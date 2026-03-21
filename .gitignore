@@ -1,0 +1,60 @@
+# Gradle
+.gradle
+build/
+local.properties
+*.iml
+*.ipr
+*.iws
+
+# Android / Gradle build outputs
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.ap_
+*.dex
+
+# Kotlin / Gradle caches
+.kotlin/
+.kotlinc/
+kotlin-daemon-*.out
+
+# IDEs
+.idea/
+.vscode/
+*.code-workspace
+
+# Misc
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+
+# Keystores / secrets (never commit!)
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Generated files
+app/src/main/assets/*
+app/src/main/res/raw/*
+
+
+# Extra explicit ignores for caches and generated code
+**/build/
+**/generated/
+**/ksp/
+**/kapt/
+**/tmp/
+**/cache/
+**/local-state/
+**/kotlin-compile/
+**/kotlin-dsl/
+**/wrapper/dists/
+
+
