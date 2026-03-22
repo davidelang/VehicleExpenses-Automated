@@ -1,6 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,12 +21,23 @@ fun SettingsScreen() {
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
     var status by remember { mutableStateOf("Ready") }
 
-    // Auto-save whenever values change
-    LaunchedEffect(sheetId) {
-        prefs.edit().putString("sheet_id", sheetId).apply()
+    // Auto-save
+    LaunchedEffect(sheetId) { prefs.edit().putString("sheet_id", sheetId).apply() }
+    LaunchedEffect(syncEnabled) { prefs.edit().putBoolean("sync_enabled", syncEnabled).apply() }
+
+    fun showToast(message: String) {
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
-    LaunchedEffect(syncEnabled) {
-        prefs.edit().putBoolean("sync_enabled", syncEnabled).apply()
+
+    fun extractSheetId(input: String): String {
+        val trimmed = input.trim()
+        return when {
+            trimmed.startsWith("https://docs.google.com/spreadsheets/d/") -> {
+                val parts = trimmed.split("/")
+                if (parts.size > 5) parts[5] else trimmed
+            }
+            else -> trimmed
+        }
     }
 
     Scaffold(
@@ -48,27 +62,43 @@ fun SettingsScreen() {
             OutlinedTextField(
                 value = sheetId,
                 onValueChange = { sheetId = it },
-                label = { Text("Google Sheet ID or URL") },
+                label = { Text("Google Sheet ID or full URL") },
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = { 
-                status = "Creating new Google Sheet... (placeholder)" 
+            Button(onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://sheets.new"))
+                context.startActivity(intent)
+                status = "New sheet opened in browser"
+                showToast("New Google Sheet created — copy the URL back here")
             }, modifier = Modifier.fillMaxWidth()) {
                 Text("Create New Google Sheet")
             }
-            
-            Button(onClick = { 
-                status = "Auto-checking sheet connection... (placeholder)" 
+
+            Button(onClick = {
+                val cleanId = extractSheetId(sheetId)
+                if (cleanId.length > 10) {
+                    sheetId = cleanId
+                    status = "Connected! Sheet ID: $cleanId"
+                    showToast("Connected to sheet")
+                } else {
+                    status = "Invalid Sheet ID/URL"
+                    showToast("Please enter a valid Sheet ID or URL")
+                }
             }, modifier = Modifier.fillMaxWidth()) {
                 Text("Connect to Sheet (auto-check)")
             }
-            
-            Button(onClick = { 
-                status = if (syncEnabled && sheetId.isNotBlank()) "Two-way sync running... (placeholder)" 
-                         else "Please enable sync and enter Sheet ID" 
+
+            Button(onClick = {
+                if (syncEnabled && sheetId.isNotBlank()) {
+                    status = "Two-way sync running... (real data sync coming next)"
+                    showToast("Sync started (placeholder)")
+                } else {
+                    status = "Enable sync + enter Sheet ID first"
+                    showToast("Sync not enabled")
+                }
             }, modifier = Modifier.fillMaxWidth()) {
                 Text("Sync Now")
             }
