@@ -20,7 +20,7 @@ class GoogleSheetsClient {
         private const val BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets"
     }
 
-    var idToken: String? = null   // ← now set automatically from Google Sign-In
+    var idToken: String? = null
 
     fun createNewSheetInBrowser() {
         Log.i(TAG, "Opening browser for new Google Sheet creation")
@@ -32,20 +32,21 @@ class GoogleSheetsClient {
             return@withContext
         }
 
-        Log.i(TAG, "🚀 Making REAL API calls with device Google account for ${vehicles.size} vehicles")
+        Log.i(TAG, "🚀 Creating tabs + column headers for ${vehicles.size} vehicles")
 
         vehicles.forEach { vehicle ->
-            createTabIfNotExists(sheetId, "Expenses - ${vehicle.name}")
-            createTabIfNotExists(sheetId, "Fuel - ${vehicle.name}")
+            createTabWithHeaders(sheetId, "Expenses - ${vehicle.name}", listOf("Date", "Amount", "Category", "Description", "Receipt"))
+            createTabWithHeaders(sheetId, "Fuel - ${vehicle.name}", listOf("Date", "Gallons", "Price/Gallon", "Total Cost", "Odometer", "Fuel Type", "Notes"))
         }
     }
 
-    private fun createTabIfNotExists(sheetId: String, tabName: String) {
+    private fun createTabWithHeaders(sheetId: String, tabName: String, headers: List<String>) {
         val token = idToken ?: return
 
         try {
-            val url = URL("$BASE_URL/$sheetId:batchUpdate")
-            val connection = url.openConnection() as HttpURLConnection
+            // 1. Create tab (idempotent)
+            val batchUrl = URL("$BASE_URL/$sheetId:batchUpdate")
+            val connection = batchUrl.openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("Content-Type", "application/json")
@@ -64,20 +65,36 @@ class GoogleSheetsClient {
             }
 
             val bodyString = json.encodeToString(JsonObject.serializer(), requestBody)
+            OutputStreamWriter(connection.outputStream).use { it.write(bodyString) }
+            connection.responseCode  // ignore response (tab may already exist)
 
-            OutputStreamWriter(connection.outputStream).use {
-                it.write(bodyString)
+            // 2. Write column headers to row 1
+            val valueUrl = URL("$BASE_URL/$sheetId/values/$tabName!A1:append?valueInputOption=RAW")
+            val valueConnection = valueUrl.openConnection() as HttpURLConnection
+            valueConnection.requestMethod = "POST"
+            valueConnection.setRequestProperty("Authorization", "Bearer $token")
+            valueConnection.setRequestProperty("Content-Type", "application/json")
+            valueConnection.doOutput = true
+
+            val headerRow = buildJsonObject {
+                put("values", buildJsonArray {
+                    addJsonArray {
+                        headers.forEach { add(it) }
+                    }
+                })
             }
 
-            val responseCode = connection.responseCode
-            if (responseCode == 200 || responseCode == 400) {
-                Log.i(TAG, "✅ Tab '$tabName' is ready (or already existed)")
-            } else {
-                Log.e(TAG, "API error for tab '$tabName': $responseCode")
+            val headerString = json.encodeToString(JsonObject.serializer(), headerRow)
+            OutputStreamWriter(valueConnection.outputStream).use { it.write(headerString) }
+
+            val code = valueConnection.responseCode
+            if (code == 200) {
+                Log.i(TAG, "✅ Tab '$tabName' ready with column headers")
             }
+            valueConnection.disconnect()
             connection.disconnect()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create tab '$tabName': ${e.message}")
+            Log.e(TAG, "Failed to setup tab '$tabName': ${e.message}")
         }
     }
 

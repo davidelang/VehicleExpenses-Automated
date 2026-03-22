@@ -19,6 +19,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
 
 @Composable
@@ -33,7 +34,6 @@ fun SettingsScreen() {
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
-    // Auto-save
     LaunchedEffect(sheetId) { prefs.edit().putString("sheet_id", sheetId).apply() }
     LaunchedEffect(syncEnabled) { prefs.edit().putBoolean("sync_enabled", syncEnabled).apply() }
 
@@ -52,11 +52,12 @@ fun SettingsScreen() {
         }
     }
 
-    // Google Sign-In setup
+    // Google Sign-In with proper Sheets scope
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken("YOUR_WEB_CLIENT_ID")   // ← replace with your actual Web Client ID from Google Cloud Console (see note below)
+            .requestIdToken("YOUR_WEB_CLIENT_ID")   // ← REPLACE WITH YOUR ACTUAL WEB CLIENT ID
             .requestEmail()
+            .requestScopes(Scope("https://www.googleapis.com/auth/spreadsheets"))
             .build()
     }
     val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
@@ -105,11 +106,24 @@ fun SettingsScreen() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = {
-                val signInIntent = googleSignInClient.signInIntent
-                signInLauncher.launch(signInIntent)
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sign in with Google (device account)")
+            if (signedInAccount == null) {
+                Button(onClick = {
+                    val signInIntent = googleSignInClient.signInIntent
+                    signInLauncher.launch(signInIntent)
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sign in with Google (device account)")
+                }
+            } else {
+                Text("Signed in as: ${signedInAccount?.email}", style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = {
+                    googleSignInClient.signOut()
+                    signedInAccount = null
+                    client.idToken = null
+                    status = "Signed out"
+                    showToast("Signed out")
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sign Out")
+                }
             }
 
             Button(onClick = {
@@ -134,11 +148,11 @@ fun SettingsScreen() {
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
                         client.ensureVehicleTabs(sheetId, dummyVehicles)
-                        status = "✅ Real sync complete using your Google account!"
+                        status = "✅ Tabs + column headers created using your Google account!"
                     }
                     showToast("Real sync started")
                 } else {
-                    status = "Sign in with Google + enable sync + enter Sheet ID"
+                    status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
