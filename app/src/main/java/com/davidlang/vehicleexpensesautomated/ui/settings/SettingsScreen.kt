@@ -42,6 +42,7 @@ fun SettingsScreen() {
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
+    // Auto-save & reschedule background worker whenever settings change
     LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours) {
         prefs.edit()
             .putString("sheet_id", sheetId)
