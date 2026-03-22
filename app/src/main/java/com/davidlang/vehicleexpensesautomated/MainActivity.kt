@@ -14,6 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
+import com.davidlang.vehicleexpensesautomated.ui.conflict.ConflictResolutionScreen
 import com.davidlang.vehicleexpensesautomated.ui.dashboard.DashboardScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelListScreen
@@ -55,6 +56,18 @@ fun AppNavigation() {
         }
         composable("settings") { SettingsScreen() }
         composable("about") { AboutScreen() }
+        composable("conflict/{type}/{local}/{sheet}") { backStackEntry ->
+            val type = backStackEntry.arguments?.getString("type") ?: ""
+            val local = backStackEntry.arguments?.getString("local") ?: ""
+            val sheet = backStackEntry.arguments?.getString("sheet") ?: ""
+            ConflictResolutionScreen(
+                conflictType = type,
+                localData = local,
+                sheetData = sheet,
+                onResolve = { /* TODO: handle resolution in next step */ },
+                navController = navController
+            )
+        }
     }
 }
 
