@@ -8,11 +8,11 @@ import javax.inject.Singleton
 
 @Singleton
 class ExpenseRepository @Inject constructor(
-    private val expenseDao: ExpenseDao
+    private val dao: ExpenseDao
 ) {
-    fun getExpensesForVehicle(vehicleId: Int): Flow<List<Expense>> = expenseDao.getExpensesForVehicle(vehicleId)
+    fun getExpensesForVehicle(vehicleId: Int): Flow<List<Expense>> = dao.getExpensesForVehicle(vehicleId)
 
-    suspend fun insert(expense: Expense) {
-        expenseDao.insertExpense(expense)
-    }
+    fun getAllExpenses(): Flow<List<Expense>> = dao.getAllExpenses()
+
+    suspend fun insert(expense: Expense) = dao.insertExpense(expense)
 }
