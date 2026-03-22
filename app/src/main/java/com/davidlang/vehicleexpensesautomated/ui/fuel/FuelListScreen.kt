@@ -21,6 +21,7 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.ExperimentalFoundationApi
 
 @Composable
 fun FuelListScreen(vehicleId: Int, vehicleName: String) {
