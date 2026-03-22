@@ -18,10 +18,10 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        buildConfigField "String", "GIT_VERSION", "\"$GIT_VERSION\""
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables { useSupportLibrary = true }
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
@@ -41,11 +41,19 @@ android {
         freeCompilerArgs += "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+    }
 
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.17" }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.17"
+    }
 
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 
     sourceSets {
         getByName("main") {
@@ -104,6 +112,8 @@ afterEvaluate {
         task.name.contains("kapt", ignoreCase = true)
     }.configureEach {
         enabled = false
-        doFirst { println("DISABLED task: ${this.name} to enforce KSP-only") }
+        doFirst {
+            println("DISABLED task: ${this.name} to enforce KSP-only")
+        }
     }
 }

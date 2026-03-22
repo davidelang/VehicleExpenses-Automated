@@ -9,7 +9,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.davidlang.vehicleexpensesautomated.BuildConfig
 
 @Composable
 fun AboutScreen() {
@@ -24,12 +23,12 @@ fun AboutScreen() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Vehicle Expenses Automated", style = MaterialTheme.typography.headlineMedium)
-            Text("Version ${BuildConfig.GIT_VERSION}", style = MaterialTheme.typography.bodyLarge)
+            Text("Version 1.0", style = MaterialTheme.typography.bodyLarge)
 
             Spacer(modifier = Modifier.height(32.dp))
 
             Text("Open Source Libraries", style = MaterialTheme.typography.titleMedium)
-            Text("• Room\n• Hilt\n• Compose\n• WorkManager\n• OkHttp (via system)\n• kotlinx-serialization")
+            Text("• Room\n• Hilt\n• Jetpack Compose\n• WorkManager\n• Google Sign-In\n• kotlinx-serialization")
 
             Spacer(modifier = Modifier.height(16.dp))
 
