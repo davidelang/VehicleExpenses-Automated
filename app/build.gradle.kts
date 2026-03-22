@@ -102,8 +102,11 @@ dependencies {
 
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
 
-    // Google Sheets Sync (KSP-safe — only serialization, no OkHttp)
+    // Google Sheets Sync (KSP-safe)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
+
+    // NEW: Proper Google Sign-In using device accounts (no manual tokens)
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 }
 
 afterEvaluate {
