@@ -38,4 +38,10 @@ class FuelViewModel @Inject constructor(
             repository.insert(fill)
         }
     }
+
+    fun deleteFuelFill(fill: FuelFill) {
+        viewModelScope.launch {
+            repository.delete(fill)
+        }
+    }
 }

@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
@@ -16,4 +17,7 @@ interface FuelFillDao {
 
     @Insert
     suspend fun insertFuelFill(fuelFill: FuelFill)
+
+    @Delete
+    suspend fun deleteFuelFill(fuelFill: FuelFill)
 }
