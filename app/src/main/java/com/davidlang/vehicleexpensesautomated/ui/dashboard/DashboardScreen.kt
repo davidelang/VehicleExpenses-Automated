@@ -56,7 +56,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
             items(perVehicleSummary) { summary ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(summary.vehicle.name, style = MaterialTheme.typography.titleMedium)
+                        Text("${summary.vehicle.make} ${summary.vehicle.model} (${summary.vehicle.year})", style = MaterialTheme.typography.titleMedium)
                         Text("Expenses: $${"%.2f".format(summary.totalExpense)}")
                         Text("Fuel Cost: $${"%.2f".format(summary.totalFuelCost)}")
                         Text("Gallons: ${"%.1f".format(summary.totalGallons)}")

@@ -53,7 +53,6 @@ class DashboardViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // Per-vehicle summary (list of vehicles with their totals)
     val perVehicleSummary: StateFlow<List<VehicleSummary>> = combine(
         vehicles,
         expenseRepo.getAllExpenses(),
