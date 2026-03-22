@@ -13,6 +13,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.dashboard.DashboardScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelListScreen
@@ -53,6 +54,7 @@ fun AppNavigation() {
             FuelListScreen(vehicleId, vehicleName)
         }
         composable("settings") { SettingsScreen() }
+        composable("about") { AboutScreen() }
     }
 }
 
@@ -70,5 +72,7 @@ fun HomeScreen(navController: NavController) {
         Button(onClick = { navController.navigate("vehicles") }) { Text("View Vehicles") }
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = { navController.navigate("settings") }) { Text("Settings & Sync") }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { navController.navigate("about") }) { Text("About") }
     }
 }
