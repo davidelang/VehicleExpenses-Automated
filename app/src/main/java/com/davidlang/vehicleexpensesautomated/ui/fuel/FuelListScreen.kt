@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -45,21 +48,31 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
                 .padding(16.dp)
         ) {
             items(fuelFills) { fill ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    onClick = { /* optional: edit later */ },
-                    onLongClick = { showDeleteConfirm = fill }
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("$${String.format("%.2f", fill.totalCost)}", style = MaterialTheme.typography.titleMedium)
-                        Text("${String.format("%.1f", fill.gallons)} gal @ $${String.format("%.2f", fill.pricePerGallon)}/gal")
-                        Text("Odometer: ${fill.odometer}")
-                        Text(
-                            Instant.ofEpochMilli(fill.dateMillis)
-                                .atZone(ZoneId.systemDefault())
-                                .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { /* optional: edit later */ },
+                                onLongClick = { showDeleteConfirm = fill }
+                            )
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("$${String.format("%.2f", fill.totalCost)}", style = MaterialTheme.typography.titleMedium)
+                            Text("${String.format("%.1f", fill.gallons)} gal @ $${String.format("%.2f", fill.pricePerGallon)}/gal")
+                            Text("Odometer: ${fill.odometer}")
+                            Text(
+                                Instant.ofEpochMilli(fill.dateMillis)
+                                    .atZone(ZoneId.systemDefault())
+                                    .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        IconButton(onClick = { showDeleteConfirm = fill }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
