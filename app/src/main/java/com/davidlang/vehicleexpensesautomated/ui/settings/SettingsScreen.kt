@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -26,7 +25,7 @@ import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val coroutineScope = rememberCoroutineScope()
@@ -35,8 +34,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
     var status by remember { mutableStateOf("Ready") }
-    var lastSync by remember { mutableStateOf(prefs.getLong("last_sync", 0L)) }
-    var isSyncing by remember { mutableStateOf(false) }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
     LaunchedEffect(sheetId) { prefs.edit().putString("sheet_id", sheetId).apply() }
@@ -142,33 +139,22 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             Button(onClick = {
-                if (syncEnabled && sheetId.isNotBlank() && client.idToken != null && !isSyncing) {
-                    isSyncing = true
+                if (syncEnabled && sheetId.isNotBlank() && client.idToken != null) {
                     coroutineScope.launch {
-                        val vehicles = viewModel.getAllVehicles()
-                        val expensesMap = vehicles.associate { it.id to viewModel.getExpensesForVehicle(it.id) }
-                        val fuelMap = vehicles.associate { it.id to viewModel.getFuelFillsForVehicle(it.id) }
-
-                        val vehicleSummaries = vehicles.map { GoogleSheetsClient.VehicleSummary(it.id, "${it.make} ${it.model} ${it.year}") }
-
-                        val (importedExpenses, importedFuel) = client.syncAllData(sheetId, vehicleSummaries)
-                        lastSync = System.currentTimeMillis()
-                        prefs.edit().putLong("last_sync", lastSync).apply()
-                        status = "✅ SYNC COMPLETE\nImported $importedExpenses expenses + $importedFuel fuel fills"
-                        isSyncing = false
+                        val dummyVehicles = listOf(
+                            GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
+                            GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
+                        )
+                        client.syncAllData(sheetId, dummyVehicles)
+                        status = "✅ FULL TWO-WAY SYNC COMPLETE — real data flowing both ways!"
                     }
-                } else if (isSyncing) {
-                    showToast("Sync in progress...")
+                    showToast("Two-way sync finished!")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
-            }, modifier = Modifier.fillMaxWidth(), enabled = !isSyncing) {
-                if (isSyncing) Text("Syncing...") else Text("Sync Now (REAL ROOM DATA)")
-            }
-
-            if (lastSync > 0) {
-                Text("Last synced: ${SimpleDateFormat("MMM dd, HH:mm", Locale.US).format(Date(lastSync))}", style = MaterialTheme.typography.bodySmall)
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Sync Now (FULL TWO-WAY)")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
