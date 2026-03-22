@@ -3,14 +3,16 @@ package com.davidlang.vehicleexpensesautomated.ui.expenses
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.Expense
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -21,16 +23,11 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String) {
 
     val expenses = viewModel.expenses.collectAsState(initial = emptyList()).value
 
-    var showAddDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf<Expense?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("$vehicleName Expenses") })
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Text("+")
-            }
         }
     ) { padding ->
         LazyColumn(
@@ -41,17 +38,22 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String) {
         ) {
             items(expenses) { expense ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("$${expense.amount}", style = MaterialTheme.typography.titleMedium)
-                        Text(expense.category, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            Instant.ofEpochMilli(expense.dateMillis)
-                                .atZone(ZoneId.systemDefault())
-                                .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        if (!expense.description.isNullOrBlank()) {
-                            Text(expense.description, style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("$${String.format("%.2f", expense.amount)}", style = MaterialTheme.typography.titleMedium)
+                            Text(expense.description)
+                            Text(
+                                Instant.ofEpochMilli(expense.dateMillis)
+                                    .atZone(ZoneId.systemDefault())
+                                    .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        IconButton(onClick = { showDeleteConfirm = expense }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -59,74 +61,30 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String) {
 
             if (expenses.isEmpty()) {
                 item {
-                    Text("No expenses yet for this vehicle.", modifier = Modifier.padding(16.dp))
+                    Text("No expenses logged yet.", modifier = Modifier.padding(16.dp))
                 }
             }
         }
     }
 
-    if (showAddDialog) {
-        AddExpenseDialog(
-            onSave = { amount, category, description, dateMillis ->
-                viewModel.addExpense(amount, category, description, dateMillis)
-                showAddDialog = false
+    showDeleteConfirm?.let { expenseToDelete ->
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text("Delete Expense") },
+            text = { Text("Are you sure you want to delete this expense?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteExpense(expenseToDelete)
+                    showDeleteConfirm = null
+                }) {
+                    Text("Delete")
+                }
             },
-            onDismiss = { showAddDialog = false }
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = null }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
-}
-
-@Composable
-fun AddExpenseDialog(
-    onSave: (Double, String, String?, Long) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var amount by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add Expense") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Amount ($)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text("Category (e.g. Maintenance)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description (optional)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                // Date is current time for demo
-                Text("Date: ${Instant.ofEpochMilli(dateMillis).atZone(java.time.ZoneId.systemDefault())}")
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                amount.toDoubleOrNull()?.let { amt ->
-                    onSave(amt, category, description.ifBlank { null }, dateMillis)
-                }
-            }) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
 }
