@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.Expense
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.repository.ExpenseRepository
 import com.davidlang.vehicleexpensesautomated.repository.FuelRepository
 import com.davidlang.vehicleexpensesautomated.repository.VehicleRepository
@@ -13,25 +14,27 @@ import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
+    private val vehicleRepo: VehicleRepository,
     private val expenseRepo: ExpenseRepository,
-    private val fuelRepo: FuelRepository,
-    private val vehicleRepo: VehicleRepository
+    private val fuelRepo: FuelRepository
 ) : ViewModel() {
 
-    val totalVehicles: StateFlow<Int> = vehicleRepo.allVehicles
-        .map { it.size }
+    val vehicles: StateFlow<List<Vehicle>> = vehicleRepo.allVehicles
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalVehicles: StateFlow<Int> = vehicles.map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val totalExpenses: StateFlow<Double> = expenseRepo.getAllExpenses()
-        .map { expenses -> expenses.sumOf { it.amount } }
+        .map { it.sumOf { e -> e.amount } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     val totalFuelCost: StateFlow<Double> = fuelRepo.getAllFuelFills()
-        .map { fills -> fills.sumOf { it.totalCost } }
+        .map { it.sumOf { f -> f.totalCost } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     val totalGallons: StateFlow<Double> = fuelRepo.getAllFuelFills()
-        .map { fills -> fills.sumOf { it.gallons } }
+        .map { it.sumOf { f -> f.gallons } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     val avgPricePerGallon: StateFlow<Double> = combine(totalFuelCost, totalGallons) { cost, gallons ->
@@ -49,4 +52,30 @@ class DashboardViewModel @Inject constructor(
             if (mpgs.isNotEmpty()) mpgs.average() else 0.0
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // Per-vehicle summary (list of vehicles with their totals)
+    val perVehicleSummary: StateFlow<List<VehicleSummary>> = combine(
+        vehicles,
+        expenseRepo.getAllExpenses(),
+        fuelRepo.getAllFuelFills()
+    ) { vehicles, allExpenses, allFills ->
+        vehicles.map { vehicle ->
+            val vehicleExpenses = allExpenses.filter { it.vehicleId == vehicle.id }
+            val vehicleFills = allFills.filter { it.vehicleId == vehicle.id }
+
+            VehicleSummary(
+                vehicle = vehicle,
+                totalExpense = vehicleExpenses.sumOf { it.amount },
+                totalFuelCost = vehicleFills.sumOf { it.totalCost },
+                totalGallons = vehicleFills.sumOf { it.gallons }
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
+
+data class VehicleSummary(
+    val vehicle: Vehicle,
+    val totalExpense: Double,
+    val totalFuelCost: Double,
+    val totalGallons: Double
+)
