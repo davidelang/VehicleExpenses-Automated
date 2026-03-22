@@ -1,10 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.data.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
-import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -17,19 +16,16 @@ class SyncWorker(
         try {
             val prefs = applicationContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
             val sheetId = prefs.getString("sheet_id", "") ?: ""
-            if (sheetId.isBlank()) return@withContext Result.failure()
+            if (sheetId.isBlank()) {
+                Log.w("SyncWorker", "No sheet ID configured")
+                return@withContext Result.failure()
+            }
 
-            // Reuse the same sync logic (dummy vehicles for now — real Room data in final step)
-            val client = GoogleSheetsClient()
-            client.idToken = "" // token is set at runtime from signed-in account
-            val dummyVehicles = listOf(
-                GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
-                GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
-            )
-            client.syncAllData(sheetId, dummyVehicles)
-
+            Log.i("SyncWorker", "Periodic background sync running for sheet $sheetId")
+            // Real data sync call will be wired in the final step
             Result.success()
         } catch (e: Exception) {
+            Log.e("SyncWorker", "Background sync failed", e)
             Result.retry()
         }
     }
