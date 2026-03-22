@@ -144,20 +144,22 @@ fun SettingsScreen() {
             Button(onClick = {
                 if (syncEnabled && sheetId.isNotBlank() && client.idToken != null) {
                     coroutineScope.launch {
+                        // TODO: Replace with real Room data fetch in next step
                         val dummyVehicles = listOf(
                             GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
                         client.ensureVehicleTabs(sheetId, dummyVehicles)
-                        status = "✅ Realistic rows (with today's date) written to your Google Sheet!"
+                        // Next step will call appendRealExpenseRows and appendRealFuelRows with your actual data
+                        status = "✅ Real data formatting ready — next step will load your actual expenses/fuel!"
                     }
-                    showToast("Full sync complete — check your sheet!")
+                    showToast("Data structure ready — next step loads your real records")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sync Now (REAL API + DATA)")
+                Text("Sync Now (REAL DATA READY)")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
