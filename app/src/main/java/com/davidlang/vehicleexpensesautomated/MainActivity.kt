@@ -13,6 +13,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.davidlang.vehicleexpensesautomated.ui.dashboard.DashboardScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelListScreen
 import com.davidlang.vehicleexpensesautomated.ui.vehicles.VehicleListScreen
@@ -41,6 +42,7 @@ fun AppNavigation() {
 
     NavHost(navController = navController, startDestination = "home") {
         composable("home") { HomeScreen(navController) }
+        composable("dashboard") { DashboardScreen() }
         composable("vehicles") { VehicleListScreen(navController) }
         composable("expenses/{vehicleId}/{vehicleName}") { backStackEntry ->
             val vehicleId = backStackEntry.arguments?.getString("vehicleId")?.toInt() ?: 0
@@ -70,19 +72,25 @@ fun HomeScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
+        Button(onClick = { navController.navigate("dashboard") }) {
+            Text("Dashboard")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         Button(onClick = { navController.navigate("vehicles") }) {
             Text("View Vehicles")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = { /* TODO: Add expense screen */ }) {
+        Button(onClick = { /* TODO */ }) {
             Text("Add Expense")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = { /* TODO: Add fuel screen */ }) {
+        Button(onClick = { /* TODO */ }) {
             Text("Log Fuel Fill")
         }
     }
