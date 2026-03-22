@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+echo "🧨 NUKING ALL CACHES - Gradle / KSP / Build"
+echo "========================================"
+
+echo "→ Stopping Gradle daemons..."
+./gradlew --stop 2>/dev/null || true
+
+echo "→ Killing Gradle/KSP/Kotlin processes..."
+pkill -9 -f "GradleDaemon" 2>/dev/null || true
+pkill -9 -f "gradle" 2>/dev/null || true
+pkill -9 -f "ksp" 2>/dev/null || true
+pkill -9 -f "kapt" 2>/dev/null || true
+
+echo "→ Removing ALL project build & cache directories..."
+rm -rf .gradle/
+rm -rf build/
+rm -rf */build/
+rm -rf app/build/
+rm -rf .idea/caches/ .idea/libraries/ .idea/build/ 2>/dev/null || true
+
+echo "→ Removing global Gradle caches (biggest kapt/KSP culprit)..."
+rm -rf ~/.gradle/caches/
+rm -rf ~/.gradle/daemon/
+rm -rf ~/.gradle/build-cache/
+rm -rf ~/.gradle/kotlin-dsl/
+
+echo "✅ All caches nuked."
+
+echo "→ Triggering fresh clean build..."
+./gradlew clean installDebug --no-daemon --rerun-tasks
+
+echo "🎉 Nuke complete! Run './nuke-caches' anytime after git reset --hard or when kapt tries to come back."
