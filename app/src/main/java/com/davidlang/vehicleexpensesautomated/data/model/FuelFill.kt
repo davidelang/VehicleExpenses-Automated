@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.data.model
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
@@ -11,7 +12,8 @@ import androidx.room.PrimaryKey
         parentColumns = ["id"],
         childColumns = ["vehicleId"],
         onDelete = ForeignKey.CASCADE
-    )]
+    )],
+    indices = [Index(value = ["vehicleId"])]
 )
 data class FuelFill(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -20,7 +22,7 @@ data class FuelFill(
     val pricePerGallon: Double,
     val totalCost: Double,
     val odometer: Int,
-    val dateMillis: Long,          // ← changed to Long (epoch millis)
+    val dateMillis: Long,
     val fuelType: String? = null,
     val notes: String? = null
 )
