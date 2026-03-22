@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -23,11 +24,9 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val coroutineScope = rememberCoroutineScope()
@@ -146,11 +145,13 @@ fun SettingsScreen() {
                 if (syncEnabled && sheetId.isNotBlank() && client.idToken != null && !isSyncing) {
                     isSyncing = true
                     coroutineScope.launch {
-                        val dummyVehicles = listOf(
-                            GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
-                            GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
-                        )
-                        val (importedExpenses, importedFuel) = client.syncAllData(sheetId, dummyVehicles)
+                        val vehicles = viewModel.getAllVehicles()
+                        val expensesMap = vehicles.associate { it.id to viewModel.getExpensesForVehicle(it.id) }
+                        val fuelMap = vehicles.associate { it.id to viewModel.getFuelFillsForVehicle(it.id) }
+
+                        val vehicleSummaries = vehicles.map { GoogleSheetsClient.VehicleSummary(it.id, "${it.make} ${it.model} ${it.year}") }
+
+                        val (importedExpenses, importedFuel) = client.syncAllData(sheetId, vehicleSummaries)
                         lastSync = System.currentTimeMillis()
                         prefs.edit().putLong("last_sync", lastSync).apply()
                         status = "✅ SYNC COMPLETE\nImported $importedExpenses expenses + $importedFuel fuel fills"
@@ -163,19 +164,7 @@ fun SettingsScreen() {
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth(), enabled = !isSyncing) {
-                if (isSyncing) Text("Syncing...") else Text("Sync Now (FULL TWO-WAY)")
-            }
-
-            Button(onClick = {
-                if (sheetId.isNotBlank() && client.idToken != null) {
-                    coroutineScope.launch {
-                        client.clearSheet(sheetId)
-                        status = "Sheet cleared for testing"
-                        showToast("Sheet cleared")
-                    }
-                }
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text("Clear Sheet (test only)")
+                if (isSyncing) Text("Syncing...") else Text("Sync Now (REAL ROOM DATA)")
             }
 
             if (lastSync > 0) {
