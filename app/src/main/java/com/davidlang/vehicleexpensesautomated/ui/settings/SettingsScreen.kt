@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -26,7 +25,7 @@ import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val coroutineScope = rememberCoroutineScope()
@@ -145,23 +144,20 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Button(onClick = {
                 if (syncEnabled && sheetId.isNotBlank() && client.idToken != null) {
                     coroutineScope.launch {
-                        val vehicles = viewModel.getAllVehicles()
-                        val expensesMap = vehicles.associate { it.id to viewModel.getExpensesForVehicle(it.id) }
-                        val fuelMap = vehicles.associate { it.id to viewModel.getFuelFillsForVehicle(it.id) }
-
-                        val vehicleSummaries = vehicles.map { GoogleSheetsClient.VehicleSummary(it.id, "${it.make} ${it.model} ${it.year}") }
-
-                        client.syncAllData(sheetId, vehicleSummaries, expensesMap, fuelMap)
-
-                        status = "✅ FULL SYNC COMPLETE — your real data is now in Google Sheets!"
+                        val dummyVehicles = listOf(
+                            GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
+                            GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
+                        )
+                        client.syncAllData(sheetId, dummyVehicles, emptyMap(), emptyMap()) // real data in next step
+                        status = "✅ Sync structure ready — real Room data coming next!"
                     }
-                    showToast("Full real sync complete — check your sheet!")
+                    showToast("Sync structure ready")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sync Now (REAL DATA FROM ROOM)")
+                Text("Sync Now (READY FOR REAL DATA)")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
