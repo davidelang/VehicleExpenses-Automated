@@ -9,9 +9,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
-import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -142,4 +142,3 @@ fun AddFuelDialog(
         }
     )
 }
-import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
