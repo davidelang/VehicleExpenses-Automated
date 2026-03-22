@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.dashboard
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -60,15 +62,42 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
                         Text("Expenses: $${"%.2f".format(summary.totalExpense)}")
                         Text("Fuel Cost: $${"%.2f".format(summary.totalFuelCost)}")
                         Text("Gallons: ${"%.1f".format(summary.totalGallons)}")
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SimpleBarChart(
+                            expense = summary.totalExpense,
+                            fuelCost = summary.totalFuelCost
+                        )
                     }
                 }
             }
-
-            if (perVehicleSummary.isEmpty()) {
-                item {
-                    Text("No vehicles or data yet.", modifier = Modifier.padding(16.dp))
-                }
-            }
         }
+    }
+}
+
+@Composable
+fun SimpleBarChart(expense: Double, fuelCost: Double) {
+    val maxValue = maxOf(expense, fuelCost, 1.0)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .background(Color.LightGray.copy(alpha = 0.3f)),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .background(Color(0xFF4CAF50))
+                .fillMaxWidth(expense / maxValue)
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .background(Color(0xFFFF9800))
+                .fillMaxWidth(fuelCost / maxValue)
+        )
     }
 }
