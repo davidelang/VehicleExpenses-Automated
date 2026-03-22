@@ -4,6 +4,7 @@ plugins {
     id("com.google.devtools.ksp") version "2.1.0-1.0.29"
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.0"
     id("com.google.dagger.hilt.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -37,7 +38,7 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
-        freeCompilerArgs += "-Xopt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+        freeCompilerArgs += "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
     }
 
     buildFeatures {
@@ -48,18 +49,18 @@ android {
         kotlinCompilerExtensionVersion = "1.5.17"
     }
 
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
     sourceSets {
         getByName("main") {
             kotlin.srcDir("src/main/kotlin")
             kotlin.srcDir(file("build/generated/source/ksp/main/kotlin"))
             kotlin.srcDir(file("build/generated/ksp/main/kotlin"))
             java.srcDir(file("build/generated/source/ksp/main/java"))
-        }
-    }
-
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
 }
@@ -86,10 +87,7 @@ dependencies {
     implementation("com.google.dagger:hilt-android:$hiltVersion")
     ksp("com.google.dagger:hilt-compiler:$hiltVersion")
 
-    // Explicitly add Hilt Compose navigation (required for hiltViewModel())
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-
-    implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
 
     implementation("androidx.navigation:navigation-compose:$navVersion")
 
@@ -103,6 +101,10 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
+
+    // Google Sheets Sync (KSP-safe)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
 }
 
 afterEvaluate {
