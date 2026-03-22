@@ -37,6 +37,7 @@ fun SettingsScreen() {
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
     var status by remember { mutableStateOf("Ready") }
     var lastSync by remember { mutableStateOf(prefs.getLong("last_sync", 0L)) }
+    var isSyncing by remember { mutableStateOf(false) }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
     LaunchedEffect(sheetId) { prefs.edit().putString("sheet_id", sheetId).apply() }
@@ -142,24 +143,39 @@ fun SettingsScreen() {
             }
 
             Button(onClick = {
-                if (syncEnabled && sheetId.isNotBlank() && client.idToken != null) {
+                if (syncEnabled && sheetId.isNotBlank() && client.idToken != null && !isSyncing) {
+                    isSyncing = true
                     coroutineScope.launch {
                         val dummyVehicles = listOf(
                             GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
-                        val (importedExpenses, importedFuel) = client.syncAllData(sheetId, dummyVehicles, emptyMap(), emptyMap())
+                        val (importedExpenses, importedFuel) = client.syncAllData(sheetId, dummyVehicles)
                         lastSync = System.currentTimeMillis()
                         prefs.edit().putLong("last_sync", lastSync).apply()
-                        status = "✅ TWO-WAY SYNC COMPLETE\nImported $importedExpenses expenses + $importedFuel fuel fills"
+                        status = "✅ SYNC COMPLETE\nImported $importedExpenses expenses + $importedFuel fuel fills"
+                        isSyncing = false
                     }
-                    showToast("Full two-way sync finished!")
+                } else if (isSyncing) {
+                    showToast("Sync in progress...")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
+            }, modifier = Modifier.fillMaxWidth(), enabled = !isSyncing) {
+                if (isSyncing) Text("Syncing...") else Text("Sync Now (FULL TWO-WAY)")
+            }
+
+            Button(onClick = {
+                if (sheetId.isNotBlank() && client.idToken != null) {
+                    coroutineScope.launch {
+                        client.clearSheet(sheetId)
+                        status = "Sheet cleared for testing"
+                        showToast("Sheet cleared")
+                    }
+                }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sync Now (FULL TWO-WAY)")
+                Text("Clear Sheet (test only)")
             }
 
             if (lastSync > 0) {
