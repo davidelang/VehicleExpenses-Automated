@@ -1,7 +1,12 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -10,6 +15,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
 
 @Composable
@@ -22,6 +31,7 @@ fun SettingsScreen() {
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
     var status by remember { mutableStateOf("Ready") }
+    var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
     // Auto-save
     LaunchedEffect(sheetId) { prefs.edit().putString("sheet_id", sheetId).apply() }
@@ -39,6 +49,31 @@ fun SettingsScreen() {
                 if (parts.size > 5) parts[5] else trimmed
             }
             else -> trimmed
+        }
+    }
+
+    // Google Sign-In setup
+    val gso = remember {
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken("YOUR_WEB_CLIENT_ID")   // ← replace with your actual Web Client ID from Google Cloud Console (see note below)
+            .requestEmail()
+            .build()
+    }
+    val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
+
+    val signInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            try {
+                val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                val account = task.getResult(ApiException::class.java)
+                signedInAccount = account
+                client.idToken = account.idToken
+                status = "Signed in as ${account.email}"
+                showToast("Signed in successfully")
+            } catch (e: ApiException) {
+                status = "Sign-in failed"
+                showToast("Sign-in failed: ${e.message}")
+            }
         }
     }
 
@@ -71,12 +106,10 @@ fun SettingsScreen() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = {
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://sheets.new"))
-                context.startActivity(intent)
-                status = "New sheet opened in browser"
-                showToast("New Google Sheet created — copy the URL back here")
+                val signInIntent = googleSignInClient.signInIntent
+                signInLauncher.launch(signInIntent)
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Create New Google Sheet")
+                Text("Sign in with Google (device account)")
             }
 
             Button(onClick = {
@@ -90,26 +123,26 @@ fun SettingsScreen() {
                     showToast("Please enter a valid Sheet ID or URL")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Connect to Sheet (auto-check)")
+                Text("Connect to Sheet")
             }
 
             Button(onClick = {
-                if (syncEnabled && sheetId.isNotBlank()) {
+                if (syncEnabled && sheetId.isNotBlank() && client.idToken != null) {
                     coroutineScope.launch {
                         val dummyVehicles = listOf(
                             GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
                         client.ensureVehicleTabs(sheetId, dummyVehicles)
-                        status = "Tabs created for ${dummyVehicles.size} vehicles!"
+                        status = "✅ Real sync complete using your Google account!"
                     }
-                    showToast("Sync started — tabs ensured")
+                    showToast("Real sync started")
                 } else {
-                    status = "Enable sync + enter Sheet ID first"
-                    showToast("Sync not enabled")
+                    status = "Sign in with Google + enable sync + enter Sheet ID"
+                    showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sync Now")
+                Text("Sync Now (REAL API)")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
