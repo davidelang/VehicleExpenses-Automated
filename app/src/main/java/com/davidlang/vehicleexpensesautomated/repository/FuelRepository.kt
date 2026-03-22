@@ -14,7 +14,7 @@ class FuelRepository @Inject constructor(
 
     fun getAllFuelFills(): Flow<List<FuelFill>> = dao.getAllFuelFills()
 
-    suspend fun insert(fuelFill: FuelFill) {
-        dao.insertFuelFill(fuelFill)
-    }
+    suspend fun insert(fuelFill: FuelFill) = dao.insertFuelFill(fuelFill)
+
+    suspend fun delete(fuelFill: FuelFill) = dao.deleteFuelFill(fuelFill)
 }
