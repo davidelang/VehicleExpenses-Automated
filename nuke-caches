@@ -29,6 +29,7 @@ rm -rf ~/.gradle/kotlin-dsl/
 echo "✅ All caches nuked."
 
 echo "→ Triggering fresh clean build..."
-./gradlew clean installDebug --no-daemon --rerun-tasks
+./gradlew clean build --no-daemon --rerun-tasks
+#./gradlew clean installDebug --no-daemon --rerun-tasks
 
 echo "🎉 Nuke complete! Run './nuke-caches' anytime after git reset --hard or when kapt tries to come back."
