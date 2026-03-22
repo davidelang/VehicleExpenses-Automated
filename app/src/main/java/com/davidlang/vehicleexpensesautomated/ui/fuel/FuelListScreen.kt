@@ -1,16 +1,15 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -20,7 +19,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FuelListScreen(vehicleId: Int, vehicleName: String) {
     val viewModel: FuelViewModel = hiltViewModel(key = "fuel_$vehicleId")
@@ -47,11 +45,12 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
                 .padding(16.dp)
         ) {
             items(fuelFills) { fill ->
-                DismissibleItem(
-                    onDismiss = { showDeleteConfirm = fill }
-                ) {
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("$${String.format("%.2f", fill.totalCost)}", style = MaterialTheme.typography.titleMedium)
                             Text("${String.format("%.1f", fill.gallons)} gal @ $${String.format("%.2f", fill.pricePerGallon)}/gal")
                             Text("Odometer: ${fill.odometer}")
@@ -61,6 +60,9 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
                                     .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
                                 style = MaterialTheme.typography.bodySmall
                             )
+                        }
+                        IconButton(onClick = { showDeleteConfirm = fill }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -112,39 +114,6 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
             }
         )
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DismissibleItem(
-    onDismiss: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    val dismissState = rememberDismissState(
-        confirmValueChange = { value ->
-            if (value == DismissValue.DismissedToEnd || value == DismissValue.DismissedToStart) {
-                onDismiss()
-                true
-            } else false
-        }
-    )
-
-    SwipeToDismiss(
-        state = dismissState,
-        directions = setOf(DismissDirection.EndToStart),
-        background = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Red)
-                    .padding(horizontal = 20.dp),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
-            }
-        },
-        dismissContent = { content() }
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
