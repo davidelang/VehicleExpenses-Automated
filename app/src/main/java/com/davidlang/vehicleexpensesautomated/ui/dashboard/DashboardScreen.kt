@@ -14,10 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.davidlang.vehicleexpensesautomated.data.model.Expense
-import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
-import java.time.Instant
-import java.time.ZoneId
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -40,7 +37,9 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { importCsvFromUri(context, it, viewModel) }
+        uri?.let {
+            android.widget.Toast.makeText(context, "CSV Import coming soon with full Google Sheets sync!", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     Scaffold(
@@ -102,23 +101,25 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
 }
 
 private fun saveCsvToUri(context: Context, uri: Uri, viewModel: DashboardViewModel) {
-    val expenses = viewModel.allExpenses.value
-    val fills = viewModel.allFuelFills.value
+    val summary = viewModel.perVehicleSummary.value
 
     val csv = buildString {
-        appendLine("Type,Date,VehicleID,Amount,Description,Gallons,PricePerGallon,Odometer,TotalCost")
-        expenses.forEach { e ->
-            appendLine("Expense,${Instant.ofEpochMilli(e.dateMillis).atZone(ZoneId.systemDefault()).toLocalDate()},${e.vehicleId},${e.amount},${e.description ?: ""},,,,")
-        }
-        fills.forEach { f ->
-            appendLine("Fuel,${Instant.ofEpochMilli(f.dateMillis).atZone(ZoneId.systemDefault()).toLocalDate()},${f.vehicleId},,,${f.gallons},${f.pricePerGallon},${f.odometer},${f.totalCost}")
+        appendLine("Vehicle Expenses Export - ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}")
+        appendLine("")
+        appendLine("OVERALL SUMMARY")
+        appendLine("Total Vehicles,${viewModel.totalVehicles.value}")
+        appendLine("Total Expenses,$${String.format("%.2f", viewModel.totalExpenses.value)}")
+        appendLine("Total Fuel Cost,$${String.format("%.2f", viewModel.totalFuelCost.value)}")
+        appendLine("Total Gallons,${String.format("%.1f", viewModel.totalGallons.value)}")
+        appendLine("Avg Price/Gal,$${String.format("%.2f", viewModel.avgPricePerGallon.value)}")
+        appendLine("Rough Avg MPG,${String.format("%.1f", viewModel.roughAvgMPG.value)}")
+        appendLine("")
+        appendLine("PER-VEHICLE BREAKDOWN")
+        appendLine("Vehicle,Year,Make,Model,Total Expenses,Total Fuel Cost,Total Gallons")
+        summary.forEach { s ->
+            appendLine("${s.vehicle.make} ${s.vehicle.model},${s.vehicle.year},${s.vehicle.make},${s.vehicle.model},${String.format("%.2f", s.totalExpense)},${String.format("%.2f", s.totalFuelCost)},${String.format("%.1f", s.totalGallons)}")
         }
     }
 
     context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
-}
-
-private fun importCsvFromUri(context: Context, uri: Uri, viewModel: DashboardViewModel) {
-    // TODO: implement import later (after you confirm the format)
-    // For now, this is a stub so the button compiles
 }
