@@ -20,7 +20,7 @@ class GoogleSheetsClient {
         private const val BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets"
     }
 
-    var accessToken: String? = null   // ← real OAuth token will be set here in next step
+    var accessToken: String? = null
 
     fun createNewSheetInBrowser() {
         Log.i(TAG, "Opening browser for new Google Sheet creation")
@@ -41,7 +41,7 @@ class GoogleSheetsClient {
     }
 
     private fun createTabIfNotExists(sheetId: String, tabName: String) {
-        val token = accessToken ?: "placeholder-token"   // real token will replace this next
+        val token = accessToken ?: "placeholder-token"
 
         try {
             val url = URL("$BASE_URL/$sheetId:batchUpdate")
@@ -63,10 +63,14 @@ class GoogleSheetsClient {
                 }
             }
 
-            OutputStreamWriter(connection.outputStream).use { it.write(json.encodeToString(requestBody)) }
+            val bodyString = json.encodeToString(JsonObject.serializer(), requestBody)
+
+            OutputStreamWriter(connection.outputStream).use {
+                it.write(bodyString)
+            }
 
             val responseCode = connection.responseCode
-            if (responseCode == 200 || responseCode == 400) {   // 400 = sheet already exists (normal)
+            if (responseCode == 200 || responseCode == 400) {   // 400 = sheet already exists
                 Log.i(TAG, "✅ Tab '$tabName' is ready (or already existed)")
             } else {
                 Log.e(TAG, "API error for tab '$tabName': $responseCode")
