@@ -90,14 +90,14 @@ fun SimpleBarChart(expense: Double, fuelCost: Double) {
                 .weight(1f)
                 .fillMaxHeight()
                 .background(Color(0xFF4CAF50))
-                .fillMaxWidth(expense / maxValue)
+                .fillMaxWidth((expense / maxValue).toFloat())
         )
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .background(Color(0xFFFF9800))
-                .fillMaxWidth(fuelCost / maxValue)
+                .fillMaxWidth((fuelCost / maxValue).toFloat())
         )
     }
 }
