@@ -149,7 +149,7 @@ fun SettingsScreen() {
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
                         client.ensureVehicleTabs(sheetId, dummyVehicles)
-                        status = "✅ Real rows written to your Google Sheet!"
+                        status = "✅ Realistic rows (with today's date) written to your Google Sheet!"
                     }
                     showToast("Full sync complete — check your sheet!")
                 } else {
