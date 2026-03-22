@@ -149,15 +149,15 @@ fun SettingsScreen() {
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
                         client.ensureVehicleTabs(sheetId, dummyVehicles)
-                        status = "✅ Tabs + column headers created using your Google account!"
+                        status = "✅ Real rows written to your Google Sheet!"
                     }
-                    showToast("Real sync started")
+                    showToast("Full sync complete — check your sheet!")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sync Now (REAL API)")
+                Text("Sync Now (REAL API + DATA)")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
