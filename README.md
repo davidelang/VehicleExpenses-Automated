@@ -3,10 +3,10 @@
 Android app for tracking vehicle expenses and fuel with **optional two-way Google Sheets sync**.
 
 ## Features
-- Local Room database for expenses & fuel fills
-- Full two-way Google Sheets sync (using your device's Google account)
-- Configurable background periodic sync
-- Clean Material 3 Compose UI
+- Local First (the app will work perfectly with no network connectivity)
+- uses camera to collect odometer readings, pump info, and expenses
+- supports multiple vehicles and auto-detects vehicle by odometeter photo
+- optional backup/sync between different devices via Google Sheet
 
 ## Screenshots
 (coming soon)
