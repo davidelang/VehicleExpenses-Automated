@@ -3,12 +3,14 @@ package com.davidlang.vehicleexpensesautomated.ui.expenses
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.Expense
@@ -23,11 +25,17 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String?) {
 
     val expenses = viewModel.expenses.collectAsState(initial = emptyList()).value
 
+    var showAddDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf<Expense?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("${vehicleName ?: "Vehicle"} Expenses") })
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAddDialog = true }) {
+                Text("+")
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -67,6 +75,16 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String?) {
         }
     }
 
+    if (showAddDialog) {
+        AddExpenseDialog(
+            onSave = { amount, description, dateMillis ->
+                viewModel.addExpense(amount, description, dateMillis)
+                showAddDialog = false
+            },
+            onDismiss = { showAddDialog = false }
+        )
+    }
+
     showDeleteConfirm?.let { expenseToDelete ->
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
@@ -86,5 +104,77 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String?) {
                 }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddExpenseDialog(
+    onSave: (Double, String, Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var amount by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = System.currentTimeMillis()
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Expense") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Amount ($)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(onClick = { showDatePicker = true }) {
+                    Text("Select Date")
+                }
+                Text("Selected Date: ${datePickerState.selectedDateMillis?.let { millis ->
+                    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+                } ?: "Not selected"}")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                amount.toDoubleOrNull()?.let { amt ->
+                    if (amt > 0 && description.isNotBlank()) {
+                        val dateMillis = datePickerState.selectedDateMillis ?: System.currentTimeMillis()
+                        onSave(amt, description, dateMillis)
+                    }
+                }
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("OK")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
     }
 }
