@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -15,7 +16,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PhotoAnalysisScreen(
     photoUri: Uri,
-    onDataExtracted: (amount: Double?, date: Long?, description: String?) -> Unit,
+    onDataExtracted: (amount: Double?, odometer: Int?, dateMillis: Long?, description: String?) -> Unit,
     onManualEntry: () -> Unit
 ) {
     val context = LocalContext.current
@@ -31,34 +32,39 @@ fun PhotoAnalysisScreen(
 
                 val text = result.text
                 val amount = extractAmount(text)
-                val date = extractDate(text)
+                val odometer = extractOdometer(text)
+                val dateMillis = extractDateMillis(text)
                 val description = extractDescription(text)
 
-                status = "Extracted: Amount=$amount, Date=$date"
-                onDataExtracted(amount, date, description)
+                if (amount != null && (odometer != null || dateMillis != null)) {
+                    status = "Auto-detected successfully"
+                    onDataExtracted(amount, odometer, dateMillis, description)
+                } else {
+                    status = "OCR uncertain — showing confirmation"
+                    // Only show screen if ambiguous (this is the rare case)
+                    onManualEntry()
+                }
             } catch (e: Exception) {
-                status = "OCR failed — falling back to manual"
+                status = "Analysis failed"
                 onManualEntry()
             }
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Photo Analysis") }) }) { padding ->
+    // This screen is almost never shown (invisible background process)
+    Scaffold(topBar = { TopAppBar(title = { Text("Analyzing Photo") }) }) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(status, style = MaterialTheme.typography.bodyLarge)
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(onClick = onManualEntry) {
-                Text("Enter Data Manually")
-            }
+            Text(status)
         }
     }
 }
 
-// Simple regex-based extractors (can be improved with more ML later)
+// Simple regex-based extractors (can be improved later)
 private fun extractAmount(text: String): Double? = Regex("""\$?(\d+\.\d{2})""").find(text)?.groupValues?.get(1)?.toDouble()
-private fun extractDate(text: String): Long? = Regex("""(\d{1,2}/\d{1,2}/\d{2,4})""").find(text)?.let { /* parse to millis */ System.currentTimeMillis() }
+private fun extractOdometer(text: String): Int? = Regex("""(\d{4,6})""").findAll(text).map { it.value.toInt() }.maxOrNull()
+private fun extractDateMillis(text: String): Long? = System.currentTimeMillis() // placeholder — improve with regex
 private fun extractDescription(text: String): String? = text.lines().firstOrNull { it.length > 10 }

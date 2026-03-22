@@ -95,10 +95,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // === NEW: OCR + Google Drive ===
+    // === OCR (local-first) ===
     implementation("com.google.mlkit:text-recognition:16.0.0")
-    implementation("com.google.mlkit:text-recognition-latin:16.0.0")
-    implementation("com.google.android.gms:play-services-drive:17.0.0")
 }
 
 afterEvaluate {
