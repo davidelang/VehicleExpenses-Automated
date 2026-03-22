@@ -16,6 +16,7 @@ import androidx.navigation.compose.rememberNavController
 import com.davidlang.vehicleexpensesautomated.ui.dashboard.DashboardScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelListScreen
+import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
 import com.davidlang.vehicleexpensesautomated.ui.vehicles.VehicleListScreen
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -25,10 +26,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     AppNavigation()
                 }
             }
@@ -54,6 +52,7 @@ fun AppNavigation() {
             val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: "Vehicle"
             FuelListScreen(vehicleId, vehicleName)
         }
+        composable("settings") { SettingsScreen() }
     }
 }
 
@@ -64,34 +63,12 @@ fun HomeScreen(navController: NavController) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "Vehicle Expenses Tracker",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-
+        Text("Vehicle Expenses Tracker", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(32.dp))
-
-        Button(onClick = { navController.navigate("dashboard") }) {
-            Text("Dashboard")
-        }
-
+        Button(onClick = { navController.navigate("dashboard") }) { Text("Dashboard") }
         Spacer(modifier = Modifier.height(16.dp))
-
-        Button(onClick = { navController.navigate("vehicles") }) {
-            Text("View Vehicles")
-        }
-
+        Button(onClick = { navController.navigate("vehicles") }) { Text("View Vehicles") }
         Spacer(modifier = Modifier.height(16.dp))
-
-        Button(onClick = { /* TODO */ }) {
-            Text("Add Expense")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(onClick = { /* TODO */ }) {
-            Text("Log Fuel Fill")
-        }
+        Button(onClick = { navController.navigate("settings") }) { Text("Settings & Sync") }
     }
 }
