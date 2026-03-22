@@ -16,13 +16,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.work.*
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncWorker
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun SettingsScreen() {
@@ -33,11 +36,27 @@ fun SettingsScreen() {
 
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
+    var wifiOnly by remember { mutableStateOf(prefs.getBoolean("wifi_only", true)) }
+    var chargingOnly by remember { mutableStateOf(prefs.getBoolean("charging_only", false)) }
+    var frequencyHours by remember { mutableStateOf(prefs.getInt("frequency_hours", 6)) }
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
-    LaunchedEffect(sheetId) { prefs.edit().putString("sheet_id", sheetId).apply() }
-    LaunchedEffect(syncEnabled) { prefs.edit().putBoolean("sync_enabled", syncEnabled).apply() }
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours) {
+        prefs.edit()
+            .putString("sheet_id", sheetId)
+            .putBoolean("sync_enabled", syncEnabled)
+            .putBoolean("wifi_only", wifiOnly)
+            .putBoolean("charging_only", chargingOnly)
+            .putInt("frequency_hours", frequencyHours)
+            .apply()
+
+        if (syncEnabled && sheetId.isNotBlank()) {
+            schedulePeriodicSync(context, wifiOnly, chargingOnly, frequencyHours)
+        } else {
+            WorkManager.getInstance(context).cancelUniqueWork("vehicle_sync")
+        }
+    }
 
     fun showToast(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -138,6 +157,35 @@ fun SettingsScreen() {
                 Text("Connect to Sheet")
             }
 
+            // === Periodic Sync Preferences ===
+            Text("Background Sync Settings", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("WiFi only")
+                Spacer(modifier = Modifier.width(8.dp))
+                Switch(checked = wifiOnly, onCheckedChange = { wifiOnly = it })
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Charging only")
+                Spacer(modifier = Modifier.width(8.dp))
+                Switch(checked = chargingOnly, onCheckedChange = { chargingOnly = it })
+            }
+
+            Text("Frequency")
+            Spacer(modifier = Modifier.height(4.dp))
+            Row {
+                listOf(1, 3, 6, 12, 24).forEach { hours ->
+                    FilterChip(
+                        selected = frequencyHours == hours,
+                        onClick = { frequencyHours = hours },
+                        label = { Text("${hours}h") },
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+            }
+
             Button(onClick = {
                 if (syncEnabled && sheetId.isNotBlank() && client.idToken != null) {
                     coroutineScope.launch {
@@ -146,15 +194,15 @@ fun SettingsScreen() {
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
                         client.syncAllData(sheetId, dummyVehicles)
-                        status = "✅ FULL TWO-WAY SYNC COMPLETE — real data flowing both ways!"
+                        status = "✅ Manual sync complete"
                     }
-                    showToast("Two-way sync finished!")
+                    showToast("Manual sync finished!")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sync Now (FULL TWO-WAY)")
+                Text("Manual Sync Now")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -164,4 +212,24 @@ fun SettingsScreen() {
             Text("Tab structure (one set per vehicle):\n• Expenses - [Make Model Year]\n• Fuel - [Make Model Year]", style = MaterialTheme.typography.bodyMedium)
         }
     }
+}
+
+private fun schedulePeriodicSync(context: Context, wifiOnly: Boolean, chargingOnly: Boolean, frequencyHours: Int) {
+    val constraints = Constraints.Builder()
+        .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+        .setRequiresCharging(chargingOnly)
+        .build()
+
+    val request = PeriodicWorkRequestBuilder<SyncWorker>(
+        frequencyHours.toLong(), TimeUnit.HOURS
+    )
+        .setConstraints(constraints)
+        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
+        .build()
+
+    WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        "vehicle_sync",
+        ExistingPeriodicWorkPolicy.UPDATE,
+        request
+    )
 }

@@ -102,11 +102,14 @@ dependencies {
 
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
 
-    // Google Sheets Sync (KSP-safe)
+    // Google Sheets Sync
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
 
-    // NEW: Proper Google Sign-In using device accounts (no manual tokens)
+    // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+    // === NEW: Periodic background sync (KSP-safe) ===
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }
 
 afterEvaluate {
