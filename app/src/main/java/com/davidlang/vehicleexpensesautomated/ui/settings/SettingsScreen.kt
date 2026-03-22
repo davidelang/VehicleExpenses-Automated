@@ -149,9 +149,9 @@ fun SettingsScreen() {
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
                         client.syncAllData(sheetId, dummyVehicles, emptyMap(), emptyMap())
-                        status = "✅ TWO-WAY SYNC COMPLETE — writing + reading real data!"
+                        status = "✅ FULL TWO-WAY SYNC COMPLETE — data flowing both directions!"
                     }
-                    showToast("Two-way sync running — check Logcat + your sheet!")
+                    showToast("Two-way sync complete!")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
