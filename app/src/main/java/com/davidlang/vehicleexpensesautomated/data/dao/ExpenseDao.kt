@@ -11,6 +11,9 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE vehicleId = :vehicleId ORDER BY dateMillis DESC")
     fun getExpensesForVehicle(vehicleId: Int): Flow<List<Expense>>
 
+    @Query("SELECT * FROM expenses ORDER BY dateMillis DESC")
+    fun getAllExpenses(): Flow<List<Expense>>
+
     @Insert
     suspend fun insertExpense(expense: Expense)
 }
