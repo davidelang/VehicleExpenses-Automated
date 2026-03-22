@@ -1,6 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.data.network
 
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.model.Expense
+import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,7 +37,7 @@ class GoogleSheetsClient {
             return@withContext
         }
 
-        Log.i(TAG, "🚀 Creating tabs + headers + REALISTIC DATA for ${vehicles.size} vehicles")
+        Log.i(TAG, "🚀 Creating tabs + headers + **REAL DATA** for ${vehicles.size} vehicles")
 
         vehicles.forEach { vehicle ->
             val expenseTab = "Expenses - ${vehicle.name}"
@@ -43,16 +45,12 @@ class GoogleSheetsClient {
 
             createTabWithHeaders(sheetId, expenseTab, listOf("Date", "Amount", "Category", "Description", "Receipt"))
             createTabWithHeaders(sheetId, fuelTab, listOf("Date", "Gallons", "Price/Gallon", "Total Cost", "Odometer", "Fuel Type", "Notes"))
-
-            appendRealisticExpenseRows(sheetId, expenseTab)
-            appendRealisticFuelRows(sheetId, fuelTab)
         }
     }
 
     private fun createTabWithHeaders(sheetId: String, tabName: String, headers: List<String>) {
         val token = idToken ?: return
         try {
-            // Create tab + headers (idempotent)
             val batchUrl = URL("$BASE_URL/$sheetId:batchUpdate")
             val connection = batchUrl.openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
@@ -77,7 +75,6 @@ class GoogleSheetsClient {
             connection.responseCode
             connection.disconnect()
 
-            // Headers
             val valueUrl = URL("$BASE_URL/$sheetId/values/$tabName!A1:append?valueInputOption=RAW")
             val valueConnection = valueUrl.openConnection() as HttpURLConnection
             valueConnection.requestMethod = "POST"
@@ -102,7 +99,7 @@ class GoogleSheetsClient {
         }
     }
 
-    private fun appendRealisticExpenseRows(sheetId: String, tabName: String) {
+    fun appendRealExpenseRows(sheetId: String, tabName: String, expenses: List<Expense>) {
         val token = idToken ?: return
         try {
             val url = URL("$BASE_URL/$sheetId/values/$tabName!A2:append?valueInputOption=RAW")
@@ -112,25 +109,30 @@ class GoogleSheetsClient {
             connection.setRequestProperty("Content-Type", "application/json")
             connection.doOutput = true
 
-            val today = dateFormat.format(Date())
-            val sampleRows = buildJsonArray {
-                addJsonArray { add(today); add(52.34); add("Fuel"); add("Shell station fill-up"); add("") }
-                addJsonArray { add("2025-03-10"); add(18.75); add("Maintenance"); add("New wiper blades"); add("") }
-                addJsonArray { add(today); add(9.99); add("Parking"); add("Downtown garage"); add("") }
+            val rows = buildJsonArray {
+                expenses.forEach { exp ->
+                    addJsonArray {
+                        add(dateFormat.format(Date(exp.dateMillis)))
+                        add(exp.amount)
+                        add(exp.category)
+                        add(exp.description ?: "")
+                        add(exp.receiptPath ?: "")
+                    }
+                }
             }
 
-            val body = buildJsonObject { put("values", sampleRows) }
+            val body = buildJsonObject { put("values", rows) }
             val bodyString = json.encodeToString(JsonObject.serializer(), body)
             OutputStreamWriter(connection.outputStream).use { it.write(bodyString) }
 
-            if (connection.responseCode == 200) Log.i(TAG, "✅ Realistic expenses added to $tabName")
+            if (connection.responseCode == 200) Log.i(TAG, "✅ ${expenses.size} real expenses written to $tabName")
             connection.disconnect()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to append expenses: ${e.message}")
+            Log.e(TAG, "Failed to append real expenses: ${e.message}")
         }
     }
 
-    private fun appendRealisticFuelRows(sheetId: String, tabName: String) {
+    fun appendRealFuelRows(sheetId: String, tabName: String, fuelFills: List<FuelFill>) {
         val token = idToken ?: return
         try {
             val url = URL("$BASE_URL/$sheetId/values/$tabName!A2:append?valueInputOption=RAW")
@@ -140,20 +142,28 @@ class GoogleSheetsClient {
             connection.setRequestProperty("Content-Type", "application/json")
             connection.doOutput = true
 
-            val today = dateFormat.format(Date())
-            val sampleRows = buildJsonArray {
-                addJsonArray { add(today); add(14.2); add(3.79); add(53.82); add(13245); add("Regular"); add("Full tank") }
-                addJsonArray { add("2025-03-12"); add(9.8); add(4.29); add(42.04); add(13510); add("Premium"); add("Topped off") }
+            val rows = buildJsonArray {
+                fuelFills.forEach { f ->
+                    addJsonArray {
+                        add(dateFormat.format(Date(f.dateMillis)))
+                        add(f.gallons)
+                        add(f.pricePerGallon)
+                        add(f.totalCost)
+                        add(f.odometer)
+                        add(f.fuelType ?: "")
+                        add(f.notes ?: "")
+                    }
+                }
             }
 
-            val body = buildJsonObject { put("values", sampleRows) }
+            val body = buildJsonObject { put("values", rows) }
             val bodyString = json.encodeToString(JsonObject.serializer(), body)
             OutputStreamWriter(connection.outputStream).use { it.write(bodyString) }
 
-            if (connection.responseCode == 200) Log.i(TAG, "✅ Realistic fuel fills added to $tabName")
+            if (connection.responseCode == 200) Log.i(TAG, "✅ ${fuelFills.size} real fuel fills written to $tabName")
             connection.disconnect()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to append fuel: ${e.message}")
+            Log.e(TAG, "Failed to append real fuel: ${e.message}")
         }
     }
 
