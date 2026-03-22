@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import com.davidlang.vehicleexpensesautomated.data.model.Expense
@@ -16,4 +17,7 @@ interface ExpenseDao {
 
     @Insert
     suspend fun insertExpense(expense: Expense)
+
+    @Delete
+    suspend fun deleteExpense(expense: Expense)
 }
