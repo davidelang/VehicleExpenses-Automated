@@ -13,7 +13,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -94,7 +93,9 @@ fun AddFuelDialog(
     var pricePerGallon by remember { mutableStateOf("") }
     var odometer by remember { mutableStateOf("") }
     var showDatePicker by remember { mutableStateOf(false) }
-    var selectedDate by remember { mutableStateOf(System.currentTimeMillis()) }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = System.currentTimeMillis()
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -125,7 +126,9 @@ fun AddFuelDialog(
                 Button(onClick = { showDatePicker = true }) {
                     Text("Select Date")
                 }
-                Text("Selected Date: ${Instant.ofEpochMilli(selectedDate).atZone(ZoneId.systemDefault()).toLocalDate()}")
+                Text("Selected Date: ${datePickerState.selectedDateMillis?.let { millis ->
+                    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+                } ?: "Not selected"}")
             }
         },
         confirmButton = {
@@ -134,7 +137,8 @@ fun AddFuelDialog(
                     pricePerGallon.toDoubleOrNull()?.let { price ->
                         odometer.toIntOrNull()?.let { odo ->
                             if (gal > 0 && price >= 0 && odo >= 0) {
-                                onSave(gal, price, odo, selectedDate)
+                                val dateMillis = datePickerState.selectedDateMillis ?: System.currentTimeMillis()
+                                onSave(gal, price, odo, dateMillis)
                             }
                         }
                     }
@@ -154,17 +158,12 @@ fun AddFuelDialog(
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
-                TextButton(onClick = {
-                    showDatePicker = false
-                }) {
+                TextButton(onClick = { showDatePicker = false }) {
                     Text("OK")
                 }
             }
         ) {
-            DatePicker(
-                state = rememberDatePickerState(initialSelectedDateMillis = selectedDate),
-                onDateChange = { selectedDate = it }
-            )
+            DatePicker(state = datePickerState)
         }
     }
 }
