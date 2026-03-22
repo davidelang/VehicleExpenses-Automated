@@ -20,33 +20,11 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelListScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
 import com.davidlang.vehicleexpensesautomated.ui.vehicles.VehicleListScreen
 import dagger.hilt.android.AndroidEntryPoint
-import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
-    private val repository: VehicleRepository by lazy { /* Hilt will inject later; for now we use a simple check */ }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // One-time default vehicle creation on first launch
-        CoroutineScope(Dispatchers.IO).launch {
-            if (repository.getAllVehicles().isEmpty()) {
-                // Create default vehicle
-                repository.insertVehicle(
-                    com.davidlang.vehicleexpensesautomated.data.model.Vehicle(
-                        make = "My",
-                        model = "Vehicle",
-                        year = 2025
-                    )
-                )
-            }
-        }
-
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
