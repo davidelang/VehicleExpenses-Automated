@@ -11,7 +11,11 @@ import androidx.compose.ui.unit.dp
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 @Composable
 fun PhotoAnalysisScreen(
@@ -24,7 +28,7 @@ fun PhotoAnalysisScreen(
     var status by remember { mutableStateOf("Analyzing photo...") }
 
     LaunchedEffect(photoUri) {
-        coroutineScope.launch {
+        coroutineScope.launch(Dispatchers.IO) {
             try {
                 val image = InputImage.fromFilePath(context, photoUri)
                 val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -36,12 +40,11 @@ fun PhotoAnalysisScreen(
                 val dateMillis = extractDateMillis(text)
                 val description = extractDescription(text)
 
-                if (amount != null && (odometer != null || dateMillis != null)) {
+                if (amount != null || odometer != null) {
                     status = "Auto-detected successfully"
                     onDataExtracted(amount, odometer, dateMillis, description)
                 } else {
                     status = "OCR uncertain — showing confirmation"
-                    // Only show screen if ambiguous (this is the rare case)
                     onManualEntry()
                 }
             } catch (e: Exception) {
@@ -51,7 +54,7 @@ fun PhotoAnalysisScreen(
         }
     }
 
-    // This screen is almost never shown (invisible background process)
+    // This screen is almost never shown (silent background process)
     Scaffold(topBar = { TopAppBar(title = { Text("Analyzing Photo") }) }) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -63,8 +66,14 @@ fun PhotoAnalysisScreen(
     }
 }
 
-// Simple regex-based extractors (can be improved later)
+// Simple regex extractors (can be improved later)
 private fun extractAmount(text: String): Double? = Regex("""\$?(\d+\.\d{2})""").find(text)?.groupValues?.get(1)?.toDouble()
 private fun extractOdometer(text: String): Int? = Regex("""(\d{4,6})""").findAll(text).map { it.value.toInt() }.maxOrNull()
 private fun extractDateMillis(text: String): Long? = System.currentTimeMillis() // placeholder — improve with regex
 private fun extractDescription(text: String): String? = text.lines().firstOrNull { it.length > 10 }
+
+// Suspend wrapper for ML Kit Task
+private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
+    addOnSuccessListener { result -> continuation.resume(result) }
+    addOnFailureListener { exception -> continuation.resumeWithException(exception) }
+}
