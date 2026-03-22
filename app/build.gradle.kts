@@ -102,8 +102,7 @@ dependencies {
 
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
 
-    // Google Sheets Sync (KSP-safe)
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Google Sheets Sync (KSP-safe — only serialization, no OkHttp)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
 }
 
