@@ -18,7 +18,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun ExpenseListScreen(vehicleId: Int, vehicleName: String) {
+fun ExpenseListScreen(vehicleId: Int, vehicleName: String?) {
     val viewModel: ExpenseViewModel = hiltViewModel(key = "expense_$vehicleId")
 
     val expenses = viewModel.expenses.collectAsState(initial = emptyList()).value
@@ -27,7 +27,7 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("$vehicleName Expenses") })
+            TopAppBar(title = { Text("${vehicleName ?: "Vehicle"} Expenses") })
         }
     ) { padding ->
         LazyColumn(
@@ -44,7 +44,7 @@ fun ExpenseListScreen(vehicleId: Int, vehicleName: String) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("$${String.format("%.2f", expense.amount)}", style = MaterialTheme.typography.titleMedium)
-                            Text(expense.description)
+                            Text(expense.description ?: "")
                             Text(
                                 Instant.ofEpochMilli(expense.dateMillis)
                                     .atZone(ZoneId.systemDefault())

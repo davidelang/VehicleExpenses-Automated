@@ -1,39 +1,41 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.Expense
 import com.davidlang.vehicleexpensesautomated.repository.ExpenseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.time.Instant
 import javax.inject.Inject
 
 @HiltViewModel
 class ExpenseViewModel @Inject constructor(
     private val repository: ExpenseRepository,
-    private val vehicleId: Int
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    val expenses = repository.getExpensesForVehicle(vehicleId).stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    private val vehicleId: Int = savedStateHandle.get<Int>("vehicleId") ?: 0
 
-    fun addExpense(amount: Double, category: String, description: String?, dateMillis: Long) {
+    val expenses: StateFlow<List<Expense>> = repository.getExpensesForVehicle(vehicleId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addExpense(amount: Double, description: String, dateMillis: Long) {
         viewModelScope.launch {
-            repository.insert(
-                Expense(
-                    vehicleId = vehicleId,
-                    amount = amount,
-                    dateMillis = dateMillis,
-                    category = category,
-                    description = description
-                )
+            val expense = Expense(
+                vehicleId = vehicleId,
+                amount = amount,
+                description = description,
+                dateMillis = dateMillis
             )
+            repository.insert(expense)
+        }
+    }
+
+    fun deleteExpense(expense: Expense) {
+        viewModelScope.launch {
+            repository.delete(expense)
         }
     }
 }
