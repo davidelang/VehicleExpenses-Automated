@@ -28,7 +28,6 @@ private val LightColorScheme = lightColorScheme(
     tertiary = androidx.compose.ui.graphics.Color(0xFF3700B3)
 )
 
-// Define the Typography instance (required for MaterialTheme)
 val AppTypography = Typography()
 
 @Composable
@@ -50,6 +49,7 @@ fun VehicleExpensesAutomatedTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+            @Suppress("DEPRECATION")
             window.statusBarColor = colorScheme.primary.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = darkTheme
         }
@@ -57,7 +57,7 @@ fun VehicleExpensesAutomatedTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = AppTypography,  // ← use the instance here
+        typography = AppTypography,
         content = content
     )
 }

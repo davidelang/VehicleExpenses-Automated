@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.app.Activity
@@ -52,7 +54,6 @@ fun SettingsScreen() {
         }
     }
 
-    // Google Sign-In with proper Sheets scope
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken("YOUR_WEB_CLIENT_ID")   // ← REPLACE WITH YOUR ACTUAL WEB CLIENT ID
