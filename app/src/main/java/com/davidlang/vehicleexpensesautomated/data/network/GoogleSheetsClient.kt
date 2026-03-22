@@ -31,13 +31,18 @@ class GoogleSheetsClient {
         Log.i(TAG, "Opening browser for new Google Sheet creation")
     }
 
-    suspend fun ensureVehicleTabs(sheetId: String, vehicles: List<VehicleSummary>) = withContext(Dispatchers.IO) {
-        if (sheetId.isBlank()) {
-            Log.w(TAG, "No Sheet ID — skipping tab creation")
+    suspend fun syncAllData(
+        sheetId: String,
+        vehicles: List<VehicleSummary>,
+        allExpenses: Map<Int, List<Expense>>,
+        allFuelFills: Map<Int, List<FuelFill>>
+    ) = withContext(Dispatchers.IO) {
+        if (sheetId.isBlank() || idToken == null) {
+            Log.w(TAG, "Missing sheet ID or token — skipping sync")
             return@withContext
         }
 
-        Log.i(TAG, "🚀 Creating tabs + headers + **REAL DATA** for ${vehicles.size} vehicles")
+        Log.i(TAG, "🚀 FULL SYNC: Writing real data for ${vehicles.size} vehicles")
 
         vehicles.forEach { vehicle ->
             val expenseTab = "Expenses - ${vehicle.name}"
@@ -45,6 +50,9 @@ class GoogleSheetsClient {
 
             createTabWithHeaders(sheetId, expenseTab, listOf("Date", "Amount", "Category", "Description", "Receipt"))
             createTabWithHeaders(sheetId, fuelTab, listOf("Date", "Gallons", "Price/Gallon", "Total Cost", "Odometer", "Fuel Type", "Notes"))
+
+            allExpenses[vehicle.id]?.let { appendRealExpenseRows(sheetId, expenseTab, it) }
+            allFuelFills[vehicle.id]?.let { appendRealFuelRows(sheetId, fuelTab, it) }
         }
     }
 
@@ -99,7 +107,7 @@ class GoogleSheetsClient {
         }
     }
 
-    fun appendRealExpenseRows(sheetId: String, tabName: String, expenses: List<Expense>) {
+    private fun appendRealExpenseRows(sheetId: String, tabName: String, expenses: List<Expense>) {
         val token = idToken ?: return
         try {
             val url = URL("$BASE_URL/$sheetId/values/$tabName!A2:append?valueInputOption=RAW")
@@ -132,7 +140,7 @@ class GoogleSheetsClient {
         }
     }
 
-    fun appendRealFuelRows(sheetId: String, tabName: String, fuelFills: List<FuelFill>) {
+    private fun appendRealFuelRows(sheetId: String, tabName: String, fuelFills: List<FuelFill>) {
         val token = idToken ?: return
         try {
             val url = URL("$BASE_URL/$sheetId/values/$tabName!A2:append?valueInputOption=RAW")

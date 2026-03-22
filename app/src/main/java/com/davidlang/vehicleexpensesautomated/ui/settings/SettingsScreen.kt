@@ -16,9 +16,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.Expense
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
+import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -27,7 +29,7 @@ import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val coroutineScope = rememberCoroutineScope()
@@ -146,34 +148,23 @@ fun SettingsScreen() {
             Button(onClick = {
                 if (syncEnabled && sheetId.isNotBlank() && client.idToken != null) {
                     coroutineScope.launch {
-                        val dummyVehicles = listOf(
-                            GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
-                            GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
-                        )
-                        client.ensureVehicleTabs(sheetId, dummyVehicles)
+                        val vehicles = viewModel.getAllVehicles()
+                        val expensesMap = vehicles.associate { it.id to viewModel.getExpensesForVehicle(it.id) }
+                        val fuelMap = vehicles.associate { it.id to viewModel.getFuelFillsForVehicle(it.id) }
 
-                        // === REAL DATA PROOF-OF-CONCEPT ===
-                        val dummyExpenses = listOf(
-                            Expense(vehicleId = 1, amount = 52.34, dateMillis = System.currentTimeMillis(), category = "Fuel", description = "Shell fill-up"),
-                            Expense(vehicleId = 1, amount = 18.75, dateMillis = System.currentTimeMillis() - 86400000, category = "Maintenance", description = "Oil change")
-                        )
-                        val dummyFuel = listOf(
-                            FuelFill(vehicleId = 1, gallons = 14.2, pricePerGallon = 3.79, totalCost = 53.82, odometer = 13245, dateMillis = System.currentTimeMillis(), fuelType = "Regular"),
-                            FuelFill(vehicleId = 1, gallons = 9.8, pricePerGallon = 4.29, totalCost = 42.04, odometer = 13510, dateMillis = System.currentTimeMillis() - 86400000, fuelType = "Premium")
-                        )
+                        val vehicleSummaries = vehicles.map { GoogleSheetsClient.VehicleSummary(it.id, "${it.make} ${it.model} ${it.year}") }
 
-                        client.appendRealExpenseRows(sheetId, "Expenses - Toyota Camry 2023", dummyExpenses)
-                        client.appendRealFuelRows(sheetId, "Fuel - Toyota Camry 2023", dummyFuel)
+                        client.syncAllData(sheetId, vehicleSummaries, expensesMap, fuelMap)
 
-                        status = "✅ ${dummyExpenses.size} expenses + ${dummyFuel.size} fuel fills written to your Google Sheet!"
+                        status = "✅ FULL SYNC COMPLETE — ${expensesMap.values.sumOf { it.size }} expenses + ${fuelMap.values.sumOf { it.size }} fuel fills written!"
                     }
-                    showToast("Full sync complete — check your sheet!")
+                    showToast("Full real sync complete — check your sheet!")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("Sync Now (REAL DATA)")
+                Text("Sync Now (REAL DATA FROM ROOM)")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
