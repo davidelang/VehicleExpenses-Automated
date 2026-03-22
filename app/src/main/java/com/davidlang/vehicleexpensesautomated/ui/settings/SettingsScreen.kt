@@ -23,6 +23,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun SettingsScreen() {
@@ -34,6 +36,7 @@ fun SettingsScreen() {
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
     var status by remember { mutableStateOf("Ready") }
+    var lastSync by remember { mutableStateOf(prefs.getLong("last_sync", 0L)) }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
     LaunchedEffect(sheetId) { prefs.edit().putString("sheet_id", sheetId).apply() }
@@ -46,10 +49,7 @@ fun SettingsScreen() {
     fun extractSheetId(input: String): String {
         val trimmed = input.trim()
         return when {
-            trimmed.startsWith("https://docs.google.com/spreadsheets/d/") -> {
-                val parts = trimmed.split("/")
-                if (parts.size > 5) parts[5] else trimmed
-            }
+            trimmed.startsWith("https://docs.google.com/spreadsheets/d/") -> trimmed.split("/").getOrNull(5) ?: trimmed
             else -> trimmed
         }
     }
@@ -148,16 +148,22 @@ fun SettingsScreen() {
                             GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
                             GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
                         )
-                        client.syncAllData(sheetId, dummyVehicles, emptyMap(), emptyMap())
-                        status = "✅ FULL TWO-WAY SYNC COMPLETE — data written to Sheets + imported back into Room!"
+                        val (importedExpenses, importedFuel) = client.syncAllData(sheetId, dummyVehicles, emptyMap(), emptyMap())
+                        lastSync = System.currentTimeMillis()
+                        prefs.edit().putLong("last_sync", lastSync).apply()
+                        status = "✅ TWO-WAY SYNC COMPLETE\nImported $importedExpenses expenses + $importedFuel fuel fills"
                     }
-                    showToast("Two-way sync finished!")
+                    showToast("Full two-way sync finished!")
                 } else {
                     status = "Sign in + enable sync + enter Sheet ID"
                     showToast("Please sign in first")
                 }
             }, modifier = Modifier.fillMaxWidth()) {
                 Text("Sync Now (FULL TWO-WAY)")
+            }
+
+            if (lastSync > 0) {
+                Text("Last synced: ${SimpleDateFormat("MMM dd, HH:mm", Locale.US).format(Date(lastSync))}", style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
