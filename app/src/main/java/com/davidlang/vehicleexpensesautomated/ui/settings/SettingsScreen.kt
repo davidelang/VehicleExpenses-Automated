@@ -1,8 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -11,11 +9,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
+    val coroutineScope = rememberCoroutineScope()
+    val client = remember { GoogleSheetsClient() }
 
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
@@ -69,7 +71,7 @@ fun SettingsScreen() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://sheets.new"))
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://sheets.new"))
                 context.startActivity(intent)
                 status = "New sheet opened in browser"
                 showToast("New Google Sheet created — copy the URL back here")
@@ -93,8 +95,15 @@ fun SettingsScreen() {
 
             Button(onClick = {
                 if (syncEnabled && sheetId.isNotBlank()) {
-                    status = "Two-way sync running... (real data sync coming next)"
-                    showToast("Sync started (placeholder)")
+                    coroutineScope.launch {
+                        val dummyVehicles = listOf(
+                            GoogleSheetsClient.VehicleSummary(1, "Toyota Camry 2023"),
+                            GoogleSheetsClient.VehicleSummary(2, "Honda Civic 2022")
+                        )
+                        client.ensureVehicleTabs(sheetId, dummyVehicles)
+                        status = "Tabs created for ${dummyVehicles.size} vehicles!"
+                    }
+                    showToast("Sync started — tabs ensured")
                 } else {
                     status = "Enable sync + enter Sheet ID first"
                     showToast("Sync not enabled")
