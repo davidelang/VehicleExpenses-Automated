@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,7 +18,6 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import androidx.compose.foundation.ExperimentalFoundationApi
 
 @Composable
 fun FuelListScreen(vehicleId: Int, vehicleName: String) {
@@ -47,25 +45,25 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
                 .padding(16.dp)
         ) {
             items(fuelFills) { fill ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .combinedClickable(
-                            onClick = { /* optional: edit later */ },
-                            onLongClick = { showDeleteConfirm = fill }
-                        )
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("$${String.format("%.2f", fill.totalCost)}", style = MaterialTheme.typography.titleMedium)
-                        Text("${String.format("%.1f", fill.gallons)} gal @ $${String.format("%.2f", fill.pricePerGallon)}/gal")
-                        Text("Odometer: ${fill.odometer}")
-                        Text(
-                            Instant.ofEpochMilli(fill.dateMillis)
-                                .atZone(ZoneId.systemDefault())
-                                .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("$${String.format("%.2f", fill.totalCost)}", style = MaterialTheme.typography.titleMedium)
+                            Text("${String.format("%.1f", fill.gallons)} gal @ $${String.format("%.2f", fill.pricePerGallon)}/gal")
+                            Text("Odometer: ${fill.odometer}")
+                            Text(
+                                Instant.ofEpochMilli(fill.dateMillis)
+                                    .atZone(ZoneId.systemDefault())
+                                    .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        IconButton(onClick = { showDeleteConfirm = fill }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
