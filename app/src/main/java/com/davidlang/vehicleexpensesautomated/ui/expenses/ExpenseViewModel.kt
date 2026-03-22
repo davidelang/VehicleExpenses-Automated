@@ -21,13 +21,14 @@ class ExpenseViewModel @Inject constructor(
     val expenses: StateFlow<List<Expense>> = repository.getExpensesForVehicle(vehicleId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun addExpense(amount: Double, description: String, dateMillis: Long) {
+    fun addExpense(amount: Double, description: String, dateMillis: Long, category: String = "Other") {
         viewModelScope.launch {
             val expense = Expense(
                 vehicleId = vehicleId,
                 amount = amount,
                 description = description,
-                dateMillis = dateMillis
+                dateMillis = dateMillis,
+                category = category
             )
             repository.insert(expense)
         }
