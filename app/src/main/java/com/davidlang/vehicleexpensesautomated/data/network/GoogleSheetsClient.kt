@@ -1,14 +1,11 @@
 package com.davidlang.vehicleexpensesautomated.data.network
 
 import android.util.Log
-import com.squareup.okhttp3.OkHttpClient
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class GoogleSheetsClient {
-
-    private val client = OkHttpClient()
 
     private val json = Json {
         ignoreUnknownKeys = true
