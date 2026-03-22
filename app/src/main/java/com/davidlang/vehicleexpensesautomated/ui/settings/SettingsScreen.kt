@@ -157,7 +157,6 @@ fun SettingsScreen() {
                 Text("Connect to Sheet")
             }
 
-            // === Periodic Sync Preferences ===
             Text("Background Sync Settings", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
 
