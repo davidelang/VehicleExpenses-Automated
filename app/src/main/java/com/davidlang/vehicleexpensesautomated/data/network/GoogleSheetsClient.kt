@@ -50,7 +50,7 @@ class GoogleSheetsClient {
             val importedExpenses = readAndParseExpenseRows(sheetId, expenseTab, vehicle.id)
             val importedFuel = readAndParseFuelRows(sheetId, fuelTab, vehicle.id)
 
-            Log.i(TAG, "📥 Imported ${importedExpenses.size} expenses + ${importedFuel.size} fuel fills from Sheets")
+            Log.i(TAG, "📥 Imported ${importedExpenses.size} expenses + ${importedFuel.size} fuel fills from Sheets (ready for Room)")
         }
     }
 
@@ -95,8 +95,63 @@ class GoogleSheetsClient {
         }
     }
 
-    private fun appendRealExpenseRows(sheetId: String, tabName: String, expenses: List<Expense>) { /* unchanged */ }
-    private fun appendRealFuelRows(sheetId: String, tabName: String, fuelFills: List<FuelFill>) { /* unchanged */ }
+    private fun appendRealExpenseRows(sheetId: String, tabName: String, expenses: List<Expense>) {
+        val token = idToken ?: return
+        try {
+            val url = URL("$BASE_URL/$sheetId/values/$tabName!A2:append?valueInputOption=RAW")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+
+            val rows = buildJsonArray {
+                expenses.forEach { e ->
+                    addJsonArray {
+                        add(dateFormat.format(Date(e.dateMillis)))
+                        add(e.amount)
+                        add(e.category)
+                        add(e.description ?: "")
+                        add(e.receiptPath ?: "")
+                    }
+                }
+            }
+            val body = buildJsonObject { put("values", rows) }
+            OutputStreamWriter(conn.outputStream).use { it.write(json.encodeToString(JsonObject.serializer(), body)) }
+            conn.responseCode
+            conn.disconnect()
+        } catch (e: Exception) {}
+    }
+
+    private fun appendRealFuelRows(sheetId: String, tabName: String, fuelFills: List<FuelFill>) {
+        val token = idToken ?: return
+        try {
+            val url = URL("$BASE_URL/$sheetId/values/$tabName!A2:append?valueInputOption=RAW")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+
+            val rows = buildJsonArray {
+                fuelFills.forEach { f ->
+                    addJsonArray {
+                        add(dateFormat.format(Date(f.dateMillis)))
+                        add(f.gallons)
+                        add(f.pricePerGallon)
+                        add(f.totalCost)
+                        add(f.odometer)
+                        add(f.fuelType ?: "")
+                        add(f.notes ?: "")
+                    }
+                }
+            }
+            val body = buildJsonObject { put("values", rows) }
+            OutputStreamWriter(conn.outputStream).use { it.write(json.encodeToString(JsonObject.serializer(), body)) }
+            conn.responseCode
+            conn.disconnect()
+        } catch (e: Exception) {}
+    }
 
     private fun readAndParseExpenseRows(sheetId: String, tabName: String, vehicleId: Int): List<Expense> {
         val token = idToken ?: return emptyList()
@@ -120,12 +175,9 @@ class GoogleSheetsClient {
                         imported.add(Expense(vehicleId = vehicleId, amount = amount, dateMillis = dateMillis, category = category, description = description))
                     }
                 }
-                Log.i(TAG, "✅ Parsed ${imported.size} expenses from $tabName")
             }
             conn.disconnect()
-        } catch (e: Exception) {
-            Log.e(TAG, "Read expense failed: ${e.message}")
-        }
+        } catch (e: Exception) {}
         return imported
     }
 
@@ -152,12 +204,9 @@ class GoogleSheetsClient {
                         imported.add(FuelFill(vehicleId = vehicleId, gallons = gallons, pricePerGallon = price, totalCost = total, odometer = odometer, dateMillis = dateMillis, fuelType = "", notes = ""))
                     }
                 }
-                Log.i(TAG, "✅ Parsed ${imported.size} fuel fills from $tabName")
             }
             conn.disconnect()
-        } catch (e: Exception) {
-            Log.e(TAG, "Read fuel failed: ${e.message}")
-        }
+        } catch (e: Exception) {}
         return imported
     }
 
