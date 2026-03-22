@@ -9,10 +9,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -74,8 +75,8 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
 
     if (showAddDialog) {
         AddFuelDialog(
-            onSave = { gallons, pricePerGallon, odometer ->
-                viewModel.addFuelFill(gallons, pricePerGallon, odometer, System.currentTimeMillis())
+            onSave = { gallons, pricePerGallon, odometer, dateMillis ->
+                viewModel.addFuelFill(gallons, pricePerGallon, odometer, dateMillis)
                 showAddDialog = false
             },
             onDismiss = { showAddDialog = false }
@@ -83,14 +84,17 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddFuelDialog(
-    onSave: (Double, Double, Int) -> Unit,
+    onSave: (Double, Double, Int, Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     var gallons by remember { mutableStateOf("") }
     var pricePerGallon by remember { mutableStateOf("") }
     var odometer by remember { mutableStateOf("") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var selectedDate by remember { mutableStateOf(System.currentTimeMillis()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -118,6 +122,10 @@ fun AddFuelDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
+                Button(onClick = { showDatePicker = true }) {
+                    Text("Select Date")
+                }
+                Text("Selected Date: ${Instant.ofEpochMilli(selectedDate).atZone(ZoneId.systemDefault()).toLocalDate()}")
             }
         },
         confirmButton = {
@@ -126,7 +134,7 @@ fun AddFuelDialog(
                     pricePerGallon.toDoubleOrNull()?.let { price ->
                         odometer.toIntOrNull()?.let { odo ->
                             if (gal > 0 && price >= 0 && odo >= 0) {
-                                onSave(gal, price, odo)
+                                onSave(gal, price, odo, selectedDate)
                             }
                         }
                     }
@@ -141,4 +149,22 @@ fun AddFuelDialog(
             }
         }
     )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDatePicker = false
+                }) {
+                    Text("OK")
+                }
+            }
+        ) {
+            DatePicker(
+                state = rememberDatePickerState(initialSelectedDateMillis = selectedDate),
+                onDateChange = { selectedDate = it }
+            )
+        }
+    }
 }
