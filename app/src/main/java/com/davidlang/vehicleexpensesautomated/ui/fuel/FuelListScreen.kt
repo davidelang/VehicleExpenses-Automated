@@ -45,25 +45,21 @@ fun FuelListScreen(vehicleId: Int, vehicleName: String) {
                 .padding(16.dp)
         ) {
             items(fuelFills) { fill ->
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("$${String.format("%.2f", fill.totalCost)}", style = MaterialTheme.typography.titleMedium)
-                            Text("${String.format("%.1f", fill.gallons)} gal @ $${String.format("%.2f", fill.pricePerGallon)}/gal")
-                            Text("Odometer: ${fill.odometer}")
-                            Text(
-                                Instant.ofEpochMilli(fill.dateMillis)
-                                    .atZone(ZoneId.systemDefault())
-                                    .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        IconButton(onClick = { showDeleteConfirm = fill }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
-                        }
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    onClick = { /* optional: edit later */ },
+                    onLongClick = { showDeleteConfirm = fill }
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("$${String.format("%.2f", fill.totalCost)}", style = MaterialTheme.typography.titleMedium)
+                        Text("${String.format("%.1f", fill.gallons)} gal @ $${String.format("%.2f", fill.pricePerGallon)}/gal")
+                        Text("Odometer: ${fill.odometer}")
+                        Text(
+                            Instant.ofEpochMilli(fill.dateMillis)
+                                .atZone(ZoneId.systemDefault())
+                                .format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }
