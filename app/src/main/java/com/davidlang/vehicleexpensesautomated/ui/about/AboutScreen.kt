@@ -39,6 +39,12 @@ fun AboutScreen() {
             }
 
             Button(onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/LICENSE")))
+            }) {
+                Text("License (Apache 2.0)")
+            }
+
+            Button(onClick = {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/PRIVACY.md")))
             }) {
                 Text("Privacy Policy")

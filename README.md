@@ -1,21 +1,20 @@
 # Vehicle Expenses Automated
 
-Android app for tracking vehicle expenses and fuel with **optional two-way Google Sheets sync**.
+Android app for tracking vehicle expenses and fuel with **optional two-way Google Sheets sync** using your device's Google account.
 
 ## Features
-- Local First (the app will work perfectly with no network connectivity)
-- uses camera to collect odometer readings, pump info, and expenses
-- supports multiple vehicles and auto-detects vehicle by odometeter photo
-- optional backup/sync between different devices via Google Sheet
-
-## Screenshots
-(coming soon)
-
-## Download
-[Play Store link coming soon]
-
-## Development
-See [docs/developer-guide.md](docs/developer-guide.md)
+- Local Room database
+- Full bidirectional Google Sheets sync
+- Configurable background periodic sync (WiFi/charging/frequency)
+- Clean Material 3 UI
 
 ## License
-MIT — see [LICENSE](LICENSE)
+Apache License 2.0 — see [LICENSE](LICENSE)
+
+## Documentation
+- [User Manual](docs/user-manual.md)
+- [Developer Guide](docs/developer-guide.md)
+- [Privacy Policy](PRIVACY.md)
+
+## Repository
+https://github.com/davidelang/VehicleExpenses-Automated
