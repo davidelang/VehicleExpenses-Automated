@@ -8,11 +8,11 @@ import javax.inject.Singleton
 
 @Singleton
 class FuelRepository @Inject constructor(
-    private val fuelFillDao: FuelFillDao
+    private val dao: FuelFillDao
 ) {
-    fun getFuelFillsForVehicle(vehicleId: Int): Flow<List<FuelFill>> = fuelFillDao.getFuelFillsForVehicle(vehicleId)
+    fun getFuelFillsForVehicle(vehicleId: Int): Flow<List<FuelFill>> = dao.getFuelFillsForVehicle(vehicleId)
 
-    suspend fun insert(fuelFill: FuelFill) {
-        fuelFillDao.insertFuelFill(fuelFill)
-    }
+    fun getAllFuelFills(): Flow<List<FuelFill>> = dao.getAllFuelFills()
+
+    suspend fun insert(fuelFill: FuelFill) = dao.insertFuelFill(fuelFill)
 }
