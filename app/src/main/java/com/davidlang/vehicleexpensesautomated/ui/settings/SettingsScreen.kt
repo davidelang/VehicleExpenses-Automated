@@ -17,10 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.davidlang.vehicleexpensesautomated.data.model.Expense
-import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
-import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -156,7 +153,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
                         client.syncAllData(sheetId, vehicleSummaries, expensesMap, fuelMap)
 
-                        status = "✅ FULL SYNC COMPLETE — ${expensesMap.values.sumOf { it.size }} expenses + ${fuelMap.values.sumOf { it.size }} fuel fills written!"
+                        status = "✅ FULL SYNC COMPLETE — your real data is now in Google Sheets!"
                     }
                     showToast("Full real sync complete — check your sheet!")
                 } else {
