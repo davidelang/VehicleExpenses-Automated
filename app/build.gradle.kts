@@ -19,9 +19,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
+        vectorDrawables { useSupportLibrary = true }
     }
 
     buildTypes {
@@ -41,19 +39,11 @@ android {
         freeCompilerArgs += "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
     }
 
-    buildFeatures {
-        compose = true
-    }
+    buildFeatures { compose = true }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.17"
-    }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.17" }
 
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
+    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 
     sourceSets {
         getByName("main") {
@@ -104,6 +94,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // === NEW: OCR + Google Drive ===
+    implementation("com.google.mlkit:text-recognition:16.0.0")
+    implementation("com.google.mlkit:text-recognition-latin:16.0.0")
+    implementation("com.google.android.gms:play-services-drive:17.0.0")
 }
 
 afterEvaluate {
@@ -112,8 +107,6 @@ afterEvaluate {
         task.name.contains("kapt", ignoreCase = true)
     }.configureEach {
         enabled = false
-        doFirst {
-            println("DISABLED task: ${this.name} to enforce KSP-only")
-        }
+        doFirst { println("DISABLED task: ${this.name} to enforce KSP-only") }
     }
 }
