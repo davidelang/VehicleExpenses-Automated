@@ -11,11 +11,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
-    val totalExpenses = viewModel.totalExpenses
-    val totalFuelCost = viewModel.totalFuelCost
-    val totalGallons = viewModel.totalGallons
-    val avgPricePerGallon = viewModel.avgPricePerGallon
-    val avgMPG = viewModel.avgMPG
+    val totalVehicles = viewModel.totalVehicles.collectAsState(initial = 0).value
+    val totalExpenses = viewModel.totalExpenses.collectAsState(initial = 0.0).value
+    val totalFuelCost = viewModel.totalFuelCost.collectAsState(initial = 0.0).value
+    val totalGallons = viewModel.totalGallons.collectAsState(initial = 0.0).value
+    val avgPricePerGallon = viewModel.avgPricePerGallon.collectAsState(initial = 0.0).value
+    val roughAvgMPG = viewModel.roughAvgMPG.collectAsState(initial = 0.0).value
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Dashboard") }) }
@@ -32,11 +33,12 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Total Expenses: $${"%.2f".format(totalExpenses)}")
-                    Text("Total Fuel Cost: $${"%.2f".format(totalFuelCost)}")
-                    Text("Total Gallons: ${"%.1f".format(totalGallons)}")
-                    Text("Avg Price/Gal: $${"%.2f".format(avgPricePerGallon)}")
-                    Text("Rough Avg MPG: ${"%.1f".format(avgMPG)}")
+                    Text("Vehicles: $totalVehicles")
+                    Text("Total Expenses: $${String.format("%.2f", totalExpenses)}")
+                    Text("Total Fuel Cost: $${String.format("%.2f", totalFuelCost)}")
+                    Text("Total Gallons: ${String.format("%.1f", totalGallons)}")
+                    Text("Avg Price/Gal: $${String.format("%.2f", avgPricePerGallon)}")
+                    Text("Rough Avg MPG: ${String.format("%.1f", roughAvgMPG)}")
                 }
             }
 
