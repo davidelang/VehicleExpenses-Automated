@@ -13,4 +13,7 @@ interface FuelDao {
 
     @Query("SELECT * FROM fuel_fillups WHERE vehicleId = :vehicleId ORDER BY timestamp DESC")
     fun getFillupsForVehicle(vehicleId: Int): Flow<List<FuelFillup>>
+
+    @Query("SELECT * FROM fuel_fillups ORDER BY timestamp DESC")
+    fun getAllFuelFills(): Flow<List<FuelFillup>>
 }
