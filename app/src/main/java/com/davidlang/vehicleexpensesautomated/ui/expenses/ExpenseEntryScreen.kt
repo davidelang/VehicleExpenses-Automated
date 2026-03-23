@@ -10,11 +10,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
+import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.photo.PhotoAnalysisScreen
+import kotlinx.coroutines.launch
 
 @Composable
 fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     var amount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
@@ -23,6 +28,13 @@ fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             photoUri?.let { uri ->
+                // ← Photo storage hook (expenses are ALWAYS archived)
+                coroutineScope.launch {
+                    val manager = PhotoStorageManager(context)
+                    val filename = "expense_${vehicleId}_${System.currentTimeMillis()}.jpg"
+                    val archiveUrl = manager.savePhoto(uri, filename, PhotoType.EXPENSE)
+                    // archiveUrl is now available if you want to store it in the database
+                }
                 showAnalysis = true
             }
         }
@@ -54,10 +66,8 @@ fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
                 }) {
                     Text("Take Receipt Photo")
                 }
-
                 OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") })
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
-
                 Button(onClick = { /* save expense */ }) {
                     Text("Save Expense")
                 }
