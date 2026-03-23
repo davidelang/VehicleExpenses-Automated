@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 fun FuelEntryScreen(vehicleId: Int, vehicleName: String) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-
     var gallons by remember { mutableStateOf("") }
     var odometer by remember { mutableStateOf("") }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
@@ -28,12 +27,10 @@ fun FuelEntryScreen(vehicleId: Int, vehicleName: String) {
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             photoUri?.let { uri ->
-                // ← Photo storage hook (fuel photos respect the Settings toggle)
                 coroutineScope.launch {
                     val manager = PhotoStorageManager(context)
                     val filename = "fuel_${vehicleId}_${System.currentTimeMillis()}.jpg"
-                    val archiveUrl = manager.savePhoto(uri, filename, PhotoType.FUEL)
-                    // archiveUrl is now available if you want to store it in the database
+                    manager.savePhoto(uri, filename, PhotoType.FUEL)
                 }
                 showAnalysis = true
             }
@@ -52,24 +49,17 @@ fun FuelEntryScreen(vehicleId: Int, vehicleName: String) {
     } else {
         Scaffold(topBar = { TopAppBar(title = { Text("New Fuel Fill - $vehicleName") }) }) { padding ->
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
                     val uri = Uri.fromFile(context.cacheDir.resolve("photo_${System.currentTimeMillis()}.jpg"))
                     photoUri = uri
                     cameraLauncher.launch(uri)
-                }) {
-                    Text("Take Dash / Pump Photo")
-                }
+                }) { Text("Take Dash / Pump Photo") }
                 OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons") })
                 OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer") })
-                Button(onClick = { /* save fuel fill */ }) {
-                    Text("Save Fill")
-                }
+                Button(onClick = { /* save */ }) { Text("Save Fill") }
             }
         }
     }

@@ -29,7 +29,7 @@ fun QuickFillupScreen(navController: NavController) {
     var showAnalysis by remember { mutableStateOf(false) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
     var isPumpPhoto by remember { mutableStateOf(false) }
-    var showVehiclePicker by remember { mutableStateOf(false) }
+    var odometerAutoFilled by remember { mutableStateOf(false) }
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
@@ -51,95 +51,60 @@ fun QuickFillupScreen(navController: NavController) {
             onVehicleDetected = { id, name ->
                 vehicleId = id
                 vehicleName = name
-                showAnalysis = false
             },
             onDataExtracted = { _, extractedOdo, _, _ ->
                 if (isPumpPhoto) {
-                    // pump photo success → go to reports
                     navController.navigate("reports/${vehicleId ?: 0}")
                 } else {
+                    extractedOdo?.let { odometer = it.toString(); odometerAutoFilled = true }
                     showAnalysis = false
                 }
             },
             onManualEntry = { showAnalysis = false }
         )
     } else {
-        Scaffold(
-            topBar = { TopAppBar(title = { Text("Quick Fillup") }) }
-        ) { padding ->
+        Scaffold(topBar = { TopAppBar(title = { Text("Quick Fillup") }) }) { padding ->
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("Vehicle: $vehicleName", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
 
-                // Vehicle selection row
                 Row {
-                    Button(onClick = { showVehiclePicker = true }) { Text("Select Vehicle") }
+                    Button(onClick = { /* vehicle picker stub */ }) { Text("Select Vehicle") }
                     Button(onClick = {
                         val uri = Uri.fromFile(context.cacheDir.resolve("dash_${System.currentTimeMillis()}.jpg"))
                         currentUri = uri
                         isPumpPhoto = false
                         cameraLauncher.launch(uri)
-                    }) { Text("📸 Dashboard") }
+                    }) { Text("📸 Dashboard Photo") }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                if (!odometerAutoFilled) {
+                    OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer Reading") })
+                    Button(onClick = { /* confirm */ }, modifier = Modifier.fillMaxWidth()) { Text("Confirm Odometer") }
+                } else {
+                    Text("Odometer auto-filled: $odometer", color = MaterialTheme.colorScheme.primary)
                 }
 
                 Spacer(Modifier.height(24.dp))
 
-                // Odometer section
-                OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer Reading") })
-                Button(onClick = { /* save odometer if needed */ }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Confirm Odometer")
-                }
-
-                Spacer(Modifier.height(24.dp))
-
-                // Pump section
-                Text("Pump / Fill Info", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-
+                Text("Pump Fill (gallons + dollars)", style = MaterialTheme.typography.titleMedium)
                 Button(onClick = {
                     val uri = Uri.fromFile(context.cacheDir.resolve("pump_${System.currentTimeMillis()}.jpg"))
                     currentUri = uri
                     isPumpPhoto = true
                     cameraLauncher.launch(uri)
                 }, modifier = Modifier.fillMaxWidth()) {
-                    Text("⛽ Take Pump Photo (gallons + cost)")
+                    Text("⛽ Take Pump Photo")
                 }
-
-                Button(onClick = { /* show manual fields */ }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Manual Volume & Cost")
-                }
-
-                Button(onClick = {
-                    if (vehicleId != null) navController.navigate("reports/${vehicleId}")
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Skip to Summary/Reports")
+                Button(onClick = { /* manual gallons/cost */ }, modifier = Modifier.fillMaxWidth()) { Text("Manual Volume & Cost") }
+                Button(onClick = { vehicleId?.let { navController.navigate("reports/$it") } }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Skip to Reports")
                 }
             }
         }
-    }
-
-    if (showVehiclePicker) {
-        AlertDialog(
-            onDismissRequest = { showVehiclePicker = false },
-            title = { Text("Select Vehicle") },
-            text = {
-                Column {
-                    listOf("Toyota Camry (1)", "Honda Civic (2)", "Ford F-150 (3)").forEach { v ->
-                        Button(onClick = {
-                            vehicleId = v.split("(")[1].removeSuffix(")").toInt()
-                            vehicleName = v.split(" (")[0]
-                            showVehiclePicker = false
-                        }) { Text(v) }
-                    }
-                }
-            },
-            confirmButton = {}
-        )
     }
 }

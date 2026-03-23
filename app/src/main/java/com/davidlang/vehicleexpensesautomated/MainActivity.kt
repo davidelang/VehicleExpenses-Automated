@@ -1,7 +1,31 @@
-// (full file with updated NavHost — startDestination = "quickfill", plus new "reports/{vehicleId}" route)
 package com.davidlang.vehicleexpensesautomated
 
-// ... existing imports + new import for VehicleSummaryScreen
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
+import com.davidlang.vehicleexpensesautomated.ui.vehicles.VehicleSummaryScreen
+import dagger.hilt.android.AndroidEntryPoint
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    AppNavigation()
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun AppNavigation() {
@@ -12,6 +36,6 @@ fun AppNavigation() {
             val id = backStackEntry.arguments?.getString("vehicleId")?.toInt() ?: 0
             VehicleSummaryScreen(id, navController)
         }
-        // other routes unchanged
+        // other routes (expenses, vehicles, settings) can be added here later
     }
 }
