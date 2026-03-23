@@ -17,7 +17,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) : Coroutin
 
             if (sheetId.isBlank()) return Result.success()
 
-            // Stub list for now (will be replaced with real data in next step)
+            // Minimal stub list (will be replaced with real data when you say "replace all stubs")
             val fuelFills: List<FuelFillup> = emptyList()
 
             val pushed = googleSheetsClient.syncFuelFills(sheetId, fuelFills)
