@@ -52,9 +52,11 @@ fun QuickFillupScreen(navController: NavController) {
                 vehicleId = id
                 vehicleName = name
             },
-            onDataExtracted = { _, extractedOdo, _, _ ->
+            onDataExtracted = { _, extractedOdo, extractedGallons, extractedCost, _, _ ->
                 if (isPumpPhoto) {
-                    navController.navigate("reports/${vehicleId ?: 0}")
+                    extractedGallons?.let { gallons = it.toString() }
+                    extractedCost?.let { cost = it.toString() }
+                    showAnalysis = false
                 } else {
                     extractedOdo?.let { odometer = it.toString(); odometerAutoFilled = true }
                     showAnalysis = false
@@ -65,7 +67,10 @@ fun QuickFillupScreen(navController: NavController) {
     } else {
         Scaffold(topBar = { TopAppBar(title = { Text("Quick Fillup") }) }) { padding ->
             Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("Vehicle: $vehicleName", style = MaterialTheme.typography.titleMedium)
@@ -91,7 +96,10 @@ fun QuickFillupScreen(navController: NavController) {
 
                 Spacer(Modifier.height(24.dp))
 
-                Text("Pump Fill (gallons + dollars)", style = MaterialTheme.typography.titleMedium)
+                Text("Pump Fill", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons") })
+                OutlinedTextField(value = cost, onValueChange = { cost = it }, label = { Text("Cost \$") })
+
                 Button(onClick = {
                     val uri = Uri.fromFile(context.cacheDir.resolve("pump_${System.currentTimeMillis()}.jpg"))
                     currentUri = uri
@@ -100,9 +108,13 @@ fun QuickFillupScreen(navController: NavController) {
                 }, modifier = Modifier.fillMaxWidth()) {
                     Text("⛽ Take Pump Photo")
                 }
-                Button(onClick = { /* manual gallons/cost */ }, modifier = Modifier.fillMaxWidth()) { Text("Manual Volume & Cost") }
-                Button(onClick = { vehicleId?.let { navController.navigate("reports/$it") } }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Skip to Reports")
+
+                Button(onClick = {
+                    // Stub save — replace with real repository call later
+                    println("💾 SAVED FILLUP: Vehicle $vehicleId, Odo $odometer, $gallons gal @ \$$cost")
+                    vehicleId?.let { navController.navigate("reports/$it") }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("💾 Save Fillup & View Reports")
                 }
             }
         }
