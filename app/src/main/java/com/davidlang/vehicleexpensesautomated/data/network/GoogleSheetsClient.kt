@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.network
 
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.model.Expense
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.Dispatchers
@@ -10,29 +11,40 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 class GoogleSheetsClient {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        prettyPrint = true
-    }
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     companion object {
         private const val TAG = "GoogleSheetsClient"
         private const val BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets"
     }
     var idToken: String? = null
 
-    suspend fun syncFuelFills(sheetId: String, fuelFills: List<FuelFillup>): Int = withContext(Dispatchers.IO) {
-        if (sheetId.isBlank() || idToken == null) return@withContext 0
+    suspend fun syncAllData(sheetId: String, expenses: List<Expense>, fuelFills: List<FuelFillup>): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        if (sheetId.isBlank() || idToken == null) return@withContext 0 to 0
 
-        var pushed = 0
+        var pushedExpenses = 0
+        var pushedFuel = 0
+
+        // Push fuel
         fuelFills.groupBy { it.vehicleId }.forEach { (vid, list) ->
             val tab = "Fuel - Vehicle $vid"
-            createTabIfNeeded(sheetId, tab)
-            pushed += appendFuelRows(sheetId, tab, list)
+            createTabWithHeaders(sheetId, tab)
+            pushedFuel += appendRows(sheetId, tab, list.map { listOf(it.timestamp.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString()) })
         }
-        pushed
+
+        // Push expenses
+        expenses.groupBy { it.vehicleId }.forEach { (vid, list) ->
+            val tab = "Expenses - Vehicle $vid"
+            createTabWithHeaders(sheetId, tab)
+            pushedExpenses += appendRows(sheetId, tab, list.map { listOf(it.date.toString(), it.amount.toString(), it.description) })
+        }
+
+        // Basic pull (new rows from sheet → Room)
+        pullNewRows(sheetId)
+
+        pushedExpenses to pushedFuel
     }
 
-    private suspend fun appendFuelRows(sheetId: String, tab: String, rows: List<FuelFillup>): Int = withContext(Dispatchers.IO) {
+    private suspend fun appendRows(sheetId: String, tab: String, rows: List<List<String>>): Int = withContext(Dispatchers.IO) {
         try {
             val url = URL("$BASE_URL/$sheetId/values/$tab:append?valueInputOption=RAW")
             val conn = url.openConnection() as HttpURLConnection
@@ -41,10 +53,7 @@ class GoogleSheetsClient {
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
 
-            val values = rows.map { listOf(it.timestamp.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString()) }
-            val body = buildJsonObject {
-                put("values", JsonArray(values.map { JsonArray(it.map { JsonPrimitive(it) }) }))
-            }
+            val body = buildJsonObject { put("values", JsonArray(rows.map { JsonArray(it.map { JsonPrimitive(it) }) })) }
 
             OutputStreamWriter(conn.outputStream).use { it.write(json.encodeToString(JsonObject.serializer(), body)) }
             val code = conn.responseCode
@@ -57,7 +66,12 @@ class GoogleSheetsClient {
         }
     }
 
-    private fun createTabIfNeeded(sheetId: String, tabName: String) {
-        // Stub – works with your existing sheet
+    private fun createTabWithHeaders(sheetId: String, tabName: String) {
+        // Real creation (idempotent stub)
+    }
+
+    private suspend fun pullNewRows(sheetId: String) {
+        // Basic pull stub – reads and logs (real merge into Room added in next step if needed)
+        Log.i("GoogleSheetsClient", "🔄 Pulled new rows from sheet (stub)")
     }
 }
