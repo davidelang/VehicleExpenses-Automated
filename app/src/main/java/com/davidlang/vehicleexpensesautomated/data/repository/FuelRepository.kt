@@ -1,19 +1,14 @@
 package com.davidlang.vehicleexpensesautomated.data.repository
 
+import com.davidlang.vehicleexpensesautomated.data.local.FuelDao
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import javax.inject.Inject
 
-// Stub repository (replace with real Room DAO later)
-class FuelRepository {
-    private val fillups = mutableListOf<FuelFillup>()
-
+class FuelRepository @Inject constructor(private val dao: FuelDao) {
     suspend fun saveFillup(fillup: FuelFillup) {
-        fillups.add(fillup.copy(id = System.currentTimeMillis()))
-        println("💾 SAVED: $fillup")
+        dao.insert(fillup)
     }
 
-    fun getFillupsForVehicle(vehicleId: Int): Flow<List<FuelFillup>> = flow {
-        emit(fillups.filter { it.vehicleId == vehicleId })
-    }
+    fun getFillupsForVehicle(vehicleId: Int): Flow<List<FuelFillup>> = dao.getFillupsForVehicle(vehicleId)
 }
