@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.work.*
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
+import com.davidlang.vehicleexpensesautomated.data.storage.GoogleDriveProvider
+import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncWorker
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -39,16 +41,21 @@ fun SettingsScreen() {
     var wifiOnly by remember { mutableStateOf(prefs.getBoolean("wifi_only", true)) }
     var chargingOnly by remember { mutableStateOf(prefs.getBoolean("charging_only", false)) }
     var frequencyHours by remember { mutableStateOf(prefs.getInt("frequency_hours", 6)) }
+    var driveFolder by remember { mutableStateOf(prefs.getString("drive_folder", "Vehicle Expenses Photos") ?: "") }
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours) {
+    // Current provider (Google Drive first, extensible)
+    val currentProvider: PhotoStorageProvider = remember { GoogleDriveProvider(signedInAccount?.idToken) }
+
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder) {
         prefs.edit()
             .putString("sheet_id", sheetId)
             .putBoolean("sync_enabled", syncEnabled)
             .putBoolean("wifi_only", wifiOnly)
             .putBoolean("charging_only", chargingOnly)
             .putInt("frequency_hours", frequencyHours)
+            .putString("drive_folder", driveFolder)
             .apply()
 
         if (syncEnabled && sheetId.isNotBlank()) {
@@ -74,7 +81,7 @@ fun SettingsScreen() {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken("YOUR_WEB_CLIENT_ID")
             .requestEmail()
-            .requestScopes(Scope("https://www.googleapis.com/auth/spreadsheets"))
+            .requestScopes(Scope("https://www.googleapis.com/auth/spreadsheets"), Scope("https://www.googleapis.com/auth/drive.file"))
             .build()
     }
     val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
@@ -157,6 +164,17 @@ fun SettingsScreen() {
                 Text("Connect to Sheet")
             }
 
+            Text("Photo Storage", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Provider: Google Drive", style = MaterialTheme.typography.bodyMedium)
+            OutlinedTextField(
+                value = driveFolder,
+                onValueChange = { driveFolder = it },
+                label = { Text("Drive Folder Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Background Sync Settings (unchanged)
             Text("Background Sync Settings", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
 
