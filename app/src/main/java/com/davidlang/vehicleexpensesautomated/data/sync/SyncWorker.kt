@@ -5,12 +5,10 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
-import com.davidlang.vehicleexpensesautomated.data.repository.FuelRepository
-import kotlinx.coroutines.flow.first
+import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
 
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) : CoroutineWorker(appContext, workerParams) {
     private val googleSheetsClient = GoogleSheetsClient()
-    private val fuelRepository = FuelRepository(/* DAO from Hilt */)
 
     override suspend fun doWork(): Result {
         try {
@@ -19,7 +17,8 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) : Coroutin
 
             if (sheetId.isBlank()) return Result.success()
 
-            val fuelFills = fuelRepository.getAllFuelFills().first()
+            // Minimal stub list (will be replaced with real data when you say "replace all stubs")
+            val fuelFills: List<FuelFillup> = emptyList()
 
             val pushed = googleSheetsClient.syncFuelFills(sheetId, fuelFills)
 
