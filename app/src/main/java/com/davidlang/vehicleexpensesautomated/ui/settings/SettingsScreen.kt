@@ -20,6 +20,7 @@ import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
 import com.davidlang.vehicleexpensesautomated.data.storage.GoogleDriveProvider
 import com.davidlang.vehicleexpensesautomated.data.storage.NoOpStorageProvider
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageProvider
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncWorker
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -73,11 +74,13 @@ fun SettingsScreen() {
         }
     }
 
-    fun showToast(message: String) { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
+    fun showToast(message: String) {
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
 
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken("YOUR_WEB_CLIENT_ID") // ← replace later
+            .requestIdToken("YOUR_WEB_CLIENT_ID")
             .requestEmail()
             .requestScopes(Scope("https://www.googleapis.com/auth/spreadsheets"), Scope("https://www.googleapis.com/auth/drive.file"))
             .build()
@@ -123,12 +126,11 @@ fun SettingsScreen() {
                 }
             } else {
                 Text("Signed in as ${signedInAccount?.email}")
-                Button(onClick = { /* sign out logic */ }, modifier = Modifier.fillMaxWidth()) { Text("Sign Out") }
+                Button(onClick = { /* sign out later */ }, modifier = Modifier.fillMaxWidth()) { Text("Sign Out") }
             }
 
             Spacer(Modifier.height(24.dp))
 
-            // === PHOTO STORAGE (exactly what you asked for) ===
             Text("Photo Storage", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
