@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
+import com.davidlang.vehicleexpensesautomated.data.repository.FuelRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.photo.PhotoAnalysisScreen
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 fun QuickFillupScreen(navController: NavController) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val repository = remember { FuelRepository() }
 
     var vehicleId by remember { mutableStateOf<Int?>(null) }
     var vehicleName by remember { mutableStateOf("No vehicle selected") }
@@ -110,9 +113,18 @@ fun QuickFillupScreen(navController: NavController) {
                 }
 
                 Button(onClick = {
-                    // Stub save — replace with real repository call later
-                    println("💾 SAVED FILLUP: Vehicle $vehicleId, Odo $odometer, $gallons gal @ \$$cost")
-                    vehicleId?.let { navController.navigate("reports/$it") }
+                    vehicleId?.let { vid ->
+                        val fillup = FuelFillup(
+                            vehicleId = vid,
+                            odometer = odometer.toIntOrNull() ?: 0,
+                            gallons = gallons.toDoubleOrNull() ?: 0.0,
+                            cost = cost.toDoubleOrNull() ?: 0.0
+                        )
+                        coroutineScope.launch {
+                            repository.saveFillup(fillup)
+                            navController.navigate("reports/$vid")
+                        }
+                    }
                 }, modifier = Modifier.fillMaxWidth()) {
                     Text("💾 Save Fillup & View Reports")
                 }
