@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelRepository
@@ -22,7 +23,7 @@ import kotlinx.coroutines.launch
 fun QuickFillupScreen(navController: NavController) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val repository = remember { FuelRepository() }
+    val repository: FuelRepository = hiltViewModel<FillupViewModel>().repository
 
     var vehicleId by remember { mutableStateOf<Int?>(null) }
     var vehicleName by remember { mutableStateOf("No vehicle selected") }
