@@ -20,9 +20,9 @@ import kotlin.coroutines.resumeWithException
 @Composable
 fun PhotoAnalysisScreen(
     photoUri: Uri,
-    isVehicleDetection: Boolean = false,           // ← default for old screens
+    isVehicleDetection: Boolean = false,
     onVehicleDetected: (vehicleId: Int, vehicleName: String) -> Unit = { _, _ -> },
-    onDataExtracted: (amount: Double?, odometer: Int?, dateMillis: Long?, description: String?) -> Unit,
+    onDataExtracted: (amount: Double?, odometer: Int?, gallons: Double?, cost: Double?, dateMillis: Long?, description: String?) -> Unit,
     onManualEntry: () -> Unit
 ) {
     val context = LocalContext.current
@@ -42,16 +42,19 @@ fun PhotoAnalysisScreen(
                     val odo = extractOdometer(text)
                     if (plate != null) {
                         onVehicleDetected(1, "Toyota Camry (auto-matched)")
-                        onDataExtracted(null, odo, null, null)   // ← auto-fill odometer for QuickFillup
+                        onDataExtracted(null, odo, null, null, null, null)
                         status = "Vehicle + odometer detected!"
                     } else {
                         onManualEntry()
                     }
                 } else {
-                    val amount = extractAmount(text)
-                    val odometer = extractOdometer(text)
+                    // Pump photo: gallons + cost extraction (US pump style)
+                    val gallons = extractGallons(text)
+                    val cost = extractCost(text)
+                    val odo = extractOdometer(text)
                     val desc = extractDescription(text)
-                    onDataExtracted(amount, odometer, null, desc)
+                    onDataExtracted(null, odo, gallons, cost, null, desc)
+                    status = if (gallons != null && cost != null) "Pump data extracted!" else "Review extracted values"
                 }
             } catch (e: Exception) {
                 onManualEntry()
@@ -59,7 +62,7 @@ fun PhotoAnalysisScreen(
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text(if (isVehicleDetection) "Identifying Vehicle" else "Analyzing") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(if (isVehicleDetection) "Vehicle Detection" else "Pump Analysis") }) }) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -67,16 +70,17 @@ fun PhotoAnalysisScreen(
         ) {
             CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
-            Text(status)
+            Text(status, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
 
-private fun extractAmount(text: String): Double? = Regex("""\$?(\d+\.\d{2})""").find(text)?.groupValues?.get(1)?.toDouble()
+private fun extractGallons(text: String): Double? = Regex("""(\d+\.\d+)\s*GAL""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toDouble()
+private fun extractCost(text: String): Double? = Regex("""\$?(\d+\.\d{2})""").find(text)?.groupValues?.get(1)?.toDouble()
 private fun extractOdometer(text: String): Int? = Regex("""\b(\d{4,7})\b""").findAll(text).map { it.value.toInt() }.maxOrNull()
-private fun extractDescription(text: String): String? = text.lines().firstOrNull()
+private fun extractDescription(text: String): String? = text.lines().firstOrNull { it.length > 10 }
 
-private suspend fun <T> com.google.android.gms.tasks.Task<T>.await() = suspendCancellableCoroutine<T> { cont ->
+private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T = suspendCancellableCoroutine { cont ->
     addOnSuccessListener { cont.resume(it) }
     addOnFailureListener { cont.resumeWithException(it) }
 }
