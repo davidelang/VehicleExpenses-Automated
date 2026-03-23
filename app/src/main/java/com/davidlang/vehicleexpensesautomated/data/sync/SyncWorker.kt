@@ -17,12 +17,12 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) : Coroutin
 
             if (sheetId.isBlank()) return Result.success()
 
-            // TODO: replace with real repository call later
+            // Stub list for now (replace with real repository call later)
             val fuelFills: List<FuelFillup> = emptyList()
 
             val pushed = googleSheetsClient.syncFuelFills(sheetId, fuelFills)
 
-            Log.i("SyncWorker", "✅ Google Sheets sync complete ($pushed rows pushed)")
+            Log.i("SyncWorker", "✅ Synced $pushed fuel fills to Google Sheets")
             return Result.success()
         } catch (e: Exception) {
             Log.e("SyncWorker", "Sync failed", e)
