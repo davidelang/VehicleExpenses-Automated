@@ -6,16 +6,11 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelRepository
-import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseRepository
 import kotlinx.coroutines.flow.first
 
-class SyncWorker(
-    appContext: Context,
-    workerParams: WorkerParameters
-) : CoroutineWorker(appContext, workerParams) {
+class SyncWorker(appContext: Context, workerParams: WorkerParameters) : CoroutineWorker(appContext, workerParams) {
     private val googleSheetsClient = GoogleSheetsClient()
-    private val fuelRepository = FuelRepository(/* DAO injected by Hilt in your app */)
-    private val expenseRepository = ExpenseRepository(/* DAO injected by Hilt in your app */)
+    private val fuelRepository = FuelRepository(/* DAO from Hilt */)
 
     override suspend fun doWork(): Result {
         try {
@@ -25,11 +20,10 @@ class SyncWorker(
             if (sheetId.isBlank()) return Result.success()
 
             val fuelFills = fuelRepository.getAllFuelFills().first()
-            val expenses = expenseRepository.getAllExpenses().first()
 
-            val (pushedExpenses, pushedFuel) = googleSheetsClient.syncAllData(sheetId, expenses, fuelFills)
+            val pushed = googleSheetsClient.syncFuelFills(sheetId, fuelFills)
 
-            Log.i("SyncWorker", "✅ Synced $pushedExpenses expenses + $pushedFuel fuel fills to Google Sheets")
+            Log.i("SyncWorker", "✅ Synced $pushed fuel fills to Google Sheets")
             return Result.success()
         } catch (e: Exception) {
             Log.e("SyncWorker", "Sync failed", e)
