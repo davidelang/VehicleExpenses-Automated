@@ -110,3 +110,20 @@ fun SettingsScreen() {
 
     // ... rest of your existing screen code (Background Sync, Manual Sync button, etc.)
 }
+
+private fun schedulePeriodicSync(context: Context, wifiOnly: Boolean, chargingOnly: Boolean, frequencyHours: Int) {
+    val constraints = Constraints.Builder()
+        .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+        .setRequiresCharging(chargingOnly)
+        .build()
+
+    val request = PeriodicWorkRequestBuilder<SyncWorker>(frequencyHours.toLong(), TimeUnit.HOURS)
+        .setConstraints(constraints)
+        .build()
+
+    WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        "vehicle_sync",
+        ExistingPeriodicWorkPolicy.UPDATE,
+        request
+    )
+}
