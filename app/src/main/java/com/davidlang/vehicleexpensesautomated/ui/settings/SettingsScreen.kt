@@ -42,13 +42,14 @@ fun SettingsScreen() {
     var chargingOnly by remember { mutableStateOf(prefs.getBoolean("charging_only", false)) }
     var frequencyHours by remember { mutableStateOf(prefs.getInt("frequency_hours", 6)) }
     var driveFolder by remember { mutableStateOf(prefs.getString("drive_folder", "Vehicle Expenses Photos") ?: "") }
+    var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", false)) }
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
-    // Current provider (Google Drive first, extensible)
+    // Current provider (extensible)
     val currentProvider: PhotoStorageProvider = remember { GoogleDriveProvider(signedInAccount?.idToken) }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder) {
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos) {
         prefs.edit()
             .putString("sheet_id", sheetId)
             .putBoolean("sync_enabled", syncEnabled)
@@ -56,6 +57,7 @@ fun SettingsScreen() {
             .putBoolean("charging_only", chargingOnly)
             .putInt("frequency_hours", frequencyHours)
             .putString("drive_folder", driveFolder)
+            .putBoolean("save_fuel_photos", saveFuelPhotos)
             .apply()
 
         if (syncEnabled && sheetId.isNotBlank()) {
@@ -150,29 +152,36 @@ fun SettingsScreen() {
                 }
             }
 
-            Button(onClick = {
-                val cleanId = extractSheetId(sheetId)
-                if (cleanId.length > 10) {
-                    sheetId = cleanId
-                    status = "Connected! Sheet ID: $cleanId"
-                    showToast("Connected to sheet")
-                } else {
-                    status = "Invalid Sheet ID/URL"
-                    showToast("Please enter a valid Sheet ID or URL")
-                }
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text("Connect to Sheet")
-            }
-
+            // === Photo Storage Settings ===
             Text("Photo Storage", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Provider: Google Drive", style = MaterialTheme.typography.bodyMedium)
+
+            Text("Storage Provider")
+            Row {
+                listOf("Google Drive", "None").forEach { provider ->
+                    FilterChip(
+                        selected = (if (provider == "Google Drive") currentProvider.getProviderName() == "Google Drive" else currentProvider.getProviderName() == "None"),
+                        onClick = { /* provider switch logic in next step */ },
+                        label = { Text(provider) },
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = driveFolder,
                 onValueChange = { driveFolder = it },
                 label = { Text("Drive Folder Name") },
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Save fuel photos to archive")
+                Spacer(modifier = Modifier.width(8.dp))
+                Switch(checked = saveFuelPhotos, onCheckedChange = { saveFuelPhotos = it })
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Background Sync Settings (unchanged)
             Text("Background Sync Settings", style = MaterialTheme.typography.titleMedium)
