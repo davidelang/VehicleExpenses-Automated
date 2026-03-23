@@ -19,7 +19,6 @@ import androidx.work.*
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
 import com.davidlang.vehicleexpensesautomated.data.storage.GoogleDriveProvider
 import com.davidlang.vehicleexpensesautomated.data.storage.NoOpStorageProvider
-import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageProvider
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -47,25 +46,25 @@ fun SettingsScreen() {
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
-    // Dynamic provider based on user selection
     val currentProvider: PhotoStorageProvider = remember(photoProviderPref, signedInAccount) {
         when (photoProviderPref) {
-            "google_drive" -> GoogleDriveProvider(signedInAccount?.idToken)
+            "google_drive" -> GoogleDriveProvider(null)
             else -> NoOpStorageProvider()
         }
     }
 
     LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref) {
-        prefs.edit()
-            .putString("sheet_id", sheetId)
-            .putBoolean("sync_enabled", syncEnabled)
-            .putBoolean("wifi_only", wifiOnly)
-            .putBoolean("charging_only", chargingOnly)
-            .putInt("frequency_hours", frequencyHours)
-            .putString("drive_folder", driveFolder)
-            .putBoolean("save_fuel_photos", saveFuelPhotos)
-            .putString("photo_storage_provider", photoProviderPref)
-            .apply()
+        prefs.edit().apply {
+            putString("sheet_id", sheetId)
+            putBoolean("sync_enabled", syncEnabled)
+            putBoolean("wifi_only", wifiOnly)
+            putBoolean("charging_only", chargingOnly)
+            putInt("frequency_hours", frequencyHours)
+            putString("drive_folder", driveFolder)
+            putBoolean("save_fuel_photos", saveFuelPhotos)
+            putString("photo_storage_provider", photoProviderPref)
+            apply()
+        }
 
         if (syncEnabled && sheetId.isNotBlank()) {
             schedulePeriodicSync(context, wifiOnly, chargingOnly, frequencyHours)
@@ -74,41 +73,90 @@ fun SettingsScreen() {
         }
     }
 
-    // ... (rest of the screen unchanged until Photo Storage section)
+    fun showToast(message: String) { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
 
-    // === Photo Storage Settings ===
-    Text("Photo Storage", style = MaterialTheme.typography.titleMedium)
-    Spacer(modifier = Modifier.height(8.dp))
+    val gso = remember {
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken("YOUR_WEB_CLIENT_ID") // ← replace later
+            .requestEmail()
+            .requestScopes(Scope("https://www.googleapis.com/auth/spreadsheets"), Scope("https://www.googleapis.com/auth/drive.file"))
+            .build()
+    }
+    val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
 
-    Text("Storage Provider")
-    Row {
-        listOf("Google Drive", "None").forEach { label ->
-            val providerKey = if (label == "Google Drive") "google_drive" else "none"
-            FilterChip(
-                selected = photoProviderPref == providerKey,
-                onClick = { photoProviderPref = providerKey },
-                label = { Text(label) },
-                modifier = Modifier.padding(end = 8.dp)
-            )
+    val signInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            try {
+                val account = GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
+                signedInAccount = account
+                status = "Signed in as ${account.email}"
+                showToast("Signed in successfully")
+            } catch (e: ApiException) {
+                status = "Sign-in failed"
+                showToast("Sign-in failed")
+            }
         }
     }
 
-    OutlinedTextField(
-        value = driveFolder,
-        onValueChange = { driveFolder = it },
-        label = { Text("Drive Folder Name (only for Google Drive)") },
-        modifier = Modifier.fillMaxWidth()
-    )
+    Scaffold(topBar = { TopAppBar(title = { Text("Settings & Sync") }) }) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Google Sheets Sync", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(16.dp))
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Save fuel photos to archive")
-        Spacer(modifier = Modifier.width(8.dp))
-        Switch(checked = saveFuelPhotos, onCheckedChange = { saveFuelPhotos = it })
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Enable Sync")
+                Spacer(Modifier.width(8.dp))
+                Switch(checked = syncEnabled, onCheckedChange = { syncEnabled = it })
+            }
+
+            OutlinedTextField(value = sheetId, onValueChange = { sheetId = it }, label = { Text("Sheet ID or URL") }, modifier = Modifier.fillMaxWidth())
+
+            if (signedInAccount == null) {
+                Button(onClick = { signInLauncher.launch(googleSignInClient.signInIntent) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sign in with Google")
+                }
+            } else {
+                Text("Signed in as ${signedInAccount?.email}")
+                Button(onClick = { /* sign out logic */ }, modifier = Modifier.fillMaxWidth()) { Text("Sign Out") }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // === PHOTO STORAGE (exactly what you asked for) ===
+            Text("Photo Storage", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+
+            Text("Storage Provider")
+            Row {
+                listOf("Google Drive" to "google_drive", "None" to "none").forEach { (label, key) ->
+                    FilterChip(
+                        selected = photoProviderPref == key,
+                        onClick = { photoProviderPref = key },
+                        label = { Text(label) },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+            }
+
+            OutlinedTextField(value = driveFolder, onValueChange = { driveFolder = it }, label = { Text("Drive Folder Name") }, modifier = Modifier.fillMaxWidth())
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Save fuel photos to archive")
+                Spacer(Modifier.width(8.dp))
+                Switch(checked = saveFuelPhotos, onCheckedChange = { saveFuelPhotos = it })
+            }
+            Text("Expense photos are ALWAYS archived (fuel optional)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+
+            Spacer(Modifier.height(32.dp))
+            Text("Status: $status", style = MaterialTheme.typography.bodyLarge)
+        }
     }
-
-    Text("Expense photos are **always** archived", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
-
-    // ... rest of your existing screen code (Background Sync, Manual Sync button, etc.)
 }
 
 private fun schedulePeriodicSync(context: Context, wifiOnly: Boolean, chargingOnly: Boolean, frequencyHours: Int) {
