@@ -6,7 +6,6 @@ import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelFillDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
-import com.davidlang.vehicleexpensesautomated.data.local.FuelDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,7 +35,4 @@ object DatabaseModule {
 
     @Provides
     fun provideFuelFillDao(database: AppDatabase): FuelFillDao = database.fuelFillDao()
-
-    @Provides
-    fun provideFuelDao(database: AppDatabase): FuelDao = database.fuelDao()
 }
