@@ -10,21 +10,16 @@ import androidx.navigation.NavController
 
 @Composable
 fun VehicleSummaryScreen(vehicleId: Int, navController: NavController) {
-    Scaffold(topBar = { TopAppBar(title = { Text("Vehicle Summary & Reports") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Summary & Reports") }) }) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Reports for Vehicle ID: $vehicleId", style = MaterialTheme.typography.headlineMedium)
+            Text("Reports for vehicle $vehicleId", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(32.dp))
-            Text("• Fuel efficiency graph\n• Expense summary\n• Monthly totals\n• Export CSV", style = MaterialTheme.typography.bodyLarge)
+            Text("Fuel efficiency • Expenses • Monthly totals • Graphs", style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(32.dp))
-            Button(onClick = { navController.popBackStack() }) {
-                Text("Back to Quick Fillup")
-            }
+            Button(onClick = { navController.popBackStack() }) { Text("Back to Quick Fillup") }
         }
     }
 }

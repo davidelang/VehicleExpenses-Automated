@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-
     var amount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
@@ -28,12 +27,10 @@ fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             photoUri?.let { uri ->
-                // ← Photo storage hook (expenses are ALWAYS archived)
                 coroutineScope.launch {
                     val manager = PhotoStorageManager(context)
                     val filename = "expense_${vehicleId}_${System.currentTimeMillis()}.jpg"
-                    val archiveUrl = manager.savePhoto(uri, filename, PhotoType.EXPENSE)
-                    // archiveUrl is now available if you want to store it in the database
+                    manager.savePhoto(uri, filename, PhotoType.EXPENSE)
                 }
                 showAnalysis = true
             }
@@ -53,24 +50,17 @@ fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
     } else {
         Scaffold(topBar = { TopAppBar(title = { Text("New Expense - $vehicleName") }) }) { padding ->
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
                     val uri = Uri.fromFile(context.cacheDir.resolve("photo_${System.currentTimeMillis()}.jpg"))
                     photoUri = uri
                     cameraLauncher.launch(uri)
-                }) {
-                    Text("Take Receipt Photo")
-                }
+                }) { Text("Take Receipt Photo") }
                 OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") })
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
-                Button(onClick = { /* save expense */ }) {
-                    Text("Save Expense")
-                }
+                Button(onClick = { /* save */ }) { Text("Save Expense") }
             }
         }
     }
