@@ -20,6 +20,8 @@ import kotlin.coroutines.resumeWithException
 @Composable
 fun PhotoAnalysisScreen(
     photoUri: Uri,
+    isVehicleDetection: Boolean = false,
+    onVehicleDetected: ((vehicleId: Int, vehicleName: String) -> Unit)? = null,
     onDataExtracted: (amount: Double?, odometer: Int?, dateMillis: Long?, description: String?) -> Unit,
     onManualEntry: () -> Unit
 ) {
@@ -37,18 +39,36 @@ fun PhotoAnalysisScreen(
                 val result = recognizer.process(image).await()
 
                 val text = result.text
-                val amount = extractAmount(text)
-                val odometer = extractOdometer(text)
-                val dateMillis = extractDateMillis(text)
-                val description = extractDescription(text)
 
-                if (amount != null || odometer != null) {
-                    status = "Auto-detected successfully"
-                    onDataExtracted(amount, odometer, dateMillis, description)
-                    isComplete = true
+                if (isVehicleDetection) {
+                    // TODO: real DB lookup for license plate / VIN / make-model match
+                    // For now: simple stub — replace with real vehicle repository call later
+                    val plateMatch = Regex("""[A-Z0-9]{3,8}""").find(text)?.value
+                    if (plateMatch != null) {
+                        status = "Vehicle matched!"
+                        onVehicleDetected?.invoke(1, "Toyota Camry (stub match)")
+                        isComplete = true
+                        return@launch
+                    } else {
+                        status = "No vehicle match — tap to create new?"
+                        onManualEntry()
+                        return@launch
+                    }
                 } else {
-                    status = "OCR uncertain — review needed"
-                    onManualEntry()
+                    // existing fuel/expense OCR
+                    val amount = extractAmount(text)
+                    val odometer = extractOdometer(text)
+                    val dateMillis = extractDateMillis(text)
+                    val description = extractDescription(text)
+
+                    if (amount != null || odometer != null) {
+                        status = "Auto-detected successfully"
+                        onDataExtracted(amount, odometer, dateMillis, description)
+                        isComplete = true
+                    } else {
+                        status = "OCR uncertain — review needed"
+                        onManualEntry()
+                    }
                 }
             } catch (e: Exception) {
                 status = "Analysis failed"
@@ -57,7 +77,7 @@ fun PhotoAnalysisScreen(
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Analyzing Photo") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(if (isVehicleDetection) "Identifying Vehicle" else "Analyzing Photo") }) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -72,13 +92,12 @@ fun PhotoAnalysisScreen(
     }
 }
 
-// Simple regex extractors
+// (existing extract functions unchanged)
 private fun extractAmount(text: String): Double? = Regex("""\$?(\d+\.\d{2})""").find(text)?.groupValues?.get(1)?.toDouble()
 private fun extractOdometer(text: String): Int? = Regex("""(\d{4,6})""").findAll(text).map { it.value.toInt() }.maxOrNull()
 private fun extractDateMillis(text: String): Long? = System.currentTimeMillis()
 private fun extractDescription(text: String): String? = text.lines().firstOrNull { it.length > 10 }
 
-// Suspend wrapper for ML Kit Task
 private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
     addOnSuccessListener { result -> continuation.resume(result) }
     addOnFailureListener { exception -> continuation.resumeWithException(exception) }
