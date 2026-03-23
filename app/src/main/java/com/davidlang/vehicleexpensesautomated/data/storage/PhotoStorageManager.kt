@@ -13,31 +13,18 @@ class PhotoStorageManager(private val context: Context) {
     private fun getCurrentProvider(): PhotoStorageProvider {
         val key = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
         return when (key) {
-            "google_drive" -> GoogleDriveProvider(null) // token will be injected later if needed
+            "google_drive" -> GoogleDriveProvider(null)
             else -> NoOpStorageProvider()
         }
     }
 
-    fun shouldSavePhoto(type: PhotoType): Boolean {
-        return when (type) {
-            PhotoType.EXPENSE -> true
-            PhotoType.FUEL -> prefs.getBoolean("save_fuel_photos", false)
-        }
+    fun shouldSavePhoto(type: PhotoType): Boolean = when (type) {
+        PhotoType.EXPENSE -> true
+        PhotoType.FUEL -> prefs.getBoolean("save_fuel_photos", false)
     }
 
     suspend fun savePhoto(photoUri: Uri, filename: String, type: PhotoType): String? = withContext(Dispatchers.IO) {
         if (!shouldSavePhoto(type)) return@withContext null
-        val provider = getCurrentProvider()
-        provider.uploadPhoto(photoUri, filename)  // returns public URL or null
+        getCurrentProvider().uploadPhoto(photoUri, filename)
     }
-}
-
-interface PhotoStorageProvider {
-    fun getProviderName(): String
-    suspend fun uploadPhoto(photoUri: Uri, filename: String): String?
-}
-
-class NoOpStorageProvider : PhotoStorageProvider {
-    override fun getProviderName() = "None"
-    override suspend fun uploadPhoto(photoUri: Uri, filename: String): String? = null
 }
