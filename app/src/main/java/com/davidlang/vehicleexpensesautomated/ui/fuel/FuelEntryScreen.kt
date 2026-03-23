@@ -40,7 +40,7 @@ fun FuelEntryScreen(vehicleId: Int, vehicleName: String) {
     if (showAnalysis && photoUri != null) {
         PhotoAnalysisScreen(
             photoUri = photoUri!!,
-            onDataExtracted = { _, extractedOdometer, _, _ ->
+            onDataExtracted = { _, extractedOdometer, _, _, _, _ ->
                 extractedOdometer?.let { odometer = it.toString() }
                 showAnalysis = false
             },
@@ -49,7 +49,10 @@ fun FuelEntryScreen(vehicleId: Int, vehicleName: String) {
     } else {
         Scaffold(topBar = { TopAppBar(title = { Text("New Fuel Fill - $vehicleName") }) }) { padding ->
             Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
@@ -59,7 +62,7 @@ fun FuelEntryScreen(vehicleId: Int, vehicleName: String) {
                 }) { Text("Take Dash / Pump Photo") }
                 OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons") })
                 OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer") })
-                Button(onClick = { /* save */ }) { Text("Save Fill") }
+                Button(onClick = { /* save fill */ }) { Text("Save Fill") }
             }
         }
     }

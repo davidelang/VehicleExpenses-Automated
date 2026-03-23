@@ -40,7 +40,7 @@ fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
     if (showAnalysis && photoUri != null) {
         PhotoAnalysisScreen(
             photoUri = photoUri!!,
-            onDataExtracted = { extractedAmount, _, _, extractedDesc ->
+            onDataExtracted = { extractedAmount, _, _, _, _, extractedDesc ->
                 extractedAmount?.let { amount = it.toString() }
                 extractedDesc?.let { description = it }
                 showAnalysis = false
@@ -50,7 +50,10 @@ fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
     } else {
         Scaffold(topBar = { TopAppBar(title = { Text("New Expense - $vehicleName") }) }) { padding ->
             Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
@@ -60,7 +63,7 @@ fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
                 }) { Text("Take Receipt Photo") }
                 OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") })
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
-                Button(onClick = { /* save */ }) { Text("Save Expense") }
+                Button(onClick = { /* save expense */ }) { Text("Save Expense") }
             }
         }
     }
