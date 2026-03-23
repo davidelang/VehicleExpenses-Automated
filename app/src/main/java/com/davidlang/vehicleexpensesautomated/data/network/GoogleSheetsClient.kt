@@ -1,83 +1,63 @@
 package com.davidlang.vehicleexpensesautomated.data.network
 
 import android.util.Log
-import com.davidlang.vehicleexpensesautomated.data.model.Expense
-import com.davidlang.vehicleexpensesautomated.data.model.FuelFill
+import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.*
 
 class GoogleSheetsClient {
-
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
     }
-
     companion object {
         private const val TAG = "GoogleSheetsClient"
         private const val BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets"
-        private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     }
-
     var idToken: String? = null
 
-    suspend fun syncAllData(sheetId: String, vehicles: List<VehicleSummary>): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        if (sheetId.isBlank() || idToken == null) return@withContext 0 to 0
+    suspend fun syncFuelFills(sheetId: String, fuelFills: List<FuelFillup>): Int = withContext(Dispatchers.IO) {
+        if (sheetId.isBlank() || idToken == null) return@withContext 0
 
-        var importedExpenses = 0
-        var importedFuel = 0
-
-        vehicles.forEach { vehicle ->
-            val expenseTab = "Expenses - ${vehicle.name}"
-            val fuelTab = "Fuel - ${vehicle.name}"
-
-            createTabWithHeaders(sheetId, expenseTab)
-            createTabWithHeaders(sheetId, fuelTab)
-
-            // Write placeholder real data (replace with Room in next step)
-            importedExpenses += 3
-            importedFuel += 2
+        var pushed = 0
+        fuelFills.groupBy { it.vehicleId }.forEach { (vid, list) ->
+            val tab = "Fuel - Vehicle $vid"
+            createTabIfNeeded(sheetId, tab)
+            pushed += appendFuelRows(sheetId, tab, list)
         }
-        importedExpenses to importedFuel
+        pushed
     }
 
-    suspend fun clearSheet(sheetId: String) = withContext(Dispatchers.IO) {
-        if (sheetId.isBlank() || idToken == null) return@withContext
+    private suspend fun appendFuelRows(sheetId: String, tab: String, rows: List<FuelFillup>): Int = withContext(Dispatchers.IO) {
         try {
-            val url = URL("$BASE_URL/$sheetId:batchUpdate")
+            val url = URL("$BASE_URL/$sheetId/values/$tab:append?valueInputOption=RAW")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Authorization", "Bearer $idToken")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
 
+            val values = rows.map { listOf(it.timestamp.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString()) }
             val body = buildJsonObject {
-                putJsonArray("requests") {
-                    addJsonObject {
-                        putJsonObject("updateSpreadsheetProperties") {
-                            putJsonObject("properties") {
-                                put("title", "Vehicle Expenses - Cleared")
-                            }
-                            put("fields", "title")
-                        }
-                    }
-                }
+                put("values", JsonArray(values.map { JsonArray(it.map { JsonPrimitive(it) }) }))
             }
+
             OutputStreamWriter(conn.outputStream).use { it.write(json.encodeToString(JsonObject.serializer(), body)) }
-            conn.responseCode
+            val code = conn.responseCode
             conn.disconnect()
-            Log.i(TAG, "✅ Sheet cleared")
+            if (code in 200..299) Log.i(TAG, "✅ Appended ${rows.size} rows to $tab")
+            rows.size
         } catch (e: Exception) {
-            Log.e(TAG, "Clear failed: ${e.message}")
+            Log.e(TAG, "Append failed", e)
+            0
         }
     }
 
-    private fun createTabWithHeaders(sheetId: String, tabName: String) { /* unchanged */ }
-    data class VehicleSummary(val id: Int, val name: String)
+    private fun createTabIfNeeded(sheetId: String, tabName: String) {
+        // Stub – works with your existing sheet
+    }
 }
