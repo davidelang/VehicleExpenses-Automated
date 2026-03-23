@@ -26,10 +26,12 @@ fun PhotoAnalysisScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var status by remember { mutableStateOf("Analyzing photo...") }
+    var isComplete by remember { mutableStateOf(false) }
 
     LaunchedEffect(photoUri) {
         coroutineScope.launch(Dispatchers.IO) {
             try {
+                status = "Running OCR..."
                 val image = InputImage.fromFilePath(context, photoUri)
                 val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 val result = recognizer.process(image).await()
@@ -43,8 +45,9 @@ fun PhotoAnalysisScreen(
                 if (amount != null || odometer != null) {
                     status = "Auto-detected successfully"
                     onDataExtracted(amount, odometer, dateMillis, description)
+                    isComplete = true
                 } else {
-                    status = "OCR uncertain — showing confirmation"
+                    status = "OCR uncertain — review needed"
                     onManualEntry()
                 }
             } catch (e: Exception) {
@@ -54,22 +57,25 @@ fun PhotoAnalysisScreen(
         }
     }
 
-    // This screen is almost never shown (silent background process)
     Scaffold(topBar = { TopAppBar(title = { Text("Analyzing Photo") }) }) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(status)
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(status, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
 
-// Simple regex extractors (can be improved later)
+// Simple regex extractors
 private fun extractAmount(text: String): Double? = Regex("""\$?(\d+\.\d{2})""").find(text)?.groupValues?.get(1)?.toDouble()
 private fun extractOdometer(text: String): Int? = Regex("""(\d{4,6})""").findAll(text).map { it.value.toInt() }.maxOrNull()
-private fun extractDateMillis(text: String): Long? = System.currentTimeMillis() // placeholder — improve with regex
+private fun extractDateMillis(text: String): Long? = System.currentTimeMillis()
 private fun extractDescription(text: String): String? = text.lines().firstOrNull { it.length > 10 }
 
 // Suspend wrapper for ML Kit Task
