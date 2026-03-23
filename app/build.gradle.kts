@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -26,19 +25,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
-    }
     buildFeatures {
         compose = true
     }
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-        ignoreWarnings = true
-        quiet = true
-        baseline = file("lint-baseline.xml")
+}
+
+kotlin {
+    jvmToolchain(17)
+    compilerOptions {
+        freeCompilerArgs.addAll(listOf("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"))
     }
 }
 
