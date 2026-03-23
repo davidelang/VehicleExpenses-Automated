@@ -5,31 +5,24 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
-import com.davidlang.vehicleexpensesautomated.data.repository.FuelRepository
-import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseRepository
-import kotlinx.coroutines.flow.first
+import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
 
-class SyncWorker(
-    appContext: Context,
-    workerParams: WorkerParameters,
-    private val googleSheetsClient: GoogleSheetsClient,
-    private val fuelRepository: FuelRepository,
-    private val expenseRepository: ExpenseRepository
-) : CoroutineWorker(appContext, workerParams) {
+class SyncWorker(appContext: Context, workerParams: WorkerParameters) : CoroutineWorker(appContext, workerParams) {
+    private val googleSheetsClient = GoogleSheetsClient()
 
     override suspend fun doWork(): Result {
         try {
-            val prefs = appContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+            val prefs = applicationContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
             val sheetId = prefs.getString("sheet_id", "") ?: ""
 
             if (sheetId.isBlank()) return Result.success()
 
-            val fuelFills = fuelRepository.getAllFuelFills().first()
-            val expenses = expenseRepository.getAllExpenses().first() // assume you have this method
+            // Stub list for now (will be replaced with real data in next step)
+            val fuelFills: List<FuelFillup> = emptyList()
 
-            val (pushedExpenses, pushedFuel) = googleSheetsClient.syncAllData(sheetId, expenses, fuelFills)
+            val pushed = googleSheetsClient.syncFuelFills(sheetId, fuelFills)
 
-            Log.i("SyncWorker", "✅ Synced $pushedExpenses expenses + $pushedFuel fuel fills")
+            Log.i("SyncWorker", "✅ Synced $pushed fuel fills to Google Sheets")
             return Result.success()
         } catch (e: Exception) {
             Log.e("SyncWorker", "Sync failed", e)
