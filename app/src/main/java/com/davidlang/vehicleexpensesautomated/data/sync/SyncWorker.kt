@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.first
 
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) : CoroutineWorker(appContext, workerParams) {
     private val googleSheetsClient = GoogleSheetsClient()
-    private val fuelRepository = FuelRepository(/* DAO is provided by Hilt elsewhere in the app */)
+    private val fuelRepository = FuelRepository(/* DAO provided by Hilt in your app */)
 
     override suspend fun doWork(): Result {
         try {
