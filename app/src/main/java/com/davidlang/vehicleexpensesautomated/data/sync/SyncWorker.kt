@@ -12,12 +12,12 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) : Coroutin
 
     override suspend fun doWork(): Result {
         try {
-            val prefs = appContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+            val prefs = applicationContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
             val sheetId = prefs.getString("sheet_id", "") ?: ""
 
             if (sheetId.isBlank()) return Result.success()
 
-            // Stub list for now (replace with real repository call later)
+            // Stub list (replace with real repository call later)
             val fuelFills: List<FuelFillup> = emptyList()
 
             val pushed = googleSheetsClient.syncFuelFills(sheetId, fuelFills)
