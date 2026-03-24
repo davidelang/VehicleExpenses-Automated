@@ -7,12 +7,15 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SyncManager @Inject constructor(private val context: Context) {
+class SyncManager @Inject constructor(
+    @param:ApplicationContext private val context: Context
+) {
 
     fun schedulePeriodicSync() {
         val constraints = Constraints.Builder()

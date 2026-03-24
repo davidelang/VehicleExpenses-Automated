@@ -9,7 +9,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -18,9 +17,14 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.vehicles.VehicleSummaryScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var syncManager: SyncManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -29,7 +33,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AppNavigation()
+                    AppNavigation(syncManager)
                 }
             }
         }
@@ -37,16 +41,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(syncManager: SyncManager) {
     val navController = rememberNavController()
-    val syncManager = hiltViewModel<SyncManager>() // injected via Hilt
     val scope = rememberCoroutineScope()
     var isSyncing by remember { mutableStateOf(false) }
 
     NavHost(navController = navController, startDestination = "quickfill") {
         composable("quickfill") {
             QuickFillupScreen(navController)
-            // Floating Sync button (visible on every screen)
+
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
                 FloatingActionButton(
                     onClick = {
@@ -70,6 +73,5 @@ fun AppNavigation() {
             val id = backStackEntry.arguments?.getString("vehicleId")?.toInt() ?: 0
             VehicleSummaryScreen(id, navController)
         }
-        // TODO: add more routes later (expenses, vehicles, settings)
     }
 }

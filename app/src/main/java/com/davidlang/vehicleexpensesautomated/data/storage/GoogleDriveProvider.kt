@@ -14,7 +14,7 @@ import javax.inject.Singleton
 
 @Singleton
 class GoogleDriveProvider @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : PhotoStorageProvider {
 
     private val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
@@ -39,13 +39,11 @@ class GoogleDriveProvider @Inject constructor(
             val boundary = "foo_bar_baz"
             val output: OutputStream = conn.outputStream
 
-            // Metadata part
             output.write("--$boundary\r\n".toByteArray())
             output.write("Content-Type: application/json; charset=UTF-8\r\n\r\n".toByteArray())
             output.write("""{"name": "$filename", "mimeType": "image/jpeg"}""".toByteArray())
             output.write("\r\n--$boundary\r\n".toByteArray())
 
-            // File content part
             output.write("Content-Type: image/jpeg\r\n\r\n".toByteArray())
 
             context.contentResolver.openInputStream(photoUri)?.use { input ->
@@ -64,8 +62,6 @@ class GoogleDriveProvider @Inject constructor(
                 val publicUrl = "https://drive.google.com/file/d/$driveId/view"
                 Log.i("GoogleDriveProvider", "✅ Uploaded $filename → $publicUrl")
                 return@withContext publicUrl
-            } else {
-                Log.e("GoogleDriveProvider", "Upload failed: $responseCode - $response")
             }
         } catch (e: Exception) {
             Log.e("GoogleDriveProvider", "Drive upload failed", e)

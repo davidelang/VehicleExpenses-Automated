@@ -12,14 +12,14 @@ enum class PhotoType { FUEL, EXPENSE }
 
 @Singleton
 class PhotoStorageManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
 
     private fun getCurrentProvider(): PhotoStorageProvider {
         val key = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
         return when (key) {
-            "google_drive" -> GoogleDriveProvider(context)  // Hilt will inject the real one
+            "google_drive" -> GoogleDriveProvider(context)
             else -> NoOpStorageProvider()
         }
     }
