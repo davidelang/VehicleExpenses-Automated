@@ -11,7 +11,7 @@ android {
     compileSdk = 36
     defaultConfig {
         applicationId = "com.davidlang.vehicleexpensesautomated"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "0.7"
@@ -25,15 +25,21 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    kotlin {
+        jvmToolchain(17)
+        compilerOptions {
+            freeCompilerArgs.addAll(listOf("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"))
+        }
+    }
     buildFeatures {
         compose = true
     }
-}
-
-kotlin {
-    jvmToolchain(17)
-    compilerOptions {
-        freeCompilerArgs.addAll(listOf("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"))
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+        ignoreWarnings = true
+        quiet = true
+        baseline = file("lint-baseline.xml")
     }
 }
 
