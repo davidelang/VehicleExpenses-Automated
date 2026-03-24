@@ -7,7 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel   // <-- correct non-deprecated import
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
@@ -71,8 +71,8 @@ fun ExpenseEntryScreen(
                         date = date,
                         photoUrl = photoUrl
                     )
-                    // TODO: replace with viewModel.saveEntry(entry) once ExpenseViewModel has the method
-                    Toast.makeText(context, "Expense saved (photo ready)", Toast.LENGTH_LONG).show()
+                    viewModel.saveEntry(entry)
+                    Toast.makeText(context, "✅ Expense saved successfully", Toast.LENGTH_SHORT).show()
                     onSaved()
                 }
             },
