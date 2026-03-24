@@ -7,7 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel   // <-- correct non-deprecated import
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
@@ -79,8 +79,8 @@ fun QuickFillupScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoUrl
                     )
-                    // TODO: replace with viewModel.saveEntry(entry) once FuelViewModel has the method
-                    Toast.makeText(context, "Fill-up saved (photo ready)", Toast.LENGTH_LONG).show()
+                    viewModel.saveEntry(entry)
+                    Toast.makeText(context, "✅ Fill-up saved successfully", Toast.LENGTH_SHORT).show()
                     onSaved()
                 }
             },
