@@ -8,7 +8,7 @@
         android:label="VehicleExpenses"
         android:supportsRtl="true">
 
-        <!-- Required when using Configuration.Provider - disables default initializer -->
+        <!-- REQUIRED: disables default WorkManager initializer when using Configuration.Provider -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
