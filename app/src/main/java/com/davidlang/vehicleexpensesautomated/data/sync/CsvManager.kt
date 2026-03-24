@@ -11,12 +11,10 @@ import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryReposi
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
-import java.io.*
+import java.io.File
+import java.io.FileOutputStream
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,21 +29,21 @@ class CsvManager @Inject constructor(
 
     private val downloadsDir = context.getExternalFilesDir("Downloads")!!
 
-    suspend fun exportToZip(): Uri = withContext(Dispatchers.IO) {
+    suspend fun exportToZip(): Uri {
         val zipFile = File(downloadsDir, "vehicle_expenses_backup_${System.currentTimeMillis()}.zip")
         ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-            // Vehicles (single tab)
+            // Vehicles tab
             writeCsvToZip(zos, "Vehicles.csv") { getVehiclesCsv() }
-            // Expenses (single tab)
+            // Expenses tab
             writeCsvToZip(zos, "Expenses.csv") { getExpensesCsv() }
-            // Fuel — one tab per vehicle (exact match to Google Sheets)
-            val fuelByVehicle = fuelRepository.getAllEntries().first().groupBy { it.vehicleId }
-            fuelByVehicle.forEach { (vehicleId, entries) ->
+            // Fuel - one tab per vehicle (exact match to Google Sheets)
+            val allFuel = fuelRepository.getAllEntries().first()
+            allFuel.groupBy { it.vehicleId }.forEach { (vehicleId, entries) ->
                 writeCsvToZip(zos, "Fuel - Vehicle $vehicleId.csv") { getFuelCsvForVehicle(entries) }
             }
         }
-        Log.i("CsvManager", "✅ Exported ZIP with per-vehicle Fuel tabs")
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
+        Log.i("CsvManager", "✅ Exported ZIP with exact Google Sheets structure")
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
     }
 
     private suspend fun getVehiclesCsv(): String {
@@ -74,9 +72,9 @@ class CsvManager @Inject constructor(
         zos.closeEntry()
     }
 
-    suspend fun importFromZip(uri: Uri) = withContext(Dispatchers.IO) {
+    suspend fun importFromZip(uri: Uri) {
         context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zis ->
+            java.util.zip.ZipInputStream(input).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
                     when {
@@ -88,10 +86,10 @@ class CsvManager @Inject constructor(
                 }
             }
         }
-        Log.i("CsvManager", "✅ Imported from CSV ZIP (including per-vehicle Fuel tabs)")
+        Log.i("CsvManager", "✅ Imported from CSV ZIP (per-vehicle Fuel tabs supported)")
     }
 
-    private suspend fun importVehiclesCsv(stream: InputStream) {
+    private suspend fun importVehiclesCsv(stream: java.io.InputStream) {
         val lines = stream.bufferedReader().readLines().drop(1)
         lines.forEach { line ->
             val parts = line.split(",")
@@ -110,7 +108,7 @@ class CsvManager @Inject constructor(
         }
     }
 
-    private suspend fun importExpensesCsv(stream: InputStream) {
+    private suspend fun importExpensesCsv(stream: java.io.InputStream) {
         val lines = stream.bufferedReader().readLines().drop(1)
         lines.forEach { line ->
             val parts = line.split(",")
@@ -128,7 +126,7 @@ class CsvManager @Inject constructor(
         }
     }
 
-    private suspend fun importFuelCsv(stream: InputStream) {
+    private suspend fun importFuelCsv(stream: java.io.InputStream) {
         val lines = stream.bufferedReader().readLines().drop(1)
         lines.forEach { line ->
             val parts = line.split(",")
