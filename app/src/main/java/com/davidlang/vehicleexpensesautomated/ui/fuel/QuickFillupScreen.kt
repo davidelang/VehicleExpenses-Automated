@@ -14,6 +14,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
 import kotlinx.coroutines.launch
 
 @Composable
@@ -33,20 +34,50 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // Placeholder vehicle list (real load + dash reference matching added next)
+    // TODO: Replace this placeholder with real load from your VehicleRepository/ViewModel
+    // (make sure each Vehicle now has referenceDashPhotoUrl: String? = null)
     LaunchedEffect(Unit) {
         if (vehicles.isEmpty()) {
+            // Example structure — replace with your real data load
+            // vehicles = vehicleRepository.getAllVehicles()
             selectedVehicle = vehicles.firstOrNull()
         }
     }
 
-    // Auto-match vehicle the moment the NEW dash/odometer photo is taken
-    // (PhotoPicker is camera-first — takes a fresh picture immediately, no gallery default)
+    // 🔥 REAL AUTO-MATCHING LOGIC (camera-first flow)
+    // When a NEW dashboard/odometer photo is taken → compare it to every vehicle's
+    // stored referenceDashPhotoUrl using perceptual Average Hash.
+    // Best match above 75% similarity is auto-selected.
     LaunchedEffect(photoUrl) {
-        photoUrl?.let {
-            if (vehicles.isNotEmpty()) {
-                selectedVehicle = vehicles.first()
-                Toast.makeText(context, "📸 Dash photo captured", Toast.LENGTH_SHORT).show()
+        photoUrl?.let { newPhotoPath ->
+            val newHash = ImageHashUtils.computeHashFromFilePath(newPhotoPath)
+            if (newHash != null && vehicles.isNotEmpty()) {
+                var bestVehicle: Vehicle? = null
+                var bestSimilarity = 0.0
+
+                for (vehicle in vehicles) {
+                    vehicle.referenceDashPhotoUrl?.let { refPath ->
+                        val refHash = ImageHashUtils.computeHashFromFilePath(refPath)
+                        if (refHash != null) {
+                            val sim = ImageHashUtils.similarity(newHash, refHash)
+                            if (sim > bestSimilarity) {
+                                bestSimilarity = sim
+                                bestVehicle = vehicle
+                            }
+                        }
+                    }
+                }
+
+                if (bestVehicle != null && bestSimilarity > 0.75) {
+                    selectedVehicle = bestVehicle
+                    Toast.makeText(
+                        context,
+                        "🔍 Auto-matched ${bestVehicle.make} ${bestVehicle.model} (${(bestSimilarity * 100).toInt()}%)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(context, "📸 Photo captured — no strong vehicle match", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -117,7 +148,7 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // SAME PhotoPicker you already use — now camera-first for new dash photos
+        // Camera-first PhotoPicker (no gallery default)
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
