@@ -36,14 +36,6 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // Show "Is this a new vehicle?" dialog when photo has no match
-    var showNewVehicleDialog by remember { mutableStateOf(false) }
-    var newMake by remember { mutableStateOf("") }
-    var newModel by remember { mutableStateOf("") }
-    var newYear by remember { mutableStateOf("") }
-    var newLicense by remember { mutableStateOf("") }
-    var newOdometer by remember { mutableStateOf("") }   // user types the number they see on dash
-
     // Real DB load
     LaunchedEffect(vehicles) {
         if (selectedVehicle == null && vehicles.isNotEmpty()) {
@@ -51,7 +43,7 @@ fun QuickFillupScreen(
         }
     }
 
-    // 🔥 AUTO-MATCHING + NEW-VEHICLE PROMPT
+    // 🔥 AUTO-MATCHING + NEW-VEHICLE NAVIGATION
     LaunchedEffect(photoUrl) {
         photoUrl?.let { newPhotoPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPhotoPath)
@@ -81,27 +73,10 @@ fun QuickFillupScreen(
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
-                    // NO MATCH → ask if new vehicle
-                    showNewVehicleDialog = true
-                    Toast.makeText(context, "📸 Photo captured — no match found", Toast.LENGTH_SHORT).show()
+                    // NO MATCH → navigate to dedicated new-vehicle screen (camera-first)
+                    navController.navigate("addNewVehicle")
+                    Toast.makeText(context, "📸 No match — opening New Vehicle screen", Toast.LENGTH_SHORT).show()
                 }
-            }
-        }
-    }
-
-    // Reference photo save (with odometer input)
-    photoUrl?.let { capturedUrl ->
-        selectedVehicle?.let { vehicle ->
-            Button(
-                onClick = {
-                    // In real app you'd show a dialog to type the odometer number here
-                    // For now we just save the photo (you can expand this later)
-                    vehicleViewModel.updateReferenceDashPhoto(vehicle.id, capturedUrl)
-                    Toast.makeText(context, "✅ Saved as reference dash photo for ${vehicle.make} ${vehicle.model}", Toast.LENGTH_LONG).show()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("💾 Save as Reference Dash Photo")
             }
         }
     }
@@ -216,45 +191,14 @@ fun QuickFillupScreen(
                 Text("Add Expense")
             }
         }
-    }
 
-    // NEW VEHICLE DIALOG (unmatched photo)
-    if (showNewVehicleDialog) {
-        AlertDialog(
-            onDismissRequest = { showNewVehicleDialog = false },
-            title = { Text("New Vehicle?") },
-            text = {
-                Column {
-                    Text("No matching reference photo found.\nIs this photo for a new vehicle?")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(value = newMake, onValueChange = { newMake = it }, label = { Text("Make") })
-                    OutlinedTextField(value = newModel, onValueChange = { newModel = it }, label = { Text("Model") })
-                    OutlinedTextField(value = newYear, onValueChange = { newYear = it }, label = { Text("Year") })
-                    OutlinedTextField(value = newLicense, onValueChange = { newLicense = it }, label = { Text("License Plate") })
-                    OutlinedTextField(value = newOdometer, onValueChange = { newOdometer = it }, label = { Text("Odometer reading on photo") })
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    vehicleViewModel.createNewVehicleWithReference(
-                        make = newMake,
-                        model = newModel,
-                        year = newYear.toIntOrNull() ?: 2025,
-                        licensePlate = newLicense,
-                        referenceDashPhotoUrl = photoUrl ?: "",
-                        initialOdometer = newOdometer.toIntOrNull() ?: 0
-                    )
-                    Toast.makeText(context, "✅ New vehicle created with this dash photo as reference", Toast.LENGTH_LONG).show()
-                    showNewVehicleDialog = false
-                }) {
-                    Text("Yes — Create New Vehicle")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewVehicleDialog = false }) {
-                    Text("No — Just use current photo")
-                }
-            }
-        )
+        // Quick link to dedicated new-vehicle screen
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedButton(
+            onClick = { navController.navigate("addNewVehicle") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("➕ Add New Vehicle (with reference photo)")
+        }
     }
 }
