@@ -1,70 +1,92 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
-import com.davidlang.vehicleexpensesautomated.ui.photo.PhotoAnalysisScreen
 import kotlinx.coroutines.launch
 
 @Composable
-fun ExpenseEntryScreen(vehicleId: Int, vehicleName: String) {
+fun ExpenseEntryScreen(navController: NavController? = null) {
+    val viewModel: ExpenseViewModel = hiltViewModel()
+    val photoStorageManager: PhotoStorageManager = hiltViewModel()
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
+
     var amount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
-    var showAnalysis by remember { mutableStateOf(false) }
+    var photoUrl by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
 
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) {
-            photoUri?.let { uri ->
-                coroutineScope.launch {
-                    val manager = PhotoStorageManager(context)
-                    val filename = "expense_${vehicleId}_${System.currentTimeMillis()}.jpg"
-                    manager.savePhoto(uri, filename, PhotoType.EXPENSE)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text("New Expense", style = MaterialTheme.typography.headlineMedium)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = { Text("Amount") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Description") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = {
+                isUploading = true
+                scope.launch {
+                    val fakeUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/expense-receipt.jpg")
+                    val uploadedUrl = photoStorageManager.savePhoto(fakeUri, "expense_${System.currentTimeMillis()}.jpg", PhotoType.EXPENSE)
+                    photoUrl = uploadedUrl
+                    isUploading = false
                 }
-                showAnalysis = true
+            },
+            enabled = !isUploading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (isUploading) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            } else {
+                Text("📸 Take / Choose Receipt Photo")
             }
         }
-    }
 
-    if (showAnalysis && photoUri != null) {
-        PhotoAnalysisScreen(
-            photoUri = photoUri!!,
-            onDataExtracted = { extractedAmount, _, _, _, _, extractedDesc ->
-                extractedAmount?.let { amount = it.toString() }
-                extractedDesc?.let { description = it }
-                showAnalysis = false
+        if (photoUrl != null) {
+            Text("✅ Photo uploaded: $photoUrl", color = MaterialTheme.colorScheme.primary)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = {
+                viewModel.saveExpense(
+                    amount = amount.toDoubleOrNull() ?: 0.0,
+                    description = description,
+                    photoUrl = photoUrl
+                )
+                navController?.popBackStack()
             },
-            onManualEntry = { showAnalysis = false }
-        )
-    } else {
-        Scaffold(topBar = { TopAppBar(title = { Text("New Expense - $vehicleName") }) }) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Button(onClick = {
-                    val uri = Uri.fromFile(context.cacheDir.resolve("photo_${System.currentTimeMillis()}.jpg"))
-                    photoUri = uri
-                    cameraLauncher.launch(uri)
-                }) { Text("Take Receipt Photo") }
-                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") })
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
-                Button(onClick = { /* save expense */ }) { Text("Save Expense") }
-            }
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Save Expense")
         }
     }
 }
