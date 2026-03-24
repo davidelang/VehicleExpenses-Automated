@@ -8,6 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
+import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import kotlinx.coroutines.launch
@@ -77,12 +79,17 @@ fun ExpenseEntryScreen(navController: NavController? = null) {
 
         Button(
             onClick = {
-                viewModel.saveExpense(
-                    amount = amount.toDoubleOrNull() ?: 0.0,
-                    description = description,
-                    photoUrl = photoUrl
-                )
-                navController?.popBackStack()
+                scope.launch {
+                    val entry = ExpenseEntry(
+                        vehicleId = 0, // TODO: replace with real vehicleId when you have vehicle selection
+                        amount = amount.toDoubleOrNull() ?: 0.0,
+                        description = description,
+                        date = System.currentTimeMillis(),
+                        photoUrl = photoUrl
+                    )
+                    viewModel.saveExpense(entry)
+                    navController?.popBackStack()
+                }
             },
             modifier = Modifier.fillMaxWidth()
         ) {

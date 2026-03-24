@@ -9,9 +9,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 @Composable
 fun QuickFillupScreen(navController: NavController) {
@@ -58,12 +60,10 @@ fun QuickFillupScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Photo upload section
         Button(
             onClick = {
                 isUploading = true
                 scope.launch {
-                    // TODO: replace with real camera/gallery picker (for now we simulate a URI)
                     val fakeUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/fuel-receipt.jpg")
                     val uploadedUrl = photoStorageManager.savePhoto(fakeUri, "fuel_${System.currentTimeMillis()}.jpg", PhotoType.FUEL)
                     photoUrl = uploadedUrl
@@ -88,13 +88,18 @@ fun QuickFillupScreen(navController: NavController) {
 
         Button(
             onClick = {
-                viewModel.saveFillup(
-                    odometer = odometer.toIntOrNull() ?: 0,
-                    gallons = gallons.toDoubleOrNull() ?: 0.0,
-                    cost = cost.toDoubleOrNull() ?: 0.0,
-                    photoUrl = photoUrl
-                )
-                navController.popBackStack()
+                scope.launch {
+                    val entry = FuelEntry(
+                        vehicleId = 0, // TODO: replace with real vehicleId when you have vehicle selection
+                        odometer = odometer.toIntOrNull() ?: 0,
+                        gallons = gallons.toDoubleOrNull() ?: 0.0,
+                        cost = cost.toDoubleOrNull() ?: 0.0,
+                        timestamp = Instant.now().toEpochMilli(),
+                        photoUrl = photoUrl
+                    )
+                    viewModel.saveFuelEntry(entry)
+                    navController.popBackStack()
+                }
             },
             modifier = Modifier.fillMaxWidth()
         ) {

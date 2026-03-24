@@ -25,4 +25,8 @@ class ExpenseViewModel @Inject constructor(
             }
         }
     }
+
+    suspend fun saveExpense(entry: ExpenseEntry) {
+        repository.saveEntry(entry)
+    }
 }
