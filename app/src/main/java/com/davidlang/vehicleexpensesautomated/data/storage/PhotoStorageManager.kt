@@ -11,17 +11,13 @@ import javax.inject.Singleton
 
 @Singleton
 class PhotoStorageManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context   // explicit @param: silences future Kotlin warning
 ) {
 
     private val photosDir: File by lazy {
         File(context.filesDir, "photos").apply { mkdirs() }
     }
 
-    /**
-     * EXACT signature called by your PhotoPicker.kt (and every other screen)
-     * savePhoto(Uri, filename, PhotoType) → returns String? (null on failure)
-     */
     fun savePhoto(uri: Uri, fileName: String, photoType: PhotoType): String? {
         val destFile = File(photosDir, "${photoType.name.lowercase()}_$fileName")
 
@@ -37,9 +33,6 @@ class PhotoStorageManager @Inject constructor(
         }
     }
 
-    /**
-     * Helper for ImportOldPicturesScreen (gallery picker)
-     */
     fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
         val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.jpg"
         return savePhoto(uri, fileName, photoType) ?: throw IllegalArgumentException("Cannot save photo from URI")

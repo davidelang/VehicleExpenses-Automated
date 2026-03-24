@@ -22,8 +22,8 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-            .addMigrations(AppDatabase.MIGRATION_1_2)   // ← your referenceDashPhotoUrl migration
-            .fallbackToDestructiveMigration()           // safe for dev only (remove in production)
+            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .fallbackToDestructiveMigration(false)   // explicit boolean = no more deprecation warning
             .build()
     }
 
