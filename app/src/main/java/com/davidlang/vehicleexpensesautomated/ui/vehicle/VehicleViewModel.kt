@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -25,7 +26,9 @@ class VehicleViewModel @Inject constructor(
 
     private fun loadVehicles() {
         viewModelScope.launch {
-            _vehicles.value = vehicleRepository.getAllVehicles()
+            vehicleRepository.getAllVehicles().collectLatest { list ->
+                _vehicles.value = list
+            }
         }
     }
 
@@ -34,7 +37,31 @@ class VehicleViewModel @Inject constructor(
             val vehicle = _vehicles.value.find { it.id == vehicleId } ?: return@launch
             val updated = vehicle.copy(referenceDashPhotoUrl = photoUrl)
             vehicleRepository.updateVehicle(updated)
-            loadVehicles() // refresh list
+            // refresh is automatic via Flow
+        }
+    }
+
+    // NEW: for "Is this a new vehicle?" flow
+    fun createNewVehicleWithReference(
+        make: String,
+        model: String,
+        year: Int,
+        licensePlate: String,
+        referenceDashPhotoUrl: String,
+        initialOdometer: Int
+    ) {
+        viewModelScope.launch {
+            val newVehicle = Vehicle(
+                make = make,
+                model = model,
+                year = year,
+                licensePlate = licensePlate,
+                referenceDashPhotoUrl = referenceDashPhotoUrl
+                // notes or vin can be empty for now
+            )
+            val newId = vehicleRepository.insertVehicle(newVehicle)
+            // TODO: you can store the initial odometer in a separate table or note field later
+            // For now we just create the vehicle with the reference photo
         }
     }
 }
