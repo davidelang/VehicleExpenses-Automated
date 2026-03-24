@@ -79,9 +79,8 @@ fun QuickFillupScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoUrl
                     )
-                    // TODO: replace this line with your actual save call once we see FuelViewModel.kt
-                    // viewModel.saveEntry(entry)   <-- uncomment when fixed
-                    Toast.makeText(context, "✅ Fill-up saved (photo included)", Toast.LENGTH_SHORT).show()
+                    viewModel.saveFuel(entry)
+                    Toast.makeText(context, "✅ Fill-up saved successfully", Toast.LENGTH_SHORT).show()
                     onSaved()
                 }
             },

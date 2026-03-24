@@ -25,4 +25,8 @@ class FuelViewModel @Inject constructor(
             }
         }
     }
+
+    suspend fun saveFuel(entry: FuelEntry) {
+        repository.saveEntry(entry)
+    }
 }

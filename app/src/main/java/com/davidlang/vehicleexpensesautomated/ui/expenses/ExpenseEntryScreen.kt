@@ -71,9 +71,8 @@ fun ExpenseEntryScreen(
                         date = date,
                         photoUrl = photoUrl
                     )
-                    // TODO: replace this line with your actual save call once we see ExpenseViewModel.kt
-                    // viewModel.saveEntry(entry)   <-- uncomment when fixed
-                    Toast.makeText(context, "✅ Expense saved (photo included)", Toast.LENGTH_SHORT).show()
+                    viewModel.saveExpense(entry)
+                    Toast.makeText(context, "✅ Expense saved successfully", Toast.LENGTH_SHORT).show()
                     onSaved()
                 }
             },
