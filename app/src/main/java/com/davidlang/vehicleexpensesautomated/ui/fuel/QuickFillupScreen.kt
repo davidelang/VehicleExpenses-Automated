@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
@@ -17,7 +18,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun QuickFillupScreen(
     vehicleId: Int,
-    onSaved: () -> Unit
+    navController: NavHostController
 ) {
     val context = LocalContext.current
     val viewModel: FuelViewModel = hiltViewModel()
@@ -68,25 +69,36 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Button(
-            onClick = {
-                scope.launch {
-                    val entry = FuelEntry(
-                        vehicleId = vehicleId,
-                        odometer = odometer.toIntOrNull() ?: 0,
-                        gallons = gallons.toDoubleOrNull() ?: 0.0,
-                        cost = cost.toDoubleOrNull() ?: 0.0,
-                        timestamp = System.currentTimeMillis(),
-                        photoUrl = photoUrl
-                    )
-                    viewModel.saveFuel(entry)
-                    Toast.makeText(context, "✅ Fill-up saved successfully", Toast.LENGTH_SHORT).show()
-                    onSaved()
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Save Fill-up")
+            Button(
+                onClick = {
+                    scope.launch {
+                        val entry = FuelEntry(
+                            vehicleId = vehicleId,
+                            odometer = odometer.toIntOrNull() ?: 0,
+                            gallons = gallons.toDoubleOrNull() ?: 0.0,
+                            cost = cost.toDoubleOrNull() ?: 0.0,
+                            timestamp = System.currentTimeMillis(),
+                            photoUrl = photoUrl
+                        )
+                        viewModel.saveFuel(entry)
+                        Toast.makeText(context, "✅ Fill-up saved successfully", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Save Fill-up")
+            }
+
+            Button(
+                onClick = { navController.navigate("expense/$vehicleId") },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Add Expense")
+            }
         }
     }
 }

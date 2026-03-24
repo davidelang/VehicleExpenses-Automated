@@ -49,8 +49,8 @@ fun AppNavigation(syncManager: SyncManager) {
     NavHost(navController = navController, startDestination = "quickfill") {
         composable("quickfill") {
             QuickFillupScreen(
-                vehicleId = 1,   // TODO: replace with real current vehicle later
-                onSaved = { navController.popBackStack() }
+                vehicleId = 1,   // TODO: make dynamic with vehicle selector later
+                navController = navController
             )
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
                 FloatingActionButton(
