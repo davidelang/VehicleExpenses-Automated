@@ -1,42 +1,28 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.davidlang.vehicleexpensesautomated.data.model.Expense
-import com.davidlang.vehicleexpensesautomated.repository.ExpenseRepository
+import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
+import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class ExpenseViewModel @Inject constructor(
-    private val repository: ExpenseRepository,
-    savedStateHandle: SavedStateHandle
+    private val repository: ExpenseEntryRepository
 ) : ViewModel() {
 
-    private val vehicleId: Int = savedStateHandle.get<Int>("vehicleId") ?: 0
+    private val _expenseEntries = MutableStateFlow<List<ExpenseEntry>>(emptyList())
+    val expenseEntries: StateFlow<List<ExpenseEntry>> = _expenseEntries
 
-    val expenses: StateFlow<List<Expense>> = repository.getExpensesForVehicle(vehicleId)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    fun addExpense(amount: Double, description: String, dateMillis: Long, category: String = "Other") {
+    fun loadExpenseEntries(vehicleId: Int) {
         viewModelScope.launch {
-            val expense = Expense(
-                vehicleId = vehicleId,
-                amount = amount,
-                description = description,
-                dateMillis = dateMillis,
-                category = category
-            )
-            repository.insert(expense)
-        }
-    }
-
-    fun deleteExpense(expense: Expense) {
-        viewModelScope.launch {
-            repository.delete(expense)
+            repository.getEntriesForVehicle(vehicleId).collect { entries ->
+                _expenseEntries.value = entries
+            }
         }
     }
 }
