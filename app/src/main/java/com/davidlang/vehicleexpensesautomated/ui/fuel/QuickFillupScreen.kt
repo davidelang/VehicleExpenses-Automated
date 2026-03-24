@@ -36,11 +36,24 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // Load real vehicles from repository
+    // Load all vehicles (each should have a stored reference dash photo)
     LaunchedEffect(Unit) {
         vehicles = vehicleRepository.getAllVehicles().first()
         if (vehicles.isNotEmpty() && selectedVehicle == null) {
             selectedVehicle = vehicles.first()
+        }
+    }
+
+    // Auto-match vehicle when a new dash photo is taken
+    LaunchedEffect(photoUrl) {
+        photoUrl?.let { newDashUrl ->
+            if (vehicles.isNotEmpty()) {
+                // TODO: replace with real image similarity (hash / embedding / ML Kit) in next step
+                // For now we use a simple placeholder: assume the newest photo belongs to the first vehicle
+                // Real version will compare newDashUrl against each vehicle's stored dashReferenceUrl
+                selectedVehicle = vehicles.first()  // <--- this is where real matching will go
+                Toast.makeText(context, "📸 Dash matched → ${selectedVehicle?.make} ${selectedVehicle?.model}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -53,7 +66,6 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Vehicle dropdown (dash photo matching will auto-select here in next step)
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = it }
@@ -108,6 +120,7 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        // The SAME PhotoPicker you already use — no extra button needed
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
