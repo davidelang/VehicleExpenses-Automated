@@ -1,13 +1,23 @@
 # Developer Guide
 
-## Data Structures
-- `Vehicle` (Room entity)
-- `Expense`
-- `FuelFill`
+## Models
+- FuelEntry (replaces FuelFill/FuelFillup)
+- ExpenseEntry (replaces Expense)
 
-## Process Flows
-1. UI → ViewModel → Repository → Room
-2. Sync → GoogleSheetsClient (write + read/parse)
-3. Background → WorkManager → SyncWorker
+## DAOs
+- FuelEntryDao
+- ExpenseEntryDao
+- VehicleDao
 
-Full architecture: https://github.com/davidelang/VehicleExpenses-Automated/tree/master/docs/developer-guide.md
+## Repositories
+- FuelEntryRepository
+- ExpenseEntryRepository
+- VehicleRepository
+
+## DatabaseModule
+Provides all DAOs from AppDatabase.
+
+## SyncWorker
+Uses GoogleSheetsClient to push FuelEntry and ExpenseEntry to Sheets.
+
+Run `./gradlew clean build` after changes.

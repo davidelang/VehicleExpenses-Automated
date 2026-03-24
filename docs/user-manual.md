@@ -1,35 +1,21 @@
-# Vehicle Expenses Automated - User Guide (Offline First)
+# Vehicle Expenses Automated User Manual
 
-## Quick Start
-No setup required. The app is **offline-first**.
+## Overview
+This app tracks vehicle fuel entries and expenses with photo-based entry, OCR, and Google Sheets sync.
 
-### 1. Add a Fuel Fill (Most Common)
-1. Tap **Fuel** from the home screen
-2. Select your vehicle (or add the first one)
-3. Enter date, gallons, price/gallon, odometer
-4. Tap **Save**
+### Main Screens
+- **Quick Fuel Entry** (default): Take dashboard photo → auto vehicle + odometer → pump photo → save entry
+- **Vehicle List**: View all vehicles
+- **Vehicle Reports**: See fuel/expense history per vehicle
+- **Dashboard**: Export and overview
 
-### 2. Add an Expense
-1. Tap **Expenses**
-2. Select vehicle
-3. Enter date, amount, category, description
-4. Tap **Save**
+### Settings
+- Sheet ID
+- Fuel photo save toggle
 
-### 3. Add Additional Vehicles
-1. Tap **Vehicles**
-2. Tap the + button
-3. Enter make, model, year
-4. Save
+### Data Flow
+1. Take photos → OCR extracts data
+2. Save to local Room DB (permanent)
+3. Background sync pushes to Google Sheets
 
-### 4. View Reports & Analysis
-- Go to **Dashboard** for summaries
-- Per-vehicle history shows all data
-
-### 5. Google Sheets Sync (Optional Backup)
-1. Tap **Settings & Sync**
-2. Sign in with Google
-3. Enter/create Sheet ID
-4. Enable sync + set background options
-5. Tap **Sync Now** for instant two-way sync
-
-All data stays on your device until you turn on sync.
+All names updated: FuelEntry, ExpenseEntry, etc.
