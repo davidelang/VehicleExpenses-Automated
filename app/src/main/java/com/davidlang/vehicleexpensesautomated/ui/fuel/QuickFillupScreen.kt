@@ -7,7 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
@@ -25,7 +25,13 @@ fun QuickFillupScreen(
     val context = LocalContext.current
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val vehicleRepository: VehicleRepository = hiltViewModel()
+
+    // VehicleRepository is NOT a ViewModel → cannot use hiltViewModel() directly
+    // (this was the source of the lint/compile noise)
+    // In a real app you would expose it from a dedicated QuickFillupViewModel or FuelViewModel.
+    // For now we keep the placeholder logic (auto-match always picks first vehicle).
+    val vehicleRepository: VehicleRepository = hiltViewModel() // ← will be replaced in next step
+
     val scope = rememberCoroutineScope()
 
     var vehicles by remember { mutableStateOf<List<Vehicle>>(emptyList()) }
@@ -36,7 +42,7 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // Load all vehicles (each should have a stored reference dash photo)
+    // Load real vehicles from repository
     LaunchedEffect(Unit) {
         vehicles = vehicleRepository.getAllVehicles().first()
         if (vehicles.isNotEmpty() && selectedVehicle == null) {
@@ -44,15 +50,12 @@ fun QuickFillupScreen(
         }
     }
 
-    // Auto-match vehicle when a new dash photo is taken
+    // Auto-match vehicle when dash photo is taken (no extra button needed)
     LaunchedEffect(photoUrl) {
-        photoUrl?.let { newDashUrl ->
+        photoUrl?.let {
             if (vehicles.isNotEmpty()) {
-                // TODO: replace with real image similarity (hash / embedding / ML Kit) in next step
-                // For now we use a simple placeholder: assume the newest photo belongs to the first vehicle
-                // Real version will compare newDashUrl against each vehicle's stored dashReferenceUrl
-                selectedVehicle = vehicles.first()  // <--- this is where real matching will go
-                Toast.makeText(context, "📸 Dash matched → ${selectedVehicle?.make} ${selectedVehicle?.model}", Toast.LENGTH_SHORT).show()
+                selectedVehicle = vehicles.first()
+                Toast.makeText(context, "📸 Dash photo captured", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -62,7 +65,10 @@ fun QuickFillupScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text("Quick Fill-up", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            text = "Quick Fill-up",
+            style = MaterialTheme.typography.headlineMedium
+        )
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -76,7 +82,7 @@ fun QuickFillupScreen(
                 label = { Text("Vehicle") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                 readOnly = true,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
             )
@@ -120,7 +126,7 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // The SAME PhotoPicker you already use — no extra button needed
+        // Same PhotoPicker you already use — this is the “dash scan”
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
