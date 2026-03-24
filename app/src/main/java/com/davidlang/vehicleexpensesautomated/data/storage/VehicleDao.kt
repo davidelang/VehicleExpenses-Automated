@@ -21,6 +21,10 @@ interface VehicleDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVehicle(vehicle: Vehicle): Long
 
+    // Legacy method for existing CsvManager.kt + SyncWorker.kt (line 121 / 47)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(vehicle: Vehicle): Long = insertVehicle(vehicle)
+
     @Update
     suspend fun updateVehicle(vehicle: Vehicle)
 
