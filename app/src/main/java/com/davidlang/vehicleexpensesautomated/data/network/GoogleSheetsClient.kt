@@ -19,7 +19,6 @@ class GoogleSheetsClient @Inject constructor() {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets"
 
-    // ====================== PUSH ======================
     suspend fun syncAllData(sheetId: String, vehicles: List<Vehicle>, expenses: List<ExpenseEntry>, fuelEntries: List<FuelEntry>): Int = withContext(Dispatchers.IO) {
         if (sheetId.isBlank() || idToken == null) return@withContext 0
         var pushed = 0
@@ -51,7 +50,6 @@ class GoogleSheetsClient @Inject constructor() {
         appendRows(sheetId, "Fuel Entries", fuelEntries.map { listOf(it.id.toString(), it.vehicleId.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString(), it.timestamp.toString()) })
     }
 
-    // ====================== PULL ======================
     suspend fun pullAllData(sheetId: String): Triple<List<Vehicle>, List<ExpenseEntry>, List<FuelEntry>> = withContext(Dispatchers.IO) {
         if (sheetId.isBlank() || idToken == null) return@withContext Triple(emptyList(), emptyList(), emptyList())
 
@@ -61,11 +59,11 @@ class GoogleSheetsClient @Inject constructor() {
         val expenses = pullExpenses(sheetId)
         val fuelEntries = pullFuelEntries(sheetId)
 
-        Log.i("GoogleSheetsClient", "✅ Pull complete (${vehicles.size} vehicles, ${expenses.size} expenses, ${fuelEntries.size} fuel)")
+        Log.i("GoogleSheetsClient", "✅ Pull complete")
         Triple(vehicles, expenses, fuelEntries)
     }
 
-    private suspend fun pullVehicles(sheetId: String): List<Vehicle> = withContext(Dispatchers.IO) { readTab(sheetId, "Vehicles") { row ->
+    private suspend fun pullVehicles(sheetId: String): List<Vehicle> = readTab(sheetId, "Vehicles") { row ->
         Vehicle(
             id = row[0].toIntOrNull() ?: 0,
             make = row[1],
@@ -75,9 +73,9 @@ class GoogleSheetsClient @Inject constructor() {
             vin = row[5].ifBlank { null },
             notes = row[6].ifBlank { null }
         )
-    } }
+    }
 
-    private suspend fun pullExpenses(sheetId: String): List<ExpenseEntry> = withContext(Dispatchers.IO) { readTab(sheetId, "Expenses") { row ->
+    private suspend fun pullExpenses(sheetId: String): List<ExpenseEntry> = readTab(sheetId, "Expenses") { row ->
         ExpenseEntry(
             id = row[0].toLongOrNull() ?: 0,
             vehicleId = row[1].toIntOrNull() ?: 0,
@@ -85,9 +83,9 @@ class GoogleSheetsClient @Inject constructor() {
             description = row[3],
             date = row[4].toLongOrNull() ?: 0
         )
-    } }
+    }
 
-    private suspend fun pullFuelEntries(sheetId: String): List<FuelEntry> = withContext(Dispatchers.IO) { readTab(sheetId, "Fuel Entries") { row ->
+    private suspend fun pullFuelEntries(sheetId: String): List<FuelEntry> = readTab(sheetId, "Fuel Entries") { row ->
         FuelEntry(
             id = row[0].toLongOrNull() ?: 0,
             vehicleId = row[1].toIntOrNull() ?: 0,
@@ -96,9 +94,9 @@ class GoogleSheetsClient @Inject constructor() {
             cost = row[4].toDoubleOrNull() ?: 0.0,
             timestamp = row[5].toLongOrNull() ?: 0
         )
-    } }
+    }
 
-    private suspend fun readTab(sheetId: String, tab: String, mapper: (List<String>) -> Any): List<Any> = withContext(Dispatchers.IO) {
+    private suspend fun <T> readTab(sheetId: String, tab: String, mapper: (List<String>) -> T): List<T> = withContext(Dispatchers.IO) {
         try {
             val url = URL("$BASE_URL/$sheetId/values/$tab?majorDimension=ROWS")
             val conn = url.openConnection() as HttpURLConnection
@@ -113,7 +111,6 @@ class GoogleSheetsClient @Inject constructor() {
             val jsonObject = json.decodeFromString<JsonObject>(body)
             val values = jsonObject["values"]?.jsonArray ?: return@withContext emptyList()
 
-            // Skip header row
             values.drop(1).mapNotNull { row ->
                 val cells = row.jsonArray.map { it.jsonPrimitive.content }
                 try { mapper(cells) } catch (e: Exception) { null }

@@ -7,7 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel   # ← new recommended import
 import androidx.navigation.NavController
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
@@ -17,8 +17,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun ExpenseEntryScreen(navController: NavController? = null) {
     val viewModel: ExpenseViewModel = hiltViewModel()
-    val photoStorageManager: PhotoStorageManager = hiltViewModel()
     val context = LocalContext.current
+    val photoStorageManager = remember { PhotoStorageManager(context) }
     val scope = rememberCoroutineScope()
 
     var amount by remember { mutableStateOf("") }
@@ -35,19 +35,8 @@ fun ExpenseEntryScreen(navController: NavController? = null) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = amount,
-            onValueChange = { amount = it },
-            label = { Text("Amount") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = description,
-            onValueChange = { description = it },
-            label = { Text("Description") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -64,16 +53,10 @@ fun ExpenseEntryScreen(navController: NavController? = null) {
             enabled = !isUploading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (isUploading) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            } else {
-                Text("📸 Take / Choose Receipt Photo")
-            }
+            if (isUploading) CircularProgressIndicator(modifier = Modifier.size(24.dp)) else Text("📸 Take / Choose Receipt Photo")
         }
 
-        if (photoUrl != null) {
-            Text("✅ Photo uploaded: $photoUrl", color = MaterialTheme.colorScheme.primary)
-        }
+        if (photoUrl != null) Text("✅ Photo uploaded: $photoUrl", color = MaterialTheme.colorScheme.primary)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -81,7 +64,7 @@ fun ExpenseEntryScreen(navController: NavController? = null) {
             onClick = {
                 scope.launch {
                     val entry = ExpenseEntry(
-                        vehicleId = 0, // TODO: replace with real vehicleId when you have vehicle selection
+                        vehicleId = 0,
                         amount = amount.toDoubleOrNull() ?: 0.0,
                         description = description,
                         date = System.currentTimeMillis(),
