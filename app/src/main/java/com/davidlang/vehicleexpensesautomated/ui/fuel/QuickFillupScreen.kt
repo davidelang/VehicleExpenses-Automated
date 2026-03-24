@@ -11,11 +11,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
-import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -25,23 +23,21 @@ fun QuickFillupScreen(
     val context = LocalContext.current
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val vehicleRepository: VehicleRepository = hiltViewModel()
     val scope = rememberCoroutineScope()
 
-    var vehicles by remember { mutableStateOf<List<Vehicle>>(emptyList()) }
-    var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
+    // TODO: replace this dummy list with real repository loading (next step: dash photo matching)
+    val vehicles = remember {
+        mutableStateOf(listOf(
+            Vehicle(1, "Toyota", "Camry", 2020, "ABC123", null, null),
+            Vehicle(2, "Honda", "Civic", 2022, "XYZ789", null, null)
+        ))
+    }
+    var selectedVehicle by remember { mutableStateOf<Vehicle?>(vehicles.value.firstOrNull()) }
     var odometer by remember { mutableStateOf("") }
     var gallons by remember { mutableStateOf("") }
     var cost by remember { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        vehicles = vehicleRepository.getAllVehicles().first()
-        if (vehicles.isNotEmpty() && selectedVehicle == null) {
-            selectedVehicle = vehicles.first()
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -52,7 +48,7 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Interactive vehicle dropdown
+        // Fixed vehicle dropdown (no more lint warnings)
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = it }
@@ -63,7 +59,7 @@ fun QuickFillupScreen(
                 label = { Text("Vehicle") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(),
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),  // fixed deprecation
                 readOnly = true,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
             )
@@ -72,7 +68,7 @@ fun QuickFillupScreen(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
-                vehicles.forEach { vehicle ->
+                vehicles.value.forEach { vehicle ->
                     DropdownMenuItem(
                         text = { Text("${vehicle.make} ${vehicle.model} (${vehicle.year})") },
                         onClick = {
