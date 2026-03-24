@@ -17,7 +17,6 @@ import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @Composable
 fun QuickFillupScreen(
@@ -26,7 +25,7 @@ fun QuickFillupScreen(
     val context = LocalContext.current
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val vehicleRepository: VehicleRepository = hiltViewModel()  // <-- we inject the repository directly
+    val vehicleRepository: VehicleRepository = hiltViewModel()
     val scope = rememberCoroutineScope()
 
     var vehicles by remember { mutableStateOf<List<Vehicle>>(emptyList()) }
@@ -35,11 +34,13 @@ fun QuickFillupScreen(
     var gallons by remember { mutableStateOf("") }
     var cost by remember { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf<String?>(null) }
+    var expanded by remember { mutableStateOf(false) }
 
-    // Load vehicles once
     LaunchedEffect(Unit) {
         vehicles = vehicleRepository.getAllVehicles().first()
-        if (vehicles.isNotEmpty()) selectedVehicle = vehicles.first()
+        if (vehicles.isNotEmpty() && selectedVehicle == null) {
+            selectedVehicle = vehicles.first()
+        }
     }
 
     Column(
@@ -51,18 +52,36 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Vehicle selector
+        // Interactive vehicle dropdown
         ExposedDropdownMenuBox(
-            expanded = false,  // you can make it expandable if you want
-            onExpandedChange = {}
+            expanded = expanded,
+            onExpandedChange = { expanded = it }
         ) {
             OutlinedTextField(
                 value = selectedVehicle?.let { "${it.make} ${it.model} (${it.year})" } ?: "Select vehicle",
                 onValueChange = {},
                 label = { Text("Vehicle") },
-                modifier = Modifier.fillMaxWidth(),
-                readOnly = true
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
             )
+
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                vehicles.forEach { vehicle ->
+                    DropdownMenuItem(
+                        text = { Text("${vehicle.make} ${vehicle.model} (${vehicle.year})") },
+                        onClick = {
+                            selectedVehicle = vehicle
+                            expanded = false
+                        }
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
