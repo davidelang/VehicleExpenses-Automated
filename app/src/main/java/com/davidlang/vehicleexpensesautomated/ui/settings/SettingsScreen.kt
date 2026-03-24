@@ -41,7 +41,7 @@ fun SettingsScreen() {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         uri?.let {
             scope.launch {
-                val exportedUri = csvManager.exportToZip()
+                csvManager.exportToZip()
                 status = "✅ Exported to Downloads"
                 Toast.makeText(context, "CSV ZIP exported", Toast.LENGTH_LONG).show()
             }

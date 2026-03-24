@@ -11,7 +11,9 @@ import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryReposi
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
@@ -29,21 +31,26 @@ class CsvManager @Inject constructor(
 
     private val downloadsDir = context.getExternalFilesDir("Downloads")!!
 
-    suspend fun exportToZip(): Uri {
+    suspend fun exportToZip(): Uri = withContext(Dispatchers.IO) {
         val zipFile = File(downloadsDir, "vehicle_expenses_backup_${System.currentTimeMillis()}.zip")
         ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-            // Vehicles tab
+            // Vehicles - single tab
             writeCsvToZip(zos, "Vehicles.csv") { getVehiclesCsv() }
-            // Expenses tab
-            writeCsvToZip(zos, "Expenses.csv") { getExpensesCsv() }
-            // Fuel - one tab per vehicle (exact match to Google Sheets)
+
+            // Expenses - one tab per vehicle
+            val allExpenses = expenseRepository.getAllEntries().first()
+            allExpenses.groupBy { it.vehicleId }.forEach { (vehicleId, entries) ->
+                writeCsvToZip(zos, "Expenses - Vehicle $vehicleId.csv") { getExpensesCsvForVehicle(entries) }
+            }
+
+            // Fuel - one tab per vehicle
             val allFuel = fuelRepository.getAllEntries().first()
             allFuel.groupBy { it.vehicleId }.forEach { (vehicleId, entries) ->
                 writeCsvToZip(zos, "Fuel - Vehicle $vehicleId.csv") { getFuelCsvForVehicle(entries) }
             }
         }
-        Log.i("CsvManager", "✅ Exported ZIP with exact Google Sheets structure")
-        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
+        Log.i("CsvManager", "✅ Exported ZIP with per-vehicle tabs (exact Google Sheets match)")
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
     }
 
     private suspend fun getVehiclesCsv(): String {
@@ -53,10 +60,9 @@ class CsvManager @Inject constructor(
         return sb.toString()
     }
 
-    private suspend fun getExpensesCsv(): String {
-        val expenses = expenseRepository.getAllEntries().first()
+    private fun getExpensesCsvForVehicle(entries: List<ExpenseEntry>): String {
         val sb = StringBuilder("ID,Vehicle ID,Amount,Description,Date,Photo URL\n")
-        expenses.forEach { sb.append("${it.id},${it.vehicleId},${it.amount},${it.description},${it.date},${it.photoUrl ?: ""}\n") }
+        entries.forEach { sb.append("${it.id},${it.vehicleId},${it.amount},${it.description},${it.date},${it.photoUrl ?: ""}\n") }
         return sb.toString()
     }
 
@@ -72,21 +78,21 @@ class CsvManager @Inject constructor(
         zos.closeEntry()
     }
 
-    suspend fun importFromZip(uri: Uri) {
+    suspend fun importFromZip(uri: Uri) = withContext(Dispatchers.IO) {
         context.contentResolver.openInputStream(uri)?.use { input ->
             java.util.zip.ZipInputStream(input).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
                     when {
                         entry.name == "Vehicles.csv" -> importVehiclesCsv(zis)
-                        entry.name == "Expenses.csv" -> importExpensesCsv(zis)
+                        entry.name.startsWith("Expenses - Vehicle ") -> importExpensesCsv(zis)
                         entry.name.startsWith("Fuel - Vehicle ") -> importFuelCsv(zis)
                     }
                     entry = zis.nextEntry
                 }
             }
         }
-        Log.i("CsvManager", "✅ Imported from CSV ZIP (per-vehicle Fuel tabs supported)")
+        Log.i("CsvManager", "✅ Imported from CSV ZIP (per-vehicle Expenses + Fuel supported)")
     }
 
     private suspend fun importVehiclesCsv(stream: java.io.InputStream) {
