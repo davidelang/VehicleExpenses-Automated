@@ -49,7 +49,7 @@ class CsvManager @Inject constructor(
                 writeCsvToZip(zos, "Fuel - Vehicle $vehicleId.csv") { getFuelCsvForVehicle(entries) }
             }
         }
-        Log.i("CsvManager", "✅ Exported ZIP with per-vehicle tabs (exact Google Sheets match)")
+        Log.i("CsvManager", "✅ Exported ZIP with exact Google Sheets structure (per-vehicle tabs)")
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
     }
 
