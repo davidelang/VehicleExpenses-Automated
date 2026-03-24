@@ -13,6 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.vehicles.VehicleSummaryScreen
 import dagger.hilt.android.AndroidEntryPoint
@@ -21,7 +22,6 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
     @Inject
     lateinit var syncManager: SyncManager
 
@@ -48,8 +48,10 @@ fun AppNavigation(syncManager: SyncManager) {
 
     NavHost(navController = navController, startDestination = "quickfill") {
         composable("quickfill") {
-            QuickFillupScreen(navController)
-
+            QuickFillupScreen(
+                vehicleId = 1,   // TODO: replace with real current vehicle later
+                onSaved = { navController.popBackStack() }
+            )
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
                 FloatingActionButton(
                     onClick = {
@@ -69,6 +71,15 @@ fun AppNavigation(syncManager: SyncManager) {
                 }
             }
         }
+
+        composable("expense/{vehicleId}") { backStackEntry ->
+            val vehicleId = backStackEntry.arguments?.getString("vehicleId")?.toInt() ?: 1
+            ExpenseEntryScreen(
+                vehicleId = vehicleId,
+                onSaved = { navController.popBackStack() }
+            )
+        }
+
         composable("reports/{vehicleId}") { backStackEntry ->
             val id = backStackEntry.arguments?.getString("vehicleId")?.toInt() ?: 0
             VehicleSummaryScreen(id, navController)

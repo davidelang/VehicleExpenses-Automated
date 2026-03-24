@@ -1,16 +1,15 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
+import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -18,8 +17,8 @@ fun QuickFillupScreen(
     vehicleId: Int,
     onSaved: () -> Unit
 ) {
-    val context = LocalContext.current
-    val viewModel: FuelViewModel = hiltViewModel()  // assumes your existing ViewModel
+    val viewModel: FuelViewModel = hiltViewModel()
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
     var odometer by remember { mutableStateOf("") }
@@ -57,9 +56,8 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Photo picker for fuel receipt
         PhotoPicker(
-            photoStorageManager = viewModel.photoStorageManager,
+            photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
             currentPhotoUrl = photoUrl,
             onPhotoUrlChanged = { photoUrl = it }
