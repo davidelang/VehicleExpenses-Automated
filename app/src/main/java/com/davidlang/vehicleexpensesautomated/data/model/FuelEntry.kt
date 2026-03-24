@@ -11,5 +11,6 @@ data class FuelEntry(
     val odometer: Int,
     val gallons: Double,
     val cost: Double,
-    val timestamp: Long = Instant.now().toEpochMilli()
+    val timestamp: Long = Instant.now().toEpochMilli(),
+    val photoUrl: String? = null   // ← NEW: stores Drive public URL
 )
