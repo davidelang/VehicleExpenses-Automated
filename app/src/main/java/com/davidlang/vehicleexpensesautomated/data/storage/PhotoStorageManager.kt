@@ -19,8 +19,8 @@ class PhotoStorageManager @Inject constructor(
     }
 
     /**
-     * Saves a photo taken from the camera (already a file path).
-     * Used by PhotoPicker for new pictures.
+     * Original method used by PhotoPicker, QuickFillupScreen, AddNewVehicleScreen, etc.
+     * (takes a file path from camera)
      */
     fun savePhoto(photoPath: String, photoType: PhotoType): String {
         val sourceFile = File(photoPath)
@@ -30,8 +30,7 @@ class PhotoStorageManager @Inject constructor(
     }
 
     /**
-     * NEW: Imports a photo from gallery (content URI) → copies to app storage.
-     * This is what ImportOldPicturesScreen needs.
+     * New method used by ImportOldPicturesScreen (gallery URI → internal file)
      */
     fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
         val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.jpg"
@@ -56,6 +55,4 @@ class PhotoStorageManager @Inject constructor(
         }
         return name
     }
-
-    fun getPhotoFile(photoUrl: String): File = File(photoUrl)
 }
