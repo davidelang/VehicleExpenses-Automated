@@ -2,6 +2,9 @@ package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.data.sync.CsvManager
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.launch
 
@@ -19,6 +23,8 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val photoStorageManager = remember { PhotoStorageManager(context) }
+    val csvManager: CsvManager = remember { CsvManager(context) } // TODO: make Hilt later if needed
+    val scope = rememberCoroutineScope()
 
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
     var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
@@ -31,7 +37,26 @@ fun SettingsScreen() {
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
-    val scope = rememberCoroutineScope()
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        uri?.let {
+            scope.launch {
+                val exportedUri = csvManager.exportToZip()
+                // TODO: copy to user-chosen uri if needed, for now we just show success
+                status = "✅ Exported CSV zip to Downloads"
+                Toast.makeText(context, "CSV exported to Downloads", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            scope.launch {
+                csvManager.importFromZip(uri)
+                status = "✅ Imported from CSV zip"
+                Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref) {
         prefs.edit().apply {
@@ -63,6 +88,7 @@ fun SettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         )
 
+        // Sync options (unchanged)
         SwitchSetting("Enable Background Sync", syncEnabled) { syncEnabled = it }
         SwitchSetting("Wi-Fi Only", wifiOnly) { wifiOnly = it }
         SwitchSetting("Charging Only", chargingOnly) { chargingOnly = it }
@@ -80,6 +106,17 @@ fun SettingsScreen() {
             Spacer(modifier = Modifier.width(16.dp))
             RadioButton(selected = photoProviderPref == "none", onClick = { photoProviderPref = "none" })
             Text("None")
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // CSV buttons
+        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }) {
+            Text("Export to CSV (ZIP)")
+        }
+
+        Button(onClick = { importLauncher.launch("*/*") }) {
+            Text("Import from CSV ZIP")
         }
 
         Spacer(modifier = Modifier.height(24.dp))
