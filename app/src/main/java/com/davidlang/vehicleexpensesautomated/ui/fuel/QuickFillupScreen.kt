@@ -34,20 +34,15 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // TODO: Replace this placeholder with real load from your VehicleRepository/ViewModel
-    // (make sure each Vehicle now has referenceDashPhotoUrl: String? = null)
+    // TODO: Replace with real load from your VehicleRepository/ViewModel
     LaunchedEffect(Unit) {
         if (vehicles.isEmpty()) {
-            // Example structure — replace with your real data load
             // vehicles = vehicleRepository.getAllVehicles()
             selectedVehicle = vehicles.firstOrNull()
         }
     }
 
-    // 🔥 REAL AUTO-MATCHING LOGIC (camera-first flow)
-    // When a NEW dashboard/odometer photo is taken → compare it to every vehicle's
-    // stored referenceDashPhotoUrl using perceptual Average Hash.
-    // Best match above 75% similarity is auto-selected.
+    // 🔥 AUTO-MATCHING: new dash photo vs each vehicle's stored referenceDashPhotoUrl
     LaunchedEffect(photoUrl) {
         photoUrl?.let { newPhotoPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPhotoPath)
@@ -56,7 +51,8 @@ fun QuickFillupScreen(
                 var bestSimilarity = 0.0
 
                 for (vehicle in vehicles) {
-                    vehicle.referenceDashPhotoUrl?.let { refPath ->
+                    val refPath = vehicle.referenceDashPhotoUrl
+                    if (refPath != null) {
                         val refHash = ImageHashUtils.computeHashFromFilePath(refPath)
                         if (refHash != null) {
                             val sim = ImageHashUtils.similarity(newHash, refHash)
