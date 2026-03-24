@@ -17,7 +17,7 @@ fun ExpenseEntryScreen(
     vehicleId: Int,
     onSaved: () -> Unit
 ) {
-    val viewModel: ExpenseViewModel = hiltViewModel()
+    val expenseViewModel: ExpenseViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
@@ -68,7 +68,7 @@ fun ExpenseEntryScreen(
                         date = date,
                         photoUrl = photoUrl
                     )
-                    viewModel.saveEntry(entry)
+                    expenseViewModel.saveEntry(entry)
                     onSaved()
                 }
             },

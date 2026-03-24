@@ -17,7 +17,7 @@ fun QuickFillupScreen(
     vehicleId: Int,
     onSaved: () -> Unit
 ) {
-    val viewModel: FuelViewModel = hiltViewModel()
+    val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
@@ -76,7 +76,7 @@ fun QuickFillupScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoUrl
                     )
-                    viewModel.saveEntry(entry)
+                    fuelViewModel.saveEntry(entry)
                     onSaved()
                 }
             },
