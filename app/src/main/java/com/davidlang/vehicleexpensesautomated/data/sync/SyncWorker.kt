@@ -34,16 +34,21 @@ class SyncWorker @AssistedInject constructor(
 
             googleSheetsClient.idToken = prefs.getString("id_token", null)
 
-            // 1. PUSH local → Sheets
+            // 1. PUSH local changes to Sheets
             val vehicles = vehicleRepository.getAllVehicles().first()
             val expenses = expenseRepository.getAllEntries().first()
             val fuelEntries = fuelRepository.getAllEntries().first()
             val pushed = googleSheetsClient.syncAllData(sheetId, vehicles, expenses, fuelEntries)
 
-            // 2. PULL Sheets → local (for future merge logic)
+            // 2. PULL from Sheets
             val (pulledVehicles, pulledExpenses, pulledFuel) = googleSheetsClient.pullAllData(sheetId)
 
-            Log.i("SyncWorker", "✅ Bidirectional sync complete (pushed $pushed items, pulled ${pulledVehicles.size + pulledExpenses.size + pulledFuel.size} items)")
+            // 3. CONFLICT RESOLUTION — simple upsert (last-write-wins via Room REPLACE)
+            pulledVehicles.forEach { vehicleRepository.insert(it) }        // uses REPLACE strategy
+            pulledExpenses.forEach { expenseRepository.saveEntry(it) }
+            pulledFuel.forEach { fuelRepository.saveEntry(it) }
+
+            Log.i("SyncWorker", "✅ Bidirectional sync complete — pushed $pushed, merged ${pulledVehicles.size + pulledExpenses.size + pulledFuel.size} items (last-write-wins)")
             Result.success()
         } catch (e: Exception) {
             Log.e("SyncWorker", "Sync failed", e)
