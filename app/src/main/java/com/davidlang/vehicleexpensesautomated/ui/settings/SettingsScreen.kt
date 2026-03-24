@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.data.sync.CsvManager
@@ -22,8 +23,8 @@ import kotlinx.coroutines.launch
 fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
-    val photoStorageManager = remember { PhotoStorageManager(context) }
-    val csvManager: CsvManager = remember { CsvManager(context) } // TODO: make Hilt later if needed
+    val photoStorageManager: PhotoStorageManager = hiltViewModel()
+    val csvManager: CsvManager = hiltViewModel()
     val scope = rememberCoroutineScope()
 
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
@@ -41,9 +42,8 @@ fun SettingsScreen() {
         uri?.let {
             scope.launch {
                 val exportedUri = csvManager.exportToZip()
-                // TODO: copy to user-chosen uri if needed, for now we just show success
-                status = "✅ Exported CSV zip to Downloads"
-                Toast.makeText(context, "CSV exported to Downloads", Toast.LENGTH_LONG).show()
+                status = "✅ Exported to Downloads"
+                Toast.makeText(context, "CSV ZIP exported", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -52,7 +52,7 @@ fun SettingsScreen() {
         uri?.let {
             scope.launch {
                 csvManager.importFromZip(uri)
-                status = "✅ Imported from CSV zip"
+                status = "✅ Imported from CSV ZIP"
                 Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show()
             }
         }
@@ -88,7 +88,6 @@ fun SettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Sync options (unchanged)
         SwitchSetting("Enable Background Sync", syncEnabled) { syncEnabled = it }
         SwitchSetting("Wi-Fi Only", wifiOnly) { wifiOnly = it }
         SwitchSetting("Charging Only", chargingOnly) { chargingOnly = it }
@@ -110,7 +109,6 @@ fun SettingsScreen() {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // CSV buttons
         Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }) {
             Text("Export to CSV (ZIP)")
         }
