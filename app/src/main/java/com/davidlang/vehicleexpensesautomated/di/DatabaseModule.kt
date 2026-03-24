@@ -2,11 +2,10 @@ package com.davidlang.vehicleexpensesautomated.di
 
 import android.content.Context
 import androidx.room.Room
-import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseDao
-import com.davidlang.vehicleexpensesautomated.data.dao.FuelFillDao
+import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
+import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
-import com.davidlang.vehicleexpensesautomated.data.local.FuelDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -32,11 +31,8 @@ object DatabaseModule {
     fun provideVehicleDao(database: AppDatabase): VehicleDao = database.vehicleDao()
 
     @Provides
-    fun provideExpenseDao(database: AppDatabase): ExpenseDao = database.expenseDao()
+    fun provideExpenseEntryDao(database: AppDatabase): ExpenseEntryDao = database.expenseEntryDao()
 
     @Provides
-    fun provideFuelFillDao(database: AppDatabase): FuelFillDao = database.fuelFillDao()
-
-    @Provides
-    fun provideFuelDao(fuelFillDao: FuelFillDao): FuelDao = fuelFillDao as FuelDao
+    fun provideFuelEntryDao(database: AppDatabase): FuelEntryDao = database.fuelEntryDao()
 }
