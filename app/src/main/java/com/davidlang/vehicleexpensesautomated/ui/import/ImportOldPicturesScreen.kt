@@ -14,12 +14,12 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
-import java.io.File
 
 @Composable
 fun ImportOldPicturesScreen(
@@ -32,8 +32,7 @@ fun ImportOldPicturesScreen(
 
     val vehicles by vehicleViewModel.vehicles.collectAsState()
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
-    var selectedPhotoUri by remember { mutableStateOf<Uri?>(null) }
-    var photoPath by remember { mutableStateOf<String?>(null) }   // absolute path for OCR + storage
+    var photoPath by remember { mutableStateOf<String?>(null) }
 
     var odometer by remember { mutableStateOf("") }
     var gallons by remember { mutableStateOf("") }
@@ -41,38 +40,37 @@ fun ImportOldPicturesScreen(
 
     var expanded by remember { mutableStateOf(false) }
 
-    // Gallery picker
+    // Gallery picker → auto-import + OCR
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        selectedPhotoUri = uri
         uri?.let {
-            // Convert content URI to real file path (PhotoStorageManager can copy it)
-            val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, com.davidlang.vehicleexpensesautomated.data.storage.PhotoType.FUEL)
-            photoPath = copiedPath
-            Toast.makeText(context, "📸 Photo imported", Toast.LENGTH_SHORT).show()
+            try {
+                val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, PhotoType.FUEL)
+                photoPath = copiedPath
+                Toast.makeText(context, "📸 Old photo imported", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "❌ Failed to import photo: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
-    // AUTO OCR on imported photo (exactly like reference screen)
+    // AUTO OCR (same as reference screen)
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
-                // Try odometer first
                 val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
                 extractedOdo?.let { odometer = it }
-
-                // TODO: extend OCR later for gallons/price/date from pump receipts
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected: odometer $extractedOdo (gallons/price coming soon)",
+                    "📸 Auto-detected odometer: $extractedOdo (gallons/price OCR coming soon)",
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
     }
 
-    // Optional auto-match against existing vehicles (same hash logic)
+    // Auto-match vehicle from reference photos
     LaunchedEffect(photoPath) {
         photoPath?.let { newPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPath)
@@ -163,14 +161,14 @@ fun ImportOldPicturesScreen(
         OutlinedTextField(
             value = gallons,
             onValueChange = { gallons = it },
-            label = { Text("Gallons (type or future OCR)") },
+            label = { Text("Gallons") },
             modifier = Modifier.fillMaxWidth()
         )
 
         OutlinedTextField(
             value = cost,
             onValueChange = { cost = it },
-            label = { Text("Total Cost (type or future OCR)") },
+            label = { Text("Total Cost") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -191,7 +189,7 @@ fun ImportOldPicturesScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
-                    // fuelViewModel.saveFuel(entry)  ← uncomment when you want to use real ViewModel
+                    // fuelViewModel.saveFuel(entry)  ← call your real ViewModel here
                     Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
