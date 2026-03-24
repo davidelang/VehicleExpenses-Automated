@@ -2,18 +2,24 @@ package com.davidlang.vehicleexpensesautomated.data.storage
 
 import android.content.Context
 import android.net.Uri
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 enum class PhotoType { FUEL, EXPENSE }
 
-class PhotoStorageManager(private val context: Context) {
+@Singleton
+class PhotoStorageManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
     private val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
 
     private fun getCurrentProvider(): PhotoStorageProvider {
         val key = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
         return when (key) {
-            "google_drive" -> GoogleDriveProvider(null)
+            "google_drive" -> GoogleDriveProvider(context)  // Hilt will inject the real one
             else -> NoOpStorageProvider()
         }
     }
