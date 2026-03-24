@@ -1,26 +1,24 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
+import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 @Composable
 fun ExpenseEntryScreen(
     vehicleId: Int,
     onSaved: () -> Unit
 ) {
-    val context = LocalContext.current
-    val viewModel: ExpenseViewModel = hiltViewModel()  // assumes your existing ViewModel
+    val viewModel: ExpenseViewModel = hiltViewModel()
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
     var amount by remember { mutableStateOf("") }
@@ -51,9 +49,8 @@ fun ExpenseEntryScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Photo picker for expense receipt
         PhotoPicker(
-            photoStorageManager = viewModel.photoStorageManager,
+            photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.EXPENSE,
             currentPhotoUrl = photoUrl,
             onPhotoUrlChanged = { photoUrl = it }
