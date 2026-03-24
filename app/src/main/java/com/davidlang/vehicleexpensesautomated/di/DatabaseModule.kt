@@ -6,6 +6,7 @@ import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
+import com.davidlang.vehicleexpensesautomated.data.db.MIGRATION_1_2
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -24,7 +25,9 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "vehicle_expenses.db"
-        ).build()
+        )
+        .addMigrations(MIGRATION_1_2)
+        .build()
     }
 
     @Provides
