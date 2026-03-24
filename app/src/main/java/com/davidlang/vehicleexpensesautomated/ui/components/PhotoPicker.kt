@@ -4,7 +4,6 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,9 +11,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import kotlinx.coroutines.launch
 
 @Composable
 fun PhotoPicker(
@@ -25,6 +24,8 @@ fun PhotoPicker(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var photoUri by remember { mutableStateOf<Uri?>(null) }
     var previewUrl by remember { mutableStateOf(currentPhotoUrl) }
 
@@ -32,13 +33,15 @@ fun PhotoPicker(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && photoUri != null) {
-            val savedUrl = photoStorageManager.savePhoto(photoUri!!, "photo_${System.currentTimeMillis()}.jpg", photoType)
-            if (savedUrl != null) {
-                previewUrl = savedUrl
-                onPhotoUrlChanged(savedUrl)
-                Toast.makeText(context, "Photo saved", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+            scope.launch {
+                val savedUrl = photoStorageManager.savePhoto(photoUri!!, "photo_${System.currentTimeMillis()}.jpg", photoType)
+                if (savedUrl != null) {
+                    previewUrl = savedUrl
+                    onPhotoUrlChanged(savedUrl)
+                    Toast.makeText(context, "Photo saved", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -47,26 +50,33 @@ fun PhotoPicker(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let {
-            val savedUrl = photoStorageManager.savePhoto(it, "photo_${System.currentTimeMillis()}.jpg", photoType)
-            if (savedUrl != null) {
-                previewUrl = savedUrl
-                onPhotoUrlChanged(savedUrl)
-                Toast.makeText(context, "Photo imported", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+            scope.launch {
+                val savedUrl = photoStorageManager.savePhoto(it, "photo_${System.currentTimeMillis()}.jpg", photoType)
+                if (savedUrl != null) {
+                    previewUrl = savedUrl
+                    onPhotoUrlChanged(savedUrl)
+                    Toast.makeText(context, "Photo imported", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
     Column(modifier = modifier) {
         if (previewUrl != null) {
-            Image(
-                painter = rememberAsyncImagePainter(previewUrl),
-                contentDescription = "Selected photo",
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
-            )
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "📸 Photo saved:\n$previewUrl",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
         }
 
