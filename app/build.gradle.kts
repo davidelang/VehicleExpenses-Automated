@@ -8,11 +8,11 @@ plugins {
 
 android {
     namespace = "com.davidlang.vehicleexpensesautomated"
-    compileSdk = 34
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.davidlang.vehicleexpensesautomated"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "0.7"
     }
@@ -49,8 +49,8 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.0")
     implementation("com.google.android.gms:play-services-auth:21.0.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    // Room DB – downgraded to 2.6.1 to match original works tag (fixes unexpected jvm signature V)
-    val roomVersion = "2.6.1"
+    // Room DB
+    val roomVersion = "2.7.0"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
