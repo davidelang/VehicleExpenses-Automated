@@ -13,9 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
-import com.davidlang.vehicleexpensesautomated.data.sync.CsvManager
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.launch
 
@@ -23,8 +21,11 @@ import kotlinx.coroutines.launch
 fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
-    val photoStorageManager: PhotoStorageManager = hiltViewModel()
-    val csvManager: CsvManager = hiltViewModel()
+    
+    val viewModel: SettingsViewModel = hiltViewModel()
+    val csvManager = viewModel.csvManager
+    val photoStorageManager = viewModel.photoStorageManager
+
     val scope = rememberCoroutineScope()
 
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
@@ -99,7 +100,7 @@ fun SettingsScreen() {
         SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { saveFuelPhotos = it }
 
         Text("Photo Storage Provider", style = MaterialTheme.typography.titleMedium)
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             RadioButton(selected = photoProviderPref == "google_drive", onClick = { photoProviderPref = "google_drive" })
             Text("Google Drive")
             Spacer(modifier = Modifier.width(16.dp))
