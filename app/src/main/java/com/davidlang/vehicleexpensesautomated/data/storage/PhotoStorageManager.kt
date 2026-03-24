@@ -19,30 +19,30 @@ class PhotoStorageManager @Inject constructor(
     }
 
     /**
-     * Original method used by PhotoPicker, QuickFillupScreen, AddNewVehicleScreen, etc.
-     * (takes a file path from camera)
+     * EXACT signature called by your PhotoPicker.kt (and every other screen)
+     * savePhoto(Uri, filename, PhotoType) → returns String? (null on failure)
      */
-    fun savePhoto(photoPath: String, photoType: PhotoType): String {
-        val sourceFile = File(photoPath)
-        val destFile = File(photosDir, "${photoType.name.lowercase()}_${System.currentTimeMillis()}.jpg")
-        sourceFile.copyTo(destFile, overwrite = true)
-        return destFile.absolutePath
+    fun savePhoto(uri: Uri, fileName: String, photoType: PhotoType): String? {
+        val destFile = File(photosDir, "${photoType.name.lowercase()}_$fileName")
+
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            destFile.absolutePath
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**
-     * New method used by ImportOldPicturesScreen (gallery URI → internal file)
+     * Helper for ImportOldPicturesScreen (gallery picker)
      */
     fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
         val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.jpg"
-        val destFile = File(photosDir, "${photoType.name.lowercase()}_$fileName")
-
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            FileOutputStream(destFile).use { output ->
-                input.copyTo(output)
-            }
-        } ?: throw IllegalArgumentException("Cannot open URI: $uri")
-
-        return destFile.absolutePath
+        return savePhoto(uri, fileName, photoType) ?: throw IllegalArgumentException("Cannot save photo from URI")
     }
 
     private fun getFileNameFromUri(uri: Uri): String? {
