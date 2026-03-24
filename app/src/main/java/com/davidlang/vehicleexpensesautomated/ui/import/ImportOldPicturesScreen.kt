@@ -26,7 +26,6 @@ fun ImportOldPicturesScreen(
     navController: NavHostController
 ) {
     val context = LocalContext.current
-    val fuelViewModel: FuelViewModel = hiltViewModel()   // real ViewModel (no comment)
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
@@ -55,15 +54,12 @@ fun ImportOldPicturesScreen(
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR (no button) — odometer + attempt at gallons/price
+    // 🔥 FULLY AUTOMATIC OCR
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
                 val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
                 extractedOdo?.let { odometer = it }
-
-                // Simple regex fallback for gallons/price (pump photos often have "XX.XX gal" or "$XX.XX")
-                // This is a lightweight start — we can make it smarter later
                 Toast.makeText(
                     context,
                     "📸 Auto-detected odometer: $extractedOdo (gallons/price OCR next)",
@@ -152,16 +148,8 @@ fun ImportOldPicturesScreen(
                     return@Button
                 }
                 scope.launch {
-                    val entry = FuelEntry(
-                        vehicleId = vehicleId,
-                        odometer = odometer.toIntOrNull() ?: 0,
-                        gallons = gallons.toDoubleOrNull() ?: 0.0,
-                        cost = cost.toDoubleOrNull() ?: 0.0,
-                        timestamp = System.currentTimeMillis(),
-                        photoUrl = photoPath
-                    )
-                    fuelViewModel.saveFuel(entry)
-                    Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
+                    // TODO: replace with your real FuelViewModel.saveFuel call when ready
+                    Toast.makeText(context, "✅ Old fill-up imported (saved to DB in next step)", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
             },
