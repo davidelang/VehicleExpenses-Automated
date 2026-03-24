@@ -31,6 +31,25 @@ fun AddNewVehicleScreen(
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
 
+    // 🔥 AUTOMATIC OCR — runs the instant the camera photo is saved
+    LaunchedEffect(referencePhotoUrl) {
+        referencePhotoUrl?.let { photoPath ->
+            scope.launch {
+                val extracted = OdometerOcrUtils.extractOdometerFromPhoto(photoPath)
+                if (extracted != null) {
+                    odometerReading = extracted
+                    Toast.makeText(context, "📸 Auto-detected odometer: $extracted", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(
+                        context,
+                        "📸 Could not auto-read odometer — please type the numbers you see",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -82,26 +101,6 @@ fun AddNewVehicleScreen(
         )
 
         Spacer(modifier = Modifier.height(8.dp))
-
-        // OCR button — appears once photo is taken
-        referencePhotoUrl?.let {
-            Button(
-                onClick = {
-                    scope.launch {
-                        val extracted = OdometerOcrUtils.extractOdometerFromPhoto(it)
-                        if (extracted != null) {
-                            odometerReading = extracted
-                            Toast.makeText(context, "📸 OCR found odometer: $extracted", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "📸 No clear odometer reading found — type it manually", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("🔍 Extract Odometer from Photo (ML Kit OCR)")
-            }
-        }
 
         OutlinedTextField(
             value = odometerReading,
