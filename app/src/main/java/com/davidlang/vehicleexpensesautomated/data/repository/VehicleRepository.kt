@@ -17,6 +17,9 @@ class VehicleRepository @Inject constructor(
 
     suspend fun insertVehicle(vehicle: Vehicle): Long = vehicleDao.insertVehicle(vehicle)
 
+    // Legacy method for existing CsvManager.kt + SyncWorker.kt
+    suspend fun insert(vehicle: Vehicle): Long = vehicleDao.insert(vehicle)
+
     suspend fun updateVehicle(vehicle: Vehicle) = vehicleDao.updateVehicle(vehicle)
 
     suspend fun deleteVehicle(vehicle: Vehicle) = vehicleDao.deleteVehicle(vehicle)
