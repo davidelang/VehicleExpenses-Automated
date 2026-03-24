@@ -33,16 +33,15 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // Placeholder vehicle list (real repository load + dash reference matching comes in next step)
+    // Placeholder vehicle list (real load + dash reference matching added next)
     LaunchedEffect(Unit) {
         if (vehicles.isEmpty()) {
-            // TODO: real load from VehicleRepository once QuickFillupViewModel is added
             selectedVehicle = vehicles.firstOrNull()
         }
     }
 
-    // Auto-match vehicle the moment the dash/odometer photo is taken
-    // (this is the SAME PhotoPicker you already use — no separate "scan dash" button needed)
+    // Auto-match vehicle the moment the NEW dash/odometer photo is taken
+    // (PhotoPicker is camera-first — takes a fresh picture immediately, no gallery default)
     LaunchedEffect(photoUrl) {
         photoUrl?.let {
             if (vehicles.isNotEmpty()) {
@@ -118,7 +117,7 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // The SAME PhotoPicker you already use — this IS your odometer/dash scan
+        // SAME PhotoPicker you already use — now camera-first for new dash photos
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
