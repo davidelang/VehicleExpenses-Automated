@@ -7,24 +7,26 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.navigation.NavController
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
-import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 @Composable
-fun ExpenseEntryScreen(navController: NavController? = null) {
-    val viewModel: ExpenseViewModel = hiltViewModel()
+fun ExpenseEntryScreen(
+    vehicleId: Int,
+    onSaved: () -> Unit
+) {
     val context = LocalContext.current
-    val photoStorageManager = remember { PhotoStorageManager(context) }
+    val viewModel: ExpenseViewModel = hiltViewModel()  // assumes your existing ViewModel
     val scope = rememberCoroutineScope()
 
     var amount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(System.currentTimeMillis()) }
     var photoUrl by remember { mutableStateOf<String?>(null) }
-    var isUploading by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -35,28 +37,27 @@ fun ExpenseEntryScreen(navController: NavController? = null) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Amount") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = {
-                isUploading = true
-                scope.launch {
-                    val fakeUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/expense-receipt.jpg")
-                    val uploadedUrl = photoStorageManager.savePhoto(fakeUri, "expense_${System.currentTimeMillis()}.jpg", PhotoType.EXPENSE)
-                    photoUrl = uploadedUrl
-                    isUploading = false
-                }
-            },
-            enabled = !isUploading,
+        OutlinedTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = { Text("Amount") },
             modifier = Modifier.fillMaxWidth()
-        ) {
-            if (isUploading) CircularProgressIndicator(modifier = Modifier.size(24.dp)) else Text("📸 Take / Choose Receipt Photo")
-        }
+        )
 
-        if (photoUrl != null) Text("✅ Photo uploaded: $photoUrl", color = MaterialTheme.colorScheme.primary)
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Description") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // Photo picker for expense receipt
+        PhotoPicker(
+            photoStorageManager = viewModel.photoStorageManager,
+            photoType = PhotoType.EXPENSE,
+            currentPhotoUrl = photoUrl,
+            onPhotoUrlChanged = { photoUrl = it }
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -64,14 +65,14 @@ fun ExpenseEntryScreen(navController: NavController? = null) {
             onClick = {
                 scope.launch {
                     val entry = ExpenseEntry(
-                        vehicleId = 0,
+                        vehicleId = vehicleId,
                         amount = amount.toDoubleOrNull() ?: 0.0,
                         description = description,
-                        date = System.currentTimeMillis(),
+                        date = date,
                         photoUrl = photoUrl
                     )
-                    viewModel.saveExpense(entry)
-                    navController?.popBackStack()
+                    viewModel.saveEntry(entry)
+                    onSaved()
                 }
             },
             modifier = Modifier.fillMaxWidth()
