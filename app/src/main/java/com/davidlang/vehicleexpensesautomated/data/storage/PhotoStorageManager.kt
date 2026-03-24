@@ -2,35 +2,60 @@ package com.davidlang.vehicleexpensesautomated.data.storage
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
-enum class PhotoType { FUEL, EXPENSE }
-
 @Singleton
 class PhotoStorageManager @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context
 ) {
-    private val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
 
-    private fun getCurrentProvider(): PhotoStorageProvider {
-        val key = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
-        return when (key) {
-            "google_drive" -> GoogleDriveProvider(context)
-            else -> NoOpStorageProvider()
+    private val photosDir: File by lazy {
+        File(context.filesDir, "photos").apply { mkdirs() }
+    }
+
+    /**
+     * Saves a photo taken from the camera (already a file path).
+     * Used by PhotoPicker for new pictures.
+     */
+    fun savePhoto(photoPath: String, photoType: PhotoType): String {
+        val sourceFile = File(photoPath)
+        val destFile = File(photosDir, "${photoType.name.lowercase()}_${System.currentTimeMillis()}.jpg")
+        sourceFile.copyTo(destFile, overwrite = true)
+        return destFile.absolutePath
+    }
+
+    /**
+     * NEW: Imports a photo from gallery (content URI) → copies to app storage.
+     * This is what ImportOldPicturesScreen needs.
+     */
+    fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
+        val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.jpg"
+        val destFile = File(photosDir, "${photoType.name.lowercase()}_$fileName")
+
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(destFile).use { output ->
+                input.copyTo(output)
+            }
+        } ?: throw IllegalArgumentException("Cannot open URI: $uri")
+
+        return destFile.absolutePath
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String? {
+        var name: String? = null
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) name = cursor.getString(index)
+            }
         }
+        return name
     }
 
-    fun shouldSavePhoto(type: PhotoType): Boolean = when (type) {
-        PhotoType.EXPENSE -> true
-        PhotoType.FUEL -> prefs.getBoolean("save_fuel_photos", false)
-    }
-
-    suspend fun savePhoto(photoUri: Uri, filename: String, type: PhotoType): String? = withContext(Dispatchers.IO) {
-        if (!shouldSavePhoto(type)) return@withContext null
-        getCurrentProvider().uploadPhoto(photoUri, filename)
-    }
+    fun getPhotoFile(photoUrl: String): File = File(photoUrl)
 }
