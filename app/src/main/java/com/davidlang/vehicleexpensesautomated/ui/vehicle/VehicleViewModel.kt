@@ -37,11 +37,10 @@ class VehicleViewModel @Inject constructor(
             val vehicle = _vehicles.value.find { it.id == vehicleId } ?: return@launch
             val updated = vehicle.copy(referenceDashPhotoUrl = photoUrl)
             vehicleRepository.updateVehicle(updated)
-            // refresh is automatic via Flow
+            // Flow will auto-refresh the list
         }
     }
 
-    // NEW: for "Is this a new vehicle?" flow
     fun createNewVehicleWithReference(
         make: String,
         model: String,
@@ -57,11 +56,9 @@ class VehicleViewModel @Inject constructor(
                 year = year,
                 licensePlate = licensePlate,
                 referenceDashPhotoUrl = referenceDashPhotoUrl
-                // notes or vin can be empty for now
             )
             val newId = vehicleRepository.insertVehicle(newVehicle)
-            // TODO: you can store the initial odometer in a separate table or note field later
-            // For now we just create the vehicle with the reference photo
+            // initialOdometer can be stored later in a FuelEntry or notes field
         }
     }
 }
