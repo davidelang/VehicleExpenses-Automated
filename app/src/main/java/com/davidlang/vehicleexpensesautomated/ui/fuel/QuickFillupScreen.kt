@@ -25,13 +25,7 @@ fun QuickFillupScreen(
     val context = LocalContext.current
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-
-    // VehicleRepository is NOT a ViewModel → cannot use hiltViewModel() directly
-    // (this was the source of the lint/compile noise)
-    // In a real app you would expose it from a dedicated QuickFillupViewModel or FuelViewModel.
-    // For now we keep the placeholder logic (auto-match always picks first vehicle).
-    val vehicleRepository: VehicleRepository = hiltViewModel() // ← will be replaced in next step
-
+    val vehicleRepository: VehicleRepository = hiltViewModel()
     val scope = rememberCoroutineScope()
 
     var vehicles by remember { mutableStateOf<List<Vehicle>>(emptyList()) }
@@ -50,7 +44,8 @@ fun QuickFillupScreen(
         }
     }
 
-    // Auto-match vehicle when dash photo is taken (no extra button needed)
+    // Auto-match vehicle when a new dash photo is taken
+    // (uses the SAME PhotoPicker you already have — no extra "scan dash" button needed)
     LaunchedEffect(photoUrl) {
         photoUrl?.let {
             if (vehicles.isNotEmpty()) {
@@ -82,7 +77,7 @@ fun QuickFillupScreen(
                 label = { Text("Vehicle") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                 readOnly = true,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
             )
@@ -126,7 +121,7 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Same PhotoPicker you already use — this is the “dash scan”
+        // The SAME PhotoPicker you already use — this is your odometer/dash scan
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
