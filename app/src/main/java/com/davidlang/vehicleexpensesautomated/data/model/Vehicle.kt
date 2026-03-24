@@ -1,5 +1,4 @@
 package com.davidlang.vehicleexpensesautomated.data.model
-
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -11,5 +10,6 @@ data class Vehicle(
     val year: Int,
     val licensePlate: String,
     val vin: String? = null,
-    val notes: String? = null
+    val notes: String? = null,
+    val referenceDashPhotoUrl: String? = null   // ← Added for auto dash-photo matching
 )
