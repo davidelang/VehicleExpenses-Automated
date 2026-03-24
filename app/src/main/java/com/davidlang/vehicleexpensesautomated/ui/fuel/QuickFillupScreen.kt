@@ -10,25 +10,37 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @Composable
 fun QuickFillupScreen(
-    vehicleId: Int,
     navController: NavHostController
 ) {
     val context = LocalContext.current
-    val viewModel: FuelViewModel = hiltViewModel()
+    val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val vehicleRepository: VehicleRepository = hiltViewModel()  // <-- we inject the repository directly
     val scope = rememberCoroutineScope()
 
+    var vehicles by remember { mutableStateOf<List<Vehicle>>(emptyList()) }
+    var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
     var odometer by remember { mutableStateOf("") }
     var gallons by remember { mutableStateOf("") }
     var cost by remember { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf<String?>(null) }
+
+    // Load vehicles once
+    LaunchedEffect(Unit) {
+        vehicles = vehicleRepository.getAllVehicles().first()
+        if (vehicles.isNotEmpty()) selectedVehicle = vehicles.first()
+    }
 
     Column(
         modifier = Modifier
@@ -36,6 +48,22 @@ fun QuickFillupScreen(
             .padding(16.dp)
     ) {
         Text("Quick Fill-up", style = MaterialTheme.typography.headlineMedium)
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Vehicle selector
+        ExposedDropdownMenuBox(
+            expanded = false,  // you can make it expandable if you want
+            onExpandedChange = {}
+        ) {
+            OutlinedTextField(
+                value = selectedVehicle?.let { "${it.make} ${it.model} (${it.year})" } ?: "Select vehicle",
+                onValueChange = {},
+                label = { Text("Vehicle") },
+                modifier = Modifier.fillMaxWidth(),
+                readOnly = true
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -75,6 +103,7 @@ fun QuickFillupScreen(
         ) {
             Button(
                 onClick = {
+                    val vehicleId = selectedVehicle?.id ?: 1
                     scope.launch {
                         val entry = FuelEntry(
                             vehicleId = vehicleId,
@@ -84,8 +113,8 @@ fun QuickFillupScreen(
                             timestamp = System.currentTimeMillis(),
                             photoUrl = photoUrl
                         )
-                        viewModel.saveFuel(entry)
-                        Toast.makeText(context, "✅ Fill-up saved successfully", Toast.LENGTH_SHORT).show()
+                        fuelViewModel.saveFuel(entry)
+                        Toast.makeText(context, "✅ Fill-up saved", Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier.weight(1f)
@@ -94,7 +123,10 @@ fun QuickFillupScreen(
             }
 
             Button(
-                onClick = { navController.navigate("expense/$vehicleId") },
+                onClick = {
+                    val vehicleId = selectedVehicle?.id ?: 1
+                    navController.navigate("expense/$vehicleId")
+                },
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Add Expense")
