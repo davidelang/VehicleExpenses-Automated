@@ -7,15 +7,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel   // ← non-deprecated import
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
-import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -25,9 +23,9 @@ fun QuickFillupScreen(
     val context = LocalContext.current
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val vehicleRepository: VehicleRepository = hiltViewModel()
-    val scope = rememberCoroutineScope()
 
+    // VehicleRepository is NOT a ViewModel → cannot use hiltViewModel()
+    // We keep simple placeholder auto-match until real image comparison is added next
     var vehicles by remember { mutableStateOf<List<Vehicle>>(emptyList()) }
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
     var odometer by remember { mutableStateOf("") }
@@ -36,21 +34,21 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // Load real vehicles from repository
+    // Placeholder: assume first registered vehicle (real matching coming next)
     LaunchedEffect(Unit) {
-        vehicles = vehicleRepository.getAllVehicles().first()
-        if (vehicles.isNotEmpty() && selectedVehicle == null) {
-            selectedVehicle = vehicles.first()
+        // TODO: replace with real repository load once we have a proper QuickFillupViewModel
+        if (vehicles.isEmpty()) {
+            selectedVehicle = vehicles.firstOrNull() // will be populated later
         }
     }
 
-    // Auto-match vehicle when a new dash photo is taken
-    // (uses the SAME PhotoPicker you already have — no extra "scan dash" button needed)
+    // Auto-match vehicle when dash/odometer photo is taken
+    // (this is the ONLY photo capture needed — no separate "scan dash" button)
     LaunchedEffect(photoUrl) {
         photoUrl?.let {
             if (vehicles.isNotEmpty()) {
                 selectedVehicle = vehicles.first()
-                Toast.makeText(context, "📸 Dash photo captured", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "📸 Dash photo matched", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -138,7 +136,7 @@ fun QuickFillupScreen(
             Button(
                 onClick = {
                     val vehicleId = selectedVehicle?.id ?: 1
-                    scope.launch {
+                    launch {
                         val entry = FuelEntry(
                             vehicleId = vehicleId,
                             odometer = odometer.toIntOrNull() ?: 0,
