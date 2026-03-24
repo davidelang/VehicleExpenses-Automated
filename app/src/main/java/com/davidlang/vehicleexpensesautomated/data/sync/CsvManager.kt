@@ -23,7 +23,7 @@ import javax.inject.Singleton
 
 @Singleton
 class CsvManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,   // <-- this silences the future-target warning
     private val vehicleRepository: VehicleRepository,
     private val expenseRepository: ExpenseEntryRepository,
     private val fuelRepository: FuelEntryRepository
@@ -32,49 +32,58 @@ class CsvManager @Inject constructor(
     private val downloadsDir = context.getExternalFilesDir("Downloads")!!
 
     suspend fun exportToZip(): Uri = withContext(Dispatchers.IO) {
-        val zipFile = File(downloadsDir, "vehicle_expenses_backup_${System.currentTimeMillis()}.zip")
-        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-            // Vehicles - single tab
-            writeCsvToZip(zos, "Vehicles.csv") { getVehiclesCsv() }
+        val vehiclesCsv = getVehiclesCsv()
+        val allExpenses = expenseRepository.getAllEntries().first()
+        val allFuel = fuelRepository.getAllEntries().first()
 
-            // Expenses - one tab per vehicle
-            val allExpenses = expenseRepository.getAllEntries().first()
+        val zipFile = File(downloadsDir, "vehicle_expenses_backup_${System.currentTimeMillis()}.zip")
+
+        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+            writeCsvToZip(zos, "Vehicles.csv", vehiclesCsv)
+
             allExpenses.groupBy { it.vehicleId }.forEach { (vehicleId, entries) ->
-                writeCsvToZip(zos, "Expenses - Vehicle $vehicleId.csv") { getExpensesCsvForVehicle(entries) }
+                val csv = getExpensesCsvForVehicle(entries)
+                writeCsvToZip(zos, "Expenses - Vehicle $vehicleId.csv", csv)
             }
 
-            // Fuel - one tab per vehicle
-            val allFuel = fuelRepository.getAllEntries().first()
             allFuel.groupBy { it.vehicleId }.forEach { (vehicleId, entries) ->
-                writeCsvToZip(zos, "Fuel - Vehicle $vehicleId.csv") { getFuelCsvForVehicle(entries) }
+                val csv = getFuelCsvForVehicle(entries)
+                writeCsvToZip(zos, "Fuel - Vehicle $vehicleId.csv", csv)
             }
         }
-        Log.i("CsvManager", "✅ Exported ZIP with exact Google Sheets structure (per-vehicle tabs)")
+
+        Log.i("CsvManager", "✅ Exported ZIP with exact Google Sheets structure")
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
     }
 
     private suspend fun getVehiclesCsv(): String {
         val vehicles = vehicleRepository.getAllVehicles().first()
         val sb = StringBuilder("ID,Make,Model,Year,License Plate,VIN,Notes\n")
-        vehicles.forEach { sb.append("${it.id},${it.make},${it.model},${it.year},${it.licensePlate},${it.vin ?: ""},${it.notes ?: ""}\n") }
+        vehicles.forEach {
+            sb.append("${it.id},${it.make},${it.model},${it.year},${it.licensePlate},${it.vin ?: ""},${it.notes ?: ""}\n")
+        }
         return sb.toString()
     }
 
     private fun getExpensesCsvForVehicle(entries: List<ExpenseEntry>): String {
         val sb = StringBuilder("ID,Vehicle ID,Amount,Description,Date,Photo URL\n")
-        entries.forEach { sb.append("${it.id},${it.vehicleId},${it.amount},${it.description},${it.date},${it.photoUrl ?: ""}\n") }
+        entries.forEach {
+            sb.append("${it.id},${it.vehicleId},${it.amount},${it.description},${it.date},${it.photoUrl ?: ""}\n")
+        }
         return sb.toString()
     }
 
     private fun getFuelCsvForVehicle(entries: List<FuelEntry>): String {
         val sb = StringBuilder("ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL\n")
-        entries.forEach { sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""}\n") }
+        entries.forEach {
+            sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""}\n")
+        }
         return sb.toString()
     }
 
-    private fun writeCsvToZip(zos: ZipOutputStream, filename: String, csvContent: () -> String) {
+    private fun writeCsvToZip(zos: ZipOutputStream, filename: String, content: String) {
         zos.putNextEntry(ZipEntry(filename))
-        zos.write(csvContent().toByteArray())
+        zos.write(content.toByteArray())
         zos.closeEntry()
     }
 
@@ -92,7 +101,7 @@ class CsvManager @Inject constructor(
                 }
             }
         }
-        Log.i("CsvManager", "✅ Imported from CSV ZIP (per-vehicle Expenses + Fuel supported)")
+        Log.i("CsvManager", "✅ Imported from CSV ZIP")
     }
 
     private suspend fun importVehiclesCsv(stream: java.io.InputStream) {
