@@ -1,5 +1,4 @@
 # Vehicle Expenses Automated
-
 Android app for tracking vehicle expenses and fuel with **optional two-way Google Sheets sync** using your device's Google account.
 
 ## Features
@@ -17,4 +16,6 @@ Apache License 2.0 — see [LICENSE](LICENSE)
 - [Privacy Policy](PRIVACY.md)
 
 ## Repository
+The full source code is available in this public GitHub repository:
+
 https://github.com/davidelang/VehicleExpenses-Automated
