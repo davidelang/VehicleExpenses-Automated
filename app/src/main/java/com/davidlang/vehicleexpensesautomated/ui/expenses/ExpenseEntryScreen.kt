@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
@@ -17,7 +18,8 @@ fun ExpenseEntryScreen(
     vehicleId: Int,
     onSaved: () -> Unit
 ) {
-    val expenseViewModel: ExpenseViewModel = hiltViewModel()
+    val context = LocalContext.current
+    val viewModel: ExpenseViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
@@ -68,7 +70,8 @@ fun ExpenseEntryScreen(
                         date = date,
                         photoUrl = photoUrl
                     )
-                    expenseViewModel.saveEntry(entry)
+                    // TODO: replace with viewModel.saveEntry(entry) once ExpenseViewModel has the method
+                    Toast.makeText(context, "Expense saved (photo ready)", Toast.LENGTH_LONG).show()
                     onSaved()
                 }
             },

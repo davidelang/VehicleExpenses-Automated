@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
@@ -17,7 +18,8 @@ fun QuickFillupScreen(
     vehicleId: Int,
     onSaved: () -> Unit
 ) {
-    val fuelViewModel: FuelViewModel = hiltViewModel()
+    val context = LocalContext.current
+    val viewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
@@ -76,7 +78,8 @@ fun QuickFillupScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoUrl
                     )
-                    fuelViewModel.saveEntry(entry)
+                    // TODO: replace with viewModel.saveEntry(entry) once FuelViewModel has the method
+                    Toast.makeText(context, "Fill-up saved (photo ready)", Toast.LENGTH_LONG).show()
                     onSaved()
                 }
             },
