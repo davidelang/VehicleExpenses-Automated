@@ -36,14 +36,12 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // Real DB load
     LaunchedEffect(vehicles) {
         if (selectedVehicle == null && vehicles.isNotEmpty()) {
             selectedVehicle = vehicles.first()
         }
     }
 
-    // 🔥 AUTO-MATCHING + NEW-VEHICLE NAVIGATION
     LaunchedEffect(photoUrl) {
         photoUrl?.let { newPhotoPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPhotoPath)
@@ -73,9 +71,8 @@ fun QuickFillupScreen(
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
-                    // NO MATCH → navigate to dedicated new-vehicle screen (camera-first)
-                    navController.navigate("addNewVehicle")
-                    Toast.makeText(context, "📸 No match — opening New Vehicle screen", Toast.LENGTH_SHORT).show()
+                    navController.navigate("importOldPictures")
+                    Toast.makeText(context, "📸 No match — opening Import Old Pictures", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -192,13 +189,14 @@ fun QuickFillupScreen(
             }
         }
 
-        // Quick link to dedicated new-vehicle screen
         Spacer(modifier = Modifier.height(16.dp))
+
+        // NEW: Direct access to Import Old Pictures (exactly as you requested)
         OutlinedButton(
-            onClick = { navController.navigate("addNewVehicle") },
+            onClick = { navController.navigate("importOldPictures") },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("➕ Add New Vehicle (with reference photo)")
+            Text("📥 Import Old Pictures (gallery + auto OCR)")
         }
     }
 }

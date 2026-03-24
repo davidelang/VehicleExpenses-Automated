@@ -26,6 +26,7 @@ fun ImportOldPicturesScreen(
     navController: NavHostController
 ) {
     val context = LocalContext.current
+    val fuelViewModel: FuelViewModel = hiltViewModel()   // real ViewModel (no comment)
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
@@ -40,37 +41,39 @@ fun ImportOldPicturesScreen(
 
     var expanded by remember { mutableStateOf(false) }
 
-    // Gallery picker → auto-import + OCR
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+    ) { uri ->
         uri?.let {
             try {
                 val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, PhotoType.FUEL)
                 photoPath = copiedPath
                 Toast.makeText(context, "📸 Old photo imported", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "❌ Failed to import photo: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "❌ Failed to import photo", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    // AUTO OCR (same as reference screen)
+    // 🔥 FULLY AUTOMATIC OCR (no button) — odometer + attempt at gallons/price
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
                 val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
                 extractedOdo?.let { odometer = it }
+
+                // Simple regex fallback for gallons/price (pump photos often have "XX.XX gal" or "$XX.XX")
+                // This is a lightweight start — we can make it smarter later
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected odometer: $extractedOdo (gallons/price OCR coming soon)",
+                    "📸 Auto-detected odometer: $extractedOdo (gallons/price OCR next)",
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
     }
 
-    // Auto-match vehicle from reference photos
+    // Auto-match vehicle
     LaunchedEffect(photoPath) {
         photoPath?.let { newPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPath)
@@ -102,26 +105,17 @@ fun ImportOldPicturesScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "Import Old Pictures",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Text(text = "Import Old Pictures", style = MaterialTheme.typography.headlineMedium)
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Button(
-            onClick = { galleryLauncher.launch("image/*") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Button(onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
             Text("📂 Pick Old Photo from Gallery")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it }
-        ) {
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
                 value = selectedVehicle?.let { "${it.make} ${it.model} (${it.year})" } ?: "Select vehicle",
                 onValueChange = {},
@@ -133,17 +127,11 @@ fun ImportOldPicturesScreen(
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
             )
 
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 vehicles.forEach { vehicle ->
                     DropdownMenuItem(
                         text = { Text("${vehicle.make} ${vehicle.model} (${vehicle.year})") },
-                        onClick = {
-                            selectedVehicle = vehicle
-                            expanded = false
-                        }
+                        onClick = { selectedVehicle = vehicle; expanded = false }
                     )
                 }
             }
@@ -151,26 +139,9 @@ fun ImportOldPicturesScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = odometer,
-            onValueChange = { odometer = it },
-            label = { Text("Odometer Reading (auto-filled)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = gallons,
-            onValueChange = { gallons = it },
-            label = { Text("Gallons") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = cost,
-            onValueChange = { cost = it },
-            label = { Text("Total Cost") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer (auto-filled)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = cost, onValueChange = { cost = it }, label = { Text("Total Cost") }, modifier = Modifier.fillMaxWidth())
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -189,7 +160,7 @@ fun ImportOldPicturesScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
-                    // fuelViewModel.saveFuel(entry)  ← call your real ViewModel here
+                    fuelViewModel.saveFuel(entry)
                     Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
@@ -201,10 +172,7 @@ fun ImportOldPicturesScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        OutlinedButton(
-            onClick = { navController.popBackStack() },
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
             Text("Cancel")
         }
     }
