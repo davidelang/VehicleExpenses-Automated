@@ -15,6 +15,7 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -24,9 +25,10 @@ fun QuickFillupScreen(
     val context = LocalContext.current
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
-    var vehicles by remember { mutableStateOf<List<Vehicle>>(emptyList()) }
+    val vehicles by vehicleViewModel.vehicles.collectAsState()
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
     var odometer by remember { mutableStateOf("") }
     var gallons by remember { mutableStateOf("") }
@@ -34,15 +36,14 @@ fun QuickFillupScreen(
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
-    // TODO: Replace with real load from your VehicleRepository/ViewModel
-    LaunchedEffect(Unit) {
-        if (vehicles.isEmpty()) {
-            // vehicles = vehicleRepository.getAllVehicles()
-            selectedVehicle = vehicles.firstOrNull()
+    // Auto-select first vehicle on load (or keep previous selection)
+    LaunchedEffect(vehicles) {
+        if (selectedVehicle == null && vehicles.isNotEmpty()) {
+            selectedVehicle = vehicles.first()
         }
     }
 
-    // 🔥 AUTO-MATCHING: new dash photo vs each vehicle's stored referenceDashPhotoUrl
+    // 🔥 AUTO-MATCHING: new dash photo vs stored reference photos
     LaunchedEffect(photoUrl) {
         photoUrl?.let { newPhotoPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPhotoPath)
@@ -144,13 +145,30 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Camera-first PhotoPicker (no gallery default)
+        // Camera-first PhotoPicker
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
             currentPhotoUrl = photoUrl,
             onPhotoUrlChanged = { photoUrl = it }
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // NEW: Save this fresh photo as the vehicle's reference dashboard photo
+        photoUrl?.let { capturedUrl ->
+            selectedVehicle?.let { vehicle ->
+                Button(
+                    onClick = {
+                        vehicleViewModel.updateReferenceDashPhoto(vehicle.id, capturedUrl)
+                        Toast.makeText(context, "✅ Saved as reference dash photo for ${vehicle.make} ${vehicle.model}", Toast.LENGTH_LONG).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("💾 Save as Reference Dash Photo")
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
