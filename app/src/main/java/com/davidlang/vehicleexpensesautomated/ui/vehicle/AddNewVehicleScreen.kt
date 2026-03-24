@@ -12,6 +12,8 @@ import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import kotlinx.coroutines.launch
 
 @Composable
 fun AddNewVehicleScreen(
@@ -20,12 +22,13 @@ fun AddNewVehicleScreen(
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val scope = rememberCoroutineScope()
 
     var make by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
-    var odometerReading by remember { mutableStateOf("") }   // what user sees in the dash photo
+    var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
 
     Column(
@@ -70,20 +73,40 @@ fun AddNewVehicleScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Camera-first PhotoPicker for reference dashboard photo
+        // Camera-first reference dash photo
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
-            photoType = PhotoType.FUEL,   // we reuse the same type for dash photos
+            photoType = PhotoType.FUEL,
             currentPhotoUrl = referencePhotoUrl,
             onPhotoUrlChanged = { referencePhotoUrl = it }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // OCR button — appears once photo is taken
+        referencePhotoUrl?.let {
+            Button(
+                onClick = {
+                    scope.launch {
+                        val extracted = OdometerOcrUtils.extractOdometerFromPhoto(it)
+                        if (extracted != null) {
+                            odometerReading = extracted
+                            Toast.makeText(context, "📸 OCR found odometer: $extracted", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "📸 No clear odometer reading found — type it manually", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("🔍 Extract Odometer from Photo (ML Kit OCR)")
+            }
+        }
+
         OutlinedTextField(
             value = odometerReading,
             onValueChange = { odometerReading = it },
-            label = { Text("Odometer reading visible in photo") },
+            label = { Text("Odometer reading (auto-filled by OCR)") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -101,9 +124,9 @@ fun AddNewVehicleScreen(
                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                     )
                     Toast.makeText(context, "✅ New vehicle created with reference dash photo", Toast.LENGTH_LONG).show()
-                    navController.popBackStack()   // return to Quick Fill-up
+                    navController.popBackStack()
                 } else {
-                    Toast.makeText(context, "❌ Fill in required fields + take reference photo", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "❌ Make, model, and reference photo required", Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier.fillMaxWidth()
