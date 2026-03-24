@@ -1,17 +1,12 @@
 package com.davidlang.vehicleexpensesautomated.data.repository
 
-import com.davidlang.vehicleexpensesautomated.data.local.FuelDao
-import com.davidlang.vehicleexpensesautomated.data.model.FuelFillup
+import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
+import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 
-class FuelRepository @Inject constructor(private val dao: FuelDao) {
-
-    suspend fun saveFillup(fillup: FuelFillup) {
-        dao.insert(fillup)
-    }
-
-    fun getFillupsForVehicle(vehicleId: Int): Flow<List<FuelFillup>> = dao.getFillupsForVehicle(vehicleId)
-
-    fun getAllFuelFills(): Flow<List<FuelFillup>> = dao.getAllFuelFills()
+class FuelRepository @Inject constructor(private val dao: FuelEntryDao) {
+    suspend fun saveEntry(entry: FuelEntry) = dao.insert(entry)
+    fun getEntriesForVehicle(vehicleId: Int): Flow<List<FuelEntry>> = dao.getEntriesForVehicle(vehicleId)
+    fun getAllEntries(): Flow<List<FuelEntry>> = dao.getAllEntries()
 }
