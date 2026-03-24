@@ -9,5 +9,6 @@ data class ExpenseEntry(
     val vehicleId: Int,
     val amount: Double,
     val description: String,
-    val date: Long
+    val date: Long,
+    val photoUrl: String? = null   // ← NEW: stores Drive public URL
 )
