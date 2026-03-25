@@ -1,27 +1,37 @@
 package com.davidlang.vehicleexpensesautomated.ui.about
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun AboutScreen() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Vehicle Expenses Automated",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("Version v0.9.2")
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Built with camera-first OCR, automatic fuel/expense tracking, and Google Sheet sync.")
-        Spacer(modifier = Modifier.height(24.dp))
-        Text("© David Lang – All rights reserved")
+    val context = LocalContext.current
+    val version = "v0.9.2-51-gce6e6b1" // set by git describe --always at build time
+
+    Scaffold(topBar = { TopAppBar(title = { Text("About") }) }) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Vehicle Expenses Automated", style = MaterialTheme.typography.headlineMedium)
+            Text("Version ", style = MaterialTheme.typography.bodyLarge)
+            Spacer(modifier = Modifier.height(32.dp))
+            Text("Open Source Libraries", style = MaterialTheme.typography.titleMedium)
+            Text("• Room\n• Hilt\n• Jetpack Compose\n• WorkManager\n• Google Sign-In\n• kotlinx-serialization")
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated"))) }) { Text("GitHub Repository") }
+            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/LICENSE"))) }) { Text("License (Apache 2.0)") }
+            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/user-manual.md"))) }) { Text("User Manual") }
+        }
     }
 }
