@@ -24,7 +24,7 @@ class GoogleSheetsClient @Inject constructor(
 
     private suspend fun getSheetsService(): Sheets = withContext(Dispatchers.IO) {
         val account: GoogleSignInAccount? = GoogleSignIn.getLastSignedInAccount(context)
-        if (account == null) throw IllegalStateException("No Google account signed in")
+        if (account == null) throw IllegalStateException("No Google account signed in for sync")
         val credential = GoogleAccountCredential.usingOAuth2(context, listOf("https://www.googleapis.com/auth/spreadsheets"))
         credential.selectedAccount = account.account
         Sheets.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
@@ -93,6 +93,48 @@ class GoogleSheetsClient @Inject constructor(
         vehicles
     }
 
-    // Similar pullFuelEntries and pullExpenseEntries can be added later if needed
-    // For now the push is the main bidirectional part (pull is stubbed in SyncWorker)
+    suspend fun pullFuelEntries(sheetId: String): List<FuelEntry> = withContext(Dispatchers.IO) {
+        val service = getSheetsService()
+        val response = service.spreadsheets().values().get(sheetId, "Fuel_entries!A:Z").execute()
+        val rows = response.getValues() ?: return@withContext emptyList()
+        val entries = mutableListOf<FuelEntry>()
+        for (i in 1 until rows.size) {
+            val row = rows[i]
+            if (row.size >= 8) {
+                entries.add(FuelEntry(
+                    id = row[0].toString().toLongOrNull() ?: 0,
+                    vehicleId = row[1].toString().toIntOrNull() ?: 0,
+                    odometer = row[2].toString().toIntOrNull() ?: 0,
+                    gallons = row[3].toString().toDoubleOrNull() ?: 0.0,
+                    cost = row[4].toString().toDoubleOrNull() ?: 0.0,
+                    timestamp = row[5].toString().toLongOrNull() ?: System.currentTimeMillis(),
+                    photoUrl = row[6].toString().ifBlank { null },
+                    isPartialFill = row[7].toString().toBoolean()
+                ))
+            }
+        }
+        entries
+    }
+
+    suspend fun pullExpenseEntries(sheetId: String): List<ExpenseEntry> = withContext(Dispatchers.IO) {
+        val service = getSheetsService()
+        val response = service.spreadsheets().values().get(sheetId, "Expense_entries!A:Z").execute()
+        val rows = response.getValues() ?: return@withContext emptyList()
+        val entries = mutableListOf<ExpenseEntry>()
+        for (i in 1 until rows.size) {
+            val row = rows[i]
+            if (row.size >= 7) {
+                entries.add(ExpenseEntry(
+                    id = row[0].toString().toLongOrNull() ?: 0,
+                    vehicleId = row[1].toString().toIntOrNull() ?: 0,
+                    date = row[2].toString().toLongOrNull() ?: System.currentTimeMillis(),
+                    amount = row[3].toString().toDoubleOrNull() ?: 0.0,
+                    category = row[4].toString(),
+                    description = row[5].toString(),
+                    receiptImagePath = row[6].toString().ifBlank { null }
+                ))
+            }
+        }
+        entries
+    }
 }
