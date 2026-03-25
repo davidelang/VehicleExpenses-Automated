@@ -10,5 +10,7 @@ data class ExpenseEntry(
     val amount: Double,
     val description: String,
     val date: Long,
-    val photoUrl: String? = null   // ← NEW: stores Drive public URL
+    val photoUrl: String? = null,
+    val category: String = "Other",
+    val receiptImagePath: String? = null
 )

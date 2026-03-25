@@ -37,7 +37,6 @@ fun SettingsScreen() {
     var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", false)) }
     var photoProviderPref by remember { mutableStateOf(prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive") }
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
-    var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
 
     var status by remember { mutableStateOf("Ready") }
 
@@ -49,7 +48,7 @@ fun SettingsScreen() {
         uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
     }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold, darkModePref) {
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold) {
         prefs.edit().apply {
             putString("sheet_id", sheetId)
             putBoolean("sync_enabled", syncEnabled)
@@ -60,7 +59,6 @@ fun SettingsScreen() {
             putBoolean("save_fuel_photos", saveFuelPhotos)
             putString("photo_storage_provider", photoProviderPref)
             putFloat("ocr_confidence_threshold", ocrConfidenceThreshold)
-            putString("dark_mode", darkModePref)
             apply()
         }
     }
@@ -80,19 +78,6 @@ fun SettingsScreen() {
         SliderSetting("Sync Frequency (hours)", frequencyHours.toFloat(), 1f..24f) { frequencyHours = it.toInt() }
         SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { saveFuelPhotos = it }
         SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) { ocrConfidenceThreshold = it }
-
-        Text("Dark Mode", style = MaterialTheme.typography.titleMedium)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = darkModePref == "system", onClick = { darkModePref = "system" })
-            Text("Match System")
-            Spacer(modifier = Modifier.width(8.dp))
-            RadioButton(selected = darkModePref == "on", onClick = { darkModePref = "on" })
-            Text("On")
-            Spacer(modifier = Modifier.width(8.dp))
-            RadioButton(selected = darkModePref == "off", onClick = { darkModePref = "off" })
-            Text("Off")
-        }
-
         Text("Photo Storage Provider", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             RadioButton(selected = photoProviderPref == "google_drive", onClick = { photoProviderPref = "google_drive" })
@@ -101,7 +86,6 @@ fun SettingsScreen() {
             RadioButton(selected = photoProviderPref == "none", onClick = { photoProviderPref = "none" })
             Text("None")
         }
-
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }) { Text("Export to CSV (ZIP)") }
         Button(onClick = { importLauncher.launch("*/*") }) { Text("Import from CSV ZIP") }

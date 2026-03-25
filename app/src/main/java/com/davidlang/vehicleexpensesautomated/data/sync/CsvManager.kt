@@ -74,7 +74,7 @@ class CsvManager @Inject constructor(
     }
 
     private fun getFuelCsvForVehicle(entries: List<FuelEntry>): String {
-        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Gallons,Price Per Gallon,Total Cost,Station,Notes,Partial Fill\n")
+        val sb = StringBuilder("ID,Vehicle ID,Date,Gallons,Cost,Partial Fill\n")
         entries.forEach {
             sb.append("${it.id},${it.vehicleId},${it.timestamp},${it.gallons},${it.cost},${it.isPartialFill}\n")
         }
@@ -86,5 +86,9 @@ class CsvManager @Inject constructor(
         zos.putNextEntry(entry)
         zos.write(csvContent.toByteArray())
         zos.closeEntry()
+    }
+
+    suspend fun importFromZip(uri: Uri) {
+        // TODO: implement import later
     }
 }

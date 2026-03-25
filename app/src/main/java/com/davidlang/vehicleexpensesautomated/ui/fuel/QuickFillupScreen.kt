@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -35,7 +36,6 @@ fun QuickFillupScreen(
     var cost by remember { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
-    var isPartialFill by remember { mutableStateOf(false) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicle == null && vehicles.isNotEmpty()) {
@@ -88,22 +88,6 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Camera takes exactly half the screen
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            PhotoPicker(
-                photoStorageManager = settingsViewModel.photoStorageManager,
-                photoType = PhotoType.FUEL,
-                currentPhotoUrl = photoUrl,
-                onPhotoUrlChanged = { photoUrl = it }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = it }
@@ -135,6 +119,8 @@ fun QuickFillupScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
         OutlinedTextField(
             value = odometer,
             onValueChange = { odometer = it },
@@ -156,13 +142,12 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = isPartialFill,
-                onCheckedChange = { isPartialFill = it }
-            )
-            Text("Partial fill (top off only)")
-        }
+        PhotoPicker(
+            photoStorageManager = settingsViewModel.photoStorageManager,
+            photoType = PhotoType.FUEL,
+            currentPhotoUrl = photoUrl,
+            onPhotoUrlChanged = { photoUrl = it }
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -176,12 +161,10 @@ fun QuickFillupScreen(
                         gallons = gallons.toDoubleOrNull() ?: 0.0,
                         cost = cost.toDoubleOrNull() ?: 0.0,
                         timestamp = System.currentTimeMillis(),
-                        photoUrl = photoUrl,
-                        isPartialFill = isPartialFill
+                        photoUrl = photoUrl
                     )
                     fuelViewModel.saveFuel(entry)
                     Toast.makeText(context, "Fill-up saved", Toast.LENGTH_SHORT).show()
-                    isPartialFill = false // reset after save
                 }
             },
             modifier = Modifier.fillMaxWidth()
