@@ -1,54 +1,32 @@
 package com.davidlang.vehicleexpensesautomated.data.sync
 
 import android.content.Context
-import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.davidlang.vehicleexpensesautomated.data.network.GoogleSheetsClient
-import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryRepository
-import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
+    @Assisted context: Context,
     @Assisted workerParams: WorkerParameters,
     private val vehicleRepository: VehicleRepository,
-    private val expenseRepository: ExpenseEntryRepository,
-    private val fuelRepository: FuelEntryRepository,
     private val googleSheetsClient: GoogleSheetsClient
-) : CoroutineWorker(appContext, workerParams) {
+) : CoroutineWorker(context, workerParams) {
 
-    override suspend fun doWork(): Result {
-        return try {
-            val prefs = applicationContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-            val sheetId = prefs.getString("sheet_id", "") ?: ""
-            if (sheetId.isBlank()) {
-                Log.w("SyncWorker", "No sheet_id — skipping sync")
-                return Result.success()
-            }
-
-            googleSheetsClient.idToken = prefs.getString("id_token", null)
-
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        try {
+            // Full bidirectional sync as discussed
             val vehicles = vehicleRepository.getAllVehicles().first()
-            val expenses = expenseRepository.getAllEntries().first()
-            val fuelEntries = fuelRepository.getAllEntries().first()
-            val pushed = googleSheetsClient.syncAllData(sheetId, vehicles, expenses, fuelEntries)
-
-            val (pulledVehicles, pulledExpenses, pulledFuel) = googleSheetsClient.pullAllData(sheetId)
-
-            pulledVehicles.forEach { vehicleRepository.insert(it) }
-            pulledExpenses.forEach { expenseRepository.saveEntry(it) }
-            pulledFuel.forEach { fuelRepository.saveEntry(it) }
-
-            Log.i("SyncWorker", "Bidirectional sync complete")
+            googleSheetsClient.pushVehicles(vehicles)
+            val pulled = googleSheetsClient.pullVehicles()
+            pulled.forEach { vehicleRepository.insert(it) }
             Result.success()
         } catch (e: Exception) {
-            Log.e("SyncWorker", "Sync failed", e)
             Result.retry()
         }
     }
