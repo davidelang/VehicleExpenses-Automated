@@ -25,21 +25,28 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Make migration idempotent so it never fails with "duplicate column"
-                // on devices where the column was already present but version was still 2
-                val cursor = db.query("PRAGMA table_info(fuel_entries)")
-                val columnExists = cursor.use { c ->
-                    var exists = false
-                    while (c.moveToNext()) {
-                        if (c.getString(1) == "isPartialFill") {
-                            exists = true
-                            break
+                // idempotent helper
+                fun columnExists(table: String, column: String): Boolean {
+                    val cursor = db.query("PRAGMA table_info($table)")
+                    return cursor.use { c ->
+                        while (c.moveToNext()) {
+                            if (c.getString(1) == column) return true
                         }
+                        false
                     }
-                    exists
                 }
-                if (!columnExists) {
+
+                // fuel_entries (isPartialFill – the recent change)
+                if (!columnExists("fuel_entries", "isPartialFill")) {
                     db.execSQL("ALTER TABLE fuel_entries ADD COLUMN isPartialFill INTEGER NOT NULL DEFAULT 0")
+                }
+
+                // expense_entries – these two columns were added to the entity but never migrated
+                if (!columnExists("expense_entries", "category")) {
+                    db.execSQL("ALTER TABLE expense_entries ADD COLUMN category TEXT NOT NULL DEFAULT 'Other'")
+                }
+                if (!columnExists("expense_entries", "receiptImagePath")) {
+                    db.execSQL("ALTER TABLE expense_entries ADD COLUMN receiptImagePath TEXT")
                 }
             }
         }
