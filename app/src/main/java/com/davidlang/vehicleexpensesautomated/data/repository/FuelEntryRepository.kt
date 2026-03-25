@@ -1,12 +1,21 @@
 package com.davidlang.vehicleexpensesautomated.data.repository
 
-import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.storage.FuelEntryDao
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
+import javax.inject.Singleton
 
-class FuelEntryRepository @Inject constructor(private val dao: FuelEntryDao) {
-    suspend fun saveEntry(entry: FuelEntry) = dao.insert(entry)
-    fun getEntriesForVehicle(vehicleId: Int): Flow<List<FuelEntry>> = dao.getEntriesForVehicle(vehicleId)
-    fun getAllEntries(): Flow<List<FuelEntry>> = dao.getAllEntries()
+@Singleton
+class FuelEntryRepository @Inject constructor(
+    private val fuelEntryDao: FuelEntryDao
+) {
+
+    fun getAllFuelEntries(): Flow<List<FuelEntry>> = fuelEntryDao.getAllFuelEntries()
+
+    suspend fun insertFuelEntry(entry: FuelEntry) = fuelEntryDao.insertFuelEntry(entry)
+
+    suspend fun updateFuelEntry(entry: FuelEntry) = fuelEntryDao.updateFuelEntry(entry)
+
+    suspend fun deleteFuelEntry(entry: FuelEntry) = fuelEntryDao.deleteFuelEntry(entry)
 }
