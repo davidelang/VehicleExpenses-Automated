@@ -2,7 +2,6 @@
 ## High Priority (next)
 ## Medium Priority
 - Full ExpenseEntry screen with receipt OCR.
-- Add settings toggle for OCR confidence threshold.
 ## Low Priority / Future
 - ODB-II integration for live odometer.
 - Advanced reports and charts.
@@ -23,4 +22,5 @@
 - CAMERA permission requested on launch in MainActivity.kt (app continues if denied)
 - Updated user-manual.md and developer-guide.md to match current functionality
 - Make Import Old Pictures screen use the real FuelViewModel.saveFuel() call instead of placeholder Toast.
+- Add settings toggle for OCR confidence threshold.
 Last updated: 2026-03-24
