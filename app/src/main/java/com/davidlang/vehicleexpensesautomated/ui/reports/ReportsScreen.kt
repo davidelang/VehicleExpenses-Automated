@@ -66,11 +66,11 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Fuel Trends – visual bars (Double coerceIn)
+        // Fuel Trends – visual bars (Double -> Float for fillMaxWidth)
         Text("Fuel Cost Trends (last 5 entries)", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(fuelEntries.takeLast(5).reversed()) { entry ->
-                val barWidth = (entry.cost / (totalFuelCost + 0.01)).coerceIn(0.0, 1.0)
+                val barWidth = (entry.cost / (totalFuelCost + 0.01)).coerceIn(0.0, 1.0).toFloat()
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                     Text("$${entry.cost} (${entry.gallons} gal)", modifier = Modifier.width(120.dp))
                     Box(
@@ -92,11 +92,11 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Expense Breakdown – visual bars (Double coerceIn)
+        // Expense Breakdown – visual bars (Double -> Float for fillMaxWidth)
         Text("Expenses by Category", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(categoryTotals.entries.toList()) { (cat, total) ->
-                val barWidth = (total / (totalExpenses + 0.01)).coerceIn(0.0, 1.0)
+                val barWidth = (total / (totalExpenses + 0.01)).coerceIn(0.0, 1.0).toFloat()
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                     Text("$cat: $${"%.2f".format(total)}", modifier = Modifier.width(140.dp))
                     Box(
