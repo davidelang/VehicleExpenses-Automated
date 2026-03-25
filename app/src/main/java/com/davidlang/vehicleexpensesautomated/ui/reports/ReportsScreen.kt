@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,7 +30,7 @@ fun ReportsScreen(navController: NavHostController) {
     val partialFills = fuelEntries.count { it.isPartialFill }
     val totalFillUps = fuelEntries.size
 
-    // MPG from last two full fills (exact fields: odometer, gallons, timestamp)
+    // MPG from last two full fills
     val avgMpg = if (fuelEntries.size >= 2) {
         val sorted = fuelEntries.sortedBy { it.timestamp }.filter { !it.isPartialFill }
         if (sorted.size >= 2) {
@@ -69,7 +70,7 @@ fun ReportsScreen(navController: NavHostController) {
         Text("Fuel Cost Trends (last 5 entries)", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(fuelEntries.takeLast(5).reversed()) { entry ->
-                val barWidth = (entry.cost / (totalFuelCost + 0.01)).coerceIn(0f, 1f)
+                val barWidth = (entry.cost / (totalFuelCost + 0.01)).coerceIn(0.0, 1.0)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                     Text("$${entry.cost} (${entry.gallons} gal)", modifier = Modifier.width(120.dp))
                     Box(
@@ -95,7 +96,7 @@ fun ReportsScreen(navController: NavHostController) {
         Text("Expenses by Category", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(categoryTotals.entries.toList()) { (cat, total) ->
-                val barWidth = (total / (totalExpenses + 0.01)).coerceIn(0f, 1f)
+                val barWidth = (total / (totalExpenses + 0.01)).coerceIn(0.0, 1.0)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                     Text("$cat: $${"%.2f".format(total)}", modifier = Modifier.width(140.dp))
                     Box(
