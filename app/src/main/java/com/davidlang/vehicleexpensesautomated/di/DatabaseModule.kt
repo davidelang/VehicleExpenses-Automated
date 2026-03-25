@@ -26,7 +26,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-        .addMigrations(MIGRATION_1_2)
+        .addMigrations(MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
         .build()
     }
 
