@@ -23,11 +23,9 @@ import kotlinx.coroutines.launch
 fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
-    
     val viewModel: SettingsViewModel = hiltViewModel()
     val csvManager = viewModel.csvManager
     val photoStorageManager = viewModel.photoStorageManager
-
     val scope = rememberCoroutineScope()
 
     var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
@@ -41,26 +39,13 @@ fun SettingsScreen() {
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
 
     var status by remember { mutableStateOf("Ready") }
-    var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        uri?.let {
-            scope.launch {
-                csvManager.exportToZip()
-                status = "Exported to Downloads"
-                Toast.makeText(context, "CSV ZIP exported", Toast.LENGTH_LONG).show()
-            }
-        }
+        uri?.let { scope.launch { csvManager.exportToZip(); status = "Exported"; Toast.makeText(context, "CSV ZIP exported", Toast.LENGTH_LONG).show() } }
     }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            scope.launch {
-                csvManager.importFromZip(uri)
-                status = "Imported from CSV ZIP"
-                Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show()
-            }
-        }
+        uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
     }
 
     LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold) {
@@ -85,30 +70,14 @@ fun SettingsScreen() {
             .verticalScroll(rememberScrollState())
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
-
         Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = sheetId,
-            onValueChange = { sheetId = it },
-            label = { Text("Google Sheet ID") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
+        OutlinedTextField(value = sheetId, onValueChange = { sheetId = it }, label = { Text("Google Sheet ID") }, modifier = Modifier.fillMaxWidth())
         SwitchSetting("Enable Background Sync", syncEnabled) { syncEnabled = it }
         SwitchSetting("Wi-Fi Only", wifiOnly) { wifiOnly = it }
         SwitchSetting("Charging Only", chargingOnly) { chargingOnly = it }
-
-        SliderSetting("Sync Frequency (hours)", frequencyHours.toFloat(), 1f..24f) {
-            frequencyHours = it.toInt()
-        }
-
+        SliderSetting("Sync Frequency (hours)", frequencyHours.toFloat(), 1f..24f) { frequencyHours = it.toInt() }
         SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { saveFuelPhotos = it }
-
-        SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) {
-            ocrConfidenceThreshold = it
-        }
-
+        SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) { ocrConfidenceThreshold = it }
         Text("Photo Storage Provider", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             RadioButton(selected = photoProviderPref == "google_drive", onClick = { photoProviderPref = "google_drive" })
@@ -117,46 +86,21 @@ fun SettingsScreen() {
             RadioButton(selected = photoProviderPref == "none", onClick = { photoProviderPref = "none" })
             Text("None")
         }
-
         Spacer(modifier = Modifier.height(24.dp))
-
-        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }) {
-            Text("Export to CSV (ZIP)")
-        }
-
-        Button(onClick = { importLauncher.launch("*/*") }) {
-            Text("Import from CSV ZIP")
-        }
-
+        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }) { Text("Export to CSV (ZIP)") }
+        Button(onClick = { importLauncher.launch("*/*") }) { Text("Import from CSV ZIP") }
         Spacer(modifier = Modifier.height(24.dp))
-
-        Button(onClick = {
-            scope.launch {
-                status = "Testing upload..."
-                val testUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/fake.jpg")
-                val url = photoStorageManager.savePhoto(testUri, "test.jpg", PhotoType.FUEL)
-                status = if (url != null) "Upload test succeeded" else "Upload test failed"
-            }
-        }) {
-            Text("Test Photo Upload")
-        }
-
+        Button(onClick = { scope.launch { status = "Testing..."; val testUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/fake.jpg"); val url = photoStorageManager.savePhoto(testUri, "test.jpg", PhotoType.FUEL); status = if (url != null) "Upload test succeeded" else "Upload test failed" } }) { Text("Test Photo Upload") }
         Text(status, modifier = Modifier.padding(top = 8.dp))
     }
 }
 
 @Composable
 private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
+    Row(verticalAlignment = Alignment.CenterVertically) { Text(label, modifier = Modifier.weight(1f)); Switch(checked = checked, onCheckedChange = onCheckedChange) }
 }
 
 @Composable
 private fun SliderSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
-    Column {
-        Text("$label: ${value.toString().take(4)}")
-        Slider(value = value, onValueChange = onValueChange, valueRange = range)
-    }
+    Column { Text("$label: ${value.toString().take(4)}"); Slider(value = value, onValueChange = onValueChange, valueRange = range) }
 }
