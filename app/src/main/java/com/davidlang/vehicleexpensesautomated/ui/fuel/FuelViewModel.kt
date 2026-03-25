@@ -5,28 +5,17 @@ import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class FuelViewModel @Inject constructor(
-    private val repository: FuelEntryRepository
+    private val fuelEntryRepository: FuelEntryRepository
 ) : ViewModel() {
 
-    private val _fuelEntries = MutableStateFlow<List<FuelEntry>>(emptyList())
-    val fuelEntries: StateFlow<List<FuelEntry>> = _fuelEntries
-
-    fun loadFuelEntries(vehicleId: Int) {
+    fun saveFuel(entry: FuelEntry) {
         viewModelScope.launch {
-            repository.getEntriesForVehicle(vehicleId).collect { entries ->
-                _fuelEntries.value = entries
-            }
+            fuelEntryRepository.insertFuelEntry(entry)
         }
-    }
-
-    suspend fun saveFuel(entry: FuelEntry) {
-        repository.saveEntry(entry)
     }
 }
