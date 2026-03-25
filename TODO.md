@@ -23,4 +23,5 @@
 - Full ExpenseEntry screen with receipt OCR.
 - Advanced reports and charts.
 - UI polish for dark mode / tablet / ensure it works on all size/resolution screens.
+- Preferences screen (OCR thresholds, storage backends, sync settings, etc.) available from every screen via hamburger menu.
 Last updated: 2026-03-24
