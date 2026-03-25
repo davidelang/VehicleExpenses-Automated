@@ -25,7 +25,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-        .fallbackToDestructiveMigration()   // nukes any surviving broken DB file and creates fresh schema at v3
+        .fallbackToDestructiveMigration(true)
         .build()
     }
 
