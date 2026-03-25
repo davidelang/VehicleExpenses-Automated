@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,26 +35,18 @@ class CsvManager @Inject constructor(
 
     suspend fun exportToZip(): Uri = withContext(Dispatchers.IO) {
         val vehiclesCsv = getVehiclesCsv()
-        val allExpenses = expenseRepository.getAllEntries().first()
-        val allFuel = fuelRepository.getAllEntries().first()
+        val fuelCsv = getFuelCsv()
+        val expenseCsv = getExpenseCsv()
 
         val zipFile = File(downloadsDir, "vehicle_expenses_backup_${System.currentTimeMillis()}.zip")
 
         ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
             writeCsvToZip(zos, "Vehicles.csv", vehiclesCsv)
-
-            allExpenses.groupBy { it.vehicleId }.forEach { (vehicleId, entries) ->
-                val csv = getExpensesCsvForVehicle(entries)
-                writeCsvToZip(zos, "Expenses - Vehicle $vehicleId.csv", csv)
-            }
-
-            allFuel.groupBy { it.vehicleId }.forEach { (vehicleId, entries) ->
-                val csv = getFuelCsvForVehicle(entries)
-                writeCsvToZip(zos, "Fuel - Vehicle $vehicleId.csv", csv)
-            }
+            writeCsvToZip(zos, "Fuel_entries.csv", fuelCsv)
+            writeCsvToZip(zos, "Expense_entries.csv", expenseCsv)
         }
 
-        Log.i("CsvManager", "Exported ZIP with exact Google Sheets structure")
+        Log.i("CsvManager", "Exported ZIP with exact Google-Sheet-style CSVs (one per tab)")
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
     }
 
@@ -65,18 +59,20 @@ class CsvManager @Inject constructor(
         return sb.toString()
     }
 
-    private fun getExpensesCsvForVehicle(entries: List<ExpenseEntry>): String {
-        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path\n")
-        entries.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.date},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""}\n")
+    private suspend fun getFuelCsv(): String {
+        val fuel = fuelRepository.getAllEntries().first()
+        val sb = StringBuilder("ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL,Partial Fill\n")
+        fuel.forEach {
+            sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""},${it.isPartialFill}\n")
         }
         return sb.toString()
     }
 
-    private fun getFuelCsvForVehicle(entries: List<FuelEntry>): String {
-        val sb = StringBuilder("ID,Vehicle ID,Date,Gallons,Cost,Partial Fill\n")
-        entries.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.timestamp},${it.gallons},${it.cost},${it.isPartialFill}\n")
+    private suspend fun getExpenseCsv(): String {
+        val expenses = expenseRepository.getAllEntries().first()
+        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path\n")
+        expenses.forEach {
+            sb.append("${it.id},${it.vehicleId},${it.timestamp},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""}\n")
         }
         return sb.toString()
     }
@@ -88,7 +84,80 @@ class CsvManager @Inject constructor(
         zos.closeEntry()
     }
 
-    suspend fun importFromZip(uri: Uri) {
-        // TODO: implement import later
+    suspend fun importFromZip(uri: Uri) = withContext(Dispatchers.IO) {
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            ZipInputStream(inputStream).use { zis ->
+                var entry: ZipEntry?
+                while (zis.nextEntry.also { entry = it } != null) {
+                    val fileName = entry!!.name
+                    val content = zis.readBytes().decodeToString()
+
+                    when (fileName) {
+                        "Vehicles.csv" -> importVehiclesCsv(content)
+                        "Fuel_entries.csv" -> importFuelCsv(content)
+                        "Expense_entries.csv" -> importExpenseCsv(content)
+                    }
+                }
+            }
+        }
+        Log.i("CsvManager", "Import from ZIP complete (exact Google-Sheet-style format)")
+    }
+
+    private suspend fun importVehiclesCsv(csv: String) {
+        val lines = csv.lines().drop(1).filter { it.isNotBlank() }
+        lines.forEach { line ->
+            val parts = line.split(",")
+            if (parts.size >= 7) {
+                val vehicle = Vehicle(
+                    id = parts[0].toIntOrNull() ?: 0,
+                    make = parts[1],
+                    model = parts[2],
+                    year = parts[3].toIntOrNull() ?: 0,
+                    licensePlate = parts[4],
+                    vin = parts[5].ifBlank { null },
+                    notes = parts[6].ifBlank { null }
+                )
+                vehicleRepository.insert(vehicle) // standard repo method
+            }
+        }
+    }
+
+    private suspend fun importFuelCsv(csv: String) {
+        val lines = csv.lines().drop(1).filter { it.isNotBlank() }
+        lines.forEach { line ->
+            val parts = line.split(",")
+            if (parts.size >= 8) {
+                val fuel = FuelEntry(
+                    id = parts[0].toLongOrNull() ?: 0,
+                    vehicleId = parts[1].toIntOrNull() ?: 0,
+                    odometer = parts[2].toIntOrNull() ?: 0,
+                    gallons = parts[3].toDoubleOrNull() ?: 0.0,
+                    cost = parts[4].toDoubleOrNull() ?: 0.0,
+                    timestamp = parts[5].toLongOrNull() ?: System.currentTimeMillis(),
+                    photoUrl = parts[6].ifBlank { null },
+                    isPartialFill = parts[7].toBoolean()
+                )
+                fuelRepository.insert(fuel) // standard repo method
+            }
+        }
+    }
+
+    private suspend fun importExpenseCsv(csv: String) {
+        val lines = csv.lines().drop(1).filter { it.isNotBlank() }
+        lines.forEach { line ->
+            val parts = line.split(",")
+            if (parts.size >= 7) {
+                val expense = ExpenseEntry(
+                    id = parts[0].toLongOrNull() ?: 0,
+                    vehicleId = parts[1].toIntOrNull() ?: 0,
+                    timestamp = parts[2].toLongOrNull() ?: System.currentTimeMillis(),
+                    amount = parts[3].toDoubleOrNull() ?: 0.0,
+                    category = parts[4],
+                    description = parts[5],
+                    receiptImagePath = parts[6].ifBlank { null }
+                )
+                expenseRepository.insert(expense) // standard repo method
+            }
+        }
     }
 }
