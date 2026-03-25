@@ -13,8 +13,9 @@
         android:name=".VehicleExpensesApplication"
         android:allowBackup="true"
         android:label="VehicleExpenses"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.VehicleExpenses">
+        android:icon="@mipmap/ic_vehicleexpenses"
+        android:roundIcon="@mipmap/ic_vehicleexpenses_round"
+        android:supportsRtl="true">
         <!-- REQUIRED: disables default WorkManager initializer when using Configuration.Provider -->
         <provider
             android:name="androidx.startup.InitializationProvider"
