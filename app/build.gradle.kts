@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = providers.exec { commandLine("git", "describe", "--always", "--tags") }.standardOutput.asText.get().trim()
+        versionName = providers.exec { commandLine("git", "describe", "--always") }.standardOutput.asText.get().trim()
         buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
     }
     buildTypes {
