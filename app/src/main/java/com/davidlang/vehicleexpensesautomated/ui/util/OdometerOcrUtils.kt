@@ -28,8 +28,8 @@ object OdometerOcrUtils {
         val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, null, null)
         val image = InputImage.fromBitmap(bitmap, 0)
 
-        val visionText = try {
-            suspendCancellableCoroutine { continuation ->
+        val visionText: String = try {
+            suspendCancellableCoroutine<String> { continuation ->
                 recognizer.process(image)
                     .addOnSuccessListener { result -> continuation.resume(result.text) }
                     .addOnFailureListener { e -> continuation.resumeWithException(e) }
