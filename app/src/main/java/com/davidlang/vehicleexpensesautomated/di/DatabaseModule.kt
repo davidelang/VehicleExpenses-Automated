@@ -25,7 +25,6 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-        .fallbackToDestructiveMigration(true)
         .build()
     }
 
