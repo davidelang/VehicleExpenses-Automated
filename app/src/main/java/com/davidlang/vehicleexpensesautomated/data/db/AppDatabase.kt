@@ -25,7 +25,22 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE fuel_entries ADD COLUMN isPartialFill INTEGER NOT NULL DEFAULT 0")
+                // Make migration idempotent so it never fails with "duplicate column"
+                // on devices where the column was already present but version was still 2
+                val cursor = db.query("PRAGMA table_info(fuel_entries)")
+                val columnExists = cursor.use { c ->
+                    var exists = false
+                    while (c.moveToNext()) {
+                        if (c.getString(1) == "isPartialFill") {
+                            exists = true
+                            break
+                        }
+                    }
+                    exists
+                }
+                if (!columnExists) {
+                    db.execSQL("ALTER TABLE fuel_entries ADD COLUMN isPartialFill INTEGER NOT NULL DEFAULT 0")
+                }
             }
         }
     }
