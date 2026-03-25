@@ -24,7 +24,7 @@ fun AboutScreen() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Vehicle Expenses Automated", style = MaterialTheme.typography.headlineMedium)
-            Text("Version ", style = MaterialTheme.typography.bodyLarge)
+            Text("Version $version", style = MaterialTheme.typography.bodyLarge)
             Spacer(modifier = Modifier.height(32.dp))
             Text("Open Source Libraries", style = MaterialTheme.typography.titleMedium)
             Text("• Room\n• Hilt\n• Jetpack Compose\n• WorkManager\n• Google Sign-In\n• kotlinx-serialization")

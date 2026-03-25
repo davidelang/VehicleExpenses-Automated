@@ -11,9 +11,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 
 @Composable
-fun ExpenseListScreen(
-    navController: NavHostController? = null
-) {
+fun ExpenseListScreen(navController: NavHostController? = null) {
     val viewModel: ExpenseViewModel = hiltViewModel()
     // TODO: replace with real list once repository exposes getAllExpenses()
     val dummyExpenses = listOf("Expense #1 - $45.67", "Expense #2 - $12.34")
