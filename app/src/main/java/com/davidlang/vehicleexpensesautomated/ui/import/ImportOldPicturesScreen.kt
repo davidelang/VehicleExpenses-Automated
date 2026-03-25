@@ -26,6 +26,7 @@ fun ImportOldPicturesScreen(
     navController: NavHostController
 ) {
     val context = LocalContext.current
+    val fuelViewModel: FuelViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
@@ -54,7 +55,7 @@ fun ImportOldPicturesScreen(
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR — odometer + gallons + cost
+    // 🔥 FULLY AUTOMATIC OCR
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
@@ -72,7 +73,7 @@ fun ImportOldPicturesScreen(
         }
     }
 
-    // Auto-match vehicle (unchanged)
+    // Auto-match vehicle
     LaunchedEffect(photoPath) {
         photoPath?.let { newPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPath)
@@ -159,7 +160,7 @@ fun ImportOldPicturesScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
-                    // fuelViewModel.saveFuel(entry)  ← your real call here
+                    fuelViewModel.saveFuel(entry)
                     Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
