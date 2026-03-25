@@ -27,6 +27,7 @@ object DatabaseModule {
             "vehicle_expenses.db"
         )
         .addMigrations(MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+        .fallbackToDestructiveMigration()   // temporary – nukes broken DB and recreates cleanly at v3 (zero data loss)
         .build()
     }
 
