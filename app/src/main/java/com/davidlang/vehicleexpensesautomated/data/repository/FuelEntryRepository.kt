@@ -18,4 +18,11 @@ class FuelEntryRepository @Inject constructor(
     suspend fun updateFuelEntry(entry: FuelEntry) = fuelEntryDao.updateFuelEntry(entry)
 
     suspend fun deleteFuelEntry(entry: FuelEntry) = fuelEntryDao.deleteFuelEntry(entry)
+
+    // Legacy methods for existing code (CsvManager, SyncWorker, DashboardViewModel, FillupViewModel)
+    suspend fun saveEntry(entry: FuelEntry) = insertFuelEntry(entry)
+
+    fun getAllEntries() = getAllFuelEntries()
+
+    fun getEntriesForVehicle(vehicleId: Int) = fuelEntryDao.getFuelEntriesForVehicle(vehicleId)
 }
