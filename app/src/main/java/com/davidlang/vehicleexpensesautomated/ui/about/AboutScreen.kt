@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AboutScreen() {
     val context = LocalContext.current
-    val version = "v0.9.2-51-gce6e6b1" // set by git describe --always at build time
+    val version = BuildConfig.VERSION_NAME
 
     Scaffold(topBar = { TopAppBar(title = { Text("About") }) }) { padding ->
         Column(
