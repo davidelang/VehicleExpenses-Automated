@@ -11,41 +11,45 @@ import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-data class OcrResult(
-    val odometer: String?,
-    val fullText: String
-)
-
 object OdometerOcrUtils {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     /**
-     * Returns both the best odometer reading AND the full vision text so the import screen can parse gallons/price.
+     * Automatically extracts the most likely odometer reading (longest run of 4-8 digits).
+     * Runs instantly when a new dash photo is captured.
      */
-    suspend fun extractOdometerFromPhoto(photoPath: String): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun extractOdometerFromPhoto(photoPath: String): String? = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, "")
+        if (!file.exists()) return@withContext null
 
-        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, "")
+        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext null
         val image = InputImage.fromBitmap(bitmap, 0)
 
-        val visionText = try {
-            suspendCancellableCoroutine { continuation ->
+        try {
+            val visionText = suspendCancellableCoroutine { continuation ->
                 recognizer.process(image)
-                    .addOnSuccessListener { result -> continuation.resume(result.text) }
-                    .addOnFailureListener { e -> continuation.resumeWithException(e) }
-                    .addOnCanceledListener { continuation.cancel() }
+                    .addOnSuccessListener { result ->
+                        continuation.resume(result.text)
+                    }
+                    .addOnFailureListener { e ->
+                        continuation.resumeWithException(e)
+                    }
+                    .addOnCanceledListener {
+                        continuation.cancel()
+                    }
             }
+
+            // Find longest sequence of digits (typical odometer format)
+            val odometerRegex = "\\b\\d{4,8}\\b".toRegex()
+            val matches = odometerRegex.findAll(visionText)
+            val bestMatch = matches.maxByOrNull { it.value.length }?.value
+
+            bestMatch
         } catch (e: Exception) {
+            null
+        } finally {
             bitmap.recycle()
-            return@withContext OcrResult(null, "")
         }
-
-        val odometerRegex = "\\b\\d{4,8}\\b".toRegex()
-        val bestOdo = odometerRegex.findAll(visionText).maxByOrNull { it.value.length }?.value
-
-        bitmap.recycle()
-        OcrResult(bestOdo, visionText)
     }
 }

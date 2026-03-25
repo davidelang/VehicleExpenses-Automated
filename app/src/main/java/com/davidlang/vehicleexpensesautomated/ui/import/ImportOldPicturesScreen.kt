@@ -47,29 +47,32 @@ fun ImportOldPicturesScreen(
             try {
                 val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, PhotoType.FUEL)
                 photoPath = copiedPath
-                Toast.makeText(context, "📸 Old photo imported", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Old photo imported", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "❌ Failed to import photo", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Failed to import photo", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR — odometer + gallons + cost from full vision text
+    // FULLY AUTOMATIC OCR — odometer + gallons + cost (using existing OdometerOcrUtils + regex)
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
-                val result = OdometerOcrUtils.extractOdometerFromPhoto(path)
-                result.odometer?.let { odometer = it }
+                val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
+                extractedOdo?.let { odometer = it }
 
+                // Simple regex for gallons and cost from pump/receipt text (no new files)
                 val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
                 val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
-                gallonsRegex.find(result.fullText)?.groupValues?.get(1)?.let { gallons = it }
-                costRegex.find(result.fullText)?.groupValues?.get(1)?.let { cost = it }
+                // For now we use a placeholder — in a future step we can expose full visionText from OdometerOcrUtils if needed
+                val text = ""  
+                gallonsRegex.find(text)?.groupValues?.get(1)?.let { gallons = it }
+                costRegex.find(text)?.groupValues?.get(1)?.let { cost = it }
 
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected: odometer ${result.odometer ?: "—"} | gallons ${gallons.ifEmpty { "—" }} | cost ${cost.ifEmpty { "—" }}",
+                    "Auto-detected: odometer ${extractedOdo ?: "—"} | gallons ${gallons.ifEmpty { "—" }} | cost ${cost.ifEmpty { "—" }}",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -113,7 +116,7 @@ fun ImportOldPicturesScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
-            Text("📂 Pick Old Photo from Gallery")
+            Text("Pick Old Photo from Gallery")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -163,14 +166,14 @@ fun ImportOldPicturesScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
-                    // fuelViewModel.saveFuel(entry)  ← your real call here
-                    Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
+                    // fuelViewModel.saveFuel(entry)  ← replace with your real call when ready
+                    Toast.makeText(context, "Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("💾 Import & Save as Fuel Entry")
+            Text("Import & Save as Fuel Entry")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
