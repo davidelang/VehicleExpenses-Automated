@@ -1,6 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.ui.help
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -9,7 +11,9 @@ import androidx.navigation.NavHostController
 
 @Composable
 fun HelpScreen(navController: NavHostController? = null) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    val scrollState = rememberScrollState()
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(scrollState)) {
         Text("Help / User Manual", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
         Text("• Camera-first flow for new photos")

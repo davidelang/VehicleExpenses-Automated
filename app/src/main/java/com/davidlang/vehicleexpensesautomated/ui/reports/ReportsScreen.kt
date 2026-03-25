@@ -3,6 +3,8 @@ package com.davidlang.vehicleexpensesautomated.ui.reports
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -15,8 +17,9 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 fun ReportsScreen(navController: NavHostController) {
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val vehicles by vehicleViewModel.vehicles.collectAsState()
+    val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(scrollState)) {
         Text("Advanced Reports & Charts", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
         Text("Vehicles & Summary", style = MaterialTheme.typography.titleMedium)
