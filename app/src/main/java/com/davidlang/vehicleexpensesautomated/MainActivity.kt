@@ -107,6 +107,14 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
+                            NavigationDrawerItem(
+                                label = { Text("About") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("about")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
                         }
                     }
                 ) {
@@ -128,24 +136,13 @@ class MainActivity : ComponentActivity() {
                                 startDestination = "quickfill",
                                 modifier = Modifier.padding(innerPadding)
                             ) {
-                                composable("quickfill") {
-                                    QuickFillupScreen(navController = navController)
-                                }
-                                composable("newvehicle") {
-                                    AddNewVehicleScreen(navController = navController)
-                                }
-                                composable("expense") {
-                                    ExpenseEntryScreen(navController = navController)
-                                }
-                                composable("import") {
-                                    ImportOldPicturesScreen(navController = navController)
-                                }
-                                composable("reports") {
-                                    ReportsScreen(navController = navController)
-                                }
-                                composable("settings") {
-                                    SettingsScreen()
-                                }
+                                composable("quickfill") { QuickFillupScreen(navController = navController) }
+                                composable("newvehicle") { AddNewVehicleScreen(navController = navController) }
+                                composable("expense") { ExpenseEntryScreen(navController = navController) }
+                                composable("import") { ImportOldPicturesScreen(navController = navController) }
+                                composable("reports") { ReportsScreen(navController = navController) }
+                                composable("settings") { SettingsScreen() }
+                                composable("about") { AboutScreen() }
                             }
                         }
                     }
