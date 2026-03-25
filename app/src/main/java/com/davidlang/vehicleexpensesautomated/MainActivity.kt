@@ -9,7 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.davidlang.vehicleexpensesautomated.ui.VehicleExpensesApp
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import dagger.hilt.android.AndroidEntryPoint
 import android.widget.Toast
 
@@ -28,13 +31,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Request CAMERA permission on launch (storage is handled by PhotoStorageManager)
+        // Request CAMERA permission on launch
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
 
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    VehicleExpensesApp()
+                    val navController = rememberNavController()
+                    NavHost(navController = navController, startDestination = "quickfill") {
+                        composable("quickfill") {
+                            QuickFillupScreen(navController = navController)
+                        }
+                    }
                 }
             }
         }
