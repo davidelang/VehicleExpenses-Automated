@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.theme
 
 import android.app.Activity
+import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -32,15 +33,21 @@ val AppTypography = Typography()
 
 @Composable
 fun VehicleExpensesAutomatedTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+    val darkModePref = prefs.getString("dark_mode", "system") ?: "system"
+
+    val darkTheme = when (darkModePref) {
+        "on" -> true
+        "off" -> false
+        else -> isSystemInDarkTheme()
+    }
+
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
+        darkTheme && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicDarkColorScheme(context)
+        !darkTheme && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
@@ -51,7 +58,7 @@ fun VehicleExpensesAutomatedTheme(
             val window = (view.context as Activity).window
             @Suppress("DEPRECATION")
             window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 

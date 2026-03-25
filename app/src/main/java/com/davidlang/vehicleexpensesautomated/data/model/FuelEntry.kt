@@ -2,7 +2,6 @@ package com.davidlang.vehicleexpensesautomated.data.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import java.time.Instant
 
 @Entity(tableName = "fuel_entries")
 data class FuelEntry(
@@ -11,6 +10,7 @@ data class FuelEntry(
     val odometer: Int,
     val gallons: Double,
     val cost: Double,
-    val timestamp: Long = Instant.now().toEpochMilli(),
-    val photoUrl: String? = null   // ← NEW: stores Drive public URL
+    val timestamp: Long,
+    val photoUrl: String? = null,
+    val isPartialFill: Boolean = false
 )
