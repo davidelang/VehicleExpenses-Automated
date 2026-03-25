@@ -31,21 +31,13 @@ fun AddNewVehicleScreen(
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
 
-    // 🔥 AUTOMATIC OCR — runs the instant the camera photo is saved
+    // Automatic OCR on reference photo capture (odometer only for new vehicle setup)
     LaunchedEffect(referencePhotoUrl) {
         referencePhotoUrl?.let { photoPath ->
             scope.launch {
-                val extracted = OdometerOcrUtils.extractOdometerFromPhoto(photoPath)
-                if (extracted != null) {
-                    odometerReading = extracted
-                    Toast.makeText(context, "📸 Auto-detected odometer: $extracted", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(
-                        context,
-                        "📸 Could not auto-read odometer — please type the numbers you see",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+                val result = OdometerOcrUtils.extractFromPhoto(photoPath)
+                result.odometer?.let { odometerReading = it }
+                Toast.makeText(context, "Auto-detected odometer: ${result.odometer ?: "—"}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -92,7 +84,6 @@ fun AddNewVehicleScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Camera-first reference dash photo
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
@@ -122,10 +113,10 @@ fun AddNewVehicleScreen(
                         referenceDashPhotoUrl = referencePhotoUrl!!,
                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                     )
-                    Toast.makeText(context, "✅ New vehicle created with reference dash photo", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "New vehicle created with reference dash photo", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 } else {
-                    Toast.makeText(context, "❌ Make, model, and reference photo required", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Make, model, and reference photo required", Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier.fillMaxWidth()
