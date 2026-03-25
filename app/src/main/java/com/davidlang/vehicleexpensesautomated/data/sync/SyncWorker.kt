@@ -24,18 +24,25 @@ class SyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            // Full bidirectional sync as per original design
-            val sheetId = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-                .getString("sheet_id", null) ?: return@withContext Result.failure()
+            val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+            val sheetId = prefs.getString("sheet_id", null) ?: return@withContext Result.failure()
 
-            // Push all data
+            if (!prefs.getBoolean("sync_enabled", false)) return@withContext Result.success()
+
+            // Full bidirectional sync
             googleSheetsClient.pushVehicles(vehicleRepository.getAllVehicles().first(), sheetId)
             googleSheetsClient.pushFuelEntries(fuelRepository.getAllEntries().first(), sheetId)
             googleSheetsClient.pushExpenseEntries(expenseRepository.getAllEntries().first(), sheetId)
 
-            // Pull back (for now vehicles only; others can be added later)
+            // Pull back
             val pulledVehicles = googleSheetsClient.pullVehicles(sheetId)
-            pulledVehicles.forEach { vehicleRepository.insert(it) }
+            pulledVehicles.forEach { vehicleRepository.insertVehicle(it) }
+
+            val pulledFuel = googleSheetsClient.pullFuelEntries(sheetId)
+            pulledFuel.forEach { fuelRepository.insertFuelEntry(it) }
+
+            val pulledExpenses = googleSheetsClient.pullExpenseEntries(sheetId)
+            pulledExpenses.forEach { expenseRepository.insertExpenseEntry(it) }
 
             Result.success()
         } catch (e: Exception) {
