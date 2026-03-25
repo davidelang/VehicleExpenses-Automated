@@ -15,6 +15,7 @@ import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -48,14 +49,14 @@ fun ImportOldPicturesScreen(
             try {
                 val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, PhotoType.FUEL)
                 photoPath = copiedPath
-                Toast.makeText(context, "📸 Old photo imported", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Old photo imported", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "❌ Failed to import photo", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Failed to import photo", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR
+    // FULLY AUTOMATIC OCR
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
@@ -66,7 +67,7 @@ fun ImportOldPicturesScreen(
 
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected: odometer ${result.odometer ?: "—"} | gallons ${result.gallons ?: "—"} | cost ${result.cost ?: "—"}",
+                    "Auto-detected: odometer ${result.odometer ?: "—"} | gallons ${result.gallons ?: "—"} | cost ${result.cost ?: "—"}",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -110,7 +111,7 @@ fun ImportOldPicturesScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
-            Text("📂 Pick Old Photo from Gallery")
+            Text("Pick Old Photo from Gallery")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -161,13 +162,13 @@ fun ImportOldPicturesScreen(
                         photoUrl = photoPath
                     )
                     fuelViewModel.saveFuel(entry)
-                    Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("💾 Import & Save as Fuel Entry")
+            Text("Import & Save as Fuel Entry")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
