@@ -9,27 +9,71 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 
 @Composable
 fun ReportsScreen(navController: NavHostController) {
+    val expenseViewModel: ExpenseViewModel = hiltViewModel()
+    val fuelViewModel: FuelViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
+
+    val expenses by expenseViewModel.expenses.collectAsState()
+    val fuelEntries by fuelViewModel.fuelEntries.collectAsState()
     val vehicles by vehicleViewModel.vehicles.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    val totalExpenses = expenses.sumOf { it.amount }
+    val totalFuelCost = fuelEntries.sumOf { it.cost }
+    val totalGallons = fuelEntries.sumOf { it.gallons }
+    val partialFills = fuelEntries.count { it.isPartialFill }
+    val totalFillUps = fuelEntries.size
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
         Text("Advanced Reports & Charts", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        Text("Vehicles & Summary", style = MaterialTheme.typography.titleMedium)
-        LazyColumn {
-            items(vehicles) { vehicle ->
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Summary", style = MaterialTheme.typography.titleMedium)
+                Text("Total Expenses: $${"%.2f".format(totalExpenses)}")
+                Text("Total Fuel Cost: $${"%.2f".format(totalFuelCost)}")
+                Text("Total Gallons: ${"%.1f".format(totalGallons)}")
+                Text("Fill-ups: $totalFillUps (${partialFills} partial)")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Recent Fuel Entries", style = MaterialTheme.typography.titleMedium)
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(fuelEntries.take(5)) { entry ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("${vehicle.make} ${vehicle.model} (${vehicle.year})")
-                        Text("License: ${vehicle.licensePlate ?: "—"}")
+                        Text("Gallons: ${entry.gallons} | Cost: $${entry.cost}")
+                        Text("Partial: ${entry.isPartialFill}")
                     }
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Recent Expenses", style = MaterialTheme.typography.titleMedium)
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(expenses.take(5)) { entry ->
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("${entry.description} | $${entry.amount}")
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
         Text("Charts coming soon (fuel efficiency, expense trends, etc.)", style = MaterialTheme.typography.bodyMedium)
     }
