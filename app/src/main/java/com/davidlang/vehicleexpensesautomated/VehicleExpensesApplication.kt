@@ -20,8 +20,12 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        val syncManager = SyncManager(this)
-        syncManager.schedulePeriodicSync()
-        syncManager.triggerImmediateSync()
+        try {
+            val syncManager = SyncManager(this)
+            syncManager.schedulePeriodicSync()
+            syncManager.triggerImmediateSync()
+        } catch (e: Exception) {
+            // Safe fallback on very old Android — sync is non-critical for launch
+        }
     }
 }
