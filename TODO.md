@@ -2,7 +2,6 @@
 ## High Priority (next)
 ## Medium Priority
 - Full ExpenseEntry screen with receipt OCR.
-- Improve reference dash photo setup UI (add odometer confirmation dialog).
 - Add settings toggle for OCR confidence threshold.
 ## Low Priority / Future
 - ODB-II integration for live odometer.
