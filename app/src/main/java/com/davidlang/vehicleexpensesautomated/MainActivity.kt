@@ -16,8 +16,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
+import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
@@ -53,68 +56,17 @@ class MainActivity : ComponentActivity() {
                     drawerState = drawerState,
                     drawerContent = {
                         ModalDrawerSheet {
-                            Text(
-                                text = "Vehicle Expenses",
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.titleLarge
-                            )
+                            Text("Vehicle Expenses", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
 
-                            NavigationDrawerItem(
-                                label = { Text("Quick Fill-up") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("quickfill") { popUpTo("quickfill") { inclusive = true } }
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("New Vehicle") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("newvehicle")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("New Expense Entry") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("expense")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Import Old Pictures") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("import")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Reports & Charts") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("reports")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Preferences") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("settings")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("About") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("about")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
+                            NavigationDrawerItem(label = { Text("Quick Fill-up") }, selected = false, onClick = { navController.navigate("quickfill"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("New Vehicle") }, selected = false, onClick = { navController.navigate("newvehicle"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("New Expense Entry") }, selected = false, onClick = { navController.navigate("expense"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Expense List") }, selected = false, onClick = { navController.navigate("expenselist"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Import Old Pictures") }, selected = false, onClick = { navController.navigate("import"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Reports & Charts") }, selected = false, onClick = { navController.navigate("reports"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Preferences") }, selected = false, onClick = { navController.navigate("settings"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Help") }, selected = false, onClick = { navController.navigate("help"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("About") }, selected = false, onClick = { navController.navigate("about"); scope.launch { drawerState.close() } })
                         }
                     }
                 ) {
@@ -139,9 +91,11 @@ class MainActivity : ComponentActivity() {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
                                 composable("newvehicle") { AddNewVehicleScreen(navController = navController) }
                                 composable("expense") { ExpenseEntryScreen(navController = navController) }
+                                composable("expenselist") { ExpenseListScreen() }
                                 composable("import") { ImportOldPicturesScreen(navController = navController) }
                                 composable("reports") { ReportsScreen(navController = navController) }
                                 composable("settings") { SettingsScreen() }
+                                composable("help") { HelpScreen() }
                                 composable("about") { AboutScreen() }
                             }
                         }
