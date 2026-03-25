@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.storage
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -11,7 +12,7 @@ import javax.inject.Singleton
 
 @Singleton
 class PhotoStorageManager @Inject constructor(
-    @param:ApplicationContext private val context: Context   // explicit @param: silences future Kotlin warning
+    @param:ApplicationContext private val context: Context
 ) {
 
     private val photosDir: File by lazy {
@@ -36,6 +37,21 @@ class PhotoStorageManager @Inject constructor(
     fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
         val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.jpg"
         return savePhoto(uri, fileName, photoType) ?: throw IllegalArgumentException("Cannot save photo from URI")
+    }
+
+    // NEW: required for camera-first flow (TakePicturePreview returns Bitmap)
+    fun savePhotoFromBitmap(bitmap: Bitmap, photoType: PhotoType): String {
+        val fileName = "${photoType.name.lowercase()}_${System.currentTimeMillis()}.jpg"
+        val destFile = File(photosDir, fileName)
+
+        return try {
+            FileOutputStream(destFile).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)
+            }
+            destFile.absolutePath
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Cannot save photo from Bitmap", e)
+        }
     }
 
     private fun getFileNameFromUri(uri: Uri): String? {
