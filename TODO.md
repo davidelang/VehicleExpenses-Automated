@@ -11,8 +11,14 @@
 ## Low Priority / Future
 - ODB-II integration for live odometer.
 - Advanced reports and charts.
-- Cloud backup options beyond Google Sheets.
-- UI polish for dark mode / tablet.
+- add additional image backup backup options
+  - google photos
+  - amazon photos
+  - dropbox
+  - ssh to personal server
+  - http to personal server (including cgi file to receive, save, and retrieve files)
+  - others (is there a library that exposes all the various cloud storage options?)
+- UI polish for dark mode / tablet / ensure it works on all size/resolution screens.
 
 ## Completed (as of this build)
 - Automatic OCR on every photo capture (no extra clicks) — now includes gallons + cost from pump/receipt photos
