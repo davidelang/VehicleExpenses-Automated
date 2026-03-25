@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                             NavigationDrawerItem(label = { Text("Expense List") }, selected = false, onClick = { navController.navigate("expenselist"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("Import Old Pictures") }, selected = false, onClick = { navController.navigate("import"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("Reports & Charts") }, selected = false, onClick = { navController.navigate("reports"); scope.launch { drawerState.close() } })
-                            NavigationDrawerItem(label = { Text("Preferences") }, selected = false, onClick = { navController.navigate("settings"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Settings") }, selected = false, onClick = { navController.navigate("settings"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("Help") }, selected = false, onClick = { navController.navigate("help"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("About") }, selected = false, onClick = { navController.navigate("about"); scope.launch { drawerState.close() } })
                         }
