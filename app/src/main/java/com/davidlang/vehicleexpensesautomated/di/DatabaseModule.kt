@@ -6,7 +6,6 @@ import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
-import com.davidlang.vehicleexpensesautomated.data.db.MIGRATION_1_2
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,8 +25,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-        .addMigrations(MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
-        .fallbackToDestructiveMigration()   // temporary – nukes broken DB and recreates cleanly at v3 (zero data loss)
+        .fallbackToDestructiveMigration()   // nukes any surviving broken DB file and creates fresh schema at v3
         .build()
     }
 
