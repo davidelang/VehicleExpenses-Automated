@@ -36,6 +36,8 @@ fun SettingsScreen() {
     var driveFolder by remember { mutableStateOf(prefs.getString("drive_folder", "Vehicle Expenses Photos") ?: "") }
     var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", false)) }
     var photoProviderPref by remember { mutableStateOf(prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive") }
+    var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
+
     var status by remember { mutableStateOf("Ready") }
     var signedInAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
@@ -43,7 +45,7 @@ fun SettingsScreen() {
         uri?.let {
             scope.launch {
                 csvManager.exportToZip()
-                status = "✅ Exported to Downloads"
+                status = "Exported to Downloads"
                 Toast.makeText(context, "CSV ZIP exported", Toast.LENGTH_LONG).show()
             }
         }
@@ -53,13 +55,13 @@ fun SettingsScreen() {
         uri?.let {
             scope.launch {
                 csvManager.importFromZip(uri)
-                status = "✅ Imported from CSV ZIP"
+                status = "Imported from CSV ZIP"
                 Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref) {
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold) {
         prefs.edit().apply {
             putString("sheet_id", sheetId)
             putBoolean("sync_enabled", syncEnabled)
@@ -69,6 +71,7 @@ fun SettingsScreen() {
             putString("drive_folder", driveFolder)
             putBoolean("save_fuel_photos", saveFuelPhotos)
             putString("photo_storage_provider", photoProviderPref)
+            putFloat("ocr_confidence_threshold", ocrConfidenceThreshold)
             apply()
         }
     }
@@ -99,6 +102,10 @@ fun SettingsScreen() {
 
         SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { saveFuelPhotos = it }
 
+        SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) {
+            ocrConfidenceThreshold = it
+        }
+
         Text("Photo Storage Provider", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             RadioButton(selected = photoProviderPref == "google_drive", onClick = { photoProviderPref = "google_drive" })
@@ -125,7 +132,7 @@ fun SettingsScreen() {
                 status = "Testing upload..."
                 val testUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/fake.jpg")
                 val url = photoStorageManager.savePhoto(testUri, "test.jpg", PhotoType.FUEL)
-                status = if (url != null) "✅ Upload test succeeded" else "❌ Upload test failed"
+                status = if (url != null) "Upload test succeeded" else "Upload test failed"
             }
         }) {
             Text("Test Photo Upload")
@@ -146,7 +153,7 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
 @Composable
 private fun SliderSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
     Column {
-        Text("$label: ${value.toInt()}")
+        Text("$label: ${value.toString().take(4)}")
         Slider(value = value, onValueChange = onValueChange, valueRange = range)
     }
 }
