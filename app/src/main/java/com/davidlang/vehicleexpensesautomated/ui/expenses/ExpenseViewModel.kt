@@ -15,7 +15,7 @@ class ExpenseViewModel @Inject constructor(
 
     fun saveExpense(entry: ExpenseEntry) {
         viewModelScope.launch {
-            expenseEntryRepository.insertExpenseEntry(entry)
+            expenseEntryRepository.saveEntry(entry)
         }
     }
 }

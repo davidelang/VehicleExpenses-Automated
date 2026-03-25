@@ -1,6 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
-import android.net.Uri
+import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,43 +37,41 @@ fun ExpenseEntryScreen(
 
     var cost by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Fuel") } // default for receipts
 
     var expanded by remember { mutableStateOf(false) }
 
     // Camera-first flow for new receipt
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
+    ) { bitmap: Bitmap? ->
         bitmap?.let {
             try {
                 val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromBitmap(it, PhotoType.FUEL)
                 photoPath = copiedPath
-                Toast.makeText(context, "📸 Receipt photo captured", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Receipt photo captured", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "❌ Failed to save photo", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Failed to save photo", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR on every capture
+    // FULLY AUTOMATIC OCR on every capture
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
                 val result = OdometerOcrUtils.extractFromPhoto(path)
                 result.cost?.let { cost = it }
-                // description can be manually edited; OCR doesn't provide text summary yet
 
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected cost: ${result.cost ?: "—"}",
+                    "Auto-detected cost: ${result.cost ?: "—"}",
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
     }
 
-    // Auto-match vehicle (same logic as import screen)
+    // Auto-match vehicle
     LaunchedEffect(photoPath) {
         photoPath?.let { newPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPath)
@@ -110,7 +108,7 @@ fun ExpenseEntryScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(onClick = { cameraLauncher.launch(null) }, modifier = Modifier.fillMaxWidth()) {
-            Text("📸 Take Receipt Photo")
+            Text("Take Receipt Photo")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -141,7 +139,6 @@ fun ExpenseEntryScreen(
 
         OutlinedTextField(value = cost, onValueChange = { cost = it }, label = { Text("Total Cost (auto-filled)") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description / Merchant") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category") }, modifier = Modifier.fillMaxWidth())
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -149,21 +146,20 @@ fun ExpenseEntryScreen(
             onClick = {
                 scope.launch {
                     val entry = ExpenseEntry(
-                        vehicleId = selectedVehicle?.id,
+                        vehicleId = selectedVehicle?.id ?: 0,
                         amount = cost.toDoubleOrNull() ?: 0.0,
                         description = description,
-                        category = category,
-                        timestamp = System.currentTimeMillis(),
+                        date = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
                     expenseViewModel.saveExpense(entry)
-                    Toast.makeText(context, "✅ Receipt expense saved", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Receipt expense saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("💾 Save Expense Entry")
+            Text("Save Expense Entry")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
