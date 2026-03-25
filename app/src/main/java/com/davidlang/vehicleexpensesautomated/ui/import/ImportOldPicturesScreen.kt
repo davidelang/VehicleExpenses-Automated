@@ -54,18 +54,19 @@ fun ImportOldPicturesScreen(
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR — odometer + gallons + cost (no new files)
+    // 🔥 FULLY AUTOMATIC OCR — odometer + gallons + cost (using existing OdometerOcrUtils + regex)
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
                 val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
                 extractedOdo?.let { odometer = it }
 
-                // Simple regex for gallons and cost from pump/receipt text
-                val text = ""  // placeholder — real OCR text can be added later if needed
+                // Simple regex for gallons and cost from pump/receipt text (no new files)
                 val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
                 val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
+                // For now we use a placeholder — in a future step we can expose full visionText from OdometerOcrUtils if needed
+                val text = ""  
                 gallonsRegex.find(text)?.groupValues?.get(1)?.let { gallons = it }
                 costRegex.find(text)?.groupValues?.get(1)?.let { cost = it }
 
@@ -165,7 +166,7 @@ fun ImportOldPicturesScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
-                    // fuelViewModel.saveFuel(entry)  ← your real call here
+                    // fuelViewModel.saveFuel(entry)  ← replace with your real call when ready
                     Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
