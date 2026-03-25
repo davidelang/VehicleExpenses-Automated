@@ -1,7 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.repository
 
+import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
-import com.davidlang.vehicleexpensesautomated.data.storage.FuelEntryDao
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
