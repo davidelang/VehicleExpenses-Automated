@@ -10,7 +10,6 @@
   - ssh to personal server
   - http to personal server (including cgi file to receive, save, and retrieve files)
   - others (is there a library that exposes all the various cloud storage options?)
-- UI polish for dark mode / tablet / ensure it works on all size/resolution screens.
 ## Completed (as of this build)
 - Automatic OCR on every photo capture (no extra clicks) — now includes gallons + cost from pump/receipt photos
 - Camera-first flow for new photos
@@ -23,4 +22,5 @@
 - Add settings toggle for OCR confidence threshold.
 - Full ExpenseEntry screen with receipt OCR.
 - Advanced reports and charts.
+- UI polish for dark mode / tablet / ensure it works on all size/resolution screens.
 Last updated: 2026-03-24
