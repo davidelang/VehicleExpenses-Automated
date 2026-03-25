@@ -65,4 +65,7 @@ dependencies {
     // Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     ksp("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
+    // Google Sheets API for bidirectional sync
+    implementation("com.google.api-client:google-api-client-android:2.2.0")
+    implementation("com.google.apis:google-api-services-sheets:v4-rev20220927-2.0.0")
 }

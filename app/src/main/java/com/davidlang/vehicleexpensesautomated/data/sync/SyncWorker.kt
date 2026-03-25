@@ -29,7 +29,7 @@ class SyncWorker @AssistedInject constructor(
 
             if (!prefs.getBoolean("sync_enabled", false)) return@withContext Result.success()
 
-            // Full bidirectional sync
+            // Full bidirectional sync using exact repository methods
             googleSheetsClient.pushVehicles(vehicleRepository.getAllVehicles().first(), sheetId)
             googleSheetsClient.pushFuelEntries(fuelRepository.getAllEntries().first(), sheetId)
             googleSheetsClient.pushExpenseEntries(expenseRepository.getAllEntries().first(), sheetId)
