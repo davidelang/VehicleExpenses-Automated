@@ -21,7 +21,7 @@ object OdometerOcrUtils {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    suspend fun extractFromPhoto(photoPath: String): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun extractFromPhoto(photoPath: String, confidenceThreshold: Float = 0.75f): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
         if (!file.exists()) return@withContext OcrResult(null, null, null)
 
