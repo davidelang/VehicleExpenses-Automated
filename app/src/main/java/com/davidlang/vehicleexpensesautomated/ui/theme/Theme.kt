@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.theme
 
 import android.app.Activity
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -11,7 +12,9 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -37,7 +40,23 @@ fun VehicleExpensesAutomatedTheme(
 ) {
     val context = LocalContext.current
     val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-    val darkModePref = prefs.getString("dark_mode", "system") ?: "system"
+
+    val darkModePrefState = remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
+
+    // React to changes from SettingsScreen
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "dark_mode") {
+                darkModePrefState.value = prefs.getString("dark_mode", "system") ?: "system"
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
+    val darkModePref = darkModePrefState.value
 
     val darkTheme = when (darkModePref) {
         "on" -> true
