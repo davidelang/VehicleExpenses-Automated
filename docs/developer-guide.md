@@ -1,5 +1,11 @@
 # Vehicle Expenses Automated — Developer Guide
 
+## App Launcher Icon (new design)
+The official launcher icon is the new design provided by the user (two cars + camera lens + green $ + symbol).
+
+**Correct way to add it:**
+Use Android Studio → New → Image Asset → Launcher Icons.
+
 ## Current Architecture (matches repo head da3a2b4f1829bf4dda99090b07105d3ba7134ce9)
 
 ### Permission Handling

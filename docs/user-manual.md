@@ -1,5 +1,8 @@
 # Vehicle Expenses Automated — User Manual
 
+## App Icon
+The official launcher icon is the new design provided (two cars, camera lens, green dollar sign with +). It represents the camera-first expense tracking experience.
+
 ## Overview
 This app tracks vehicle fuel entries and expenses using **camera-first photo capture** with fully automatic OCR.
 
@@ -21,6 +24,10 @@ This app tracks vehicle fuel entries and expenses using **camera-first photo cap
 ## Automatic OCR
 - Runs instantly on every photo capture (no extra button clicks).
 - Extracts odometer from dash photos and gallons + cost from pump/receipt photos.
+
+## Permissions
+- The app requests CAMERA permission on first launch.
+- If denied, it continues to operate (photo features are disabled or greyed out).
 
 ## Settings
 - Google Sheets sync (optional two-way)
