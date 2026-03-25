@@ -1,6 +1,5 @@
 # Vehicle Expenses Automated — TODO List
 ## High Priority (next)
-- Make Import Old Pictures screen use the real FuelViewModel.saveFuel() call instead of placeholder Toast.
 ## Medium Priority
 - Full ExpenseEntry screen with receipt OCR.
 - Improve reference dash photo setup UI (add odometer confirmation dialog).
@@ -24,4 +23,5 @@
 - VehicleViewModel + Room migration for referenceDashPhotoUrl
 - CAMERA permission requested on launch in MainActivity.kt (app continues if denied)
 - Updated user-manual.md and developer-guide.md to match current functionality
-Last updated: $(date +%Y-%m-%d)
+- Make Import Old Pictures screen use the real FuelViewModel.saveFuel() call instead of placeholder Toast.
+Last updated: 2026-03-24
