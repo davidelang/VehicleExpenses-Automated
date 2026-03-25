@@ -23,7 +23,7 @@ fun ReportsScreen(navController: NavHostController) {
     val expenses by expenseViewModel.expenses.collectAsState()
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState()
 
-    // Enhanced stats using exact model fields
+    // Enhanced stats using exact model fields (all Double)
     val totalExpenses = expenses.sumOf { it.amount }
     val totalFuelCost = fuelEntries.sumOf { it.cost }
     val totalGallons = fuelEntries.sumOf { it.gallons }
@@ -66,7 +66,7 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Fuel Trends – visual bars
+        // Fuel Trends – visual bars (Double coerceIn)
         Text("Fuel Cost Trends (last 5 entries)", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(fuelEntries.takeLast(5).reversed()) { entry ->
@@ -92,7 +92,7 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Expense Breakdown – visual bars
+        // Expense Breakdown – visual bars (Double coerceIn)
         Text("Expenses by Category", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(categoryTotals.entries.toList()) { (cat, total) ->
