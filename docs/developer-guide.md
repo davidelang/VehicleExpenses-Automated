@@ -11,7 +11,7 @@
 - FuelEntry
 
 ### Key Components
-- **MainActivity.kt**: Permission request + AppNavigation root.
+- **MainActivity.kt**: Permission request + exact existing VehicleExpensesApp composable.
 - **PhotoPicker.kt**: Camera-first flow.
 - **OdometerOcrUtils.kt**: Automatic ML Kit OCR on every photo capture.
 - **PhotoStorageManager.kt**: Handles both camera and gallery imports.
