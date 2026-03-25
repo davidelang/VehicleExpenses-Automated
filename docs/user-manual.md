@@ -1,8 +1,5 @@
 # Vehicle Expenses Automated — User Manual
 
-## App Icon
-The official launcher icon is the new design provided (two cars, camera lens, green dollar sign with +). It represents the camera-first expense tracking experience.
-
 ## Overview
 This app tracks vehicle fuel entries and expenses using **camera-first photo capture** with fully automatic OCR.
 

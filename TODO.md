@@ -20,6 +20,6 @@
 - Gallery-only Import Old Pictures screen with auto OCR + auto vehicle match
 - Reference dash photo auto-matching using perceptual hash
 - VehicleViewModel + Room migration for referenceDashPhotoUrl
-- New app launcher icon documented (manual placement failed — use Android Studio Image Asset Studio)
+- Updated user-manual.md and developer-guide.md to match current functionality
 
 Last updated: $(date +%Y-%m-%d)
