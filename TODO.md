@@ -20,7 +20,7 @@
 - Gallery-only Import Old Pictures screen with auto OCR + auto vehicle match
 - Reference dash photo auto-matching using perceptual hash
 - VehicleViewModel + Room migration for referenceDashPhotoUrl
-- Permissions now requested on launch (CAMERA) — app continues if denied (photo options greyed out later)
+- CAMERA permission requested on launch in MainActivity.kt (app continues if denied)
 - Updated user-manual.md, developer-guide.md and TODO.md
 
 Last updated: $(date +%Y-%m-%d)
