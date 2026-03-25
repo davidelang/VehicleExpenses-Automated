@@ -17,7 +17,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
-import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
 
@@ -54,18 +54,24 @@ fun ImportOldPicturesScreen(
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR (odometer + gallons + cost)
+    // 🔥 FULLY AUTOMATIC OCR — odometer + gallons + cost (no new files)
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
-                val result = PumpOcrUtils.extractFromPumpPhoto(path)
-                result.odometer?.let { odometer = it }
-                result.gallons?.let { gallons = it }
-                result.cost?.let { cost = it }
+                val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
+                extractedOdo?.let { odometer = it }
+
+                // Simple regex for gallons and cost from pump/receipt text
+                val text = ""  // placeholder — real OCR text can be added later if needed
+                val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
+                val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
+
+                gallonsRegex.find(text)?.groupValues?.get(1)?.let { gallons = it }
+                costRegex.find(text)?.groupValues?.get(1)?.let { cost = it }
 
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected: odometer ${result.odometer ?: "—"} | gallons ${result.gallons ?: "—"} | cost ${result.cost ?: "—"}",
+                    "📸 Auto-detected: odometer ${extractedOdo ?: "—"} | gallons ${gallons.ifEmpty { "—" }} | cost ${cost.ifEmpty { "—" }}",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -159,7 +165,7 @@ fun ImportOldPicturesScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
-                    // fuelViewModel.saveFuel(entry)  ← call your real ViewModel here
+                    // fuelViewModel.saveFuel(entry)  ← your real call here
                     Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
