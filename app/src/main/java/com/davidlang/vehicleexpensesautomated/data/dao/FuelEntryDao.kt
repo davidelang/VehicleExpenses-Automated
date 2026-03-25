@@ -14,6 +14,9 @@ interface FuelEntryDao {
     @Query("SELECT * FROM fuel_entries ORDER BY timestamp DESC")
     fun getAllFuelEntries(): Flow<List<FuelEntry>>
 
+    @Query("SELECT * FROM fuel_entries WHERE vehicleId = :vehicleId ORDER BY timestamp DESC")
+    fun getFuelEntriesForVehicle(vehicleId: Int): Flow<List<FuelEntry>>
+
     @Insert
     suspend fun insertFuelEntry(entry: FuelEntry)
 
