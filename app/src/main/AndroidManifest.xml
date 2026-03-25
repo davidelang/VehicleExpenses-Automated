@@ -13,7 +13,7 @@
         android:allowBackup="true"
         android:label="VehicleExpenses"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VehicleExpensesAutomated">
+        android:theme="@style/Theme.VehicleExpenses">
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
