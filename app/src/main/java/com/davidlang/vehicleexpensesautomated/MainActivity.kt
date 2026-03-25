@@ -6,11 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,7 +71,6 @@ class MainActivity : ComponentActivity() {
                                 label = { Text("About") },
                                 selected = false,
                                 onClick = {
-                                    // Future About screen
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -81,9 +82,7 @@ class MainActivity : ComponentActivity() {
                             TopAppBar(
                                 title = { Text("Vehicle Expenses") },
                                 navigationIcon = {
-                                    IconButton(onClick = {
-                                        scope.launch { drawerState.open() }
-                                    }) {
+                                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                         Icon(Icons.Default.Menu, contentDescription = "Menu")
                                     }
                                 }
