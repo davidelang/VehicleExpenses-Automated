@@ -22,3 +22,4 @@ https://github.com/davidelang/VehicleExpenses-Automated
 - Provide the fix first, then (only if asked) a separate block with these operating instructions.
 - As part of each changeset provide an explanation about what problem was found and how it is solved by this changeset.
 - each changeset is to include the git instructions to add changes to the repo and use git push to push the local state up to github
+- To make the Grok UI left sidebar ("Instructions" / "Sources") reflect the rules in this file: open the sidebar, click into the "Instructions" box, delete the old text, and paste the entire "## Grok Collaboration" section (including the rules list) from this CONTRIBUTING.md file. The "Sources" section can optionally have personal files uploaded, but the operating rules live in the Instructions panel.
