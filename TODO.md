@@ -3,7 +3,6 @@
 ## Medium Priority
 ## Low Priority / Future
 - ODB-II integration for live odometer.
-- Advanced reports and charts.
 - add additional image backup backup options
   - google photos
   - amazon photos
@@ -23,4 +22,5 @@
 - Make Import Old Pictures screen use the real FuelViewModel.saveFuel() call instead of placeholder Toast.
 - Add settings toggle for OCR confidence threshold.
 - Full ExpenseEntry screen with receipt OCR.
+- Advanced reports and charts.
 Last updated: 2026-03-24
