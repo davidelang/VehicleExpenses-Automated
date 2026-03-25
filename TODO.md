@@ -21,6 +21,7 @@
 - Reference dash photo auto-matching using perceptual hash
 - VehicleViewModel + Room migration for referenceDashPhotoUrl
 - CAMERA permission requested on launch in MainActivity.kt (app continues if denied)
+- VehicleExpensesApp.kt created as root composable
 - Updated user-manual.md, developer-guide.md and TODO.md
 
 Last updated: $(date +%Y-%m-%d)
