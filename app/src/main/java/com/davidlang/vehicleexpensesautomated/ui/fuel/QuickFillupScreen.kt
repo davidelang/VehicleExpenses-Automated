@@ -67,12 +67,12 @@ fun QuickFillupScreen(
                     selectedVehicle = bestVehicle
                     Toast.makeText(
                         context,
-                        "🔍 Auto-matched ${bestVehicle.make} ${bestVehicle.model} (${(bestSimilarity * 100).toInt()}%)",
+                        "Auto-matched ${bestVehicle.make} ${bestVehicle.model} (${(bestSimilarity * 100).toInt()}%)",
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
                     navController.navigate("importOldPictures")
-                    Toast.makeText(context, "📸 No match — opening Import Old Pictures", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "No match — opening Import Old Pictures", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -153,40 +153,25 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Button(
+            onClick = {
+                val vehicleId = selectedVehicle?.id ?: 1
+                scope.launch {
+                    val entry = FuelEntry(
+                        vehicleId = vehicleId,
+                        odometer = odometer.toIntOrNull() ?: 0,
+                        gallons = gallons.toDoubleOrNull() ?: 0.0,
+                        cost = cost.toDoubleOrNull() ?: 0.0,
+                        timestamp = System.currentTimeMillis(),
+                        photoUrl = photoUrl
+                    )
+                    fuelViewModel.saveFuel(entry)
+                    Toast.makeText(context, "Fill-up saved", Toast.LENGTH_SHORT).show()
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Button(
-                onClick = {
-                    val vehicleId = selectedVehicle?.id ?: 1
-                    scope.launch {
-                        val entry = FuelEntry(
-                            vehicleId = vehicleId,
-                            odometer = odometer.toIntOrNull() ?: 0,
-                            gallons = gallons.toDoubleOrNull() ?: 0.0,
-                            cost = cost.toDoubleOrNull() ?: 0.0,
-                            timestamp = System.currentTimeMillis(),
-                            photoUrl = photoUrl
-                        )
-                        fuelViewModel.saveFuel(entry)
-                        Toast.makeText(context, "✅ Fill-up saved", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Save Fill-up")
-            }
-
-            Button(
-                onClick = {
-                    val vehicleId = selectedVehicle?.id ?: 1
-                    navController.navigate("expense/$vehicleId")
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Add Expense")
-            }
+            Text("Save Fill-up")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -196,7 +181,7 @@ fun QuickFillupScreen(
             onClick = { navController.navigate("importOldPictures") },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("📥 Import Old Pictures (gallery + auto OCR)")
+            Text("Import Old Pictures (gallery + auto OCR)")
         }
     }
 }
