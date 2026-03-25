@@ -46,7 +46,7 @@ class CsvManager @Inject constructor(
             writeCsvToZip(zos, "Expense_entries.csv", expenseCsv)
         }
 
-        Log.i("CsvManager", "Exported ZIP with exact Google-Sheet-style CSVs (one per tab)")
+        Log.i("CsvManager", "Exported ZIP with exact Google-Sheet-style flat CSVs (one per tab)")
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
     }
 
@@ -72,7 +72,7 @@ class CsvManager @Inject constructor(
         val expenses = expenseRepository.getAllEntries().first()
         val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path\n")
         expenses.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.timestamp},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""}\n")
+            sb.append("${it.id},${it.vehicleId},${it.date},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""}\n")
         }
         return sb.toString()
     }
@@ -117,7 +117,7 @@ class CsvManager @Inject constructor(
                     vin = parts[5].ifBlank { null },
                     notes = parts[6].ifBlank { null }
                 )
-                vehicleRepository.insert(vehicle) // standard repo method
+                vehicleRepository.insert(vehicle)
             }
         }
     }
@@ -137,7 +137,7 @@ class CsvManager @Inject constructor(
                     photoUrl = parts[6].ifBlank { null },
                     isPartialFill = parts[7].toBoolean()
                 )
-                fuelRepository.insert(fuel) // standard repo method
+                fuelRepository.insertFuelEntry(fuel)
             }
         }
     }
@@ -150,13 +150,13 @@ class CsvManager @Inject constructor(
                 val expense = ExpenseEntry(
                     id = parts[0].toLongOrNull() ?: 0,
                     vehicleId = parts[1].toIntOrNull() ?: 0,
-                    timestamp = parts[2].toLongOrNull() ?: System.currentTimeMillis(),
                     amount = parts[3].toDoubleOrNull() ?: 0.0,
-                    category = parts[4],
                     description = parts[5],
+                    date = parts[2].toLongOrNull() ?: System.currentTimeMillis(),
+                    category = parts[4],
                     receiptImagePath = parts[6].ifBlank { null }
                 )
-                expenseRepository.insert(expense) // standard repo method
+                expenseRepository.insertExpenseEntry(expense)
             }
         }
     }
