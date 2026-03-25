@@ -1,5 +1,5 @@
 #!/bin/bash
+git describe --always
 git push
 git tag -f works
 git push --tags -f
-git describe --always
