@@ -1,6 +1,5 @@
 # Vehicle Expenses Automated — TODO List
 ## High Priority (next)
-- Units support: setting to select default units, and on pump photo screen allow overriding units for the purchase and convert to configured units before saving.
 - Make Import Old Pictures screen use the real FuelViewModel.saveFuel() call instead of placeholder Toast.
 ## Medium Priority
 - Full ExpenseEntry screen with receipt OCR.
