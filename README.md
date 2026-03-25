@@ -19,3 +19,5 @@ Apache License 2.0 — see [LICENSE](LICENSE)
 The full source code is available in this public GitHub repository:
 
 https://github.com/davidelang/VehicleExpenses-Automated
+
+note that this code was largely written by Grok
