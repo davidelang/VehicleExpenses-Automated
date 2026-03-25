@@ -6,12 +6,11 @@ This app tracks vehicle fuel entries and expenses using **camera-first photo cap
 ## Core Workflow (Camera-First)
 - **Quick Fill-up** (main screen):
   - Tap **Take Photo** → camera opens immediately for dashboard/odometer photo.
-  - OCR runs automatically and auto-matches the vehicle using reference dash photos.
-  - Fill in gallons/cost (or use future pump-photo OCR).
+  - OCR runs automatically (odometer + gallons + cost when available) and auto-matches the vehicle using reference dash photos.
   - Save to local Room database.
 - **Import Old Pictures** (gallery-only):
   - Tap the button → pick an old photo from gallery.
-  - OCR runs automatically (odometer + gallons + cost where possible).
+  - OCR runs automatically (odometer + gallons + cost).
   - Auto-matches vehicle if possible.
   - Save as Fuel Entry.
 
@@ -20,9 +19,8 @@ This app tracks vehicle fuel entries and expenses using **camera-first photo cap
 - Future dash photos are automatically matched against these references using perceptual hash.
 
 ## Automatic OCR
-- Runs instantly on every new photo capture (no extra button clicks).
-- Currently extracts odometer from dash photos.
-- Pump/receipt photos will have full gallons + price OCR in a future update.
+- Runs instantly on every photo capture (no extra button clicks).
+- Extracts odometer from dash photos and gallons + cost from pump/receipt photos.
 
 ## Settings
 - Google Sheets sync (optional two-way)
@@ -34,8 +32,3 @@ This app tracks vehicle fuel entries and expenses using **camera-first photo cap
 3. Background SyncWorker pushes to Google Sheets (if configured)
 
 All data is stored locally first — sync is optional.
-
-## Planned Features (see TODO.md)
-- Full pump-photo OCR for gallons + price
-- Expense receipt OCR
-- Improved import flow for historical photos
