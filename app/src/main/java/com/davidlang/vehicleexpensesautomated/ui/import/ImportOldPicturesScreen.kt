@@ -54,25 +54,22 @@ fun ImportOldPicturesScreen(
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR — odometer + gallons + cost (using existing OdometerOcrUtils + regex)
+    // 🔥 FULLY AUTOMATIC OCR — odometer + gallons + cost from full vision text
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
-                val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
-                extractedOdo?.let { odometer = it }
+                val result = OdometerOcrUtils.extractOdometerFromPhoto(path)
+                result.odometer?.let { odometer = it }
 
-                // Simple regex for gallons and cost from pump/receipt text (no new files)
                 val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
                 val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
-                // For now we use a placeholder — in a future step we can expose full visionText from OdometerOcrUtils if needed
-                val text = ""  
-                gallonsRegex.find(text)?.groupValues?.get(1)?.let { gallons = it }
-                costRegex.find(text)?.groupValues?.get(1)?.let { cost = it }
+                gallonsRegex.find(result.fullText)?.groupValues?.get(1)?.let { gallons = it }
+                costRegex.find(result.fullText)?.groupValues?.get(1)?.let { cost = it }
 
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected: odometer ${extractedOdo ?: "—"} | gallons ${gallons.ifEmpty { "—" }} | cost ${cost.ifEmpty { "—" }}",
+                    "📸 Auto-detected: odometer ${result.odometer ?: "—"} | gallons ${gallons.ifEmpty { "—" }} | cost ${cost.ifEmpty { "—" }}",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -166,7 +163,7 @@ fun ImportOldPicturesScreen(
                         timestamp = System.currentTimeMillis(),
                         photoUrl = photoPath
                     )
-                    // fuelViewModel.saveFuel(entry)  ← replace with your real call when ready
+                    // fuelViewModel.saveFuel(entry)  ← your real call here
                     Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
