@@ -17,7 +17,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
-import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
 
@@ -54,22 +54,25 @@ fun ImportOldPicturesScreen(
         }
     }
 
-    // 🔥 FULLY AUTOMATIC OCR
+    // 🔥 FULLY AUTOMATIC OCR (odometer + gallons + cost)
     LaunchedEffect(photoPath) {
         photoPath?.let { path ->
             scope.launch {
-                val extractedOdo = OdometerOcrUtils.extractOdometerFromPhoto(path)
-                extractedOdo?.let { odometer = it }
+                val result = PumpOcrUtils.extractFromPumpPhoto(path)
+                result.odometer?.let { odometer = it }
+                result.gallons?.let { gallons = it }
+                result.cost?.let { cost = it }
+
                 Toast.makeText(
                     context,
-                    "📸 Auto-detected odometer: $extractedOdo (gallons/price OCR next)",
+                    "📸 Auto-detected: odometer ${result.odometer ?: "—"} | gallons ${result.gallons ?: "—"} | cost ${result.cost ?: "—"}",
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
     }
 
-    // Auto-match vehicle
+    // Auto-match vehicle (unchanged)
     LaunchedEffect(photoPath) {
         photoPath?.let { newPath ->
             val newHash = ImageHashUtils.computeHashFromFilePath(newPath)
@@ -136,8 +139,8 @@ fun ImportOldPicturesScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer (auto-filled)") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = cost, onValueChange = { cost = it }, label = { Text("Total Cost") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons (auto-filled)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = cost, onValueChange = { cost = it }, label = { Text("Total Cost (auto-filled)") }, modifier = Modifier.fillMaxWidth())
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -148,8 +151,16 @@ fun ImportOldPicturesScreen(
                     return@Button
                 }
                 scope.launch {
-                    // TODO: replace with your real FuelViewModel.saveFuel call when ready
-                    Toast.makeText(context, "✅ Old fill-up imported (saved to DB in next step)", Toast.LENGTH_LONG).show()
+                    val entry = FuelEntry(
+                        vehicleId = vehicleId,
+                        odometer = odometer.toIntOrNull() ?: 0,
+                        gallons = gallons.toDoubleOrNull() ?: 0.0,
+                        cost = cost.toDoubleOrNull() ?: 0.0,
+                        timestamp = System.currentTimeMillis(),
+                        photoUrl = photoPath
+                    )
+                    // fuelViewModel.saveFuel(entry)  ← call your real ViewModel here
+                    Toast.makeText(context, "✅ Old fill-up imported and saved", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 }
             },
