@@ -35,6 +35,7 @@ fun QuickFillupScreen(
     var cost by remember { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
+    var isPartialFill by remember { mutableStateOf(false) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicle == null && vehicles.isNotEmpty()) {
@@ -70,9 +71,6 @@ fun QuickFillupScreen(
                         "Auto-matched ${bestVehicle.make} ${bestVehicle.model} (${(bestSimilarity * 100).toInt()}%)",
                         Toast.LENGTH_LONG
                     ).show()
-                } else {
-                    navController.navigate("importOldPictures")
-                    Toast.makeText(context, "No match — opening Import Old Pictures", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -89,6 +87,22 @@ fun QuickFillupScreen(
         )
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        // Camera takes exactly half the screen
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            PhotoPicker(
+                photoStorageManager = settingsViewModel.photoStorageManager,
+                photoType = PhotoType.FUEL,
+                currentPhotoUrl = photoUrl,
+                onPhotoUrlChanged = { photoUrl = it }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -121,8 +135,6 @@ fun QuickFillupScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
         OutlinedTextField(
             value = odometer,
             onValueChange = { odometer = it },
@@ -144,12 +156,13 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        PhotoPicker(
-            photoStorageManager = settingsViewModel.photoStorageManager,
-            photoType = PhotoType.FUEL,
-            currentPhotoUrl = photoUrl,
-            onPhotoUrlChanged = { photoUrl = it }
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = isPartialFill,
+                onCheckedChange = { isPartialFill = it }
+            )
+            Text("Partial fill (top off only)")
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -163,25 +176,17 @@ fun QuickFillupScreen(
                         gallons = gallons.toDoubleOrNull() ?: 0.0,
                         cost = cost.toDoubleOrNull() ?: 0.0,
                         timestamp = System.currentTimeMillis(),
-                        photoUrl = photoUrl
+                        photoUrl = photoUrl,
+                        isPartialFill = isPartialFill
                     )
                     fuelViewModel.saveFuel(entry)
                     Toast.makeText(context, "Fill-up saved", Toast.LENGTH_SHORT).show()
+                    isPartialFill = false // reset after save
                 }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Save Fill-up")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // NEW: Direct access to Import Old Pictures (exactly as you requested)
-        OutlinedButton(
-            onClick = { navController.navigate("importOldPictures") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Import Old Pictures (gallery + auto OCR)")
         }
     }
 }
