@@ -3,6 +3,8 @@ package com.davidlang.vehicleexpensesautomated.ui.vehicle
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -66,6 +68,7 @@ fun AddNewVehicleScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Text(
             text = "Add New Vehicle",
