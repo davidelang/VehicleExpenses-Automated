@@ -3,7 +3,7 @@ package com.davidlang.vehicleexpensesautomated.ui.vehicles
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
-import com.davidlang.vehicleexpensesautomated.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -21,10 +21,11 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    fun addVehicle(make: String, model: String, year: Int, licensePlate: String) {
+    fun addVehicle(name: String, make: String, model: String, year: Int, licensePlate: String) {
         viewModelScope.launch {
             repository.insert(
                 Vehicle(
+                    name = name,
                     make = make,
                     model = model,
                     year = year,
