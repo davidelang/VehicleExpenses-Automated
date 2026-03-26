@@ -17,7 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner   // updated import
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -115,7 +115,7 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
             OutlinedTextField(
                 value = vehicleId.toString(),
                 onValueChange = { vehicleId = it.toIntOrNull() ?: 0 },
-                label = { Text("Vehicle ID") },
+                label = { Text("Vehicle") },
                 modifier = Modifier.fillMaxWidth()
             )
 
