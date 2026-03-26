@@ -37,7 +37,6 @@ android {
         buildConfig = true
     }
     packagingOptions {
-        // Fix duplicate META-INF files from Google auth libraries
         exclude("META-INF/DEPENDENCIES")
         exclude("META-INF/INDEX.LIST")
     }
@@ -75,4 +74,8 @@ dependencies {
     implementation("com.google.apis:google-api-services-sheets:v4-rev20220927-2.0.0")
     // Google Drive API for photo upload
     implementation("com.google.apis:google-api-services-drive:v3-rev20240509-2.0.0")
+    // CameraX for the new fillup screen
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
 }
