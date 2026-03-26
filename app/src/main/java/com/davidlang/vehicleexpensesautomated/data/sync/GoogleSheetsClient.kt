@@ -1,5 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.data.sync
 
+import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
+import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
