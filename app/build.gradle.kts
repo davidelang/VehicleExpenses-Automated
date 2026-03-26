@@ -37,7 +37,9 @@ android {
         buildConfig = true
     }
     packagingOptions {
+        // Fix duplicate META-INF files from Google auth libraries
         exclude("META-INF/DEPENDENCIES")
+        exclude("META-INF/INDEX.LIST")
     }
 }
 
@@ -71,6 +73,6 @@ dependencies {
     // Google Sheets API for bidirectional sync
     implementation("com.google.api-client:google-api-client-android:2.2.0")
     implementation("com.google.apis:google-api-services-sheets:v4-rev20220927-2.0.0")
-    // Google Drive API for photo upload (correct, existing version)
+    // Google Drive API for photo upload
     implementation("com.google.apis:google-api-services-drive:v3-rev20240509-2.0.0")
 }
