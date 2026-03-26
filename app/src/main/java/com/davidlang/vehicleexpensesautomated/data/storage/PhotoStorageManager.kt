@@ -34,7 +34,7 @@ class PhotoStorageManager @Inject constructor(
             .build()
     }
 
-    fun savePhoto(uri: Uri, fileName: String, photoType: PhotoType): String? {
+    suspend fun savePhoto(uri: Uri, fileName: String, photoType: PhotoType): String? {
         val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
         val provider = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
 
@@ -105,7 +105,7 @@ class PhotoStorageManager @Inject constructor(
         return created.id
     }
 
-    fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
+    suspend fun savePhotoFromUri(uri: Uri, photoType: PhotoType): String {
         val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.jpg"
         return savePhoto(uri, fileName, photoType) ?: throw IllegalArgumentException("Cannot save photo from URI")
     }
