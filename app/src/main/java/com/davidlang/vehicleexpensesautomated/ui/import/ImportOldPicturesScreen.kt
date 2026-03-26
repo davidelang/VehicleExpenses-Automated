@@ -120,7 +120,7 @@ fun ImportOldPicturesScreen(
 
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
-                value = selectedVehicle?.let { it.name } ?: "Select vehicle",
+                value = selectedVehicle?.name ?: "Select vehicle",
                 onValueChange = {},
                 label = { Text("Vehicle") },
                 modifier = Modifier

@@ -39,8 +39,7 @@ class VehicleViewModel @Inject constructor(
                 licensePlate = licensePlate,
                 referenceDashPhotoUrl = referenceDashPhotoUrl
             )
-            val newId = repository.insert(newVehicle)
-            // initialOdometer can be stored later in a FuelEntry or notes field
+            repository.insert(newVehicle)
         }
     }
 }
