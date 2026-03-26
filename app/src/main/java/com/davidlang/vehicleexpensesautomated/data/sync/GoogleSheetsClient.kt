@@ -19,7 +19,7 @@ import javax.inject.Singleton
 
 @Singleton
 class GoogleSheetsClient @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
 
     private suspend fun getSheetsService(): Sheets = withContext(Dispatchers.IO) {
