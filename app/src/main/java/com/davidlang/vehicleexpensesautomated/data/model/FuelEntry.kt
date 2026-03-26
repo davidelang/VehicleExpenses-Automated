@@ -12,5 +12,6 @@ data class FuelEntry(
     val cost: Double,
     val timestamp: Long,
     val photoUrl: String? = null,
-    val isPartialFill: Boolean = false
+    val isPartialFill: Boolean = false,
+    val isMissedFillup: Boolean = false
 )

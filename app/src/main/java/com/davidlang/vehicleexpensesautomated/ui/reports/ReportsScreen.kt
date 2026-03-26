@@ -30,9 +30,10 @@ fun ReportsScreen(navController: NavHostController) {
     val partialFills = fuelEntries.count { it.isPartialFill }
     val totalFillUps = fuelEntries.size
 
-    // MPG from last two full fills
+    // MPG from last two full fills — ignore final partial + any missed fills between full fills
     val avgMpg = if (fuelEntries.size >= 2) {
-        val sorted = fuelEntries.sortedBy { it.timestamp }.filter { !it.isPartialFill }
+        val sorted = fuelEntries.sortedBy { it.timestamp }
+            .filter { !it.isPartialFill && !it.isMissedFillup }
         if (sorted.size >= 2) {
             val lastTwo = sorted.takeLast(2)
             if (lastTwo[1].odometer > lastTwo[0].odometer && lastTwo[1].gallons > 0)
@@ -124,7 +125,7 @@ fun ReportsScreen(navController: NavHostController) {
             items(fuelEntries.take(5)) { entry ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Gallons: ${entry.gallons} | Cost: $${entry.cost} | Partial: ${entry.isPartialFill}")
+                        Text("Gallons: ${entry.gallons} | Cost: $${entry.cost} | Partial: ${entry.isPartialFill} | Missed: ${entry.isMissedFillup}")
                     }
                 }
             }
