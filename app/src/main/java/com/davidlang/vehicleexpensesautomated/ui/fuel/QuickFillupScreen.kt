@@ -51,9 +51,12 @@ fun QuickFillupScreen(navController: NavHostController) {
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
 
-    // Vehicle selector
+    // Vehicle selector (hard-coded for this patch; will be replaced with real list from ViewModel later)
     var selectedVehicle by remember { mutableStateOf("Select vehicle") }
     val vehicles = listOf("My Truck", "Family Car", "Work Van")
+
+    var showOdometerConfirmation by remember { mutableStateOf(false) }
+    var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // Gallery picker for "Advanced: Pick existing picture"
     val pickImageLauncher = rememberLauncherForActivityResult(
@@ -62,7 +65,6 @@ fun QuickFillupScreen(navController: NavHostController) {
         uri?.let { selectedUri ->
             Toast.makeText(context, "Image selected — copying to temp file for OCR...", Toast.LENGTH_SHORT).show()
             scope.launch {
-                // Convert content URI to real file path (fixes the null OCR)
                 val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
                     tempFile.outputStream().use { output ->
@@ -71,20 +73,24 @@ fun QuickFillupScreen(navController: NavHostController) {
                 }
                 val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
 
-                // Long debug Toast so we can confirm values
                 Toast.makeText(
                     context,
-                    "OCR RESULT (Step $step): odometer=${result.odometer} | gallons=${result.gallons} | cost=${result.cost}",
+                    "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}",
                     Toast.LENGTH_LONG
                 ).show()
 
                 if (step == 1) {
-                    odometer = result.odometer?.toIntOrNull() ?: odometer
+                    if (result.possibleOdometers.isNotEmpty()) {
+                        possibleOdometers = result.possibleOdometers
+                        showOdometerConfirmation = true
+                    } else {
+                        odometer = result.odometer?.toIntOrNull() ?: odometer
+                    }
                 } else {
                     gallons = result.gallons?.toDoubleOrNull() ?: gallons
                     cost = result.cost?.toDoubleOrNull() ?: cost
                 }
-                tempFile.delete() // clean up
+                tempFile.delete()
             }
         }
     }
@@ -132,7 +138,13 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         scope = scope,
                         viewModel = viewModel,
-                        navController = navController
+                        navController = navController,
+                        showOdometerConfirmation = showOdometerConfirmation,
+                        possibleOdometers = possibleOdometers,
+                        onOdometerConfirmed = { selected ->
+                            odometer = selected.toIntOrNull() ?: odometer
+                            showOdometerConfirmation = false
+                        }
                     )
                 }
             }
@@ -180,7 +192,13 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         scope = scope,
                         viewModel = viewModel,
-                        navController = navController
+                        navController = navController,
+                        showOdometerConfirmation = showOdometerConfirmation,
+                        possibleOdometers = possibleOdometers,
+                        onOdometerConfirmed = { selected ->
+                            odometer = selected.toIntOrNull() ?: odometer
+                            showOdometerConfirmation = false
+                        }
                     )
                 }
             }
@@ -208,7 +226,10 @@ private fun ControlsContent(
     onAdvancedPick: () -> Unit,
     scope: CoroutineScope,
     viewModel: FuelViewModel,
-    navController: NavHostController
+    navController: NavHostController,
+    showOdometerConfirmation: Boolean,
+    possibleOdometers: List<String>,
+    onOdometerConfirmed: (String) -> Unit
 ) {
     // Vehicle pulldown
     ExposedDropdownMenuBox(
@@ -248,7 +269,12 @@ private fun ControlsContent(
             onClick = {
                 scope.launch {
                     val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg")
-                    onOdometerChange(result.odometer?.toIntOrNull() ?: odometer)
+                    if (result.possibleOdometers.isNotEmpty()) {
+                        possibleOdometers = result.possibleOdometers // trigger confirmation
+                        showOdometerConfirmation = true
+                    } else {
+                        onOdometerChange(result.odometer?.toIntOrNull() ?: odometer)
+                    }
                     if (isMissedFill) {
                         val entry = FuelEntry(
                             vehicleId = 1,
@@ -332,5 +358,33 @@ private fun ControlsContent(
         Button(onClick = onAdvancedPick, modifier = Modifier.fillMaxWidth()) {
             Text("Advanced: Pick existing picture")
         }
+    }
+
+    // Odometer confirmation dialog (Google-Lens style selection)
+    if (showOdometerConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showOdometerConfirmation = false },
+            title = { Text("Confirm Odometer Reading") },
+            text = {
+                Column {
+                    Text("Multiple possible readings found. Tap the correct one:")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    possibleOdometers.forEach { candidate ->
+                        Button(
+                            onClick = { onOdometerConfirmed(candidate) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(candidate)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showOdometerConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
