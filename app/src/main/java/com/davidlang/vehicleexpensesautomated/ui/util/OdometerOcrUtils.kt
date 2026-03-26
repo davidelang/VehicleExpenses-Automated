@@ -15,8 +15,7 @@ import kotlin.coroutines.resumeWithException
 data class OcrResult(
     val odometer: String?,
     val gallons: String?,
-    val cost: String?,
-    val confidence: Float?   // new: overall max confidence of matched text blocks
+    val cost: String?
 )
 
 object OdometerOcrUtils {
@@ -25,9 +24,9 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, confidenceThreshold: Float = 0.75f): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, null, null, null)
+        if (!file.exists()) return@withContext OcrResult(null, null, null)
 
-        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, null, null, null)
+        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, null, null)
         val image = InputImage.fromBitmap(bitmap, 0)
 
         val visionText: Text = try {
@@ -39,26 +38,19 @@ object OdometerOcrUtils {
             }
         } catch (e: Exception) {
             bitmap.recycle()
-            return@withContext OcrResult(null, null, null, null)
+            return@withContext OcrResult(null, null, null)
         }
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
         val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
         val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
-        // Find matches with their confidence
-        var maxConfidence = 0f
         var odometer: String? = null
         var gallons: String? = null
         var cost: String? = null
 
         visionText.textBlocks.forEach { block ->
             val blockText = block.text
-            val blockConfidence = block.confidence ?: 0f
-
-            if (blockConfidence < confidenceThreshold) return@forEach
-
-            if (blockConfidence > maxConfidence) maxConfidence = blockConfidence
 
             // Odometer
             odoRegex.find(blockText)?.let {
@@ -83,8 +75,7 @@ object OdometerOcrUtils {
         OcrResult(
             odometer = odometer,
             gallons = gallons,
-            cost = cost,
-            confidence = if (maxConfidence > 0f) maxConfidence else null
+            cost = cost
         )
     }
 }
