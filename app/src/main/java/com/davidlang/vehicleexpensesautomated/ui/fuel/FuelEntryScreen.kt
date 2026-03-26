@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -9,18 +8,16 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
-import com.davidlang.vehicleexpensesautomated.ui.camera.CameraViewModel
 
 @Composable
 fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null) {
     val viewModel: FuelViewModel = hiltViewModel()
-    val cameraViewModel: CameraViewModel = hiltViewModel()
 
     var odometer by remember { mutableStateOf(0) }
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
     var isPartialFill by remember { mutableStateOf(false) }
-    val photoUrl = cameraViewModel.latestPhotoUrl.collectAsState().value
+    var timestamp by remember { mutableStateOf(System.currentTimeMillis()) }
 
     Column(
         modifier = Modifier
@@ -39,7 +36,7 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { viewModel.insert(FuelEntry(vehicleId = vehicleId, odometer = odometer, gallons = gallons, cost = cost, timestamp = System.currentTimeMillis(), photoUrl = photoUrl, isPartialFill = isPartialFill)) }) {
+        Button(onClick = { viewModel.saveFuel(FuelEntry(vehicleId = vehicleId, odometer = odometer, gallons = gallons, cost = cost, timestamp = timestamp, isPartialFill = isPartialFill)) }) {
             Text("Save Fuel Entry")
         }
     }
