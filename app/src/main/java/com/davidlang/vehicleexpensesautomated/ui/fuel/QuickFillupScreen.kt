@@ -51,10 +51,11 @@ fun QuickFillupScreen(navController: NavHostController) {
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
 
-    // Vehicle selector (hard-coded for this patch; will be replaced with real list from ViewModel later)
+    // Vehicle selector
     var selectedVehicle by remember { mutableStateOf("Select vehicle") }
     val vehicles = listOf("My Truck", "Family Car", "Work Van")
 
+    // Confirmation dialog state (lifted to parent)
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
@@ -136,6 +137,8 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
+                        onShowConfirmationChange = { showOdometerConfirmation = it },
+                        onPossibleOdometersChange = { possibleOdometers = it },
                         scope = scope,
                         viewModel = viewModel,
                         navController = navController,
@@ -190,6 +193,8 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
+                        onShowConfirmationChange = { showOdometerConfirmation = it },
+                        onPossibleOdometersChange = { possibleOdometers = it },
                         scope = scope,
                         viewModel = viewModel,
                         navController = navController,
@@ -224,6 +229,8 @@ private fun ControlsContent(
     onCostChange: (Double) -> Unit,
     onStepChange: (Int) -> Unit,
     onAdvancedPick: () -> Unit,
+    onShowConfirmationChange: (Boolean) -> Unit,
+    onPossibleOdometersChange: (List<String>) -> Unit,
     scope: CoroutineScope,
     viewModel: FuelViewModel,
     navController: NavHostController,
@@ -270,8 +277,8 @@ private fun ControlsContent(
                 scope.launch {
                     val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg")
                     if (result.possibleOdometers.isNotEmpty()) {
-                        possibleOdometers = result.possibleOdometers // trigger confirmation
-                        showOdometerConfirmation = true
+                        onPossibleOdometersChange(result.possibleOdometers)
+                        onShowConfirmationChange(true)
                     } else {
                         onOdometerChange(result.odometer?.toIntOrNull() ?: odometer)
                     }
@@ -360,10 +367,10 @@ private fun ControlsContent(
         }
     }
 
-    // Odometer confirmation dialog (Google-Lens style selection)
+    // Odometer confirmation dialog
     if (showOdometerConfirmation) {
         AlertDialog(
-            onDismissRequest = { showOdometerConfirmation = false },
+            onDismissRequest = { onShowConfirmationChange(false) },
             title = { Text("Confirm Odometer Reading") },
             text = {
                 Column {
@@ -371,7 +378,9 @@ private fun ControlsContent(
                     Spacer(modifier = Modifier.height(8.dp))
                     possibleOdometers.forEach { candidate ->
                         Button(
-                            onClick = { onOdometerConfirmed(candidate) },
+                            onClick = {
+                                onOdometerConfirmed(candidate)
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(candidate)
@@ -381,7 +390,7 @@ private fun ControlsContent(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showOdometerConfirmation = false }) {
+                TextButton(onClick = { onShowConfirmationChange(false) }) {
                     Text("Cancel")
                 }
             }

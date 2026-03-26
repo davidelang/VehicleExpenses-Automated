@@ -14,7 +14,7 @@ import kotlin.coroutines.resumeWithException
 
 data class OcrResult(
     val odometer: String?,
-    val possibleOdometers: List<String>, // new: all candidate matches for user confirmation
+    val possibleOdometers: List<String>,
     val gallons: String?,
     val cost: String?
 )
