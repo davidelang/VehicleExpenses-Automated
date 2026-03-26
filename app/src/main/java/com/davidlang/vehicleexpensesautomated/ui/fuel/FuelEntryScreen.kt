@@ -19,7 +19,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
-import com.davidlang.vehicleexpensesautomated.ui.camera.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlinx.coroutines.launch
 
 @Composable
@@ -97,8 +97,7 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
 
                 Button(onClick = {
                     scope.launch {
-                        // In production this would capture from camera; here we simulate OCR
-                        val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg")
+                        val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg") // real capture will replace this
                         odometer = result.odometer?.toIntOrNull() ?: odometer
                         if (isMissedFill) {
                             val entry = FuelEntry(
