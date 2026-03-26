@@ -46,12 +46,14 @@ fun ImportOldPicturesScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let {
-            try {
-                val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, PhotoType.FUEL)
-                photoPath = copiedPath
-                Toast.makeText(context, "Old photo imported", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to import photo", Toast.LENGTH_LONG).show()
+            scope.launch {
+                try {
+                    val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, PhotoType.FUEL)
+                    photoPath = copiedPath
+                    Toast.makeText(context, "Old photo imported", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to import photo", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
