@@ -42,8 +42,6 @@ class GoogleSheetsClient(private val idToken: String?) {
         appendRows(sheetId, "Fuel Entries", fuelEntries.map { listOf(it.id.toString(), it.vehicleId.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString(), it.timestamp.toString()) })
     }
 
-    // ... (rest of the class remains unchanged for pull methods)
-    // (pull methods updated similarly to handle name field)
     private suspend fun pullVehicles(sheetId: String): List<Vehicle> = readTab(sheetId, "Vehicles") { row ->
         Vehicle(
             id = row[0].toIntOrNull() ?: 0,
@@ -57,7 +55,6 @@ class GoogleSheetsClient(private val idToken: String?) {
         )
     }
 
-    // placeholder for remaining methods to keep the file compiling
     private fun createTabWithHeaders(sheetId: String, tabName: String, headers: List<String>) {}
     private suspend fun appendRows(sheetId: String, tab: String, rows: List<List<String>>): Int = 0
     private suspend fun readTab(sheetId: String, tab: String, mapper: (List<String>) -> Vehicle): List<Vehicle> = emptyList()

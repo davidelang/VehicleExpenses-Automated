@@ -120,7 +120,7 @@ fun ImportOldPicturesScreen(
 
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
-                value = selectedVehicle?.let { "${it.make} ${it.model} (${it.year})" } ?: "Select vehicle",
+                value = selectedVehicle?.let { it.name } ?: "Select vehicle",
                 onValueChange = {},
                 label = { Text("Vehicle") },
                 modifier = Modifier
@@ -133,7 +133,7 @@ fun ImportOldPicturesScreen(
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 vehicles.forEach { vehicle ->
                     DropdownMenuItem(
-                        text = { Text("${vehicle.make} ${vehicle.model} (${vehicle.year})") },
+                        text = { Text(vehicle.name) },
                         onClick = { selectedVehicle = vehicle; expanded = false }
                     )
                 }

@@ -28,6 +28,7 @@ fun AddNewVehicleScreen(
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
+    var name by remember { mutableStateOf("") }
     var make by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
@@ -78,16 +79,23 @@ fun AddNewVehicleScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Vehicle Name (required)") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
             value = make,
             onValueChange = { make = it },
-            label = { Text("Make") },
+            label = { Text("Make (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
 
         OutlinedTextField(
             value = model,
             onValueChange = { model = it },
-            label = { Text("Model") },
+            label = { Text("Model (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -127,19 +135,20 @@ fun AddNewVehicleScreen(
 
         Button(
             onClick = {
-                if (make.isNotBlank() && model.isNotBlank() && referencePhotoUrl != null) {
+                if (name.isNotBlank()) {
                     vehicleViewModel.createNewVehicleWithReference(
+                        name = name,
                         make = make,
                         model = model,
                         year = year.toIntOrNull() ?: 2025,
                         licensePlate = licensePlate,
-                        referenceDashPhotoUrl = referencePhotoUrl!!,
+                        referenceDashPhotoUrl = referencePhotoUrl,
                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                     )
                     Toast.makeText(context, "New vehicle created with reference dash photo", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 } else {
-                    Toast.makeText(context, "Make, model, and reference photo required", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Vehicle name is required", Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier.fillMaxWidth()

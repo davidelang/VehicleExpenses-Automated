@@ -42,7 +42,6 @@ class GoogleSheetsClient(private val idToken: String?) {
         appendRows(sheetId, "Fuel Entries", fuelEntries.map { listOf(it.id.toString(), it.vehicleId.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString(), it.timestamp.toString()) })
     }
 
-    // ... (pull methods updated similarly)
     private suspend fun pullVehicles(sheetId: String): List<Vehicle> = readTab(sheetId, "Vehicles") { row ->
         Vehicle(
             id = row[0].toIntOrNull() ?: 0,
