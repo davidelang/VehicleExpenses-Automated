@@ -7,14 +7,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 
 @Composable
 fun ExpenseListScreen(navController: NavHostController? = null) {
     val viewModel: ExpenseViewModel = hiltViewModel()
-    // TODO: replace with real list once repository exposes getAllExpenses()
-    val dummyExpenses = listOf("Expense #1 - $45.67", "Expense #2 - $12.34")
+    val expenses by viewModel.expenses.collectAsState()
 
     LazyColumn(
         modifier = Modifier
@@ -30,16 +29,20 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
         }
-        items(dummyExpenses) { expense ->
+        items(expenses) { expense ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
             ) {
-                Text(
-                    text = expense,
-                    modifier = Modifier.padding(16.dp)
-                )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("${expense.description} | $${expense.amount} | ${expense.category}")
+                }
+            }
+        }
+        if (expenses.isEmpty()) {
+            item {
+                Text("No expenses yet", style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
