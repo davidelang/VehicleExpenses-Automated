@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -14,6 +15,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun AddNewVehicleScreen(
@@ -31,13 +33,31 @@ fun AddNewVehicleScreen(
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
 
-    // Automatic OCR on reference photo capture (odometer only for new vehicle setup)
+    // Automatic OCR on reference photo capture (now with temp-file conversion for both camera and gallery)
     LaunchedEffect(referencePhotoUrl) {
-        referencePhotoUrl?.let { photoPath ->
+        referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
-                val result = OdometerOcrUtils.extractFromPhoto(photoPath)
+                var finalPath = photoPathOrUri
+
+                // If it's a content:// URI (from gallery), copy to temp file
+                if (photoPathOrUri.startsWith("content://")) {
+                    val tempFile = File.createTempFile("ocr_vehicle", ".jpg", context.cacheDir)
+                    context.contentResolver.openInputStream(Uri.parse(photoPathOrUri))?.use { input ->
+                        tempFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    finalPath = tempFile.absolutePath
+                }
+
+                val result = OdometerOcrUtils.extractFromPhoto(finalPath)
                 result.odometer?.let { odometerReading = it }
-                Toast.makeText(context, "Auto-detected odometer: ${result.odometer ?: "—"}", Toast.LENGTH_SHORT).show()
+
+                Toast.makeText(
+                    context,
+                    "Auto-detected odometer: ${result.odometer ?: "—"}",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
