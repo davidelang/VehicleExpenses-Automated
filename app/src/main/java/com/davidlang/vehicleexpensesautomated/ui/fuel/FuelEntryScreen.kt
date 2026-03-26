@@ -30,7 +30,6 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
     val scope = rememberCoroutineScope()
 
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
-    var previewView by remember { mutableStateOf<PreviewView?>(null) }
 
     var step by remember { mutableStateOf(1) } // 1 = dash, 2 = pump
     var isMissedFill by remember { mutableStateOf(false) }
@@ -41,16 +40,20 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
 
     val advancedMode = true
 
+    // Create PreviewView once (this fixes the factory type issue)
+    val previewView = remember {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
+    }
+
     // Start camera immediately
     LaunchedEffect(Unit) {
         val provider = ProcessCameraProvider.getInstance(context).get()
         cameraProvider = provider
         val preview = Preview.Builder().build()
         val selector = CameraSelector.DEFAULT_BACK_CAMERA
-        previewView = PreviewView(context).apply {
-            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-        }
-        preview.setSurfaceProvider(previewView!!.surfaceProvider)
+        preview.setSurfaceProvider(previewView.surfaceProvider)
         provider.unbindAll()
         provider.bindToLifecycle(lifecycleOwner, selector, preview)
     }
@@ -62,9 +65,10 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            previewView?.let {
-                AndroidView(factory = { it }, modifier = Modifier.fillMaxSize())
-            }
+            AndroidView(
+                factory = { _ -> previewView },
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         // Controls half
