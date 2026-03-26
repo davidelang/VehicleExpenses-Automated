@@ -38,9 +38,8 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
     var odometer by remember { mutableStateOf(0) }
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
 
-    val advancedMode = true // hard-coded for now
+    val advancedMode = true
 
     // Start camera immediately
     LaunchedEffect(Unit) {
@@ -78,9 +77,6 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
                 Text("Step 1: Point at dashboard", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Vehicle dropdown would go here (stub for now)
-                Text("Vehicle: Select (TODO dropdown)", style = MaterialTheme.typography.bodyMedium)
-
                 OutlinedTextField(
                     value = odometer.toString(),
                     onValueChange = { odometer = it.toIntOrNull() ?: 0 },
@@ -101,7 +97,8 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
 
                 Button(onClick = {
                     scope.launch {
-                        val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg") // replace with real capture in production
+                        // In production this would capture from camera; here we simulate OCR
+                        val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg")
                         odometer = result.odometer?.toIntOrNull() ?: odometer
                         if (isMissedFill) {
                             val entry = FuelEntry(
