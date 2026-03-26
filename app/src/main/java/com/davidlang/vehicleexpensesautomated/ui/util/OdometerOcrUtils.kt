@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.BitmapFactory
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
@@ -14,7 +15,8 @@ import kotlin.coroutines.resumeWithException
 data class OcrResult(
     val odometer: String?,
     val gallons: String?,
-    val cost: String?
+    val cost: String?,
+    val confidence: Float?   // new: overall max confidence of matched text blocks
 )
 
 object OdometerOcrUtils {
@@ -23,32 +25,66 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, confidenceThreshold: Float = 0.75f): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, null, null)
+        if (!file.exists()) return@withContext OcrResult(null, null, null, null)
 
-        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, null, null)
+        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, null, null, null)
         val image = InputImage.fromBitmap(bitmap, 0)
 
-        val visionText: String = try {
-            suspendCancellableCoroutine<String> { continuation ->
+        val visionText: Text = try {
+            suspendCancellableCoroutine { continuation ->
                 recognizer.process(image)
-                    .addOnSuccessListener { result -> continuation.resume(result.text) }
+                    .addOnSuccessListener { continuation.resume(it) }
                     .addOnFailureListener { e -> continuation.resumeWithException(e) }
                     .addOnCanceledListener { continuation.cancel() }
             }
         } catch (e: Exception) {
             bitmap.recycle()
-            return@withContext OcrResult(null, null, null)
+            return@withContext OcrResult(null, null, null, null)
         }
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
         val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
         val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
-        val odometer = odoRegex.findAll(visionText).maxByOrNull { it.value.length }?.value
-        val gallons = gallonsRegex.find(visionText)?.groupValues?.get(1)
-        val cost = costRegex.find(visionText)?.groupValues?.get(1)
+        // Find matches with their confidence
+        var maxConfidence = 0f
+        var odometer: String? = null
+        var gallons: String? = null
+        var cost: String? = null
+
+        visionText.textBlocks.forEach { block ->
+            val blockText = block.text
+            val blockConfidence = block.confidence ?: 0f
+
+            if (blockConfidence < confidenceThreshold) return@forEach
+
+            if (blockConfidence > maxConfidence) maxConfidence = blockConfidence
+
+            // Odometer
+            odoRegex.find(blockText)?.let {
+                if (it.value.length > (odometer?.length ?: 0)) {
+                    odometer = it.value
+                }
+            }
+
+            // Gallons
+            gallonsRegex.find(blockText)?.groupValues?.get(1)?.let {
+                gallons = it
+            }
+
+            // Cost
+            costRegex.find(blockText)?.groupValues?.get(1)?.let {
+                cost = it
+            }
+        }
 
         bitmap.recycle()
-        OcrResult(odometer, gallons, cost)
+
+        OcrResult(
+            odometer = odometer,
+            gallons = gallons,
+            cost = cost,
+            confidence = if (maxConfidence > 0f) maxConfidence else null
+        )
     }
 }
