@@ -52,7 +52,6 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
     var date by remember { mutableStateOf(System.currentTimeMillis()) }
     var vehicleId by remember { mutableStateOf(0) }
     var photoUrl by remember { mutableStateOf<String?>(null) }
-    var ocrConfidence by remember { mutableStateOf<Float?>(null) }
 
     // Gallery picker (gallery-only for import old pictures)
     val pickImageLauncher = rememberLauncherForActivityResult(
@@ -69,10 +68,9 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
                 val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
                 amount = result.cost?.toDoubleOrNull() ?: amount
                 description = "Receipt (OCR)" // placeholder — can be extended later
-                ocrConfidence = result.confidence
                 photoUrl = tempFile.absolutePath // archived
                 tempFile.delete()
-                Toast.makeText(context, "OCR complete — confidence ${result.confidence?.times(100)?.toInt()}%", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "OCR complete — receipt data filled", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -142,10 +140,6 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
                 modifier = Modifier.fillMaxWidth()
             )
 
-            if (ocrConfidence != null) {
-                Text("OCR Confidence: ${(ocrConfidence!! * 100).toInt()}%", color = Color.Green)
-            }
-
             Spacer(modifier = Modifier.height(12.dp))
 
             // Take photo button (camera-first)
@@ -156,9 +150,8 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
                         val result = OdometerOcrUtils.extractFromPhoto("dummy_receipt.jpg")
                         amount = result.cost?.toDoubleOrNull() ?: amount
                         description = "Receipt OCR"
-                        ocrConfidence = result.confidence
                         photoUrl = "archived_receipt.jpg" // archived via PhotoPicker in full impl
-                        Toast.makeText(context, "Receipt OCR complete — confidence ${result.confidence?.times(100)?.toInt()}%", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Receipt OCR complete — receipt data filled", Toast.LENGTH_LONG).show()
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
