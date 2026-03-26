@@ -28,6 +28,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun QuickFillupScreen(navController: NavHostController) {
@@ -59,10 +60,18 @@ fun QuickFillupScreen(navController: NavHostController) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            Toast.makeText(context, "Image selected — running OCR...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Image selected — copying to temp file for OCR...", Toast.LENGTH_SHORT).show()
             scope.launch {
-                val result = OdometerOcrUtils.extractFromPhoto(selectedUri.toString())
-                // DEBUG TOAST — this will tell us exactly why OCR is failing
+                // Convert content URI to real file path (fixes the null OCR)
+                val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
+                context.contentResolver.openInputStream(selectedUri)?.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
+
+                // Long debug Toast so we can confirm values
                 Toast.makeText(
                     context,
                     "OCR RESULT (Step $step): odometer=${result.odometer} | gallons=${result.gallons} | cost=${result.cost}",
@@ -75,6 +84,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                     gallons = result.gallons?.toDoubleOrNull() ?: gallons
                     cost = result.cost?.toDoubleOrNull() ?: cost
                 }
+                tempFile.delete() // clean up
             }
         }
     }
