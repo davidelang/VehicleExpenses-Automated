@@ -11,9 +11,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -96,14 +99,23 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Camera - aggressively smaller in portrait (0.35f) so controls have plenty of room
-                Box(modifier = Modifier.weight(0.35f)) {
+                // Camera - even smaller in portrait (0.30f) + DEBUG overlay to prove this is the correct file
+                Box(modifier = Modifier.weight(0.30f)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+                    Text(
+                        text = "DEBUG: QuickFillupScreen.kt (portrait)",
+                        color = Color.Red,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(8.dp)
+                    )
                 }
                 // Controls - larger share
                 Column(
                     modifier = Modifier
-                        .weight(0.65f)
+                        .weight(0.70f)
                         .padding(12.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
