@@ -45,21 +45,7 @@ class PhotoStorageManager @Inject constructor(
         }
     }
 
-    private fun saveLocally(uri: Uri, fileName: String, photoType: PhotoType): String? {
-        val destFile = File(photosDir, "${photoType.name.lowercase()}_$fileName")
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(destFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            destFile.absolutePath
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun uploadToDrive(uri: Uri, fileName: String, photoType: PhotoType): String? {
+    private suspend fun uploadToDrive(uri: Uri, fileName: String, photoType: PhotoType): String? {
         return try {
             val drive = getDriveService()
             val folderName = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
@@ -87,6 +73,20 @@ class PhotoStorageManager @Inject constructor(
 
             tempFile.delete()
             uploaded.webViewLink ?: "https://drive.google.com/file/d/${uploaded.id}/view"
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun saveLocally(uri: Uri, fileName: String, photoType: PhotoType): String? {
+        val destFile = File(photosDir, "${photoType.name.lowercase()}_$fileName")
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            destFile.absolutePath
         } catch (e: Exception) {
             null
         }
