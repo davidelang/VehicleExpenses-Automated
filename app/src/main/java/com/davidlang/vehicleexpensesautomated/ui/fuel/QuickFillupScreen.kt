@@ -87,6 +87,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onOdometerChange = { odometer = it },
                         onGallonsChange = { gallons = it },
                         onCostChange = { cost = it },
+                        onStepChange = { step = it },
                         scope = scope,
                         viewModel = viewModel,
                         navController = navController
@@ -121,6 +122,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onOdometerChange = { odometer = it },
                         onGallonsChange = { gallons = it },
                         onCostChange = { cost = it },
+                        onStepChange = { step = it },
                         scope = scope,
                         viewModel = viewModel,
                         navController = navController
@@ -147,6 +149,7 @@ private fun ControlsContent(
     onOdometerChange: (Int) -> Unit,
     onGallonsChange: (Double) -> Unit,
     onCostChange: (Double) -> Unit,
+    onStepChange: (Int) -> Unit,
     scope: CoroutineScope,
     viewModel: FuelViewModel,
     navController: NavHostController
@@ -204,7 +207,7 @@ private fun ControlsContent(
                         viewModel.saveFuel(entry)
                         navController.navigate("reports")
                     } else {
-                        step = 2 // will be updated in next iteration to use state
+                        onStepChange(2)
                     }
                 }
             },
