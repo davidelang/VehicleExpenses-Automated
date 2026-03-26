@@ -71,4 +71,6 @@ dependencies {
     // Google Sheets API for bidirectional sync
     implementation("com.google.api-client:google-api-client-android:2.2.0")
     implementation("com.google.apis:google-api-services-sheets:v4-rev20220927-2.0.0")
+    // Google Drive API for photo upload
+    implementation("com.google.apis:google-api-services-drive:v3-rev20241105-2.0.0")
 }
