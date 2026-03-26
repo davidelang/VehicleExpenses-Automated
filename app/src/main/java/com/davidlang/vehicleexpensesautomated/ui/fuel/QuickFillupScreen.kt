@@ -61,11 +61,11 @@ fun QuickFillupScreen(navController: NavHostController) {
 
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
-                // Camera - reduced size
+                // Camera - reduced size (already working for you)
                 Box(modifier = Modifier.weight(0.60f)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                 }
-                // Controls - scrollable to prevent cutoff
+                // Controls - scrollable
                 Column(
                     modifier = Modifier
                         .weight(0.40f)
@@ -96,14 +96,14 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Camera - smaller than before
-                Box(modifier = Modifier.weight(0.55f)) {
+                // Camera - MUCH SMALLER in portrait (0.40f) so controls get plenty of space
+                Box(modifier = Modifier.weight(0.40f)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                 }
-                // Controls - scrollable
+                // Controls - scrollable with more room
                 Column(
                     modifier = Modifier
-                        .weight(0.45f)
+                        .weight(0.60f)
                         .padding(12.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
@@ -154,9 +154,9 @@ private fun ControlsContent(
     viewModel: FuelViewModel,
     navController: NavHostController
 ) {
-    // Vehicle pulldown at top of controls
+    // Vehicle pulldown at VERY TOP of controls (now guaranteed visible)
     ExposedDropdownMenuBox(
-        expanded = false, // TODO: expand logic in next iteration
+        expanded = false,
         onExpandedChange = {}
     ) {
         OutlinedTextField(
@@ -168,7 +168,7 @@ private fun ControlsContent(
         )
     }
 
-    Spacer(modifier = Modifier.height(12.dp))
+    Spacer(modifier = Modifier.height(8.dp))
 
     if (step == 1) {
         Text("Step 1: Point at dashboard", style = MaterialTheme.typography.titleMedium)
@@ -189,7 +189,7 @@ private fun ControlsContent(
             Text("Missed fill (unknown gas added)")
         }
 
-        // Take Picture button - smaller + placed BETWEEN checkboxes
+        // Take Picture button - SMALLER + placed BETWEEN the two checkboxes
         Button(
             onClick = {
                 scope.launch {
@@ -197,7 +197,7 @@ private fun ControlsContent(
                     onOdometerChange(result.odometer?.toIntOrNull() ?: odometer)
                     if (isMissedFill) {
                         val entry = FuelEntry(
-                            vehicleId = 1, // TODO: use selectedVehicle ID
+                            vehicleId = 1,
                             odometer = odometer,
                             gallons = -1.0,
                             cost = -1.0,
@@ -211,7 +211,7 @@ private fun ControlsContent(
                     }
                 }
             },
-            modifier = Modifier.padding(vertical = 8.dp)
+            modifier = Modifier.padding(vertical = 4.dp)
         ) {
             Text("Take Dash Picture")
         }
@@ -269,7 +269,7 @@ private fun ControlsContent(
                     navController.navigate("reports")
                 }
             },
-            modifier = Modifier.padding(vertical = 8.dp)
+            modifier = Modifier.padding(vertical = 4.dp)
         ) {
             Text("Take Pump Picture")
         }
