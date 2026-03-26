@@ -99,8 +99,8 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Camera - even smaller in portrait (0.30f) + DEBUG overlay to prove this is the correct file
-                Box(modifier = Modifier.weight(0.30f)) {
+                // Camera - FIXED small height in portrait (260.dp) so it CANNOT stay big
+                Box(modifier = Modifier.height(260.dp)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                     Text(
                         text = "DEBUG: QuickFillupScreen.kt (portrait)",
@@ -112,10 +112,10 @@ fun QuickFillupScreen(navController: NavHostController) {
                             .padding(8.dp)
                     )
                 }
-                // Controls - larger share
+                // Controls - now gets the rest of the screen
                 Column(
                     modifier = Modifier
-                        .weight(0.70f)
+                        .weight(1f)
                         .padding(12.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
