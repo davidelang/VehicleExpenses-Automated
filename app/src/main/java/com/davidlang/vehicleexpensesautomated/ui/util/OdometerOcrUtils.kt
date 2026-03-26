@@ -14,6 +14,7 @@ import kotlin.coroutines.resumeWithException
 
 data class OcrResult(
     val odometer: String?,
+    val possibleOdometers: List<String>, // new: all candidate matches for user confirmation
     val gallons: String?,
     val cost: String?
 )
@@ -22,11 +23,11 @@ object OdometerOcrUtils {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    suspend fun extractFromPhoto(photoPath: String, confidenceThreshold: Float = 0.75f): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun extractFromPhoto(photoPath: String): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, null, null)
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null)
 
-        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, null, null)
+        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
         val image = InputImage.fromBitmap(bitmap, 0)
 
         val visionText: Text = try {
@@ -38,13 +39,14 @@ object OdometerOcrUtils {
             }
         } catch (e: Exception) {
             bitmap.recycle()
-            return@withContext OcrResult(null, null, null)
+            return@withContext OcrResult(null, emptyList(), null, null)
         }
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
         val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
         val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
+        val possibleOdometers = mutableListOf<String>()
         var odometer: String? = null
         var gallons: String? = null
         var cost: String? = null
@@ -52,19 +54,18 @@ object OdometerOcrUtils {
         visionText.textBlocks.forEach { block ->
             val blockText = block.text
 
-            // Odometer
-            odoRegex.find(blockText)?.let {
-                if (it.value.length > (odometer?.length ?: 0)) {
-                    odometer = it.value
+            odoRegex.findAll(blockText).forEach { match ->
+                val value = match.value
+                possibleOdometers.add(value)
+                if (odometer == null || value.length > odometer!!.length) {
+                    odometer = value
                 }
             }
 
-            // Gallons
             gallonsRegex.find(blockText)?.groupValues?.get(1)?.let {
                 gallons = it
             }
 
-            // Cost
             costRegex.find(blockText)?.groupValues?.get(1)?.let {
                 cost = it
             }
@@ -74,6 +75,7 @@ object OdometerOcrUtils {
 
         OcrResult(
             odometer = odometer,
+            possibleOdometers = possibleOdometers.distinct().sortedByDescending { it.length },
             gallons = gallons,
             cost = cost
         )
