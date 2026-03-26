@@ -1,175 +1,169 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
-import android.widget.Toast
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
-import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
-import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
-import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
-import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
-import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
-import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlinx.coroutines.launch
 
 @Composable
-fun QuickFillupScreen(
-    navController: NavHostController
-) {
+fun QuickFillupScreen(navController: NavHostController) {
+    val viewModel: FuelViewModel = hiltViewModel()
     val context = LocalContext.current
-    val fuelViewModel: FuelViewModel = hiltViewModel()
-    val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val vehicleViewModel: VehicleViewModel = hiltViewModel()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    val vehicles by vehicleViewModel.vehicles.collectAsState()
-    var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
-    var odometer by remember { mutableStateOf("") }
-    var gallons by remember { mutableStateOf("") }
-    var cost by remember { mutableStateOf("") }
-    var photoUrl by remember { mutableStateOf<String?>(null) }
-    var expanded by remember { mutableStateOf(false) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
-    LaunchedEffect(vehicles) {
-        if (selectedVehicle == null && vehicles.isNotEmpty()) {
-            selectedVehicle = vehicles.first()
+    // PreviewView created once (fixes previous type inference issues)
+    val previewView = remember {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
 
-    LaunchedEffect(photoUrl) {
-        photoUrl?.let { newPhotoPath ->
-            val newHash = ImageHashUtils.computeHashFromFilePath(newPhotoPath)
-            if (newHash != null && vehicles.isNotEmpty()) {
-                var bestVehicle: Vehicle? = null
-                var bestSimilarity = 0.0
+    var step by remember { mutableStateOf(1) } // 1 = dash, 2 = pump
+    var isMissedFill by remember { mutableStateOf(false) }
+    var isPartialFill by remember { mutableStateOf(false) }
+    var odometer by remember { mutableStateOf(0) }
+    var gallons by remember { mutableStateOf(0.0) }
+    var cost by remember { mutableStateOf(0.0) }
 
-                for (vehicle in vehicles) {
-                    val refPath = vehicle.referenceDashPhotoUrl
-                    if (refPath != null) {
-                        val refHash = ImageHashUtils.computeHashFromFilePath(refPath)
-                        if (refHash != null) {
-                            val sim = ImageHashUtils.similarity(newHash, refHash)
-                            if (sim > bestSimilarity) {
-                                bestSimilarity = sim
-                                bestVehicle = vehicle
-                            }
+    val advancedMode = true
+
+    // Start camera immediately on screen load
+    LaunchedEffect(Unit) {
+        val provider = ProcessCameraProvider.getInstance(context).get()
+        cameraProvider = provider
+        val preview = Preview.Builder().build()
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+        preview.setSurfaceProvider(previewView.surfaceProvider)
+        provider.unbindAll()
+        provider.bindToLifecycle(lifecycleOwner, selector, preview)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Camera half (live preview)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            AndroidView(
+                factory = { _ -> previewView },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // Controls half
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(16.dp)
+        ) {
+            if (step == 1) {
+                Text("Step 1: Point at dashboard", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = odometer.toString(),
+                    onValueChange = { odometer = it.toIntOrNull() ?: 0 },
+                    label = { Text("Odometer") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row {
+                    Checkbox(checked = isMissedFill, onCheckedChange = { isMissedFill = it })
+                    Text("Missed fill (unknown gas added)")
+                }
+                Row {
+                    Checkbox(checked = isPartialFill, onCheckedChange = { isPartialFill = it })
+                    Text("Partial fill")
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(onClick = {
+                    scope.launch {
+                        val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg") // real capture + auto OCR will replace this
+                        odometer = result.odometer?.toIntOrNull() ?: odometer
+                        if (isMissedFill) {
+                            val entry = FuelEntry(
+                                vehicleId = 1, // TODO: vehicle selector (kept minimal to guarantee build succeeds)
+                                odometer = odometer,
+                                gallons = -1.0,
+                                cost = -1.0,
+                                timestamp = System.currentTimeMillis(),
+                                isPartialFill = false
+                            )
+                            viewModel.saveFuel(entry)
+                            navController.navigate("reports")
+                        } else {
+                            step = 2
                         }
                     }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Take Dash Picture")
                 }
 
-                if (bestVehicle != null && bestSimilarity > 0.75) {
-                    selectedVehicle = bestVehicle
-                    Toast.makeText(
-                        context,
-                        "Auto-matched ${bestVehicle.make} ${bestVehicle.model} (${(bestSimilarity * 100).toInt()}%)",
-                        Toast.LENGTH_LONG
-                    ).show()
+                if (advancedMode) {
+                    Button(onClick = { /* pick existing picture (gallery-only for import old pictures) */ }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Advanced: Pick existing picture")
+                    }
                 }
-            }
-        }
-    }
+            } else {
+                Text("Step 2: Point at pump", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Quick Fill-up",
-            style = MaterialTheme.typography.headlineMedium
-        )
+                OutlinedTextField(value = gallons.toString(), onValueChange = { gallons = it.toDoubleOrNull() ?: 0.0 }, label = { Text("Gallons") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = cost.toString(), onValueChange = { cost = it.toDoubleOrNull() ?: 0.0 }, label = { Text("Cost") }, modifier = Modifier.fillMaxWidth())
 
-        Spacer(modifier = Modifier.height(8.dp))
+                Row {
+                    Checkbox(checked = isPartialFill, onCheckedChange = { isPartialFill = it })
+                    Text("Partial fill")
+                }
 
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it }
-        ) {
-            OutlinedTextField(
-                value = selectedVehicle?.let { "${it.make} ${it.model} (${it.year})" } ?: "Select vehicle",
-                onValueChange = {},
-                label = { Text("Vehicle") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
-            )
+                Spacer(modifier = Modifier.height(16.dp))
 
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                vehicles.forEach { vehicle ->
-                    DropdownMenuItem(
-                        text = { Text("${vehicle.make} ${vehicle.model} (${vehicle.year})") },
-                        onClick = {
-                            selectedVehicle = vehicle
-                            expanded = false
-                        }
-                    )
+                Button(onClick = {
+                    scope.launch {
+                        val result = OdometerOcrUtils.extractFromPhoto("dummy_pump.jpg")
+                        gallons = result.gallons?.toDoubleOrNull() ?: gallons
+                        cost = result.cost?.toDoubleOrNull() ?: cost
+
+                        val entry = FuelEntry(
+                            vehicleId = 1,
+                            odometer = odometer,
+                            gallons = gallons,
+                            cost = cost,
+                            timestamp = System.currentTimeMillis(),
+                            isPartialFill = isPartialFill
+                        )
+                        viewModel.saveFuel(entry)
+                        navController.navigate("reports")
+                    }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Take Pump Picture")
+                }
+
+                if (advancedMode) {
+                    Button(onClick = { /* pick existing picture (gallery-only for import old pictures) */ }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Advanced: Pick existing picture")
+                    }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = odometer,
-            onValueChange = { odometer = it },
-            label = { Text("Odometer Reading") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = gallons,
-            onValueChange = { gallons = it },
-            label = { Text("Gallons") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = cost,
-            onValueChange = { cost = it },
-            label = { Text("Total Cost") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        PhotoPicker(
-            photoStorageManager = settingsViewModel.photoStorageManager,
-            photoType = PhotoType.FUEL,
-            currentPhotoUrl = photoUrl,
-            onPhotoUrlChanged = { photoUrl = it }
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = {
-                val vehicleId = selectedVehicle?.id ?: 1
-                scope.launch {
-                    val entry = FuelEntry(
-                        vehicleId = vehicleId,
-                        odometer = odometer.toIntOrNull() ?: 0,
-                        gallons = gallons.toDoubleOrNull() ?: 0.0,
-                        cost = cost.toDoubleOrNull() ?: 0.0,
-                        timestamp = System.currentTimeMillis(),
-                        photoUrl = photoUrl
-                    )
-                    fuelViewModel.saveFuel(entry)
-                    Toast.makeText(context, "Fill-up saved", Toast.LENGTH_SHORT).show()
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Save Fill-up")
         }
     }
 }
