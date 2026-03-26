@@ -65,16 +65,16 @@ class PhotoStorageManager @Inject constructor(
             val folderName = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
                 .getString("drive_folder", "Vehicle Expenses Photos") ?: "Vehicle Expenses Photos"
 
-            // Ensure folder exists (simple create-if-not-exists)
             val folderId = findOrCreateFolder(drive, folderName)
 
-            val mediaContent = FileContent("image/jpeg", File(context.cacheDir, fileName).apply {
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(this).use { output ->
-                        input.copyTo(output)
-                    }
+            val tempFile = File(context.cacheDir, fileName)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
                 }
-            })
+            }
+
+            val mediaContent = FileContent("image/jpeg", tempFile)
 
             val fileMetadata = com.google.api.services.drive.model.File().apply {
                 name = "${photoType.name.lowercase()}_$fileName"
@@ -85,6 +85,7 @@ class PhotoStorageManager @Inject constructor(
                 .setFields("id,webViewLink")
                 .execute()
 
+            tempFile.delete()
             uploaded.webViewLink ?: "https://drive.google.com/file/d/${uploaded.id}/view"
         } catch (e: Exception) {
             null
@@ -92,7 +93,6 @@ class PhotoStorageManager @Inject constructor(
     }
 
     private fun findOrCreateFolder(drive: Drive, folderName: String): String {
-        // Simple implementation - in production you would cache the folder ID
         val query = "mimeType='application/vnd.google-apps.folder' and name='$folderName' and trashed=false"
         val result = drive.files().list().setQ(query).execute()
         if (result.files.isNotEmpty()) return result.files[0].id
