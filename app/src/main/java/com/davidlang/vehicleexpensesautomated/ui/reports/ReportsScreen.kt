@@ -10,7 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
@@ -23,14 +23,12 @@ fun ReportsScreen(navController: NavHostController) {
     val expenses by expenseViewModel.expenses.collectAsState()
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState()
 
-    // Enhanced stats using exact model fields (all Double)
     val totalExpenses = expenses.sumOf { it.amount }
     val totalFuelCost = fuelEntries.sumOf { it.cost }
     val totalGallons = fuelEntries.sumOf { it.gallons }
     val partialFills = fuelEntries.count { it.isPartialFill }
     val totalFillUps = fuelEntries.size
 
-    // MPG from last two full fills — ignore any entry with gallons <= 0 (missed fillup / break) and ignore a final partial fill
     val avgMpg = if (fuelEntries.size >= 2) {
         val sortedFull = fuelEntries.sortedBy { it.timestamp }
             .filter { it.gallons > 0 && !it.isPartialFill }
@@ -42,7 +40,6 @@ fun ReportsScreen(navController: NavHostController) {
         } else 0f
     } else 0f
 
-    // Expense category breakdown
     val categoryTotals = expenses.groupBy { it.category }.mapValues { it.value.sumOf { e -> e.amount } }
 
     Column(
@@ -53,7 +50,6 @@ fun ReportsScreen(navController: NavHostController) {
         Text("Enhanced Reports & Charts", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Summary Card
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Overall Summary", style = MaterialTheme.typography.titleMedium)
@@ -67,7 +63,6 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Fuel Trends – visual bars (Double -> Float for fillMaxWidth)
         Text("Fuel Cost Trends (last 5 entries)", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(fuelEntries.takeLast(5).reversed()) { entry ->
@@ -94,7 +89,6 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Expense Breakdown – visual bars (Double -> Float for fillMaxWidth)
         Text("Expenses by Category", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.height(180.dp)) {
             items(categoryTotals.entries.toList()) { (cat, total) ->
@@ -120,7 +114,6 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Recent Fuel
         Text("Recent Fuel Entries", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(fuelEntries.take(5)) { entry ->
@@ -136,7 +129,6 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Recent Expenses
         Text("Recent Expenses", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(expenses.take(5)) { entry ->

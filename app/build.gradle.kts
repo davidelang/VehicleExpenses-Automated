@@ -37,7 +37,6 @@ android {
         buildConfig = true
     }
     packagingOptions {
-        // Fix duplicate META-INF/DEPENDENCIES from Google Sheets API transitive deps
         exclude("META-INF/DEPENDENCIES")
     }
 }
