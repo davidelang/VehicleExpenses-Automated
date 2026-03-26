@@ -54,7 +54,7 @@ fun QuickFillupScreen(navController: NavHostController) {
     var selectedVehicle by remember { mutableStateOf("Select vehicle") }
     val vehicles = listOf("My Truck", "Family Car", "Work Van")
 
-    // Gallery picker for "Advanced: Pick existing picture" (gallery-only for import old pictures)
+    // Gallery picker for "Advanced: Pick existing picture"
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -62,6 +62,13 @@ fun QuickFillupScreen(navController: NavHostController) {
             Toast.makeText(context, "Image selected — running OCR...", Toast.LENGTH_SHORT).show()
             scope.launch {
                 val result = OdometerOcrUtils.extractFromPhoto(selectedUri.toString())
+                // DEBUG TOAST — this will tell us exactly why OCR is failing
+                Toast.makeText(
+                    context,
+                    "OCR RESULT (Step $step): odometer=${result.odometer} | gallons=${result.gallons} | cost=${result.cost}",
+                    Toast.LENGTH_LONG
+                ).show()
+
                 if (step == 1) {
                     odometer = result.odometer?.toIntOrNull() ?: odometer
                 } else {
