@@ -7,9 +7,9 @@ import androidx.room.PrimaryKey
 data class Vehicle(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val name: String,                  // new required name field
-    val make: String? = null,          // now optional
-    val model: String? = null,         // now optional
+    val name: String,
+    val make: String? = null,
+    val model: String? = null,
     val year: Int,
     val licensePlate: String,
     val vin: String? = null,

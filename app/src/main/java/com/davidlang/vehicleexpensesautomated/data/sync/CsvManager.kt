@@ -52,9 +52,9 @@ class CsvManager @Inject constructor(
 
     private suspend fun getVehiclesCsv(): String {
         val vehicles = vehicleRepository.getAllVehicles().first()
-        val sb = StringBuilder("ID,Make,Model,Year,License Plate,VIN,Notes\n")
+        val sb = StringBuilder("ID,Name,Make,Model,Year,License Plate,VIN,Notes\n")
         vehicles.forEach {
-            sb.append("${it.id},${it.make},${it.model},${it.year},${it.licensePlate},${it.vin ?: ""},${it.notes ?: ""}\n")
+            sb.append("${it.id},${it.name},${it.make ?: ""},${it.model ?: ""},${it.year},${it.licensePlate},${it.vin ?: ""},${it.notes ?: ""}\n")
         }
         return sb.toString()
     }
@@ -107,15 +107,16 @@ class CsvManager @Inject constructor(
         val lines = csv.lines().drop(1).filter { it.isNotBlank() }
         lines.forEach { line ->
             val parts = line.split(",")
-            if (parts.size >= 7) {
+            if (parts.size >= 8) {
                 val vehicle = Vehicle(
                     id = parts[0].toIntOrNull() ?: 0,
-                    make = parts[1],
-                    model = parts[2],
-                    year = parts[3].toIntOrNull() ?: 0,
-                    licensePlate = parts[4],
-                    vin = parts[5].ifBlank { null },
-                    notes = parts[6].ifBlank { null }
+                    name = parts[1],
+                    make = parts[2],
+                    model = parts[3],
+                    year = parts[4].toIntOrNull() ?: 0,
+                    licensePlate = parts[5],
+                    vin = parts[6].ifBlank { null },
+                    notes = parts[7].ifBlank { null }
                 )
                 vehicleRepository.insert(vehicle)
             }

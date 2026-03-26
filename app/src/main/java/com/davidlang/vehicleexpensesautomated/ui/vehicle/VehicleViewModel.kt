@@ -5,59 +5,41 @@ import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class VehicleViewModel @Inject constructor(
-    private val vehicleRepository: VehicleRepository
+    private val repository: VehicleRepository
 ) : ViewModel() {
 
-    private val _vehicles = MutableStateFlow<List<Vehicle>>(emptyList())
-    val vehicles: StateFlow<List<Vehicle>> = _vehicles.asStateFlow()
-
-    init {
-        loadVehicles()
-    }
-
-    private fun loadVehicles() {
-        viewModelScope.launch {
-            vehicleRepository.getAllVehicles().collectLatest { list ->
-                _vehicles.value = list
-            }
-        }
-    }
-
-    fun updateReferenceDashPhoto(vehicleId: Int, photoUrl: String) {
-        viewModelScope.launch {
-            val vehicle = _vehicles.value.find { it.id == vehicleId } ?: return@launch
-            val updated = vehicle.copy(referenceDashPhotoUrl = photoUrl)
-            vehicleRepository.updateVehicle(updated)
-            // Flow will auto-refresh the list
-        }
-    }
+    val vehicles = repository.allVehicles.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     fun createNewVehicleWithReference(
+        name: String,
         make: String,
         model: String,
         year: Int,
         licensePlate: String,
-        referenceDashPhotoUrl: String,
+        referenceDashPhotoUrl: String?,
         initialOdometer: Int
     ) {
         viewModelScope.launch {
             val newVehicle = Vehicle(
+                name = name,
                 make = make,
                 model = model,
                 year = year,
                 licensePlate = licensePlate,
                 referenceDashPhotoUrl = referenceDashPhotoUrl
             )
-            val newId = vehicleRepository.insertVehicle(newVehicle)
+            val newId = repository.insert(newVehicle)
             // initialOdometer can be stored later in a FuelEntry or notes field
         }
     }
