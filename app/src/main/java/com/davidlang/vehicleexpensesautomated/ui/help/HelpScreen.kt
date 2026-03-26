@@ -16,11 +16,38 @@ fun HelpScreen(navController: NavHostController? = null) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(scrollState)) {
         Text("Help / User Manual", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        Text("• Camera-first flow for new photos")
-        Text("• Automatic OCR runs on every capture")
-        Text("• Import old pictures from gallery")
-        Text("• Hamburger menu accesses all screens")
+
+        Text("Adding a fill-up (recommended workflow)")
+        Text("• Open the app — the camera starts automatically")
+        Text("• Point at your dashboard and tap 'Take Dash Picture'")
+        Text("• The app reads the odometer automatically")
+        Text("• If this is a missed fill (unknown gas added), check the box — no second picture needed")
+        Text("• Otherwise point at the pump and tap 'Take Pump Picture'")
+        Text("• The app reads gallons and cost automatically")
+        Text("• Data is saved and you return to the Reports screen")
+
         Spacer(modifier = Modifier.height(24.dp))
-        Text("Full documentation: https://github.com/davidelang/VehicleExpenses-Automated/blob/master/user-manual.md")
+
+        Text("Adding an expense")
+        Text("• Select the vehicle")
+        Text("• Take a picture of the receipt")
+        Text("• Data is saved automatically")
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Advanced mode (for testing)")
+        Text("• On each step you will see an extra button to pick an existing picture instead of taking a new one")
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Data backup and sharing")
+        Text("• All photos and data can be backed up to Google Drive")
+        Text("• Everything can be exported/imported via CSV ZIP")
+        Text("• Full bidirectional sync with Google Sheets is available in Settings")
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Full documentation and screenshots:")
+        Text("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/docs/user-manual.md")
     }
 }
