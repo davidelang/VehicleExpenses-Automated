@@ -14,22 +14,22 @@ import kotlinx.coroutines.withContext
 
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
-    @Assisted context: Context,
+    @Assisted private val appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val vehicleRepository: VehicleRepository,
     private val fuelRepository: FuelEntryRepository,
     private val expenseRepository: ExpenseEntryRepository,
     private val googleSheetsClient: GoogleSheetsClient
-) : CoroutineWorker(context, workerParams) {
+) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+            val prefs = appContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
             val sheetId = prefs.getString("sheet_id", null) ?: return@withContext Result.failure()
 
             if (!prefs.getBoolean("sync_enabled", false)) return@withContext Result.success()
 
-            // Full bidirectional sync using exact repository methods
+            // Full bidirectional sync
             googleSheetsClient.pushVehicles(vehicleRepository.getAllVehicles().first(), sheetId)
             googleSheetsClient.pushFuelEntries(fuelRepository.getAllEntries().first(), sheetId)
             googleSheetsClient.pushExpenseEntries(expenseRepository.getAllEntries().first(), sheetId)
