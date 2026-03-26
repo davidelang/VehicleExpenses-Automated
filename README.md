@@ -21,9 +21,3 @@ The full source code is available in this public GitHub repository:
 https://github.com/davidelang/VehicleExpenses-Automated
 
 note that this code was largely written by Grok
-
-## TODO
-- Restore CSV export/import feature:
-  - CSV export format must be identical to exporting from a Google Sheet tab
-  - One CSV file per tab (vehicles, fuel_entries, expense_entries)
-  - Combine multiple CSV files into a single ZIP file for download/import
