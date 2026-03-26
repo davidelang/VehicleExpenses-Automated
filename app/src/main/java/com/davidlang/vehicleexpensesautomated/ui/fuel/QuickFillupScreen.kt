@@ -61,7 +61,7 @@ fun QuickFillupScreen(navController: NavHostController) {
 
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
-                // Camera - reduced size (already working for you)
+                // Camera - already good for landscape
                 Box(modifier = Modifier.weight(0.60f)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                 }
@@ -96,14 +96,14 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Camera - MUCH SMALLER in portrait (0.40f) so controls get plenty of space
-                Box(modifier = Modifier.weight(0.40f)) {
+                // Camera - aggressively smaller in portrait (0.35f) so controls have plenty of room
+                Box(modifier = Modifier.weight(0.35f)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                 }
-                // Controls - scrollable with more room
+                // Controls - larger share
                 Column(
                     modifier = Modifier
-                        .weight(0.60f)
+                        .weight(0.65f)
                         .padding(12.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
@@ -154,7 +154,7 @@ private fun ControlsContent(
     viewModel: FuelViewModel,
     navController: NavHostController
 ) {
-    // Vehicle pulldown at VERY TOP of controls (now guaranteed visible)
+    // Vehicle pulldown at VERY TOP of controls
     ExposedDropdownMenuBox(
         expanded = false,
         onExpandedChange = {}
