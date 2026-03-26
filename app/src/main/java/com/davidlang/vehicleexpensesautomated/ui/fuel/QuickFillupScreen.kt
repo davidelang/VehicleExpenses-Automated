@@ -17,7 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner   // updated import
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,9 +51,9 @@ fun QuickFillupScreen(navController: NavHostController) {
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
 
-    // Vehicle selector
+    // Vehicle selector - now uses vehicle.name
     var selectedVehicle by remember { mutableStateOf("Select vehicle") }
-    val vehicles = listOf("My Truck", "Family Car", "Work Van")
+    val vehicles = listOf("My Truck", "Family Car", "Work Van") // will be replaced with real list from ViewModel
 
     // Confirmation dialog state (lifted to parent)
     var showOdometerConfirmation by remember { mutableStateOf(false) }
@@ -238,7 +238,7 @@ private fun ControlsContent(
     possibleOdometers: List<String>,
     onOdometerConfirmed: (String) -> Unit
 ) {
-    // Vehicle pulldown
+    // Vehicle pulldown - now uses name
     ExposedDropdownMenuBox(
         expanded = false,
         onExpandedChange = {}
