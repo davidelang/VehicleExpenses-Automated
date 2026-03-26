@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -35,7 +39,7 @@ fun QuickFillupScreen(navController: NavHostController) {
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            scaleType = PreviewView.ScaleType.FIT_CENTER   // <-- THIS STOPS AGGRESSIVE FILLING
+            scaleType = PreviewView.ScaleType.FIT_CENTER
         }
     }
 
@@ -46,9 +50,27 @@ fun QuickFillupScreen(navController: NavHostController) {
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
 
-    // Vehicle selector (simple dropdown - matches original "Select vehicle" UI)
+    // Vehicle selector
     var selectedVehicle by remember { mutableStateOf("Select vehicle") }
-    val vehicles = listOf("My Truck", "Family Car", "Work Van") // will be replaced with real list from ViewModel in future iteration
+    val vehicles = listOf("My Truck", "Family Car", "Work Van")
+
+    // Gallery picker for "Advanced: Pick existing picture" (gallery-only for import old pictures)
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            Toast.makeText(context, "Image selected — running OCR...", Toast.LENGTH_SHORT).show()
+            scope.launch {
+                val result = OdometerOcrUtils.extractFromPhoto(selectedUri.toString())
+                if (step == 1) {
+                    odometer = result.odometer?.toIntOrNull() ?: odometer
+                } else {
+                    gallons = result.gallons?.toDoubleOrNull() ?: gallons
+                    cost = result.cost?.toDoubleOrNull() ?: cost
+                }
+            }
+        }
+    }
 
     // Start camera immediately
     LaunchedEffect(Unit) {
@@ -65,11 +87,9 @@ fun QuickFillupScreen(navController: NavHostController) {
 
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
-                // Camera - already good for landscape
                 Box(modifier = Modifier.weight(0.60f)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                 }
-                // Controls - scrollable
                 Column(
                     modifier = Modifier
                         .weight(0.40f)
@@ -92,6 +112,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onGallonsChange = { gallons = it },
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
+                        onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         scope = scope,
                         viewModel = viewModel,
                         navController = navController
@@ -100,7 +121,6 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Camera - FIXED small size in portrait + padding so it does NOT touch the edges
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -118,7 +138,6 @@ fun QuickFillupScreen(navController: NavHostController) {
                             .padding(8.dp)
                     )
                 }
-                // Controls - now gets the rest of the screen
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -141,6 +160,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onGallonsChange = { gallons = it },
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
+                        onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         scope = scope,
                         viewModel = viewModel,
                         navController = navController
@@ -168,11 +188,12 @@ private fun ControlsContent(
     onGallonsChange: (Double) -> Unit,
     onCostChange: (Double) -> Unit,
     onStepChange: (Int) -> Unit,
+    onAdvancedPick: () -> Unit,
     scope: CoroutineScope,
     viewModel: FuelViewModel,
     navController: NavHostController
 ) {
-    // Vehicle pulldown at VERY TOP of controls
+    // Vehicle pulldown
     ExposedDropdownMenuBox(
         expanded = false,
         onExpandedChange = {}
@@ -201,13 +222,11 @@ private fun ControlsContent(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Missed checkbox
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = isMissedFill, onCheckedChange = onMissedChange)
             Text("Missed fill (unknown gas added)")
         }
 
-        // Take Picture button - SMALLER + placed BETWEEN the two checkboxes
         Button(
             onClick = {
                 scope.launch {
@@ -234,7 +253,6 @@ private fun ControlsContent(
             Text("Take Dash Picture")
         }
 
-        // Partial checkbox (directly after button)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = isPartialFill, onCheckedChange = onPartialChange)
             Text("Partial fill")
@@ -242,7 +260,7 @@ private fun ControlsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = { /* gallery only for import old pictures */ }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = onAdvancedPick, modifier = Modifier.fillMaxWidth()) {
             Text("Advanced: Pick existing picture")
         }
     } else {
@@ -294,7 +312,7 @@ private fun ControlsContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Button(onClick = { /* gallery only */ }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = onAdvancedPick, modifier = Modifier.fillMaxWidth()) {
             Text("Advanced: Pick existing picture")
         }
     }
