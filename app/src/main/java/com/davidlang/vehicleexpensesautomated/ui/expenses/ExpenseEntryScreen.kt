@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -9,20 +8,16 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
-import com.davidlang.vehicleexpensesautomated.ui.camera.CameraViewModel
 
 @Composable
 fun ExpenseEntryScreen(navController: NavHostController? = null) {
     val viewModel: ExpenseViewModel = hiltViewModel()
-    val cameraViewModel: CameraViewModel = hiltViewModel()
 
     var vehicleId by remember { mutableStateOf(0) }
     var amount by remember { mutableStateOf(0.0) }
     var description by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Other") }
-    var receiptUri by remember { mutableStateOf<Uri?>(null) }
-
-    val photoUrl = cameraViewModel.latestPhotoUrl.collectAsState().value
+    var date by remember { mutableStateOf(System.currentTimeMillis()) }
 
     Column(
         modifier = Modifier
@@ -38,7 +33,7 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
         OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category") })
 
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { viewModel.insert(ExpenseEntry(vehicleId = vehicleId, amount = amount, description = description, category = category, receiptImagePath = photoUrl)) }) {
+        Button(onClick = { viewModel.saveExpense(ExpenseEntry(vehicleId = vehicleId, amount = amount, description = description, category = category, date = date)) }) {
             Text("Save Expense")
         }
     }
