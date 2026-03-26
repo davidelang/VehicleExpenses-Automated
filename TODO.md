@@ -5,9 +5,6 @@
 - ODB-II integration for live odometer.
 - unit selection in setup
   - include ability to override to different units for fill, normalize when saving/syncing
-- add ability to enter missed fillup record
-  - make sure reporting ignores a final partial fill with not full fill
-  - make sure reporting ignores period between full fills where there is a missed fill
 - add additional image backup backup options
   - google photos
   - amazon photos
