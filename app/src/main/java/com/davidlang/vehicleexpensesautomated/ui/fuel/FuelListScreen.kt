@@ -11,7 +11,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 
 @Composable
-fun FuelListScreen(vehicleId: Int? = null, vehicleName: String? = null) {
+fun FuelListScreen(navController: NavHostController? = null) {
     val viewModel: FuelViewModel = hiltViewModel()
     val fuelEntries by viewModel.fuelEntries.collectAsState()
 
@@ -22,7 +22,7 @@ fun FuelListScreen(vehicleId: Int? = null, vehicleName: String? = null) {
     ) {
         item {
             Text(
-                text = vehicleName?.let { "Fuel for $it" } ?: "Fuel Entries",
+                text = "Fuel Entries",
                 style = MaterialTheme.typography.headlineMedium
             )
         }
