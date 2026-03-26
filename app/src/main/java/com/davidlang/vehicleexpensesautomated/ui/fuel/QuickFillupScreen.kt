@@ -35,6 +35,7 @@ fun QuickFillupScreen(navController: NavHostController) {
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FIT_CENTER   // <-- THIS STOPS AGGRESSIVE FILLING
         }
     }
 
@@ -99,8 +100,13 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Camera - FIXED small height in portrait (260.dp) so it CANNOT stay big
-                Box(modifier = Modifier.height(260.dp)) {
+                // Camera - FIXED small size in portrait + padding so it does NOT touch the edges
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .height(200.dp)
+                ) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                     Text(
                         text = "DEBUG: QuickFillupScreen.kt (portrait)",
