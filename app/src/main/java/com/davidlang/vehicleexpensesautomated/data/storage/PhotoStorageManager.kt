@@ -39,7 +39,8 @@ class PhotoStorageManager @Inject constructor(
         val provider = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
 
         return if (provider == "google_drive") {
-            uploadToDrive(uri, fileName, photoType)
+            // Try Drive first; if it fails for any reason (no account, network, auth, etc.), fall back to local
+            uploadToDrive(uri, fileName, photoType) ?: saveLocally(uri, fileName, photoType)
         } else {
             saveLocally(uri, fileName, photoType)
         }
@@ -74,7 +75,7 @@ class PhotoStorageManager @Inject constructor(
             tempFile.delete()
             uploaded.webViewLink ?: "https://drive.google.com/file/d/${uploaded.id}/view"
         } catch (e: Exception) {
-            null
+            null // Drive failed → will fall back to local
         }
     }
 
