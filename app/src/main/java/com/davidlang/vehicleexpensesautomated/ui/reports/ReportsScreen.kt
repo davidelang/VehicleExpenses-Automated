@@ -30,12 +30,12 @@ fun ReportsScreen(navController: NavHostController) {
     val partialFills = fuelEntries.count { it.isPartialFill }
     val totalFillUps = fuelEntries.size
 
-    // MPG from last two full fills — ignore final partial + any missed fills between full fills
+    // MPG from last two full fills — ignore any entry with gallons <= 0 (missed fillup / break) and ignore a final partial fill
     val avgMpg = if (fuelEntries.size >= 2) {
-        val sorted = fuelEntries.sortedBy { it.timestamp }
-            .filter { !it.isPartialFill && !it.isMissedFillup }
-        if (sorted.size >= 2) {
-            val lastTwo = sorted.takeLast(2)
+        val sortedFull = fuelEntries.sortedBy { it.timestamp }
+            .filter { it.gallons > 0 && !it.isPartialFill }
+        if (sortedFull.size >= 2) {
+            val lastTwo = sortedFull.takeLast(2)
             if (lastTwo[1].odometer > lastTwo[0].odometer && lastTwo[1].gallons > 0)
                 ((lastTwo[1].odometer - lastTwo[0].odometer) / lastTwo[1].gallons).toFloat()
             else 0f
@@ -73,7 +73,8 @@ fun ReportsScreen(navController: NavHostController) {
             items(fuelEntries.takeLast(5).reversed()) { entry ->
                 val barWidth = (entry.cost / (totalFuelCost + 0.01)).coerceIn(0.0, 1.0).toFloat()
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-                    Text("$${entry.cost} (${entry.gallons} gal)", modifier = Modifier.width(120.dp))
+                    val label = if (entry.gallons <= 0) "Missed (0 gal)" else "$${entry.cost} (${entry.gallons} gal)"
+                    Text(label, modifier = Modifier.width(120.dp))
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -125,7 +126,9 @@ fun ReportsScreen(navController: NavHostController) {
             items(fuelEntries.take(5)) { entry ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Gallons: ${entry.gallons} | Cost: $${entry.cost} | Partial: ${entry.isPartialFill} | Missed: ${entry.isMissedFillup}")
+                        val label = if (entry.gallons <= 0) "Missed fillup (unknown gas added)" else "Gallons: ${entry.gallons} | Cost: $${entry.cost}"
+                        Text(label)
+                        Text("Partial: ${entry.isPartialFill}")
                     }
                 }
             }
