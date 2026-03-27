@@ -10,8 +10,8 @@ data class Vehicle(
     val name: String,
     val make: String? = null,
     val model: String? = null,
-    val year: Int,
-    val licensePlate: String,
+    val year: Int? = null,
+    val licensePlate: String? = null,
     val vin: String? = null,
     val notes: String? = null,
     val referenceDashPhotoUrl: String? = null

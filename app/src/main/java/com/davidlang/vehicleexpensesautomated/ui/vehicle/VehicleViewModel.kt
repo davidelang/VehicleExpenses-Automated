@@ -25,8 +25,8 @@ class VehicleViewModel @Inject constructor(
         name: String,
         make: String,
         model: String,
-        year: Int,
-        licensePlate: String,
+        year: Int?,
+        licensePlate: String?,
         referenceDashPhotoUrl: String?,
         initialOdometer: Int
     ) {

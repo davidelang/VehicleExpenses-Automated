@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -90,14 +92,14 @@ fun ManageVehiclesScreen(
         OutlinedTextField(
             value = year,
             onValueChange = { year = it },
-            label = { Text("Year") },
+            label = { Text("Year (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
 
         OutlinedTextField(
             value = licensePlate,
             onValueChange = { licensePlate = it },
-            label = { Text("License Plate") },
+            label = { Text("License Plate (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -113,8 +115,16 @@ fun ManageVehiclesScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         if (referencePhotoUrl != null) {
+            Image(
+                painter = rememberAsyncImagePainter(referencePhotoUrl),
+                contentDescription = "Reference dash photo",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+            )
+        } else {
             Box(modifier = Modifier.fillMaxWidth().height(120.dp)) {
-                Text("Reference Dash Photo (thumbnail placeholder)", modifier = Modifier.align(Alignment.Center))
+                Text("No dash photo yet", modifier = Modifier.align(Alignment.Center))
             }
         }
 
@@ -134,7 +144,7 @@ fun ManageVehiclesScreen(
                         name = name,
                         make = make,
                         model = model,
-                        year = year.toIntOrNull() ?: 2025,
+                        year = year.toIntOrNull(),
                         licensePlate = licensePlate,
                         referenceDashPhotoUrl = referencePhotoUrl,
                         initialOdometer = odometerReading.toIntOrNull() ?: 0
