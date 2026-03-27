@@ -68,28 +68,32 @@ fun ManageVehiclesScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
-    // Explicitly typed Try OCR function
+    // Try OCR with full error reporting (this was why "Try OCR" produced no results)
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
-                var finalPath = photoPathOrUri
-                if (photoPathOrUri.startsWith("content://")) {
-                    val tempFile = File.createTempFile("ocr_vehicle", ".jpg", context.cacheDir)
-                    context.contentResolver.openInputStream(Uri.parse(photoPathOrUri))?.use { input ->
-                        tempFile.outputStream().use { output ->
-                            input.copyTo(output)
+                try {
+                    var finalPath = photoPathOrUri
+                    if (photoPathOrUri.startsWith("content://")) {
+                        val tempFile = File.createTempFile("ocr_vehicle", ".jpg", context.cacheDir)
+                        context.contentResolver.openInputStream(Uri.parse(photoPathOrUri))?.use { input ->
+                            tempFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
                         }
+                        finalPath = tempFile.absolutePath
                     }
-                    finalPath = tempFile.absolutePath
+                    val crop = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                    val result = OdometerOcrUtils.extractFromPhoto(finalPath, crop)
+                    result.odometer?.let { odometerReading = it }
+                    Toast.makeText(
+                        context,
+                        "OCR result: ${result.odometer ?: "—"} (region used)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
-                val crop = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
-                val result = OdometerOcrUtils.extractFromPhoto(finalPath, crop)
-                result.odometer?.let { odometerReading = it }
-                Toast.makeText(
-                    context,
-                    "OCR result: ${result.odometer ?: "—"} (region used)",
-                    Toast.LENGTH_LONG
-                ).show()
             }
         } ?: run {
             Toast.makeText(context, "No photo selected", Toast.LENGTH_SHORT).show()
