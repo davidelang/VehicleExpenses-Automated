@@ -27,7 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
@@ -70,8 +70,8 @@ fun ManageVehiclesScreen(
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
     var isCropMode by remember { mutableStateOf(false) }
 
-    // Manual OCR trigger
-    val tryOcr = {
+    // Explicitly typed Try OCR function (fixes the Function0<Any> error)
+    val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
                 var finalPath = photoPathOrUri
@@ -93,10 +93,12 @@ fun ManageVehiclesScreen(
                     Toast.LENGTH_LONG
                 ).show()
             }
-        } ?: Toast.makeText(context, "No photo selected", Toast.LENGTH_SHORT).show()
+        } ?: run {
+            Toast.makeText(context, "No photo selected", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    // Auto OCR on crop change
+    // Auto OCR whenever crop changes
     LaunchedEffect(referencePhotoUrl, odometerCropRect) {
         if (odometerCropRect != null) {
             tryOcr()
@@ -193,14 +195,9 @@ fun ManageVehiclesScreen(
                                     currentDrag = null
                                 }
                             )
-                        } else {
-                            detectTransformGestures { _, pan, zoom, rotationChange ->
-                                // transformState already handles this via its own modifier below
-                            }
                         }
                     }
             ) {
-                // Transformed image + overlays
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -211,6 +208,7 @@ fun ManageVehiclesScreen(
                             translationY = offset.y,
                             rotationZ = rotation
                         )
+                        .transformable(state = transformState)
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
@@ -218,7 +216,7 @@ fun ManageVehiclesScreen(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Live drag preview (blue)
+                    // Live drag preview (blue) — only in crop mode
                     if (isCropMode && dragStart != null && currentDrag != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val start = dragStart!!
@@ -287,7 +285,7 @@ fun ManageVehiclesScreen(
                             .padding(horizontal = 24.dp, vertical = 16.dp)
                     ) {
                         Text(
-                            text = "PINCH/ZOOM • DRAG TO PAN • ROTATE\nTap 'Crop Mode' to mark region",
+                            text = "TWO-FINGER ZOOM • PAN • ROTATE\nTap Crop Mode to mark region",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White,
                             textAlign = TextAlign.Center
@@ -315,7 +313,7 @@ fun ManageVehiclesScreen(
                 },
                 modifier = Modifier.weight(1f)
             ) {
-                Text(if (isCropMode) "View Mode (zoom/pan)" else "Crop Mode (mark region)")
+                Text(if (isCropMode) "View Mode (2-finger zoom/pan/rotate)" else "Crop Mode (mark region)")
             }
 
             OutlinedButton(
