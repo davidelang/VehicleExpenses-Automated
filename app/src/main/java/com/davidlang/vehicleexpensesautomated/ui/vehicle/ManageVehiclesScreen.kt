@@ -208,55 +208,98 @@ fun ManageVehiclesScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         if (referencePhotoUrl != null) {
-            Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
-                Image(
-                    painter = rememberAsyncImagePainter(referencePhotoUrl),
-                    contentDescription = "Reference dash photo",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.FillBounds
-                )
-
-                // Saved crop (green)
-                odometerCropRect?.let { crop ->
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val w = size.width
-                        val h = size.height
-                        val leftPx = crop.left * w
-                        val topPx = crop.top * h
-                        val rightPx = crop.right * w
-                        val bottomPx = crop.bottom * h
-                        drawRect(
-                            color = Color.Green.copy(alpha = 0.3f),
-                            topLeft = Offset(leftPx, topPx),
-                            size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
-                        )
-                        drawRect(
-                            color = Color.Green,
-                            topLeft = Offset(leftPx, topPx),
-                            size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
-                            style = Stroke(width = 6f)
-                        )
-                    }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+            ) {
+                val imageModifier = if (isEditingOcrArea) {
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    dragStart = offset
+                                    currentDrag = offset
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    currentDrag = (currentDrag ?: dragStart)!! + dragAmount
+                                },
+                                onDragEnd = {
+                                    val w = size.width.toFloat()
+                                    val h = size.height.toFloat()
+                                    val start = dragStart ?: Offset.Zero
+                                    val end = currentDrag ?: start
+                                    val left = (start.x.coerceAtMost(end.x) / w).coerceIn(0f, 1f)
+                                    val top = (start.y.coerceAtMost(end.y) / h).coerceIn(0f, 1f)
+                                    val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
+                                    val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
+                                    odometerCropRect = Rect(left, top, right, bottom)
+                                    Toast.makeText(context, "Crop area set — tap Try OCR Now to test", Toast.LENGTH_SHORT).show()
+                                    dragStart = null
+                                    currentDrag = null
+                                },
+                                onDragCancel = {
+                                    dragStart = null
+                                    currentDrag = null
+                                }
+                            )
+                        }
+                } else {
+                    Modifier.fillMaxSize()
                 }
 
-                // Live drag preview (blue) when editing
-                if (isEditingOcrArea && dragStart != null && currentDrag != null) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val start = dragStart!!
-                        val end = currentDrag!!
-                        val width = (end.x - start.x).coerceAtLeast(0f)
-                        val height = (end.y - start.y).coerceAtLeast(0f)
-                        drawRect(
-                            color = Color.Blue.copy(alpha = 0.4f),
-                            topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
-                            size = androidx.compose.ui.geometry.Size(width, height)
-                        )
-                        drawRect(
-                            color = Color.Blue,
-                            topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
-                            size = androidx.compose.ui.geometry.Size(width, height),
-                            style = Stroke(width = 4f)
-                        )
+                Box(modifier = imageModifier) {
+                    Image(
+                        painter = rememberAsyncImagePainter(referencePhotoUrl),
+                        contentDescription = "Reference dash photo",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.FillBounds
+                    )
+
+                    // Live drag preview (blue)
+                    if (isEditingOcrArea && dragStart != null && currentDrag != null) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val start = dragStart!!
+                            val end = currentDrag!!
+                            val width = (end.x - start.x).coerceAtLeast(0f)
+                            val height = (end.y - start.y).coerceAtLeast(0f)
+                            drawRect(
+                                color = Color.Blue.copy(alpha = 0.4f),
+                                topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
+                                size = androidx.compose.ui.geometry.Size(width, height)
+                            )
+                            drawRect(
+                                color = Color.Blue,
+                                topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
+                                size = androidx.compose.ui.geometry.Size(width, height),
+                                style = Stroke(width = 4f)
+                            )
+                        }
+                    }
+
+                    // Saved crop (green)
+                    odometerCropRect?.let { crop ->
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val w = size.width
+                            val h = size.height
+                            val leftPx = crop.left * w
+                            val topPx = crop.top * h
+                            val rightPx = crop.right * w
+                            val bottomPx = crop.bottom * h
+                            drawRect(
+                                color = Color.Green.copy(alpha = 0.3f),
+                                topLeft = Offset(leftPx, topPx),
+                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
+                            )
+                            drawRect(
+                                color = Color.Green,
+                                topLeft = Offset(leftPx, topPx),
+                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
+                                style = Stroke(width = 6f)
+                            )
+                        }
                     }
                 }
             }
