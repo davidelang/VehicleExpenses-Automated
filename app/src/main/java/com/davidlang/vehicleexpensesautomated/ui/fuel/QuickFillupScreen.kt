@@ -60,11 +60,15 @@ fun QuickFillupScreen(navController: NavHostController) {
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
+    // Persistent debug state so toasts don't disappear too fast
+    var lastCropDebug by remember { mutableStateOf("No crop info yet") }
+    var lastOcrResult by remember { mutableStateOf("No OCR run yet") }
+
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            Toast.makeText(context, "Image selected — running OCR with saved crop...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Image selected — processing...", Toast.LENGTH_SHORT).show()
             scope.launch {
                 val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
@@ -73,7 +77,6 @@ fun QuickFillupScreen(navController: NavHostController) {
                     }
                 }
 
-                // Defensive lookup using the latest vehicles state
                 val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
                 val crop = selectedVehicle?.let {
                     androidx.compose.ui.geometry.Rect(
@@ -87,20 +90,20 @@ fun QuickFillupScreen(navController: NavHostController) {
                 val cropDebug = if (crop != null) {
                     "Crop L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)} (w=${"%.3f".format(crop.right - crop.left)}, h=${"%.3f".format(crop.bottom - crop.top)})"
                 } else {
-                    "NO CROP — full image OCR (vehicleId=$selectedVehicleId not found or no crop saved)"
+                    "NO CROP — full image OCR (vehicleId=$selectedVehicleId)"
                 }
-                Toast.makeText(context, "Gallery picker — $cropDebug", Toast.LENGTH_LONG).show()
+
+                lastCropDebug = "Gallery: $cropDebug"
 
                 val result = OdometerOcrUtils.extractFromPhoto(
                     tempFile.absolutePath,
                     crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                 )
 
-                Toast.makeText(
-                    context,
-                    "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}",
-                    Toast.LENGTH_LONG
-                ).show()
+                val ocrMsg = "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}"
+                lastOcrResult = ocrMsg
+
+                Toast.makeText(context, ocrMsg, Toast.LENGTH_LONG).show()
 
                 if (step == 1) {
                     if (result.possibleOdometers.isNotEmpty()) {
@@ -168,7 +171,9 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onOdometerConfirmed = { selected ->
                             odometer = selected.toIntOrNull() ?: odometer
                             showOdometerConfirmation = false
-                        }
+                        },
+                        lastCropDebug = lastCropDebug,
+                        lastOcrResult = lastOcrResult
                     )
                 }
             }
@@ -225,7 +230,9 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onOdometerConfirmed = { selected ->
                             odometer = selected.toIntOrNull() ?: odometer
                             showOdometerConfirmation = false
-                        }
+                        },
+                        lastCropDebug = lastCropDebug,
+                        lastOcrResult = lastOcrResult
                     )
                 }
             }
@@ -259,7 +266,9 @@ private fun ControlsContent(
     navController: NavHostController,
     showOdometerConfirmation: Boolean,
     possibleOdometers: List<String>,
-    onOdometerConfirmed: (String) -> Unit
+    onOdometerConfirmed: (String) -> Unit,
+    lastCropDebug: String,
+    lastOcrResult: String
 ) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
@@ -290,6 +299,19 @@ private fun ControlsContent(
     }
 
     Spacer(modifier = Modifier.height(8.dp))
+
+    // Persistent debug panel
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Text("DEBUG CROP INFO", style = MaterialTheme.typography.titleSmall, color = Color.Yellow)
+            Text(lastCropDebug, fontSize = 12.sp, color = Color.White)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(lastOcrResult, fontSize = 12.sp, color = Color.Cyan)
+        }
+    }
 
     if (step == 1) {
         Text("Step 1: Point at dashboard", style = MaterialTheme.typography.titleMedium)
@@ -322,7 +344,7 @@ private fun ControlsContent(
                     val cropDebug = if (crop != null) {
                         "L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)}"
                     } else "NO CROP"
-                    Toast.makeText(context, "Dash button — using crop: $cropDebug (vehicleId=$selectedVehicleId)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Dash button — using crop: $cropDebug", Toast.LENGTH_LONG).show()
 
                     val result = OdometerOcrUtils.extractFromPhoto(
                         "dummy_dash.jpg",
@@ -406,7 +428,7 @@ private fun ControlsContent(
                     }
 
                     val cropDebug = if (crop != null) "L=${"%.3f".format(crop.left)} ..." else "NO CROP"
-                    Toast.makeText(context, "Pump button — using crop: $cropDebug (vehicleId=$selectedVehicleId)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Pump button — using crop: $cropDebug", Toast.LENGTH_SHORT).show()
 
                     val result = OdometerOcrUtils.extractFromPhoto(
                         "dummy_pump.jpg",
