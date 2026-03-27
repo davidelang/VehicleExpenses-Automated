@@ -108,9 +108,9 @@ fun ManageVehiclesScreen(
                         finalPath = tempFile.absolutePath
                     }
 
-                    val cropRectF = odometerCropRect?.let { r ->
-                        RectF(r.left, r.top, r.right, r.bottom)
-                    }
+                    val cropRectF = odometerCropRect?.let { r -> RectF(r.left, r.top, r.right, r.bottom) }
+
+                    Log.d("OcrTest", "Trying OCR with crop: $cropRectF")
 
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRectF)
 
@@ -129,16 +129,16 @@ fun ManageVehiclesScreen(
                         appendLine(cropInfo)
                         appendLine("Final odometer: ${result.odometer ?: "NONE"}")
                         appendLine(candidatesMsg)
-                        appendLine("Raw text blocks found: ${result.possibleOdometers.size} total candidates before dedup")
+                        appendLine("Raw text blocks found: ${result.possibleOdometers.size}")
                         appendLine("")
-                        appendLine("Check Logcat (tag: OdometerOcr) for detailed crop/padding info.")
+                        appendLine("Check Logcat (tag: OdometerOcr) for crop/padding details.")
                     }
 
                     lastOcrDebug = debugText
 
                     Toast.makeText(
                         context,
-                        if (result.odometer != null) "OCR Success: ${result.odometer}" else "Still no reading — check Logcat",
+                        if (result.odometer != null) "OCR Success: ${result.odometer}" else "No reading — check Logcat",
                         Toast.LENGTH_LONG
                     ).show()
 
