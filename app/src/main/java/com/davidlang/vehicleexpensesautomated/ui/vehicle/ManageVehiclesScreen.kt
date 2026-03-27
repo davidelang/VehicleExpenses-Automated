@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    // NEW: edit mode for OCR area
+    // Edit mode for OCR area
     var isEditingOcrArea by remember { mutableStateOf(false) }
 
     // Zoom / pan / rotate state (only active in edit mode)
@@ -102,7 +102,7 @@ fun ManageVehiclesScreen(
                         bottom = it.odometerCropBottom ?: 1f
                     )
                 }
-                isEditingOcrArea = false  // start in static mode
+                isEditingOcrArea = false
             }
         }
     }
@@ -150,7 +150,6 @@ fun ManageVehiclesScreen(
     }
 
     val saveOcrArea = {
-        // persist the current cropRect (already in state; Save Vehicle will persist it)
         isEditingOcrArea = false
         Toast.makeText(context, "OCR area saved", Toast.LENGTH_SHORT).show()
     }
@@ -164,7 +163,7 @@ fun ManageVehiclesScreen(
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Vehicle dropdown at top
+        // Vehicle dropdown at top — "New Vehicle" now at the BOTTOM
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,
@@ -181,6 +180,17 @@ fun ManageVehiclesScreen(
                 expanded = dropdownExpanded,
                 onDismissRequest = { dropdownExpanded = false }
             ) {
+                // Real vehicles first
+                vehicles.forEach { vehicle ->
+                    DropdownMenuItem(
+                        text = { Text(vehicle.name) },
+                        onClick = {
+                            selectedVehicleId = vehicle.id
+                            dropdownExpanded = false
+                        }
+                    )
+                }
+                // "New Vehicle" is now the bottom item
                 DropdownMenuItem(
                     text = { Text("New Vehicle") },
                     onClick = {
@@ -198,15 +208,6 @@ fun ManageVehiclesScreen(
                         dropdownExpanded = false
                     }
                 )
-                vehicles.forEach { vehicle ->
-                    DropdownMenuItem(
-                        text = { Text(vehicle.name) },
-                        onClick = {
-                            selectedVehicleId = vehicle.id
-                            dropdownExpanded = false
-                        }
-                    )
-                }
             }
         }
 
@@ -317,7 +318,6 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.FillBounds
                     )
 
-                    // Live drag preview (only in edit mode)
                     if (isEditingOcrArea && dragStart != null && currentDrag != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val start = dragStart!!
@@ -338,7 +338,6 @@ fun ManageVehiclesScreen(
                         }
                     }
 
-                    // Saved crop overlay (green) — always visible
                     odometerCropRect?.let { crop ->
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val w = size.width
@@ -370,7 +369,6 @@ fun ManageVehiclesScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Mode-dependent buttons
         if (isEditingOcrArea) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -406,7 +404,6 @@ fun ManageVehiclesScreen(
                 }
             }
         } else {
-            // Static mode — only "Edit OCR Area" button
             Button(
                 onClick = { isEditingOcrArea = true },
                 modifier = Modifier.fillMaxWidth()
@@ -415,7 +412,6 @@ fun ManageVehiclesScreen(
             }
         }
 
-        // Odometer field only in edit mode (as requested)
         if (isEditingOcrArea) {
             OutlinedTextField(
                 value = odometerReading,
@@ -490,7 +486,6 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Delete confirmation dialog
     if (showDeleteConfirm && editingVehicle != null) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -517,7 +512,6 @@ fun ManageVehiclesScreen(
         )
     }
 
-    // Enlarged crop region preview dialog
     if (showEnlargedCrop && referencePhotoUrl != null && odometerCropRect != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
