@@ -26,7 +26,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
-import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel   // added for reference crop
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
@@ -34,7 +34,7 @@ import java.io.File
 @Composable
 fun QuickFillupScreen(navController: NavHostController) {
     val fuelViewModel: FuelViewModel = hiltViewModel()
-    val vehicleViewModel: VehicleViewModel = hiltViewModel()   // added
+    val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -53,15 +53,13 @@ fun QuickFillupScreen(navController: NavHostController) {
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
 
-    // Real vehicle selection from ViewModel
     val vehicles by vehicleViewModel.vehicles.collectAsState()
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
 
-    // Confirmation dialog state
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // Gallery picker for "Advanced: Pick existing picture"
+    // Gallery picker
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -75,7 +73,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                     }
                 }
 
-                // NEW: use saved crop rect from selected vehicle
+                // Use saved crop rect from selected vehicle
                 val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
                 val crop = selectedVehicle?.let {
                     androidx.compose.ui.geometry.Rect(
@@ -86,7 +84,10 @@ fun QuickFillupScreen(navController: NavHostController) {
                     )
                 }
 
-                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) })
+                val result = OdometerOcrUtils.extractFromPhoto(
+                    tempFile.absolutePath, 
+                    crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
+                )
 
                 Toast.makeText(
                     context,
