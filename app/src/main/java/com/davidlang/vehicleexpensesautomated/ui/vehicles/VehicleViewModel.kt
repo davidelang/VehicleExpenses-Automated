@@ -15,7 +15,7 @@ class VehicleViewModel @Inject constructor(
     private val repository: VehicleRepository
 ) : ViewModel() {
 
-    val vehicles = repository.allVehicles.stateIn(
+    val vehicles = repository.getAllVehicles().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
