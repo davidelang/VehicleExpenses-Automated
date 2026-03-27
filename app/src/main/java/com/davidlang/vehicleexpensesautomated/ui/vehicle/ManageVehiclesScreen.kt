@@ -27,9 +27,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel   // fixed deprecation
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -46,6 +47,11 @@ fun ManageVehiclesScreen(
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
+    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+
+    var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
+    var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
+
     var name by remember { mutableStateOf("") }
     var make by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
@@ -53,9 +59,9 @@ fun ManageVehiclesScreen(
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }   // normalized 0.0-1.0
+    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    // Zoom / pan / rotate state (two-finger only)
+    // Zoom / pan / rotate state
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var rotation by remember { mutableStateOf(0f) }
@@ -65,14 +71,38 @@ fun ManageVehiclesScreen(
         rotation += rotationChange
     }
 
-    // Drag-to-draw state (single-finger only)
+    // Drag-to-draw state
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
-    // Debug enlarged crop preview dialog
     var showEnlargedCrop by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    // Try OCR ONLY when button is pressed
+    // Load selected vehicle into form
+    LaunchedEffect(selectedVehicleId) {
+        selectedVehicleId?.let { id ->
+            val vehicle = vehicleViewModel.getVehicleById(id)
+            editingVehicle = vehicle
+            vehicle?.let {
+                name = it.name
+                make = it.make ?: ""
+                model = it.model ?: ""
+                year = it.year?.toString() ?: ""
+                licensePlate = it.licensePlate ?: ""
+                odometerReading = ""  // OCR will fill this
+                referencePhotoUrl = it.referenceDashPhotoUrl
+                odometerCropRect = it.odometerCropLeft?.let { left ->
+                    Rect(
+                        left = left,
+                        top = it.odometerCropTop ?: 0f,
+                        right = it.odometerCropRight ?: 1f,
+                        bottom = it.odometerCropBottom ?: 1f
+                    )
+                }
+            }
+        }
+    }
+
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
@@ -122,6 +152,53 @@ fun ManageVehiclesScreen(
             .verticalScroll(rememberScrollState())
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Vehicle dropdown at top
+        var dropdownExpanded by remember { mutableStateOf(false) }
+        ExposedDropdownMenuBox(
+            expanded = dropdownExpanded,
+            onExpandedChange = { dropdownExpanded = it }
+        ) {
+            OutlinedTextField(
+                value = editingVehicle?.name ?: "New Vehicle",
+                onValueChange = {},
+                label = { Text("Vehicle") },
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                readOnly = true
+            )
+            ExposedDropdownMenu(
+                expanded = dropdownExpanded,
+                onDismissRequest = { dropdownExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("New Vehicle") },
+                    onClick = {
+                        selectedVehicleId = null
+                        editingVehicle = null
+                        name = ""
+                        make = ""
+                        model = ""
+                        year = ""
+                        licensePlate = ""
+                        odometerReading = ""
+                        referencePhotoUrl = null
+                        odometerCropRect = null
+                        dropdownExpanded = false
+                    }
+                )
+                vehicles.forEach { vehicle ->
+                    DropdownMenuItem(
+                        text = { Text(vehicle.name) },
+                        onClick = {
+                            selectedVehicleId = vehicle.id
+                            dropdownExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
@@ -225,7 +302,6 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.FillBounds
                     )
 
-                    // Live drag preview (blue)
                     if (dragStart != null && currentDrag != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val start = dragStart!!
@@ -246,7 +322,6 @@ fun ManageVehiclesScreen(
                         }
                     }
 
-                    // Saved crop overlay (green)
                     odometerCropRect?.let { crop ->
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val w = size.width
@@ -315,17 +390,36 @@ fun ManageVehiclesScreen(
         Button(
             onClick = {
                 if (name.isNotBlank()) {
-                    vehicleViewModel.createNewVehicleWithReference(
-                        name = name,
-                        make = make,
-                        model = model,
-                        year = year.toIntOrNull(),
-                        licensePlate = licensePlate,
-                        referenceDashPhotoUrl = referencePhotoUrl,
-                        odometerCropRect = odometerCropRect,
-                        initialOdometer = odometerReading.toIntOrNull() ?: 0
-                    )
-                    Toast.makeText(context, "Vehicle saved with odometer calibration", Toast.LENGTH_LONG).show()
+                    if (editingVehicle != null) {
+                        // Update existing
+                        val updated = editingVehicle!!.copy(
+                            name = name,
+                            make = make.ifBlank { null },
+                            model = model.ifBlank { null },
+                            year = year.toIntOrNull(),
+                            licensePlate = licensePlate.ifBlank { null },
+                            referenceDashPhotoUrl = referencePhotoUrl,
+                            odometerCropLeft = odometerCropRect?.left,
+                            odometerCropTop = odometerCropRect?.top,
+                            odometerCropRight = odometerCropRect?.right,
+                            odometerCropBottom = odometerCropRect?.bottom
+                        )
+                        vehicleViewModel.updateVehicle(updated)
+                        Toast.makeText(context, "Vehicle updated", Toast.LENGTH_LONG).show()
+                    } else {
+                        // Create new
+                        vehicleViewModel.createNewVehicleWithReference(
+                            name = name,
+                            make = make,
+                            model = model,
+                            year = year.toIntOrNull(),
+                            licensePlate = licensePlate,
+                            referenceDashPhotoUrl = referencePhotoUrl,
+                            odometerCropRect = odometerCropRect,
+                            initialOdometer = odometerReading.toIntOrNull() ?: 0
+                        )
+                        Toast.makeText(context, "Vehicle saved with odometer calibration", Toast.LENGTH_LONG).show()
+                    }
                     navController.popBackStack()
                 } else {
                     Toast.makeText(context, "Vehicle name is required", Toast.LENGTH_SHORT).show()
@@ -333,7 +427,20 @@ fun ManageVehiclesScreen(
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Save Vehicle")
+            Text(if (editingVehicle != null) "Update Vehicle" else "Save Vehicle")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Delete button (only shown when editing)
+        if (editingVehicle != null) {
+            OutlinedButton(
+                onClick = { showDeleteConfirm = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+            ) {
+                Text("Delete Vehicle")
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -344,6 +451,33 @@ fun ManageVehiclesScreen(
         ) {
             Text("Cancel")
         }
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteConfirm && editingVehicle != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Vehicle?") },
+            text = { Text("This will permanently delete ${editingVehicle!!.name} and all associated fuel entries.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vehicleViewModel.deleteVehicle(editingVehicle!!)
+                        Toast.makeText(context, "Vehicle deleted", Toast.LENGTH_LONG).show()
+                        showDeleteConfirm = false
+                        navController.popBackStack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     // Enlarged crop region preview dialog
