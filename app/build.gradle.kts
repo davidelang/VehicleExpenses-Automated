@@ -41,7 +41,6 @@ android {
             excludes.add("META-INF/DEPENDENCIES")
             excludes.add("META-INF/INDEX.LIST")
         }
-        // Removed jniLibs exclude that was preventing ML Kit native libraries from being packaged
     }
 }
 
@@ -58,6 +57,8 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.0")
     implementation("com.google.android.gms:play-services-auth:21.0.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Coil for image thumbnails
+    implementation("io.coil-kt:coil-compose:2.6.0")
     // Room DB
     val roomVersion = "2.7.0"
     implementation("androidx.room:room-runtime:$roomVersion")
