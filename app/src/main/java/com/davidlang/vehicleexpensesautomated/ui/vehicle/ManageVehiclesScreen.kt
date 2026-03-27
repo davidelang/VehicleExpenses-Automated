@@ -61,7 +61,10 @@ fun ManageVehiclesScreen(
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    // Zoom / pan / rotate state
+    // NEW: edit mode for OCR area
+    var isEditingOcrArea by remember { mutableStateOf(false) }
+
+    // Zoom / pan / rotate state (only active in edit mode)
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var rotation by remember { mutableStateOf(0f) }
@@ -71,7 +74,7 @@ fun ManageVehiclesScreen(
         rotation += rotationChange
     }
 
-    // Drag-to-draw state
+    // Drag-to-draw state (only active in edit mode)
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
@@ -89,7 +92,7 @@ fun ManageVehiclesScreen(
                 model = it.model ?: ""
                 year = it.year?.toString() ?: ""
                 licensePlate = it.licensePlate ?: ""
-                odometerReading = ""  // OCR will fill this
+                odometerReading = ""
                 referencePhotoUrl = it.referenceDashPhotoUrl
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(
@@ -99,6 +102,7 @@ fun ManageVehiclesScreen(
                         bottom = it.odometerCropBottom ?: 1f
                     )
                 }
+                isEditingOcrArea = false  // start in static mode
             }
         }
     }
@@ -145,6 +149,12 @@ fun ManageVehiclesScreen(
         }
     }
 
+    val saveOcrArea = {
+        // persist the current cropRect (already in state; Save Vehicle will persist it)
+        isEditingOcrArea = false
+        Toast.makeText(context, "OCR area saved", Toast.LENGTH_SHORT).show()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -184,6 +194,7 @@ fun ManageVehiclesScreen(
                         odometerReading = ""
                         referencePhotoUrl = null
                         odometerCropRect = null
+                        isEditingOcrArea = false
                         dropdownExpanded = false
                     }
                 )
@@ -253,8 +264,8 @@ fun ManageVehiclesScreen(
                     .fillMaxWidth()
                     .height(280.dp)
             ) {
-                Box(
-                    modifier = Modifier
+                val imageModifier = if (isEditingOcrArea) {
+                    Modifier
                         .fillMaxSize()
                         .graphicsLayer(
                             scaleX = scale,
@@ -294,15 +305,20 @@ fun ManageVehiclesScreen(
                                 }
                             )
                         }
-                ) {
+                } else {
+                    Modifier.fillMaxSize()
+                }
+
+                Box(modifier = imageModifier) {
                     Image(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
-                        contentDescription = "Reference dash photo — single finger drag to mark, two fingers to zoom/pan/rotate",
+                        contentDescription = "Reference dash photo",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.FillBounds
                     )
 
-                    if (dragStart != null && currentDrag != null) {
+                    // Live drag preview (only in edit mode)
+                    if (isEditingOcrArea && dragStart != null && currentDrag != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val start = dragStart!!
                             val end = currentDrag!!
@@ -322,6 +338,7 @@ fun ManageVehiclesScreen(
                         }
                     }
 
+                    // Saved crop overlay (green) — always visible
                     odometerCropRect?.let { crop ->
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val w = size.width
@@ -351,39 +368,62 @@ fun ManageVehiclesScreen(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = {
-                    odometerCropRect = null
-                    dragStart = null
-                    currentDrag = null
-                    scale = 1f
-                    offset = Offset.Zero
-                    rotation = 0f
-                    Toast.makeText(context, "Region & view reset", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Reset All")
-            }
+        Spacer(modifier = Modifier.height(8.dp))
 
-            Button(
-                onClick = tryOcr,
-                modifier = Modifier.weight(1f)
+        // Mode-dependent buttons
+        if (isEditingOcrArea) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Try OCR Now")
+                OutlinedButton(
+                    onClick = {
+                        odometerCropRect = null
+                        dragStart = null
+                        currentDrag = null
+                        scale = 1f
+                        offset = Offset.Zero
+                        rotation = 0f
+                        Toast.makeText(context, "Region & view reset", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Reset All")
+                }
+
+                Button(
+                    onClick = tryOcr,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Try OCR Now")
+                }
+
+                Button(
+                    onClick = saveOcrArea,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Save OCR Area")
+                }
+            }
+        } else {
+            // Static mode — only "Edit OCR Area" button
+            Button(
+                onClick = { isEditingOcrArea = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Edit OCR Area")
             }
         }
 
-        OutlinedTextField(
-            value = odometerReading,
-            onValueChange = { odometerReading = it },
-            label = { Text("Odometer reading (auto-filled by OCR)") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Odometer field only in edit mode (as requested)
+        if (isEditingOcrArea) {
+            OutlinedTextField(
+                value = odometerReading,
+                onValueChange = { odometerReading = it },
+                label = { Text("Odometer reading (auto-filled by OCR)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -391,7 +431,6 @@ fun ManageVehiclesScreen(
             onClick = {
                 if (name.isNotBlank()) {
                     if (editingVehicle != null) {
-                        // Update existing
                         val updated = editingVehicle!!.copy(
                             name = name,
                             make = make.ifBlank { null },
@@ -407,7 +446,6 @@ fun ManageVehiclesScreen(
                         vehicleViewModel.updateVehicle(updated)
                         Toast.makeText(context, "Vehicle updated", Toast.LENGTH_LONG).show()
                     } else {
-                        // Create new
                         vehicleViewModel.createNewVehicleWithReference(
                             name = name,
                             make = make,
@@ -432,7 +470,6 @@ fun ManageVehiclesScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Delete button (only shown when editing)
         if (editingVehicle != null) {
             OutlinedButton(
                 onClick = { showDeleteConfirm = true },
