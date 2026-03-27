@@ -7,7 +7,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -55,7 +54,7 @@ fun ManageVehiclesScreen(
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }   // normalized 0.0-1.0
 
-    // Zoom / pan / rotate state
+    // Zoom / pan / rotate state (two-finger only)
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var rotation by remember { mutableStateOf(0f) }
@@ -65,12 +64,11 @@ fun ManageVehiclesScreen(
         rotation += rotationChange
     }
 
-    // Drag-to-draw state
+    // Drag-to-draw state (single-finger only)
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
-    var isCropMode by remember { mutableStateOf(false) }
 
-    // Explicitly typed Try OCR function (fixes the Function0<Any> error)
+    // Explicitly typed Try OCR function
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
@@ -166,36 +164,34 @@ fun ManageVehiclesScreen(
                     .fillMaxWidth()
                     .height(280.dp)
                     .pointerInput(Unit) {
-                        if (isCropMode) {
-                            detectDragGestures(
-                                onDragStart = { offset ->
-                                    dragStart = offset
-                                    currentDrag = offset
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    currentDrag = (currentDrag ?: dragStart)!! + dragAmount
-                                },
-                                onDragEnd = {
-                                    val w = size.width.toFloat()
-                                    val h = size.height.toFloat()
-                                    val start = dragStart ?: Offset.Zero
-                                    val end = currentDrag ?: start
-                                    val left = (start.x.coerceAtMost(end.x) / w).coerceIn(0f, 1f)
-                                    val top = (start.y.coerceAtMost(end.y) / h).coerceIn(0f, 1f)
-                                    val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
-                                    val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
-                                    odometerCropRect = Rect(left, top, right, bottom)
-                                    Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
-                                    dragStart = null
-                                    currentDrag = null
-                                },
-                                onDragCancel = {
-                                    dragStart = null
-                                    currentDrag = null
-                                }
-                            )
-                        }
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                dragStart = offset
+                                currentDrag = offset
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                currentDrag = (currentDrag ?: dragStart)!! + dragAmount
+                            },
+                            onDragEnd = {
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                val start = dragStart ?: Offset.Zero
+                                val end = currentDrag ?: start
+                                val left = (start.x.coerceAtMost(end.x) / w).coerceIn(0f, 1f)
+                                val top = (start.y.coerceAtMost(end.y) / h).coerceIn(0f, 1f)
+                                val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
+                                val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
+                                odometerCropRect = Rect(left, top, right, bottom)
+                                Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
+                                dragStart = null
+                                currentDrag = null
+                            },
+                            onDragCancel = {
+                                dragStart = null
+                                currentDrag = null
+                            }
+                        )
                     }
             ) {
                 Box(
@@ -212,12 +208,12 @@ fun ManageVehiclesScreen(
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
-                        contentDescription = "Reference dash photo",
+                        contentDescription = "Reference dash photo — single finger drag to mark, two fingers to zoom/pan/rotate",
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Live drag preview (blue) — only in crop mode
-                    if (isCropMode && dragStart != null && currentDrag != null) {
+                    // Live drag preview (blue)
+                    if (dragStart != null && currentDrag != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val start = dragStart!!
                             val end = currentDrag!!
@@ -261,7 +257,7 @@ fun ManageVehiclesScreen(
                     }
                 }
 
-                if (isCropMode && odometerCropRect == null && dragStart == null) {
+                if (odometerCropRect == null && dragStart == null) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -270,23 +266,8 @@ fun ManageVehiclesScreen(
                             .padding(horizontal = 24.dp, vertical = 16.dp)
                     ) {
                         Text(
-                            text = "DRAG ACROSS THE ODOMETER NUMBERS",
+                            text = "SINGLE FINGER: DRAG ACROSS ODOMETER NUMBERS\nTWO FINGERS: ZOOM • PAN • ROTATE",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                } else if (!isCropMode) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(8.dp)
-                            .background(Color.Gray.copy(alpha = 0.8f), shape = MaterialTheme.shapes.medium)
-                            .padding(horizontal = 24.dp, vertical = 16.dp)
-                    ) {
-                        Text(
-                            text = "TWO-FINGER ZOOM • PAN • ROTATE\nTap Crop Mode to mark region",
-                            style = MaterialTheme.typography.bodyMedium,
                             color = Color.White,
                             textAlign = TextAlign.Center
                         )
@@ -303,19 +284,6 @@ fun ManageVehiclesScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(
-                onClick = {
-                    isCropMode = !isCropMode
-                    if (!isCropMode) {
-                        dragStart = null
-                        currentDrag = null
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(if (isCropMode) "View Mode (2-finger zoom/pan/rotate)" else "Crop Mode (mark region)")
-            }
-
             OutlinedButton(
                 onClick = {
                     odometerCropRect = null
