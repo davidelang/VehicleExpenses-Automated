@@ -13,9 +13,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -125,15 +127,15 @@ fun ManageVehiclesScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(220.dp)
+                    .height(280.dp)
                     .pointerInput(Unit) {
                         detectTapGestures { offset ->
                             val w = size.width.toFloat()
                             val h = size.height.toFloat()
-                            val left = (offset.x - 80f).coerceAtLeast(0f) / w
-                            val top = (offset.y - 40f).coerceAtLeast(0f) / h
-                            val right = (offset.x + 80f).coerceAtMost(w) / w
-                            val bottom = (offset.y + 40f).coerceAtMost(h) / h
+                            val left = (offset.x - 100f).coerceAtLeast(0f) / w
+                            val top = (offset.y - 60f).coerceAtLeast(0f) / h
+                            val right = (offset.x + 100f).coerceAtMost(w) / w
+                            val bottom = (offset.y + 60f).coerceAtMost(h) / h
                             odometerCropRect = Rect(left, top, right, bottom)
                             Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
                         }
@@ -144,15 +146,25 @@ fun ManageVehiclesScreen(
                     contentDescription = "Reference dash photo - tap the odometer area",
                     modifier = Modifier.fillMaxSize()
                 )
-                Text(
-                    text = "TAP the odometer reading area",
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+
+                // Large, highly visible prompt
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(8.dp)
+                        .background(Color.Red.copy(alpha = 0.85f), shape = MaterialTheme.shapes.medium)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "TAP THE ODOMETER NUMBERS",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         } else {
-            Box(modifier = Modifier.fillMaxWidth().height(220.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
                 Text("No dash photo yet", modifier = Modifier.align(Alignment.Center))
             }
         }
