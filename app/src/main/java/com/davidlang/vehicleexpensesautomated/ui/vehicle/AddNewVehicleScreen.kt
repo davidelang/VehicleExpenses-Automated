@@ -42,9 +42,9 @@ fun AddNewVehicleScreen(
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }   // normalized 0.0-1.0
+    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    LaunchedEffect(referencePhotoUrl) {
+    LaunchedEffect(referencePhotoUrl, odometerCropRect) {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
                 var finalPath = photoPathOrUri

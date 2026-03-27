@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,9 +45,9 @@ fun ManageVehiclesScreen(
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }   // normalized 0.0-1.0
+    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    LaunchedEffect(referencePhotoUrl) {
+    LaunchedEffect(referencePhotoUrl, odometerCropRect) {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
                 var finalPath = photoPathOrUri
@@ -148,7 +147,6 @@ fun ManageVehiclesScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Large, highly visible prompt
                 Box(
                     modifier = Modifier
                         .align(Alignment.Center)
