@@ -91,17 +91,21 @@ fun ManageVehiclesScreen(
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, crop)
                     result.odometer?.let { odometerReading = it }
 
+                    val candidates = if (result.possibleOdometers.isNotEmpty()) {
+                        "Candidates: ${result.possibleOdometers.joinToString()}"
+                    } else "No candidates found"
+
                     val cropDebug = odometerCropRect?.let { 
                         "Crop: L=${"%.2f".format(it.left)} T=${"%.2f".format(it.top)} R=${"%.2f".format(it.right)} B=${"%.2f".format(it.bottom)}" 
                     } ?: "No crop selected"
 
                     Toast.makeText(
                         context,
-                        "OCR result: ${result.odometer ?: "—"} ($cropDebug)",
+                        "OCR: ${result.odometer ?: "—"} ($candidates) — $cropDebug",
                         Toast.LENGTH_LONG
                     ).show()
 
-                    showEnlargedCrop = true   // show enlarged preview dialog
+                    showEnlargedCrop = true
                 } catch (e: Exception) {
                     Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -218,7 +222,7 @@ fun ManageVehiclesScreen(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
                         contentDescription = "Reference dash photo — single finger drag to mark, two fingers to zoom/pan/rotate",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.FillBounds   // fixes letterboxing → green/red now match exactly
+                        contentScale = ContentScale.FillBounds
                     )
 
                     // Live drag preview (blue)
@@ -342,7 +346,7 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Enlarged crop region preview dialog — now shows EXACT region OCR receives
+    // Enlarged crop region preview dialog
     if (showEnlargedCrop && referencePhotoUrl != null && odometerCropRect != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
@@ -357,7 +361,7 @@ fun ManageVehiclesScreen(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
                         contentDescription = "Enlarged crop preview",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.FillBounds   // ensures red box matches green box
+                        contentScale = ContentScale.FillBounds
                     )
                     odometerCropRect?.let { crop ->
                         Canvas(modifier = Modifier.fillMaxSize()) {
