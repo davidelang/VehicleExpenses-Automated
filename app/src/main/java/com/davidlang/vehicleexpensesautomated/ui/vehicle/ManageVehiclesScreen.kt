@@ -126,7 +126,7 @@ fun ManageVehiclesScreen(
 
                     val candidatesMsg = if (result.possibleOdometers.isNotEmpty()) {
                         "Candidates: ${result.possibleOdometers.joinToString()}"
-                    } else "No candidates — crop may be too small or misaligned. Try a larger rectangle."
+                    } else "No candidates — crop may be misaligned or too tight. Try adjusting rotation/position."
 
                     Toast.makeText(
                         context,
@@ -145,15 +145,6 @@ fun ManageVehiclesScreen(
     }
 
     val saveOcrArea = {
-        if (odometerCropRect != null) {
-            val width = odometerCropRect!!.right - odometerCropRect!!.left
-            val height = odometerCropRect!!.bottom - odometerCropRect!!.top
-            if (width < 0.05f || height < 0.05f) {
-                Toast.makeText(context, "Crop too small — drag a larger rectangle around the odometer numbers", Toast.LENGTH_LONG).show()
-                return@saveOcrArea
-            }
-        }
-
         isEditingOcrArea = false
         Toast.makeText(context, "OCR area saved — normalized crop will work on similar photos", Toast.LENGTH_SHORT).show()
     }
@@ -232,11 +223,7 @@ fun ManageVehiclesScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         if (referencePhotoUrl != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-            ) {
+            Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
                 val imageModifier = if (isEditingOcrArea) {
                     Modifier
                         .fillMaxSize()
