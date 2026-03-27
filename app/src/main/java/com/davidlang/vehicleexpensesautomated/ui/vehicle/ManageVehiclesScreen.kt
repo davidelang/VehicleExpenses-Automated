@@ -112,8 +112,6 @@ fun ManageVehiclesScreen(
                         RectF(r.left, r.top, r.right, r.bottom)
                     }
 
-                    Log.d("OcrTest", "Trying OCR with exact crop: $cropRectF")
-
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRectF)
 
                     result.odometer?.let { odometerReading = it }
@@ -132,24 +130,22 @@ fun ManageVehiclesScreen(
                         appendLine("Final odometer: ${result.odometer ?: "NONE"}")
                         appendLine(candidatesMsg)
                         appendLine("Raw text blocks found: ${result.possibleOdometers.size} total candidates before dedup")
-                        if (result.possibleOdometers.isEmpty()) {
-                            appendLine("The saved original crop still works, so the issue is specific to how newly drawn crops are processed.")
-                            appendLine("Next step will inspect OdometerOcrUtils.")
-                        }
+                        appendLine("")
+                        appendLine("Check Logcat (tag: OdometerOcr) for detailed crop/padding info.")
                     }
 
                     lastOcrDebug = debugText
 
                     Toast.makeText(
                         context,
-                        if (result.odometer != null) "OCR Success: ${result.odometer}" else "No reading — check debug",
+                        if (result.odometer != null) "OCR Success: ${result.odometer}" else "Still no reading — check Logcat",
                         Toast.LENGTH_LONG
                     ).show()
 
                     showEnlargedCrop = true
                 } catch (e: Exception) {
                     Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
-                    lastOcrDebug = "Exception: ${e.message}\n${e.stackTraceToString()}"
+                    lastOcrDebug = "Exception: ${e.message}"
                 }
             }
         } ?: run {
@@ -161,9 +157,6 @@ fun ManageVehiclesScreen(
         isEditingOcrArea = false
         Toast.makeText(context, "Fixed reference crop saved", Toast.LENGTH_SHORT).show()
     }
-
-    // ... (the rest of the Composable remains exactly the same as your current version — 
-    // only the tryOcr block above was replaced. The UI, drag handling, green box, etc. are unchanged.)
 
     Column(
         modifier = Modifier

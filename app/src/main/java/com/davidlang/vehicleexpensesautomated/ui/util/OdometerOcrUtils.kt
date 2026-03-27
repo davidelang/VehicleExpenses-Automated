@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
+import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -27,30 +28,59 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null)
+        if (!file.exists()) {
+            Log.w("OdometerOcr", "Photo file does not exist: $photoPath")
+            return@withContext OcrResult(null, emptyList(), null, null)
+        }
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: run {
+            Log.w("OdometerOcr", "Failed to decode bitmap from $photoPath")
+            return@withContext OcrResult(null, emptyList(), null, null)
+        }
 
-        // Crop to user-defined odometer region + 25% padding (much larger context for ML Kit)
         if (cropRect != null && cropRect.width() > 0 && cropRect.height() > 0) {
-            val left = (cropRect.left * bitmap.width).toInt().coerceAtLeast(0)
-            val top = (cropRect.top * bitmap.height).toInt().coerceAtLeast(0)
-            val right = (cropRect.right * bitmap.width).toInt().coerceAtMost(bitmap.width)
-            val bottom = (cropRect.bottom * bitmap.height).toInt().coerceAtMost(bitmap.height)
+            val origW = bitmap.width
+            val origH = bitmap.height
 
-            val cropW = right - left
-            val cropH = bottom - top
-            val padW = (cropW * 0.25f).toInt()
-            val padH = (cropH * 0.25f).toInt()
+            val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
+            val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
+            val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
+            val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
+
+            var cropW = right - left
+            var cropH = bottom - top
+
+            if (cropW <= 0 || cropH <= 0) {
+                Log.w("OdometerOcr", "Invalid crop dimensions after scaling: ${cropW}x${cropH}")
+                bitmap.recycle()
+                return@withContext OcrResult(null, emptyList(), null, null)
+            }
+
+            // More robust padding: 15% + minimum 50px to guarantee ML Kit sees something
+            val padW = ((cropW * 0.15f).toInt()).coerceAtLeast(50)
+            val padH = ((cropH * 0.15f).toInt()).coerceAtLeast(30)
 
             val paddedLeft = (left - padW).coerceAtLeast(0)
             val paddedTop = (top - padH).coerceAtLeast(0)
-            val paddedRight = (right + padW).coerceAtMost(bitmap.width)
-            val paddedBottom = (bottom + padH).coerceAtMost(bitmap.height)
+            val paddedRight = (right + padW).coerceAtMost(origW)
+            val paddedBottom = (bottom + padH).coerceAtMost(origH)
 
-            val cropped = Bitmap.createBitmap(bitmap, paddedLeft, paddedTop, paddedRight - paddedLeft, paddedBottom - paddedTop)
-            bitmap.recycle()
-            bitmap = cropped
+            val finalW = paddedRight - paddedLeft
+            val finalH = paddedBottom - paddedTop
+
+            Log.d("OdometerOcr", "Crop applied: normalized=$cropRect, original=${origW}x${origH}, " +
+                    "raw crop=${cropW}x${cropH}, padded=${finalW}x${finalH} (pad ${padW}x${padH})")
+
+            if (finalW < 50 || finalH < 30) {
+                Log.w("OdometerOcr", "Final cropped region too small (${finalW}x${finalH}) — using full image instead")
+                // fall through to full image (rare safety net)
+            } else {
+                val cropped = Bitmap.createBitmap(bitmap, paddedLeft, paddedTop, finalW, finalH)
+                bitmap.recycle()
+                bitmap = cropped
+            }
+        } else {
+            Log.d("OdometerOcr", "No crop provided — using full image")
         }
 
         val image = InputImage.fromBitmap(bitmap, 0)
@@ -63,6 +93,7 @@ object OdometerOcrUtils {
                     .addOnCanceledListener { continuation.cancel() }
             }
         } catch (e: Exception) {
+            Log.e("OdometerOcr", "ML Kit failed", e)
             bitmap.recycle()
             return@withContext OcrResult(null, emptyList(), null, null)
         }
@@ -78,7 +109,6 @@ object OdometerOcrUtils {
 
         visionText.textBlocks.forEach { block ->
             val blockText = block.text
-
             odoRegex.findAll(blockText).forEach { match ->
                 val value = match.value
                 possibleOdometers.add(value)
@@ -86,12 +116,13 @@ object OdometerOcrUtils {
                     odometer = value
                 }
             }
-
             gallonsRegex.find(blockText)?.groupValues?.get(1)?.let { gallons = it }
             costRegex.find(blockText)?.groupValues?.get(1)?.let { cost = it }
         }
 
         bitmap.recycle()
+
+        Log.d("OdometerOcr", "OCR result: odometer=$odometer, blocks=${visionText.textBlocks.size}, candidates=${possibleOdometers.size}")
 
         OcrResult(
             odometer = odometer,
