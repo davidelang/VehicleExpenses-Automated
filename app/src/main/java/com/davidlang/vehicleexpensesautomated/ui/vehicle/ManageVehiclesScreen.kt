@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -114,7 +115,7 @@ fun ManageVehiclesScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState())   // restored — screen is scrollable again
+            .verticalScroll(rememberScrollState())
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
@@ -216,7 +217,8 @@ fun ManageVehiclesScreen(
                     Image(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
                         contentDescription = "Reference dash photo — single finger drag to mark, two fingers to zoom/pan/rotate",
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.FillBounds   // fixes letterboxing → green/red now match exactly
                     )
 
                     // Live drag preview (blue)
@@ -340,11 +342,11 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Enlarged crop region preview dialog (debug aid)
-    if (showEnlargedCrop && referencePhotoUrl != null) {
+    // Enlarged crop region preview dialog — now shows EXACT region OCR receives
+    if (showEnlargedCrop && referencePhotoUrl != null && odometerCropRect != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
-            title = { Text("Enlarged Crop Region Preview") },
+            title = { Text("Enlarged Crop Region Preview (what OCR actually sees)") },
             text = {
                 Box(
                     modifier = Modifier
@@ -354,7 +356,8 @@ fun ManageVehiclesScreen(
                     Image(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
                         contentDescription = "Enlarged crop preview",
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.FillBounds   // ensures red box matches green box
                     )
                     odometerCropRect?.let { crop ->
                         Canvas(modifier = Modifier.fillMaxSize()) {
