@@ -108,15 +108,19 @@ fun ManageVehiclesScreen(
                         finalPath = tempFile.absolutePath
                     }
 
-                    val cropRectF = odometerCropRect?.let { r -> RectF(r.left, r.top, r.right, r.bottom) }
+                    // Force latest state - critical fix for drag crops
+                    val currentCrop = odometerCropRect
+                    val cropRectF = currentCrop?.let { r ->
+                        RectF(r.left, r.top, r.right, r.bottom)
+                    }
 
-                    Log.d("OcrTest", "Trying OCR with crop: $cropRectF")
+                    Log.d("OcrTest", "tryOcr called with cropRect = $currentCrop → RectF = $cropRectF")
 
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRectF)
 
                     result.odometer?.let { odometerReading = it }
 
-                    val cropInfo = odometerCropRect?.let { r ->
+                    val cropInfo = currentCrop?.let { r ->
                         "Normalized crop sent to OCR: [${"%.3f".format(r.left)}, ${"%.3f".format(r.top)}, ${"%.3f".format(r.right)}, ${"%.3f".format(r.bottom)}]"
                     } ?: "No crop defined"
 
@@ -131,14 +135,14 @@ fun ManageVehiclesScreen(
                         appendLine(candidatesMsg)
                         appendLine("Raw text blocks found: ${result.possibleOdometers.size}")
                         appendLine("")
-                        appendLine("Check Logcat (tag: OdometerOcr) for crop/padding details.")
+                        appendLine("If still 0 blocks, check Logcat for 'OcrTest' and 'OdometerOcr' tags.")
                     }
 
                     lastOcrDebug = debugText
 
                     Toast.makeText(
                         context,
-                        if (result.odometer != null) "OCR Success: ${result.odometer}" else "No reading — check Logcat",
+                        if (result.odometer != null) "OCR Success: ${result.odometer}" else "No reading — see debug + Logcat",
                         Toast.LENGTH_LONG
                     ).show()
 
