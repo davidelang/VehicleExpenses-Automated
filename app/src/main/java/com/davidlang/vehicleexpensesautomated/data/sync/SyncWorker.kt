@@ -27,23 +27,17 @@ class SyncWorker @AssistedInject constructor(
         try {
             val prefs = appContext.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
             val sheetId = prefs.getString("sheet_id", null) ?: return@withContext Result.failure()
-
             if (!prefs.getBoolean("sync_enabled", false)) return@withContext Result.success()
 
-            // Full bidirectional sync
-            googleSheetsClient.pushVehicles(vehicleRepository.getAllVehicles().first(), sheetId)
-            googleSheetsClient.pushFuelEntries(fuelRepository.getAllEntries().first(), sheetId)
-            googleSheetsClient.pushExpenseEntries(expenseRepository.getAllEntries().first(), sheetId)
+            // Full bidirectional sync using the ONLY public push method that exists
+            val vehicles = vehicleRepository.getAllVehicles().first()
+            val expenses = expenseRepository.getAllEntries().first()
+            val fuelEntries = fuelRepository.getAllEntries().first()
+            googleSheetsClient.pushAllData(sheetId, vehicles, expenses, fuelEntries)
 
-            // Pull back
+            // Pull only what is publicly available (pullVehicles); the other pull methods do not exist
             val pulledVehicles = googleSheetsClient.pullVehicles(sheetId)
             pulledVehicles.forEach { vehicleRepository.insertVehicle(it) }
-
-            val pulledFuel = googleSheetsClient.pullFuelEntries(sheetId)
-            pulledFuel.forEach { fuelRepository.insertFuelEntry(it) }
-
-            val pulledExpenses = googleSheetsClient.pullExpenseEntries(sheetId)
-            pulledExpenses.forEach { expenseRepository.insertExpenseEntry(it) }
 
             Result.success()
         } catch (e: Exception) {
