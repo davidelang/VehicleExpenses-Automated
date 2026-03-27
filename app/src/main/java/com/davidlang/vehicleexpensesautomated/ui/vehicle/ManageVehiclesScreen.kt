@@ -126,7 +126,7 @@ fun ManageVehiclesScreen(
 
                     val candidatesMsg = if (result.possibleOdometers.isNotEmpty()) {
                         "Candidates: ${result.possibleOdometers.joinToString()}"
-                    } else "No candidates — crop may be misaligned or too tight. Try adjusting rotation/position."
+                    } else "No candidates — try adjusting rotation/position or making rectangle larger"
 
                     Toast.makeText(
                         context,
@@ -248,14 +248,22 @@ fun ManageVehiclesScreen(
                                 onDragEnd = {
                                     val w = size.width.toFloat()
                                     val h = size.height.toFloat()
+
+                                    // Apply current transform to get correct normalized coordinates
                                     val start = dragStart ?: Offset.Zero
                                     val end = currentDrag ?: start
-                                    val left = (start.x.coerceAtMost(end.x) / w).coerceIn(0f, 1f)
-                                    val top = (start.y.coerceAtMost(end.y) / h).coerceIn(0f, 1f)
-                                    val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
-                                    val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
+
+                                    // Transform the drag points back to original image coordinates
+                                    val transformedStart = transformPoint(start, scale, offset, rotation, w, h)
+                                    val transformedEnd = transformPoint(end, scale, offset, rotation, w, h)
+
+                                    val left = (transformedStart.x.coerceAtMost(transformedEnd.x) / w).coerceIn(0f, 1f)
+                                    val top = (transformedStart.y.coerceAtMost(transformedEnd.y) / h).coerceIn(0f, 1f)
+                                    val right = (transformedStart.x.coerceAtLeast(transformedEnd.x) / w).coerceIn(0f, 1f)
+                                    val bottom = (transformedStart.y.coerceAtLeast(transformedEnd.y) / h).coerceIn(0f, 1f)
+
                                     odometerCropRect = Rect(left, top, right, bottom)
-                                    Toast.makeText(context, "New crop area set — tap Try OCR Now to test", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "New crop saved with rotation/zoom applied", Toast.LENGTH_SHORT).show()
                                     dragStart = null
                                     currentDrag = null
                                 },
@@ -391,7 +399,7 @@ fun ManageVehiclesScreen(
                             odometerCropBottom = odometerCropRect?.bottom
                         )
                         vehicleViewModel.updateVehicle(updated)
-                        Toast.makeText(context, "Vehicle updated with new crop", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Vehicle updated with rotation-aware crop", Toast.LENGTH_LONG).show()
                     } else {
                         vehicleViewModel.createNewVehicleWithReference(
                             name = name,
@@ -509,4 +517,34 @@ fun ManageVehiclesScreen(
             }
         )
     }
+}
+
+// Helper to transform a point from screen space back to original image space
+private fun transformPoint(
+    point: Offset,
+    scale: Float,
+    offset: Offset,
+    rotation: Float,
+    width: Float,
+    height: Float
+): Offset {
+    // This is a simplified inverse transform. For production we would use a proper matrix,
+    // but for now this approximation works well enough for dashboard photos.
+    val centerX = width / 2f
+    val centerY = height / 2f
+
+    var x = (point.x - offset.x) / scale
+    var y = (point.y - offset.y) / scale
+
+    // Simple rotation inverse (approximate)
+    val rad = -Math.toRadians(rotation.toDouble())
+    val cos = Math.cos(rad).toFloat()
+    val sin = Math.sin(rad).toFloat()
+
+    val dx = x - centerX
+    val dy = y - centerY
+    x = centerX + (dx * cos - dy * sin)
+    y = centerY + (dx * sin + dy * cos)
+
+    return Offset(x.coerceIn(0f, width), y.coerceIn(0f, height))
 }
