@@ -6,6 +6,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -27,11 +29,11 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
-import com.davidlang.vehicleexpensesautomated.ui.util.PhotoAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.concurrent.Executors
 
 @Composable
 fun QuickFillupScreen(navController: NavHostController) {
@@ -47,6 +49,8 @@ fun QuickFillupScreen(navController: NavHostController) {
             scaleType = PreviewView.ScaleType.FIT_CENTER
         }
     }
+
+    val imageCapture = remember { ImageCapture.Builder().build() }
 
     var step by remember { mutableStateOf(1) }
     var isMissedFill by remember { mutableStateOf(false) }
@@ -64,58 +68,13 @@ fun QuickFillupScreen(navController: NavHostController) {
     var lastCropDebug by remember { mutableStateOf("No crop info yet") }
     var lastOcrResult by remember { mutableStateOf("No OCR run yet") }
 
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            Toast.makeText(context, "Image selected — running OCR with fixed crop...", Toast.LENGTH_SHORT).show()
-            scope.launch {
-                val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
-                context.contentResolver.openInputStream(selectedUri)?.use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-
-                val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
-                val referenceCrop = selectedVehicle?.let {
-                    androidx.compose.ui.geometry.Rect(
-                        it.odometerCropLeft ?: 0f,
-                        it.odometerCropTop ?: 0f,
-                        it.odometerCropRight ?: 1f,
-                        it.odometerCropBottom ?: 1f
-                    )
-                }
-
-                val cropDebug = if (referenceCrop != null) {
-                    "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
-                } else "NO CROP"
-                lastCropDebug = "Gallery: $cropDebug"
-
-                // Use exact same crop conversion that now works in ManageVehiclesScreen
-                val cropRectF = referenceCrop?.let { r ->
-                    android.graphics.RectF(r.left, r.top, r.right, r.bottom)
-                }
-
-                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
-
-                lastOcrResult = "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}"
-
-                Toast.makeText(context, lastOcrResult, Toast.LENGTH_LONG).show()
-
-                if (step == 1) {
-                    if (result.possibleOdometers.isNotEmpty()) {
-                        possibleOdometers = result.possibleOdometers
-                        showOdometerConfirmation = true
-                    } else {
-                        odometer = result.odometer?.toIntOrNull() ?: odometer
-                    }
-                } else {
-                    gallons = result.gallons?.toDoubleOrNull() ?: gallons
-                    cost = result.cost?.toDoubleOrNull() ?: cost
-                }
-                tempFile.delete()
-            }
+            processPhoto(context, selectedUri, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
         }
     }
 
@@ -125,7 +84,7 @@ fun QuickFillupScreen(navController: NavHostController) {
         val selector = CameraSelector.DEFAULT_BACK_CAMERA
         preview.setSurfaceProvider(previewView.surfaceProvider)
         provider.unbindAll()
-        provider.bindToLifecycle(lifecycleOwner, selector, preview)
+        provider.bindToLifecycle(lifecycleOwner, selector, preview, imageCapture)
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -158,6 +117,9 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onGallonsChange = { gallons = it },
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
+                        onTakeDashPicture = {
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                        },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
                         onPossibleOdometersChange = { possibleOdometers = it },
@@ -215,6 +177,9 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onGallonsChange = { gallons = it },
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
+                        onTakeDashPicture = {
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                        },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
                         onPossibleOdometersChange = { possibleOdometers = it },
@@ -236,6 +201,105 @@ fun QuickFillupScreen(navController: NavHostController) {
     }
 }
 
+private fun processPhoto(
+    context: Context,
+    uriOrPath: Any, // Uri or String path
+    selectedVehicleId: Int?,
+    vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
+    step: Int,
+    scope: CoroutineScope,
+    onCropDebug: (String) -> Unit,
+    onOcrResult: (String) -> Unit,
+    onOdometerUpdate: (Int) -> Unit,
+    onPossibleUpdate: (List<String>) -> Unit,
+    onConfirmationShow: (Boolean) -> Unit,
+    onGallonsUpdate: (Double) -> Unit,
+    onCostUpdate: (Double) -> Unit
+) {
+    scope.launch {
+        val tempFile = if (uriOrPath is Uri) {
+            val f = File.createTempFile("ocr_dash", ".jpg", context.cacheDir)
+            context.contentResolver.openInputStream(uriOrPath)?.use { input ->
+                f.outputStream().use { output -> input.copyTo(output) }
+            }
+            f
+        } else {
+            File(uriOrPath.toString())
+        }
+
+        val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
+        val referenceCrop = selectedVehicle?.let {
+            androidx.compose.ui.geometry.Rect(
+                it.odometerCropLeft ?: 0f,
+                it.odometerCropTop ?: 0f,
+                it.odometerCropRight ?: 1f,
+                it.odometerCropBottom ?: 1f
+            )
+        }
+
+        val cropDebug = if (referenceCrop != null) {
+            "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
+        } else "NO CROP"
+        onCropDebug("Source: ${if (uriOrPath is Uri) "Gallery" else "Camera"} | $cropDebug")
+
+        val cropRectF = referenceCrop?.let { r ->
+            android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+        }
+
+        val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
+
+        onOcrResult("OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}")
+
+        if (step == 1) {
+            if (result.possibleOdometers.isNotEmpty()) {
+                onPossibleUpdate(result.possibleOdometers)
+                onConfirmationShow(true)
+            } else {
+                onOdometerUpdate(result.odometer?.toIntOrNull() ?: 0)
+            }
+        } else {
+            onGallonsUpdate(result.gallons?.toDoubleOrNull() ?: 0.0)
+            onCostUpdate(result.cost?.toDoubleOrNull() ?: 0.0)
+        }
+        tempFile.delete()
+    }
+}
+
+private fun captureDashPhoto(
+    context: Context,
+    imageCapture: ImageCapture,
+    executor: java.util.concurrent.Executor,
+    selectedVehicleId: Int?,
+    vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
+    step: Int,
+    scope: CoroutineScope,
+    onCropDebug: (String) -> Unit,
+    onOcrResult: (String) -> Unit,
+    onOdometerUpdate: (Int) -> Unit,
+    onPossibleUpdate: (List<String>) -> Unit,
+    onConfirmationShow: (Boolean) -> Unit,
+    onGallonsUpdate: (Double) -> Unit,
+    onCostUpdate: (Double) -> Unit
+) {
+    val photoFile = File.createTempFile("dash_capture", ".jpg", context.cacheDir)
+    val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+    imageCapture.takePicture(
+        outputOptions,
+        executor,
+        object : ImageCapture.OnImageSavedCallback {
+            override fun onError(exc: ImageCaptureException) {
+                Toast.makeText(context, "Photo capture failed: ${exc.message}", Toast.LENGTH_LONG).show()
+            }
+
+            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                Toast.makeText(context, "Dash photo captured — running OCR...", Toast.LENGTH_SHORT).show()
+                processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, scope, onCropDebug, onOcrResult, onOdometerUpdate, onPossibleUpdate, onConfirmationShow, onGallonsUpdate, onCostUpdate)
+            }
+        }
+    )
+}
+
 @Composable
 private fun ControlsContent(
     context: Context,
@@ -254,6 +318,7 @@ private fun ControlsContent(
     onGallonsChange: (Double) -> Unit,
     onCostChange: (Double) -> Unit,
     onStepChange: (Int) -> Unit,
+    onTakeDashPicture: () -> Unit,
     onAdvancedPick: () -> Unit,
     onShowConfirmationChange: (Boolean) -> Unit,
     onPossibleOdometersChange: (List<String>) -> Unit,
@@ -322,11 +387,8 @@ private fun ControlsContent(
             Text("Missed fill (unknown gas added)")
         }
         Button(
-            onClick = {
-                Toast.makeText(context, "Take Dash Picture — camera + crop coming soon", Toast.LENGTH_LONG).show()
-                // Placeholder — will be replaced with real camera + crop in next step
-            },
-            modifier = Modifier.padding(vertical = 4.dp)
+            onClick = onTakeDashPicture,
+            modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()
         ) {
             Text("Take Dash Picture")
         }
@@ -339,7 +401,6 @@ private fun ControlsContent(
             Text("Advanced: Pick existing picture")
         }
     } else {
-        // Step 2 (pump) remains unchanged for now
         Text("Step 2: Point at pump", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -360,10 +421,8 @@ private fun ControlsContent(
         }
         Spacer(modifier = Modifier.height(12.dp))
         Button(
-            onClick = {
-                Toast.makeText(context, "Take Pump Picture — OCR coming soon", Toast.LENGTH_LONG).show()
-            },
-            modifier = Modifier.padding(vertical = 4.dp)
+            onClick = { /* Pump picture placeholder - implement similarly later */ },
+            modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()
         ) {
             Text("Take Pump Picture")
         }
