@@ -30,7 +30,7 @@ class GoogleSheetsClient(private val idToken: String?) {
     private suspend fun syncVehicles(sheetId: String, vehicles: List<Vehicle>): Int = withContext(Dispatchers.IO) {
         if (vehicles.isEmpty()) return@withContext 0
         createTabWithHeaders(sheetId, "Vehicles", listOf("ID", "Name", "Make", "Model", "Year", "License Plate", "VIN", "Notes"))
-        appendRows(sheetId, "Vehicles", vehicles.map { listOf(it.id.toString(), it.name, it.make ?: "", it.model ?: "", it.year.toString(), it.licensePlate, it.vin ?: "", it.notes ?: "") })
+        appendRows(sheetId, "Vehicles", vehicles.map { listOf(it.id.toString(), it.name, it.make ?: "", it.model ?: "", it.year?.toString() ?: "", it.licensePlate ?: "", it.vin ?: "", it.notes ?: "") })
     }
 
     private suspend fun syncExpenses(sheetId: String, expenses: List<ExpenseEntry>): Int = withContext(Dispatchers.IO) {
@@ -51,8 +51,8 @@ class GoogleSheetsClient(private val idToken: String?) {
             name = row[1],
             make = row[2].ifBlank { null },
             model = row[3].ifBlank { null },
-            year = row[4].toIntOrNull() ?: 0,
-            licensePlate = row[5],
+            year = row[4].toIntOrNull(),
+            licensePlate = row[5].ifBlank { null },
             vin = row[6].ifBlank { null },
             notes = row[7].ifBlank { null }
         )
