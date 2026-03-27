@@ -64,6 +64,9 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    // Debug info for the preview popup
+    var lastOcrDebug by remember { mutableStateOf<String>("") }
+
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
@@ -109,9 +112,26 @@ fun ManageVehiclesScreen(
 
                     result.odometer?.let { odometerReading = it }
 
+                    val cropInfo = odometerCropRect?.let { r ->
+                        "Normalized crop: [${"%.3f".format(r.left)}, ${"%.3f".format(r.top)}, ${"%.3f".format(r.right)}, ${"%.3f".format(r.bottom)}]"
+                    } ?: "No crop defined"
+
                     val candidatesMsg = if (result.possibleOdometers.isNotEmpty()) {
                         "Candidates: ${result.possibleOdometers.joinToString()}"
-                    } else "No candidates — crop may be too tight or misaligned. Try a larger rectangle."
+                    } else "No candidates — try making the rectangle larger"
+
+                    val debugText = buildString {
+                        appendLine("=== OCR DEBUG ===")
+                        appendLine(cropInfo)
+                        appendLine("Final odometer: ${result.odometer ?: "NONE"}")
+                        appendLine(candidatesMsg)
+                        appendLine("Raw text blocks found: ${result.possibleOdometers.size} total candidates before dedup")
+                        if (result.possibleOdometers.isEmpty()) {
+                            appendLine("Tip: Make crop larger (include more context around the numbers)")
+                        }
+                    }
+
+                    lastOcrDebug = debugText
 
                     Toast.makeText(
                         context,
@@ -122,6 +142,7 @@ fun ManageVehiclesScreen(
                     showEnlargedCrop = true
                 } catch (e: Exception) {
                     Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    lastOcrDebug = "Exception: ${e.message}"
                 }
             }
         } ?: run {
@@ -232,7 +253,7 @@ fun ManageVehiclesScreen(
                                     val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
                                     val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
                                     odometerCropRect = Rect(left, top, right, bottom)
-                                    Toast.makeText(context, "New crop area set — tap Try OCR Now to test", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "New crop area set — tap Try OCR Now", Toast.LENGTH_SHORT).show()
                                     dragStart = null
                                     currentDrag = null
                                 },
@@ -431,44 +452,52 @@ fun ManageVehiclesScreen(
         )
     }
 
-    if (showEnlargedCrop && referencePhotoUrl != null && odometerCropRect != null) {
+    if (showEnlargedCrop && referencePhotoUrl != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
-            title = { Text("Enlarged Crop Region Preview") },
+            title = { Text("OCR Debug — Enlarged Crop Preview") },
             text = {
-                Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
-                    Image(
-                        painter = rememberAsyncImagePainter(referencePhotoUrl),
-                        contentDescription = "Enlarged crop preview",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.FillBounds
-                    )
-                    odometerCropRect?.let { crop ->
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val w = size.width
-                            val h = size.height
-                            val leftPx = crop.left * w
-                            val topPx = crop.top * h
-                            val rightPx = crop.right * w
-                            val bottomPx = crop.bottom * h
-                            drawRect(
-                                color = Color.Red.copy(alpha = 0.3f),
-                                topLeft = Offset(leftPx, topPx),
-                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
-                            )
-                            drawRect(
-                                color = Color.Red,
-                                topLeft = Offset(leftPx, topPx),
-                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
-                                style = Stroke(width = 8f)
-                            )
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
+                        Image(
+                            painter = rememberAsyncImagePainter(referencePhotoUrl),
+                            contentDescription = "Enlarged crop preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.FillBounds
+                        )
+                        odometerCropRect?.let { crop ->
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val w = size.width
+                                val h = size.height
+                                val leftPx = crop.left * w
+                                val topPx = crop.top * h
+                                val rightPx = crop.right * w
+                                val bottomPx = crop.bottom * h
+                                drawRect(
+                                    color = Color.Red.copy(alpha = 0.3f),
+                                    topLeft = Offset(leftPx, topPx),
+                                    size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
+                                )
+                                drawRect(
+                                    color = Color.Red,
+                                    topLeft = Offset(leftPx, topPx),
+                                    size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
+                                    style = Stroke(width = 8f)
+                                )
+                            }
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = lastOcrDebug.ifEmpty { "Run 'Try OCR Now' first" },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
                 Button(onClick = { showEnlargedCrop = false }) {
-                    Text("Close Preview")
+                    Text("Close")
                 }
             }
         )
