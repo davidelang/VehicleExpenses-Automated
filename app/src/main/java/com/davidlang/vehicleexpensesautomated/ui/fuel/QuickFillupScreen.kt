@@ -27,6 +27,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -60,7 +61,6 @@ fun QuickFillupScreen(navController: NavHostController) {
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // Persistent debug state so toasts don't disappear too fast
     var lastCropDebug by remember { mutableStateOf("No crop info yet") }
     var lastOcrResult by remember { mutableStateOf("No OCR run yet") }
 
@@ -68,7 +68,7 @@ fun QuickFillupScreen(navController: NavHostController) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            Toast.makeText(context, "Image selected — processing...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Image selected — aligning to reference...", Toast.LENGTH_SHORT).show()
             scope.launch {
                 val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
@@ -78,7 +78,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                 }
 
                 val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
-                val crop = selectedVehicle?.let {
+                val referenceCrop = selectedVehicle?.let {
                     androidx.compose.ui.geometry.Rect(
                         it.odometerCropLeft ?: 0f,
                         it.odometerCropTop ?: 0f,
@@ -87,23 +87,20 @@ fun QuickFillupScreen(navController: NavHostController) {
                     )
                 }
 
-                val cropDebug = if (crop != null) {
-                    "Crop L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)} (w=${"%.3f".format(crop.right - crop.left)}, h=${"%.3f".format(crop.bottom - crop.top)})"
-                } else {
-                    "NO CROP — full image OCR (vehicleId=$selectedVehicleId)"
-                }
-
+                val cropDebug = if (referenceCrop != null) {
+                    "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
+                } else "NO CROP"
                 lastCropDebug = "Gallery: $cropDebug"
 
+                // Stage 1 placeholder - automatic alignment will be implemented here
                 val result = OdometerOcrUtils.extractFromPhoto(
                     tempFile.absolutePath,
-                    crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
+                    referenceCrop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                 )
 
-                val ocrMsg = "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}"
-                lastOcrResult = ocrMsg
+                lastOcrResult = "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}"
 
-                Toast.makeText(context, ocrMsg, Toast.LENGTH_LONG).show()
+                Toast.makeText(context, lastOcrResult, Toast.LENGTH_LONG).show()
 
                 if (step == 1) {
                     if (result.possibleOdometers.isNotEmpty()) {
@@ -191,9 +188,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         color = Color.Red,
                         fontSize = 18.sp,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(8.dp)
+                        modifier = Modifier.align(Alignment.Center).padding(8.dp)
                     )
                 }
                 Column(
@@ -300,7 +295,6 @@ private fun ControlsContent(
 
     Spacer(modifier = Modifier.height(8.dp))
 
-    // Persistent debug panel
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
@@ -341,21 +335,15 @@ private fun ControlsContent(
                         )
                     }
 
-                    val cropDebug = if (crop != null) {
-                        "L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)}"
-                    } else "NO CROP"
-                    Toast.makeText(context, "Dash button — using crop: $cropDebug", Toast.LENGTH_LONG).show()
+                    val cropDebug = if (crop != null) "Fixed reference crop" else "NO CROP"
+                    Toast.makeText(context, "Dash button — $cropDebug", Toast.LENGTH_LONG).show()
 
                     val result = OdometerOcrUtils.extractFromPhoto(
                         "dummy_dash.jpg",
                         crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                     )
 
-                    Toast.makeText(
-                        context,
-                        "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(context, "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}", Toast.LENGTH_LONG).show()
 
                     if (result.possibleOdometers.isNotEmpty()) {
                         onPossibleOdometersChange(result.possibleOdometers)
@@ -413,7 +401,6 @@ private fun ControlsContent(
             Text("Partial fill")
         }
         Spacer(modifier = Modifier.height(12.dp))
-
         Button(
             onClick = {
                 scope.launch {
@@ -427,19 +414,12 @@ private fun ControlsContent(
                         )
                     }
 
-                    val cropDebug = if (crop != null) "L=${"%.3f".format(crop.left)} ..." else "NO CROP"
-                    Toast.makeText(context, "Pump button — using crop: $cropDebug", Toast.LENGTH_SHORT).show()
-
                     val result = OdometerOcrUtils.extractFromPhoto(
                         "dummy_pump.jpg",
                         crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                     )
 
-                    Toast.makeText(
-                        context,
-                        "OCR RESULT (Step $step): gallons=${result.gallons} | cost=${result.cost}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(context, "OCR RESULT (Step $step): gallons=${result.gallons} | cost=${result.cost}", Toast.LENGTH_LONG).show()
 
                     onGallonsChange(result.gallons?.toDoubleOrNull() ?: gallons)
                     onCostChange(result.cost?.toDoubleOrNull() ?: cost)
@@ -476,23 +456,14 @@ private fun ControlsContent(
                     Text("Multiple possible readings found. Tap the correct one:")
                     Spacer(modifier = Modifier.height(8.dp))
                     possibleOdometers.forEach { candidate ->
-                        Button(
-                            onClick = {
-                                onOdometerConfirmed(candidate)
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                        Button(onClick = { onOdometerConfirmed(candidate) }, modifier = Modifier.fillMaxWidth()) {
                             Text(candidate)
                         }
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { onShowConfirmationChange(false) }) {
-                    Text("Cancel")
-                }
-            }
+            dismissButton = { TextButton(onClick = { onShowConfirmationChange(false) }) { Text("Cancel") } }
         )
     }
 }

@@ -6,8 +6,6 @@ import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,7 +17,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -61,15 +58,6 @@ fun ManageVehiclesScreen(
 
     var isEditingOcrArea by remember { mutableStateOf(false) }
 
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    var rotation by remember { mutableStateOf(0f) }
-    val transformState = rememberTransformableState { zoomChange, panChange, rotationChange ->
-        scale = (scale * zoomChange).coerceIn(0.5f, 5f)
-        offset += panChange
-        rotation += rotationChange
-    }
-
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
@@ -98,9 +86,6 @@ fun ManageVehiclesScreen(
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
                 isEditingOcrArea = false
-                scale = 1f
-                offset = Offset.Zero
-                rotation = 0f
             }
         }
     }
@@ -126,7 +111,7 @@ fun ManageVehiclesScreen(
 
                     val candidatesMsg = if (result.possibleOdometers.isNotEmpty()) {
                         "Candidates: ${result.possibleOdometers.joinToString()}"
-                    } else "No candidates — try adjusting rotation/position or making rectangle larger"
+                    } else "No candidates — try a larger rectangle"
 
                     Toast.makeText(
                         context,
@@ -146,7 +131,7 @@ fun ManageVehiclesScreen(
 
     val saveOcrArea = {
         isEditingOcrArea = false
-        Toast.makeText(context, "OCR area saved — normalized crop will work on similar photos", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Fixed reference crop saved", Toast.LENGTH_SHORT).show()
     }
 
     Column(
@@ -224,145 +209,59 @@ fun ManageVehiclesScreen(
 
         if (referencePhotoUrl != null) {
             Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
-                val imageModifier = if (isEditingOcrArea) {
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(
-                            scaleX = scale,
-                            scaleY = scale,
-                            translationX = offset.x,
-                            translationY = offset.y,
-                            rotationZ = rotation
-                        )
-                        .transformable(state = transformState)
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDragStart = { offset ->
-                                    dragStart = offset
-                                    currentDrag = offset
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    currentDrag = (currentDrag ?: dragStart)!! + dragAmount
-                                },
-                                onDragEnd = {
-                                    val w = size.width.toFloat()
-                                    val h = size.height.toFloat()
+                Image(
+                    painter = rememberAsyncImagePainter(referencePhotoUrl),
+                    contentDescription = "Reference dash photo",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds
+                )
 
-                                    // Apply current transform to get correct normalized coordinates
-                                    val start = dragStart ?: Offset.Zero
-                                    val end = currentDrag ?: start
-
-                                    // Transform the drag points back to original image coordinates
-                                    val transformedStart = transformPoint(start, scale, offset, rotation, w, h)
-                                    val transformedEnd = transformPoint(end, scale, offset, rotation, w, h)
-
-                                    val left = (transformedStart.x.coerceAtMost(transformedEnd.x) / w).coerceIn(0f, 1f)
-                                    val top = (transformedStart.y.coerceAtMost(transformedEnd.y) / h).coerceIn(0f, 1f)
-                                    val right = (transformedStart.x.coerceAtLeast(transformedEnd.x) / w).coerceIn(0f, 1f)
-                                    val bottom = (transformedStart.y.coerceAtLeast(transformedEnd.y) / h).coerceIn(0f, 1f)
-
-                                    odometerCropRect = Rect(left, top, right, bottom)
-                                    Toast.makeText(context, "New crop saved with rotation/zoom applied", Toast.LENGTH_SHORT).show()
-                                    dragStart = null
-                                    currentDrag = null
-                                },
-                                onDragCancel = {
-                                    dragStart = null
-                                    currentDrag = null
-                                }
-                            )
-                        }
-                } else {
-                    Modifier.fillMaxSize()
+                odometerCropRect?.let { crop ->
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+                        val leftPx = crop.left * w
+                        val topPx = crop.top * h
+                        val rightPx = crop.right * w
+                        val bottomPx = crop.bottom * h
+                        drawRect(Color.Green.copy(alpha = 0.3f), topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx))
+                        drawRect(Color.Green, topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx), style = Stroke(6f))
+                    }
                 }
 
-                Box(modifier = imageModifier) {
-                    Image(
-                        painter = rememberAsyncImagePainter(referencePhotoUrl),
-                        contentDescription = "Reference dash photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.FillBounds
-                    )
-
-                    if (isEditingOcrArea && dragStart != null && currentDrag != null) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
+                if (isEditingOcrArea) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        if (dragStart != null && currentDrag != null) {
                             val start = dragStart!!
                             val end = currentDrag!!
                             val width = (end.x - start.x).coerceAtLeast(0f)
                             val height = (end.y - start.y).coerceAtLeast(0f)
-                            drawRect(
-                                color = Color.Blue.copy(alpha = 0.4f),
-                                topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
-                                size = androidx.compose.ui.geometry.Size(width, height)
-                            )
-                            drawRect(
-                                color = Color.Blue,
-                                topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
-                                size = androidx.compose.ui.geometry.Size(width, height),
-                                style = Stroke(width = 4f)
-                            )
-                        }
-                    }
-
-                    odometerCropRect?.let { crop ->
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val w = size.width
-                            val h = size.height
-                            val leftPx = crop.left * w
-                            val topPx = crop.top * h
-                            val rightPx = crop.right * w
-                            val bottomPx = crop.bottom * h
-                            drawRect(
-                                color = Color.Green.copy(alpha = 0.3f),
-                                topLeft = Offset(leftPx, topPx),
-                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
-                            )
-                            drawRect(
-                                color = Color.Green,
-                                topLeft = Offset(leftPx, topPx),
-                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
-                                style = Stroke(width = 6f)
-                            )
+                            drawRect(Color.Blue.copy(alpha = 0.4f), topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)), size = androidx.compose.ui.geometry.Size(width, height))
+                            drawRect(Color.Blue, topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)), size = androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
                         }
                     }
                 }
             }
 
             if (isEditingOcrArea) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
                             odometerCropRect = null
                             dragStart = null
                             currentDrag = null
-                            scale = 1f
-                            offset = Offset.Zero
-                            rotation = 0f
-                            Toast.makeText(context, "Region & view reset", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Crop reset", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Reset All")
-                    }
+                    ) { Text("Reset Crop") }
 
-                    Button(onClick = tryOcr, modifier = Modifier.weight(1f)) {
-                        Text("Try OCR Now")
-                    }
+                    Button(onClick = tryOcr, modifier = Modifier.weight(1f)) { Text("Try OCR Now") }
 
-                    Button(onClick = saveOcrArea, modifier = Modifier.weight(1f)) {
-                        Text("Save OCR Area")
-                    }
+                    Button(onClick = saveOcrArea, modifier = Modifier.weight(1f)) { Text("Save OCR Area") }
                 }
             } else {
-                Button(
-                    onClick = { isEditingOcrArea = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Edit OCR Area (pinch/rotate to match other photos, then drag large rectangle)")
+                Button(onClick = { isEditingOcrArea = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Edit Fixed Reference Crop (drag rectangle around odometer numbers)")
                 }
             }
         } else {
@@ -372,12 +271,7 @@ fun ManageVehiclesScreen(
         }
 
         if (isEditingOcrArea) {
-            OutlinedTextField(
-                value = odometerReading,
-                onValueChange = { odometerReading = it },
-                label = { Text("Odometer reading (auto-filled by OCR)") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            OutlinedTextField(value = odometerReading, onValueChange = { odometerReading = it }, label = { Text("Odometer reading (auto-filled by OCR)") }, modifier = Modifier.fillMaxWidth())
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -399,7 +293,7 @@ fun ManageVehiclesScreen(
                             odometerCropBottom = odometerCropRect?.bottom
                         )
                         vehicleViewModel.updateVehicle(updated)
-                        Toast.makeText(context, "Vehicle updated with rotation-aware crop", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Vehicle updated with fixed reference crop", Toast.LENGTH_LONG).show()
                     } else {
                         vehicleViewModel.createNewVehicleWithReference(
                             name = name,
@@ -423,24 +317,15 @@ fun ManageVehiclesScreen(
             Text(if (editingVehicle != null) "Update Vehicle" else "Save Vehicle")
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
         if (editingVehicle != null) {
-            OutlinedButton(
-                onClick = { showDeleteConfirm = true },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
-            ) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)) {
                 Text("Delete Vehicle")
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedButton(
-            onClick = { navController.popBackStack() },
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
             Text("Cancel")
         }
     }
@@ -451,36 +336,24 @@ fun ManageVehiclesScreen(
             title = { Text("Delete Vehicle?") },
             text = { Text("This will permanently delete ${editingVehicle!!.name} and all associated fuel entries.") },
             confirmButton = {
-                Button(
-                    onClick = {
-                        vehicleViewModel.deleteVehicle(editingVehicle!!)
-                        Toast.makeText(context, "Vehicle deleted", Toast.LENGTH_LONG).show()
-                        showDeleteConfirm = false
-                        navController.popBackStack()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                ) {
+                Button(onClick = {
+                    vehicleViewModel.deleteVehicle(editingVehicle!!)
+                    showDeleteConfirm = false
+                    navController.popBackStack()
+                }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
                     Text("Delete")
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
-                }
-            }
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
         )
     }
 
     if (showEnlargedCrop && referencePhotoUrl != null && odometerCropRect != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
-            title = { Text("Enlarged Crop Region Preview (what OCR actually sees)") },
+            title = { Text("Enlarged Crop Region Preview") },
             text = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                ) {
+                Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
                     Image(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
                         contentDescription = "Enlarged crop preview",
@@ -495,56 +368,13 @@ fun ManageVehiclesScreen(
                             val topPx = crop.top * h
                             val rightPx = crop.right * w
                             val bottomPx = crop.bottom * h
-                            drawRect(
-                                color = Color.Red.copy(alpha = 0.3f),
-                                topLeft = Offset(leftPx, topPx),
-                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
-                            )
-                            drawRect(
-                                color = Color.Red,
-                                topLeft = Offset(leftPx, topPx),
-                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
-                                style = Stroke(width = 8f)
-                            )
+                            drawRect(Color.Red.copy(alpha = 0.3f), topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx))
+                            drawRect(Color.Red, topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx), style = Stroke(8f))
                         }
                     }
                 }
             },
-            confirmButton = {
-                Button(onClick = { showEnlargedCrop = false }) {
-                    Text("Close Preview")
-                }
-            }
+            confirmButton = { Button(onClick = { showEnlargedCrop = false }) { Text("Close Preview") } }
         )
     }
-}
-
-// Helper to transform a point from screen space back to original image space
-private fun transformPoint(
-    point: Offset,
-    scale: Float,
-    offset: Offset,
-    rotation: Float,
-    width: Float,
-    height: Float
-): Offset {
-    // This is a simplified inverse transform. For production we would use a proper matrix,
-    // but for now this approximation works well enough for dashboard photos.
-    val centerX = width / 2f
-    val centerY = height / 2f
-
-    var x = (point.x - offset.x) / scale
-    var y = (point.y - offset.y) / scale
-
-    // Simple rotation inverse (approximate)
-    val rad = -Math.toRadians(rotation.toDouble())
-    val cos = Math.cos(rad).toFloat()
-    val sin = Math.sin(rad).toFloat()
-
-    val dx = x - centerX
-    val dy = y - centerY
-    x = centerX + (dx * cos - dy * sin)
-    y = centerY + (dx * sin + dy * cos)
-
-    return Offset(x.coerceIn(0f, width), y.coerceIn(0f, height))
 }
