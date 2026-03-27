@@ -28,6 +28,7 @@ class VehicleViewModel @Inject constructor(
         year: Int?,
         licensePlate: String?,
         referenceDashPhotoUrl: String?,
+        odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int
     ) {
         viewModelScope.launch {
@@ -37,7 +38,11 @@ class VehicleViewModel @Inject constructor(
                 model = model,
                 year = year,
                 licensePlate = licensePlate,
-                referenceDashPhotoUrl = referenceDashPhotoUrl
+                referenceDashPhotoUrl = referenceDashPhotoUrl,
+                odometerCropLeft = odometerCropRect?.left,
+                odometerCropTop = odometerCropRect?.top,
+                odometerCropRight = odometerCropRect?.right,
+                odometerCropBottom = odometerCropRect?.bottom
             )
             repository.insert(newVehicle)
         }
