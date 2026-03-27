@@ -5,7 +5,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,14 +13,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
@@ -47,6 +49,10 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }   // normalized 0.0-1.0
+
+    // Drag-to-draw state
+    var dragStart by remember { mutableStateOf<Offset?>(null) }
+    var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
     LaunchedEffect(referencePhotoUrl, odometerCropRect) {
         referencePhotoUrl?.let { photoPathOrUri ->
@@ -130,37 +136,109 @@ fun ManageVehiclesScreen(
                     .fillMaxWidth()
                     .height(280.dp)
                     .pointerInput(Unit) {
-                        detectTapGestures { offset ->
-                            val w = size.width.toFloat()
-                            val h = size.height.toFloat()
-                            val left = (offset.x - 100f).coerceAtLeast(0f) / w
-                            val top = (offset.y - 60f).coerceAtLeast(0f) / h
-                            val right = (offset.x + 100f).coerceAtMost(w) / w
-                            val bottom = (offset.y + 60f).coerceAtMost(h) / h
-                            odometerCropRect = Rect(left, top, right, bottom)
-                            Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
-                        }
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                dragStart = offset
+                                currentDrag = offset
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                currentDrag = (currentDrag ?: dragStart)!! + dragAmount
+                            },
+                            onDragEnd = {
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                val start = dragStart ?: Offset.Zero
+                                val end = currentDrag ?: start
+                                val left = (start.x.coerceAtMost(end.x) / w).coerceIn(0f, 1f)
+                                val top = (start.y.coerceAtMost(end.y) / h).coerceIn(0f, 1f)
+                                val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
+                                val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
+                                odometerCropRect = Rect(left, top, right, bottom)
+                                Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
+                                dragStart = null
+                                currentDrag = null
+                            },
+                            onDragCancel = {
+                                dragStart = null
+                                currentDrag = null
+                            }
+                        )
                     }
             ) {
                 Image(
                     painter = rememberAsyncImagePainter(referencePhotoUrl),
-                    contentDescription = "Reference dash photo - tap the odometer area",
+                    contentDescription = "Reference dash photo - drag across the odometer area",
                     modifier = Modifier.fillMaxSize()
                 )
 
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(8.dp)
-                        .background(Color.Red.copy(alpha = 0.9f), shape = MaterialTheme.shapes.medium)
-                        .padding(horizontal = 24.dp, vertical = 16.dp)
-                ) {
-                    Text(
-                        text = "TAP THE ODOMETER NUMBERS",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        textAlign = TextAlign.Center
-                    )
+                // Live drag rectangle preview
+                if (dragStart != null && currentDrag != null) {
+                    androidx.compose.foundation.Canvas(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        val start = dragStart!!
+                        val end = currentDrag!!
+                        drawRect(
+                            color = Color.Blue.copy(alpha = 0.4f),
+                            topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
+                            size = androidx.compose.ui.geometry.Size(
+                                (end.x - start.x).coerceAtLeast(0f).coerceAtMost(size.width),
+                                (end.y - start.y).coerceAtLeast(0f).coerceAtMost(size.height)
+                            )
+                        )
+                        drawRect(
+                            color = Color.Blue,
+                            topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
+                            size = androidx.compose.ui.geometry.Size(
+                                (end.x - start.x).coerceAtLeast(0f).coerceAtMost(size.width),
+                                (end.y - start.y).coerceAtLeast(0f).coerceAtMost(size.height)
+                            ),
+                            style = Stroke(width = 4f)
+                        )
+                    }
+                }
+
+                // Saved crop rectangle overlay (green)
+                odometerCropRect?.let { crop ->
+                    androidx.compose.foundation.Canvas(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        val w = size.width
+                        val h = size.height
+                        val leftPx = crop.left * w
+                        val topPx = crop.top * h
+                        val rightPx = crop.right * w
+                        val bottomPx = crop.bottom * h
+                        drawRect(
+                            color = Color.Green.copy(alpha = 0.3f),
+                            topLeft = Offset(leftPx, topPx),
+                            size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
+                        )
+                        drawRect(
+                            color = Color.Green,
+                            topLeft = Offset(leftPx, topPx),
+                            size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
+                            style = Stroke(width = 6f)
+                        )
+                    }
+                }
+
+                if (odometerCropRect == null && dragStart == null) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(8.dp)
+                            .background(Color.Blue.copy(alpha = 0.9f), shape = MaterialTheme.shapes.medium)
+                            .padding(horizontal = 24.dp, vertical = 16.dp)
+                    ) {
+                        Text(
+                            text = "DRAG ACROSS THE ODOMETER NUMBERS",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         } else {
@@ -169,37 +247,45 @@ fun ManageVehiclesScreen(
             }
         }
 
-        OutlinedTextField(
-            value = odometerReading,
-            onValueChange = { odometerReading = it },
-            label = { Text("Odometer reading (auto-filled by OCR)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = {
-                if (name.isNotBlank()) {
-                    vehicleViewModel.createNewVehicleWithReference(
-                        name = name,
-                        make = make,
-                        model = model,
-                        year = year.toIntOrNull(),
-                        licensePlate = licensePlate,
-                        referenceDashPhotoUrl = referencePhotoUrl,
-                        odometerCropRect = odometerCropRect,
-                        initialOdometer = odometerReading.toIntOrNull() ?: 0
-                    )
-                    Toast.makeText(context, "Vehicle saved with odometer calibration", Toast.LENGTH_LONG).show()
-                    navController.popBackStack()
-                } else {
-                    Toast.makeText(context, "Vehicle name is required", Toast.LENGTH_SHORT).show()
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Save Vehicle")
+            OutlinedButton(
+                onClick = {
+                    odometerCropRect = null
+                    dragStart = null
+                    currentDrag = null
+                    Toast.makeText(context, "Crop region reset", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Reset Region")
+            }
+
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        vehicleViewModel.createNewVehicleWithReference(
+                            name = name,
+                            make = make,
+                            model = model,
+                            year = year.toIntOrNull(),
+                            licensePlate = licensePlate,
+                            referenceDashPhotoUrl = referencePhotoUrl,
+                            odometerCropRect = odometerCropRect,
+                            initialOdometer = odometerReading.toIntOrNull() ?: 0
+                        )
+                        Toast.makeText(context, "Vehicle saved with odometer calibration", Toast.LENGTH_LONG).show()
+                        navController.popBackStack()
+                    } else {
+                        Toast.makeText(context, "Vehicle name is required", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Save Vehicle")
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
