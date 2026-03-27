@@ -93,7 +93,9 @@ fun ManageVehiclesScreen(
 
                     val candidates = if (result.possibleOdometers.isNotEmpty()) {
                         "Candidates: ${result.possibleOdometers.joinToString()}"
-                    } else "No candidates found"
+                    } else {
+                        "No candidates found — try selecting a LARGER area around the numbers"
+                    }
 
                     val cropDebug = odometerCropRect?.let { 
                         "Crop: L=${"%.2f".format(it.left)} T=${"%.2f".format(it.top)} R=${"%.2f".format(it.right)} B=${"%.2f".format(it.bottom)}" 
