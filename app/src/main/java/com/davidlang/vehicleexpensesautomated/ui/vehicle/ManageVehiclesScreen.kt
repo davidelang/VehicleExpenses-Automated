@@ -68,7 +68,7 @@ fun ManageVehiclesScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
-    // Try OCR with full error reporting (this was why "Try OCR" produced no results)
+    // Try OCR with full error reporting (so we can see exactly why it was silent before)
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
@@ -167,36 +167,6 @@ fun ManageVehiclesScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(280.dp)
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { offset ->
-                                dragStart = offset
-                                currentDrag = offset
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                currentDrag = (currentDrag ?: dragStart)!! + dragAmount
-                            },
-                            onDragEnd = {
-                                val w = size.width.toFloat()
-                                val h = size.height.toFloat()
-                                val start = dragStart ?: Offset.Zero
-                                val end = currentDrag ?: start
-                                val left = (start.x.coerceAtMost(end.x) / w).coerceIn(0f, 1f)
-                                val top = (start.y.coerceAtMost(end.y) / h).coerceIn(0f, 1f)
-                                val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
-                                val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
-                                odometerCropRect = Rect(left, top, right, bottom)
-                                Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
-                                dragStart = null
-                                currentDrag = null
-                            },
-                            onDragCancel = {
-                                dragStart = null
-                                currentDrag = null
-                            }
-                        )
-                    }
             ) {
                 Box(
                     modifier = Modifier
@@ -209,6 +179,36 @@ fun ManageVehiclesScreen(
                             rotationZ = rotation
                         )
                         .transformable(state = transformState)
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    dragStart = offset
+                                    currentDrag = offset
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    currentDrag = (currentDrag ?: dragStart)!! + dragAmount
+                                },
+                                onDragEnd = {
+                                    val w = size.width.toFloat()
+                                    val h = size.height.toFloat()
+                                    val start = dragStart ?: Offset.Zero
+                                    val end = currentDrag ?: start
+                                    val left = (start.x.coerceAtMost(end.x) / w).coerceIn(0f, 1f)
+                                    val top = (start.y.coerceAtMost(end.y) / h).coerceIn(0f, 1f)
+                                    val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
+                                    val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
+                                    odometerCropRect = Rect(left, top, right, bottom)
+                                    Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
+                                    dragStart = null
+                                    currentDrag = null
+                                },
+                                onDragCancel = {
+                                    dragStart = null
+                                    currentDrag = null
+                                }
+                            )
+                        }
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
