@@ -81,6 +81,13 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    // NEW: Default to the first vehicle in the list (as requested)
+    LaunchedEffect(vehicles) {
+        if (selectedVehicleId == null && vehicles.isNotEmpty()) {
+            selectedVehicleId = vehicles.first().id
+        }
+    }
+
     // Load selected vehicle into form
     LaunchedEffect(selectedVehicleId) {
         selectedVehicleId?.let { id ->
@@ -163,7 +170,7 @@ fun ManageVehiclesScreen(
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Vehicle dropdown at top — "New Vehicle" now at the BOTTOM
+        // Vehicle dropdown at top — "New Vehicle" at bottom
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,
@@ -180,7 +187,6 @@ fun ManageVehiclesScreen(
                 expanded = dropdownExpanded,
                 onDismissRequest = { dropdownExpanded = false }
             ) {
-                // Real vehicles first
                 vehicles.forEach { vehicle ->
                     DropdownMenuItem(
                         text = { Text(vehicle.name) },
@@ -190,7 +196,6 @@ fun ManageVehiclesScreen(
                         }
                     )
                 }
-                // "New Vehicle" is now the bottom item
                 DropdownMenuItem(
                     text = { Text("New Vehicle") },
                     onClick = {
