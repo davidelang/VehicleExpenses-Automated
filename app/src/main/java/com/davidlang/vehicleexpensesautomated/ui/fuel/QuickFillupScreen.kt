@@ -73,6 +73,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                     }
                 }
 
+                // Defensive lookup using the latest vehicles state
                 val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
                 val crop = selectedVehicle?.let {
                     androidx.compose.ui.geometry.Rect(
@@ -84,11 +85,11 @@ fun QuickFillupScreen(navController: NavHostController) {
                 }
 
                 val cropDebug = if (crop != null) {
-                    "Crop L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)} (w=${"%.3f".format(crop.right-crop.left)}, h=${"%.3f".format(crop.bottom-crop.top)})"
+                    "Crop L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)} (w=${"%.3f".format(crop.right - crop.left)}, h=${"%.3f".format(crop.bottom - crop.top)})"
                 } else {
-                    "NO CROP — full image OCR"
+                    "NO CROP — full image OCR (vehicleId=$selectedVehicleId not found or no crop saved)"
                 }
-                Toast.makeText(context, "Gallery picker — Using vehicle crop: $cropDebug (vehicleId=$selectedVehicleId)", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Gallery picker — $cropDebug", Toast.LENGTH_LONG).show()
 
                 val result = OdometerOcrUtils.extractFromPhoto(
                     tempFile.absolutePath,
