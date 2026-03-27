@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
@@ -52,6 +53,22 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
 
+                // Dynamic page title
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
+                val title = when (currentRoute) {
+                    "quickfill" -> "Quick Fill-up"
+                    "newvehicle" -> "New Vehicle"
+                    "expense" -> "New Expense Entry"
+                    "expenselist" -> "Expense List"
+                    "import" -> "Import Old Pictures"
+                    "reports" -> "Reports & Charts"
+                    "settings" -> "Settings"
+                    "help" -> "Help"
+                    "about" -> "About"
+                    else -> "Vehicle Expenses"
+                }
+
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
@@ -73,7 +90,7 @@ class MainActivity : ComponentActivity() {
                     Scaffold(
                         topBar = {
                             TopAppBar(
-                                title = { Text("Vehicle Expenses") },
+                                title = { Text(title) },
                                 navigationIcon = {
                                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                         Icon(Icons.Default.Menu, contentDescription = "Menu")
