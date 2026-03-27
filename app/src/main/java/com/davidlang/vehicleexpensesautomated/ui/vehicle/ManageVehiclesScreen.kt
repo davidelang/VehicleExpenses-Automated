@@ -5,7 +5,6 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -24,7 +23,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -63,6 +61,7 @@ fun ManageVehiclesScreen(
 
     var isEditingOcrArea by remember { mutableStateOf(false) }
 
+    // Transform state — now includes rotation for better matching other photos
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var rotation by remember { mutableStateOf(0f) }
@@ -105,6 +104,10 @@ fun ManageVehiclesScreen(
                     )
                 }
                 isEditingOcrArea = false
+                // Reset transform when switching vehicle
+                scale = 1f
+                offset = Offset.Zero
+                rotation = 0f
             }
         }
     }
@@ -153,7 +156,7 @@ fun ManageVehiclesScreen(
 
     val saveOcrArea = {
         isEditingOcrArea = false
-        Toast.makeText(context, "OCR area saved", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "OCR area saved (use this crop on any similar dashboard photo)", Toast.LENGTH_SHORT).show()
     }
 
     Column(
@@ -165,6 +168,7 @@ fun ManageVehiclesScreen(
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
+        // vehicle dropdown (unchanged)
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,
@@ -174,7 +178,7 @@ fun ManageVehiclesScreen(
                 value = editingVehicle?.name ?: "New Vehicle",
                 onValueChange = {},
                 label = { Text("Vehicle") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),  // fixed deprecation
+                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                 readOnly = true
             )
             ExposedDropdownMenu(
@@ -212,40 +216,12 @@ fun ManageVehiclesScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Vehicle Name (required)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = make,
-            onValueChange = { make = it },
-            label = { Text("Make (optional)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = model,
-            onValueChange = { model = it },
-            label = { Text("Model (optional)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = year,
-            onValueChange = { year = it },
-            label = { Text("Year (optional)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = licensePlate,
-            onValueChange = { licensePlate = it },
-            label = { Text("License Plate (optional)") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        // form fields (unchanged)
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Vehicle Name (required)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text("Make (optional)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model (optional)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Year (optional)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text("License Plate (optional)") }, modifier = Modifier.fillMaxWidth())
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -272,7 +248,7 @@ fun ManageVehiclesScreen(
                             scaleY = scale,
                             translationX = offset.x,
                             translationY = offset.y,
-                            rotationZ = rotation
+                            rotationZ = rotation   // now supports rotation for matching other photos
                         )
                         .transformable(state = transformState)
                         .pointerInput(Unit) {
@@ -295,7 +271,7 @@ fun ManageVehiclesScreen(
                                     val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
                                     val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
                                     odometerCropRect = Rect(left, top, right, bottom)
-                                    Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Odometer region calibrated — saved normalized crop", Toast.LENGTH_SHORT).show()
                                     dragStart = null
                                     currentDrag = null
                                 },
@@ -360,54 +336,43 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
+
+            if (isEditingOcrArea) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            odometerCropRect = null
+                            dragStart = null
+                            currentDrag = null
+                            scale = 1f
+                            offset = Offset.Zero
+                            rotation = 0f
+                            Toast.makeText(context, "Region & view reset", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Reset All")
+                    }
+
+                    Button(onClick = tryOcr, modifier = Modifier.weight(1f)) {
+                        Text("Try OCR Now")
+                    }
+
+                    Button(onClick = saveOcrArea, modifier = Modifier.weight(1f)) {
+                        Text("Save OCR Area")
+                    }
+                }
+            } else {
+                Button(onClick = { isEditingOcrArea = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Edit OCR Area (rotate/zoom to match other photos)")
+                }
+            }
         } else {
             Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
                 Text("No dash photo yet", modifier = Modifier.align(Alignment.Center))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (isEditingOcrArea) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        odometerCropRect = null
-                        dragStart = null
-                        currentDrag = null
-                        scale = 1f
-                        offset = Offset.Zero
-                        rotation = 0f
-                        Toast.makeText(context, "Region & view reset", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Reset All")
-                }
-
-                Button(
-                    onClick = tryOcr,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Try OCR Now")
-                }
-
-                Button(
-                    onClick = saveOcrArea,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Save OCR Area")
-                }
-            }
-        } else {
-            Button(
-                onClick = { isEditingOcrArea = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Edit OCR Area")
             }
         }
 
@@ -439,7 +404,7 @@ fun ManageVehiclesScreen(
                             odometerCropBottom = odometerCropRect?.bottom
                         )
                         vehicleViewModel.updateVehicle(updated)
-                        Toast.makeText(context, "Vehicle updated", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Vehicle updated — crop is normalized for any similar photo", Toast.LENGTH_LONG).show()
                     } else {
                         vehicleViewModel.createNewVehicleWithReference(
                             name = name,
@@ -485,6 +450,7 @@ fun ManageVehiclesScreen(
         }
     }
 
+    // delete and enlarged preview dialogs (unchanged)
     if (showDeleteConfirm && editingVehicle != null) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -514,7 +480,7 @@ fun ManageVehiclesScreen(
     if (showEnlargedCrop && referencePhotoUrl != null && odometerCropRect != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
-            title = { Text("Enlarged Crop Region Preview (what OCR actually sees)") },
+            title = { Text("Enlarged Crop Region Preview") },
             text = {
                 Box(
                     modifier = Modifier
