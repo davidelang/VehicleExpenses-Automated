@@ -10,6 +10,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -102,7 +104,7 @@ fun ManageVehiclesScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            // NO verticalScroll — page is now non-scrolling when image is selected (and always)
+            .verticalScroll(rememberScrollState())
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
@@ -157,7 +159,7 @@ fun ManageVehiclesScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)   // image now takes all remaining vertical space (non-scrolling page)
+                    .height(280.dp)
             ) {
                 Box(
                     modifier = Modifier
