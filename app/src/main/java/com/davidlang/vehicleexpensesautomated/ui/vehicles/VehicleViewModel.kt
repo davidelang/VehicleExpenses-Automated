@@ -37,7 +37,7 @@ class VehicleViewModel @Inject constructor(
 
     fun deleteVehicle(vehicle: Vehicle) {
         viewModelScope.launch {
-            repository.delete(vehicle)
+            repository.deleteVehicle(vehicle)
         }
     }
 }

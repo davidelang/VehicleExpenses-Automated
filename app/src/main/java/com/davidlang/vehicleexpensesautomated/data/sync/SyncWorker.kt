@@ -29,15 +29,11 @@ class SyncWorker @AssistedInject constructor(
             val sheetId = prefs.getString("sheet_id", null) ?: return@withContext Result.failure()
             if (!prefs.getBoolean("sync_enabled", false)) return@withContext Result.success()
 
-            // Full bidirectional sync using the ONLY public push method that exists
+            // Full push using the ONLY public method that exists
             val vehicles = vehicleRepository.getAllVehicles().first()
             val expenses = expenseRepository.getAllEntries().first()
             val fuelEntries = fuelRepository.getAllEntries().first()
             googleSheetsClient.pushAllData(sheetId, vehicles, expenses, fuelEntries)
-
-            // Pull only what is publicly available (pullVehicles); the other pull methods do not exist
-            val pulledVehicles = googleSheetsClient.pullVehicles(sheetId)
-            pulledVehicles.forEach { vehicleRepository.insertVehicle(it) }
 
             Result.success()
         } catch (e: Exception) {
