@@ -31,14 +31,24 @@ object OdometerOcrUtils {
 
         var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
 
-        // Crop to user-defined odometer region if provided
+        // Crop to user-defined odometer region + 15% padding so ML Kit has context around digits
         if (cropRect != null && cropRect.width() > 0 && cropRect.height() > 0) {
             val left = (cropRect.left * bitmap.width).toInt().coerceAtLeast(0)
             val top = (cropRect.top * bitmap.height).toInt().coerceAtLeast(0)
             val right = (cropRect.right * bitmap.width).toInt().coerceAtMost(bitmap.width)
             val bottom = (cropRect.bottom * bitmap.height).toInt().coerceAtMost(bitmap.height)
 
-            val cropped = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+            val cropW = right - left
+            val cropH = bottom - top
+            val padW = (cropW * 0.15f).toInt()
+            val padH = (cropH * 0.15f).toInt()
+
+            val paddedLeft = (left - padW).coerceAtLeast(0)
+            val paddedTop = (top - padH).coerceAtLeast(0)
+            val paddedRight = (right + padW).coerceAtMost(bitmap.width)
+            val paddedBottom = (bottom + padH).coerceAtMost(bitmap.height)
+
+            val cropped = Bitmap.createBitmap(bitmap, paddedLeft, paddedTop, paddedRight - paddedLeft, paddedBottom - paddedTop)
             bitmap.recycle()
             bitmap = cropped
         }
@@ -57,7 +67,7 @@ object OdometerOcrUtils {
             return@withContext OcrResult(null, emptyList(), null, null)
         }
 
-        val odoRegex = "\\b\\d{1,8}\\b".toRegex()
+        val odoRegex = "\\b\\d{4,8}\\b".toRegex()   // more lenient for odometer (4-8 digits)
         val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
         val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
