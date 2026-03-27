@@ -21,6 +21,8 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
+    suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
+
     fun createNewVehicleWithReference(
         name: String,
         make: String,
@@ -45,6 +47,18 @@ class VehicleViewModel @Inject constructor(
                 odometerCropBottom = odometerCropRect?.bottom
             )
             repository.insert(newVehicle)
+        }
+    }
+
+    fun updateVehicle(vehicle: Vehicle) {
+        viewModelScope.launch {
+            repository.updateVehicle(vehicle)
+        }
+    }
+
+    fun deleteVehicle(vehicle: Vehicle) {
+        viewModelScope.launch {
+            repository.deleteVehicle(vehicle)
         }
     }
 }
