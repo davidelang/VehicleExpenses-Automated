@@ -26,7 +26,7 @@ import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
-import com.davidlang.vehicleexpensesautomated.ui.vehicle.AddNewVehicleScreen
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehiclesScreen
 import dagger.hilt.android.AndroidEntryPoint
 import android.widget.Toast
 import kotlinx.coroutines.launch
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
                 val currentRoute = navBackStackEntry?.destination?.route
                 val title = when (currentRoute) {
                     "quickfill" -> "Quick Fill-up"
-                    "newvehicle" -> "New Vehicle"
+                    "managevehicles" -> "Manage Vehicles"
                     "expense" -> "New Expense Entry"
                     "expenselist" -> "Expense List"
                     "import" -> "Import Old Pictures"
@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
                             Text("Vehicle Expenses", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
 
                             NavigationDrawerItem(label = { Text("Quick Fill-up") }, selected = false, onClick = { navController.navigate("quickfill"); scope.launch { drawerState.close() } })
-                            NavigationDrawerItem(label = { Text("New Vehicle") }, selected = false, onClick = { navController.navigate("newvehicle"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Manage Vehicles") }, selected = false, onClick = { navController.navigate("managevehicles"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("New Expense Entry") }, selected = false, onClick = { navController.navigate("expense"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("Expense List") }, selected = false, onClick = { navController.navigate("expenselist"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("Import Old Pictures") }, selected = false, onClick = { navController.navigate("import"); scope.launch { drawerState.close() } })
@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding)
                             ) {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
-                                composable("newvehicle") { AddNewVehicleScreen(navController = navController) }
+                                composable("managevehicles") { ManageVehiclesScreen(navController = navController) }
                                 composable("expense") { ExpenseEntryScreen(navController = navController) }
                                 composable("expenselist") { ExpenseListScreen() }
                                 composable("import") { ImportOldPicturesScreen(navController = navController) }
