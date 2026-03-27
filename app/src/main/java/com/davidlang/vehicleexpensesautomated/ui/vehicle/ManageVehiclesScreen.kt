@@ -61,10 +61,8 @@ fun ManageVehiclesScreen(
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    // Edit mode for OCR area
     var isEditingOcrArea by remember { mutableStateOf(false) }
 
-    // Zoom / pan / rotate state (only active in edit mode)
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var rotation by remember { mutableStateOf(0f) }
@@ -74,21 +72,18 @@ fun ManageVehiclesScreen(
         rotation += rotationChange
     }
 
-    // Drag-to-draw state (only active in edit mode)
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    // NEW: Default to the first vehicle in the list (as requested)
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
         }
     }
 
-    // Load selected vehicle into form
     LaunchedEffect(selectedVehicleId) {
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
@@ -170,7 +165,6 @@ fun ManageVehiclesScreen(
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Vehicle dropdown at top — "New Vehicle" at bottom
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,
@@ -180,7 +174,7 @@ fun ManageVehiclesScreen(
                 value = editingVehicle?.name ?: "New Vehicle",
                 onValueChange = {},
                 label = { Text("Vehicle") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),  // fixed deprecation
                 readOnly = true
             )
             ExposedDropdownMenu(

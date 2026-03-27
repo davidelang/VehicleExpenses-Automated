@@ -59,7 +59,6 @@ fun QuickFillupScreen(navController: NavHostController) {
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // Gallery picker
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -73,7 +72,6 @@ fun QuickFillupScreen(navController: NavHostController) {
                     }
                 }
 
-                // Use saved crop rect from selected vehicle
                 val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
                 val crop = selectedVehicle?.let {
                     androidx.compose.ui.geometry.Rect(
@@ -84,10 +82,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                     )
                 }
 
-                val result = OdometerOcrUtils.extractFromPhoto(
-                    tempFile.absolutePath, 
-                    crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-                )
+                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) })
 
                 Toast.makeText(
                     context,
@@ -111,7 +106,6 @@ fun QuickFillupScreen(navController: NavHostController) {
         }
     }
 
-    // Start camera immediately
     LaunchedEffect(Unit) {
         val provider = ProcessCameraProvider.getInstance(context).get()
         val preview = Preview.Builder().build()
@@ -252,7 +246,6 @@ private fun ControlsContent(
     possibleOdometers: List<String>,
     onOdometerConfirmed: (String) -> Unit
 ) {
-    // Real vehicle dropdown
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -262,7 +255,7 @@ private fun ControlsContent(
             value = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle",
             onValueChange = {},
             label = { Text("Vehicle") },
-            modifier = Modifier.fillMaxWidth().menuAnchor(),
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),  // fixed deprecation
             readOnly = true
         )
         ExposedDropdownMenu(
@@ -300,7 +293,6 @@ private fun ControlsContent(
         Button(
             onClick = {
                 scope.launch {
-                    // Dummy path for camera — real capture will be added later
                     val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg")
                     if (result.possibleOdometers.isNotEmpty()) {
                         onPossibleOdometersChange(result.possibleOdometers)
@@ -384,7 +376,6 @@ private fun ControlsContent(
         }
     }
 
-    // Odometer confirmation dialog
     if (showOdometerConfirmation) {
         AlertDialog(
             onDismissRequest = { onShowConfirmationChange(false) },
