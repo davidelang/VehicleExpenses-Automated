@@ -4,6 +4,7 @@ import android.graphics.RectF
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -152,12 +152,12 @@ fun ManageVehiclesScreen(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(8.dp)
-                        .background(Color.Red.copy(alpha = 0.85f), shape = MaterialTheme.shapes.medium)
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .background(Color.Red.copy(alpha = 0.9f), shape = MaterialTheme.shapes.medium)
+                        .padding(horizontal = 24.dp, vertical = 16.dp)
                 ) {
                     Text(
                         text = "TAP THE ODOMETER NUMBERS",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = Color.White,
                         textAlign = TextAlign.Center
                     )
