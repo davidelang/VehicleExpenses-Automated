@@ -1,17 +1,24 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import android.graphics.RectF
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -35,14 +42,12 @@ fun AddNewVehicleScreen(
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
+    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }   // normalized 0.0-1.0
 
-    // Automatic OCR on reference photo capture (now with temp-file conversion for both camera and gallery)
     LaunchedEffect(referencePhotoUrl) {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
                 var finalPath = photoPathOrUri
-
-                // If it's a content:// URI (from gallery), copy to temp file
                 if (photoPathOrUri.startsWith("content://")) {
                     val tempFile = File.createTempFile("ocr_vehicle", ".jpg", context.cacheDir)
                     context.contentResolver.openInputStream(Uri.parse(photoPathOrUri))?.use { input ->
@@ -52,15 +57,10 @@ fun AddNewVehicleScreen(
                     }
                     finalPath = tempFile.absolutePath
                 }
-
-                val result = OdometerOcrUtils.extractFromPhoto(finalPath)
+                val crop = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                val result = OdometerOcrUtils.extractFromPhoto(finalPath, crop)
                 result.odometer?.let { odometerReading = it }
-
-                Toast.makeText(
-                    context,
-                    "Auto-detected odometer: ${result.odometer ?: "—"}",
-                    Toast.LENGTH_SHORT
-                ).show()
+                Toast.makeText(context, "Auto-detected odometer: ${result.odometer ?: "—"}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -71,11 +71,7 @@ fun AddNewVehicleScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text(
-            text = "Add New Vehicle",
-            style = MaterialTheme.typography.headlineMedium
-        )
-
+        Text("Add New Vehicle", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
@@ -102,14 +98,14 @@ fun AddNewVehicleScreen(
         OutlinedTextField(
             value = year,
             onValueChange = { year = it },
-            label = { Text("Year") },
+            label = { Text("Year (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
 
         OutlinedTextField(
             value = licensePlate,
             onValueChange = { licensePlate = it },
-            label = { Text("License Plate") },
+            label = { Text("License Plate (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -123,6 +119,42 @@ fun AddNewVehicleScreen(
         )
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        if (referencePhotoUrl != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            val w = size.width.toFloat()
+                            val h = size.height.toFloat()
+                            val left = (offset.x - 80f).coerceAtLeast(0f) / w
+                            val top = (offset.y - 40f).coerceAtLeast(0f) / h
+                            val right = (offset.x + 80f).coerceAtMost(w) / w
+                            val bottom = (offset.y + 40f).coerceAtMost(h) / h
+                            odometerCropRect = Rect(left, top, right, bottom)
+                            Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+            ) {
+                Image(
+                    painter = rememberAsyncImagePainter(referencePhotoUrl),
+                    contentDescription = "Reference dash photo - tap the odometer area",
+                    modifier = Modifier.fillMaxSize()
+                )
+                Text(
+                    text = "TAP the odometer reading area",
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxWidth().height(220.dp)) {
+                Text("No dash photo yet", modifier = Modifier.align(Alignment.Center))
+            }
+        }
 
         OutlinedTextField(
             value = odometerReading,
@@ -143,10 +175,10 @@ fun AddNewVehicleScreen(
                         year = year.toIntOrNull() ?: 2025,
                         licensePlate = licensePlate,
                         referenceDashPhotoUrl = referencePhotoUrl,
-                        odometerCropRect = null,
+                        odometerCropRect = odometerCropRect,
                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                     )
-                    Toast.makeText(context, "New vehicle created with reference dash photo", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "New vehicle created with odometer calibration", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 } else {
                     Toast.makeText(context, "Vehicle name is required", Toast.LENGTH_SHORT).show()
