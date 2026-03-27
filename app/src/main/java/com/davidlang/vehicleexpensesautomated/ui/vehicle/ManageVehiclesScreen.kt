@@ -10,8 +10,6 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -68,7 +66,7 @@ fun ManageVehiclesScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
-    // Try OCR with full error reporting (so we can see exactly why it was silent before)
+    // Try OCR ONLY when button is pressed (no auto-run)
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
@@ -100,18 +98,11 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Auto OCR whenever crop changes
-    LaunchedEffect(referencePhotoUrl, odometerCropRect) {
-        if (odometerCropRect != null) {
-            tryOcr()
-        }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState())
+            // NO verticalScroll — page is now non-scrolling when image is selected (and always)
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
@@ -166,7 +157,7 @@ fun ManageVehiclesScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(280.dp)
+                    .weight(1f)   // image now takes all remaining vertical space (non-scrolling page)
             ) {
                 Box(
                     modifier = Modifier
@@ -258,23 +249,6 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 6f)
                             )
                         }
-                    }
-                }
-
-                if (odometerCropRect == null && dragStart == null) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(8.dp)
-                            .background(Color.Blue.copy(alpha = 0.9f), shape = MaterialTheme.shapes.medium)
-                            .padding(horizontal = 24.dp, vertical = 16.dp)
-                    ) {
-                        Text(
-                            text = "SINGLE FINGER: DRAG ACROSS ODOMETER NUMBERS\nTWO FINGERS: ZOOM • PAN • ROTATE",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
                     }
                 }
             }
