@@ -84,7 +84,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                 }
 
                 val cropDebug = if (crop != null) {
-                    "Crop: L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)}"
+                    "Crop L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)} (w=${"%.3f".format(crop.right-crop.left)}, h=${"%.3f".format(crop.bottom-crop.top)})"
                 } else {
                     "NO CROP — full image OCR"
                 }
@@ -234,7 +234,7 @@ fun QuickFillupScreen(navController: NavHostController) {
 
 @Composable
 private fun ControlsContent(
-    context: Context,   // <-- added so Toast calls compile and work
+    context: Context,
     step: Int,
     isMissedFill: Boolean,
     isPartialFill: Boolean,
