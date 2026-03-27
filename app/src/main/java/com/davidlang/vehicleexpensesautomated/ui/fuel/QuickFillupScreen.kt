@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -139,6 +140,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         .verticalScroll(rememberScrollState())
                 ) {
                     ControlsContent(
+                        context = context,
                         step = step,
                         isMissedFill = isMissedFill,
                         isPartialFill = isPartialFill,
@@ -195,6 +197,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         .verticalScroll(rememberScrollState())
                 ) {
                     ControlsContent(
+                        context = context,
                         step = step,
                         isMissedFill = isMissedFill,
                         isPartialFill = isPartialFill,
@@ -231,6 +234,7 @@ fun QuickFillupScreen(navController: NavHostController) {
 
 @Composable
 private fun ControlsContent(
+    context: Context,   // <-- added so Toast calls compile and work
     step: Int,
     isMissedFill: Boolean,
     isPartialFill: Boolean,
