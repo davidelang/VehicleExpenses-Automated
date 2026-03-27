@@ -68,7 +68,10 @@ fun ManageVehiclesScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
 
-    // Try OCR ONLY when button is pressed (no auto-run)
+    // Debug enlarged crop preview dialog
+    var showEnlargedCrop by remember { mutableStateOf(false) }
+
+    // Try OCR ONLY when button is pressed
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
@@ -86,11 +89,18 @@ fun ManageVehiclesScreen(
                     val crop = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, crop)
                     result.odometer?.let { odometerReading = it }
+
+                    val cropDebug = odometerCropRect?.let { 
+                        "Crop: L=${"%.2f".format(it.left)} T=${"%.2f".format(it.top)} R=${"%.2f".format(it.right)} B=${"%.2f".format(it.bottom)}" 
+                    } ?: "No crop selected"
+
                     Toast.makeText(
                         context,
-                        "OCR result: ${result.odometer ?: "—"} (region used)",
+                        "OCR result: ${result.odometer ?: "—"} ($cropDebug)",
                         Toast.LENGTH_LONG
                     ).show()
+
+                    showEnlargedCrop = true   // show enlarged preview dialog
                 } catch (e: Exception) {
                     Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -104,7 +114,7 @@ fun ManageVehiclesScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(rememberScrollState())   // restored — screen is scrollable again
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
@@ -328,5 +338,52 @@ fun ManageVehiclesScreen(
         ) {
             Text("Cancel")
         }
+    }
+
+    // Enlarged crop region preview dialog (debug aid)
+    if (showEnlargedCrop && referencePhotoUrl != null) {
+        AlertDialog(
+            onDismissRequest = { showEnlargedCrop = false },
+            title = { Text("Enlarged Crop Region Preview") },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                ) {
+                    Image(
+                        painter = rememberAsyncImagePainter(referencePhotoUrl),
+                        contentDescription = "Enlarged crop preview",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    odometerCropRect?.let { crop ->
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val w = size.width
+                            val h = size.height
+                            val leftPx = crop.left * w
+                            val topPx = crop.top * h
+                            val rightPx = crop.right * w
+                            val bottomPx = crop.bottom * h
+                            drawRect(
+                                color = Color.Red.copy(alpha = 0.3f),
+                                topLeft = Offset(leftPx, topPx),
+                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
+                            )
+                            drawRect(
+                                color = Color.Red,
+                                topLeft = Offset(leftPx, topPx),
+                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
+                                style = Stroke(width = 8f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showEnlargedCrop = false }) {
+                    Text("Close Preview")
+                }
+            }
+        )
     }
 }
