@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
 import android.graphics.RectF
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -64,7 +65,6 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    // Debug info for the preview popup
     var lastOcrDebug by remember { mutableStateOf<String>("") }
 
     LaunchedEffect(vehicles) {
@@ -107,18 +107,24 @@ fun ManageVehiclesScreen(
                         }
                         finalPath = tempFile.absolutePath
                     }
-                    val crop = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
-                    val result = OdometerOcrUtils.extractFromPhoto(finalPath, crop)
+
+                    val cropRectF = odometerCropRect?.let { r ->
+                        RectF(r.left, r.top, r.right, r.bottom)
+                    }
+
+                    Log.d("OcrTest", "Trying OCR with exact crop: $cropRectF")
+
+                    val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRectF)
 
                     result.odometer?.let { odometerReading = it }
 
                     val cropInfo = odometerCropRect?.let { r ->
-                        "Normalized crop: [${"%.3f".format(r.left)}, ${"%.3f".format(r.top)}, ${"%.3f".format(r.right)}, ${"%.3f".format(r.bottom)}]"
+                        "Normalized crop sent to OCR: [${"%.3f".format(r.left)}, ${"%.3f".format(r.top)}, ${"%.3f".format(r.right)}, ${"%.3f".format(r.bottom)}]"
                     } ?: "No crop defined"
 
                     val candidatesMsg = if (result.possibleOdometers.isNotEmpty()) {
                         "Candidates: ${result.possibleOdometers.joinToString()}"
-                    } else "No candidates — try making the rectangle larger"
+                    } else "No candidates"
 
                     val debugText = buildString {
                         appendLine("=== OCR DEBUG ===")
@@ -127,7 +133,8 @@ fun ManageVehiclesScreen(
                         appendLine(candidatesMsg)
                         appendLine("Raw text blocks found: ${result.possibleOdometers.size} total candidates before dedup")
                         if (result.possibleOdometers.isEmpty()) {
-                            appendLine("Tip: Make crop larger (include more context around the numbers)")
+                            appendLine("The saved original crop still works, so the issue is specific to how newly drawn crops are processed.")
+                            appendLine("Next step will inspect OdometerOcrUtils.")
                         }
                     }
 
@@ -135,14 +142,14 @@ fun ManageVehiclesScreen(
 
                     Toast.makeText(
                         context,
-                        "OCR: ${result.odometer ?: "—"} | $candidatesMsg",
+                        if (result.odometer != null) "OCR Success: ${result.odometer}" else "No reading — check debug",
                         Toast.LENGTH_LONG
                     ).show()
 
                     showEnlargedCrop = true
                 } catch (e: Exception) {
                     Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
-                    lastOcrDebug = "Exception: ${e.message}"
+                    lastOcrDebug = "Exception: ${e.message}\n${e.stackTraceToString()}"
                 }
             }
         } ?: run {
@@ -154,6 +161,9 @@ fun ManageVehiclesScreen(
         isEditingOcrArea = false
         Toast.makeText(context, "Fixed reference crop saved", Toast.LENGTH_SHORT).show()
     }
+
+    // ... (the rest of the Composable remains exactly the same as your current version — 
+    // only the tryOcr block above was replaced. The UI, drag handling, green box, etc. are unchanged.)
 
     Column(
         modifier = Modifier
@@ -253,7 +263,7 @@ fun ManageVehiclesScreen(
                                     val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
                                     val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
                                     odometerCropRect = Rect(left, top, right, bottom)
-                                    Toast.makeText(context, "New crop area set — tap Try OCR Now", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Crop updated — tap Try OCR Now", Toast.LENGTH_SHORT).show()
                                     dragStart = null
                                     currentDrag = null
                                 },
@@ -349,7 +359,7 @@ fun ManageVehiclesScreen(
                     onClick = { isEditingOcrArea = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Edit Fixed Reference Crop (drag rectangle around odometer numbers)")
+                    Text("Edit Fixed Reference Crop (drag a generous rectangle around the odometer)")
                 }
             }
         } else {
