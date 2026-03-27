@@ -26,13 +26,15 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel   // added for reference crop
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
 fun QuickFillupScreen(navController: NavHostController) {
-    val viewModel: FuelViewModel = hiltViewModel()
+    val fuelViewModel: FuelViewModel = hiltViewModel()
+    val vehicleViewModel: VehicleViewModel = hiltViewModel()   // added
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -51,11 +53,11 @@ fun QuickFillupScreen(navController: NavHostController) {
     var gallons by remember { mutableStateOf(0.0) }
     var cost by remember { mutableStateOf(0.0) }
 
-    // Vehicle selector - now uses vehicle.name
-    var selectedVehicle by remember { mutableStateOf("Select vehicle") }
-    val vehicles = listOf("My Truck", "Family Car", "Work Van") // will be replaced with real list from ViewModel
+    // Real vehicle selection from ViewModel
+    val vehicles by vehicleViewModel.vehicles.collectAsState()
+    var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
 
-    // Confirmation dialog state (lifted to parent)
+    // Confirmation dialog state
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
@@ -64,7 +66,7 @@ fun QuickFillupScreen(navController: NavHostController) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            Toast.makeText(context, "Image selected — copying to temp file for OCR...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Image selected — running OCR with saved crop...", Toast.LENGTH_SHORT).show()
             scope.launch {
                 val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
@@ -72,7 +74,19 @@ fun QuickFillupScreen(navController: NavHostController) {
                         input.copyTo(output)
                     }
                 }
-                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
+
+                // NEW: use saved crop rect from selected vehicle
+                val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
+                val crop = selectedVehicle?.let {
+                    androidx.compose.ui.geometry.Rect(
+                        it.odometerCropLeft ?: 0f,
+                        it.odometerCropTop ?: 0f,
+                        it.odometerCropRight ?: 1f,
+                        it.odometerCropBottom ?: 1f
+                    )
+                }
+
+                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) })
 
                 Toast.makeText(
                     context,
@@ -108,7 +122,6 @@ fun QuickFillupScreen(navController: NavHostController) {
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isLandscape = maxWidth > maxHeight
-
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.weight(0.60f)) {
@@ -127,9 +140,9 @@ fun QuickFillupScreen(navController: NavHostController) {
                         odometer = odometer,
                         gallons = gallons,
                         cost = cost,
-                        selectedVehicle = selectedVehicle,
+                        selectedVehicleId = selectedVehicleId,
                         vehicles = vehicles,
-                        onVehicleChange = { selectedVehicle = it },
+                        onVehicleChange = { selectedVehicleId = it },
                         onMissedChange = { isMissedFill = it },
                         onPartialChange = { isPartialFill = it },
                         onOdometerChange = { odometer = it },
@@ -140,7 +153,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onShowConfirmationChange = { showOdometerConfirmation = it },
                         onPossibleOdometersChange = { possibleOdometers = it },
                         scope = scope,
-                        viewModel = viewModel,
+                        viewModel = fuelViewModel,
                         navController = navController,
                         showOdometerConfirmation = showOdometerConfirmation,
                         possibleOdometers = possibleOdometers,
@@ -183,9 +196,9 @@ fun QuickFillupScreen(navController: NavHostController) {
                         odometer = odometer,
                         gallons = gallons,
                         cost = cost,
-                        selectedVehicle = selectedVehicle,
+                        selectedVehicleId = selectedVehicleId,
                         vehicles = vehicles,
-                        onVehicleChange = { selectedVehicle = it },
+                        onVehicleChange = { selectedVehicleId = it },
                         onMissedChange = { isMissedFill = it },
                         onPartialChange = { isPartialFill = it },
                         onOdometerChange = { odometer = it },
@@ -196,7 +209,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onShowConfirmationChange = { showOdometerConfirmation = it },
                         onPossibleOdometersChange = { possibleOdometers = it },
                         scope = scope,
-                        viewModel = viewModel,
+                        viewModel = fuelViewModel,
                         navController = navController,
                         showOdometerConfirmation = showOdometerConfirmation,
                         possibleOdometers = possibleOdometers,
@@ -219,9 +232,9 @@ private fun ControlsContent(
     odometer: Int,
     gallons: Double,
     cost: Double,
-    selectedVehicle: String,
-    vehicles: List<String>,
-    onVehicleChange: (String) -> Unit,
+    selectedVehicleId: Int?,
+    vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
+    onVehicleChange: (Int?) -> Unit,
     onMissedChange: (Boolean) -> Unit,
     onPartialChange: (Boolean) -> Unit,
     onOdometerChange: (Int) -> Unit,
@@ -238,18 +251,33 @@ private fun ControlsContent(
     possibleOdometers: List<String>,
     onOdometerConfirmed: (String) -> Unit
 ) {
-    // Vehicle pulldown - now uses name
+    // Real vehicle dropdown
+    var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
-        expanded = false,
-        onExpandedChange = {}
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
     ) {
         OutlinedTextField(
-            value = selectedVehicle,
+            value = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle",
             onValueChange = {},
             label = { Text("Vehicle") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
             readOnly = true
         )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            vehicles.forEach { vehicle ->
+                DropdownMenuItem(
+                    text = { Text(vehicle.name) },
+                    onClick = {
+                        onVehicleChange(vehicle.id)
+                        expanded = false
+                    }
+                )
+            }
+        }
     }
 
     Spacer(modifier = Modifier.height(8.dp))
@@ -257,24 +285,21 @@ private fun ControlsContent(
     if (step == 1) {
         Text("Step 1: Point at dashboard", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
-
         OutlinedTextField(
             value = odometer.toString(),
             onValueChange = { onOdometerChange(it.toIntOrNull() ?: 0) },
             label = { Text("Odometer") },
             modifier = Modifier.fillMaxWidth()
         )
-
         Spacer(modifier = Modifier.height(12.dp))
-
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = isMissedFill, onCheckedChange = onMissedChange)
             Text("Missed fill (unknown gas added)")
         }
-
         Button(
             onClick = {
                 scope.launch {
+                    // Dummy path for camera — real capture will be added later
                     val result = OdometerOcrUtils.extractFromPhoto("dummy_dash.jpg")
                     if (result.possibleOdometers.isNotEmpty()) {
                         onPossibleOdometersChange(result.possibleOdometers)
@@ -284,7 +309,7 @@ private fun ControlsContent(
                     }
                     if (isMissedFill) {
                         val entry = FuelEntry(
-                            vehicleId = 1,
+                            vehicleId = selectedVehicleId ?: 0,
                             odometer = odometer,
                             gallons = -1.0,
                             cost = -1.0,
@@ -302,21 +327,17 @@ private fun ControlsContent(
         ) {
             Text("Take Dash Picture")
         }
-
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = isPartialFill, onCheckedChange = onPartialChange)
             Text("Partial fill")
         }
-
         Spacer(modifier = Modifier.height(16.dp))
-
         Button(onClick = onAdvancedPick, modifier = Modifier.fillMaxWidth()) {
             Text("Advanced: Pick existing picture")
         }
     } else {
         Text("Step 2: Point at pump", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
-
         OutlinedTextField(
             value = gallons.toString(),
             onValueChange = { onGallonsChange(it.toDoubleOrNull() ?: 0.0) },
@@ -329,14 +350,11 @@ private fun ControlsContent(
             label = { Text("Total Cost") },
             modifier = Modifier.fillMaxWidth()
         )
-
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = isPartialFill, onCheckedChange = onPartialChange)
             Text("Partial fill")
         }
-
         Spacer(modifier = Modifier.height(12.dp))
-
         Button(
             onClick = {
                 scope.launch {
@@ -344,7 +362,7 @@ private fun ControlsContent(
                     onGallonsChange(result.gallons?.toDoubleOrNull() ?: gallons)
                     onCostChange(result.cost?.toDoubleOrNull() ?: cost)
                     val entry = FuelEntry(
-                        vehicleId = 1,
+                        vehicleId = selectedVehicleId ?: 0,
                         odometer = odometer,
                         gallons = gallons,
                         cost = cost,
@@ -359,9 +377,7 @@ private fun ControlsContent(
         ) {
             Text("Take Pump Picture")
         }
-
         Spacer(modifier = Modifier.height(8.dp))
-
         Button(onClick = onAdvancedPick, modifier = Modifier.fillMaxWidth()) {
             Text("Advanced: Pick existing picture")
         }
