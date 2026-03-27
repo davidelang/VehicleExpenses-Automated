@@ -1,8 +1,10 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import android.graphics.RectF
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,6 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -38,6 +43,7 @@ fun ManageVehiclesScreen(
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
+    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }   // normalized 0.0-1.0
 
     LaunchedEffect(referencePhotoUrl) {
         referencePhotoUrl?.let { photoPathOrUri ->
@@ -52,7 +58,8 @@ fun ManageVehiclesScreen(
                     }
                     finalPath = tempFile.absolutePath
                 }
-                val result = OdometerOcrUtils.extractFromPhoto(finalPath)
+                val crop = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                val result = OdometerOcrUtils.extractFromPhoto(finalPath, crop)
                 result.odometer?.let { odometerReading = it }
                 Toast.makeText(context, "Auto-detected odometer: ${result.odometer ?: "—"}", Toast.LENGTH_SHORT).show()
             }
@@ -115,15 +122,37 @@ fun ManageVehiclesScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         if (referencePhotoUrl != null) {
-            Image(
-                painter = rememberAsyncImagePainter(referencePhotoUrl),
-                contentDescription = "Reference dash photo",
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
-            )
+                    .height(220.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            val w = size.width.toFloat()
+                            val h = size.height.toFloat()
+                            val left = (offset.x - 80f).coerceAtLeast(0f) / w
+                            val top = (offset.y - 40f).coerceAtLeast(0f) / h
+                            val right = (offset.x + 80f).coerceAtMost(w) / w
+                            val bottom = (offset.y + 40f).coerceAtMost(h) / h
+                            odometerCropRect = Rect(left, top, right, bottom)
+                            Toast.makeText(context, "Odometer region calibrated", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+            ) {
+                Image(
+                    painter = rememberAsyncImagePainter(referencePhotoUrl),
+                    contentDescription = "Reference dash photo - tap the odometer area",
+                    modifier = Modifier.fillMaxSize()
+                )
+                Text(
+                    text = "TAP the odometer reading area",
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         } else {
-            Box(modifier = Modifier.fillMaxWidth().height(120.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().height(220.dp)) {
                 Text("No dash photo yet", modifier = Modifier.align(Alignment.Center))
             }
         }
@@ -147,9 +176,10 @@ fun ManageVehiclesScreen(
                         year = year.toIntOrNull(),
                         licensePlate = licensePlate,
                         referenceDashPhotoUrl = referencePhotoUrl,
+                        odometerCropRect = odometerCropRect,
                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                     )
-                    Toast.makeText(context, "Vehicle saved", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Vehicle saved with odometer calibration", Toast.LENGTH_LONG).show()
                     navController.popBackStack()
                 } else {
                     Toast.makeText(context, "Vehicle name is required", Toast.LENGTH_SHORT).show()

@@ -1,6 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.RectF
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -23,11 +25,24 @@ object OdometerOcrUtils {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    suspend fun extractFromPhoto(photoPath: String): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null)
 
-        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
+
+        // Crop to user-defined odometer region if provided
+        if (cropRect != null && cropRect.width() > 0 && cropRect.height() > 0) {
+            val left = (cropRect.left * bitmap.width).toInt().coerceAtLeast(0)
+            val top = (cropRect.top * bitmap.height).toInt().coerceAtLeast(0)
+            val right = (cropRect.right * bitmap.width).toInt().coerceAtMost(bitmap.width)
+            val bottom = (cropRect.bottom * bitmap.height).toInt().coerceAtMost(bitmap.height)
+
+            val cropped = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+            bitmap.recycle()
+            bitmap = cropped
+        }
+
         val image = InputImage.fromBitmap(bitmap, 0)
 
         val visionText: Text = try {
@@ -42,7 +57,7 @@ object OdometerOcrUtils {
             return@withContext OcrResult(null, emptyList(), null, null)
         }
 
-        val odoRegex = "\\b\\d{4,8}\\b".toRegex()
+        val odoRegex = "\\b\\d{1,8}\\b".toRegex()
         val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
         val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
 
@@ -62,13 +77,8 @@ object OdometerOcrUtils {
                 }
             }
 
-            gallonsRegex.find(blockText)?.groupValues?.get(1)?.let {
-                gallons = it
-            }
-
-            costRegex.find(blockText)?.groupValues?.get(1)?.let {
-                cost = it
-            }
+            gallonsRegex.find(blockText)?.groupValues?.get(1)?.let { gallons = it }
+            costRegex.find(blockText)?.groupValues?.get(1)?.let { cost = it }
         }
 
         bitmap.recycle()

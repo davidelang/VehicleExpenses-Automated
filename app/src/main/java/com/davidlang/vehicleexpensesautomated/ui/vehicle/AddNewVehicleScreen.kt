@@ -143,6 +143,7 @@ fun AddNewVehicleScreen(
                         year = year.toIntOrNull() ?: 2025,
                         licensePlate = licensePlate,
                         referenceDashPhotoUrl = referencePhotoUrl,
+                        odometerCropRect = null,
                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                     )
                     Toast.makeText(context, "New vehicle created with reference dash photo", Toast.LENGTH_LONG).show()
