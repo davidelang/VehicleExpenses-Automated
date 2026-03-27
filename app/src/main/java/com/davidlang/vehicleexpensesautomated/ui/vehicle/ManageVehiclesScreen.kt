@@ -111,7 +111,7 @@ fun ManageVehiclesScreen(
 
                     val candidatesMsg = if (result.possibleOdometers.isNotEmpty()) {
                         "Candidates: ${result.possibleOdometers.joinToString()}"
-                    } else "No candidates — try a larger rectangle"
+                    } else "No candidates — crop may be too tight or misaligned. Try a larger rectangle."
 
                     Toast.makeText(
                         context,
@@ -208,11 +208,7 @@ fun ManageVehiclesScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         if (referencePhotoUrl != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-            ) {
+            Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
                 val imageModifier = if (isEditingOcrArea) {
                     Modifier
                         .fillMaxSize()
@@ -236,7 +232,7 @@ fun ManageVehiclesScreen(
                                     val right = (start.x.coerceAtLeast(end.x) / w).coerceIn(0f, 1f)
                                     val bottom = (start.y.coerceAtLeast(end.y) / h).coerceIn(0f, 1f)
                                     odometerCropRect = Rect(left, top, right, bottom)
-                                    Toast.makeText(context, "Crop area set — tap Try OCR Now to test", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "New crop area set — tap Try OCR Now to test", Toast.LENGTH_SHORT).show()
                                     dragStart = null
                                     currentDrag = null
                                 },
@@ -258,7 +254,6 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.FillBounds
                     )
 
-                    // Live drag preview (blue)
                     if (isEditingOcrArea && dragStart != null && currentDrag != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val start = dragStart!!
@@ -279,7 +274,6 @@ fun ManageVehiclesScreen(
                         }
                     }
 
-                    // Saved crop (green)
                     odometerCropRect?.let { crop ->
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val w = size.width
