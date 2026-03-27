@@ -2,7 +2,6 @@ package com.davidlang.vehicleexpensesautomated.data.storage
 
 import android.content.Context
 import androidx.room.Room
-import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,8 +21,8 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-            .addMigrations(AppDatabase.MIGRATION_1_2)
-            .fallbackToDestructiveMigration(false)   // explicit boolean = no more deprecation warning
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .fallbackToDestructiveMigration(false)
             .build()
     }
 
