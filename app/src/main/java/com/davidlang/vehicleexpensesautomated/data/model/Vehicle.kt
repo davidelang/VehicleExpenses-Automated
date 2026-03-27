@@ -14,5 +14,10 @@ data class Vehicle(
     val licensePlate: String? = null,
     val vin: String? = null,
     val notes: String? = null,
-    val referenceDashPhotoUrl: String? = null
+    val referenceDashPhotoUrl: String? = null,
+    // Normalized crop region (0.0 - 1.0) for the odometer display - set once by user
+    val odometerCropLeft: Float? = null,
+    val odometerCropTop: Float? = null,
+    val odometerCropRight: Float? = null,
+    val odometerCropBottom: Float? = null
 )
