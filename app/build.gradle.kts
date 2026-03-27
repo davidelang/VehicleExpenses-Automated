@@ -41,9 +41,7 @@ android {
             excludes.add("META-INF/DEPENDENCIES")
             excludes.add("META-INF/INDEX.LIST")
         }
-        jniLibs {
-            excludes.add("**/*.so")
-        }
+        // Removed jniLibs exclude that was preventing ML Kit native libraries from being packaged
     }
 }
 
