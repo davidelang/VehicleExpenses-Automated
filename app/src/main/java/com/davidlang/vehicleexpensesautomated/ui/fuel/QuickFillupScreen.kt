@@ -59,7 +59,6 @@ fun QuickFillupScreen(navController: NavHostController) {
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var possibleOdometers by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // Gallery picker – already correct (uses vehicle crop)
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -82,6 +81,14 @@ fun QuickFillupScreen(navController: NavHostController) {
                         it.odometerCropBottom ?: 1f
                     )
                 }
+
+                // Debug: show exactly what crop is being used (or if none)
+                val cropDebug = if (crop != null) {
+                    "Crop: L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)}"
+                } else {
+                    "NO CROP — full image OCR"
+                }
+                Toast.makeText(context, "Using vehicle crop: $cropDebug (vehicleId=$selectedVehicleId)", Toast.LENGTH_LONG).show()
 
                 val result = OdometerOcrUtils.extractFromPhoto(
                     tempFile.absolutePath,
@@ -295,7 +302,6 @@ private fun ControlsContent(
             Text("Missed fill (unknown gas added)")
         }
 
-        // Both real flows now use identical crop logic (same as gallery)
         Button(
             onClick = {
                 scope.launch {
@@ -309,8 +315,13 @@ private fun ControlsContent(
                         )
                     }
 
+                    val cropDebug = if (crop != null) {
+                        "L=${"%.3f".format(crop.left)} T=${"%.3f".format(crop.top)} R=${"%.3f".format(crop.right)} B=${"%.3f".format(crop.bottom)}"
+                    } else "NO CROP"
+                    Toast.makeText(context, "Dash button — using crop: $cropDebug", Toast.LENGTH_LONG).show()
+
                     val result = OdometerOcrUtils.extractFromPhoto(
-                        "dummy_dash.jpg",  // placeholder; real camera flow will replace later
+                        "dummy_dash.jpg",
                         crop?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                     )
 
@@ -357,6 +368,7 @@ private fun ControlsContent(
             Text("Advanced: Pick existing picture")
         }
     } else {
+        // pump button (identical crop logic)
         Text("Step 2: Point at pump", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -376,7 +388,6 @@ private fun ControlsContent(
             Text("Partial fill")
         }
         Spacer(modifier = Modifier.height(12.dp))
-
         Button(
             onClick = {
                 scope.launch {
@@ -389,6 +400,9 @@ private fun ControlsContent(
                             it.odometerCropBottom ?: 1f
                         )
                     }
+
+                    val cropDebug = if (crop != null) "L=${"%.3f".format(crop.left)} ..." else "NO CROP"
+                    Toast.makeText(context, "Pump button — using crop: $cropDebug", Toast.LENGTH_SHORT).show()
 
                     val result = OdometerOcrUtils.extractFromPhoto(
                         "dummy_pump.jpg",
@@ -437,9 +451,7 @@ private fun ControlsContent(
                     Spacer(modifier = Modifier.height(8.dp))
                     possibleOdometers.forEach { candidate ->
                         Button(
-                            onClick = {
-                                onOdometerConfirmed(candidate)
-                            },
+                            onClick = { onOdometerConfirmed(candidate) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(candidate)
