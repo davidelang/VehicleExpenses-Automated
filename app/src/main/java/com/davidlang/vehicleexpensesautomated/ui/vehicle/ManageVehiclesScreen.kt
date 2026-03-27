@@ -216,6 +216,7 @@ fun ManageVehiclesScreen(
                     contentScale = ContentScale.FillBounds
                 )
 
+                // Saved crop (green)
                 odometerCropRect?.let { crop ->
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val w = size.width
@@ -224,27 +225,47 @@ fun ManageVehiclesScreen(
                         val topPx = crop.top * h
                         val rightPx = crop.right * w
                         val bottomPx = crop.bottom * h
-                        drawRect(Color.Green.copy(alpha = 0.3f), topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx))
-                        drawRect(Color.Green, topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx), style = Stroke(6f))
+                        drawRect(
+                            color = Color.Green.copy(alpha = 0.3f),
+                            topLeft = Offset(leftPx, topPx),
+                            size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
+                        )
+                        drawRect(
+                            color = Color.Green,
+                            topLeft = Offset(leftPx, topPx),
+                            size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
+                            style = Stroke(width = 6f)
+                        )
                     }
                 }
 
-                if (isEditingOcrArea) {
+                // Live drag preview (blue) when editing
+                if (isEditingOcrArea && dragStart != null && currentDrag != null) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        if (dragStart != null && currentDrag != null) {
-                            val start = dragStart!!
-                            val end = currentDrag!!
-                            val width = (end.x - start.x).coerceAtLeast(0f)
-                            val height = (end.y - start.y).coerceAtLeast(0f)
-                            drawRect(Color.Blue.copy(alpha = 0.4f), topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)), size = androidx.compose.ui.geometry.Size(width, height))
-                            drawRect(Color.Blue, topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)), size = androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
-                        }
+                        val start = dragStart!!
+                        val end = currentDrag!!
+                        val width = (end.x - start.x).coerceAtLeast(0f)
+                        val height = (end.y - start.y).coerceAtLeast(0f)
+                        drawRect(
+                            color = Color.Blue.copy(alpha = 0.4f),
+                            topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
+                            size = androidx.compose.ui.geometry.Size(width, height)
+                        )
+                        drawRect(
+                            color = Color.Blue,
+                            topLeft = Offset(start.x.coerceAtMost(end.x), start.y.coerceAtMost(end.y)),
+                            size = androidx.compose.ui.geometry.Size(width, height),
+                            style = Stroke(width = 4f)
+                        )
                     }
                 }
             }
 
             if (isEditingOcrArea) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     OutlinedButton(
                         onClick = {
                             odometerCropRect = null
@@ -253,14 +274,23 @@ fun ManageVehiclesScreen(
                             Toast.makeText(context, "Crop reset", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Reset Crop") }
+                    ) {
+                        Text("Reset Crop")
+                    }
 
-                    Button(onClick = tryOcr, modifier = Modifier.weight(1f)) { Text("Try OCR Now") }
+                    Button(onClick = tryOcr, modifier = Modifier.weight(1f)) {
+                        Text("Try OCR Now")
+                    }
 
-                    Button(onClick = saveOcrArea, modifier = Modifier.weight(1f)) { Text("Save OCR Area") }
+                    Button(onClick = saveOcrArea, modifier = Modifier.weight(1f)) {
+                        Text("Save OCR Area")
+                    }
                 }
             } else {
-                Button(onClick = { isEditingOcrArea = true }, modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { isEditingOcrArea = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Edit Fixed Reference Crop (drag rectangle around odometer numbers)")
                 }
             }
@@ -271,7 +301,12 @@ fun ManageVehiclesScreen(
         }
 
         if (isEditingOcrArea) {
-            OutlinedTextField(value = odometerReading, onValueChange = { odometerReading = it }, label = { Text("Odometer reading (auto-filled by OCR)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = odometerReading,
+                onValueChange = { odometerReading = it },
+                label = { Text("Odometer reading (auto-filled by OCR)") },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -319,7 +354,11 @@ fun ManageVehiclesScreen(
 
         if (editingVehicle != null) {
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)) {
+            OutlinedButton(
+                onClick = { showDeleteConfirm = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+            ) {
                 Text("Delete Vehicle")
             }
         }
@@ -336,15 +375,22 @@ fun ManageVehiclesScreen(
             title = { Text("Delete Vehicle?") },
             text = { Text("This will permanently delete ${editingVehicle!!.name} and all associated fuel entries.") },
             confirmButton = {
-                Button(onClick = {
-                    vehicleViewModel.deleteVehicle(editingVehicle!!)
-                    showDeleteConfirm = false
-                    navController.popBackStack()
-                }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
+                Button(
+                    onClick = {
+                        vehicleViewModel.deleteVehicle(editingVehicle!!)
+                        showDeleteConfirm = false
+                        navController.popBackStack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
                     Text("Delete")
                 }
             },
-            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 
@@ -368,13 +414,26 @@ fun ManageVehiclesScreen(
                             val topPx = crop.top * h
                             val rightPx = crop.right * w
                             val bottomPx = crop.bottom * h
-                            drawRect(Color.Red.copy(alpha = 0.3f), topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx))
-                            drawRect(Color.Red, topLeft = Offset(leftPx, topPx), size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx), style = Stroke(8f))
+                            drawRect(
+                                color = Color.Red.copy(alpha = 0.3f),
+                                topLeft = Offset(leftPx, topPx),
+                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx)
+                            )
+                            drawRect(
+                                color = Color.Red,
+                                topLeft = Offset(leftPx, topPx),
+                                size = androidx.compose.ui.geometry.Size(rightPx - leftPx, bottomPx - topPx),
+                                style = Stroke(width = 8f)
+                            )
                         }
                     }
                 }
             },
-            confirmButton = { Button(onClick = { showEnlargedCrop = false }) { Text("Close Preview") } }
+            confirmButton = {
+                Button(onClick = { showEnlargedCrop = false }) {
+                    Text("Close Preview")
+                }
+            }
         )
     }
 }
