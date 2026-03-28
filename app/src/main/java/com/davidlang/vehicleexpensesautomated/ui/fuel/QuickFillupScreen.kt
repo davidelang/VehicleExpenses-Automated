@@ -78,9 +78,7 @@ fun QuickFillupScreen(navController: NavHostController) {
             scope.launch {
                 val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+                    tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 processPhoto(context, tempFile.absolutePath, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
                 tempFile.delete()
