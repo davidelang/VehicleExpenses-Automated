@@ -70,27 +70,64 @@ fun QuickFillupScreen(navController: NavHostController) {
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
+    // Unified photo processor - always uses latest vehicle crop
+    val processPhoto: (Any) -> Unit = { imageSource ->  // Uri or String path
+        scope.launch {
+            val tempFile = when (imageSource) {
+                is Uri -> {
+                    val f = File.createTempFile("ocr_input", ".jpg", context.cacheDir)
+                    context.contentResolver.openInputStream(imageSource)?.use { input ->
+                        f.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    f
+                }
+                is String -> File(imageSource)
+                else -> return@launch
+            }
+
+            val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
+            val referenceCrop = selectedVehicle?.let {
+                androidx.compose.ui.geometry.Rect(
+                    it.odometerCropLeft ?: 0f,
+                    it.odometerCropTop ?: 0f,
+                    it.odometerCropRight ?: 1f,
+                    it.odometerCropBottom ?: 1f
+                )
+            }
+
+            val sourceName = if (imageSource is Uri) "Gallery" else "Camera"
+            val cropDebug = if (referenceCrop != null) {
+                "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
+            } else "NO CROP"
+            lastCropDebug = "$sourceName: $cropDebug"
+
+            val cropRectF = referenceCrop?.let { r ->
+                android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+            }
+
+            val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
+
+            lastOcrResult = "OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}"
+
+            if (step == 1) {
+                if (result.possibleOdometers.isNotEmpty()) {
+                    possibleOdometers = result.possibleOdometers
+                    showOdometerConfirmation = true
+                } else {
+                    odometer = result.odometer?.toIntOrNull() ?: odometer
+                }
+            } else {
+                gallons = result.gallons?.toDoubleOrNull() ?: gallons
+                cost = result.cost?.toDoubleOrNull() ?: cost
+            }
+            if (imageSource is Uri) tempFile.delete()
+        }
+    }
+
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { selectedUri ->
-            Toast.makeText(context, "Gallery image selected — processing with crop...", Toast.LENGTH_SHORT).show()
-            processPhoto(
-                context = context,
-                imageSource = selectedUri,
-                selectedVehicleId = selectedVehicleId,
-                vehicles = vehicles,
-                step = step,
-                scope = scope,
-                onCropDebug = { lastCropDebug = it },
-                onOcrResult = { lastOcrResult = it },
-                onOdometerUpdate = { odometer = it },
-                onPossibleUpdate = { possibleOdometers = it },
-                onConfirmationShow = { showOdometerConfirmation = it },
-                onGallonsUpdate = { gallons = it },
-                onCostUpdate = { cost = it }
-            )
-        }
+        uri?.let { processPhoto(it) }
     }
 
     LaunchedEffect(Unit) {
@@ -133,7 +170,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, processPhoto)
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -193,7 +230,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, processPhoto)
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -216,73 +253,6 @@ fun QuickFillupScreen(navController: NavHostController) {
     }
 }
 
-private fun processPhoto(
-    context: Context,
-    imageSource: Any, // Uri or String (file path)
-    selectedVehicleId: Int?,
-    vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
-    step: Int,
-    scope: CoroutineScope,
-    onCropDebug: (String) -> Unit,
-    onOcrResult: (String) -> Unit,
-    onOdometerUpdate: (Int) -> Unit,
-    onPossibleUpdate: (List<String>) -> Unit,
-    onConfirmationShow: (Boolean) -> Unit,
-    onGallonsUpdate: (Double) -> Unit,
-    onCostUpdate: (Double) -> Unit
-) {
-    scope.launch {
-        val tempFile = when (imageSource) {
-            is Uri -> {
-                val f = File.createTempFile("ocr_input", ".jpg", context.cacheDir)
-                context.contentResolver.openInputStream(imageSource)?.use { input ->
-                    f.outputStream().use { output -> input.copyTo(output) }
-                }
-                f
-            }
-            is String -> File(imageSource)
-            else -> return@launch
-        }
-
-        val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
-        val referenceCrop = selectedVehicle?.let {
-            androidx.compose.ui.geometry.Rect(
-                it.odometerCropLeft ?: 0f,
-                it.odometerCropTop ?: 0f,
-                it.odometerCropRight ?: 1f,
-                it.odometerCropBottom ?: 1f
-            )
-        }
-
-        val sourceName = if (imageSource is Uri) "Gallery" else "Camera"
-        val cropDebug = if (referenceCrop != null) {
-            "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
-        } else "NO CROP"
-        onCropDebug("$sourceName: $cropDebug")
-
-        val cropRectF = referenceCrop?.let { r ->
-            android.graphics.RectF(r.left, r.top, r.right, r.bottom)
-        }
-
-        val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
-
-        onOcrResult("OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}")
-
-        if (step == 1) {
-            if (result.possibleOdometers.isNotEmpty()) {
-                onPossibleUpdate(result.possibleOdometers)
-                onConfirmationShow(true)
-            } else {
-                onOdometerUpdate(result.odometer?.toIntOrNull() ?: 0)
-            }
-        } else {
-            onGallonsUpdate(result.gallons?.toDoubleOrNull() ?: 0.0)
-            onCostUpdate(result.cost?.toDoubleOrNull() ?: 0.0)
-        }
-        if (imageSource is Uri) tempFile.delete() // keep camera temp file only if needed
-    }
-}
-
 private fun captureDashPhoto(
     context: Context,
     imageCapture: ImageCapture,
@@ -290,14 +260,7 @@ private fun captureDashPhoto(
     selectedVehicleId: Int?,
     vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
     step: Int,
-    scope: CoroutineScope,
-    onCropDebug: (String) -> Unit,
-    onOcrResult: (String) -> Unit,
-    onOdometerUpdate: (Int) -> Unit,
-    onPossibleUpdate: (List<String>) -> Unit,
-    onConfirmationShow: (Boolean) -> Unit,
-    onGallonsUpdate: (Double) -> Unit,
-    onCostUpdate: (Double) -> Unit
+    processPhoto: (Any) -> Unit
 ) {
     val photoFile = File.createTempFile("dash_capture", ".jpg", context.cacheDir)
     val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
@@ -312,21 +275,7 @@ private fun captureDashPhoto(
 
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 Toast.makeText(context, "Dash photo captured — running OCR with reference crop...", Toast.LENGTH_SHORT).show()
-                processPhoto(
-                    context = context,
-                    imageSource = photoFile.absolutePath,
-                    selectedVehicleId = selectedVehicleId,
-                    vehicles = vehicles,
-                    step = step,
-                    scope = scope,
-                    onCropDebug = onCropDebug,
-                    onOcrResult = onOcrResult,
-                    onOdometerUpdate = onOdometerUpdate,
-                    onPossibleUpdate = onPossibleUpdate,
-                    onConfirmationShow = onConfirmationShow,
-                    onGallonsUpdate = onGallonsUpdate,
-                    onCostUpdate = onCostUpdate
-                )
+                processPhoto(photoFile.absolutePath)
             }
         }
     )
@@ -433,7 +382,6 @@ private fun ControlsContent(
             Text("Advanced: Pick existing picture")
         }
     } else {
-        // Step 2 placeholder (pump) - can be expanded later
         Text("Step 2: Point at pump", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
