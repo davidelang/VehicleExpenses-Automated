@@ -284,12 +284,14 @@ private fun captureDashPhoto(
         executor,
         object : ImageCapture.OnImageSavedCallback {
             override fun onError(exc: ImageCaptureException) {
-                Toast.makeText(context, "Capture failed: ${exc.message}", Toast.LENGTH_LONG).show()
+                scope.launch {
+                    Toast.makeText(context, "Capture failed: ${exc.message}", Toast.LENGTH_LONG).show()
+                }
             }
 
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                Toast.makeText(context, "Dash photo captured — running OCR with reference crop...", Toast.LENGTH_SHORT).show()
                 scope.launch {
+                    Toast.makeText(context, "Dash photo captured — running OCR with reference crop...", Toast.LENGTH_SHORT).show()
                     processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, onCropDebug, onOcrResult, onOdometerUpdate, onPossibleUpdate, onConfirmationShow, onGallonsUpdate, onCostUpdate)
                     photoFile.delete() // delete ONLY AFTER OCR completes
                 }
