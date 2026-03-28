@@ -29,7 +29,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
-import com.davidlang.vehicleexpensesautomated.ui.util.PhotoAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -75,11 +74,13 @@ fun QuickFillupScreen(navController: NavHostController) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            Toast.makeText(context, "Gallery image selected — aligning...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Gallery image selected — running OCR with reference crop...", Toast.LENGTH_SHORT).show()
             scope.launch {
                 val tempFile = File.createTempFile("ocr_gallery", ".jpg", context.cacheDir)
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
-                    tempFile.outputStream().use { output -> input.copyTo(output) }
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
                 }
                 processPhoto(context, tempFile.absolutePath, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
                 tempFile.delete()
@@ -236,16 +237,15 @@ private fun processPhoto(
             )
         }
 
+        val sourceName = if (photoPath.contains("dash_capture")) "Camera" else "Gallery"
         val cropDebug = if (referenceCrop != null) {
             "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
         } else "NO CROP"
-        onCropDebug("Source: ${if (photoPath.contains("dash_capture")) "Camera" else "Gallery"} | $cropDebug")
+        onCropDebug("$sourceName: $cropDebug")
 
-        // Stage 1 automatic alignment
-        val bitmap = android.graphics.BitmapFactory.decodeFile(photoPath) ?: return@launch
-        val (alignedBitmap, alignedCrop) = PhotoAlignmentUtils.alignToReference(bitmap, referenceCrop)
-
-        val cropRectF = alignedCrop
+        val cropRectF = referenceCrop?.let { r ->
+            android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+        }
 
         val result = OdometerOcrUtils.extractFromPhoto(photoPath, cropRectF)
 
@@ -262,8 +262,6 @@ private fun processPhoto(
             onGallonsUpdate(result.gallons?.toDoubleOrNull() ?: 0.0)
             onCostUpdate(result.cost?.toDoubleOrNull() ?: 0.0)
         }
-        bitmap.recycle()
-        alignedBitmap.recycle()
     }
 }
 
@@ -295,7 +293,7 @@ private fun captureDashPhoto(
             }
 
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                Toast.makeText(context, "Dash photo captured — aligning & running OCR...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Dash photo captured — running OCR with reference crop...", Toast.LENGTH_SHORT).show()
                 processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, scope, onCropDebug, onOcrResult, onOdometerUpdate, onPossibleUpdate, onConfirmationShow, onGallonsUpdate, onCostUpdate)
             }
         }
