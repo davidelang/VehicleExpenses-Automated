@@ -74,7 +74,22 @@ fun QuickFillupScreen(navController: NavHostController) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            processPhoto(context, selectedUri, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+            Toast.makeText(context, "Gallery image selected — processing with crop...", Toast.LENGTH_SHORT).show()
+            processPhoto(
+                context = context,
+                imageSource = selectedUri,
+                selectedVehicleId = selectedVehicleId,
+                vehicles = vehicles,
+                step = step,
+                scope = scope,
+                onCropDebug = { lastCropDebug = it },
+                onOcrResult = { lastOcrResult = it },
+                onOdometerUpdate = { odometer = it },
+                onPossibleUpdate = { possibleOdometers = it },
+                onConfirmationShow = { showOdometerConfirmation = it },
+                onGallonsUpdate = { gallons = it },
+                onCostUpdate = { cost = it }
+            )
         }
     }
 
@@ -203,7 +218,7 @@ fun QuickFillupScreen(navController: NavHostController) {
 
 private fun processPhoto(
     context: Context,
-    uriOrPath: Any, // Uri or String path
+    imageSource: Any, // Uri or String (file path)
     selectedVehicleId: Int?,
     vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
     step: Int,
@@ -217,14 +232,16 @@ private fun processPhoto(
     onCostUpdate: (Double) -> Unit
 ) {
     scope.launch {
-        val tempFile = if (uriOrPath is Uri) {
-            val f = File.createTempFile("ocr_dash", ".jpg", context.cacheDir)
-            context.contentResolver.openInputStream(uriOrPath)?.use { input ->
-                f.outputStream().use { output -> input.copyTo(output) }
+        val tempFile = when (imageSource) {
+            is Uri -> {
+                val f = File.createTempFile("ocr_input", ".jpg", context.cacheDir)
+                context.contentResolver.openInputStream(imageSource)?.use { input ->
+                    f.outputStream().use { output -> input.copyTo(output) }
+                }
+                f
             }
-            f
-        } else {
-            File(uriOrPath.toString())
+            is String -> File(imageSource)
+            else -> return@launch
         }
 
         val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
@@ -237,10 +254,11 @@ private fun processPhoto(
             )
         }
 
+        val sourceName = if (imageSource is Uri) "Gallery" else "Camera"
         val cropDebug = if (referenceCrop != null) {
             "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
         } else "NO CROP"
-        onCropDebug("Source: ${if (uriOrPath is Uri) "Gallery" else "Camera"} | $cropDebug")
+        onCropDebug("$sourceName: $cropDebug")
 
         val cropRectF = referenceCrop?.let { r ->
             android.graphics.RectF(r.left, r.top, r.right, r.bottom)
@@ -261,7 +279,7 @@ private fun processPhoto(
             onGallonsUpdate(result.gallons?.toDoubleOrNull() ?: 0.0)
             onCostUpdate(result.cost?.toDoubleOrNull() ?: 0.0)
         }
-        tempFile.delete()
+        if (imageSource is Uri) tempFile.delete() // keep camera temp file only if needed
     }
 }
 
@@ -289,12 +307,26 @@ private fun captureDashPhoto(
         executor,
         object : ImageCapture.OnImageSavedCallback {
             override fun onError(exc: ImageCaptureException) {
-                Toast.makeText(context, "Photo capture failed: ${exc.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Capture failed: ${exc.message}", Toast.LENGTH_LONG).show()
             }
 
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                Toast.makeText(context, "Dash photo captured — running OCR...", Toast.LENGTH_SHORT).show()
-                processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, scope, onCropDebug, onOcrResult, onOdometerUpdate, onPossibleUpdate, onConfirmationShow, onGallonsUpdate, onCostUpdate)
+                Toast.makeText(context, "Dash photo captured — running OCR with reference crop...", Toast.LENGTH_SHORT).show()
+                processPhoto(
+                    context = context,
+                    imageSource = photoFile.absolutePath,
+                    selectedVehicleId = selectedVehicleId,
+                    vehicles = vehicles,
+                    step = step,
+                    scope = scope,
+                    onCropDebug = onCropDebug,
+                    onOcrResult = onOcrResult,
+                    onOdometerUpdate = onOdometerUpdate,
+                    onPossibleUpdate = onPossibleUpdate,
+                    onConfirmationShow = onConfirmationShow,
+                    onGallonsUpdate = onGallonsUpdate,
+                    onCostUpdate = onCostUpdate
+                )
             }
         }
     )
@@ -401,6 +433,7 @@ private fun ControlsContent(
             Text("Advanced: Pick existing picture")
         }
     } else {
+        // Step 2 placeholder (pump) - can be expanded later
         Text("Step 2: Point at pump", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -420,10 +453,7 @@ private fun ControlsContent(
             Text("Partial fill")
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Button(
-            onClick = { /* Pump picture placeholder - implement similarly later */ },
-            modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()
-        ) {
+        Button(onClick = { Toast.makeText(context, "Pump picture coming soon", Toast.LENGTH_SHORT).show() }, modifier = Modifier.fillMaxWidth()) {
             Text("Take Pump Picture")
         }
         Spacer(modifier = Modifier.height(8.dp))
