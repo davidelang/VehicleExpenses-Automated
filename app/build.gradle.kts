@@ -83,4 +83,6 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
+    // OpenCV for dashboard image alignment (rotate + pan + scale to match reference photo)
+    implementation("org.opencv:opencv-android:4.10.0")
 }
