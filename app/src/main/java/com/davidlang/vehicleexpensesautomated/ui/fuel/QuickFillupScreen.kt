@@ -81,7 +81,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 processPhoto(context, tempFile.absolutePath, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
-                // delete ONLY after OCR finishes
+                // delete ONLY after OCR completes
                 tempFile.delete()
             }
         }
