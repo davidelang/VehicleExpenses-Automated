@@ -80,9 +80,8 @@ fun QuickFillupScreen(navController: NavHostController) {
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
-                processPhoto(context, tempFile.absolutePath, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
-                // delete ONLY after OCR completes
-                tempFile.delete()
+                processPhoto(context, tempFile.absolutePath, selectedVehicleId, vehicles, step, { lastCropDebug = it }, { lastOcrResult = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                tempFile.delete() // delete ONLY AFTER OCR completes
             }
         }
     }
@@ -210,13 +209,12 @@ fun QuickFillupScreen(navController: NavHostController) {
     }
 }
 
-private fun processPhoto(
+private suspend fun processPhoto(
     context: Context,
     photoPath: String,
     selectedVehicleId: Int?,
     vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
     step: Int,
-    scope: CoroutineScope,
     onCropDebug: (String) -> Unit,
     onOcrResult: (String) -> Unit,
     onOdometerUpdate: (Int) -> Unit,
@@ -225,42 +223,40 @@ private fun processPhoto(
     onGallonsUpdate: (Double) -> Unit,
     onCostUpdate: (Double) -> Unit
 ) {
-    scope.launch {
-        val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
-        val referenceCrop = selectedVehicle?.let {
-            androidx.compose.ui.geometry.Rect(
-                it.odometerCropLeft ?: 0f,
-                it.odometerCropTop ?: 0f,
-                it.odometerCropRight ?: 1f,
-                it.odometerCropBottom ?: 1f
-            )
-        }
+    val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
+    val referenceCrop = selectedVehicle?.let {
+        androidx.compose.ui.geometry.Rect(
+            it.odometerCropLeft ?: 0f,
+            it.odometerCropTop ?: 0f,
+            it.odometerCropRight ?: 1f,
+            it.odometerCropBottom ?: 1f
+        )
+    }
 
-        val sourceName = if (photoPath.contains("dash_capture")) "Camera" else "Gallery"
-        val cropDebug = if (referenceCrop != null) {
-            "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
-        } else "NO CROP"
-        onCropDebug("$sourceName: $cropDebug")
+    val sourceName = if (photoPath.contains("dash_capture")) "Camera" else "Gallery"
+    val cropDebug = if (referenceCrop != null) {
+        "Fixed reference crop L=${"%.3f".format(referenceCrop.left)} T=${"%.3f".format(referenceCrop.top)} R=${"%.3f".format(referenceCrop.right)} B=${"%.3f".format(referenceCrop.bottom)}"
+    } else "NO CROP"
+    onCropDebug("$sourceName: $cropDebug")
 
-        val cropRectF = referenceCrop?.let { r ->
-            android.graphics.RectF(r.left, r.top, r.right, r.bottom)
-        }
+    val cropRectF = referenceCrop?.let { r ->
+        android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+    }
 
-        val result = OdometerOcrUtils.extractFromPhoto(photoPath, cropRectF)
+    val result = OdometerOcrUtils.extractFromPhoto(photoPath, cropRectF)
 
-        onOcrResult("OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}")
+    onOcrResult("OCR RESULT (Step $step): odometer=${result.odometer} | possible=${result.possibleOdometers}")
 
-        if (step == 1) {
-            if (result.possibleOdometers.isNotEmpty()) {
-                onPossibleUpdate(result.possibleOdometers)
-                onConfirmationShow(true)
-            } else {
-                onOdometerUpdate(result.odometer?.toIntOrNull() ?: 0)
-            }
+    if (step == 1) {
+        if (result.possibleOdometers.isNotEmpty()) {
+            onPossibleUpdate(result.possibleOdometers)
+            onConfirmationShow(true)
         } else {
-            onGallonsUpdate(result.gallons?.toDoubleOrNull() ?: 0.0)
-            onCostUpdate(result.cost?.toDoubleOrNull() ?: 0.0)
+            onOdometerUpdate(result.odometer?.toIntOrNull() ?: 0)
         }
+    } else {
+        onGallonsUpdate(result.gallons?.toDoubleOrNull() ?: 0.0)
+        onCostUpdate(result.cost?.toDoubleOrNull() ?: 0.0)
     }
 }
 
@@ -293,7 +289,10 @@ private fun captureDashPhoto(
 
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 Toast.makeText(context, "Dash photo captured — running OCR with reference crop...", Toast.LENGTH_SHORT).show()
-                processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, scope, onCropDebug, onOcrResult, onOdometerUpdate, onPossibleUpdate, onConfirmationShow, onGallonsUpdate, onCostUpdate)
+                scope.launch {
+                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, onCropDebug, onOcrResult, onOdometerUpdate, onPossibleUpdate, onConfirmationShow, onGallonsUpdate, onCostUpdate)
+                    photoFile.delete() // delete ONLY AFTER OCR completes
+                }
             }
         }
     )
