@@ -56,9 +56,9 @@ object OdometerOcrUtils {
                 return@withContext OcrResult(null, emptyList(), null, null)
             }
 
-            // Robust padding: 15% + minimum pixel size so ML Kit always sees the digits clearly
-            val padW = (cropW * 0.15f).toInt().coerceAtLeast(80)
-            val padH = (cropH * 0.15f).toInt().coerceAtLeast(40)
+            // More generous padding for real dashboard photos (25% + larger minimum)
+            val padW = (cropW * 0.25f).toInt().coerceAtLeast(120)
+            val padH = (cropH * 0.25f).toInt().coerceAtLeast(60)
 
             val paddedLeft = (left - padW).coerceAtLeast(0)
             val paddedTop = (top - padH).coerceAtLeast(0)
@@ -70,12 +70,14 @@ object OdometerOcrUtils {
 
             Log.d("OdometerOcr", "Crop applied - normalized: $cropRect | original: ${origW}x${origH} | raw crop: ${cropW}x${cropH} | final padded: ${finalW}x${finalH} (pad ${padW}x${padH})")
 
-            if (finalW >= 50 && finalH >= 30) {
+            if (finalW >= 100 && finalH >= 50) {
                 val cropped = Bitmap.createBitmap(bitmap, paddedLeft, paddedTop, finalW, finalH)
                 bitmap.recycle()
                 bitmap = cropped
+                Log.d("OdometerOcr", "Using cropped region for OCR")
             } else {
-                Log.w("OdometerOcr", "Final region too small (${finalW}x${finalH}) - falling back to full image")
+                Log.w("OdometerOcr", "Final region too small (${finalW}x${finalH}) — falling back to full image")
+                // keep full bitmap
             }
         } else {
             Log.d("OdometerOcr", "No crop - using full image")
