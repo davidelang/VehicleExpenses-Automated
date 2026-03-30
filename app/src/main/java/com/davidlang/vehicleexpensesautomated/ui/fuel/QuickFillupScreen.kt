@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.fuel
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -44,6 +45,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
 import android.widget.Toast
+import androidx.compose.ui.geometry.Rect
 
 @Composable
 fun QuickFillupScreen(navController: NavHostController) {
@@ -78,13 +80,15 @@ fun QuickFillupScreen(navController: NavHostController) {
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
-    // Load the selected vehicle's crop rect when vehicle changes
+    // Load vehicle crop box when vehicle is selected
     LaunchedEffect(selectedVehicleId) {
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
-            vehicle?.odometerCropLeft?.let { left ->
-                val rect = Rect(left, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
-                Log.d("CropDebug", "QuickFillupScreen loaded vehicle crop rect: $rect")
+            vehicle?.let {
+                odometerCropRect = it.odometerCropLeft?.let { left ->
+                    Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
+                }
+                Log.d("CropDebug", "QuickFillupScreen loaded vehicle crop rect: $odometerCropRect")
             }
         }
     }
