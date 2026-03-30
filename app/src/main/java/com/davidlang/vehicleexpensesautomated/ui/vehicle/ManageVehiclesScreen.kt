@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -247,7 +248,7 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        // Draw odometer crop box
+                        // Odometer crop box
                         odometerCropRect?.let { rect ->
                             drawRect(
                                 color = if (isEditingOcrArea) Color.Red else Color.Blue,
@@ -256,7 +257,7 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Draw landmark crop box
+                        // Landmark crop box
                         landmarkCropRect?.let { rect ->
                             drawRect(
                                 color = if (isEditingLandmark) Color.Red else Color.Green,
@@ -265,7 +266,7 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Live drag preview
+                        // Live drag preview (dashed red box)
                         if (dragStart != null && currentDrag != null && (isEditingOcrArea || isEditingLandmark)) {
                             val left = minOf(dragStart!!.x, currentDrag!!.x)
                             val top = minOf(dragStart!!.y, currentDrag!!.y)
@@ -275,7 +276,10 @@ fun ManageVehiclesScreen(
                                 color = Color.Red,
                                 topLeft = Offset(left, top),
                                 size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
-                                style = Stroke(width = 4f, dashPathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f))
+                                style = Stroke(
+                                    width = 4f,
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                )
                             )
                         }
                     }
