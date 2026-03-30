@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
-import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -111,7 +110,7 @@ fun ManageVehiclesScreen(
                         finalPath = tempFile.absolutePath
                     }
                     val cropRect = odometerCropRect?.let { r ->
-                        RectF(r.left, r.top, r.right, r.bottom)
+                        android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                     }
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
@@ -250,7 +249,6 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        // Saved odometer crop
                         odometerCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Blue,
@@ -259,7 +257,6 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Saved landmark crop
                         landmarkCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Green,
@@ -268,7 +265,6 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Live drag preview (only when editing odometer)
                         if (dragStart != null && currentDrag != null && isEditingOcrArea) {
                             val left = minOf(dragStart!!.x, currentDrag!!.x)
                             val top = minOf(dragStart!!.y, currentDrag!!.y)
@@ -380,7 +376,7 @@ fun ManageVehiclesScreen(
                             year = year.toIntOrNull(),
                             licensePlate = licensePlate,
                             referenceDashPhotoUrl = referencePhotoUrl,
-                            odometerCropRect = odometerCropRect?.let { r -> RectF(r.left, r.top, r.right, r.bottom) },
+                            odometerCropRect = odometerCropRect,
                             initialOdometer = odometerReading.toIntOrNull() ?: 0
                         )
                         Toast.makeText(context, "New vehicle created", Toast.LENGTH_SHORT).show()
