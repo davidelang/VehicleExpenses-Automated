@@ -23,7 +23,8 @@ echo "→ Deleting ALL caches..."
 rm -rf .gradle/ app/build/ build/ ~/.gradle/caches/ ~/.gradle/daemon/ ~/.gradle/build-cache/ ~/.gradle/kotlin-dsl/ ~/.gradle/.cache/ .kotlin/ app/.kotlin/
 
 # Extra KSP-specific directories the normal nuke misses
-rm -rf app/build/generated/ksp/ app/build/tmp/ksp/ app/build/intermediates/ksp/ app/build/ksp/ .ksp/
+rm -rf app/build/generated/ksp/ app/build/tmp/ksp/ app/build/intermediates/ksp/ app/build/ksp/ .ksp/ app/build/generated/ app/build/tmp/
+
 
 
 echo "✅ Super nuke complete."
