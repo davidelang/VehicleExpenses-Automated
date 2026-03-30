@@ -17,13 +17,16 @@ pkill -9 -f GradleDaemon 2>/dev/null || true
 pkill -9 -f gradle 2>/dev/null || true
 pkill -9 -f ksp 2>/dev/null || true
 pkill -9 -f kotlin 2>/dev/null || true
+pkill -9 -f studio 2>/dev/null || true
+
 
 
 echo "→ Deleting ALL caches..."
 rm -rf .gradle/ app/build/ build/ ~/.gradle/caches/ ~/.gradle/daemon/ ~/.gradle/build-cache/ ~/.gradle/kotlin-dsl/ ~/.gradle/.cache/ .kotlin/ app/.kotlin/
 
 # Extra KSP-specific directories the normal nuke misses
-rm -rf app/build/generated/ksp/ app/build/tmp/ksp/ app/build/intermediates/ksp/ app/build/ksp/ .ksp/ app/build/generated/ app/build/tmp/
+
+rm -rf app/build/generated/ksp/ app/build/tmp/ksp/ app/build/intermediates/ksp/ app/build/ksp/ .ksp/ app/build/generated/ app/build/tmp/ .idea/
 
 
 
