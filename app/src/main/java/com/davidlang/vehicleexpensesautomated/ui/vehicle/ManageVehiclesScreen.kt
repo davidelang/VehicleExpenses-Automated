@@ -46,6 +46,7 @@ fun ManageVehiclesScreen(
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
+    var isNewVehicle by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var make by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
@@ -74,6 +75,7 @@ fun ManageVehiclesScreen(
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
             editingVehicle = vehicle
+            isNewVehicle = false
             vehicle?.let {
                 name = it.name
                 make = it.make ?: ""
@@ -134,13 +136,39 @@ fun ManageVehiclesScreen(
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Add New Vehicle button
+        Button(
+            onClick = {
+                selectedVehicleId = null
+                editingVehicle = null
+                isNewVehicle = true
+                name = ""
+                make = ""
+                model = ""
+                year = ""
+                licensePlate = ""
+                odometerReading = ""
+                referencePhotoUrl = null
+                odometerCropRect = null
+                landmarkCropRect = null
+                isEditingOcrArea = false
+                isEditingLandmark = false
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Add New Vehicle")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,
             onExpandedChange = { dropdownExpanded = it }
         ) {
             OutlinedTextField(
-                value = editingVehicle?.name ?: "New Vehicle",
+                value = if (isNewVehicle) "New Vehicle" else (editingVehicle?.name ?: "Select vehicle"),
                 onValueChange = {},
                 label = { Text("Vehicle") },
                 modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
@@ -155,6 +183,7 @@ fun ManageVehiclesScreen(
                         text = { Text(vehicle.name) },
                         onClick = {
                             selectedVehicleId = vehicle.id
+                            isNewVehicle = false
                             dropdownExpanded = false
                         }
                     )
@@ -164,7 +193,7 @@ fun ManageVehiclesScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (editingVehicle != null) {
+        if (isNewVehicle || editingVehicle != null) {
             PhotoPicker(
                 photoStorageManager = settingsViewModel.photoStorageManager,
                 photoType = PhotoType.FUEL,
@@ -218,9 +247,44 @@ fun ManageVehiclesScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = make,
+                onValueChange = { make = it },
+                label = { Text("Make") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = model,
+                onValueChange = { model = it },
+                label = { Text("Model") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = year,
+                onValueChange = { year = it },
+                label = { Text("Year") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = licensePlate,
+                onValueChange = { licensePlate = it },
+                label = { Text("License Plate") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
                 value = odometerReading,
                 onValueChange = { odometerReading = it },
-                label = { Text("Odometer (auto-filled)") },
+                label = { Text("Initial Odometer") },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -228,32 +292,46 @@ fun ManageVehiclesScreen(
 
             Button(
                 onClick = {
-                    editingVehicle?.let { vehicle ->
-                        vehicleViewModel.updateVehicle(
-                            vehicle.copy(
-                                name = name,
-                                make = make,
-                                model = model,
-                                year = year.toIntOrNull(),
-                                licensePlate = licensePlate,
-                                referenceDashPhotoUrl = referencePhotoUrl,
-                                odometerCropLeft = odometerCropRect?.left,
-                                odometerCropTop = odometerCropRect?.top,
-                                odometerCropRight = odometerCropRect?.right,
-                                odometerCropBottom = odometerCropRect?.bottom,
-                                landmarkCropLeft = landmarkCropRect?.left,
-                                landmarkCropTop = landmarkCropRect?.top,
-                                landmarkCropRight = landmarkCropRect?.right,
-                                landmarkCropBottom = landmarkCropRect?.bottom
-                            )
+                    if (isNewVehicle) {
+                        vehicleViewModel.createNewVehicleWithReference(
+                            name = name,
+                            make = make,
+                            model = model,
+                            year = year.toIntOrNull(),
+                            licensePlate = licensePlate,
+                            referenceDashPhotoUrl = referencePhotoUrl,
+                            odometerCropRect = odometerCropRect,
+                            initialOdometer = odometerReading.toIntOrNull() ?: 0
                         )
-                        Toast.makeText(context, "Vehicle updated", Toast.LENGTH_SHORT).show()
-                        navController.popBackStack()
+                        Toast.makeText(context, "New vehicle created", Toast.LENGTH_SHORT).show()
+                    } else {
+                        editingVehicle?.let { vehicle ->
+                            vehicleViewModel.updateVehicle(
+                                vehicle.copy(
+                                    name = name,
+                                    make = make,
+                                    model = model,
+                                    year = year.toIntOrNull(),
+                                    licensePlate = licensePlate,
+                                    referenceDashPhotoUrl = referencePhotoUrl,
+                                    odometerCropLeft = odometerCropRect?.left,
+                                    odometerCropTop = odometerCropRect?.top,
+                                    odometerCropRight = odometerCropRect?.right,
+                                    odometerCropBottom = odometerCropRect?.bottom,
+                                    landmarkCropLeft = landmarkCropRect?.left,
+                                    landmarkCropTop = landmarkCropRect?.top,
+                                    landmarkCropRight = landmarkCropRect?.right,
+                                    landmarkCropBottom = landmarkCropRect?.bottom
+                                )
+                            )
+                            Toast.makeText(context, "Vehicle updated", Toast.LENGTH_SHORT).show()
+                        }
                     }
+                    navController.popBackStack()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save Changes")
+                Text(if (isNewVehicle) "Create Vehicle" else "Save Changes")
             }
         }
     }
