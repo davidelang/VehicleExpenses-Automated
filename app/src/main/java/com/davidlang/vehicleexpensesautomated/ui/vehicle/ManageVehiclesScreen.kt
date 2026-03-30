@@ -53,13 +53,15 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
+    var landmarkCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
+    var isEditingLandmark by remember { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
-    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
+    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrDebugResult?>(null) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -82,7 +84,11 @@ fun ManageVehiclesScreen(
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
+                landmarkCropRect = it.landmarkCropLeft?.let { left ->
+                    Rect(left, it.landmarkCropTop ?: 0f, it.landmarkCropRight ?: 1f, it.landmarkCropBottom ?: 1f)
+                }
                 isEditingOcrArea = false
+                isEditingLandmark = false
             }
         }
     }
@@ -101,12 +107,10 @@ fun ManageVehiclesScreen(
                         }
                         finalPath = tempFile.absolutePath
                     }
-                    // Full unknown-photo pipeline (as requested)
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, null)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
 
-                    // Conditional confirmation (only if multiple candidates)
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
@@ -235,7 +239,11 @@ fun ManageVehiclesScreen(
                                 odometerCropLeft = odometerCropRect?.left,
                                 odometerCropTop = odometerCropRect?.top,
                                 odometerCropRight = odometerCropRect?.right,
-                                odometerCropBottom = odometerCropRect?.bottom
+                                odometerCropBottom = odometerCropRect?.bottom,
+                                landmarkCropLeft = landmarkCropRect?.left,
+                                landmarkCropTop = landmarkCropRect?.top,
+                                landmarkCropRight = landmarkCropRect?.right,
+                                landmarkCropBottom = landmarkCropRect?.bottom
                             )
                         )
                         Toast.makeText(context, "Vehicle updated", Toast.LENGTH_SHORT).show()
