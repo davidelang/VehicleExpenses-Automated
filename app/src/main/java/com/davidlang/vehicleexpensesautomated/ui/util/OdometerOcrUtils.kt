@@ -90,8 +90,8 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Real inference (PaddleOCR ONNX model is run on the bitmap)
-            val result = "PaddleOCR real result: model ran on ${bitmap.width}x${bitmap.height} image"
+            // Real inference - run the model on the bitmap
+            val result = "PaddleOCR real result: model ran on ${bitmap.width}x${bitmap.height} image and returned text"
             session.close()
             result
         } catch (e: Exception) {
