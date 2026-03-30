@@ -41,7 +41,8 @@ object OdometerOcrUtils {
         }
     }
 
-    private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String): Triple<String, String, String> {
+    private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String, stage: String): Triple<String, String, String> {
+        Log.d("OCRStage", "$stage - $label - Starting ML Kit")
         val mlResult = try {
             val image = InputImage.fromBitmap(bitmap, 0)
             val text: Text = suspendCancellableCoroutine { cont ->
@@ -54,11 +55,16 @@ object OdometerOcrUtils {
             Log.e("OdometerOcr", "ML Kit failed for $label", e)
             "(ML Kit error)"
         }
+        Log.d("OCRStage", "$stage - $label - ML Kit: $mlResult")
 
+        Log.d("OCRStage", "$stage - $label - Starting Tesseract")
         val tessResult = runTesseract(bitmap)
-        val paddleResult = runPaddleOcr(bitmap)
+        Log.d("OCRStage", "$stage - $label - Tesseract: $tessResult")
 
-        Log.i("OdometerOcr", "$label OCR → ML Kit: \"$mlResult\" | Tesseract: \"$tessResult\" | PaddleOCR: \"$paddleResult\"")
+        Log.d("OCRStage", "$stage - $label - Starting PaddleOCR")
+        val paddleResult = runPaddleOcr(bitmap)
+        Log.d("OCRStage", "$stage - $label - PaddleOCR: $paddleResult")
+
         return Triple(mlResult, tessResult, paddleResult)
     }
 
@@ -90,7 +96,6 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Stage 2: Recognition - resize to the model's fixed input shape
             val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
 
             val shape = longArrayOf(1, 3, 224, 224)
@@ -101,7 +106,6 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Simple decoding: argmax on each time step + basic vocabulary
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val decoded = StringBuilder()
             for (t in 0 until outputTensor.size) {
@@ -126,6 +130,8 @@ object OdometerOcrUtils {
 
         var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap")
 
+        Log.d("OCRStage", "Stage 0 - Full image loaded, size ${bitmap.width}x${bitmap.height}")
+
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
@@ -138,10 +144,11 @@ object OdometerOcrUtils {
                 val cropped = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
                 bitmap.recycle()
                 bitmap = cropped
+                Log.d("OCRStage", "Stage 1 - Crop applied, new size ${bitmap.width}x${bitmap.height}")
             }
         }
 
-        val (ml, tess, paddle) = runAllThreeEngines(bitmap, "final")
+        val (ml, tess, paddle) = runAllThreeEngines(bitmap, "final", "Stage 2")
 
         val rawText = ml
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")

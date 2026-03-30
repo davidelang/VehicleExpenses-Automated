@@ -78,6 +78,17 @@ fun QuickFillupScreen(navController: NavHostController) {
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
+    // Load the selected vehicle's crop rect when vehicle changes
+    LaunchedEffect(selectedVehicleId) {
+        selectedVehicleId?.let { id ->
+            val vehicle = vehicleViewModel.getVehicleById(id)
+            vehicle?.odometerCropLeft?.let { left ->
+                val rect = Rect(left, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
+                Log.d("CropDebug", "QuickFillupScreen loaded vehicle crop rect: $rect")
+            }
+        }
+    }
+
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
