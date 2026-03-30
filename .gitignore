@@ -1,3 +1,6 @@
+command.output
+crash-log.txt
+
 # Gradle
 .gradle
 build/
