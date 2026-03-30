@@ -20,6 +20,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -45,7 +47,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
 import android.widget.Toast
-import androidx.compose.ui.geometry.Rect
 
 @Composable
 fun QuickFillupScreen(navController: NavHostController) {
@@ -79,8 +80,9 @@ fun QuickFillupScreen(navController: NavHostController) {
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    // Load vehicle crop box when vehicle is selected
+    // Load the selected vehicle's crop rect when vehicle changes
     LaunchedEffect(selectedVehicleId) {
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
