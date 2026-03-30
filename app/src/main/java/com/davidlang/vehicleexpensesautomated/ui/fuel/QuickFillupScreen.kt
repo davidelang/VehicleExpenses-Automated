@@ -73,7 +73,7 @@ fun QuickFillupScreen(navController: NavHostController) {
     var lastOcrResult by remember { mutableStateOf("No OCR run yet") }
     var lastOpenCVDebug by remember { mutableStateOf("OpenCV: N/A") }
     var showAlignedDialog by remember { mutableStateOf(false) }
-    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
+    var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
