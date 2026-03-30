@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
-    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrDebugResult?>(null) }
+    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -111,7 +111,6 @@ fun ManageVehiclesScreen(
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
 
-                    // Conditional confirmation — only when >1 candidate
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
@@ -275,7 +274,6 @@ fun ManageVehiclesScreen(
         )
     }
 
-    // Unified conditional confirmation dialog (only if >1 candidate)
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
