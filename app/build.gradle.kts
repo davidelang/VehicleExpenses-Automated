@@ -86,3 +86,7 @@ dependencies {
     // OpenCV for dashboard image alignment (rotate + pan + scale to match reference photo)
     implementation("org.opencv:opencv:4.10.0")
 }
+    // Tesseract OCR (excellent for 7-segment numbers)
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+    // PaddleOCR via ONNX Runtime
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")

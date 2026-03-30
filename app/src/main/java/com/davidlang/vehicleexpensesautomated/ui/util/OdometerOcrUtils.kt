@@ -120,7 +120,7 @@ object OdometerOcrUtils {
             val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
 
             if (right > left && bottom > top) {
-                val cropped = Bitmap.createBitmap(bitmap, left, top, right-left, bottom-top)
+                val cropped = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
                 bitmap.recycle()
                 bitmap = cropped
             }
@@ -156,6 +156,7 @@ object OdometerOcrUtils {
                     .addOnFailureListener { e -> continuation.resumeWithException(e) }
             }
         } catch (e: Exception) {
+            Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
             return@withContext OcrResult(null, emptyList(), null, null)
         }
