@@ -91,7 +91,7 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 }
 
-// === Build-time validation for paddleocr.onnx ===
+// === Build-time validation for paddleocr.onnx (now stronger) ===
 tasks.register("validatePaddleOcrModel") {
     doLast {
         val modelFile = file("src/main/assets/paddleocr.onnx")
@@ -101,7 +101,13 @@ tasks.register("validatePaddleOcrModel") {
         if (modelFile.length() < 100_000) {
             throw GradleException("❌ paddleocr.onnx is too small (${modelFile.length()} bytes) — probably corrupted")
         }
-        println("✅ paddleocr.onnx validated (${modelFile.length()} bytes)")
+        // Extra safety: reject obvious HTML files
+        val firstBytes = modelFile.readBytes().take(16).toByteArray()
+        val hex = firstBytes.joinToString(" ") { "%02x".format(it) }
+        if (firstBytes.isNotEmpty() && firstBytes[0] == '<'.code.toByte()) {
+            throw GradleException("❌ paddleocr.onnx looks like HTML (starts with '<') — this is not a valid ONNX model. First 16 bytes: $hex")
+        }
+        println("✅ paddleocr.onnx validated (${modelFile.length()} bytes, first bytes: $hex)")
     }
 }
 
