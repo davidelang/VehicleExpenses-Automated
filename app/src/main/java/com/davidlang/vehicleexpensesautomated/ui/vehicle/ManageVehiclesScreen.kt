@@ -31,6 +31,7 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import kotlinx.coroutines.launch
 import java.io.File
 
