@@ -60,11 +60,12 @@ fun ManageVehiclesScreen(
     var isEditingLandmark by remember { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var imageSize by remember { mutableStateOf(Offset.Zero) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -230,10 +231,10 @@ fun ManageVehiclesScreen(
                                     val start = dragStart
                                     if (start != null) {
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        val left = minOf(start.x, end.x) / constraints.maxWidth
-                                        val top = minOf(start.y, end.y) / constraints.maxHeight
-                                        val right = maxOf(start.x, end.x) / constraints.maxWidth
-                                        val bottom = maxOf(start.y, end.y) / constraints.maxHeight
+                                        val left = minOf(start.x, end.x) / maxWidth.value
+                                        val top = minOf(start.y, end.y) / maxHeight.value
+                                        val right = maxOf(start.x, end.x) / maxWidth.value
+                                        val bottom = maxOf(start.y, end.y) / maxHeight.value
                                         val newRect = Rect(left, top, right, bottom)
                                         Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
                                         if (isEditingOcrArea) {
