@@ -306,6 +306,25 @@ fun ManageVehiclesScreen(
                 }
             }
 
+            // Clear buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { odometerCropRect = null },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Clear Odometer Crop")
+                }
+                Button(
+                    onClick = { landmarkCropRect = null },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Clear Landmark Crop")
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth()) {
