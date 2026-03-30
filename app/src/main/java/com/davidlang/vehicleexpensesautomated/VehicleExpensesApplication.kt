@@ -52,10 +52,14 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     private fun copyPaddleOcrOnce(context: Context) {
         val destFile = File(context.filesDir, "paddleocr.onnx")
-        if (destFile.exists() && destFile.length() > 100000) {
-            android.util.Log.i("OdometerOcr", "✅ paddleocr.onnx already present (${destFile.length()} bytes)")
+        val expectedSize = 4956208L   // size of the good model we just committed
+
+        // Force re-copy if the file on device is wrong size or missing
+        if (destFile.exists() && destFile.length() == expectedSize) {
+            android.util.Log.i("OdometerOcr", "✅ paddleocr.onnx already correct on device (${destFile.length()} bytes)")
             return
         }
+
         try {
             val assetManager = context.assets
             val input = assetManager.open("paddleocr.onnx")
