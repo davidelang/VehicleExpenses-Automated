@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
-    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
+    var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
