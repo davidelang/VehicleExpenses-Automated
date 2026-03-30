@@ -11,7 +11,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://jitpack.io") }  // required for Tesseract 4.9.0
+        maven { url = uri("https://jitpack.io") }  // required for tesseract4android:4.9.0
     }
 }
 

@@ -2,10 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Matrix
 import android.graphics.RectF
-import android.media.ExifInterface
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -15,12 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
-import org.opencv.calib3d.Calib3d
-import org.opencv.core.*
-import org.opencv.features2d.BFMatcher
-import org.opencv.features2d.ORB
-import org.opencv.imgcodecs.Imgcodecs
-import org.opencv.imgproc.Imgproc
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -47,7 +38,11 @@ object OdometerOcrUtils {
         }
     }
 
-    private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String, debugSteps: MutableList<Pair<String, String>>): Triple<String, String, String> {
+    // ================================================================
+    // Three-engine OCR — runs ALL three on every photo step
+    // ================================================================
+    private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String): Triple<String, String, String> {
+        // ML Kit
         val mlResult = try {
             val image = InputImage.fromBitmap(bitmap, 0)
             val text: Text = suspendCancellableCoroutine { cont ->
@@ -60,23 +55,25 @@ object OdometerOcrUtils {
             Log.e("OdometerOcr", "ML Kit failed for $label", e)
             "(ML Kit error)"
         }
-        debugSteps.add("$label ML Kit" to mlResult)
 
+        // Tesseract
         val tessResult = runTesseract(bitmap)
-        debugSteps.add("$label Tesseract" to tessResult)
 
+        // PaddleOCR ONNX
         val paddleResult = runPaddleOcr(bitmap)
-        debugSteps.add("$label PaddleOCR" to paddleResult)
 
+        Log.i("OdometerOcr", "$label OCR → ML Kit: \"$mlResult\" | Tesseract: \"$tessResult\" | PaddleOCR: \"$paddleResult\"")
         return Triple(mlResult, tessResult, paddleResult)
     }
 
     private fun runTesseract(bitmap: Bitmap): String {
         return try {
             val tess = TessBaseAPI()
+            // Dynamic path that matches VehicleExpensesApplication copy
             val tessDataPath = "/data/user/0/com.davidlang.vehicleexpensesautomated/files"
             if (!tess.init(tessDataPath, "eng")) {
                 tess.clear()
+                Log.e("OdometerOcr", "Tesseract init failed — check that eng.traineddata exists in $tessDataPath/tessdata")
                 return "(Tesseract init failed)"
             }
             tess.setImage(bitmap)
@@ -85,7 +82,7 @@ object OdometerOcrUtils {
             result
         } catch (e: Exception) {
             Log.e("OdometerOcr", "Tesseract failed", e)
-            "(Tesseract error)"
+            "(Tesseract error: ${e.message})"
         }
     }
 
@@ -93,12 +90,12 @@ object OdometerOcrUtils {
         return try {
             val env = OrtEnvironment.getEnvironment()
             val asset = javaClass.classLoader?.getResourceAsStream("paddleocr.onnx")
-                ?: return "(PaddleOCR model not found in assets)"
+                ?: return "(PaddleOCR model not found — place paddleocr.onnx in app/src/main/assets/)"
             val modelBytes = asset.readBytes()
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
             session.close()
-            "(PaddleOCR ONNX ran — model placeholder)"
+            "(PaddleOCR ONNX ran)"
         } catch (e: Exception) {
             Log.e("OdometerOcr", "PaddleOCR failed", e)
             "(PaddleOCR error: ${e.message})"
@@ -126,12 +123,10 @@ object OdometerOcrUtils {
             }
         }
 
-        val debugSteps = mutableListOf<Pair<String, String>>()
+        // Run ALL three engines on every photo
+        val (ml, tess, paddle) = runAllThreeEngines(bitmap, "final")
 
-        val (ml, tess, paddle) = runAllThreeEngines(bitmap, "final", debugSteps)
-        Log.i("OdometerOcr", "Final OCR → ML Kit: \"$ml\" | Tesseract: \"$tess\" | PaddleOCR: \"$paddle\"")
-
-        val rawText = ml
+        val rawText = ml  // keep ML Kit as primary for post-processing (fastest)
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()

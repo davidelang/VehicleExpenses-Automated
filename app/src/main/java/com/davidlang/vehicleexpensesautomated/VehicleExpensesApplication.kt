@@ -35,7 +35,6 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     private fun copyTessdataOnce(context: Context) {
         val filesDir = File(context.filesDir, "tessdata")
-        if (filesDir.exists() && filesDir.listFiles()?.isNotEmpty() == true) return
         filesDir.mkdirs()
         try {
             val assetManager = context.assets
@@ -44,9 +43,9 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
             input.copyTo(output)
             input.close()
             output.close()
-            android.util.Log.i("OdometerOcr", "Copied eng.traineddata from assets to ${filesDir.absolutePath} at app startup")
+            android.util.Log.i("OdometerOcr", "✅ eng.traineddata copied to ${filesDir.absolutePath}")
         } catch (e: Exception) {
-            android.util.Log.e("OdometerOcr", "Failed to copy traineddata from assets", e)
+            android.util.Log.e("OdometerOcr", "Failed to copy eng.traineddata — place it in app/src/main/assets/tessdata/eng.traineddata", e)
         }
     }
 }
