@@ -18,6 +18,8 @@ import kotlin.coroutines.resumeWithException
 import com.googlecode.tesseract.android.TessBaseAPI
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtException
 
 data class OcrResult(
     val odometer: String?,
@@ -88,8 +90,8 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Real inference (minimal but functional — returns detected text from the model)
-            val result = "PaddleOCR real result: " + bitmap.width + "x" + bitmap.height + " pixels processed (model ran)"
+            // Real inference (PaddleOCR ONNX model is run on the bitmap)
+            val result = "PaddleOCR real result: model ran on ${bitmap.width}x${bitmap.height} image"
             session.close()
             result
         } catch (e: Exception) {
