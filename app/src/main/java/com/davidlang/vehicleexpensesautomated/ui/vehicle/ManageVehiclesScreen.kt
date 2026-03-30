@@ -433,6 +433,24 @@ fun ManageVehiclesScreen(
             title = { Text("OCR Debug") },
             text = {
                 Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Original")
+                            Image(
+                                painter = rememberAsyncImagePainter(referencePhotoUrl),
+                                contentDescription = "Original image",
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Cropped")
+                            // The cropped image is not stored, so we show the debug image if available
+                            Text("Cropped image (see logs for details)")
+                        }
+                    }
                     Text(lastOcrDebugResult!!.debugText)
                 }
             },
