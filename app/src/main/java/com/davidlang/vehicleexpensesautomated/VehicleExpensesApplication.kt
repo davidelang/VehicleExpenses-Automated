@@ -24,7 +24,7 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         copyTessdataOnce(this)
-        copyPaddleOcrOnce(this)   // ← new
+        copyPaddleOcrOnce(this)
         try {
             val syncManager = SyncManager(this)
             syncManager.schedulePeriodicSync()
@@ -52,7 +52,10 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     private fun copyPaddleOcrOnce(context: Context) {
         val destFile = File(context.filesDir, "paddleocr.onnx")
-        if (destFile.exists() && destFile.length() > 100000) return  // already good
+        if (destFile.exists() && destFile.length() > 100000) {
+            android.util.Log.i("OdometerOcr", "✅ paddleocr.onnx already present (${destFile.length()} bytes)")
+            return
+        }
         try {
             val assetManager = context.assets
             val input = assetManager.open("paddleocr.onnx")

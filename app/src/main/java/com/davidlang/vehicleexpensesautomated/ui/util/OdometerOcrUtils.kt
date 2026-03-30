@@ -79,15 +79,21 @@ object OdometerOcrUtils {
     }
 
     private fun runPaddleOcr(): String {
+        val modelFile = File("/data/user/0/com.davidlang.vehicleexpensesautomated/files/paddleocr.onnx")
         return try {
-            val env = OrtEnvironment.getEnvironment()
-            val modelFile = File("/data/user/0/com.davidlang.vehicleexpensesautomated/files/paddleocr.onnx")
             if (!modelFile.exists()) {
                 return "(PaddleOCR model not found on device)"
             }
+            Log.i("OdometerOcr", "PaddleOCR model size on device: ${modelFile.length()} bytes")
+            // Print first 64 bytes as hex so we can see what is really there
+            val firstBytes = modelFile.readBytes().take(64).toByteArray()
+            val hex = firstBytes.joinToString(" ") { "%02x".format(it) }
+            Log.i("OdometerOcr", "First 64 bytes of model: $hex")
+
+            val env = OrtEnvironment.getEnvironment()
             val modelBytes = modelFile.readBytes()
             val session = env.createSession(modelBytes)
-            Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully (${modelBytes.size} bytes)")
+            Log.i("OdometerOcr", "✅ PaddleOCR ONNX session created successfully")
             session.close()
             "(PaddleOCR ONNX ran)"
         } catch (e: Exception) {
