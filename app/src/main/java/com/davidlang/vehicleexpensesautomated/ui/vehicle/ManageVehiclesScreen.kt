@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
-    var lastOcrResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
+    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrDebugResult?>(null) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -108,9 +108,10 @@ fun ManageVehiclesScreen(
                         finalPath = tempFile.absolutePath
                     }
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, null)
-                    lastOcrResult = result
+                    lastOcrDebugResult = result
                     showEnlargedCrop = true
 
+                    // Conditional confirmation — only when >1 candidate
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
@@ -257,16 +258,13 @@ fun ManageVehiclesScreen(
         }
     }
 
-    if (showEnlargedCrop && lastOcrResult != null) {
+    if (showEnlargedCrop && lastOcrDebugResult != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
             title = { Text("OCR Debug") },
             text = {
                 Column {
-                    Text("ML Kit: ${lastOcrResult!!.odometer ?: "—"}")
-                    Text("Tesseract: —")
-                    Text("PaddleOCR: —")
-                    Text("Candidates: ${lastOcrResult!!.possibleOdometers.joinToString()}")
+                    Text(lastOcrDebugResult!!.debugText)
                 }
             },
             confirmButton = {
@@ -277,13 +275,14 @@ fun ManageVehiclesScreen(
         )
     }
 
-    if (showOdometerConfirmation && lastOcrResult != null && lastOcrResult!!.possibleOdometers.size > 1) {
+    // Unified conditional confirmation dialog (only if >1 candidate)
+    if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
             title = { Text("Confirm Odometer") },
             text = {
                 Column {
-                    lastOcrResult!!.possibleOdometers.forEach { candidate ->
+                    lastOcrDebugResult!!.possibleOdometers.forEach { candidate ->
                         Button(
                             onClick = {
                                 odometerReading = candidate
