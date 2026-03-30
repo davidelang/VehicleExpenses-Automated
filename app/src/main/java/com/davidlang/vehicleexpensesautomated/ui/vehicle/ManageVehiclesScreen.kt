@@ -59,7 +59,7 @@ fun ManageVehiclesScreen(
     var isEditingOcrArea by remember { mutableStateOf(false) }
     var isEditingLandmark by remember { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
-    var currentDrag by remember { mutableStateOf<Offset?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
@@ -213,18 +213,16 @@ fun ManageVehiclesScreen(
                             detectDragGestures(
                                 onDragStart = { offset ->
                                     dragStart = offset
-                                    currentDrag = offset
+                                    dragOffset = Offset.Zero
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
-                                    currentDrag = dragStart?.let { start ->
-                                        Offset(start.x + dragAmount.x, start.y + dragAmount.y)
-                                    }
+                                    dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
                                 },
                                 onDragEnd = {
                                     val start = dragStart
-                                    val end = currentDrag
-                                    if (start != null && end != null) {
+                                    if (start != null) {
+                                        val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
                                         val left = minOf(start.x, end.x)
                                         val top = minOf(start.y, end.y)
                                         val right = maxOf(start.x, end.x)
@@ -237,7 +235,7 @@ fun ManageVehiclesScreen(
                                         }
                                     }
                                     dragStart = null
-                                    currentDrag = null
+                                    dragOffset = Offset.Zero
                                 }
                             )
                         }
@@ -249,6 +247,7 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
+                        // Saved odometer crop
                         odometerCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Blue,
@@ -257,6 +256,7 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
+                        // Saved landmark crop
                         landmarkCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Green,
@@ -265,11 +265,13 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-                        if (dragStart != null && currentDrag != null && isEditingOcrArea) {
-                            val left = minOf(dragStart!!.x, currentDrag!!.x)
-                            val top = minOf(dragStart!!.y, currentDrag!!.y)
-                            val right = maxOf(dragStart!!.x, currentDrag!!.x)
-                            val bottom = maxOf(dragStart!!.y, currentDrag!!.y)
+                        // Live drag preview (only when editing odometer)
+                        if (dragStart != null && isEditingOcrArea) {
+                            val end = Offset(dragStart!!.x + dragOffset.x, dragStart!!.y + dragOffset.y)
+                            val left = minOf(dragStart!!.x, end.x)
+                            val top = minOf(dragStart!!.y, end.y)
+                            val right = maxOf(dragStart!!.x, end.x)
+                            val bottom = maxOf(dragStart!!.y, end.y)
                             drawRect(
                                 color = Color.Red,
                                 topLeft = Offset(left, top),
