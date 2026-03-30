@@ -2,7 +2,10 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.RectF
+import android.media.ExifInterface
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -11,9 +14,19 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.opencv.android.OpenCVLoader
+import org.opencv.calib3d.Calib3d
+import org.opencv.core.*
+import org.opencv.features2d.BFMatcher
+import org.opencv.features2d.ORB
+import org.opencv.imgcodecs.Imgcodecs
+import org.opencv.imgproc.Imgproc
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import com.googlecode.tesseract.android.TessBaseAPI
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 
 data class OcrResult(
     val odometer: String?,
@@ -25,6 +38,78 @@ data class OcrResult(
 object OdometerOcrUtils {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+    init {
+        if (!OpenCVLoader.initLocal()) {
+            Log.e("OdometerOcr", "OpenCV initialization failed!")
+        } else {
+            Log.i("OdometerOcr", "OpenCV initialized successfully")
+        }
+    }
+
+    // ================================================================
+    // Three-engine OCR helper — logs each engine SEPARATELY
+    // ================================================================
+    private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String, debugSteps: MutableList<Pair<String, String>>): Triple<String, String, String> {
+        // ML Kit
+        val mlResult = try {
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val text: Text = suspendCancellableCoroutine { cont ->
+                recognizer.process(image)
+                    .addOnSuccessListener { cont.resume(it) }
+                    .addOnFailureListener { cont.resumeWithException(it) }
+            }
+            text.text.ifEmpty { "(no text)" }
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "ML Kit failed for $label", e)
+            "(ML Kit error)"
+        }
+        debugSteps.add("$label ML Kit" to mlResult)
+
+        // Tesseract
+        val tessResult = runTesseract(bitmap)
+        debugSteps.add("$label Tesseract" to tessResult)
+
+        // PaddleOCR ONNX
+        val paddleResult = runPaddleOcr(bitmap)
+        debugSteps.add("$label PaddleOCR" to paddleResult)
+
+        return Triple(mlResult, tessResult, paddleResult)
+    }
+
+    private fun runTesseract(bitmap: Bitmap): String {
+        return try {
+            val tess = TessBaseAPI()
+            val tessDataPath = "/data/user/0/com.davidlang.vehicleexpensesautomated/files"
+            if (!tess.init(tessDataPath, "eng")) {
+                tess.clear()
+                return "(Tesseract init failed)"
+            }
+            tess.setImage(bitmap)
+            val result = tess.getUTF8Text()?.trim() ?: "(no text)"
+            tess.clear()
+            result
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "Tesseract failed", e)
+            "(Tesseract error)"
+        }
+    }
+
+    private fun runPaddleOcr(bitmap: Bitmap): String {
+        return try {
+            val env = OrtEnvironment.getEnvironment()
+            val asset = javaClass.classLoader?.getResourceAsStream("paddleocr.onnx")
+                ?: return "(PaddleOCR model not found in assets)"
+            val modelBytes = asset.readBytes()
+            val session = env.createSession(modelBytes)
+            Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
+            session.close()
+            "(PaddleOCR ONNX ran — model placeholder)"
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "PaddleOCR failed", e)
+            "(PaddleOCR error: ${e.message})"
+        }
+    }
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
@@ -56,7 +141,6 @@ object OdometerOcrUtils {
                 return@withContext OcrResult(null, emptyList(), null, null)
             }
 
-            // More generous padding for real dashboard photos (25% + larger minimum)
             val padW = (cropW * 0.25f).toInt().coerceAtLeast(120)
             val padH = (cropH * 0.25f).toInt().coerceAtLeast(60)
 
@@ -77,20 +161,40 @@ object OdometerOcrUtils {
                 Log.d("OdometerOcr", "Using cropped region for OCR")
             } else {
                 Log.w("OdometerOcr", "Final region too small (${finalW}x${finalH}) — falling back to full image")
-                // keep full bitmap
             }
         } else {
             Log.d("OdometerOcr", "No crop - using full image")
         }
 
-        val image = InputImage.fromBitmap(bitmap, 0)
+        val debugSteps = mutableListOf<Pair<String, String>>()
 
+        // === FINAL OCR — three engines separately ===
+        val (finalMl, finalTess, finalPaddle) = runAllThreeEngines(bitmap, "final", debugSteps)
+        Log.i("OdometerOcr", "Final OCR → ML Kit: \"$finalMl\" | Tesseract: \"$finalTess\" | PaddleOCR: \"$finalPaddle\"")
+
+        val rawText = finalMl
+        val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
+
+        val odoRegex = "\\b\\d{4,8}\\b".toRegex()
+        val possibleOdometers = mutableListOf<String>()
+        var odometer: String? = null
+        odoRegex.findAll(cleanText).forEach { match ->
+            val value = match.value
+            possibleOdometers.add(value)
+            if (odometer == null || value.length > (odometer?.length ?: 0)) odometer = value
+        }
+
+        val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
+        val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
+        var gallons: String? = null
+        var cost: String? = null
+
+        val image = InputImage.fromBitmap(bitmap, 0)
         val visionText: Text = try {
             suspendCancellableCoroutine { continuation ->
                 recognizer.process(image)
                     .addOnSuccessListener { continuation.resume(it) }
                     .addOnFailureListener { e -> continuation.resumeWithException(e) }
-                    .addOnCanceledListener { continuation.cancel() }
             }
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit error", e)
@@ -98,32 +202,15 @@ object OdometerOcrUtils {
             return@withContext OcrResult(null, emptyList(), null, null)
         }
 
-        val odoRegex = "\\b\\d{4,8}\\b".toRegex()
-        val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
-        val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
-
-        val possibleOdometers = mutableListOf<String>()
-        var odometer: String? = null
-        var gallons: String? = null
-        var cost: String? = null
-
         visionText.textBlocks.forEach { block ->
             val blockText = block.text
-            odoRegex.findAll(blockText).forEach { match ->
-                val value = match.value
-                possibleOdometers.add(value)
-                if (odometer == null || value.length > (odometer?.length ?: 0)) {
-                    odometer = value
-                }
-            }
             gallonsRegex.find(blockText)?.groupValues?.get(1)?.let { gallons = it }
             costRegex.find(blockText)?.groupValues?.get(1)?.let { cost = it }
         }
 
         bitmap.recycle()
 
-        Log.d("OdometerOcr", "OCR complete - blocks: ${visionText.textBlocks.size}, odometer: $odometer, candidates: ${possibleOdometers.size}")
-
+        Log.d("OdometerOcr", "OCR complete - blocks: ${visionText.textBlocks.size}, odometer: $odometer")
         OcrResult(
             odometer = odometer,
             possibleOdometers = possibleOdometers.distinct().sortedByDescending { it.length },
