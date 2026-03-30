@@ -60,12 +60,11 @@ fun ManageVehiclesScreen(
     var isEditingLandmark by remember { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
-    var displayedSize by remember { mutableStateOf(Offset.Zero) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, displayedSize=$displayedSize")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -212,14 +211,10 @@ fun ManageVehiclesScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (referencePhotoUrl != null) {
-                Box(
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(220.dp)
-                        .onSizeChanged { size ->
-                            displayedSize = Offset(size.width.toFloat(), size.height.toFloat())
-                            Log.d("CropDebug", "Box size changed to $displayedSize")
-                        }
                         .pointerInput(Unit) {
                             detectDragGestures(
                                 onDragStart = { offset ->
@@ -233,12 +228,12 @@ fun ManageVehiclesScreen(
                                 },
                                 onDragEnd = {
                                     val start = dragStart
-                                    if (start != null && displayedSize.x > 0 && displayedSize.y > 0) {
+                                    if (start != null) {
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        val left = minOf(start.x, end.x) / displayedSize.x
-                                        val top = minOf(start.y, end.y) / displayedSize.y
-                                        val right = maxOf(start.x, end.x) / displayedSize.x
-                                        val bottom = maxOf(start.y, end.y) / displayedSize.y
+                                        val left = minOf(start.x, end.x) / constraints.maxWidth
+                                        val top = minOf(start.y, end.y) / constraints.maxHeight
+                                        val right = maxOf(start.x, end.x) / constraints.maxWidth
+                                        val bottom = maxOf(start.y, end.y) / constraints.maxHeight
                                         val newRect = Rect(left, top, right, bottom)
                                         Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
                                         if (isEditingOcrArea) {
@@ -280,10 +275,10 @@ fun ManageVehiclesScreen(
                         }
                         if (dragStart != null && isEditingOcrArea) {
                             val end = Offset(dragStart!!.x + dragOffset.x, dragStart!!.y + dragOffset.y)
-                            val left = minOf(dragStart!!.x, end.x) / displayedSize.x * size.width
-                            val top = minOf(dragStart!!.y, end.y) / displayedSize.y * size.height
-                            val right = maxOf(dragStart!!.x, end.x) / displayedSize.x * size.width
-                            val bottom = maxOf(dragStart!!.y, end.y) / displayedSize.y * size.height
+                            val left = minOf(dragStart!!.x, end.x)
+                            val top = minOf(dragStart!!.y, end.y)
+                            val right = maxOf(dragStart!!.x, end.x)
+                            val bottom = maxOf(dragStart!!.y, end.y)
                             drawRect(
                                 color = Color.Red,
                                 topLeft = Offset(left, top),
