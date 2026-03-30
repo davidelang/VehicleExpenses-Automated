@@ -23,8 +23,7 @@ data class OcrResult(
     val odometer: String?,
     val possibleOdometers: List<String>,
     val gallons: String?,
-    val cost: String?,
-    val debugText: String
+    val cost: String?
 )
 
 object OdometerOcrUtils {
@@ -97,9 +96,9 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found")
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null)
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap")
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
 
         // Always treat as unknown photo (full pipeline) — even from Manage Vehicles
         if (cropRect != null) {
@@ -146,7 +145,7 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
-            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error")
+            return@withContext OcrResult(null, emptyList(), null, null)
         }
 
         visionText.textBlocks.forEach { block ->
@@ -157,15 +156,6 @@ object OdometerOcrUtils {
 
         bitmap.recycle()
 
-        val debugText = buildString {
-            appendLine("=== OCR DEBUG ===")
-            appendLine("ML Kit: $ml")
-            appendLine("Tesseract: $tess")
-            appendLine("PaddleOCR: $paddle")
-            appendLine("Final odometer: ${odometer ?: "NONE"}")
-            appendLine("Candidates: ${possibleOdometers.joinToString()}")
-        }
-
-        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost, debugText)
+        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost)
     }
 }
