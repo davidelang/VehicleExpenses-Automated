@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
-import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -62,7 +61,6 @@ fun ManageVehiclesScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDrag by remember { mutableStateOf<Offset?>(null) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
@@ -111,7 +109,8 @@ fun ManageVehiclesScreen(
                         }
                         finalPath = tempFile.absolutePath
                     }
-                    val result = OdometerOcrUtils.extractFromPhoto(finalPath, null)
+                    val cropRect = if (isEditingOcrArea) odometerCropRect else null
+                    val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
 
@@ -248,26 +247,26 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        // Odometer crop box
+                        // Saved odometer crop
                         odometerCropRect?.let { rect ->
                             drawRect(
-                                color = if (isEditingOcrArea) Color.Red else Color.Blue,
+                                color = Color.Blue,
                                 topLeft = Offset(rect.left, rect.top),
                                 size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Landmark crop box
+                        // Saved landmark crop
                         landmarkCropRect?.let { rect ->
                             drawRect(
-                                color = if (isEditingLandmark) Color.Red else Color.Green,
+                                color = Color.Green,
                                 topLeft = Offset(rect.left, rect.top),
                                 size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Live drag preview (dashed red box)
-                        if (dragStart != null && currentDrag != null && (isEditingOcrArea || isEditingLandmark)) {
+                        // Live drag preview (only when editing odometer)
+                        if (dragStart != null && currentDrag != null && isEditingOcrArea) {
                             val left = minOf(dragStart!!.x, currentDrag!!.x)
                             val top = minOf(dragStart!!.y, currentDrag!!.y)
                             val right = maxOf(dragStart!!.x, currentDrag!!.x)
@@ -306,22 +305,14 @@ fun ManageVehiclesScreen(
                 }
             }
 
-            // Clear buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            // Clear odometer button (always visible when odometer crop exists)
+            if (odometerCropRect != null) {
                 Button(
                     onClick = { odometerCropRect = null },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
-                    Text("Clear Odometer Crop")
-                }
-                Button(
-                    onClick = { landmarkCropRect = null },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Clear Landmark Crop")
+                    Text("Clear Odometer Crop Box")
                 }
             }
 

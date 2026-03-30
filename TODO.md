@@ -12,6 +12,10 @@
   - ssh to personal server
   - http to personal server (including cgi file to receive, save, and retrieve files)
   - others (is there a library that exposes all the various cloud storage options?)
+- Landmark crop box UI improvements:
+  - Change button text to "Highlight other parts of the image that may change"
+  - Allow clearing all boxes, clearing the last box, saving the current box (which starts a new box)
+  - When finished, the landmark area needs to be saved
 ## Completed (as of this build)
 - Automatic OCR on every photo capture (no extra clicks) — now includes gallons + cost from pump/receipt photos
 - Camera-first flow for new photos
@@ -26,4 +30,4 @@
 - Advanced reports and charts.
 - UI polish for dark mode / tablet / ensure it works on all size/resolution screens.
 - Preferences screen (OCR thresholds, storage backends, sync settings, etc.) available from every screen via hamburger menu.
-Last updated: 2026-03-24
+Last updated: 2026-03-30
