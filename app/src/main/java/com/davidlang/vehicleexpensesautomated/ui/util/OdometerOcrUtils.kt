@@ -47,11 +47,7 @@ object OdometerOcrUtils {
         }
     }
 
-    // ================================================================
-    // Three-engine OCR helper — logs each engine SEPARATELY
-    // ================================================================
     private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String, debugSteps: MutableList<Pair<String, String>>): Triple<String, String, String> {
-        // ML Kit
         val mlResult = try {
             val image = InputImage.fromBitmap(bitmap, 0)
             val text: Text = suspendCancellableCoroutine { cont ->
@@ -66,11 +62,9 @@ object OdometerOcrUtils {
         }
         debugSteps.add("$label ML Kit" to mlResult)
 
-        // Tesseract
         val tessResult = runTesseract(bitmap)
         debugSteps.add("$label Tesseract" to tessResult)
 
-        // PaddleOCR ONNX
         val paddleResult = runPaddleOcr(bitmap)
         debugSteps.add("$label PaddleOCR" to paddleResult)
 
@@ -113,66 +107,31 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) {
-            Log.w("OdometerOcr", "Photo file does not exist: $photoPath")
-            return@withContext OcrResult(null, emptyList(), null, null)
-        }
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null)
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: run {
-            Log.w("OdometerOcr", "Failed to decode bitmap from $photoPath")
-            return@withContext OcrResult(null, emptyList(), null, null)
-        }
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
 
-        if (cropRect != null && cropRect.width() > 0 && cropRect.height() > 0) {
+        if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
-
             val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
             val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
             val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
             val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
 
-            var cropW = right - left
-            var cropH = bottom - top
-
-            if (cropW <= 0 || cropH <= 0) {
-                Log.w("OdometerOcr", "Invalid crop after scaling: ${cropW}x${cropH}")
-                bitmap.recycle()
-                return@withContext OcrResult(null, emptyList(), null, null)
-            }
-
-            val padW = (cropW * 0.25f).toInt().coerceAtLeast(120)
-            val padH = (cropH * 0.25f).toInt().coerceAtLeast(60)
-
-            val paddedLeft = (left - padW).coerceAtLeast(0)
-            val paddedTop = (top - padH).coerceAtLeast(0)
-            val paddedRight = (right + padW).coerceAtMost(origW)
-            val paddedBottom = (bottom + padH).coerceAtMost(origH)
-
-            val finalW = paddedRight - paddedLeft
-            val finalH = paddedBottom - paddedTop
-
-            Log.d("OdometerOcr", "Crop applied - normalized: $cropRect | original: ${origW}x${origH} | raw crop: ${cropW}x${cropH} | final padded: ${finalW}x${finalH} (pad ${padW}x${padH})")
-
-            if (finalW >= 100 && finalH >= 50) {
-                val cropped = Bitmap.createBitmap(bitmap, paddedLeft, paddedTop, finalW, finalH)
+            if (right > left && bottom > top) {
+                val cropped = Bitmap.createBitmap(bitmap, left, top, right-left, bottom-top)
                 bitmap.recycle()
                 bitmap = cropped
-                Log.d("OdometerOcr", "Using cropped region for OCR")
-            } else {
-                Log.w("OdometerOcr", "Final region too small (${finalW}x${finalH}) — falling back to full image")
             }
-        } else {
-            Log.d("OdometerOcr", "No crop - using full image")
         }
 
         val debugSteps = mutableListOf<Pair<String, String>>()
 
-        // === FINAL OCR — three engines separately ===
-        val (finalMl, finalTess, finalPaddle) = runAllThreeEngines(bitmap, "final", debugSteps)
-        Log.i("OdometerOcr", "Final OCR → ML Kit: \"$finalMl\" | Tesseract: \"$finalTess\" | PaddleOCR: \"$finalPaddle\"")
+        val (ml, tess, paddle) = runAllThreeEngines(bitmap, "final", debugSteps)
+        Log.i("OdometerOcr", "Final OCR → ML Kit: \"$ml\" | Tesseract: \"$tess\" | PaddleOCR: \"$paddle\"")
 
-        val rawText = finalMl
+        val rawText = ml
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
@@ -197,7 +156,6 @@ object OdometerOcrUtils {
                     .addOnFailureListener { e -> continuation.resumeWithException(e) }
             }
         } catch (e: Exception) {
-            Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
             return@withContext OcrResult(null, emptyList(), null, null)
         }
@@ -210,12 +168,6 @@ object OdometerOcrUtils {
 
         bitmap.recycle()
 
-        Log.d("OdometerOcr", "OCR complete - blocks: ${visionText.textBlocks.size}, odometer: $odometer")
-        OcrResult(
-            odometer = odometer,
-            possibleOdometers = possibleOdometers.distinct().sortedByDescending { it.length },
-            gallons = gallons,
-            cost = cost
-        )
+        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost)
     }
 }
