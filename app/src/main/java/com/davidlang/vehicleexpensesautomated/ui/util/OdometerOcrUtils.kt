@@ -86,7 +86,7 @@ object OdometerOcrUtils {
             val env = OrtEnvironment.getEnvironment()
             val modelBytes = modelFile.readBytes()
             val session = env.createSession(modelBytes)
-            Log.i("OdometerOcr", "✅ PaddleOCR ONNX session created successfully")
+            Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
             session.close()
             "(PaddleOCR ONNX ran)"
         } catch (e: Exception) {
