@@ -85,7 +85,8 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.4")
     // OpenCV for dashboard image alignment
     implementation("org.opencv:opencv:4.10.0")
-    // === Two additional OCR engines ===
+
+    // === Two additional OCR engines (now correctly inside dependencies block) ===
     implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 }
