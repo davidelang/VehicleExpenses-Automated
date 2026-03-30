@@ -86,9 +86,7 @@ dependencies {
     // OpenCV for dashboard image alignment
     implementation("org.opencv:opencv:4.10.0")
 
-    // === RESEARCH OCR LIBRARIES (exact versions from commit 9010356) ===
-    // Tesseract OCR (excellent for 7-segment numbers) - latest stable 4.9.0
+    // === Two additional OCR engines (exact versions from commit 9010356) ===
     implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
-    // PaddleOCR via ONNX Runtime (modern deep-learning OCR)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 }
