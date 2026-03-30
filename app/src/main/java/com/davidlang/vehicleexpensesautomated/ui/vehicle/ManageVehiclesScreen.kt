@@ -137,7 +137,6 @@ fun ManageVehiclesScreen(
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Add New Vehicle button
         Button(
             onClick = {
                 selectedVehicleId = null
@@ -209,11 +208,36 @@ fun ManageVehiclesScreen(
                         .fillMaxWidth()
                         .height(220.dp)
                         .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                if (dragStart == null) dragStart = change.position
-                                currentDrag = change.position
-                            }
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    dragStart = offset
+                                    currentDrag = offset
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    currentDrag = dragStart?.let { start ->
+                                        Offset(start.x + dragAmount.x, start.y + dragAmount.y)
+                                    }
+                                },
+                                onDragEnd = {
+                                    val start = dragStart
+                                    val end = currentDrag
+                                    if (start != null && end != null) {
+                                        val left = minOf(start.x, end.x)
+                                        val top = minOf(start.y, end.y)
+                                        val right = maxOf(start.x, end.x)
+                                        val bottom = maxOf(start.y, end.y)
+                                        val newRect = Rect(left, top, right, bottom)
+                                        if (isEditingOcrArea) {
+                                            odometerCropRect = newRect
+                                        } else if (isEditingLandmark) {
+                                            landmarkCropRect = newRect
+                                        }
+                                    }
+                                    dragStart = null
+                                    currentDrag = null
+                                }
+                            )
                         }
                 ) {
                     Image(
@@ -223,15 +247,35 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        if (dragStart != null && currentDrag != null) {
+                        // Draw odometer crop box
+                        odometerCropRect?.let { rect ->
+                            drawRect(
+                                color = if (isEditingOcrArea) Color.Red else Color.Blue,
+                                topLeft = Offset(rect.left, rect.top),
+                                size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
+                                style = Stroke(width = 4f)
+                            )
+                        }
+                        // Draw landmark crop box
+                        landmarkCropRect?.let { rect ->
+                            drawRect(
+                                color = if (isEditingLandmark) Color.Red else Color.Green,
+                                topLeft = Offset(rect.left, rect.top),
+                                size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
+                                style = Stroke(width = 4f)
+                            )
+                        }
+                        // Live drag preview
+                        if (dragStart != null && currentDrag != null && (isEditingOcrArea || isEditingLandmark)) {
+                            val left = minOf(dragStart!!.x, currentDrag!!.x)
+                            val top = minOf(dragStart!!.y, currentDrag!!.y)
+                            val right = maxOf(dragStart!!.x, currentDrag!!.x)
+                            val bottom = maxOf(dragStart!!.y, currentDrag!!.y)
                             drawRect(
                                 color = Color.Red,
-                                topLeft = dragStart!!,
-                                size = androidx.compose.ui.geometry.Size(
-                                    currentDrag!!.x - dragStart!!.x,
-                                    currentDrag!!.y - dragStart!!.y
-                                ),
-                                style = Stroke(width = 4f)
+                                topLeft = Offset(left, top),
+                                size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+                                style = Stroke(width = 4f, dashPathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f))
                             )
                         }
                     }
@@ -240,7 +284,6 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Crop management buttons (restored from pre-unification UI)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -357,7 +400,6 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // OCR debug dialog
     if (showEnlargedCrop && lastOcrDebugResult != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
@@ -375,7 +417,6 @@ fun ManageVehiclesScreen(
         )
     }
 
-    // Odometer confirmation dialog
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
