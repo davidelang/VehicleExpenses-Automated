@@ -5,6 +5,7 @@ git reset --hard HEAD
 git clean -fdx
 echo "sdk.dir=$HOME/Android/Sdk" > local.properties
 
+
 echo "🧨 SUPER-AGGRESSIVE FULL CACHE NUKE"
 echo "=================================="
 
@@ -17,15 +18,13 @@ pkill -9 -f gradle 2>/dev/null || true
 pkill -9 -f ksp 2>/dev/null || true
 pkill -9 -f kotlin 2>/dev/null || true
 
+
 echo "→ Deleting ALL caches..."
-rm -rf .gradle/
-rm -rf build/
-rm -rf */build/
-rm -rf ~/.gradle/caches/
-rm -rf ~/.gradle/daemon/
-rm -rf ~/.gradle/build-cache/
-rm -rf ~/.gradle/kotlin-dsl/
-rm -rf ~/.gradle/.cache/
+rm -rf .gradle/ app/build/ build/ ~/.gradle/caches/ ~/.gradle/daemon/ ~/.gradle/build-cache/ ~/.gradle/kotlin-dsl/ ~/.gradle/.cache/ .kotlin/ app/.kotlin/
+
+# Extra KSP-specific directories the normal nuke misses
+rm -rf app/build/generated/ksp/ app/build/tmp/ksp/ app/build/intermediates/ksp/ app/build/ksp/ .ksp/
+
 
 echo "✅ Super nuke complete."
 echo "→ Starting fresh build with full dependency refresh..."
