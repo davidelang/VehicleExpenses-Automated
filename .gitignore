@@ -61,3 +61,7 @@ app/src/main/res/raw/*
 **/wrapper/dists/
 
 
+
+# === Explicitly allow the committed OCR model files ===
+!app/src/main/assets/tessdata/eng.traineddata
+!app/src/main/assets/paddleocr.onnx
