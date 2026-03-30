@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -109,7 +110,9 @@ fun ManageVehiclesScreen(
                         }
                         finalPath = tempFile.absolutePath
                     }
-                    val cropRect = if (isEditingOcrArea) odometerCropRect else null
+                    val cropRect = odometerCropRect?.let { r ->
+                        RectF(r.left, r.top, r.right, r.bottom)
+                    }
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
@@ -305,7 +308,6 @@ fun ManageVehiclesScreen(
                 }
             }
 
-            // Clear odometer button (always visible when odometer crop exists)
             if (odometerCropRect != null) {
                 Button(
                     onClick = { odometerCropRect = null },
@@ -378,7 +380,7 @@ fun ManageVehiclesScreen(
                             year = year.toIntOrNull(),
                             licensePlate = licensePlate,
                             referenceDashPhotoUrl = referencePhotoUrl,
-                            odometerCropRect = odometerCropRect,
+                            odometerCropRect = odometerCropRect?.let { r -> RectF(r.left, r.top, r.right, r.bottom) },
                             initialOdometer = odometerReading.toIntOrNull() ?: 0
                         )
                         Toast.makeText(context, "New vehicle created", Toast.LENGTH_SHORT).show()
