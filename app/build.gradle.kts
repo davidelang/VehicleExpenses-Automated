@@ -44,6 +44,15 @@ android {
     }
 }
 
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }  // ← required for Tesseract
+    }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
@@ -86,7 +95,7 @@ dependencies {
     // OpenCV for dashboard image alignment
     implementation("org.opencv:opencv:4.10.0")
 
-    // === Two additional OCR engines (now correctly inside dependencies block) ===
+    // === Two additional OCR engines ===
     implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 }
