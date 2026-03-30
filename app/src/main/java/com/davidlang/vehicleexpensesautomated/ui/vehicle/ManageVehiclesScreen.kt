@@ -60,11 +60,12 @@ fun ManageVehiclesScreen(
     var isEditingLandmark by remember { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var displayedSize by remember { mutableStateOf(Offset.Zero) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, displayedSize=$displayedSize")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -215,6 +216,10 @@ fun ManageVehiclesScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(220.dp)
+                        .onSizeChanged { size ->
+                            displayedSize = Offset(size.width.toFloat(), size.height.toFloat())
+                            Log.d("CropDebug", "Box size changed to $displayedSize")
+                        }
                         .pointerInput(Unit) {
                             detectDragGestures(
                                 onDragStart = { offset ->
@@ -228,20 +233,20 @@ fun ManageVehiclesScreen(
                                 },
                                 onDragEnd = {
                                     val start = dragStart
-                                    if (start != null) {
+                                    if (start != null && displayedSize.x > 0 && displayedSize.y > 0) {
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        val left = minOf(start.x, end.x)
-                                        val top = minOf(start.y, end.y)
-                                        val right = maxOf(start.x, end.x)
-                                        val bottom = maxOf(start.y, end.y)
+                                        val left = minOf(start.x, end.x) / displayedSize.x
+                                        val top = minOf(start.y, end.y) / displayedSize.y
+                                        val right = maxOf(start.x, end.x) / displayedSize.x
+                                        val bottom = maxOf(start.y, end.y) / displayedSize.y
                                         val newRect = Rect(left, top, right, bottom)
-                                        Log.d("CropDebug", "Drag END — calculated Rect=$newRect")
+                                        Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
-                                            Log.d("CropDebug", "✅ Committed to odometerCropRect=$odometerCropRect")
+                                            Log.d("CropDebug", "✅ Committed normalized odometerCropRect=$odometerCropRect")
                                         } else if (isEditingLandmark) {
                                             landmarkCropRect = newRect
-                                            Log.d("CropDebug", "✅ Committed to landmarkCropRect=$landmarkCropRect")
+                                            Log.d("CropDebug", "✅ Committed normalized landmarkCropRect=$landmarkCropRect")
                                         }
                                     }
                                     dragStart = null
@@ -260,25 +265,25 @@ fun ManageVehiclesScreen(
                         odometerCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Blue,
-                                topLeft = Offset(rect.left, rect.top),
-                                size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
+                                topLeft = Offset(rect.left * size.width, rect.top * size.height),
+                                size = androidx.compose.ui.geometry.Size(rect.width * size.width, rect.height * size.height),
                                 style = Stroke(width = 4f)
                             )
                         }
                         landmarkCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Green,
-                                topLeft = Offset(rect.left, rect.top),
-                                size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
+                                topLeft = Offset(rect.left * size.width, rect.top * size.height),
+                                size = androidx.compose.ui.geometry.Size(rect.width * size.width, rect.height * size.height),
                                 style = Stroke(width = 4f)
                             )
                         }
                         if (dragStart != null && isEditingOcrArea) {
                             val end = Offset(dragStart!!.x + dragOffset.x, dragStart!!.y + dragOffset.y)
-                            val left = minOf(dragStart!!.x, end.x)
-                            val top = minOf(dragStart!!.y, end.y)
-                            val right = maxOf(dragStart!!.x, end.x)
-                            val bottom = maxOf(dragStart!!.y, end.y)
+                            val left = minOf(dragStart!!.x, end.x) / displayedSize.x * size.width
+                            val top = minOf(dragStart!!.y, end.y) / displayedSize.y * size.height
+                            val right = maxOf(dragStart!!.x, end.x) / displayedSize.x * size.width
+                            val bottom = maxOf(dragStart!!.y, end.y) / displayedSize.y * size.height
                             drawRect(
                                 color = Color.Red,
                                 topLeft = Offset(left, top),
