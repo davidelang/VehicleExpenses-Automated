@@ -240,6 +240,27 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Crop management buttons (restored from pre-unification UI)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingLandmark = false },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (isEditingOcrArea) "Done Editing Odometer" else "Edit Odometer Crop")
+                }
+                Button(
+                    onClick = { isEditingLandmark = !isEditingLandmark; isEditingOcrArea = false },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (isEditingLandmark) "Done Editing Landmark" else "Edit Landmark Crop")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth()) {
                 Text("Try OCR Now")
             }
@@ -336,6 +357,7 @@ fun ManageVehiclesScreen(
         }
     }
 
+    // OCR debug dialog
     if (showEnlargedCrop && lastOcrDebugResult != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
@@ -353,6 +375,7 @@ fun ManageVehiclesScreen(
         )
     }
 
+    // Odometer confirmation dialog
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
