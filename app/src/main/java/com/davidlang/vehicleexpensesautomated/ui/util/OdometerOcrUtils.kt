@@ -23,7 +23,8 @@ data class OcrResult(
     val odometer: String?,
     val possibleOdometers: List<String>,
     val gallons: String?,
-    val cost: String?
+    val cost: String?,
+    val debugText: String   // added so both screens can show the same debug dialog
 )
 
 object OdometerOcrUtils {
@@ -96,9 +97,9 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null)
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found")
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap")
 
         // Always treat as unknown photo (full pipeline) — even from Manage Vehicles
         if (cropRect != null) {
@@ -145,7 +146,7 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
-            return@withContext OcrResult(null, emptyList(), null, null)
+            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error")
         }
 
         visionText.textBlocks.forEach { block ->
@@ -156,6 +157,15 @@ object OdometerOcrUtils {
 
         bitmap.recycle()
 
-        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost)
+        val debugText = buildString {
+            appendLine("=== OCR DEBUG ===")
+            appendLine("ML Kit: $ml")
+            appendLine("Tesseract: $tess")
+            appendLine("PaddleOCR: $paddle")
+            appendLine("Final odometer: ${odometer ?: "NONE"}")
+            appendLine("Candidates: ${possibleOdometers.joinToString()}")
+        }
+
+        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost, debugText)
     }
 }
