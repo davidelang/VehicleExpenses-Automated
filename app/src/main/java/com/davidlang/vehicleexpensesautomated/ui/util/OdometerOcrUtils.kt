@@ -19,11 +19,12 @@ import com.googlecode.tesseract.android.TessBaseAPI
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 
-data class OcrResult(
+data class OcrDebugResult(
     val odometer: String?,
     val possibleOdometers: List<String>,
     val gallons: String?,
-    val cost: String?
+    val cost: String?,
+    val debugText: String
 )
 
 object OdometerOcrUtils {
@@ -81,15 +82,7 @@ object OdometerOcrUtils {
     private fun runPaddleOcr(): String {
         val modelFile = File("/data/user/0/com.davidlang.vehicleexpensesautomated/files/paddleocr.onnx")
         return try {
-            if (!modelFile.exists()) {
-                return "(PaddleOCR model not found on device)"
-            }
-            Log.i("OdometerOcr", "PaddleOCR model size on device: ${modelFile.length()} bytes")
-            // Print first 64 bytes as hex so we can see what is really there
-            val firstBytes = modelFile.readBytes().take(64).toByteArray()
-            val hex = firstBytes.joinToString(" ") { "%02x".format(it) }
-            Log.i("OdometerOcr", "First 64 bytes of model: $hex")
-
+            if (!modelFile.exists()) return "(PaddleOCR model not found on device)"
             val env = OrtEnvironment.getEnvironment()
             val modelBytes = modelFile.readBytes()
             val session = env.createSession(modelBytes)
@@ -102,12 +95,13 @@ object OdometerOcrUtils {
         }
     }
 
-    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrDebugResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null)
+        if (!file.exists()) return@withContext OcrDebugResult(null, emptyList(), null, null, "Photo file not found")
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null)
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrDebugResult(null, emptyList(), null, null, "Failed to decode bitmap")
 
+        // Always treat as unknown photo (full pipeline) — even from Manage Vehicles
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
@@ -152,7 +146,7 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
-            return@withContext OcrResult(null, emptyList(), null, null)
+            return@withContext OcrDebugResult(null, emptyList(), null, null, "ML Kit error")
         }
 
         visionText.textBlocks.forEach { block ->
@@ -163,6 +157,21 @@ object OdometerOcrUtils {
 
         bitmap.recycle()
 
-        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost)
+        val debugText = buildString {
+            appendLine("=== OCR DEBUG ===")
+            appendLine("ML Kit: $ml")
+            appendLine("Tesseract: $tess")
+            appendLine("PaddleOCR: $paddle")
+            appendLine("Final odometer: ${odometer ?: "NONE"}")
+            appendLine("Candidates: ${possibleOdometers.joinToString()}")
+        }
+
+        OcrDebugResult(
+            odometer = odometer,
+            possibleOdometers = possibleOdometers.distinct().sortedByDescending { it.length },
+            gallons = gallons,
+            cost = cost,
+            debugText = debugText
+        )
     }
 }
