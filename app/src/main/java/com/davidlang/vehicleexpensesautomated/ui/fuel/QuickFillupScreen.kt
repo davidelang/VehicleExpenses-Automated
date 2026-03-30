@@ -72,10 +72,8 @@ fun QuickFillupScreen(navController: NavHostController) {
     var lastCropDebug by remember { mutableStateOf("No crop info yet") }
     var lastOcrResult by remember { mutableStateOf("No OCR run yet") }
     var lastOpenCVDebug by remember { mutableStateOf("OpenCV: N/A") }
-    var alignedImagePath by remember { mutableStateOf<String?>(null) }
-    var ocrInputImagePath by remember { mutableStateOf<String?>(null) }
     var showAlignedDialog by remember { mutableStateOf(false) }
-    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrDebugResult?>(null) }
+    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
@@ -136,7 +134,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { alignedImagePath = it.first; ocrInputImagePath = it.second; showAlignedDialog = true }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -148,10 +146,6 @@ fun QuickFillupScreen(navController: NavHostController) {
                         lastCropDebug = lastCropDebug,
                         lastOcrResult = lastOcrResult,
                         lastOpenCVDebug = lastOpenCVDebug,
-                        alignedImagePath = alignedImagePath,
-                        ocrInputImagePath = ocrInputImagePath,
-                        onShowAlignedDialog = { showAlignedDialog = true },
-                        onDismissAlignedDialog = { showAlignedDialog = false },
                         dropdownExpanded = dropdownExpanded,
                         onDropdownExpandedChange = { dropdownExpanded = it }
                     )
@@ -190,7 +184,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { alignedImagePath = it.first; ocrInputImagePath = it.second; showAlignedDialog = true }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -202,10 +196,6 @@ fun QuickFillupScreen(navController: NavHostController) {
                         lastCropDebug = lastCropDebug,
                         lastOcrResult = lastOcrResult,
                         lastOpenCVDebug = lastOpenCVDebug,
-                        alignedImagePath = alignedImagePath,
-                        ocrInputImagePath = ocrInputImagePath,
-                        onShowAlignedDialog = { showAlignedDialog = true },
-                        onDismissAlignedDialog = { showAlignedDialog = false },
                         dropdownExpanded = dropdownExpanded,
                         onDropdownExpandedChange = { dropdownExpanded = it }
                     )
@@ -231,7 +221,7 @@ fun QuickFillupScreen(navController: NavHostController) {
         )
     }
 
-    // Unified confirmation dialog (only shown if multiple candidates)
+    // Unified conditional confirmation dialog (only if >1 candidate)
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
@@ -285,10 +275,6 @@ private fun ControlsContent(
     lastCropDebug: String,
     lastOcrResult: String,
     lastOpenCVDebug: String,
-    alignedImagePath: String?,
-    ocrInputImagePath: String?,
-    onShowAlignedDialog: () -> Unit,
-    onDismissAlignedDialog: () -> Unit,
     dropdownExpanded: Boolean,
     onDropdownExpandedChange: (Boolean) -> Unit
 ) {
@@ -357,7 +343,6 @@ private suspend fun processPhoto(
     updateCropDebug: (String) -> Unit,
     updateOcrResult: (String) -> Unit,
     updateOpenCVDebug: (String) -> Unit,
-    updateAlignedImages: (Pair<String?, String?>) -> Unit,
     updateOdometer: (Int) -> Unit,
     updatePossibleOdometers: (List<String>) -> Unit,
     updateShowConfirmation: (Boolean) -> Unit,
@@ -370,7 +355,6 @@ private suspend fun processPhoto(
     updatePossibleOdometers(result.possibleOdometers)
     updateGallons(result.gallons?.toDoubleOrNull() ?: 0.0)
     updateCost(result.cost?.toDoubleOrNull() ?: 0.0)
-    updateAlignedImages(Pair(result.alignedImagePath, result.ocrInputImagePath))
     updateCropDebug("Crop sent to OCR")
     updateOpenCVDebug("OpenCV completed")
 }
@@ -386,7 +370,6 @@ private fun captureDashPhoto(
     updateCropDebug: (String) -> Unit,
     updateOcrResult: (String) -> Unit,
     updateOpenCVDebug: (String) -> Unit,
-    updateAlignedImages: (Pair<String?, String?>) -> Unit,
     updateOdometer: (Int) -> Unit,
     updatePossibleOdometers: (List<String>) -> Unit,
     updateShowConfirmation: (Boolean) -> Unit,
@@ -404,7 +387,7 @@ private fun captureDashPhoto(
             }
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 scope.launch {
-                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateAlignedImages, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost)
+                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost)
                 }
             }
         }
