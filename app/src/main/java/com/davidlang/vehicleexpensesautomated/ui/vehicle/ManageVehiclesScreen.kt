@@ -216,6 +216,10 @@ fun ManageVehiclesScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(220.dp)
+                        .onSizeChanged { size ->
+                            imageSize = Offset(size.width.toFloat(), size.height.toFloat())
+                            Log.d("CropDebug", "Image size updated to $imageSize")
+                        }
                         .pointerInput(Unit) {
                             detectDragGestures(
                                 onDragStart = { offset ->
@@ -229,12 +233,12 @@ fun ManageVehiclesScreen(
                                 },
                                 onDragEnd = {
                                     val start = dragStart
-                                    if (start != null) {
+                                    if (start != null && imageSize.x > 0 && imageSize.y > 0) {
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        val left = minOf(start.x, end.x) / maxWidth.value
-                                        val top = minOf(start.y, end.y) / maxHeight.value
-                                        val right = maxOf(start.x, end.x) / maxWidth.value
-                                        val bottom = maxOf(start.y, end.y) / maxHeight.value
+                                        val left = minOf(start.x, end.x) / imageSize.x
+                                        val top = minOf(start.y, end.y) / imageSize.y
+                                        val right = maxOf(start.x, end.x) / imageSize.x
+                                        val bottom = maxOf(start.y, end.y) / imageSize.y
                                         val newRect = Rect(left, top, right, bottom)
                                         Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
                                         if (isEditingOcrArea) {
