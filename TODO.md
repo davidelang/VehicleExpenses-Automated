@@ -31,3 +31,8 @@ Last updated: 2026-03-30
 - Change button text to "Highlight other parts of the image that may change"
 - Allow clearing all boxes, clearing the last box, saving the current box (which starts a new box)
 - When finished, the landmark area needs to be saved
+
+## Landmark crop box UI improvements (pending):
+- Change button text to "Highlight other parts of the image that may change"
+- Allow clearing all boxes, clearing the last box, saving the current box (which starts a new box)
+- When finished, the landmark area needs to be saved
