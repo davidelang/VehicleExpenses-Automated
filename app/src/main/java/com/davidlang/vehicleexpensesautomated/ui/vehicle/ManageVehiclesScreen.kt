@@ -64,6 +64,8 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect")
+
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
@@ -98,6 +100,7 @@ fun ManageVehiclesScreen(
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
+                Log.d("CropDebug", "Try OCR clicked — odometerCropRect=$odometerCropRect")
                 try {
                     var finalPath = photoPathOrUri
                     if (photoPathOrUri.startsWith("content://")) {
@@ -112,9 +115,11 @@ fun ManageVehiclesScreen(
                     val cropRect = odometerCropRect?.let { r ->
                         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                     }
+                    Log.d("CropDebug", "Calling extractFromPhoto with cropRect=$cropRect (null = full image)")
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
+                    Log.d("CropDebug", "OCR result received — odometer=${result.odometer}, possible=${result.possibleOdometers.size}")
 
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
@@ -122,6 +127,7 @@ fun ManageVehiclesScreen(
                         result.odometer?.let { odometerReading = it }
                     }
                 } catch (e: Exception) {
+                    Log.e("CropDebug", "OCR exception", e)
                     Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
@@ -214,6 +220,7 @@ fun ManageVehiclesScreen(
                                 onDragStart = { offset ->
                                     dragStart = offset
                                     dragOffset = Offset.Zero
+                                    Log.d("CropDebug", "Drag START at $offset — isEditingOcrArea=$isEditingOcrArea")
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
@@ -228,10 +235,13 @@ fun ManageVehiclesScreen(
                                         val right = maxOf(start.x, end.x)
                                         val bottom = maxOf(start.y, end.y)
                                         val newRect = Rect(left, top, right, bottom)
+                                        Log.d("CropDebug", "Drag END — calculated Rect=$newRect")
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
+                                            Log.d("CropDebug", "✅ Committed to odometerCropRect=$odometerCropRect")
                                         } else if (isEditingLandmark) {
                                             landmarkCropRect = newRect
+                                            Log.d("CropDebug", "✅ Committed to landmarkCropRect=$landmarkCropRect")
                                         }
                                     }
                                     dragStart = null
@@ -247,7 +257,6 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        // Saved odometer crop
                         odometerCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Blue,
@@ -256,7 +265,6 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Saved landmark crop
                         landmarkCropRect?.let { rect ->
                             drawRect(
                                 color = Color.Green,
@@ -265,7 +273,6 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-                        // Live drag preview (only when editing odometer)
                         if (dragStart != null && isEditingOcrArea) {
                             val end = Offset(dragStart!!.x + dragOffset.x, dragStart!!.y + dragOffset.y)
                             val left = minOf(dragStart!!.x, end.x)
