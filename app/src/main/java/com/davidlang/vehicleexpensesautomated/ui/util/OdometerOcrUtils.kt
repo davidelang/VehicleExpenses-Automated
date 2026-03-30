@@ -19,7 +19,7 @@ import com.googlecode.tesseract.android.TessBaseAPI
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 
-data class OcrDebugResult(
+data class OcrResult(
     val odometer: String?,
     val possibleOdometers: List<String>,
     val gallons: String?,
@@ -95,11 +95,11 @@ object OdometerOcrUtils {
         }
     }
 
-    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrDebugResult = withContext(Dispatchers.IO) {
+    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrDebugResult(null, emptyList(), null, null, "Photo file not found")
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found")
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrDebugResult(null, emptyList(), null, null, "Failed to decode bitmap")
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap")
 
         // Always treat as unknown photo (full pipeline) — even from Manage Vehicles
         if (cropRect != null) {
@@ -146,7 +146,7 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
-            return@withContext OcrDebugResult(null, emptyList(), null, null, "ML Kit error")
+            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error")
         }
 
         visionText.textBlocks.forEach { block ->
@@ -166,12 +166,6 @@ object OdometerOcrUtils {
             appendLine("Candidates: ${possibleOdometers.joinToString()}")
         }
 
-        OcrDebugResult(
-            odometer = odometer,
-            possibleOdometers = possibleOdometers.distinct().sortedByDescending { it.length },
-            gallons = gallons,
-            cost = cost,
-            debugText = debugText
-        )
+        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost, debugText)
     }
 }
