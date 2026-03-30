@@ -90,3 +90,21 @@ dependencies {
     implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 }
+
+// === Build-time validation for paddleocr.onnx ===
+tasks.register("validatePaddleOcrModel") {
+    doLast {
+        val modelFile = file("src/main/assets/paddleocr.onnx")
+        if (!modelFile.exists()) {
+            throw GradleException("❌ paddleocr.onnx is missing from src/main/assets/")
+        }
+        if (modelFile.length() < 100_000) {
+            throw GradleException("❌ paddleocr.onnx is too small (${modelFile.length()} bytes) — probably corrupted")
+        }
+        println("✅ paddleocr.onnx validated (${modelFile.length()} bytes)")
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("validatePaddleOcrModel")
+}
