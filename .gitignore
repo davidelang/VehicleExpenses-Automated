@@ -69,3 +69,7 @@ app/src/main/res/raw/*
 # === OCR model files — NEVER delete ===
 !app/src/main/assets/tessdata/eng.traineddata
 !app/src/main/assets/paddleocr.onnx
+
+# === OCR model files — NEVER delete ===
+!app/src/main/assets/tessdata/eng.traineddata
+!app/src/main/assets/paddleocr.onnx
