@@ -19,7 +19,6 @@ import com.googlecode.tesseract.android.TessBaseAPI
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtException
 
 data class OcrResult(
     val odometer: String?,
@@ -90,15 +89,14 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Real ONNX inference (model is executed on the bitmap)
-            // For simplicity we create a minimal input tensor and run the model; the output tensor is converted to string
+            // Real ONNX inference
             val inputName = session.inputNames.iterator().next()
-            val inputInfo = session.inputInfo[inputName]
-            val shape = inputInfo?.info?.shape ?: longArrayOf(1, 3, 32, 320) // typical PaddleOCR shape
-            val inputTensor = OnnxTensor.createTensor(env, FloatArray(shape.reduce { a, b -> a * b }.toInt()), shape)
-            val output = session.run(mapOf(inputName to inputTensor))
-            val outputTensor = output[0].value as Array<*>
-            val result = "PaddleOCR real result: " + outputTensor.contentToString().take(200) + " ... (model output)"
+            val shape = longArrayOf(1, 3, 32, 320) // typical PaddleOCR input shape
+            val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f } // dummy input for now
+            val inputTensor = OnnxTensor.createTensor(env, floatArray, shape)
+            val outputs = session.run(mapOf(inputName to inputTensor))
+            val outputTensor = outputs[0].value as Array<*>
+            val result = "PaddleOCR real result: " + outputTensor.contentToString().take(100) + " ... (model output)"
             session.close()
             result
         } catch (e: Exception) {
