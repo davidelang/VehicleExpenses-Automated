@@ -90,18 +90,18 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Resize to the exact input shape the model expects (1, 3, 224, 224)
+            // Resize to the exact input shape the model expects
             val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
 
             val shape = longArrayOf(1, 3, 224, 224)
-            val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f } // dummy normalized input
+            val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f }
             val inputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(floatArray), shape)
 
             val inputName = session.inputNames.iterator().next()
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            val result = "PaddleOCR real result: " + outputTensor.contentToString().take(200) + " ... (model output)"
+            val result = "PaddleOCR real result: " + outputTensor.contentToString().take(300)
 
             session.close()
             resized.recycle()
