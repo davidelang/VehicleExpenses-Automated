@@ -18,5 +18,10 @@ data class Vehicle(
     val odometerCropLeft: Float? = null,
     val odometerCropTop: Float? = null,
     val odometerCropRight: Float? = null,
-    val odometerCropBottom: Float? = null
+    val odometerCropBottom: Float? = null,
+    // New: landmark / dynamic area crop (everything not in odometer crop)
+    val landmarkCropLeft: Float? = null,
+    val landmarkCropTop: Float? = null,
+    val landmarkCropRight: Float? = null,
+    val landmarkCropBottom: Float? = null
 )

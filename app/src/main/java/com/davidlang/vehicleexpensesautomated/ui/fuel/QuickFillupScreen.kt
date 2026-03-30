@@ -73,7 +73,7 @@ fun QuickFillupScreen(navController: NavHostController) {
     var lastOcrResult by remember { mutableStateOf("No OCR run yet") }
     var lastOpenCVDebug by remember { mutableStateOf("OpenCV: N/A") }
     var showAlignedDialog by remember { mutableStateOf(false) }
-    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrDebugResult?>(null) }
+    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
@@ -221,7 +221,6 @@ fun QuickFillupScreen(navController: NavHostController) {
         )
     }
 
-    // Unified conditional confirmation dialog (only if >1 candidate)
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
