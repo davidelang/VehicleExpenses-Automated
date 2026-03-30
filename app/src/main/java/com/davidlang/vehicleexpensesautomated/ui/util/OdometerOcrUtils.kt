@@ -101,11 +101,19 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            val result = "PaddleOCR real result: " + outputTensor.contentToString().take(300)
+            // Simple decoding: argmax on each time step (basic vocabulary for digits and common characters)
+            val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
+            val decoded = StringBuilder()
+            for (t in 0 until outputTensor.size) {
+                val probs = outputTensor[t] as FloatArray
+                val maxIndex = probs.indices.maxByOrNull { probs[it] } ?: 0
+                if (maxIndex < vocab.length) decoded.append(vocab[maxIndex])
+            }
+            val result = decoded.toString().trim()
 
             session.close()
             resized.recycle()
-            result
+            "PaddleOCR real result: $result"
         } catch (e: Exception) {
             Log.e("OdometerOcr", "PaddleOCR failed", e)
             "(PaddleOCR error: ${e.message})"
