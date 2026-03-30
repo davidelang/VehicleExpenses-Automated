@@ -90,7 +90,7 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Resize to the exact input shape the model expects
+            // Stage 2: Recognition - resize to the model's fixed input shape
             val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
 
             val shape = longArrayOf(1, 3, 224, 224)
@@ -101,7 +101,7 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Simple decoding: argmax on each time step (basic vocabulary for digits and common characters)
+            // Simple decoding: argmax on each time step + basic vocabulary
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val decoded = StringBuilder()
             for (t in 0 until outputTensor.size) {
