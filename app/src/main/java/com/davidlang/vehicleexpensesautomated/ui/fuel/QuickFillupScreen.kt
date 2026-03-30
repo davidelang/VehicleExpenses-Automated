@@ -210,7 +210,10 @@ fun QuickFillupScreen(navController: NavHostController) {
             title = { Text("OCR Debug") },
             text = {
                 Column {
-                    Text(lastOcrDebugResult!!.debugText)
+                    Text("ML Kit: ${lastOcrDebugResult!!.odometer ?: "—"}")
+                    Text("Tesseract: —")
+                    Text("PaddleOCR: —")
+                    Text("Candidates: ${lastOcrDebugResult!!.possibleOdometers.joinToString()}")
                 }
             },
             confirmButton = {

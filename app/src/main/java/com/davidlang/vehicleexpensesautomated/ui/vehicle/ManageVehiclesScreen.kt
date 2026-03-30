@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
-    var lastOcrDebugResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
+    var lastOcrResult by remember { mutableStateOf<OdometerOcrUtils.OcrResult?>(null) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -108,7 +108,7 @@ fun ManageVehiclesScreen(
                         finalPath = tempFile.absolutePath
                     }
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, null)
-                    lastOcrDebugResult = result
+                    lastOcrResult = result
                     showEnlargedCrop = true
 
                     if (result.possibleOdometers.size > 1) {
@@ -257,13 +257,16 @@ fun ManageVehiclesScreen(
         }
     }
 
-    if (showEnlargedCrop && lastOcrDebugResult != null) {
+    if (showEnlargedCrop && lastOcrResult != null) {
         AlertDialog(
             onDismissRequest = { showEnlargedCrop = false },
             title = { Text("OCR Debug") },
             text = {
                 Column {
-                    Text(lastOcrDebugResult!!.debugText)
+                    Text("ML Kit: ${lastOcrResult!!.odometer ?: "—"}")
+                    Text("Tesseract: —")
+                    Text("PaddleOCR: —")
+                    Text("Candidates: ${lastOcrResult!!.possibleOdometers.joinToString()}")
                 }
             },
             confirmButton = {
@@ -274,13 +277,13 @@ fun ManageVehiclesScreen(
         )
     }
 
-    if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
+    if (showOdometerConfirmation && lastOcrResult != null && lastOcrResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
             title = { Text("Confirm Odometer") },
             text = {
                 Column {
-                    lastOcrDebugResult!!.possibleOdometers.forEach { candidate ->
+                    lastOcrResult!!.possibleOdometers.forEach { candidate ->
                         Button(
                             onClick = {
                                 odometerReading = candidate
