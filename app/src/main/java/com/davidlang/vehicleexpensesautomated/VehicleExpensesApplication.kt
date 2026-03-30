@@ -24,6 +24,7 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         copyTessdataOnce(this)
+        copyPaddleOcrOnce(this)   // ← new
         try {
             val syncManager = SyncManager(this)
             syncManager.schedulePeriodicSync()
@@ -45,7 +46,23 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
             output.close()
             android.util.Log.i("OdometerOcr", "✅ eng.traineddata copied to ${filesDir.absolutePath}")
         } catch (e: Exception) {
-            android.util.Log.e("OdometerOcr", "Failed to copy eng.traineddata — place it in app/src/main/assets/tessdata/eng.traineddata", e)
+            android.util.Log.e("OdometerOcr", "Failed to copy eng.traineddata", e)
+        }
+    }
+
+    private fun copyPaddleOcrOnce(context: Context) {
+        val destFile = File(context.filesDir, "paddleocr.onnx")
+        if (destFile.exists() && destFile.length() > 100000) return  // already good
+        try {
+            val assetManager = context.assets
+            val input = assetManager.open("paddleocr.onnx")
+            val output = FileOutputStream(destFile)
+            input.copyTo(output)
+            input.close()
+            output.close()
+            android.util.Log.i("OdometerOcr", "✅ paddleocr.onnx copied to ${destFile.absolutePath} (${destFile.length()} bytes)")
+        } catch (e: Exception) {
+            android.util.Log.e("OdometerOcr", "Failed to copy paddleocr.onnx", e)
         }
     }
 }

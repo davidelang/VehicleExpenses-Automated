@@ -38,11 +38,7 @@ object OdometerOcrUtils {
         }
     }
 
-    // ================================================================
-    // Three-engine OCR — runs ALL three on every photo step
-    // ================================================================
     private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String): Triple<String, String, String> {
-        // ML Kit
         val mlResult = try {
             val image = InputImage.fromBitmap(bitmap, 0)
             val text: Text = suspendCancellableCoroutine { cont ->
@@ -56,11 +52,8 @@ object OdometerOcrUtils {
             "(ML Kit error)"
         }
 
-        // Tesseract
         val tessResult = runTesseract(bitmap)
-
-        // PaddleOCR ONNX
-        val paddleResult = runPaddleOcr(bitmap)
+        val paddleResult = runPaddleOcr()
 
         Log.i("OdometerOcr", "$label OCR → ML Kit: \"$mlResult\" | Tesseract: \"$tessResult\" | PaddleOCR: \"$paddleResult\"")
         return Triple(mlResult, tessResult, paddleResult)
@@ -69,11 +62,10 @@ object OdometerOcrUtils {
     private fun runTesseract(bitmap: Bitmap): String {
         return try {
             val tess = TessBaseAPI()
-            // Dynamic path that matches VehicleExpensesApplication copy
             val tessDataPath = "/data/user/0/com.davidlang.vehicleexpensesautomated/files"
             if (!tess.init(tessDataPath, "eng")) {
                 tess.clear()
-                Log.e("OdometerOcr", "Tesseract init failed — check that eng.traineddata exists in $tessDataPath/tessdata")
+                Log.e("OdometerOcr", "Tesseract init failed")
                 return "(Tesseract init failed)"
             }
             tess.setImage(bitmap)
@@ -86,14 +78,16 @@ object OdometerOcrUtils {
         }
     }
 
-    private fun runPaddleOcr(bitmap: Bitmap): String {
+    private fun runPaddleOcr(): String {
         return try {
             val env = OrtEnvironment.getEnvironment()
-            val asset = javaClass.classLoader?.getResourceAsStream("paddleocr.onnx")
-                ?: return "(PaddleOCR model not found — place paddleocr.onnx in app/src/main/assets/)"
-            val modelBytes = asset.readBytes()
+            val modelFile = File("/data/user/0/com.davidlang.vehicleexpensesautomated/files/paddleocr.onnx")
+            if (!modelFile.exists()) {
+                return "(PaddleOCR model not found on device)"
+            }
+            val modelBytes = modelFile.readBytes()
             val session = env.createSession(modelBytes)
-            Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
+            Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully (${modelBytes.size} bytes)")
             session.close()
             "(PaddleOCR ONNX ran)"
         } catch (e: Exception) {
@@ -123,10 +117,9 @@ object OdometerOcrUtils {
             }
         }
 
-        // Run ALL three engines on every photo
         val (ml, tess, paddle) = runAllThreeEngines(bitmap, "final")
 
-        val rawText = ml  // keep ML Kit as primary for post-processing (fastest)
+        val rawText = ml
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
