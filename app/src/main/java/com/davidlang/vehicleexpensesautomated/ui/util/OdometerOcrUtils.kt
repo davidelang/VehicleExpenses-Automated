@@ -153,7 +153,7 @@ object OdometerOcrUtils {
         val debugText = buildString {
             appendLine("=== OCR DEBUG (multi-stage) ===\n")
 
-            // Stage 1: Raw cropped
+            // Stage 1: Raw cropped - this is the one used for default odometer
             append(runBothEngines(bitmap, "Raw Cropped"))
 
             // Stage 2: Grayscale
@@ -183,13 +183,14 @@ object OdometerOcrUtils {
             openCvProcessedBitmap = processedBmp
         }
 
-        val rawText = debugText
-        val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
+        // Extract odometer from raw cropped Tesseract result (default value)
+        val rawTesseract = runTesseract(bitmap)
+        val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
         val possibleOdometers = mutableListOf<String>()
         var odometer: String? = null
-        odoRegex.findAll(cleanText).forEach { match ->
+        odoRegex.findAll(cleanRaw).forEach { match ->
             val value = match.value
             possibleOdometers.add(value)
             if (odometer == null || value.length > (odometer?.length ?: 0)) odometer = value
