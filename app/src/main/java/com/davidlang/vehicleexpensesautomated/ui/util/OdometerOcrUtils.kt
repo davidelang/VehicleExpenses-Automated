@@ -150,9 +150,9 @@ object OdometerOcrUtils {
                     val r = ((pixel shr 16) and 0xFF) / 255.0f
                     val g = ((pixel shr 8) and 0xFF) / 255.0f
                     val b = (pixel and 0xFF) / 255.0f
-                    floatArray[idx++] = r - 0.485f
-                    floatArray[idx++] = g - 0.456f
-                    floatArray[idx++] = b - 0.406f
+                    floatArray[idx++] = r
+                    floatArray[idx++] = g
+                    floatArray[idx++] = b
                 }
             }
 
@@ -161,7 +161,7 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Heavy debugging: top-5 classes per timestep
+            // Heavy debugging
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val blank = 0
             val decoded = StringBuilder()
