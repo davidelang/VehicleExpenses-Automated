@@ -161,7 +161,7 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // More permissive CTC decoding
+            // Diagnostic logging
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val blank = 0
             val decoded = StringBuilder()
@@ -169,6 +169,8 @@ object OdometerOcrUtils {
             for (t in 0 until outputTensor.size) {
                 val probs = outputTensor[t] as FloatArray
                 val maxIndex = probs.indices.maxByOrNull { probs[it] } ?: blank
+                val maxProb = probs[maxIndex]
+                Log.d("OdometerOcr", "PaddleOCR timestep $t: max class $maxIndex ('${if (maxIndex < vocab.length) vocab[maxIndex] else '?'}') prob=$maxProb")
                 if (maxIndex != blank && maxIndex != previous) {
                     if (maxIndex < vocab.length) decoded.append(vocab[maxIndex])
                 }
