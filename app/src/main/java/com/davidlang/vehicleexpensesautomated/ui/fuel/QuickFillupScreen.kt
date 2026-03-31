@@ -97,9 +97,10 @@ fun QuickFillupScreen(navController: NavHostController) {
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
-                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, odometerCropRect?.let { r ->
+                val cropRectF = odometerCropRect?.let { r ->
                     android.graphics.RectF(r.left, r.top, r.right, r.bottom)
-                })
+                }
+                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
                 lastOcrDebugResult = result
                 showAlignedDialog = true
                 tempFile.delete()
@@ -146,7 +147,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect)
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -196,7 +197,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect)
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -359,12 +360,12 @@ private suspend fun processPhoto(
     updateShowConfirmation: (Boolean) -> Unit,
     updateGallons: (Double) -> Unit,
     updateCost: (Double) -> Unit,
-    cropRect: Rect?   // <-- now passed from the caller
+    cropRect: Rect?
 ) {
-    val androidRectF = cropRect?.let { r ->
+    val cropRectF = cropRect?.let { r ->
         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
     }
-    val result = OdometerOcrUtils.extractFromPhoto(path, androidRectF)
+    val result = OdometerOcrUtils.extractFromPhoto(path, cropRectF)
     updateOcrResult("Odometer: ${result.odometer ?: "—"} | Gallons: ${result.gallons ?: "—"} | Cost: ${result.cost ?: "—"}")
     result.odometer?.toIntOrNull()?.let { updateOdometer(it) }
     updatePossibleOdometers(result.possibleOdometers)
@@ -389,7 +390,8 @@ private fun captureDashPhoto(
     updatePossibleOdometers: (List<String>) -> Unit,
     updateShowConfirmation: (Boolean) -> Unit,
     updateGallons: (Double) -> Unit,
-    updateCost: (Double) -> Unit
+    updateCost: (Double) -> Unit,
+    cropRect: Rect?
 ) {
     val photoFile = File.createTempFile("dash_", ".jpg", context.cacheDir)
     val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
@@ -402,7 +404,7 @@ private fun captureDashPhoto(
             }
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 scope.launch {
-                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, odometerCropRect)
+                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
                 }
             }
         }
