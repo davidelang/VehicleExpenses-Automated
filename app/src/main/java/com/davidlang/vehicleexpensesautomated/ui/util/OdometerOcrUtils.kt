@@ -24,6 +24,8 @@ import ai.onnxruntime.OnnxTensor
 import java.nio.FloatBuffer
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 
 data class OcrResult(
     val odometer: String?,
@@ -94,6 +96,20 @@ object OdometerOcrUtils {
         }
     }
 
+    private fun letterboxResize(bitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+        val ratio = min(targetWidth.toFloat() / bitmap.width, targetHeight.toFloat() / bitmap.height)
+        val newWidth = (bitmap.width * ratio).toInt()
+        val newHeight = (bitmap.height * ratio).toInt()
+
+        val scaled = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(result)
+        canvas.drawColor(android.graphics.Color.BLACK) // black padding
+        canvas.drawBitmap(scaled, (targetWidth - newWidth) / 2f, (targetHeight - newHeight) / 2f, null)
+        scaled.recycle()
+        return result
+    }
+
     private fun runPaddleOcr(bitmap: Bitmap): Pair<String, Bitmap?> {
         val modelFile = File("/data/user/0/com.davidlang.vehicleexpensesautomated/files/paddleocr.onnx")
         return try {
@@ -134,8 +150,8 @@ object OdometerOcrUtils {
                 Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found")
             }
 
-            // Use ORIGINAL color image and raw [0,1] normalization
-            val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
+            // Letterbox resize — preserves aspect ratio, adds black padding
+            val resized = letterboxResize(bitmap, 224, 224)
 
             val shape = longArrayOf(1, 3, 224, 224)
             val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f }
@@ -159,7 +175,6 @@ object OdometerOcrUtils {
 
             Log.d("OdometerOcr", "PaddleOCR output tensor shape: ${outputTensor.size} timesteps × ${(outputTensor[0] as FloatArray).size} classes")
 
-            // Single-timestep 1000-class model
             val probs = outputTensor[0] as FloatArray
             val top50 = probs.indices.sortedByDescending { probs[it] }.take(50)
             val sb = StringBuilder("PaddleOCR timestep 0 top50: ")
