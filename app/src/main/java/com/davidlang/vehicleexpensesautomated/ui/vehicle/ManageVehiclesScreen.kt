@@ -67,8 +67,6 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize")
-
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
@@ -118,11 +116,11 @@ fun ManageVehiclesScreen(
                     val cropRect = odometerCropRect?.let { r ->
                         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                     }
-                    Log.d("CropDebug", "Calling extractFromPhoto with cropRect=$cropRect (null = full image)")
+                    Log.d("CropDebug", "Calling extractFromPhoto with cropRect=$cropRect")
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
-                    Log.d("CropDebug", "OCR result received — odometer=${result.odometer}, possible=${result.possibleOdometers.size}")
+                    Log.d("CropDebug", "OCR result received — odometer=${result.odometer}")
 
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
@@ -220,14 +218,12 @@ fun ManageVehiclesScreen(
                         .height(220.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
-                            Log.d("CropDebug", "Image size updated to $imageSize")
                         }
                         .pointerInput(Unit) {
                             detectDragGestures(
                                 onDragStart = { offset ->
                                     dragStart = offset
                                     dragOffset = Offset.Zero
-                                    Log.d("CropDebug", "Drag START at $offset — isEditingOcrArea=$isEditingOcrArea")
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
@@ -242,13 +238,10 @@ fun ManageVehiclesScreen(
                                         val right = maxOf(start.x, end.x) / imageSize.x
                                         val bottom = maxOf(start.y, end.y) / imageSize.y
                                         val newRect = Rect(left, top, right, bottom)
-                                        Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
-                                            Log.d("CropDebug", "✅ Committed normalized odometerCropRect=$odometerCropRect")
                                         } else if (isEditingLandmark) {
                                             landmarkCropRect = newRect
-                                            Log.d("CropDebug", "✅ Committed normalized landmarkCropRect=$landmarkCropRect")
                                         }
                                     }
                                     dragStart = null
@@ -430,7 +423,11 @@ fun ManageVehiclesScreen(
 
     if (showEnlargedCrop && lastOcrDebugResult != null) {
         AlertDialog(
-            onDismissRequest = { showEnlargedCrop = false },
+            onDismissRequest = {
+                lastOcrDebugResult?.croppedBitmap?.recycle()
+                lastOcrDebugResult = null
+                showEnlargedCrop = false
+            },
             title = { Text("OCR Debug") },
             text = {
                 Column {
@@ -461,7 +458,11 @@ fun ManageVehiclesScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { showEnlargedCrop = false }) {
+                Button(onClick = {
+                    lastOcrDebugResult?.croppedBitmap?.recycle()
+                    lastOcrDebugResult = null
+                    showEnlargedCrop = false
+                }) {
                     Text("Close")
                 }
             }
