@@ -159,16 +159,16 @@ object OdometerOcrUtils {
 
             Log.d("OdometerOcr", "PaddleOCR output tensor shape: ${outputTensor.size} timesteps × ${(outputTensor[0] as FloatArray).size} classes")
 
-            // Single-timestep model: just take argmax of the only probability vector
+            // Single-timestep 1000-class model
             val probs = outputTensor[0] as FloatArray
-            val top20 = probs.indices.sortedByDescending { probs[it] }.take(20)
-            val sb = StringBuilder("PaddleOCR timestep 0 top20: ")
-            for (i in top20) {
+            val top50 = probs.indices.sortedByDescending { probs[it] }.take(50)
+            val sb = StringBuilder("PaddleOCR timestep 0 top50: ")
+            for (i in top50) {
                 sb.append("[$i p=${"%.4f".format(probs[i])}] ")
             }
             Log.d("OdometerOcr", sb.toString())
 
-            val maxIndex = top20[0]
+            val maxIndex = top50[0]
             val result = if (maxIndex in 0..9) maxIndex.toString() else "?"
 
             Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result' (from class $maxIndex)")
