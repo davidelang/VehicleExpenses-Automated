@@ -2,6 +2,8 @@ package com.davidlang.vehicleexpensesautomated.ui.components
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -24,7 +26,11 @@ fun OcrDebugDialog(
         onDismissRequest = onDismiss,
         title = { Text("OCR Debug") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
