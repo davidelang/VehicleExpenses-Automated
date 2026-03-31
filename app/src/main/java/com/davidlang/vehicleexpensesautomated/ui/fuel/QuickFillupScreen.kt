@@ -32,6 +32,7 @@ import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.ui.components.OcrDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
@@ -222,51 +223,13 @@ fun QuickFillupScreen(navController: NavHostController) {
     }
 
     if (showAlignedDialog && lastOcrDebugResult != null) {
-        AlertDialog(
-            onDismissRequest = {
+        OcrDebugDialog(
+            ocrResult = lastOcrDebugResult!!,
+            originalPhotoPath = lastPhotoPath,
+            onDismiss = {
                 lastOcrDebugResult?.croppedBitmap?.recycle()
                 lastOcrDebugResult = null
                 showAlignedDialog = false
-            },
-            title = { Text("OCR Debug") },
-            text = {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Original")
-                            lastPhotoPath?.let {
-                                Image(
-                                    painter = rememberAsyncImagePainter(it),
-                                    contentDescription = "Original image",
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Cropped")
-                            lastOcrDebugResult!!.croppedBitmap?.let {
-                                Image(
-                                    bitmap = it.asImageBitmap(),
-                                    contentDescription = "Cropped image",
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } ?: Text("Cropped image (see logs)")
-                        }
-                    }
-                    Text(lastOcrDebugResult!!.debugText)
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    lastOcrDebugResult?.croppedBitmap?.recycle()
-                    lastOcrDebugResult = null
-                    showAlignedDialog = false
-                }) {
-                    Text("Close")
-                }
             }
         )
     }
@@ -329,7 +292,6 @@ private fun ControlsContent(
 ) {
     Text("Quick Fill-up — Step $step", style = MaterialTheme.typography.titleMedium)
     Spacer(modifier = Modifier.height(8.dp))
-
     ExposedDropdownMenuBox(
         expanded = dropdownExpanded,
         onExpandedChange = onDropdownExpandedChange
@@ -356,14 +318,12 @@ private fun ControlsContent(
             }
         }
     }
-
     OutlinedTextField(
         value = odometer.toString(),
         onValueChange = { onOdometerChange(it.toIntOrNull() ?: 0) },
         label = { Text("Odometer") },
         modifier = Modifier.fillMaxWidth()
     )
-
     Row {
         Checkbox(checked = isMissedFill, onCheckedChange = onMissedChange)
         Text("Missed fill (unknown gas added)")
@@ -372,9 +332,7 @@ private fun ControlsContent(
         Checkbox(checked = isPartialFill, onCheckedChange = onPartialChange)
         Text("Partial fill")
     }
-
     Spacer(modifier = Modifier.height(16.dp))
-
     Button(onClick = onTakeDashPicture, modifier = Modifier.fillMaxWidth()) {
         Text("Take Dash Picture")
     }
