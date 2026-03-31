@@ -103,7 +103,7 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // === STAGE 1: OpenCV text detection (contour-based) ===
+            // === STAGE 1: OpenCV text detection ===
             val mat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, mat)
             val gray = Mat()
@@ -138,14 +138,19 @@ object OdometerOcrUtils {
                 bitmap
             }
 
-            // === STAGE 2: Recognition on detected (or original) region ===
-            val resized = Bitmap.createScaledBitmap(finalBitmap, 224, 224, true)
+            // === STAGE 2: Recognition (standard PaddleOCR CRNN input) ===
+            // Fixed height 32, variable width (proportional)
+            val targetHeight = 32
+            val aspect = finalBitmap.width.toFloat() / finalBitmap.height
+            val targetWidth = (targetHeight * aspect).toInt().coerceIn(32, 320)
 
-            val shape = longArrayOf(1, 3, 224, 224)
+            val resized = Bitmap.createScaledBitmap(finalBitmap, targetWidth, targetHeight, true)
+
+            val shape = longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong())
             val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f }
             var idx = 0
-            for (y in 0 until 224) {
-                for (x in 0 until 224) {
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
                     val pixel = resized.getPixel(x, y)
                     val r = ((pixel shr 16) and 0xFF) / 255.0f
                     val g = ((pixel shr 8) and 0xFF) / 255.0f
