@@ -148,6 +148,8 @@ object OdometerOcrUtils {
             }
         }
 
+        var openCvProcessedBitmap: Bitmap? = null
+
         val debugText = buildString {
             appendLine("=== OCR DEBUG (multi-stage) ===\n")
 
@@ -176,8 +178,9 @@ object OdometerOcrUtils {
             threshMat.release()
 
             // Stage 4: Morphology (OpenCV cleaning)
-            val (openCvResult, openCvProcessedBitmap) = runOpenCvPreprocessingStages(bitmap)
+            val (openCvResult, processedBmp) = runOpenCvPreprocessingStages(bitmap)
             append(openCvResult)
+            openCvProcessedBitmap = processedBmp
         }
 
         val rawText = debugText
