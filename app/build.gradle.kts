@@ -83,34 +83,10 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
-    // OpenCV for dashboard image alignment
+    // OpenCV for dashboard image alignment and preprocessing
     implementation("org.opencv:opencv:4.10.0")
-
-    // === Two additional OCR engines (exact versions from commit 9010356) ===
+    // Tesseract (main OCR engine)
     implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 }
 
-// === Build-time validation for paddleocr.onnx (now stronger) ===
-tasks.register("validatePaddleOcrModel") {
-    doLast {
-        val modelFile = file("src/main/assets/paddleocr.onnx")
-        if (!modelFile.exists()) {
-            throw GradleException("❌ paddleocr.onnx is missing from src/main/assets/")
-        }
-        if (modelFile.length() < 100_000) {
-            throw GradleException("❌ paddleocr.onnx is too small (${modelFile.length()} bytes) — probably corrupted")
-        }
-        // Extra safety: reject obvious HTML files
-        val firstBytes = modelFile.readBytes().take(16).toByteArray()
-        val hex = firstBytes.joinToString(" ") { "%02x".format(it) }
-        if (firstBytes.isNotEmpty() && firstBytes[0] == '<'.code.toByte()) {
-            throw GradleException("❌ paddleocr.onnx looks like HTML (starts with '<') — this is not a valid ONNX model. First 16 bytes: $hex")
-        }
-        println("✅ paddleocr.onnx validated (${modelFile.length()} bytes, first bytes: $hex)")
-    }
-}
-
-tasks.named("preBuild") {
-    dependsOn("validatePaddleOcrModel")
-}
+// No more PaddleOCR validation — model has been removed
