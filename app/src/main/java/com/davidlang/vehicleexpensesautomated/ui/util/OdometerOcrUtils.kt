@@ -134,7 +134,7 @@ object OdometerOcrUtils {
                 Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found")
             }
 
-            // Use the ORIGINAL color image (not binary) and plain [0,1] normalization
+            // Use ORIGINAL color image and raw [0,1] normalization
             val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
 
             val shape = longArrayOf(1, 3, 224, 224)
@@ -157,37 +157,25 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Log model output shape once
             Log.d("OdometerOcr", "PaddleOCR output tensor shape: ${outputTensor.size} timesteps × ${(outputTensor[0] as FloatArray).size} classes")
 
-            // Heavy per-timestep logging
-            val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
-            val blank = 0
-            val decoded = StringBuilder()
-            var previous = -1
-            for (t in 0 until outputTensor.size) {
-                val probs = outputTensor[t] as FloatArray
-                val top5 = probs.indices.sortedByDescending { probs[it] }.take(5)
-                val sb = StringBuilder("PaddleOCR timestep $t top5: ")
-                for (i in top5) {
-                    val ch = if (i < vocab.length) vocab[i] else '?'
-                    sb.append("[$i='$ch' p=${"%.4f".format(probs[i])}] ")
-                }
-                Log.d("OdometerOcr", sb.toString())
-
-                val maxIndex = top5[0]
-                if (maxIndex != blank && maxIndex != previous) {
-                    if (maxIndex < vocab.length) decoded.append(vocab[maxIndex])
-                }
-                previous = maxIndex
+            // Single-timestep model: just take argmax of the only probability vector
+            val probs = outputTensor[0] as FloatArray
+            val top20 = probs.indices.sortedByDescending { probs[it] }.take(20)
+            val sb = StringBuilder("PaddleOCR timestep 0 top20: ")
+            for (i in top20) {
+                sb.append("[$i p=${"%.4f".format(probs[i])}] ")
             }
-            val result = decoded.toString().trim()
+            Log.d("OdometerOcr", sb.toString())
 
-            Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result'")
+            val maxIndex = top20[0]
+            val result = if (maxIndex in 0..9) maxIndex.toString() else "?"
+
+            Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result' (from class $maxIndex)")
 
             session.close()
 
-            "PaddleOCR real result: $result" to resized
+            "PaddleOCR real result: $result (class $maxIndex)" to resized
         } catch (e: Exception) {
             Log.e("OdometerOcr", "PaddleOCR failed", e)
             "(PaddleOCR error: ${e.message})" to null
