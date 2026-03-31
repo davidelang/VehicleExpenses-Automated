@@ -27,7 +27,8 @@ data class OcrResult(
     val gallons: String?,
     val cost: String?,
     val debugText: String,
-    val croppedBitmap: Bitmap? = null   // safe copy for debug popup
+    val originalPhotoPath: String? = null,   // added for debug popup
+    val croppedBitmap: Bitmap? = null         // safe copy for debug popup
 )
 
 object OdometerOcrUtils {
@@ -127,9 +128,9 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", null)
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null)
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", null)
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null)
 
         Log.d("OCRStage", "Stage 0 - Full image loaded, size ${bitmap.width}x${bitmap.height}")
 
@@ -179,7 +180,7 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
-            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error", null)
+            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error", photoPath, null)
         }
 
         visionText.textBlocks.forEach { block ->
@@ -188,7 +189,7 @@ object OdometerOcrUtils {
             costRegex.find(blockText)?.groupValues?.get(1)?.let { cost = it }
         }
 
-        // Do NOT recycle croppedBitmap here — the popup needs it
+        // Do NOT recycle croppedBitmap — the popup needs it
         bitmap.recycle()
 
         val debugText = buildString {
@@ -200,6 +201,6 @@ object OdometerOcrUtils {
             appendLine("Candidates: ${possibleOdometers.joinToString()}")
         }
 
-        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost, debugText, croppedBitmap)
+        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost, debugText, photoPath, croppedBitmap)
     }
 }

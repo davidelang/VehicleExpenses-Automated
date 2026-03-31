@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -72,6 +73,7 @@ fun QuickFillupScreen(navController: NavHostController) {
     var lastOpenCVDebug by remember { mutableStateOf("OpenCV: N/A") }
     var showAlignedDialog by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
+    var lastPhotoPath by remember { mutableStateOf<String?>(null) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
@@ -99,6 +101,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
+                lastPhotoPath = tempFile.absolutePath
                 val cropRectF = odometerCropRect?.let { r ->
                     android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                 }
@@ -149,7 +152,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect)
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -199,7 +202,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect)
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
@@ -231,11 +234,13 @@ fun QuickFillupScreen(navController: NavHostController) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Original")
-                            Image(
-                                painter = rememberAsyncImagePainter(referencePhotoUrl),
-                                contentDescription = "Original image",
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            lastPhotoPath?.let {
+                                Image(
+                                    painter = rememberAsyncImagePainter(it),
+                                    contentDescription = "Original image",
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Cropped")
@@ -416,7 +421,8 @@ private fun captureDashPhoto(
     updateShowConfirmation: (Boolean) -> Unit,
     updateGallons: (Double) -> Unit,
     updateCost: (Double) -> Unit,
-    cropRect: Rect?
+    cropRect: Rect?,
+    updateLastPhotoPath: (String) -> Unit
 ) {
     val photoFile = File.createTempFile("dash_", ".jpg", context.cacheDir)
     val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
@@ -428,6 +434,7 @@ private fun captureDashPhoto(
                 Toast.makeText(context, "Camera error", Toast.LENGTH_SHORT).show()
             }
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                updateLastPhotoPath(photoFile.absolutePath)
                 scope.launch {
                     processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
                 }
