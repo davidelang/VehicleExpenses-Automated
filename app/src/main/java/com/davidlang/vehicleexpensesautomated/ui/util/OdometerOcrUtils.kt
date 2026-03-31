@@ -27,8 +27,8 @@ data class OcrResult(
     val gallons: String?,
     val cost: String?,
     val debugText: String,
-    val originalPhotoPath: String? = null,   // added for debug popup
-    val croppedBitmap: Bitmap? = null         // safe copy for debug popup
+    val originalPhotoPath: String? = null,
+    val croppedBitmap: Bitmap? = null
 )
 
 object OdometerOcrUtils {
@@ -189,8 +189,10 @@ object OdometerOcrUtils {
             costRegex.find(blockText)?.groupValues?.get(1)?.let { cost = it }
         }
 
-        // Do NOT recycle croppedBitmap — the popup needs it
-        bitmap.recycle()
+        // CRITICAL FIX: NEVER recycle croppedBitmap here — Compose dialog needs it
+        if (croppedBitmap == null) {
+            bitmap.recycle()
+        }
 
         val debugText = buildString {
             appendLine("=== OCR DEBUG ===")

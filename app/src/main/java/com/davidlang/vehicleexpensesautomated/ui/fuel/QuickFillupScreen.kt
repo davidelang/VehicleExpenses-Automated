@@ -78,7 +78,6 @@ fun QuickFillupScreen(navController: NavHostController) {
     var dropdownExpanded by remember { mutableStateOf(false) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
-    // Load the selected vehicle's crop rect when vehicle changes
     LaunchedEffect(selectedVehicleId) {
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
@@ -224,7 +223,11 @@ fun QuickFillupScreen(navController: NavHostController) {
 
     if (showAlignedDialog && lastOcrDebugResult != null) {
         AlertDialog(
-            onDismissRequest = { showAlignedDialog = false },
+            onDismissRequest = {
+                lastOcrDebugResult?.croppedBitmap?.recycle()
+                lastOcrDebugResult = null
+                showAlignedDialog = false
+            },
             title = { Text("OCR Debug") },
             text = {
                 Column {
@@ -257,7 +260,11 @@ fun QuickFillupScreen(navController: NavHostController) {
                 }
             },
             confirmButton = {
-                Button(onClick = { showAlignedDialog = false }) {
+                Button(onClick = {
+                    lastOcrDebugResult?.croppedBitmap?.recycle()
+                    lastOcrDebugResult = null
+                    showAlignedDialog = false
+                }) {
                     Text("Close")
                 }
             }
