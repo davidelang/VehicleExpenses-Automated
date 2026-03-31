@@ -30,6 +30,7 @@ import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.ui.components.OcrDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -301,7 +302,6 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
 
-                    // Compute fit rectangle once per recomposition
                     val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
                         calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                     } else {
@@ -309,7 +309,6 @@ fun ManageVehiclesScreen(
                     }
 
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        // Blue committed box - now uses fitRect mapping
                         odometerCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
                             val top = fitRect.top + rect.top * fitRect.height
@@ -323,8 +322,6 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-
-                        // Green landmark box (same mapping)
                         landmarkCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
                             val top = fitRect.top + rect.top * fitRect.height
@@ -338,8 +335,6 @@ fun ManageVehiclesScreen(
                                 style = Stroke(width = 4f)
                             )
                         }
-
-                        // Red live drag preview - now also uses fitRect
                         if (dragStart != null && isEditingOcrArea) {
                             val end = Offset(dragStart!!.x + dragOffset.x, dragStart!!.y + dragOffset.y)
                             val rawLeft = minOf(dragStart!!.x, end.x)
@@ -347,7 +342,6 @@ fun ManageVehiclesScreen(
                             val rawRight = maxOf(dragStart!!.x, end.x)
                             val rawBottom = maxOf(dragStart!!.y, end.y)
 
-                            // Clamp to fit area
                             val left = rawLeft.coerceIn(fitRect.left, fitRect.right)
                             val top = rawTop.coerceIn(fitRect.top, fitRect.bottom)
                             val right = rawRight.coerceIn(fitRect.left, fitRect.right)
@@ -490,49 +484,13 @@ fun ManageVehiclesScreen(
     }
 
     if (showEnlargedCrop && lastOcrDebugResult != null) {
-        AlertDialog(
-            onDismissRequest = {
+        OcrDebugDialog(
+            ocrResult = lastOcrDebugResult!!,
+            originalPhotoPath = referencePhotoUrl,
+            onDismiss = {
                 lastOcrDebugResult?.croppedBitmap?.recycle()
                 lastOcrDebugResult = null
                 showEnlargedCrop = false
-            },
-            title = { Text("OCR Debug") },
-            text = {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Original")
-                            Image(
-                                painter = rememberAsyncImagePainter(referencePhotoUrl),
-                                contentDescription = "Original image",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Cropped")
-                            lastOcrDebugResult!!.croppedBitmap?.let {
-                                Image(
-                                    bitmap = it.asImageBitmap(),
-                                    contentDescription = "Cropped image",
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } ?: Text("Cropped image (see logs for details)")
-                        }
-                    }
-                    Text(lastOcrDebugResult!!.debugText)
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    lastOcrDebugResult?.croppedBitmap?.recycle()
-                    lastOcrDebugResult = null
-                    showEnlargedCrop = false
-                }) {
-                    Text("Close")
-                }
             }
         )
     }
