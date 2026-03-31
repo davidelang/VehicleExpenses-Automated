@@ -40,7 +40,6 @@ fun OcrDebugDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Original
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Original")
                         originalUri?.let {
@@ -54,8 +53,6 @@ fun OcrDebugDialog(
                             )
                         } ?: Text("No original photo path")
                     }
-
-                    // Cropped (Stage 1 crop sent to all engines)
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Cropped")
                         ocrResult.croppedBitmap?.let {
@@ -69,8 +66,6 @@ fun OcrDebugDialog(
                             )
                         } ?: Text("No cropped image")
                     }
-
-                    // Paddle Input (the exact 224x224 bitmap fed to the ONNX model)
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Paddle Input (224×224)")
                         ocrResult.paddleInputBitmap?.let {
@@ -82,7 +77,7 @@ fun OcrDebugDialog(
                                     .height(220.dp),
                                 contentScale = ContentScale.Fit
                             )
-                        } ?: Text("No Paddle input (see logs)")
+                        } ?: Text("No Paddle input")
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
