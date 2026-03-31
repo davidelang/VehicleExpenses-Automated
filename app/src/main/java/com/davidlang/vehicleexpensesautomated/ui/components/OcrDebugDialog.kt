@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,6 +23,8 @@ fun OcrDebugDialog(
     originalPhotoPath: String?,
     onDismiss: () -> Unit
 ) {
+    Log.d("OcrDebug", "Dialog rendered with originalPhotoPath = $originalPhotoPath (file exists = ${originalPhotoPath?.let { java.io.File(it).exists() } ?: false})")
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("OCR Debug") },

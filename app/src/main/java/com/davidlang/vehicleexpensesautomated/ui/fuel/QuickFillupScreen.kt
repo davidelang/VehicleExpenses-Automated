@@ -102,14 +102,15 @@ fun QuickFillupScreen(navController: NavHostController) {
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 lastPhotoPath = tempFile.absolutePath
+                Log.d("OcrDebug", "Gallery: lastPhotoPath set to: $lastPhotoPath (file exists = ${tempFile.exists()})")
                 val cropRectF = odometerCropRect?.let { r ->
                     android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                 }
                 val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
                 lastOcrDebugResult = result
+                Log.d("OcrDebug", "Gallery: showing dialog with lastPhotoPath = $lastPhotoPath")
                 showAlignedDialog = true
-                // DO NOT delete here — file must stay alive while dialog is open
-                // tempFile.delete()  <-- removed
+                // File intentionally left on disk so dialog can load it
             }
         }
     }
@@ -400,9 +401,11 @@ private fun captureDashPhoto(
                 Toast.makeText(context, "Camera error", Toast.LENGTH_SHORT).show()
             }
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                updateLastPhotoPath(photoFile.absolutePath)
+                val path = photoFile.absolutePath
+                updateLastPhotoPath(path)
+                Log.d("OcrDebug", "Camera: lastPhotoPath set to: $path (file exists = ${photoFile.exists()})")
                 scope.launch {
-                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
+                    processPhoto(context, path, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
                 }
             }
         }
