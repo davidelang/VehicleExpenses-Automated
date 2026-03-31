@@ -33,7 +33,7 @@ data class OcrResult(
     val debugText: String,
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
-    val paddleInputBitmap: Bitmap? = null   // NEW: exact 224x224 image fed to ONNX model
+    val paddleInputBitmap: Bitmap? = null
 )
 
 object OdometerOcrUtils {
@@ -69,7 +69,7 @@ object OdometerOcrUtils {
         Log.d("OCRStage", "$stage - $label - Tesseract: $tessResult")
 
         Log.d("OCRStage", "$stage - $label - Starting PaddleOCR (2-stage)")
-        val paddlePair = runPaddleOcr(bitmap)   // now returns Pair<String, Bitmap?>
+        val paddlePair = runPaddleOcr(bitmap)
         Log.d("OCRStage", "$stage - $label - PaddleOCR: ${paddlePair.first}")
 
         return Triple(mlResult, tessResult, paddlePair)
@@ -104,7 +104,7 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Stage 1: OpenCV text detection (unchanged)
+            // Stage 1: contour detection ONLY for logging (we still use the original color image for recognition)
             val mat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, mat)
             val gray = Mat()
@@ -128,19 +128,14 @@ object OdometerOcrUtils {
                 }
             }
 
-            val finalBitmap = if (bestRect != null && bestRect.width > 20 && bestRect.height > 20) {
+            if (bestRect != null && bestRect.width > 20 && bestRect.height > 20) {
                 Log.d("OdometerOcr", "PaddleOCR Stage 1: detected text box ${bestRect.width}x${bestRect.height}")
-                val croppedMat = Mat(thresh, bestRect)
-                val croppedBmp = Bitmap.createBitmap(croppedMat.cols(), croppedMat.rows(), Bitmap.Config.ARGB_8888)
-                org.opencv.android.Utils.matToBitmap(croppedMat, croppedBmp)
-                croppedBmp
             } else {
-                Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found, using full image")
-                bitmap
+                Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found")
             }
 
-            // Stage 2: the exact image that gets fed to the model
-            val resized = Bitmap.createScaledBitmap(finalBitmap, 224, 224, true)
+            // Stage 2: use ORIGINAL color cropped image (NOT the binary thresh)
+            val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
 
             val shape = longArrayOf(1, 3, 224, 224)
             val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f }
@@ -151,9 +146,9 @@ object OdometerOcrUtils {
                     val r = ((pixel shr 16) and 0xFF) / 255.0f
                     val g = ((pixel shr 8) and 0xFF) / 255.0f
                     val b = (pixel and 0xFF) / 255.0f
-                    floatArray[idx++] = r
-                    floatArray[idx++] = g
-                    floatArray[idx++] = b
+                    floatArray[idx++] = r - 0.485f
+                    floatArray[idx++] = g - 0.456f
+                    floatArray[idx++] = b - 0.406f
                 }
             }
 
@@ -162,7 +157,6 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Heavy debugging (unchanged)
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val blank = 0
             val decoded = StringBuilder()
@@ -188,9 +182,7 @@ object OdometerOcrUtils {
             Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result'")
 
             session.close()
-            if (finalBitmap !== bitmap) finalBitmap.recycle()
 
-            // Return BOTH the text result AND the exact 224x224 bitmap that was fed to the model
             "PaddleOCR real result: $result" to resized
         } catch (e: Exception) {
             Log.e("OdometerOcr", "PaddleOCR failed", e)
@@ -229,7 +221,7 @@ object OdometerOcrUtils {
 
         val (ml, tess, paddlePair) = runAllThreeEngines(bitmap, "final", "Stage 2")
         val paddleResult = paddlePair.first
-        val paddleInputBitmap = paddlePair.second   // the exact 224x224 image fed to ONNX
+        val paddleInputBitmap = paddlePair.second
 
         val rawText = ml
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
@@ -288,7 +280,7 @@ object OdometerOcrUtils {
             debugText = debugText,
             originalPhotoPath = photoPath,
             croppedBitmap = croppedBitmap,
-            paddleInputBitmap = paddleInputBitmap   // NEW: exact image passed to ONNX model
+            paddleInputBitmap = paddleInputBitmap
         )
     }
 }
