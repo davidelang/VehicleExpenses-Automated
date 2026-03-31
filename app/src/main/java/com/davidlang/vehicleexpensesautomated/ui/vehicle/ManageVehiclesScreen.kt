@@ -37,6 +37,25 @@ import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import kotlinx.coroutines.launch
 import java.io.File
 
+// Helper to compute the actual image rectangle inside a Fit container
+private fun calculateFitImageRect(
+    containerWidth: Float,
+    containerHeight: Float,
+    imageWidth: Float,
+    imageHeight: Float
+): Rect {
+    if (imageWidth <= 0f || imageHeight <= 0f) return Rect(0f, 0f, containerWidth, containerHeight)
+
+    val scale = minOf(containerWidth / imageWidth, containerHeight / imageHeight)
+    val scaledWidth = imageWidth * scale
+    val scaledHeight = imageHeight * scale
+
+    val left = (containerWidth - scaledWidth) / 2f
+    val top = (containerHeight - scaledHeight) / 2f
+
+    return Rect(left, top, left + scaledWidth, top + scaledHeight)
+}
+
 @Composable
 fun ManageVehiclesScreen(
     navController: NavHostController
@@ -63,6 +82,7 @@ fun ManageVehiclesScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
+    var originalImageSize by remember { mutableStateOf(Offset.Zero) } // NEW: intrinsic bitmap size
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
@@ -210,14 +230,13 @@ fun ManageVehiclesScreen(
                 currentPhotoUrl = referencePhotoUrl,
                 onPhotoUrlChanged = { referencePhotoUrl = it }
             )
-
             Spacer(modifier = Modifier.height(8.dp))
 
             if (referencePhotoUrl != null) {
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(300.dp)  // taller box + Fit = full image visible
+                        .height(300.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
                             Log.d("CropDebug", "Image container size updated to $imageSize")
@@ -235,14 +254,25 @@ fun ManageVehiclesScreen(
                                 },
                                 onDragEnd = {
                                     val start = dragStart
-                                    if (start != null && imageSize.x > 0 && imageSize.y > 0) {
+                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
+                                        // NEW: compute actual Fit image bounds inside container
+                                        val fitRect = calculateFitImageRect(
+                                            imageSize.x, imageSize.y,
+                                            originalImageSize.x, originalImageSize.y
+                                        )
+
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        val left = minOf(start.x, end.x) / imageSize.x
-                                        val top = minOf(start.y, end.y) / imageSize.y
-                                        val right = maxOf(start.x, end.x) / imageSize.x
-                                        val bottom = maxOf(start.y, end.y) / imageSize.y
+
+                                        // normalize relative to displayed image area only
+                                        val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+
                                         val newRect = Rect(left, top, right, bottom)
-                                        Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
+
+                                        Log.d("CropDebug", "Drag END — normalized Rect=$newRect (after Fit correction)")
+
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
                                             Log.d("CropDebug", "✅ Committed normalized odometerCropRect=$odometerCropRect")
@@ -258,11 +288,22 @@ fun ManageVehiclesScreen(
                         }
                 ) {
                     Image(
-                        painter = rememberAsyncImagePainter(referencePhotoUrl),
+                        painter = rememberAsyncImagePainter(
+                            model = referencePhotoUrl,
+                            onSuccess = { result ->
+                                // Capture intrinsic bitmap size once loaded
+                                originalImageSize = Offset(
+                                    result.painter.intrinsicSize.width,
+                                    result.painter.intrinsicSize.height
+                                )
+                                Log.d("CropDebug", "Image intrinsic size loaded: $originalImageSize")
+                            }
+                        ),
                         contentDescription = "Reference dash photo",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit   // CHANGED: Fit makes preview-to-bitmap mapping 1:1
+                        contentScale = ContentScale.Fit
                     )
+
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         odometerCropRect?.let { rect ->
                             drawRect(
@@ -331,7 +372,6 @@ fun ManageVehiclesScreen(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-
             Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth()) {
                 Text("Try OCR Now")
             }
@@ -344,35 +384,30 @@ fun ManageVehiclesScreen(
                 label = { Text("Name") },
                 modifier = Modifier.fillMaxWidth()
             )
-
             OutlinedTextField(
                 value = make,
                 onValueChange = { make = it },
                 label = { Text("Make") },
                 modifier = Modifier.fillMaxWidth()
             )
-
             OutlinedTextField(
                 value = model,
                 onValueChange = { model = it },
                 label = { Text("Model") },
                 modifier = Modifier.fillMaxWidth()
             )
-
             OutlinedTextField(
                 value = year,
                 onValueChange = { year = it },
                 label = { Text("Year") },
                 modifier = Modifier.fillMaxWidth()
             )
-
             OutlinedTextField(
                 value = licensePlate,
                 onValueChange = { licensePlate = it },
                 label = { Text("License Plate") },
                 modifier = Modifier.fillMaxWidth()
             )
-
             OutlinedTextField(
                 value = odometerReading,
                 onValueChange = { odometerReading = it },
