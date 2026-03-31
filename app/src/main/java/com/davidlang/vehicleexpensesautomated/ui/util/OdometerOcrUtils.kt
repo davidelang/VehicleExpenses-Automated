@@ -44,7 +44,7 @@ object OdometerOcrUtils {
         }
     }
 
-    private suspend fun runAllEnginesOnStage(bitmap: Bitmap, stageName: String): String {
+    private suspend fun runBothEngines(bitmap: Bitmap, stageName: String): String {
         val mlResult = try {
             val image = InputImage.fromBitmap(bitmap, 0)
             val text: Text = suspendCancellableCoroutine { cont ->
@@ -64,6 +64,7 @@ object OdometerOcrUtils {
             appendLine("--- $stageName ---")
             appendLine("ML Kit: $mlResult")
             appendLine("Tesseract: $tessResult")
+            appendLine()
         }
     }
 
@@ -91,15 +92,12 @@ object OdometerOcrUtils {
             val mat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, mat)
 
-            // Stage 1: Grayscale
             val gray = Mat()
             Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
 
-            // Stage 2: Binary threshold (OTSU)
             val thresh = Mat()
             Imgproc.threshold(gray, thresh, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
 
-            // Stage 3: Morphology (opening + closing to clean noise)
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
             val morph = Mat()
             Imgproc.morphologyEx(thresh, morph, Imgproc.MORPH_OPEN, kernel)
@@ -150,38 +148,41 @@ object OdometerOcrUtils {
             }
         }
 
-        // Run both engines on multiple stages
-        val debugBuilder = StringBuilder("=== OCR DEBUG (multi-stage) ===\n\n")
+        val debugText = buildString {
+            appendLine("=== OCR DEBUG (multi-stage) ===\n")
 
-        // Stage 1: Raw cropped
-        debugBuilder.append(runAllEnginesOnStage(bitmap, "Raw Cropped"))
+            // Stage 1: Raw cropped
+            append(runBothEngines(bitmap, "Raw Cropped"))
 
-        // Stage 2: Grayscale
-        val grayMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
-        Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
-        val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
-        debugBuilder.append(runAllEnginesOnStage(grayBmp, "Grayscale"))
-        grayMat.release()
+            // Stage 2: Grayscale
+            val grayMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
+            Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+            val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
+            append(runBothEngines(grayBmp, "Grayscale"))
+            grayMat.release()
 
-        // Stage 3: Binary threshold
-        val threshMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, threshMat)
-        val gray2 = Mat()
-        Imgproc.cvtColor(threshMat, gray2, Imgproc.COLOR_RGB2GRAY)
-        Imgproc.threshold(gray2, threshMat, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
-        val threshBmp = Bitmap.createBitmap(threshMat.cols(), threshMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(threshMat, threshBmp)
-        debugBuilder.append(runAllEnginesOnStage(threshBmp, "Binary Threshold"))
-        gray2.release()
-        threshMat.release()
+            // Stage 3: Binary threshold
+            val threshMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(bitmap, threshMat)
+            val gray2 = Mat()
+            Imgproc.cvtColor(threshMat, gray2, Imgproc.COLOR_RGB2GRAY)
+            Imgproc.threshold(gray2, threshMat, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+            val threshBmp = Bitmap.createBitmap(threshMat.cols(), threshMat.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(threshMat, threshBmp)
+            append(runBothEngines(threshBmp, "Binary Threshold"))
+            gray2.release()
+            threshMat.release()
 
-        // Stage 4: Morphology (OpenCV cleaning)
-        val (openCvResult, openCvProcessedBitmap) = runOpenCvPreprocessingStages(bitmap)
-        debugBuilder.append(openCvResult)
+            // Stage 4: Morphology (OpenCV cleaning)
+            val (openCvResult, openCvProcessedBitmap) = runOpenCvPreprocessingStages(bitmap)
+            append(openCvResult)
+            // Store the final OpenCV processed image for the debug dialog
+            val finalOpenCvBitmap = openCvProcessedBitmap
+        }
 
-        val rawText = debugBuilder.toString() // simplified for now
+        val rawText = debugText
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
@@ -221,18 +222,12 @@ object OdometerOcrUtils {
             bitmap.recycle()
         }
 
-        val debugText = buildString {
-            append(debugBuilder)
-            appendLine("Final odometer (default = Tesseract on raw crop): ${odometer ?: "NONE"}")
-            appendLine("Candidates: ${possibleOdometers.joinToString()}")
-        }
-
         OcrResult(
-            odometer = odometer,
+            odometer = odometer,   // Default = Tesseract on raw cropped image
             possibleOdometers = possibleOdometers.distinct().sortedByDescending { it.length },
             gallons = gallons,
             cost = cost,
-            debugText = debugText,
+            debugText = debugText.toString(),
             originalPhotoPath = photoPath,
             croppedBitmap = croppedBitmap,
             openCvProcessedBitmap = openCvProcessedBitmap
