@@ -26,7 +26,8 @@ data class OcrResult(
     val possibleOdometers: List<String>,
     val gallons: String?,
     val cost: String?,
-    val debugText: String
+    val debugText: String,
+    val croppedBitmap: Bitmap? = null   // added for debug popup
 )
 
 object OdometerOcrUtils {
@@ -126,12 +127,13 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found")
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", null)
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap")
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", null)
 
         Log.d("OCRStage", "Stage 0 - Full image loaded, size ${bitmap.width}x${bitmap.height}")
 
+        var croppedBitmap: Bitmap? = null
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
@@ -141,9 +143,9 @@ object OdometerOcrUtils {
             val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
 
             if (right > left && bottom > top) {
-                val cropped = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+                croppedBitmap = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
                 bitmap.recycle()
-                bitmap = cropped
+                bitmap = croppedBitmap
                 Log.d("OCRStage", "Stage 1 - Crop applied, new size ${bitmap.width}x${bitmap.height}")
             }
         }
@@ -177,7 +179,7 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit error", e)
             bitmap.recycle()
-            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error")
+            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error", null)
         }
 
         visionText.textBlocks.forEach { block ->
@@ -197,6 +199,6 @@ object OdometerOcrUtils {
             appendLine("Candidates: ${possibleOdometers.joinToString()}")
         }
 
-        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost, debugText)
+        OcrResult(odometer, possibleOdometers.distinct().sortedByDescending { it.length }, gallons, cost, debugText, croppedBitmap)
     }
 }
