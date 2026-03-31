@@ -82,7 +82,7 @@ fun ManageVehiclesScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
-    var originalImageSize by remember { mutableStateOf(Offset.Zero) } // NEW: intrinsic bitmap size
+    var originalImageSize by remember { mutableStateOf(Offset.Zero) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
@@ -255,7 +255,6 @@ fun ManageVehiclesScreen(
                                 onDragEnd = {
                                     val start = dragStart
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
-                                        // NEW: compute actual Fit image bounds inside container
                                         val fitRect = calculateFitImageRect(
                                             imageSize.x, imageSize.y,
                                             originalImageSize.x, originalImageSize.y
@@ -263,7 +262,6 @@ fun ManageVehiclesScreen(
 
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
 
-                                        // normalize relative to displayed image area only
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
@@ -291,7 +289,6 @@ fun ManageVehiclesScreen(
                         painter = rememberAsyncImagePainter(
                             model = referencePhotoUrl,
                             onSuccess = { result ->
-                                // Capture intrinsic bitmap size once loaded
                                 originalImageSize = Offset(
                                     result.painter.intrinsicSize.width,
                                     result.painter.intrinsicSize.height
@@ -304,29 +301,58 @@ fun ManageVehiclesScreen(
                         contentScale = ContentScale.Fit
                     )
 
+                    // Compute fit rectangle once per recomposition
+                    val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
+                        calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
+                    } else {
+                        Rect(0f, 0f, imageSize.x, imageSize.y)
+                    }
+
                     Canvas(modifier = Modifier.fillMaxSize()) {
+                        // Blue committed box - now uses fitRect mapping
                         odometerCropRect?.let { rect ->
+                            val left = fitRect.left + rect.left * fitRect.width
+                            val top = fitRect.top + rect.top * fitRect.height
+                            val width = rect.width * fitRect.width
+                            val height = rect.height * fitRect.height
+
                             drawRect(
                                 color = Color.Blue,
-                                topLeft = Offset(rect.left * size.width, rect.top * size.height),
-                                size = androidx.compose.ui.geometry.Size(rect.width * size.width, rect.height * size.height),
+                                topLeft = Offset(left, top),
+                                size = androidx.compose.ui.geometry.Size(width, height),
                                 style = Stroke(width = 4f)
                             )
                         }
+
+                        // Green landmark box (same mapping)
                         landmarkCropRect?.let { rect ->
+                            val left = fitRect.left + rect.left * fitRect.width
+                            val top = fitRect.top + rect.top * fitRect.height
+                            val width = rect.width * fitRect.width
+                            val height = rect.height * fitRect.height
+
                             drawRect(
                                 color = Color.Green,
-                                topLeft = Offset(rect.left * size.width, rect.top * size.height),
-                                size = androidx.compose.ui.geometry.Size(rect.width * size.width, rect.height * size.height),
+                                topLeft = Offset(left, top),
+                                size = androidx.compose.ui.geometry.Size(width, height),
                                 style = Stroke(width = 4f)
                             )
                         }
+
+                        // Red live drag preview - now also uses fitRect
                         if (dragStart != null && isEditingOcrArea) {
                             val end = Offset(dragStart!!.x + dragOffset.x, dragStart!!.y + dragOffset.y)
-                            val left = minOf(dragStart!!.x, end.x)
-                            val top = minOf(dragStart!!.y, end.y)
-                            val right = maxOf(dragStart!!.x, end.x)
-                            val bottom = maxOf(dragStart!!.y, end.y)
+                            val rawLeft = minOf(dragStart!!.x, end.x)
+                            val rawTop = minOf(dragStart!!.y, end.y)
+                            val rawRight = maxOf(dragStart!!.x, end.x)
+                            val rawBottom = maxOf(dragStart!!.y, end.y)
+
+                            // Clamp to fit area
+                            val left = rawLeft.coerceIn(fitRect.left, fitRect.right)
+                            val top = rawTop.coerceIn(fitRect.top, fitRect.bottom)
+                            val right = rawRight.coerceIn(fitRect.left, fitRect.right)
+                            val bottom = rawBottom.coerceIn(fitRect.top, fitRect.bottom)
+
                             drawRect(
                                 color = Color.Red,
                                 topLeft = Offset(left, top),
