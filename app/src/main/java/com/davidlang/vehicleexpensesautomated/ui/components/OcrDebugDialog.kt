@@ -67,17 +67,17 @@ fun OcrDebugDialog(
                         } ?: Text("No cropped image")
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Paddle Input (224×224)")
-                        ocrResult.paddleInputBitmap?.let {
+                        Text("OpenCV Processed")
+                        ocrResult.openCvProcessedBitmap?.let {
                             Image(
                                 bitmap = it.asImageBitmap(),
-                                contentDescription = "Paddle input image",
+                                contentDescription = "OpenCV processed image",
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(220.dp),
                                 contentScale = ContentScale.Fit
                             )
-                        } ?: Text("No Paddle input")
+                        } ?: Text("No OpenCV processed image")
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
