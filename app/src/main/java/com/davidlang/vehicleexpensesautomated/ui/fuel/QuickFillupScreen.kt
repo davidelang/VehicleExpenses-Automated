@@ -157,6 +157,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                             captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
+                        onExperimentClick = { navController.navigate("experiment") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
                         onPossibleOdometersChange = { possibleOdometers = it },
                         onOdometerConfirmed = { selected ->
@@ -207,6 +208,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                             captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
+                        onExperimentClick = { navController.navigate("experiment") },
                         onShowConfirmationChange = { showOdometerConfirmation = it },
                         onPossibleOdometersChange = { possibleOdometers = it },
                         onOdometerConfirmed = { selected ->
@@ -284,6 +286,7 @@ private fun ControlsContent(
     onStepChange: (Int) -> Unit,
     onTakeDashPicture: () -> Unit,
     onAdvancedPick: () -> Unit,
+    onExperimentClick: () -> Unit,
     onShowConfirmationChange: (Boolean) -> Unit,
     onPossibleOdometersChange: (List<String>) -> Unit,
     onOdometerConfirmed: (String) -> Unit,
@@ -342,16 +345,7 @@ private fun ControlsContent(
     Button(onClick = onAdvancedPick, modifier = Modifier.fillMaxWidth()) {
         Text("Advanced: Pick Existing Picture")
     }
-    Button(
-        onClick = {
-            Toast.makeText(
-                LocalContext.current,
-                "Experiment page is ready!\n\nCopy your Amazon Photos images to:\n/sdcard/Download/experiment_photos/\n\nThen press this button again to run the full report.",
-                Toast.LENGTH_LONG
-            ).show()
-        },
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Button(onClick = onExperimentClick, modifier = Modifier.fillMaxWidth()) {
         Text("Run Alignment Experiment (test new function)")
     }
 }

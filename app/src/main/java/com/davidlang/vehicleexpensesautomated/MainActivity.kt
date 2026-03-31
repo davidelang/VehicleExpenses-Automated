@@ -20,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
                     "settings" -> "Settings"
                     "help" -> "Help"
                     "about" -> "About"
+                    "experiment" -> "Alignment Experiment"
                     else -> "Vehicle Expenses"
                 }
 
@@ -84,6 +86,7 @@ class MainActivity : ComponentActivity() {
                             NavigationDrawerItem(label = { Text("Settings") }, selected = false, onClick = { navController.navigate("settings"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("Help") }, selected = false, onClick = { navController.navigate("help"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("About") }, selected = false, onClick = { navController.navigate("about"); scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(label = { Text("Alignment Experiment") }, selected = false, onClick = { navController.navigate("experiment"); scope.launch { drawerState.close() } })
                         }
                     }
                 ) {
@@ -114,6 +117,7 @@ class MainActivity : ComponentActivity() {
                                 composable("settings") { SettingsScreen() }
                                 composable("help") { HelpScreen() }
                                 composable("about") { AboutScreen() }
+                                composable("experiment") { ExperimentAlignmentScreen() }
                             }
                         }
                     }
