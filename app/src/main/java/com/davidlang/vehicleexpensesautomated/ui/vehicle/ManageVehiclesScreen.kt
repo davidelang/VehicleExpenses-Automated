@@ -217,7 +217,7 @@ fun ManageVehiclesScreen(
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
+                        .height(300.dp)  // taller box + Fit = full image visible
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
                             Log.d("CropDebug", "Image container size updated to $imageSize")
@@ -261,7 +261,7 @@ fun ManageVehiclesScreen(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
                         contentDescription = "Reference dash photo",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop   // CHANGED: now fills the box exactly (no letterboxing)
+                        contentScale = ContentScale.Fit   // CHANGED: Fit makes preview-to-bitmap mapping 1:1
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         odometerCropRect?.let { rect ->
