@@ -16,10 +16,6 @@ import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import java.io.File
 
-/**
- * Unified OCR Debug dialog used by both ManageVehiclesScreen and QuickFillupScreen.
- * Future image enhancement features should be added here (one place only).
- */
 @Composable
 fun OcrDebugDialog(
     ocrResult: OcrResult,
@@ -52,7 +48,7 @@ fun OcrDebugDialog(
                                 contentDescription = "Original image",
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(220.dp),           // fixed height prevents collapse
+                                    .height(220.dp),
                                 contentScale = ContentScale.Fit
                             )
                         } ?: Text("No original photo path")
@@ -75,8 +71,6 @@ fun OcrDebugDialog(
                 Text(ocrResult.debugText)
 
                 // TODO: Image enhancement (add here so both screens get it automatically)
-                // Example future button:
-                // Button(onClick = { /* enhance logic */ }) { Text("Enhance Cropped Image") }
             }
         },
         confirmButton = {
