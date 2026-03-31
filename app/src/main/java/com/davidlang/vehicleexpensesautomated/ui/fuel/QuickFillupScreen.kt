@@ -110,7 +110,6 @@ fun QuickFillupScreen(navController: NavHostController) {
                 lastOcrDebugResult = result
                 Log.d("OcrDebug", "Gallery: showing dialog with lastPhotoPath = $lastPhotoPath")
                 showAlignedDialog = true
-                // File intentionally left on disk so dialog can load it
             }
         }
     }
