@@ -178,8 +178,6 @@ object OdometerOcrUtils {
             // Stage 4: Morphology (OpenCV cleaning)
             val (openCvResult, openCvProcessedBitmap) = runOpenCvPreprocessingStages(bitmap)
             append(openCvResult)
-            // Store the final OpenCV processed image for the debug dialog
-            val finalOpenCvBitmap = openCvProcessedBitmap
         }
 
         val rawText = debugText
