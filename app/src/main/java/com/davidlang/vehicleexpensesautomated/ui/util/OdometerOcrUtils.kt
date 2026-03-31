@@ -18,15 +18,6 @@ import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import com.googlecode.tesseract.android.TessBaseAPI
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
-import ai.onnxruntime.OnnxTensor
-import java.nio.FloatBuffer
-import kotlin.math.ceil
-import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.exp
 
 data class OcrResult(
     val odometer: String?,
@@ -36,7 +27,7 @@ data class OcrResult(
     val debugText: String,
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
-    val paddleInputBitmap: Bitmap? = null
+    val openCvProcessedBitmap: Bitmap? = null
 )
 
 object OdometerOcrUtils {
@@ -71,11 +62,11 @@ object OdometerOcrUtils {
         val tessResult = runTesseract(bitmap)
         Log.d("OCRStage", "$stage - $label - Tesseract: $tessResult")
 
-        Log.d("OCRStage", "$stage - $label - Starting PaddleOCR (2-stage)")
-        val paddlePair = runPaddleOcr(bitmap)
-        Log.d("OCRStage", "$stage - $label - PaddleOCR: ${paddlePair.first}")
+        Log.d("OCRStage", "$stage - $label - Starting OpenCV + Tesseract")
+        val openCvPair = runOpenCvTesseract(bitmap)
+        Log.d("OCRStage", "$stage - $label - OpenCV+Tesseract: ${openCvPair.first}")
 
-        return Triple(mlResult, tessResult, paddlePair)
+        return Triple(mlResult, tessResult, openCvPair)
     }
 
     private fun runTesseract(bitmap: Bitmap): String {
@@ -97,121 +88,30 @@ object OdometerOcrUtils {
         }
     }
 
-    private fun letterboxResize(bitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
-        val ratio = min(targetWidth.toFloat() / bitmap.width, targetHeight.toFloat() / bitmap.height)
-        val newWidth = (bitmap.width * ratio).toInt()
-        val newHeight = (bitmap.height * ratio).toInt()
-
-        val scaled = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
-        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(result)
-        canvas.drawColor(android.graphics.Color.BLACK)
-        canvas.drawBitmap(scaled, (targetWidth - newWidth) / 2f, (targetHeight - newHeight) / 2f, null)
-        scaled.recycle()
-        return result
-    }
-
-    private fun softmax(probs: FloatArray): FloatArray {
-        val maxVal = probs.maxOrNull() ?: 0f
-        val expSum = probs.sumOf { exp((it - maxVal).toDouble()) }
-        return FloatArray(probs.size) { i -> (exp((probs[i] - maxVal).toDouble()) / expSum).toFloat() }
-    }
-
-    private fun runPaddleOcr(bitmap: Bitmap): Pair<String, Bitmap?> {
-        val modelFile = File("/data/user/0/com.davidlang.vehicleexpensesautomated/files/paddleocr.onnx")
+    private fun runOpenCvTesseract(bitmap: Bitmap): Pair<String, Bitmap?> {
         return try {
-            if (!modelFile.exists()) return "(PaddleOCR model not found on device)" to null
-
-            val env = OrtEnvironment.getEnvironment()
-            val modelBytes = modelFile.readBytes()
-            val session = env.createSession(modelBytes)
-            Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
-
-            // Stage 1: contour detection for logging only
             val mat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+
             val gray = Mat()
             Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+
             val thresh = Mat()
             Imgproc.threshold(gray, thresh, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
 
-            val contours = ArrayList<MatOfPoint>()
-            val hierarchy = Mat()
-            Imgproc.findContours(thresh, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+            val resultBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(thresh, resultBmp)
 
-            var bestRect: Rect? = null
-            var bestArea = 0.0
-            for (contour in contours) {
-                val rect = Imgproc.boundingRect(contour)
-                val aspect = rect.width.toDouble() / rect.height
-                val area = rect.area()
-                if (aspect in 1.5..8.0 && area > 200 && area > bestArea) {
-                    bestArea = area
-                    bestRect = rect
-                }
-            }
+            val tessResult = runTesseract(resultBmp)
 
-            if (bestRect != null && bestRect.width > 20 && bestRect.height > 20) {
-                Log.d("OdometerOcr", "PaddleOCR Stage 1: detected text box ${bestRect.width}x${bestRect.height}")
-            } else {
-                Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found")
-            }
+            mat.release()
+            gray.release()
+            thresh.release()
 
-            // Letterbox resize (preserve aspect ratio + black padding)
-            val resized = letterboxResize(bitmap, 224, 224)
-
-            val shape = longArrayOf(1, 3, 224, 224)
-            val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f }
-            var idx = 0
-            for (y in 0 until 224) {
-                for (x in 0 until 224) {
-                    val pixel = resized.getPixel(x, y)
-                    val r = ((pixel shr 16) and 0xFF) / 255.0f
-                    val g = ((pixel shr 8) and 0xFF) / 255.0f
-                    val b = (pixel and 0xFF) / 255.0f
-                    floatArray[idx++] = r
-                    floatArray[idx++] = g
-                    floatArray[idx++] = b
-                }
-            }
-
-            val inputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(floatArray), shape)
-            val inputName = session.inputNames.iterator().next()
-            val outputs = session.run(mapOf(inputName to inputTensor))
-            val outputTensor = outputs[0].value as Array<*>
-
-            Log.d("OdometerOcr", "PaddleOCR output tensor shape: ${outputTensor.size} timesteps × ${(outputTensor[0] as FloatArray).size} classes")
-
-            // Single-timestep 1000-class model
-            val logits = outputTensor[0] as FloatArray
-            val probs = softmax(logits)
-
-            val top50 = probs.indices.sortedByDescending { probs[it] }.take(50)
-            val sb = StringBuilder("PaddleOCR timestep 0 top50 (after softmax): ")
-            for (i in top50) {
-                sb.append("[$i p=${"%.4f".format(probs[i])}] ")
-            }
-            Log.d("OdometerOcr", sb.toString())
-
-            // Force digit-only decoding: max probability among classes 0-9 only
-            var bestDigit = -1
-            var bestProb = -1f
-            for (d in 0..9) {
-                if (probs[d] > bestProb) {
-                    bestProb = probs[d]
-                    bestDigit = d
-                }
-            }
-            val result = if (bestDigit != -1) bestDigit.toString() else "?"
-
-            Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result' (digit $bestDigit, prob=$bestProb)")
-
-            session.close()
-
-            "PaddleOCR real result: $result (digit $bestDigit)" to resized
+            "OpenCV + Tesseract: $tessResult" to resultBmp
         } catch (e: Exception) {
-            Log.e("OdometerOcr", "PaddleOCR failed", e)
-            "(PaddleOCR error: ${e.message})" to null
+            Log.e("OdometerOcr", "OpenCV + Tesseract failed", e)
+            "(OpenCV+Tesseract error)" to null
         }
     }
 
@@ -244,9 +144,9 @@ object OdometerOcrUtils {
             }
         }
 
-        val (ml, tess, paddlePair) = runAllThreeEngines(bitmap, "final", "Stage 2")
-        val paddleResult = paddlePair.first
-        val paddleInputBitmap = paddlePair.second
+        val (ml, tess, openCvPair) = runAllThreeEngines(bitmap, "final", "Stage 2")
+        val openCvResult = openCvPair.first
+        val openCvProcessedBitmap = openCvPair.second
 
         val rawText = ml
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
@@ -292,7 +192,7 @@ object OdometerOcrUtils {
             appendLine("=== OCR DEBUG ===")
             appendLine("ML Kit: $ml")
             appendLine("Tesseract: $tess")
-            appendLine("PaddleOCR: $paddleResult")
+            appendLine("OpenCV + Tesseract: $openCvResult")
             appendLine("Final odometer: ${odometer ?: "NONE"}")
             appendLine("Candidates: ${possibleOdometers.joinToString()}")
         }
@@ -305,7 +205,7 @@ object OdometerOcrUtils {
             debugText = debugText,
             originalPhotoPath = photoPath,
             croppedBitmap = croppedBitmap,
-            paddleInputBitmap = paddleInputBitmap
+            openCvProcessedBitmap = openCvProcessedBitmap
         )
     }
 }
