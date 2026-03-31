@@ -44,8 +44,7 @@ object OdometerOcrUtils {
         }
     }
 
-    private suspend fun runAllThreeEngines(bitmap: Bitmap, label: String, stage: String): Triple<String, String, Pair<String, Bitmap?>> {
-        Log.d("OCRStage", "$stage - $label - Starting ML Kit")
+    private suspend fun runAllEnginesOnStage(bitmap: Bitmap, stageName: String): String {
         val mlResult = try {
             val image = InputImage.fromBitmap(bitmap, 0)
             val text: Text = suspendCancellableCoroutine { cont ->
@@ -55,20 +54,17 @@ object OdometerOcrUtils {
             }
             text.text.ifEmpty { "(no text)" }
         } catch (e: Exception) {
-            Log.e("OdometerOcr", "ML Kit failed for $label", e)
+            Log.e("OdometerOcr", "ML Kit failed on $stageName", e)
             "(ML Kit error)"
         }
-        Log.d("OCRStage", "$stage - $label - ML Kit: $mlResult")
 
-        Log.d("OCRStage", "$stage - $label - Starting Tesseract")
         val tessResult = runTesseract(bitmap)
-        Log.d("OCRStage", "$stage - $label - Tesseract: $tessResult")
 
-        Log.d("OCRStage", "$stage - $label - Starting OpenCV + Tesseract")
-        val openCvPair = runOpenCvTesseract(bitmap)
-        Log.d("OCRStage", "$stage - $label - OpenCV+Tesseract: ${openCvPair.first}")
-
-        return Triple(mlResult, tessResult, openCvPair)
+        return buildString {
+            appendLine("--- $stageName ---")
+            appendLine("ML Kit: $mlResult")
+            appendLine("Tesseract: $tessResult")
+        }
     }
 
     private fun runTesseract(bitmap: Bitmap): String {
@@ -90,30 +86,38 @@ object OdometerOcrUtils {
         }
     }
 
-    private fun runOpenCvTesseract(bitmap: Bitmap): Pair<String, Bitmap?> {
+    private fun runOpenCvPreprocessingStages(bitmap: Bitmap): Pair<String, Bitmap?> {
         return try {
             val mat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, mat)
 
+            // Stage 1: Grayscale
             val gray = Mat()
             Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
 
+            // Stage 2: Binary threshold (OTSU)
             val thresh = Mat()
             Imgproc.threshold(gray, thresh, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
 
-            val resultBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(thresh, resultBmp)
+            // Stage 3: Morphology (opening + closing to clean noise)
+            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+            val morph = Mat()
+            Imgproc.morphologyEx(thresh, morph, Imgproc.MORPH_OPEN, kernel)
+            Imgproc.morphologyEx(morph, morph, Imgproc.MORPH_CLOSE, kernel)
 
-            val tessResult = runTesseract(resultBmp)
+            val resultBmp = Bitmap.createBitmap(morph.cols(), morph.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(morph, resultBmp)
 
             mat.release()
             gray.release()
             thresh.release()
+            morph.release()
+            kernel.release()
 
-            "OpenCV + Tesseract: $tessResult" to resultBmp
+            "OpenCV processed (morphology)" to resultBmp
         } catch (e: Exception) {
-            Log.e("OdometerOcr", "OpenCV + Tesseract failed", e)
-            "(OpenCV+Tesseract error)" to null
+            Log.e("OdometerOcr", "OpenCV preprocessing failed", e)
+            "(OpenCV error)" to null
         }
     }
 
@@ -146,11 +150,38 @@ object OdometerOcrUtils {
             }
         }
 
-        val (ml, tess, openCvPair) = runAllThreeEngines(bitmap, "final", "Stage 2")
-        val openCvResult = openCvPair.first
-        val openCvProcessedBitmap = openCvPair.second
+        // Run both engines on multiple stages
+        val debugBuilder = StringBuilder("=== OCR DEBUG (multi-stage) ===\n\n")
 
-        val rawText = ml
+        // Stage 1: Raw cropped
+        debugBuilder.append(runAllEnginesOnStage(bitmap, "Raw Cropped"))
+
+        // Stage 2: Grayscale
+        val grayMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
+        Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+        val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
+        debugBuilder.append(runAllEnginesOnStage(grayBmp, "Grayscale"))
+        grayMat.release()
+
+        // Stage 3: Binary threshold
+        val threshMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, threshMat)
+        val gray2 = Mat()
+        Imgproc.cvtColor(threshMat, gray2, Imgproc.COLOR_RGB2GRAY)
+        Imgproc.threshold(gray2, threshMat, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+        val threshBmp = Bitmap.createBitmap(threshMat.cols(), threshMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(threshMat, threshBmp)
+        debugBuilder.append(runAllEnginesOnStage(threshBmp, "Binary Threshold"))
+        gray2.release()
+        threshMat.release()
+
+        // Stage 4: Morphology (OpenCV cleaning)
+        val (openCvResult, openCvProcessedBitmap) = runOpenCvPreprocessingStages(bitmap)
+        debugBuilder.append(openCvResult)
+
+        val rawText = debugBuilder.toString() // simplified for now
         val cleanText = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
 
         val odoRegex = "\\b\\d{4,8}\\b".toRegex()
@@ -191,11 +222,8 @@ object OdometerOcrUtils {
         }
 
         val debugText = buildString {
-            appendLine("=== OCR DEBUG ===")
-            appendLine("ML Kit: $ml")
-            appendLine("Tesseract: $tess")
-            appendLine("OpenCV + Tesseract: $openCvResult")
-            appendLine("Final odometer: ${odometer ?: "NONE"}")
+            append(debugBuilder)
+            appendLine("Final odometer (default = Tesseract on raw crop): ${odometer ?: "NONE"}")
             appendLine("Candidates: ${possibleOdometers.joinToString()}")
         }
 
