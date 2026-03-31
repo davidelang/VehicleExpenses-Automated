@@ -35,7 +35,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -229,27 +228,6 @@ fun QuickFillupScreen(navController: NavHostController) {
             title = { Text("OCR Debug") },
             text = {
                 Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Original")
-                            Image(
-                                painter = rememberAsyncImagePainter(referencePhotoUrl),
-                                contentDescription = "Original image",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Cropped")
-                            Image(
-                                painter = rememberAsyncImagePainter(referencePhotoUrl),
-                                contentDescription = "Cropped image",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
                     Text(lastOcrDebugResult!!.debugText)
                 }
             },
