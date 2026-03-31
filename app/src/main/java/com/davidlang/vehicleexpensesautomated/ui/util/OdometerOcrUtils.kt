@@ -18,6 +18,8 @@ import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import com.googlecode.tesseract.android.TessBaseAPI
+import kotlin.math.ceil
+import kotlin.math.floor
 
 data class OcrResult(
     val odometer: String?,
