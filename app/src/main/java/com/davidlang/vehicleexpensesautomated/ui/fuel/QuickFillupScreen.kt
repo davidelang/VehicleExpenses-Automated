@@ -11,7 +11,6 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
@@ -225,29 +223,6 @@ fun QuickFillupScreen(navController: NavHostController) {
             title = { Text("OCR Debug") },
             text = {
                 Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Original")
-                            Image(
-                                bitmap = BitmapFactory.decodeFile(/* path would be needed, but for now use the result's original if available */),
-                                contentDescription = "Original image",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Cropped")
-                            lastOcrDebugResult!!.croppedBitmap?.let {
-                                Image(
-                                    bitmap = it.asImageBitmap(),
-                                    contentDescription = "Cropped image",
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } ?: Text("Cropped image (see logs for details)")
-                        }
-                    }
                     Text(lastOcrDebugResult!!.debugText)
                 }
             },
