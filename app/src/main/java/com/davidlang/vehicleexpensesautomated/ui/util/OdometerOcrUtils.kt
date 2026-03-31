@@ -161,26 +161,26 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Proper CTC-style decoding (most PaddleOCR models use CTC)
+            // Proper CTC decoding for PaddleOCR CRNN models
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
-            val blankIndex = 0
+            val blank = 0
             val decoded = StringBuilder()
             var previous = -1
             for (t in 0 until outputTensor.size) {
                 val probs = outputTensor[t] as FloatArray
-                val maxIndex = probs.indices.maxByOrNull { probs[it] } ?: blankIndex
-                if (maxIndex != blankIndex && maxIndex != previous) {
+                val maxIndex = probs.indices.maxByOrNull { probs[it] } ?: blank
+                if (maxIndex != blank && maxIndex != previous) {
                     if (maxIndex < vocab.length) decoded.append(vocab[maxIndex])
                 }
                 previous = maxIndex
             }
             val result = decoded.toString().trim()
 
+            Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result'")
+
             session.close()
             resized.recycle()
             if (finalBitmap !== bitmap) finalBitmap.recycle()
-
-            Log.d("OdometerOcr", "PaddleOCR Stage 2 decoded: '$result'")
             "PaddleOCR real result: $result"
         } catch (e: Exception) {
             Log.e("OdometerOcr", "PaddleOCR failed", e)
