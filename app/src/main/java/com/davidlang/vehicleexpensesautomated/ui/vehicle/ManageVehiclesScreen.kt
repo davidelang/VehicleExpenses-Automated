@@ -67,6 +67,8 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize")
+
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
@@ -120,7 +122,7 @@ fun ManageVehiclesScreen(
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
-                    Log.d("CropDebug", "OCR result received — odometer=${result.odometer}")
+                    Log.d("CropDebug", "OCR result received — odometer=${result.odometer}, possible=${result.possibleOdometers.size}")
 
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
@@ -218,12 +220,14 @@ fun ManageVehiclesScreen(
                         .height(220.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
+                            Log.d("CropDebug", "Image container size updated to $imageSize")
                         }
                         .pointerInput(Unit) {
                             detectDragGestures(
                                 onDragStart = { offset ->
                                     dragStart = offset
                                     dragOffset = Offset.Zero
+                                    Log.d("CropDebug", "Drag START at $offset")
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
@@ -238,10 +242,13 @@ fun ManageVehiclesScreen(
                                         val right = maxOf(start.x, end.x) / imageSize.x
                                         val bottom = maxOf(start.y, end.y) / imageSize.y
                                         val newRect = Rect(left, top, right, bottom)
+                                        Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
+                                            Log.d("CropDebug", "✅ Committed normalized odometerCropRect=$odometerCropRect")
                                         } else if (isEditingLandmark) {
                                             landmarkCropRect = newRect
+                                            Log.d("CropDebug", "✅ Committed normalized landmarkCropRect=$landmarkCropRect")
                                         }
                                     }
                                     dragStart = null
@@ -254,7 +261,7 @@ fun ManageVehiclesScreen(
                         painter = rememberAsyncImagePainter(referencePhotoUrl),
                         contentDescription = "Reference dash photo",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
+                        contentScale = ContentScale.Crop   // CHANGED: now fills the box exactly (no letterboxing)
                     )
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         odometerCropRect?.let { rect ->
