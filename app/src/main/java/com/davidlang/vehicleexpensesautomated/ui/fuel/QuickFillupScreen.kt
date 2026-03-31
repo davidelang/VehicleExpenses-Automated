@@ -108,6 +108,10 @@ fun QuickFillupScreen(navController: NavHostController) {
                 }
                 val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
                 lastOcrDebugResult = result
+
+                // <<< FIXED: transfer odometer value to UI state >>>
+                result.odometer?.toIntOrNull()?.let { odometer = it }
+
                 Log.d("OcrDebug", "Gallery: showing dialog with lastPhotoPath = $lastPhotoPath")
                 showAlignedDialog = true
             }
@@ -229,6 +233,7 @@ fun QuickFillupScreen(navController: NavHostController) {
             originalPhotoPath = lastPhotoPath,
             onDismiss = {
                 lastOcrDebugResult?.croppedBitmap?.recycle()
+                lastOcrDebugResult?.openCvProcessedBitmap?.recycle()
                 lastOcrDebugResult = null
                 showAlignedDialog = false
             }
@@ -362,8 +367,12 @@ private suspend fun processPhoto(
         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
     }
     val result = OdometerOcrUtils.extractFromPhoto(path, cropRectF)
+
     updateOcrResult("Odometer: ${result.odometer ?: "—"} | Gallons: ${result.gallons ?: "—"} | Cost: ${result.cost ?: "—"}")
+
+    // <<< FIXED: transfer odometer value to UI state >>>
     result.odometer?.toIntOrNull()?.let { updateOdometer(it) }
+
     updatePossibleOdometers(result.possibleOdometers)
     updateGallons(result.gallons?.toDoubleOrNull() ?: 0.0)
     updateCost(result.cost?.toDoubleOrNull() ?: 0.0)
