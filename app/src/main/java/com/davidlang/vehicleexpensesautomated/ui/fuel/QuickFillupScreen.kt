@@ -11,8 +11,6 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,22 +18,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -106,7 +97,9 @@ fun QuickFillupScreen(navController: NavHostController) {
                 context.contentResolver.openInputStream(selectedUri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
-                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
+                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, odometerCropRect?.let { r ->
+                    android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+                })
                 lastOcrDebugResult = result
                 showAlignedDialog = true
                 tempFile.delete()
@@ -365,9 +358,13 @@ private suspend fun processPhoto(
     updatePossibleOdometers: (List<String>) -> Unit,
     updateShowConfirmation: (Boolean) -> Unit,
     updateGallons: (Double) -> Unit,
-    updateCost: (Double) -> Unit
+    updateCost: (Double) -> Unit,
+    cropRect: Rect?   // <-- now passed from the caller
 ) {
-    val result = OdometerOcrUtils.extractFromPhoto(path, null)
+    val androidRectF = cropRect?.let { r ->
+        android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+    }
+    val result = OdometerOcrUtils.extractFromPhoto(path, androidRectF)
     updateOcrResult("Odometer: ${result.odometer ?: "—"} | Gallons: ${result.gallons ?: "—"} | Cost: ${result.cost ?: "—"}")
     result.odometer?.toIntOrNull()?.let { updateOdometer(it) }
     updatePossibleOdometers(result.possibleOdometers)
@@ -405,7 +402,7 @@ private fun captureDashPhoto(
             }
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 scope.launch {
-                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost)
+                    processPhoto(context, photoFile.absolutePath, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, odometerCropRect)
                 }
             }
         }
