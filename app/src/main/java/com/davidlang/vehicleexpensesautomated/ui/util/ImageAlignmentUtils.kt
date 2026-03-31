@@ -86,7 +86,7 @@ object ImageAlignmentUtils {
 
             val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
 
-            val confidence = goodMatches.size.toFloat() / matches.size()
+            val confidence = goodMatches.size.toFloat() / matches.toList().size.toFloat()
 
             val warped = Mat()
             Imgproc.warpPerspective(queryMat, warped, homography, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
