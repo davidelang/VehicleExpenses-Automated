@@ -228,6 +228,28 @@ fun QuickFillupScreen(navController: NavHostController) {
             title = { Text("OCR Debug") },
             text = {
                 Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Original")
+                            Image(
+                                painter = rememberAsyncImagePainter(referencePhotoUrl),
+                                contentDescription = "Original image",
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Cropped")
+                            // Draw the crop rect on the original image for visual feedback
+                            Image(
+                                painter = rememberAsyncImagePainter(referencePhotoUrl),
+                                contentDescription = "Cropped image",
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                     Text(lastOcrDebugResult!!.debugText)
                 }
             },
