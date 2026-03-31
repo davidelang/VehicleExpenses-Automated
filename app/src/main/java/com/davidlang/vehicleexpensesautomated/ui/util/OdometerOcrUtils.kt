@@ -161,7 +161,8 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Diagnostic logging for the model output
+            // Diagnostic: log shape and first timestep details
+            Log.d("OdometerOcr", "PaddleOCR output tensor shape: ${outputTensor[0]?.javaClass?.simpleName} with length ${ (outputTensor[0] as FloatArray).size }")
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val blank = 0
             val decoded = StringBuilder()
