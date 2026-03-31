@@ -26,6 +26,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.exp
 
 data class OcrResult(
     val odometer: String?,
@@ -104,10 +105,16 @@ object OdometerOcrUtils {
         val scaled = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
         val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(result)
-        canvas.drawColor(android.graphics.Color.BLACK) // black padding
+        canvas.drawColor(android.graphics.Color.BLACK)
         canvas.drawBitmap(scaled, (targetWidth - newWidth) / 2f, (targetHeight - newHeight) / 2f, null)
         scaled.recycle()
         return result
+    }
+
+    private fun softmax(probs: FloatArray): FloatArray {
+        val maxVal = probs.maxOrNull() ?: 0f
+        val expSum = probs.sumOf { exp((it - maxVal).toDouble()) }
+        return FloatArray(probs.size) { i -> (exp((probs[i] - maxVal).toDouble()) / expSum).toFloat() }
     }
 
     private fun runPaddleOcr(bitmap: Bitmap): Pair<String, Bitmap?> {
@@ -150,7 +157,7 @@ object OdometerOcrUtils {
                 Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found")
             }
 
-            // Letterbox resize — preserves aspect ratio, adds black padding
+            // Letterbox resize (preserve aspect ratio + black padding)
             val resized = letterboxResize(bitmap, 224, 224)
 
             val shape = longArrayOf(1, 3, 224, 224)
@@ -175,22 +182,33 @@ object OdometerOcrUtils {
 
             Log.d("OdometerOcr", "PaddleOCR output tensor shape: ${outputTensor.size} timesteps × ${(outputTensor[0] as FloatArray).size} classes")
 
-            val probs = outputTensor[0] as FloatArray
+            // Single-timestep 1000-class model
+            val logits = outputTensor[0] as FloatArray
+            val probs = softmax(logits)
+
             val top50 = probs.indices.sortedByDescending { probs[it] }.take(50)
-            val sb = StringBuilder("PaddleOCR timestep 0 top50: ")
+            val sb = StringBuilder("PaddleOCR timestep 0 top50 (after softmax): ")
             for (i in top50) {
                 sb.append("[$i p=${"%.4f".format(probs[i])}] ")
             }
             Log.d("OdometerOcr", sb.toString())
 
-            val maxIndex = top50[0]
-            val result = if (maxIndex in 0..9) maxIndex.toString() else "?"
+            // Force digit-only decoding: max probability among classes 0-9 only
+            var bestDigit = -1
+            var bestProb = -1f
+            for (d in 0..9) {
+                if (probs[d] > bestProb) {
+                    bestProb = probs[d]
+                    bestDigit = d
+                }
+            }
+            val result = if (bestDigit != -1) bestDigit.toString() else "?"
 
-            Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result' (from class $maxIndex)")
+            Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result' (digit $bestDigit, prob=$bestProb)")
 
             session.close()
 
-            "PaddleOCR real result: $result (class $maxIndex)" to resized
+            "PaddleOCR real result: $result (digit $bestDigit)" to resized
         } catch (e: Exception) {
             Log.e("OdometerOcr", "PaddleOCR failed", e)
             "(PaddleOCR error: ${e.message})" to null
