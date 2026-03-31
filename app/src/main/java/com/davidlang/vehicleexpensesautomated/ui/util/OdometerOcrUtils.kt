@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
+import org.opencv.core.*
+import org.opencv.imgproc.Imgproc
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -65,7 +67,7 @@ object OdometerOcrUtils {
         val tessResult = runTesseract(bitmap)
         Log.d("OCRStage", "$stage - $label - Tesseract: $tessResult")
 
-        Log.d("OCRStage", "$stage - $label - Starting PaddleOCR")
+        Log.d("OCRStage", "$stage - $label - Starting PaddleOCR (2-stage)")
         val paddleResult = runPaddleOcr(bitmap)
         Log.d("OCRStage", "$stage - $label - PaddleOCR: $paddleResult")
 
@@ -95,17 +97,66 @@ object OdometerOcrUtils {
         val modelFile = File("/data/user/0/com.davidlang.vehicleexpensesautomated/files/paddleocr.onnx")
         return try {
             if (!modelFile.exists()) return "(PaddleOCR model not found on device)"
+
             val env = OrtEnvironment.getEnvironment()
             val modelBytes = modelFile.readBytes()
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
+            // === STAGE 1: OpenCV text detection (contour-based) ===
+            val mat = Mat()
+            org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+            val gray = Mat()
+            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+            val thresh = Mat()
+            Imgproc.threshold(gray, thresh, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+
+            val contours = ArrayList<MatOfPoint>()
+            val hierarchy = Mat()
+            Imgproc.findContours(thresh, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+
+            var bestRect: Rect? = null
+            var bestArea = 0.0
+            for (contour in contours) {
+                val rect = Imgproc.boundingRect(contour)
+                val aspect = rect.width.toDouble() / rect.height
+                val area = rect.area()
+                if (aspect in 1.5..8.0 && area > 200 && area > bestArea) {
+                    bestArea = area
+                    bestRect = rect
+                }
+            }
+
+            val finalBitmap = if (bestRect != null && bestRect.width > 20 && bestRect.height > 20) {
+                Log.d("OdometerOcr", "PaddleOCR Stage 1: detected text box ${bestRect.width}x${bestRect.height}")
+                val croppedMat = Mat(thresh, bestRect)
+                val croppedBmp = Bitmap.createBitmap(croppedMat.cols(), croppedMat.rows(), Bitmap.Config.ARGB_8888)
+                org.opencv.android.Utils.matToBitmap(croppedMat, croppedBmp)
+                croppedBmp
+            } else {
+                Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found, using full image")
+                bitmap
+            }
+
+            // === STAGE 2: Recognition on detected (or original) region ===
+            val resized = Bitmap.createScaledBitmap(finalBitmap, 224, 224, true)
 
             val shape = longArrayOf(1, 3, 224, 224)
             val floatArray = FloatArray(shape.reduce { a, b -> a * b }.toInt()) { 0.0f }
-            val inputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(floatArray), shape)
+            var idx = 0
+            for (y in 0 until 224) {
+                for (x in 0 until 224) {
+                    val pixel = resized.getPixel(x, y)
+                    val r = ((pixel shr 16) and 0xFF) / 255.0f
+                    val g = ((pixel shr 8) and 0xFF) / 255.0f
+                    val b = (pixel and 0xFF) / 255.0f
+                    floatArray[idx++] = r - 0.485f
+                    floatArray[idx++] = g - 0.456f
+                    floatArray[idx++] = b - 0.406f
+                }
+            }
 
+            val inputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(floatArray), shape)
             val inputName = session.inputNames.iterator().next()
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
@@ -121,6 +172,7 @@ object OdometerOcrUtils {
 
             session.close()
             resized.recycle()
+            if (finalBitmap !== bitmap) finalBitmap.recycle()
             "PaddleOCR real result: $result"
         } catch (e: Exception) {
             Log.e("OdometerOcr", "PaddleOCR failed", e)
@@ -140,8 +192,6 @@ object OdometerOcrUtils {
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
-
-            // floor left/top + ceil right/bottom = pixel-perfect inclusive crop
             val left = floor(cropRect.left * origW).toInt().coerceAtLeast(0)
             val top = floor(cropRect.top * origH).toInt().coerceAtLeast(0)
             val right = ceil(cropRect.right * origW).toInt().coerceAtMost(origW)
