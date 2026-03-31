@@ -8,11 +8,12 @@ import org.opencv.android.OpenCVLoader
 import org.opencv.core.*
 import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
+import org.opencv.calib3d.Calib3d
 
 data class AlignmentResult(
     val success: Boolean,
     val alignedImage: Bitmap?,
-    val confidence: Float,           // inlier ratio (0.0 - 1.0)
+    val confidence: Float,
     val message: String
 )
 
@@ -26,25 +27,22 @@ object ImageAlignmentUtils {
         }
     }
 
-    /**
-     * Aligns a new query image to a stored reference image.
-     * Returns success + the warped query image (same size/orientation as reference).
-     * Works with small changes in angle, zoom, pan, and lighting.
-     */
-    suspend fun alignImages(reference: Bitmap, query: Bitmap, minInliers: Int = 15): AlignmentResult = withContext(Dispatchers.IO) {
+    suspend fun alignImages(
+        reference: Bitmap,
+        query: Bitmap,
+        minInliers: Int = 15
+    ): AlignmentResult = withContext(Dispatchers.IO) {
         val refMat = Mat()
         val queryMat = Mat()
         try {
             org.opencv.android.Utils.bitmapToMat(reference, refMat)
             org.opencv.android.Utils.bitmapToMat(query, queryMat)
 
-            // Convert to grayscale
             val refGray = Mat()
             val queryGray = Mat()
             Imgproc.cvtColor(refMat, refGray, Imgproc.COLOR_RGB2GRAY)
             Imgproc.cvtColor(queryMat, queryGray, Imgproc.COLOR_RGB2GRAY)
 
-            // ORB detector + descriptor
             val orb = ORB.create(500)
             val refKeypoints = MatOfKeyPoint()
             val queryKeypoints = MatOfKeyPoint()
@@ -58,12 +56,10 @@ object ImageAlignmentUtils {
                 return@withContext AlignmentResult(false, null, 0f, "Not enough features detected")
             }
 
-            // Match descriptors
             val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
             val matches = MatOfDMatch()
             matcher.match(queryDescriptors, refDescriptors, matches)
 
-            // Keep only good matches
             val goodMatches = mutableListOf<DMatch>()
             val minDist = matches.toList().minOfOrNull { it.distance } ?: 0f
             matches.toList().forEach { match ->
@@ -74,7 +70,6 @@ object ImageAlignmentUtils {
                 return@withContext AlignmentResult(false, null, 0f, "Only ${goodMatches.size} good matches (need $minInliers)")
             }
 
-            // Convert to points for homography
             val srcPoints = MatOfPoint2f()
             val dstPoints = MatOfPoint2f()
             val srcList = mutableListOf<Point>()
@@ -89,17 +84,10 @@ object ImageAlignmentUtils {
             srcPoints.fromList(srcList)
             dstPoints.fromList(dstList)
 
-            // Compute homography
             val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
 
-            val inliers = Calib3d.countNonZero(homography) // approximate inlier count
             val confidence = goodMatches.size.toFloat() / matches.size()
 
-            if (inliers < minInliers) {
-                return@withContext AlignmentResult(false, null, confidence, "Homography not reliable")
-            }
-
-            // Warp the query image to match reference size/orientation
             val warped = Mat()
             Imgproc.warpPerspective(queryMat, warped, homography, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
 
