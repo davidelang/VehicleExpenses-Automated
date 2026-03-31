@@ -161,7 +161,7 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Heavy debugging: top-5 classes and probabilities for every timestep
+            // Heavy debugging: top-5 classes per timestep
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val blank = 0
             val decoded = StringBuilder()
@@ -169,10 +169,8 @@ object OdometerOcrUtils {
 
             for (t in 0 until outputTensor.size) {
                 val probs = outputTensor[t] as FloatArray
-
-                // Get top-5 indices
                 val top5 = probs.indices.sortedByDescending { probs[it] }.take(5)
-                val sb = StringBuilder("PaddleOCR timestep $t: ")
+                val sb = StringBuilder("PaddleOCR timestep $t top5: ")
                 for (i in top5) {
                     val ch = if (i < vocab.length) vocab[i] else '?'
                     sb.append("[$i='$ch' p=${"%.4f".format(probs[i])}] ")
@@ -180,13 +178,11 @@ object OdometerOcrUtils {
                 Log.d("OdometerOcr", sb.toString())
 
                 val maxIndex = top5[0]
-                val maxProb = probs[maxIndex]
                 if (maxIndex != blank && maxIndex != previous) {
                     if (maxIndex < vocab.length) decoded.append(vocab[maxIndex])
                 }
                 previous = maxIndex
             }
-
             val result = decoded.toString().trim()
 
             Log.d("OdometerOcr", "PaddleOCR Stage 2 raw decoded: '$result'")
