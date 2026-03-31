@@ -20,6 +20,8 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.OnnxTensor
 import java.nio.FloatBuffer
+import kotlin.math.ceil
+import kotlin.math.floor
 
 data class OcrResult(
     val odometer: String?,
@@ -138,16 +140,22 @@ object OdometerOcrUtils {
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
-            val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
-            val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
-            val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
-            val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
+
+            // floor left/top + ceil right/bottom = pixel-perfect inclusive crop
+            val left = floor(cropRect.left * origW).toInt().coerceAtLeast(0)
+            val top = floor(cropRect.top * origH).toInt().coerceAtLeast(0)
+            val right = ceil(cropRect.right * origW).toInt().coerceAtMost(origW)
+            val bottom = ceil(cropRect.bottom * origH).toInt().coerceAtMost(origH)
+
+            Log.d("CropDebug", "Crop rect applied → left=$left top=$top right=$right bottom=$bottom (original ${origW}x${origH})")
 
             if (right > left && bottom > top) {
                 croppedBitmap = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
                 bitmap.recycle()
                 bitmap = croppedBitmap
                 Log.d("OCRStage", "Stage 1 - Crop applied, new size ${bitmap.width}x${bitmap.height}")
+            } else {
+                Log.w("CropDebug", "Invalid crop rect after calculation — using full image")
             }
         }
 
@@ -189,7 +197,6 @@ object OdometerOcrUtils {
             costRegex.find(blockText)?.groupValues?.get(1)?.let { cost = it }
         }
 
-        // CRITICAL FIX: NEVER recycle croppedBitmap here — Compose dialog needs it
         if (croppedBitmap == null) {
             bitmap.recycle()
         }
