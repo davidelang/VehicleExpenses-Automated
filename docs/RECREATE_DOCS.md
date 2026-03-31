@@ -14,6 +14,9 @@ When the user asks you to recreate all files in the docs directory:
    - Ends with the git add, commit, and push commands for all docs files
    - Runs the exact required command: ./gradlew clean build; git describe
 
+**New requirement (added 2026-03-31):**
+- Always include `docs/API.md` in the recreation. This file must contain a complete list of every public function, class, object, and data class in the repo, with the file it lives in, its purpose, and parameters.
+
 4. In the explanation section state: "This changeset recreates every file in /docs exactly as it exists on GitHub."
 
 5. Never guess or modify content — use only the exact text returned by the raw fetches.
