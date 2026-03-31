@@ -161,7 +161,7 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
-            // Diagnostic logging
+            // Diagnostic logging for the model output
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val blank = 0
             val decoded = StringBuilder()
