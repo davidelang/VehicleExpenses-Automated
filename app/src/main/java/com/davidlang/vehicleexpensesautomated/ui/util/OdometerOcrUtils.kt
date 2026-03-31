@@ -104,7 +104,7 @@ object OdometerOcrUtils {
             val session = env.createSession(modelBytes)
             Log.i("OdometerOcr", "PaddleOCR ONNX session created successfully")
 
-            // Stage 1: contour detection ONLY for logging (we still use the original color image for recognition)
+            // Stage 1: contour detection for logging only
             val mat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, mat)
             val gray = Mat()
@@ -134,7 +134,7 @@ object OdometerOcrUtils {
                 Log.w("OdometerOcr", "PaddleOCR Stage 1: no good contour found")
             }
 
-            // Stage 2: use ORIGINAL color cropped image (NOT the binary thresh)
+            // Use the ORIGINAL color image (not binary) and plain [0,1] normalization
             val resized = Bitmap.createScaledBitmap(bitmap, 224, 224, true)
 
             val shape = longArrayOf(1, 3, 224, 224)
@@ -146,9 +146,9 @@ object OdometerOcrUtils {
                     val r = ((pixel shr 16) and 0xFF) / 255.0f
                     val g = ((pixel shr 8) and 0xFF) / 255.0f
                     val b = (pixel and 0xFF) / 255.0f
-                    floatArray[idx++] = r - 0.485f
-                    floatArray[idx++] = g - 0.456f
-                    floatArray[idx++] = b - 0.406f
+                    floatArray[idx++] = r
+                    floatArray[idx++] = g
+                    floatArray[idx++] = b
                 }
             }
 
@@ -157,6 +157,10 @@ object OdometerOcrUtils {
             val outputs = session.run(mapOf(inputName to inputTensor))
             val outputTensor = outputs[0].value as Array<*>
 
+            // Log model output shape once
+            Log.d("OdometerOcr", "PaddleOCR output tensor shape: ${outputTensor.size} timesteps × ${(outputTensor[0] as FloatArray).size} classes")
+
+            // Heavy per-timestep logging
             val vocab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.- "
             val blank = 0
             val decoded = StringBuilder()
