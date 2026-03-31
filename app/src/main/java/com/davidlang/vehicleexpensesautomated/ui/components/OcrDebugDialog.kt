@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -9,9 +10,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
+import java.io.File
 
 /**
  * Unified OCR Debug dialog used by both ManageVehiclesScreen and QuickFillupScreen.
@@ -23,7 +26,10 @@ fun OcrDebugDialog(
     originalPhotoPath: String?,
     onDismiss: () -> Unit
 ) {
-    Log.d("OcrDebug", "Dialog rendered with originalPhotoPath = $originalPhotoPath (file exists = ${originalPhotoPath?.let { java.io.File(it).exists() } ?: false})")
+    val originalUri = originalPhotoPath?.let { path ->
+        Log.d("OcrDebug", "Loading Original with URI: file://$path (exists = ${File(path).exists()})")
+        Uri.fromFile(File(path))
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -40,13 +46,16 @@ fun OcrDebugDialog(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Original")
-                        originalPhotoPath?.let {
+                        originalUri?.let {
                             Image(
                                 painter = rememberAsyncImagePainter(it),
                                 contentDescription = "Original image",
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp),           // fixed height prevents collapse
+                                contentScale = ContentScale.Fit
                             )
-                        }
+                        } ?: Text("No original photo path")
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Cropped")
@@ -54,7 +63,10 @@ fun OcrDebugDialog(
                             Image(
                                 bitmap = it.asImageBitmap(),
                                 contentDescription = "Cropped image",
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp),
+                                contentScale = ContentScale.Fit
                             )
                         } ?: Text("Cropped image (see logs for details)")
                     }
