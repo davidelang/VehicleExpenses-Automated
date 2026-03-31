@@ -108,7 +108,8 @@ fun QuickFillupScreen(navController: NavHostController) {
                 val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
                 lastOcrDebugResult = result
                 showAlignedDialog = true
-                tempFile.delete()
+                // DO NOT delete here — the file must stay alive while the dialog is open
+                // tempFile.delete()  <-- removed
             }
         }
     }
