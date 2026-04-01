@@ -225,7 +225,7 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
-        // === BUG FIX: prefer cleaned reference for report thumbnail ===
+        // Prefer cleaned reference for report thumbnail
         val referenceWithCrop = if (bestVehicleName != "No match") {
             vehicles.find { it.name == bestVehicleName }?.let { v ->
                 val refUrl = v.cleanedReferenceDashPhotoUrl ?: v.referenceDashPhotoUrl
