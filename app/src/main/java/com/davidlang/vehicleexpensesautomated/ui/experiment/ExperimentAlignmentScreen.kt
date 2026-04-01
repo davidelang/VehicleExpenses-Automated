@@ -209,9 +209,9 @@ private suspend fun runFullExperiment(
             photoName = file.name,
             vehicle = bestVehicleName,
             confidence = bestScore,
-            originalThumbBase64 = bitmapToBase64(originalBitmap, 160),
-            alignedBase64 = bitmapToBase64(alignedBitmap, 160),
-            odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 160),
+            originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
+            alignedBase64 = bitmapToBase64(alignedBitmap, 120),
+            odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
             odometer = extractedOdometer
         ))
     }
@@ -238,9 +238,9 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     return buildString {
         appendLine("<html><head><title>Alignment Experiment - $time</title>")
-        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top; } img { max-width: 180px; height: auto; }</style></head><body>")
+        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top; } img { max-width: 140px; height: auto; }</style></head><body>")
         appendLine("<h1>Alignment Experiment Report</h1>")
-        appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized for upload (&lt;300 KB total)</b></p>")
+        appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
         appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
 
@@ -266,7 +266,7 @@ private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
     } else bitmap
 
     val out = ByteArrayOutputStream()
-    scaled.compress(Bitmap.CompressFormat.JPEG, 60, out)
+    scaled.compress(Bitmap.CompressFormat.JPEG, 50, out)
     val bytes = out.toByteArray()
     return Base64.encodeToString(bytes, Base64.DEFAULT)
 }
