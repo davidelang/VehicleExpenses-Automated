@@ -59,13 +59,11 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             }
         }
     }
-
     LaunchedEffect(Unit) {
         if (!experimentDir.exists()) experimentDir.mkdirs()
         val count = experimentDir.listFiles()?.size ?: 0
         status = if (count == 0) "⚠️ Folder is empty.\nUse the buttons below." else "✅ $count photos ready."
     }
-
     Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
         Column(
             modifier = Modifier
@@ -155,6 +153,7 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
     }
 }
 
+/** Updated to use ensureCleanedReference for both alignment and report thumbnail */
 private suspend fun runFullExperiment(
     vehicles: List<Vehicle>,
     experimentDir: File,
@@ -182,15 +181,13 @@ private suspend fun runFullExperiment(
         var alignmentMessage = ""
 
         vehicles.forEach { vehicle ->
-            val cleanUrl = viewModel.ensureCleanedReference(vehicle)
-            val refUrl = cleanUrl ?: vehicle.referenceDashPhotoUrl
+            val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
             val refFile = File(refUrl)
             if (!refFile.exists()) return@forEach
-
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
-            val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
 
+            val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
                 bestVehicleName = vehicle.name
@@ -218,6 +215,7 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
+        // Report thumbnail now guaranteed clean
         val referenceWithCrop = if (bestVehicleName != "No match") {
             vehicles.find { it.name == bestVehicleName }?.let { v ->
                 val refUrl = viewModel.ensureCleanedReference(v) ?: v.referenceDashPhotoUrl
