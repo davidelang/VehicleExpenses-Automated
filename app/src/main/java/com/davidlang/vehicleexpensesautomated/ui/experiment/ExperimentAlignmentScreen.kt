@@ -189,6 +189,8 @@ private suspend fun runFullExperiment(
         var alignedBitmap: Bitmap? = null
         var odometerCropBitmap: Bitmap? = null
         var extractedOdometer: String? = null
+        var inliersCount = 0
+        var alignmentMessage = ""
 
         vehicles.filter { it.referenceDashPhotoUrl != null && (it.name.contains("honda", true) || it.name.contains("ford", true)) }.forEach { vehicle ->
             val refFile = File(vehicle.referenceDashPhotoUrl!!)
@@ -200,24 +202,27 @@ private suspend fun runFullExperiment(
                 bestScore = alignment.confidence
                 bestVehicleName = vehicle.name
                 alignedBitmap = alignment.alignedImage
+                alignmentMessage = alignment.message
+
+                // Parse inliers from message (e.g. "Aligned with 42 inliers")
+                val inliersMatch = Regex("with (\\d+) inliers").find(alignment.message)
+                inliersCount = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
             }
         }
 
         if (alignedBitmap != null) {
-            // Manual crop using vehicle's odometer rect (ensures crop always exists for matches)
             val matchedVehicle = vehicles.find { it.name == bestVehicleName }
             if (matchedVehicle != null && bestVehicleName != "No match") {
                 odometerCropBitmap = manualCropOdometer(alignedBitmap, matchedVehicle)
             }
 
-            // Still run OCR for text extraction
             val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
             val out = java.io.FileOutputStream(tempAlignedFile)
             alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
             out.close()
             val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
             extractedOdometer = ocrResult.odometer
-            if (odometerCropBitmap == null) odometerCropBitmap = ocrResult.croppedBitmap  // fallback to OCR crop if available
+            if (odometerCropBitmap == null) odometerCropBitmap = ocrResult.croppedBitmap
             tempAlignedFile.delete()
             if (ocrResult.odometer != null) success++
         }
@@ -236,6 +241,8 @@ private suspend fun runFullExperiment(
             photoName = file.name,
             vehicle = bestVehicleName,
             confidence = bestScore,
+            inliersCount = inliersCount,
+            alignmentMessage = alignmentMessage,
             originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
             alignedBase64 = bitmapToBase64(alignedBitmap, 120),
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
@@ -306,6 +313,8 @@ private data class PhotoResult(
     val photoName: String,
     val vehicle: String,
     val confidence: Float,
+    val inliersCount: Int,
+    val alignmentMessage: String,
     val originalThumbBase64: String,
     val alignedBase64: String,
     val odometerCropBase64: String,
@@ -323,7 +332,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
 
         results.forEach { r ->
             appendLine("<tr>")
@@ -332,6 +341,8 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td><img src='data:image/jpeg;base64,${r.odometerCropBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.referenceBase64}'></td>")
             appendLine("<td>${r.vehicle}</td>")
+            appendLine("<td>${r.inliersCount}</td>")
+            appendLine("<td>${r.alignmentMessage}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
             appendLine("</tr>")
