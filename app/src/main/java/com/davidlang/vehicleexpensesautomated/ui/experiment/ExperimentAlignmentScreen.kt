@@ -36,8 +36,6 @@ import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
-// Small 1x1 gray placeholder (base64 JPEG) so no broken icons ever appear
-private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
 
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
@@ -173,7 +171,7 @@ private suspend fun runFullExperiment(
     context: android.content.Context,
     onProgress: (Float, String) -> Unit
 ): ExperimentResult {
-    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
+    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") && !it.name.contains("pump", true) && !it.name.contains("receipt", true) } ?: emptyList()
     val total = photos.size
     if (total == 0) return ExperimentResult("No photos found", "<h1>No photos</h1>")
 
@@ -315,7 +313,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
 }
 
 private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
-    val bmp = bitmap ?: return PLACEHOLDER_BASE64
+    val bmp = bitmap ?: createPlaceholderBitmap()
     val scaled = if (bmp.width > maxWidth) {
         val scale = maxWidth.toFloat() / bmp.width
         Bitmap.createScaledBitmap(bmp, maxWidth, (bmp.height * scale).toInt(), true)
@@ -325,4 +323,11 @@ private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
     scaled.compress(Bitmap.CompressFormat.JPEG, 50, out)
     val bytes = out.toByteArray()
     return Base64.encodeToString(bytes, Base64.DEFAULT)
+}
+
+private fun createPlaceholderBitmap(): Bitmap {
+    val bmp = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bmp)
+    canvas.drawColor(Color.GRAY)
+    return bmp
 }
