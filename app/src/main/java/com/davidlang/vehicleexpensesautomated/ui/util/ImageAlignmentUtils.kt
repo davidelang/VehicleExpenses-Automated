@@ -33,8 +33,13 @@ object ImageAlignmentUtils {
         val src = Mat()
         try {
             org.opencv.android.Utils.bitmapToMat(original, src)
+
+            // Convert ARGB_8888 (4-channel BGRA) to 3-channel BGR for inpaint
+            val srcBGR = Mat()
+            Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
+
             val gray = Mat()
-            Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY)
+            Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
 
             val edges = Mat()
             Imgproc.Canny(gray, edges, 50.0, 150.0)
@@ -55,7 +60,7 @@ object ImageAlignmentUtils {
             }
 
             val cleaned = Mat()
-            Photo.inpaint(src, mask, cleaned, 3.0, Photo.INPAINT_TELEA)
+            Photo.inpaint(srcBGR, mask, cleaned, 3.0, Photo.INPAINT_TELEA)
 
             val result = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(cleaned, result)
