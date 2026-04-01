@@ -28,7 +28,7 @@ object ImageAlignmentUtils {
         }
     }
 
-    // NEW: One-time preprocessing to remove speedometer ticks while keeping numbers
+    // One-time preprocessing: remove speedometer ticks while keeping numbers
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         val src = Mat()
         try {
@@ -36,15 +36,12 @@ object ImageAlignmentUtils {
             val gray = Mat()
             Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY)
 
-            // Detect edges
             val edges = Mat()
             Imgproc.Canny(gray, edges, 50.0, 150.0)
 
-            // Hough lines to find radial ticks
             val lines = Mat()
             Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 50, 30.0, 10.0)
 
-            // Create mask for ticks
             val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
             for (i in 0 until lines.rows()) {
                 val line = lines.get(i, 0)
@@ -52,13 +49,11 @@ object ImageAlignmentUtils {
                 val y1 = line[1].toInt()
                 val x2 = line[2].toInt()
                 val y2 = line[3].toInt()
-                // Only short lines near center (ticks)
                 if (Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 80) {
                     Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 3)
                 }
             }
 
-            // Inpaint ticks
             val cleaned = Mat()
             Photo.inpaint(src, mask, cleaned, 3.0, Photo.INPAINT_TELEA)
 
@@ -76,7 +71,7 @@ object ImageAlignmentUtils {
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
-        minInliers: Int = 12
+        minInliers: Int = 15
     ): AlignmentResult = withContext(Dispatchers.IO) {
         val refMat = Mat()
         val queryMat = Mat()

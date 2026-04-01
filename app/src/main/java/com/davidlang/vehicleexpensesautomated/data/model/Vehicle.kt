@@ -5,13 +5,17 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "vehicles")
 data class Vehicle(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
     val name: String,
-    val make: String,
-    val model: String,
-    val year: Int,
-    val referenceDashPhotoUrl: String?,
-    val cleanedReferenceDashPhotoUrl: String? = null,  // NEW: pre-processed (ticks removed)
+    val make: String? = null,
+    val model: String? = null,
+    val year: Int? = null,
+    val licensePlate: String? = null,
+    val vin: String? = null,
+    val notes: String? = null,
+    val referenceDashPhotoUrl: String? = null,
+    val cleanedReferenceDashPhotoUrl: String? = null,  // NEW: ticks removed for better matching
     val odometerCropLeft: Float? = null,
     val odometerCropTop: Float? = null,
     val odometerCropRight: Float? = null,
