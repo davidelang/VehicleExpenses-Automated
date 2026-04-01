@@ -1,6 +1,11 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -27,8 +32,6 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
@@ -180,7 +183,7 @@ private suspend fun runFullExperiment(
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
 
         var bestScore = 0f
-        var bestVehicleName = "No match"
+        var bestVehicle: Vehicle? = null
         var alignedBitmap: Bitmap? = null
         var odometerCropBitmap: Bitmap? = null
         var extractedOdometer: String? = null
@@ -193,7 +196,7 @@ private suspend fun runFullExperiment(
             val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 20)
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
-                bestVehicleName = vehicle.name
+                bestVehicle = vehicle
                 alignedBitmap = alignment.alignedImage
             }
         }
@@ -205,13 +208,19 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
+        val referenceWithCrop = bestVehicle?.let { v ->
+            val refBmp = BitmapFactory.decodeFile(File(v.referenceDashPhotoUrl!!).absolutePath)
+            drawCropBoxesOnReference(refBmp, v)
+        }
+
         results.add(PhotoResult(
             photoName = file.name,
-            vehicle = bestVehicleName,
+            vehicle = bestVehicle?.name ?: "No match",
             confidence = bestScore,
             originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
             alignedBase64 = bitmapToBase64(alignedBitmap, 120),
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
+            referenceBase64 = bitmapToBase64(referenceWithCrop, 120),
             odometer = extractedOdometer
         ))
     }
@@ -222,6 +231,40 @@ private suspend fun runFullExperiment(
     return ExperimentResult(summary, html)
 }
 
+private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap? {
+    if (refBmp == null) return null
+    val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(bitmap)
+    val paint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 8f
+        color = Color.RED
+    }
+    val landmarkPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 8f
+        color = Color.GREEN
+    }
+
+    vehicle.odometerCropLeft?.let { left ->
+        val l = left * bitmap.width
+        val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height
+        val r = (vehicle.odometerCropRight ?: 1f) * bitmap.width
+        val b = (vehicle.odometerCropBottom ?: 1f) * bitmap.height
+        canvas.drawRect(l, t, r, b, paint)
+    }
+
+    vehicle.landmarkCropLeft?.let { left ->
+        val l = left * bitmap.width
+        val t = (vehicle.landmarkCropTop ?: 0f) * bitmap.height
+        val r = (vehicle.landmarkCropRight ?: 1f) * bitmap.width
+        val b = (vehicle.landmarkCropBottom ?: 1f) * bitmap.height
+        canvas.drawRect(l, t, r, b, landmarkPaint)
+    }
+
+    return bitmap
+}
+
 private data class PhotoResult(
     val photoName: String,
     val vehicle: String,
@@ -229,6 +272,7 @@ private data class PhotoResult(
     val originalThumbBase64: String,
     val alignedBase64: String,
     val odometerCropBase64: String,
+    val referenceBase64: String,
     val odometer: String?
 )
 
@@ -242,13 +286,14 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
 
         results.forEach { r ->
             appendLine("<tr>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.alignedBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.odometerCropBase64}'></td>")
+            appendLine("<td><img src='data:image/jpeg;base64,${r.referenceBase64}'></td>")
             appendLine("<td>${r.vehicle}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
