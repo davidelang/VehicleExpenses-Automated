@@ -35,6 +35,8 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     var currentPhoto by remember { mutableStateOf("") }
     var reportPath by remember { mutableStateOf<String?>(null) }
 
+    val scope = rememberCoroutineScope()
+
     LaunchedEffect(Unit) {
         if (!experimentDir.exists()) {
             experimentDir.mkdirs()
@@ -76,7 +78,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                     currentPhoto = ""
                     status = "🚀 Starting alignment test..."
 
-                    launch {
+                    scope.launch {
                         val result = runFullExperiment(vehicles, experimentDir, context) { p, name ->
                             progress = p
                             currentPhoto = name
