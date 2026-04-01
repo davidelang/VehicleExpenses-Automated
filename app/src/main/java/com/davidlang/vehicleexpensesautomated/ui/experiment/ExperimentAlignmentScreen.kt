@@ -2,6 +2,8 @@ package com.davidlang.vehicleexpensesautomated.ui.experiment
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Base64
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,13 +23,16 @@ import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
+private const val TAG = "ExperimentAlignment"
 
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
@@ -82,11 +87,11 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                 context.startActivity(intent)
                 Toast.makeText(context, "Opened Amazon Photos — tap 'Download all'", Toast.LENGTH_LONG).show()
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("📥 Open Amazon Photos Album (100+ images)")
+                Text("Open Amazon Photos Album (100+ images)")
             }
 
             Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
-                Text("📦 Extract Downloaded ZIP")
+                Text("Extract Downloaded ZIP")
             }
 
             Button(
@@ -108,9 +113,10 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                             htmlFile.writeText(result.htmlReport)
                             reportPath = htmlFile.absolutePath
                             status = "✅ Test complete!\n${result.summary}"
+                            Log.i(TAG, "Report successfully written: ${htmlFile.absolutePath}")
                         } catch (e: Exception) {
                             status = "❌ Report generation failed: ${e.message}"
-                            e.printStackTrace()
+                            Log.e(TAG, "Report generation failed", e)
                         } finally {
                             isRunning = false
                         }
@@ -151,7 +157,7 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
         }
         true
     } catch (e: Exception) {
-        e.printStackTrace()
+        Log.e("ExperimentAlignment", "ZIP extraction failed", e)
         false
     }
 }
@@ -171,48 +177,99 @@ private suspend fun runFullExperiment(
 
     photos.forEachIndexed { index, file ->
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
+
+        val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
 
         var bestScore = 0f
         var bestVehicleName = "No match"
-        var alignedOk = false
+        var alignedBitmap: Bitmap? = null
+        var odometerCropBitmap: Bitmap? = null
+        var extractedOdometer: String? = null
 
         vehicles.filter { it.referenceDashPhotoUrl != null }.forEach { vehicle ->
             val refFile = File(vehicle.referenceDashPhotoUrl!!)
             if (!refFile.exists()) return@forEach
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
 
-            val alignment = ImageAlignmentUtils.alignImages(refBmp, bitmap)
+            val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap)
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
                 bestVehicleName = vehicle.name
-                alignedOk = true
+                alignedBitmap = alignment.alignedImage
             }
         }
 
-        if (alignedOk) success++
-        results.add(PhotoResult(file.name, bestVehicleName, bestScore, alignedOk))
+        if (alignedBitmap != null) {
+            val ocrResult = OdometerOcrUtils.extractFromPhoto(file.absolutePath)
+            extractedOdometer = ocrResult.odometer
+            odometerCropBitmap = ocrResult.croppedBitmap
+            if (ocrResult.odometer != null) success++
+        }
+
+        results.add(PhotoResult(
+            photoName = file.name,
+            vehicle = bestVehicleName,
+            confidence = bestScore,
+            alignedBitmap = alignedBitmap,
+            odometerCropBitmap = odometerCropBitmap,
+            odometer = extractedOdometer
+        ))
     }
 
-    onProgress(1f, "Generating report...")
-    val html = buildHtmlReport(results, total, success)
-    val summary = "Aligned $success/$total photos (${"%.1f".format(success * 100f / total)}%)"
+    onProgress(1f, "Generating visual report...")
+    val html = buildRichHtmlReport(results, total)
+    val summary = "Processed $total photos — $success successful alignments"
     return ExperimentResult(summary, html)
 }
 
-private data class PhotoResult(val photo: String, val vehicle: String, val confidence: Float, val success: Boolean)
+private data class PhotoResult(
+    val photoName: String,
+    val vehicle: String,
+    val confidence: Float,
+    val alignedBitmap: Bitmap?,
+    val odometerCropBitmap: Bitmap?,
+    val odometer: String?
+)
+
 private data class ExperimentResult(val summary: String, val htmlReport: String)
 
-private fun buildHtmlReport(results: List<PhotoResult>, total: Int, success: Int): String {
+private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String {
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     return buildString {
-        appendLine("<html><head><title>Alignment Experiment - $time</title></head><body>")
+        appendLine("<html><head><title>Alignment Experiment - $time</title>")
+        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; } img { max-width: 320px; height: auto; }</style></head><body>")
         appendLine("<h1>Alignment Experiment Report</h1>")
-        appendLine("<p><b>Run:</b> $time | <b>Photos:</b> $total | <b>Successful:</b> $success (${"%.1f".format(success * 100f / total)}%)</p>")
-        appendLine("<table border='1' cellpadding='6'><tr><th>Photo</th><th>Best Vehicle</th><th>Confidence</th><th>Aligned?</th></tr>")
-        results.forEach {
-            appendLine("<tr><td>${it.photo}</td><td>${it.vehicle}</td><td>${"%.1f".format(it.confidence*100)}%</td><td>${if(it.success)"✅ YES" else "❌ NO"}</td></tr>")
+        appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total</p>")
+        appendLine("<table>")
+        appendLine("<tr><th>Original Thumbnail</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+
+        results.forEach { r ->
+            val thumbBase64 = bitmapToBase64(r.alignedBitmap?.let { it } ?: BitmapFactory.decodeFile(File(context.filesDir, "experiment_photos/${r.photoName}").absolutePath) ?: return@forEach, 320)
+            val alignedBase64 = bitmapToBase64(r.alignedBitmap, 320)
+            val cropBase64 = bitmapToBase64(r.odometerCropBitmap, 320)
+
+            appendLine("<tr>")
+            appendLine("<td><img src='data:image/jpeg;base64,$thumbBase64'></td>")
+            appendLine("<td><img src='data:image/jpeg;base64,$alignedBase64'></td>")
+            appendLine("<td><img src='data:image/jpeg;base64,$cropBase64'></td>")
+            appendLine("<td>${r.vehicle}</td>")
+            appendLine("<td>${r.odometer ?: "—"}</td>")
+            appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
+            appendLine("</tr>")
         }
         appendLine("</table></body></html>")
     }
+}
+
+private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
+    if (bitmap == null) return ""
+    val scaled = if (bitmap.width > maxWidth) {
+        val scale = maxWidth.toFloat() / bitmap.width
+        Bitmap.createScaledBitmap(bitmap, maxWidth, (bitmap.height * scale).toInt(), true)
+    } else bitmap
+
+    val out = ByteArrayOutputStream()
+    scaled.compress(Bitmap.CompressFormat.JPEG, 75, out)
+    val bytes = out.toByteArray()
+    return Base64.encodeToString(bytes, Base64.DEFAULT)
 }
