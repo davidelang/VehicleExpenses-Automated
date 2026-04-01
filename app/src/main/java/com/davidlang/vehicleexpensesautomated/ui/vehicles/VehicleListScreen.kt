@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.davidlang.vehicleexpensesautomated.ui.vehicles.VehicleViewModel
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 
 @Composable
 fun VehicleListScreen(navController: NavController) {
