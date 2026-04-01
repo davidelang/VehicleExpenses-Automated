@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -21,6 +23,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import android.graphics.BitmapFactory
 
+private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
+
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     val context = LocalContext.current
@@ -38,13 +42,12 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        if (!experimentDir.exists()) {
-            experimentDir.mkdirs()
-            status = "✅ Created experiment_photos folder.\n\nAdd test photos from Amazon Photos."
-        } else if (experimentDir.listFiles()?.isEmpty() == true) {
-            status = "⚠️ Folder is empty.\n\nAdd test photos from Amazon Photos."
+        if (!experimentDir.exists()) experimentDir.mkdirs()
+        val count = experimentDir.listFiles()?.size ?: 0
+        status = if (count == 0) {
+            "⚠️ Folder is empty.\nTap below to open your Amazon Photos album."
         } else {
-            status = "✅ ${experimentDir.listFiles()?.size ?: 0} photos ready."
+            "✅ $count photos ready."
         }
     }
 
@@ -57,17 +60,23 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = status, style = MaterialTheme.typography.bodyLarge)
+            Text(text = status, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
 
             if (isRunning) {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    text = currentPhoto.ifEmpty { "Processing..." },
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
+            }
+
+            // === AUTOMATIC AMAZON PHOTOS BUTTON ===
+            Button(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
+                    context.startActivity(intent)
+                    Toast.makeText(context, "Opened your Amazon Photos album — tap 'Download all' to save all images", Toast.LENGTH_LONG).show()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("📥 Open Amazon Photos Album (100+ images)")
             }
 
             Button(
