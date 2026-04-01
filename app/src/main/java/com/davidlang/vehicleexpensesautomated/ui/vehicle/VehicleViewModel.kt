@@ -25,7 +25,7 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    suspend fun getVehicleById(id: Long): Vehicle? = repository.getVehicleById(id)
+    suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
     fun createNewVehicleWithReference(
         name: String,
@@ -75,6 +75,7 @@ class VehicleViewModel @Inject constructor(
         val out = java.io.FileOutputStream(cleanedFile)
         cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
         out.close()
+        Log.i("VehicleReferenceCleaning", "✅ Saved cleaned reference: ${cleanedFile.absolutePath}")
         return cleanedFile.absolutePath
     }
 
