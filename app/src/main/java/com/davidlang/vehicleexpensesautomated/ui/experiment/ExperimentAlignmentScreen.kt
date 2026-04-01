@@ -3,6 +3,8 @@ package com.davidlang.vehicleexpensesautomated.ui.experiment
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import android.graphics.BitmapFactory
+import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 
@@ -42,11 +45,30 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
 
     val scope = rememberCoroutineScope()
 
+    // Launcher to pick the ZIP file from Downloads
+    val zipLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                status = "Extracting ZIP..."
+                val success = extractZipToPhotos(uri, experimentDir, context)
+                if (success) {
+                    val count = experimentDir.listFiles()?.size ?: 0
+                    status = "✅ Extracted $count photos into experiment_photos folder."
+                    Toast.makeText(context, "All photos extracted successfully!", Toast.LENGTH_LONG).show()
+                } else {
+                    status = "❌ Failed to extract ZIP."
+                }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!experimentDir.exists()) experimentDir.mkdirs()
         val count = experimentDir.listFiles()?.size ?: 0
         status = if (count == 0) {
-            "⚠️ Folder is empty.\nTap below to open your Amazon Photos album."
+            "⚠️ Folder is empty.\nUse the buttons below."
         } else {
             "✅ $count photos ready."
         }
@@ -72,11 +94,18 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                 onClick = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
                     context.startActivity(intent)
-                    Toast.makeText(context, "Opened your Amazon Photos album — tap 'Download all' for all 100+ images", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Opened Amazon Photos — tap 'Download all' to get the ZIP", Toast.LENGTH_LONG).show()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("📥 Open Amazon Photos Album (100+ images)")
+            }
+
+            Button(
+                onClick = { zipLauncher.launch("application/zip") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("📦 Extract Downloaded ZIP")
             }
 
             Button(
@@ -118,6 +147,29 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                 Text("Back to Quick Fill-up")
             }
         }
+    }
+}
+
+private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: android.content.Context): Boolean {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            ZipInputStream(input).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && entry.name.lowercase().endsWith(".jpg") || entry.name.lowercase().endsWith(".jpeg") || entry.name.lowercase().endsWith(".png")) {
+                        val outFile = File(targetDir, entry.name.substringAfterLast('/'))
+                        outFile.outputStream().use { output ->
+                            zip.copyTo(output)
+                        }
+                    }
+                    entry = zip.nextEntry
+                }
+            }
+        }
+        true
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
     }
 }
 
