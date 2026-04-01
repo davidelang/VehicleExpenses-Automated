@@ -113,7 +113,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                             htmlFile.writeText(result.htmlReport)
                             reportPath = htmlFile.absolutePath
                             status = "✅ Test complete!\n${result.summary}"
-                            Log.i(TAG, "Report successfully written: ${htmlFile.absolutePath}")
+                            Log.i(TAG, "Rich report written: ${htmlFile.absolutePath} (${htmlFile.length() / 1024} KB)")
                         } catch (e: Exception) {
                             status = "❌ Report generation failed: ${e.message}"
                             Log.e(TAG, "Report generation failed", e)
@@ -177,7 +177,6 @@ private suspend fun runFullExperiment(
 
     photos.forEachIndexed { index, file ->
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
-
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
 
         var bestScore = 0f
@@ -210,8 +209,9 @@ private suspend fun runFullExperiment(
             photoName = file.name,
             vehicle = bestVehicleName,
             confidence = bestScore,
-            alignedBitmap = alignedBitmap,
-            odometerCropBitmap = odometerCropBitmap,
+            originalThumbBase64 = bitmapToBase64(originalBitmap, 400),
+            alignedBase64 = bitmapToBase64(alignedBitmap, 400),
+            odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 400),
             odometer = extractedOdometer
         ))
     }
@@ -226,8 +226,9 @@ private data class PhotoResult(
     val photoName: String,
     val vehicle: String,
     val confidence: Float,
-    val alignedBitmap: Bitmap?,
-    val odometerCropBitmap: Bitmap?,
+    val originalThumbBase64: String,
+    val alignedBase64: String,
+    val odometerCropBase64: String,
     val odometer: String?
 )
 
@@ -237,21 +238,17 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     return buildString {
         appendLine("<html><head><title>Alignment Experiment - $time</title>")
-        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; } img { max-width: 320px; height: auto; }</style></head><body>")
+        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top; } img { max-width: 320px; height: auto; }</style></head><body>")
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total</p>")
         appendLine("<table>")
-        appendLine("<tr><th>Original Thumbnail</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
 
         results.forEach { r ->
-            val thumbBase64 = bitmapToBase64(r.alignedBitmap?.let { it } ?: BitmapFactory.decodeFile(File(context.filesDir, "experiment_photos/${r.photoName}").absolutePath) ?: return@forEach, 320)
-            val alignedBase64 = bitmapToBase64(r.alignedBitmap, 320)
-            val cropBase64 = bitmapToBase64(r.odometerCropBitmap, 320)
-
             appendLine("<tr>")
-            appendLine("<td><img src='data:image/jpeg;base64,$thumbBase64'></td>")
-            appendLine("<td><img src='data:image/jpeg;base64,$alignedBase64'></td>")
-            appendLine("<td><img src='data:image/jpeg;base64,$cropBase64'></td>")
+            appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
+            appendLine("<td><img src='data:image/jpeg;base64,${r.alignedBase64}'></td>")
+            appendLine("<td><img src='data:image/jpeg;base64,${r.odometerCropBase64}'></td>")
             appendLine("<td>${r.vehicle}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
