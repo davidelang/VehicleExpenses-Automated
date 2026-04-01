@@ -36,6 +36,8 @@ import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
+// Small 1x1 gray placeholder (base64 JPEG) so no broken icons ever appear
+private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
 
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
@@ -202,13 +204,20 @@ private suspend fun runFullExperiment(
         }
 
         if (alignedBitmap != null) {
+            // Manual crop using vehicle's odometer rect (ensures crop always exists for matches)
+            val matchedVehicle = vehicles.find { it.name == bestVehicleName }
+            if (matchedVehicle != null && bestVehicleName != "No match") {
+                odometerCropBitmap = manualCropOdometer(alignedBitmap, matchedVehicle)
+            }
+
+            // Still run OCR for text extraction
             val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
             val out = java.io.FileOutputStream(tempAlignedFile)
             alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
             out.close()
             val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
             extractedOdometer = ocrResult.odometer
-            odometerCropBitmap = ocrResult.croppedBitmap
+            if (odometerCropBitmap == null) odometerCropBitmap = ocrResult.croppedBitmap  // fallback to OCR crop if available
             tempAlignedFile.delete()
             if (ocrResult.odometer != null) success++
         }
@@ -239,6 +248,25 @@ private suspend fun runFullExperiment(
     val html = buildRichHtmlReport(results, total)
     val summary = "Processed $total photos — $success successful alignments"
     return ExperimentResult(summary, html)
+}
+
+private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle): Bitmap? {
+    val leftF = vehicle.odometerCropLeft ?: return null
+    val topF = vehicle.odometerCropTop ?: 0f
+    val rightF = vehicle.odometerCropRight ?: 1f
+    val bottomF = vehicle.odometerCropBottom ?: 1f
+
+    val left = (leftF * aligned.width).toInt().coerceAtLeast(0)
+    val top = (topF * aligned.height).toInt().coerceAtLeast(0)
+    val width = ((rightF - leftF) * aligned.width).toInt().coerceAtLeast(1)
+    val height = ((bottomF - topF) * aligned.height).toInt().coerceAtLeast(1)
+
+    return try {
+        Bitmap.createBitmap(aligned, left, top, width, height)
+    } catch (e: Exception) {
+        Log.e(TAG, "Manual crop failed", e)
+        null
+    }
 }
 
 private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap? {
