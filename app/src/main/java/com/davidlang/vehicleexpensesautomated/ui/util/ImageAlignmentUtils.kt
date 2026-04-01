@@ -59,9 +59,10 @@ object ImageAlignmentUtils {
 
             val result = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(cleaned, result)
+            Log.i("VehicleReferenceCleaning", "Created cleaned reference (${result.width}x${result.height})")
             result
         } catch (e: Exception) {
-            Log.e("ImageAlignment", "Cleaning reference failed", e)
+            Log.e("VehicleReferenceCleaning", "Cleaning reference failed", e)
             null
         } finally {
             src.release()

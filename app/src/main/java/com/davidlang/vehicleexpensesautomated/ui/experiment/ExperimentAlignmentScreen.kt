@@ -192,6 +192,7 @@ private suspend fun runFullExperiment(
         var alignmentMessage = ""
 
         vehicles.forEach { vehicle ->
+            // Prefer cleaned reference if available
             val refUrl = vehicle.cleanedReferenceDashPhotoUrl ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
             val refFile = File(refUrl)
