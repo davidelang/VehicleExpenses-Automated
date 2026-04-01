@@ -105,7 +105,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                     progress = 0f
                     currentPhoto = ""
                     status = "🚀 Starting alignment test..."
-
                     scope.launch {
                         try {
                             val result = runFullExperiment(vehicles, experimentDir, context) { p, name ->
@@ -197,15 +196,14 @@ private suspend fun runFullExperiment(
             if (refUrl == null) return@forEach
             val refFile = File(refUrl)
             if (!refFile.exists()) return@forEach
-            val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
 
+            val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
             val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
                 bestVehicleName = vehicle.name
                 alignedBitmap = alignment.alignedImage
                 alignmentMessage = alignment.message
-
                 val inliersMatch = Regex("with (\\d+) inliers").find(alignment.message)
                 inliersCount = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
             }
@@ -216,7 +214,6 @@ private suspend fun runFullExperiment(
             if (matchedVehicle != null && bestVehicleName != "No match") {
                 odometerCropBitmap = manualCropOdometer(alignedBitmap, matchedVehicle)
             }
-
             val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
             val out = java.io.FileOutputStream(tempAlignedFile)
             alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
@@ -228,12 +225,16 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
+        // === BUG FIX: prefer cleaned reference for report thumbnail ===
         val referenceWithCrop = if (bestVehicleName != "No match") {
             vehicles.find { it.name == bestVehicleName }?.let { v ->
-                val refFile = File(v.referenceDashPhotoUrl!!)
-                if (refFile.exists()) {
-                    val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
-                    drawCropBoxesOnReference(refBmp, v)
+                val refUrl = v.cleanedReferenceDashPhotoUrl ?: v.referenceDashPhotoUrl
+                if (refUrl != null) {
+                    val refFile = File(refUrl)
+                    if (refFile.exists()) {
+                        val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
+                        drawCropBoxesOnReference(refBmp, v)
+                    } else null
                 } else null
             }
         } else null
@@ -263,12 +264,10 @@ private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle): Bitmap? {
     val topF = vehicle.odometerCropTop ?: 0f
     val rightF = vehicle.odometerCropRight ?: 1f
     val bottomF = vehicle.odometerCropBottom ?: 1f
-
     val left = (leftF * aligned.width).toInt().coerceAtLeast(0)
     val top = (topF * aligned.height).toInt().coerceAtLeast(0)
     val width = ((rightF - leftF) * aligned.width).toInt().coerceAtLeast(1)
     val height = ((bottomF - topF) * aligned.height).toInt().coerceAtLeast(1)
-
     return try {
         Bitmap.createBitmap(aligned, left, top, width, height)
     } catch (e: Exception) {
@@ -291,7 +290,6 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
         strokeWidth = 8f
         color = Color.GREEN
     }
-
     vehicle.odometerCropLeft?.let { left ->
         val l = left * bitmap.width
         val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height
@@ -299,7 +297,6 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
         val b = (vehicle.odometerCropBottom ?: 1f) * bitmap.height
         canvas.drawRect(l, t, r, b, paint)
     }
-
     vehicle.landmarkCropLeft?.let { left ->
         val l = left * bitmap.width
         val t = (vehicle.landmarkCropTop ?: 0f) * bitmap.height
@@ -334,7 +331,6 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
         appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
-
         results.forEach { r ->
             appendLine("<tr>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
@@ -358,7 +354,6 @@ private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
         val scale = maxWidth.toFloat() / bmp.width
         Bitmap.createScaledBitmap(bmp, maxWidth, (bmp.height * scale).toInt(), true)
     } else bmp
-
     val out = ByteArrayOutputStream()
     scaled.compress(Bitmap.CompressFormat.JPEG, 50, out)
     val bytes = out.toByteArray()
