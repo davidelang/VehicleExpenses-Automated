@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
@@ -67,12 +68,11 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                 Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
             }
 
-            // === AUTOMATIC AMAZON PHOTOS BUTTON ===
             Button(
                 onClick = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
                     context.startActivity(intent)
-                    Toast.makeText(context, "Opened your Amazon Photos album — tap 'Download all' to save all images", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Opened your Amazon Photos album — tap 'Download all' for all 100+ images", Toast.LENGTH_LONG).show()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
