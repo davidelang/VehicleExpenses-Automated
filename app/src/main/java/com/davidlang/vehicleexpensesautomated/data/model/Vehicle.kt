@@ -15,7 +15,7 @@ data class Vehicle(
     val vin: String? = null,
     val notes: String? = null,
     val referenceDashPhotoUrl: String? = null,
-    val cleanedReferenceDashPhotoUrl: String? = null,  // NEW: ticks removed for better matching
+    val cleanedReferenceDashPhotoUrl: String? = null,  // ticks removed for better matching
     val odometerCropLeft: Float? = null,
     val odometerCropTop: Float? = null,
     val odometerCropRight: Float? = null,
