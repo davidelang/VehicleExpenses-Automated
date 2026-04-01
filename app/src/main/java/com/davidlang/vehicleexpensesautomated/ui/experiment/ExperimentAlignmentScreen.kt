@@ -35,7 +35,6 @@ import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
-
 private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
 
 @Composable
@@ -45,15 +44,12 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     val vehicles by viewModel.vehicles.collectAsState(initial = emptyList())
     val experimentDir = File(context.filesDir, "experiment_photos")
     val reportDir = File(context.filesDir, "experiment_reports").apply { mkdirs() }
-
     var status by remember { mutableStateOf("Checking experiment folder...") }
     var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var currentPhoto by remember { mutableStateOf("") }
     var reportPath by remember { mutableStateOf<String?>(null) }
-
     val scope = rememberCoroutineScope()
-
     val zipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             scope.launch {
@@ -80,12 +76,10 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(text = status, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-
             if (isRunning) {
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                 Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
             }
-
             Button(onClick = {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
                 context.startActivity(intent)
@@ -93,11 +87,9 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             }, modifier = Modifier.fillMaxWidth()) {
                 Text("Open Amazon Photos Album (100+ images)")
             }
-
             Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
                 Text("Extract Downloaded ZIP")
             }
-
             Button(
                 onClick = {
                     if (isRunning) return@Button
@@ -107,7 +99,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                     status = "🚀 Starting alignment test..."
                     scope.launch {
                         try {
-                            val result = runFullExperiment(vehicles, experimentDir, context) { p, name ->
+                            val result = runFullExperiment(vehicles, experimentDir, viewModel, context) { p, name ->
                                 progress = p
                                 currentPhoto = name
                             }
@@ -130,13 +122,11 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             ) {
                 Text(if (isRunning) "Running..." else "🚀 Run Alignment Experiment Now")
             }
-
             if (reportPath != null) {
                 Button(onClick = { Toast.makeText(context, "Report: $reportPath", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
                     Text("📄 Open Latest Report")
                 }
             }
-
             Button(onClick = { navController?.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
                 Text("Back to Quick Fill-up")
             }
@@ -144,30 +134,11 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     }
 }
 
-private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: android.content.Context): Boolean {
-    return try {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zip ->
-                var entry = zip.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory && entry.name.lowercase().matches(Regex(".*\\.(jpg|jpeg|png)$"))) {
-                        val outFile = File(targetDir, entry.name.substringAfterLast('/'))
-                        outFile.outputStream().use { output -> zip.copyTo(output) }
-                    }
-                    entry = zip.nextEntry
-                }
-            }
-        }
-        true
-    } catch (e: Exception) {
-        Log.e("ExperimentAlignment", "ZIP extraction failed", e)
-        false
-    }
-}
-
+/** NEW: pass viewModel so we can ensure cleaned references */
 private suspend fun runFullExperiment(
     vehicles: List<Vehicle>,
     experimentDir: File,
+    viewModel: VehicleViewModel,
     context: android.content.Context,
     onProgress: (Float, String) -> Unit
 ): ExperimentResult {
@@ -191,14 +162,16 @@ private suspend fun runFullExperiment(
         var alignmentMessage = ""
 
         vehicles.forEach { vehicle ->
-            // Prefer cleaned reference if available
-            val refUrl = vehicle.cleanedReferenceDashPhotoUrl ?: vehicle.referenceDashPhotoUrl
+            // ENSURE cleaned reference exists before using it
+            val cleanUrl = viewModel.ensureCleanedReference(vehicle)
+            val refUrl = cleanUrl ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
             val refFile = File(refUrl)
             if (!refFile.exists()) return@forEach
 
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
             val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
+
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
                 bestVehicleName = vehicle.name
@@ -218,6 +191,7 @@ private suspend fun runFullExperiment(
             val out = java.io.FileOutputStream(tempAlignedFile)
             alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
             out.close()
+
             val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
             extractedOdometer = ocrResult.odometer
             if (odometerCropBitmap == null) odometerCropBitmap = ocrResult.croppedBitmap
@@ -225,10 +199,10 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
-        // Prefer cleaned reference for report thumbnail
+        // Build report thumbnail using the *cleaned* reference (guaranteed by ensureCleanedReference)
         val referenceWithCrop = if (bestVehicleName != "No match") {
             vehicles.find { it.name == bestVehicleName }?.let { v ->
-                val refUrl = v.cleanedReferenceDashPhotoUrl ?: v.referenceDashPhotoUrl
+                val refUrl = viewModel.ensureCleanedReference(v) ?: v.referenceDashPhotoUrl
                 if (refUrl != null) {
                     val refFile = File(refUrl)
                     if (refFile.exists()) {
@@ -259,6 +233,7 @@ private suspend fun runFullExperiment(
     return ExperimentResult(summary, html)
 }
 
+/* rest of the file (manualCropOdometer, drawCropBoxesOnReference, etc.) remains exactly the same */
 private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle): Bitmap? {
     val leftF = vehicle.odometerCropLeft ?: return null
     val topF = vehicle.odometerCropTop ?: 0f
@@ -280,16 +255,9 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
     if (refBmp == null) return null
     val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = Canvas(bitmap)
-    val paint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 8f
-        color = Color.RED
-    }
-    val landmarkPaint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 8f
-        color = Color.GREEN
-    }
+    val paint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.RED }
+    val landmarkPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.GREEN }
+
     vehicle.odometerCropLeft?.let { left ->
         val l = left * bitmap.width
         val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height

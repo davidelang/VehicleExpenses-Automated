@@ -65,13 +65,22 @@ class VehicleViewModel @Inject constructor(
         }
     }
 
+    /** NEW HELPER: guarantees a cleaned (tick-free) reference exists */
+    suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
+        val cleaned = vehicle.cleanedReferenceDashPhotoUrl
+        if (cleaned != null) {
+            val f = File(cleaned)
+            if (f.exists()) return cleaned
+        }
+        val originalUrl = vehicle.referenceDashPhotoUrl ?: return null
+        return createAndSaveCleanedReference(originalUrl)
+    }
+
     private suspend fun createAndSaveCleanedReference(originalUrl: String): String? {
         val originalFile = File(originalUrl)
         if (!originalFile.exists()) return null
         val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath) ?: return null
-
         val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp) ?: return null
-
         val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
         val out = java.io.FileOutputStream(cleanedFile)
         cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
