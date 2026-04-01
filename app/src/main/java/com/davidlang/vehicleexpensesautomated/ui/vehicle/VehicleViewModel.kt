@@ -65,7 +65,7 @@ class VehicleViewModel @Inject constructor(
         }
     }
 
-    /** NEW HELPER: guarantees a cleaned (tick-free) reference exists */
+    /** Guarantees a cleaned (tick-free) reference exists before use in reports */
     suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
         val cleaned = vehicle.cleanedReferenceDashPhotoUrl
         if (cleaned != null) {
