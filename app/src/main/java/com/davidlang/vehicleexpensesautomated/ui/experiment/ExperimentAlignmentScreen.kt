@@ -33,6 +33,8 @@ import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
+// Small 1x1 gray placeholder (base64 JPEG) so no broken icons ever appear
+private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
 
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
@@ -168,8 +170,7 @@ private suspend fun runFullExperiment(
     context: android.content.Context,
     onProgress: (Float, String) -> Unit
 ): ExperimentResult {
-    // Only process likely dash photos (ignore pump/receipt shots as requested)
-    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") && !it.name.contains("pump", true) && !it.name.contains("receipt", true) } ?: emptyList()
+    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
     val total = photos.size
     if (total == 0) return ExperimentResult("No photos found", "<h1>No photos</h1>")
 
@@ -191,7 +192,6 @@ private suspend fun runFullExperiment(
             if (!refFile.exists()) return@forEach
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
 
-            // Lowered minInliers to 12 as requested
             val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
@@ -201,7 +201,6 @@ private suspend fun runFullExperiment(
         }
 
         if (alignedBitmap != null) {
-            // OCR now runs on the ALIGNED image (fixes broken crop)
             val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
             val out = java.io.FileOutputStream(tempAlignedFile)
             alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
@@ -213,6 +212,14 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
+        val referenceWithCrop = bestVehicleName != "No match" && vehicles.find { it.name == bestVehicleName }?.let { v ->
+            val refFile = File(v.referenceDashPhotoUrl!!)
+            if (refFile.exists()) {
+                val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
+                drawCropBoxesOnReference(refBmp, v)
+            } else null
+        }
+
         results.add(PhotoResult(
             photoName = file.name,
             vehicle = bestVehicleName,
@@ -220,7 +227,7 @@ private suspend fun runFullExperiment(
             originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
             alignedBase64 = bitmapToBase64(alignedBitmap, 120),
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
-            referenceBase64 = bitmapToBase64(null, 120), // reference + crops kept but optional
+            referenceBase64 = bitmapToBase64(referenceWithCrop, 120),
             odometer = extractedOdometer
         ))
     }
@@ -229,6 +236,31 @@ private suspend fun runFullExperiment(
     val html = buildRichHtmlReport(results, total)
     val summary = "Processed $total photos — $success successful alignments"
     return ExperimentResult(summary, html)
+}
+
+private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap? {
+    if (refBmp == null) return null
+    val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(bitmap)
+    val paint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.RED }
+    val landmarkPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.GREEN }
+
+    vehicle.odometerCropLeft?.let { left ->
+        val l = left * bitmap.width
+        val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height
+        val r = (vehicle.odometerCropRight ?: 1f) * bitmap.width
+        val b = (vehicle.odometerCropBottom ?: 1f) * bitmap.height
+        canvas.drawRect(l, t, r, b, paint)
+    }
+
+    vehicle.landmarkCropLeft?.let { left ->
+        val l = left * bitmap.width
+        val t = (vehicle.landmarkCropTop ?: 0f) * bitmap.height
+        val r = (vehicle.landmarkCropRight ?: 1f) * bitmap.width
+        val b = (vehicle.landmarkCropBottom ?: 1f) * bitmap.height
+        canvas.drawRect(l, t, r, b, landmarkPaint)
+    }
+    return bitmap
 }
 
 private data class PhotoResult(
@@ -270,11 +302,11 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
 }
 
 private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
-    if (bitmap == null) return ""
-    val scaled = if (bitmap.width > maxWidth) {
-        val scale = maxWidth.toFloat() / bitmap.width
-        Bitmap.createScaledBitmap(bitmap, maxWidth, (bitmap.height * scale).toInt(), true)
-    } else bitmap
+    val bmp = bitmap ?: return PLACEHOLDER_BASE64
+    val scaled = if (bmp.width > maxWidth) {
+        val scale = maxWidth.toFloat() / bmp.width
+        Bitmap.createScaledBitmap(bmp, maxWidth, (bmp.height * scale).toInt(), true)
+    } else bmp
 
     val out = ByteArrayOutputStream()
     scaled.compress(Bitmap.CompressFormat.JPEG, 50, out)
