@@ -134,7 +134,27 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     }
 }
 
-/** NEW: pass viewModel so we can ensure cleaned references */
+private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: android.content.Context): Boolean {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            ZipInputStream(input).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && entry.name.lowercase().matches(Regex(".*\\.(jpg|jpeg|png)$"))) {
+                        val outFile = File(targetDir, entry.name.substringAfterLast('/'))
+                        outFile.outputStream().use { output -> zip.copyTo(output) }
+                    }
+                    entry = zip.nextEntry
+                }
+            }
+        }
+        true
+    } catch (e: Exception) {
+        Log.e("ExperimentAlignment", "ZIP extraction failed", e)
+        false
+    }
+}
+
 private suspend fun runFullExperiment(
     vehicles: List<Vehicle>,
     experimentDir: File,
@@ -162,7 +182,6 @@ private suspend fun runFullExperiment(
         var alignmentMessage = ""
 
         vehicles.forEach { vehicle ->
-            // ENSURE cleaned reference exists before using it
             val cleanUrl = viewModel.ensureCleanedReference(vehicle)
             val refUrl = cleanUrl ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
@@ -199,7 +218,6 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
-        // Build report thumbnail using the *cleaned* reference (guaranteed by ensureCleanedReference)
         val referenceWithCrop = if (bestVehicleName != "No match") {
             vehicles.find { it.name == bestVehicleName }?.let { v ->
                 val refUrl = viewModel.ensureCleanedReference(v) ?: v.referenceDashPhotoUrl
@@ -233,7 +251,6 @@ private suspend fun runFullExperiment(
     return ExperimentResult(summary, html)
 }
 
-/* rest of the file (manualCropOdometer, drawCropBoxesOnReference, etc.) remains exactly the same */
 private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle): Bitmap? {
     val leftF = vehicle.odometerCropLeft ?: return null
     val topF = vehicle.odometerCropTop ?: 0f
