@@ -45,21 +45,12 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
 
     val scope = rememberCoroutineScope()
 
-    // Launcher to pick the ZIP file from Downloads
-    val zipLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+    val zipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             scope.launch {
                 status = "Extracting ZIP..."
                 val success = extractZipToPhotos(uri, experimentDir, context)
-                if (success) {
-                    val count = experimentDir.listFiles()?.size ?: 0
-                    status = "✅ Extracted $count photos into experiment_photos folder."
-                    Toast.makeText(context, "All photos extracted successfully!", Toast.LENGTH_LONG).show()
-                } else {
-                    status = "❌ Failed to extract ZIP."
-                }
+                status = if (success) "✅ ZIP extracted successfully!" else "❌ Failed to extract ZIP"
             }
         }
     }
@@ -67,11 +58,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     LaunchedEffect(Unit) {
         if (!experimentDir.exists()) experimentDir.mkdirs()
         val count = experimentDir.listFiles()?.size ?: 0
-        status = if (count == 0) {
-            "⚠️ Folder is empty.\nUse the buttons below."
-        } else {
-            "✅ $count photos ready."
-        }
+        status = if (count == 0) "⚠️ Folder is empty.\nUse the buttons below." else "✅ $count photos ready."
     }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
@@ -90,21 +77,15 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                 Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
             }
 
-            Button(
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
-                    context.startActivity(intent)
-                    Toast.makeText(context, "Opened Amazon Photos — tap 'Download all' to get the ZIP", Toast.LENGTH_LONG).show()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Button(onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
+                context.startActivity(intent)
+                Toast.makeText(context, "Opened Amazon Photos — tap 'Download all'", Toast.LENGTH_LONG).show()
+            }, modifier = Modifier.fillMaxWidth()) {
                 Text("📥 Open Amazon Photos Album (100+ images)")
             }
 
-            Button(
-                onClick = { zipLauncher.launch("application/zip") },
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
                 Text("📦 Extract Downloaded ZIP")
             }
 
@@ -117,18 +98,22 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                     status = "🚀 Starting alignment test..."
 
                     scope.launch {
-                        val result = runFullExperiment(vehicles, experimentDir, context) { p, name ->
-                            progress = p
-                            currentPhoto = name
+                        try {
+                            val result = runFullExperiment(vehicles, experimentDir, context) { p, name ->
+                                progress = p
+                                currentPhoto = name
+                            }
+                            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+                            val htmlFile = File(reportDir, "alignment_report_$timestamp.html")
+                            htmlFile.writeText(result.htmlReport)
+                            reportPath = htmlFile.absolutePath
+                            status = "✅ Test complete!\n${result.summary}"
+                        } catch (e: Exception) {
+                            status = "❌ Report generation failed: ${e.message}"
+                            e.printStackTrace()
+                        } finally {
+                            isRunning = false
                         }
-                        val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-                        val htmlFile = File(reportDir, "alignment_report_$timestamp.html")
-                        htmlFile.writeText(result.htmlReport)
-
-                        reportPath = htmlFile.absolutePath
-                        status = "✅ Test complete!\n${result.summary}"
-                        isRunning = false
-                        Toast.makeText(context, "Report saved: ${htmlFile.name}", Toast.LENGTH_LONG).show()
                     }
                 },
                 enabled = !isRunning && experimentDir.listFiles()?.isNotEmpty() == true,
@@ -156,11 +141,9 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
             ZipInputStream(input).use { zip ->
                 var entry = zip.nextEntry
                 while (entry != null) {
-                    if (!entry.isDirectory && entry.name.lowercase().endsWith(".jpg") || entry.name.lowercase().endsWith(".jpeg") || entry.name.lowercase().endsWith(".png")) {
+                    if (!entry.isDirectory && entry.name.lowercase().matches(Regex(".*\\.(jpg|jpeg|png)$"))) {
                         val outFile = File(targetDir, entry.name.substringAfterLast('/'))
-                        outFile.outputStream().use { output ->
-                            zip.copyTo(output)
-                        }
+                        outFile.outputStream().use { output -> zip.copyTo(output) }
                     }
                     entry = zip.nextEntry
                 }
@@ -208,14 +191,12 @@ private suspend fun runFullExperiment(
         }
 
         if (alignedOk) success++
-
         results.add(PhotoResult(file.name, bestVehicleName, bestScore, alignedOk))
     }
 
     onProgress(1f, "Generating report...")
     val html = buildHtmlReport(results, total, success)
     val summary = "Aligned $success/$total photos (${"%.1f".format(success * 100f / total)}%)"
-
     return ExperimentResult(summary, html)
 }
 
