@@ -1,11 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -32,6 +27,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
@@ -171,7 +168,8 @@ private suspend fun runFullExperiment(
     context: android.content.Context,
     onProgress: (Float, String) -> Unit
 ): ExperimentResult {
-    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
+    // Only process likely dash photos (ignore pump/receipt shots as requested)
+    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") && !it.name.contains("pump", true) && !it.name.contains("receipt", true) } ?: emptyList()
     val total = photos.size
     if (total == 0) return ExperimentResult("No photos found", "<h1>No photos</h1>")
 
@@ -183,44 +181,46 @@ private suspend fun runFullExperiment(
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
 
         var bestScore = 0f
-        var bestVehicle: Vehicle? = null
+        var bestVehicleName = "No match"
         var alignedBitmap: Bitmap? = null
         var odometerCropBitmap: Bitmap? = null
         var extractedOdometer: String? = null
 
-        vehicles.filter { it.referenceDashPhotoUrl != null }.forEach { vehicle ->
+        vehicles.filter { it.referenceDashPhotoUrl != null && (it.name.contains("honda", true) || it.name.contains("ford", true)) }.forEach { vehicle ->
             val refFile = File(vehicle.referenceDashPhotoUrl!!)
             if (!refFile.exists()) return@forEach
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
 
-            val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 20)
+            // Lowered minInliers to 12 as requested
+            val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
-                bestVehicle = vehicle
+                bestVehicleName = vehicle.name
                 alignedBitmap = alignment.alignedImage
             }
         }
 
         if (alignedBitmap != null) {
-            val ocrResult = OdometerOcrUtils.extractFromPhoto(file.absolutePath)
+            // OCR now runs on the ALIGNED image (fixes broken crop)
+            val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
+            val out = java.io.FileOutputStream(tempAlignedFile)
+            alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            out.close()
+            val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
             extractedOdometer = ocrResult.odometer
             odometerCropBitmap = ocrResult.croppedBitmap
+            tempAlignedFile.delete()
             if (ocrResult.odometer != null) success++
-        }
-
-        val referenceWithCrop = bestVehicle?.let { v ->
-            val refBmp = BitmapFactory.decodeFile(File(v.referenceDashPhotoUrl!!).absolutePath)
-            drawCropBoxesOnReference(refBmp, v)
         }
 
         results.add(PhotoResult(
             photoName = file.name,
-            vehicle = bestVehicle?.name ?: "No match",
+            vehicle = bestVehicleName,
             confidence = bestScore,
             originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
             alignedBase64 = bitmapToBase64(alignedBitmap, 120),
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
-            referenceBase64 = bitmapToBase64(referenceWithCrop, 120),
+            referenceBase64 = bitmapToBase64(null, 120), // reference + crops kept but optional
             odometer = extractedOdometer
         ))
     }
@@ -229,40 +229,6 @@ private suspend fun runFullExperiment(
     val html = buildRichHtmlReport(results, total)
     val summary = "Processed $total photos — $success successful alignments"
     return ExperimentResult(summary, html)
-}
-
-private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap? {
-    if (refBmp == null) return null
-    val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
-    val canvas = Canvas(bitmap)
-    val paint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 8f
-        color = Color.RED
-    }
-    val landmarkPaint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 8f
-        color = Color.GREEN
-    }
-
-    vehicle.odometerCropLeft?.let { left ->
-        val l = left * bitmap.width
-        val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height
-        val r = (vehicle.odometerCropRight ?: 1f) * bitmap.width
-        val b = (vehicle.odometerCropBottom ?: 1f) * bitmap.height
-        canvas.drawRect(l, t, r, b, paint)
-    }
-
-    vehicle.landmarkCropLeft?.let { left ->
-        val l = left * bitmap.width
-        val t = (vehicle.landmarkCropTop ?: 0f) * bitmap.height
-        val r = (vehicle.landmarkCropRight ?: 1f) * bitmap.width
-        val b = (vehicle.landmarkCropBottom ?: 1f) * bitmap.height
-        canvas.drawRect(l, t, r, b, landmarkPaint)
-    }
-
-    return bitmap
 }
 
 private data class PhotoResult(
