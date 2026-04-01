@@ -1,6 +1,11 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -27,8 +32,6 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
@@ -212,13 +215,15 @@ private suspend fun runFullExperiment(
             if (ocrResult.odometer != null) success++
         }
 
-        val referenceWithCrop = bestVehicleName != "No match" && vehicles.find { it.name == bestVehicleName }?.let { v ->
-            val refFile = File(v.referenceDashPhotoUrl!!)
-            if (refFile.exists()) {
-                val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
-                drawCropBoxesOnReference(refBmp, v)
-            } else null
-        }
+        val referenceWithCrop = if (bestVehicleName != "No match") {
+            vehicles.find { it.name == bestVehicleName }?.let { v ->
+                val refFile = File(v.referenceDashPhotoUrl!!)
+                if (refFile.exists()) {
+                    val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
+                    drawCropBoxesOnReference(refBmp, v)
+                } else null
+            }
+        } else null
 
         results.add(PhotoResult(
             photoName = file.name,
@@ -242,8 +247,16 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
     if (refBmp == null) return null
     val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = Canvas(bitmap)
-    val paint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.RED }
-    val landmarkPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.GREEN }
+    val paint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 8f
+        color = Color.RED
+    }
+    val landmarkPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 8f
+        color = Color.GREEN
+    }
 
     vehicle.odometerCropLeft?.let { left ->
         val l = left * bitmap.width
