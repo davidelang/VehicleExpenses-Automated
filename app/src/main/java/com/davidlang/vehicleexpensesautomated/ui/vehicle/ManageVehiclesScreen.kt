@@ -235,6 +235,8 @@ fun ManageVehiclesScreen(
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
             Spacer(modifier = Modifier.height(8.dp))
+
+            // === Original + CLEANED (always visible) ===
             if (pickedPhotoUrl != null || referencePhotoUrl != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -268,9 +270,12 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // === 8-VARIANT DIAGNOSTIC GRID (now higher and always visible when ready) ===
             if (diagnosticVariants.isNotEmpty()) {
-                Text("Tic-Removal Diagnostic Grid", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
+                Text("Tic-Removal Diagnostic Grid (8 variants)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
                 Column {
                     for (row in 0 until 4) {
@@ -304,7 +309,9 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             if (referencePhotoUrl != null) {
                 Log.i("CropDebug", "Using reference for crop/edit: $referencePhotoUrl")
                 BoxWithConstraints(
@@ -429,6 +436,7 @@ fun ManageVehiclesScreen(
                         isSaving = true
                         scope.launch {
                             try {
+                                Log.i("VehicleSave", "Save button pressed — calling ViewModel (isNewVehicle=$isNewVehicle)")
                                 if (isNewVehicle) {
                                     vehicleViewModel.createNewVehicleWithReference(
                                         name = name,
@@ -464,6 +472,7 @@ fun ManageVehiclesScreen(
                                         Toast.makeText(context, "Vehicle updated with crop box", Toast.LENGTH_LONG).show()
                                     }
                                 }
+                                Log.i("VehicleSave", "Save completed successfully")
                             } catch (e: Exception) {
                                 Log.e("VehicleSave", "Save failed", e)
                                 Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()

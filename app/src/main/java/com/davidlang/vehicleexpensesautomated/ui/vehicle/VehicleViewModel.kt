@@ -36,7 +36,7 @@ class VehicleViewModel @Inject constructor(
 
     suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
-    fun createNewVehicleWithReference(
+    suspend fun createNewVehicleWithReference(
         name: String,
         make: String,
         model: String,
@@ -46,65 +46,63 @@ class VehicleViewModel @Inject constructor(
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int
     ) {
-        viewModelScope.launch {
-            Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name with original $referenceDashPhotoUrl")
-            var cleanedUrl: String? = null
-            try {
-                cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
-            } catch (e: Exception) {
-                Log.e("VehicleReferenceCleaning", "Cleaning failed, falling back to original photo", e)
-                cleanedUrl = referenceDashPhotoUrl
-            }
+        Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name with original $referenceDashPhotoUrl")
+        var cleanedUrl: String? = null
+        try {
+            cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
+        } catch (e: Exception) {
+            Log.e("VehicleReferenceCleaning", "Cleaning failed, falling back to original photo", e)
+            cleanedUrl = referenceDashPhotoUrl
+        }
 
-            val newVehicle = Vehicle(
-                name = name,
-                make = make,
-                model = model,
-                year = year,
-                licensePlate = licensePlate,
-                referenceDashPhotoUrl = null,
-                cleanedReferenceDashPhotoUrl = cleanedUrl,
-                odometerCropLeft = odometerCropRect?.left,
-                odometerCropTop = odometerCropRect?.top,
-                odometerCropRight = odometerCropRect?.right,
-                odometerCropBottom = odometerCropRect?.bottom
-            )
+        val newVehicle = Vehicle(
+            name = name,
+            make = make,
+            model = model,
+            year = year,
+            licensePlate = licensePlate,
+            referenceDashPhotoUrl = null,
+            cleanedReferenceDashPhotoUrl = cleanedUrl,
+            odometerCropLeft = odometerCropRect?.left,
+            odometerCropTop = odometerCropRect?.top,
+            odometerCropRight = odometerCropRect?.right,
+            odometerCropBottom = odometerCropRect?.bottom
+        )
 
-            try {
-                withContext(NonCancellable + Dispatchers.IO) {
-                    repository.insert(newVehicle)
-                }
-                Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted successfully")
-            } catch (e: Exception) {
-                Log.e("VehicleReferenceCleaning", "Insert failed", e)
+        try {
+            withContext(NonCancellable + Dispatchers.IO) {
+                repository.insert(newVehicle)
             }
+            Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted successfully")
+        } catch (e: Exception) {
+            Log.e("VehicleReferenceCleaning", "Insert failed", e)
+            throw e
         }
     }
 
-    fun updateVehicle(vehicle: Vehicle) {
-        viewModelScope.launch {
-            Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
-            var cleanedUrl: String? = vehicle.cleanedReferenceDashPhotoUrl
-            try {
-                cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
-                    ?: vehicle.cleanedReferenceDashPhotoUrl
-            } catch (e: Exception) {
-                Log.e("VehicleReferenceCleaning", "Cleaning failed, keeping original", e)
-            }
+    suspend fun updateVehicle(vehicle: Vehicle) {
+        Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
+        var cleanedUrl: String? = vehicle.cleanedReferenceDashPhotoUrl
+        try {
+            cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
+                ?: vehicle.cleanedReferenceDashPhotoUrl
+        } catch (e: Exception) {
+            Log.e("VehicleReferenceCleaning", "Cleaning failed, keeping original", e)
+        }
 
-            val updated = vehicle.copy(
-                referenceDashPhotoUrl = null,
-                cleanedReferenceDashPhotoUrl = cleanedUrl
-            )
+        val updated = vehicle.copy(
+            referenceDashPhotoUrl = null,
+            cleanedReferenceDashPhotoUrl = cleanedUrl
+        )
 
-            try {
-                withContext(NonCancellable + Dispatchers.IO) {
-                    repository.updateVehicle(updated)
-                }
-                Log.i("VehicleReferenceCleaning", "✅ Vehicle updated successfully")
-            } catch (e: Exception) {
-                Log.e("VehicleReferenceCleaning", "Update failed", e)
+        try {
+            withContext(NonCancellable + Dispatchers.IO) {
+                repository.updateVehicle(updated)
             }
+            Log.i("VehicleReferenceCleaning", "✅ Vehicle updated successfully")
+        } catch (e: Exception) {
+            Log.e("VehicleReferenceCleaning", "Update failed", e)
+            throw e
         }
     }
 
