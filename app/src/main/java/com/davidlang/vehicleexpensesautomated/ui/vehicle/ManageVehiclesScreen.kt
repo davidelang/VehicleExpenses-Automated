@@ -108,7 +108,7 @@ fun ManageVehiclesScreen(
                 odometerReading = ""
                 // ALWAYS use the cleaned version for display (the only image we keep)
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
-                Log.i("CropDebug", "Loaded vehicle ${it.id} — displaying cleaned photo: $referencePhotoUrl")
+                Log.i("CropDebug", "Loaded vehicle ${it.id} — displaying CLEANED photo: $referencePhotoUrl")
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
