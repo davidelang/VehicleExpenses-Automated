@@ -39,7 +39,7 @@ class VehicleViewModel @Inject constructor(
         initialOdometer: Int
     ) {
         viewModelScope.launch {
-            Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name with original photo $referenceDashPhotoUrl")
+            Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name with original $referenceDashPhotoUrl")
             val cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
             val newVehicle = Vehicle(
                 name = name,

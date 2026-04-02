@@ -94,7 +94,7 @@ fun ManageVehiclesScreen(
         }
     }
 
-    LaunchedEffect(selectedVehicleId) {
+    LaunchedEffect(selectedVehicleId, vehicles) {  // added vehicles as key so list refresh forces reload
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
             editingVehicle = vehicle
@@ -106,7 +106,7 @@ fun ManageVehiclesScreen(
                 year = it.year?.toString() ?: ""
                 licensePlate = it.licensePlate ?: ""
                 odometerReading = ""
-                // ALWAYS use the cleaned version for display (the only image we keep)
+                // ALWAYS prefer the cleaned version (this is the ONLY image we keep)
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
                 Log.i("CropDebug", "Loaded vehicle ${it.id} — displaying CLEANED photo: $referencePhotoUrl")
                 odometerCropRect = it.odometerCropLeft?.let { left ->
@@ -224,13 +224,15 @@ fun ManageVehiclesScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (referencePhotoUrl != null) {
-                Log.i("CropDebug", "Displaying reference photo: $referencePhotoUrl (should be the cleaned version)")
+                Log.i("CropDebug", "Displaying reference photo: $referencePhotoUrl (should be cleaned version)")
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(300.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
+                            // Set originalImageSize once we have a real image size
+                            if (originalImageSize.x == 0f) originalImageSize = imageSize
                             Log.d("CropDebug", "BoxWithConstraints measured: $imageSize")
                         }
                         .pointerInput(Unit) {
