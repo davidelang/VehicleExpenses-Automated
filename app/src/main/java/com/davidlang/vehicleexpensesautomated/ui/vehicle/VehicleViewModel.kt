@@ -139,7 +139,6 @@ class VehicleViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("CropDebug", "loadDiagnosticGrid FAILED — full stack trace below", e)
                 e.printStackTrace()
-                Toast.makeText(android.app.Application(), "Grid generation failed — check logcat for details", Toast.LENGTH_LONG).show()
             }
         }
     }
