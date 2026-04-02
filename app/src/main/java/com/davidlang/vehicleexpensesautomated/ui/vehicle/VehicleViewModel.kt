@@ -34,6 +34,9 @@ class VehicleViewModel @Inject constructor(
     private val _diagnosticVariants = MutableStateFlow<List<Bitmap>>(emptyList())
     val diagnosticVariants: StateFlow<List<Bitmap>> = _diagnosticVariants
 
+    private val _radialSteps = MutableStateFlow<List<Bitmap>>(emptyList())
+    val radialSteps: StateFlow<List<Bitmap>> = _radialSteps
+
     suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
     suspend fun createNewVehicleWithReference(
@@ -127,9 +130,15 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        val newVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
-                        _diagnosticVariants.value = newVariants
-                        Log.i("CropDebug", "✅ Grid updated with ${newVariants.size} variants")
+                        // Old method (shrunk to only 3 useful variants + original)
+                        val oldVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
+                        _diagnosticVariants.value = oldVariants
+
+                        // NEW radial-line subtraction method — 4 step images
+                        val steps = ImageAlignmentUtils.createRadialLineRemovalSteps(bmp)
+                        _radialSteps.value = steps
+
+                        Log.i("CropDebug", "✅ Grid updated with ${oldVariants.size} old variants + ${steps.size} radial steps")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }
