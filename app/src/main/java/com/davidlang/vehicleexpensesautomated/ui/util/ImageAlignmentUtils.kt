@@ -29,10 +29,10 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Creates 8 diagnostic variants for the UI grid.
-     * EXTREMELY AGGRESSIVE tic removal — Variant 1 is already stronger than the old maximum,
-     * then ramps up dramatically (old 7 → new 14/21/28/35/42/49 style aggression).
-     * We are deliberately going past the previous "apocalypse" level until we start removing digits.
+     * Balanced aggressive tic removal for next test round.
+     * Starts at moderate-high aggression (stronger than old "good" set)
+     * and ramps gradually to a controlled strong level (much less extreme than the last version).
+     * This narrows the search space between the two previous sets.
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -49,15 +49,15 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // NEW ULTRA-AGGRESSIVE paramSets — starting from old max and going way beyond
+        // Balanced ramp — moderate-high to strong but controlled
         val paramSets = listOf(
-            Triple(0.5,  15.0, 35),   // Variant 1 — already stronger than old #7
-            Triple(1.0,  18.0, 40),   // Variant 2
-            Triple(1.5,  22.0, 45),   // Variant 3
-            Triple(2.0,  25.0, 50),   // Variant 4
-            Triple(2.5,  28.0, 55),   // Variant 5
-            Triple(3.0,  32.0, 60),   // Variant 6
-            Triple(4.0,  35.0, 65)    // Variant 7 — extreme aggression
+            Triple(5.0,  40.0, 24),   // Variant 1 – reasonably aggressive
+            Triple(4.5,  38.0, 27),
+            Triple(4.0,  36.0, 30),
+            Triple(3.5,  34.0, 33),
+            Triple(3.0,  32.0, 36),
+            Triple(2.5,  30.0, 39),
+            Triple(2.0,  28.0, 42)    // Variant 7 – quite strong but not destructive
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -68,9 +68,8 @@ object ImageAlignmentUtils {
                 val edges = Mat()
                 Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
 
-                // Even more sensitive line detection
                 val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, 8.0, 1.5)
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 15, 10.0, 2.0)
 
                 val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
                 for (i in 0 until lines.rows()) {
@@ -80,19 +79,19 @@ object ImageAlignmentUtils {
                     val x2 = line[2].toInt()
                     val y2 = line[3].toInt()
                     val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
-                    if (length < 300) {   // catch even the shortest lines
+                    if (length < 280) {
                         Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness)
                     }
                 }
 
                 val cleaned = Mat()
-                Photo.inpaint(srcBGR, mask, cleaned, 18.0, Photo.INPAINT_TELEA)  // larger radius
+                Photo.inpaint(srcBGR, mask, cleaned, 14.0, Photo.INPAINT_TELEA)
 
-                // Second pass — even more aggressive
+                // Second pass – controlled strength
                 val edges2 = Mat()
-                Imgproc.Canny(cleaned, edges2, cannyLow * 0.4, cannyHigh * 0.4)
+                Imgproc.Canny(cleaned, edges2, cannyLow * 0.6, cannyHigh * 0.6)
                 val lines2 = Mat()
-                Imgproc.HoughLinesP(edges2, lines2, 1.0, Math.PI / 180, 10, 6.0, 1.0)
+                Imgproc.HoughLinesP(edges2, lines2, 1.0, Math.PI / 180, 12, 8.0, 1.5)
                 val mask2 = Mat.zeros(gray.size(), CvType.CV_8UC1)
                 for (i in 0 until lines2.rows()) {
                     val line = lines2.get(i, 0)
@@ -100,11 +99,11 @@ object ImageAlignmentUtils {
                     val y1 = line[1].toInt()
                     val x2 = line[2].toInt()
                     val y2 = line[3].toInt()
-                    if (Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 260) {
-                        Imgproc.line(mask2, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness + 6)
+                    if (Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 250) {
+                        Imgproc.line(mask2, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness + 3)
                     }
                 }
-                Photo.inpaint(cleaned, mask2, cleaned, 14.0, Photo.INPAINT_TELEA)
+                Photo.inpaint(cleaned, mask2, cleaned, 10.0, Photo.INPAINT_TELEA)
 
                 val debug = Mat()
                 Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
@@ -145,7 +144,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Production cleaned reference — now uses the strongest settings from the new grid (Variant 1 level)
+     * Production cleaned reference — uses a strong but safe setting (around Variant 3 level)
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
@@ -157,9 +156,9 @@ object ImageAlignmentUtils {
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
         val edges = Mat()
-        Imgproc.Canny(gray, edges, 0.5, 15.0)
+        Imgproc.Canny(gray, edges, 6.0, 45.0)
         val lines = Mat()
-        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, 8.0, 1.5)
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 15, 10.0, 2.0)
 
         val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
         for (i in 0 until lines.rows()) {
@@ -169,13 +168,13 @@ object ImageAlignmentUtils {
             val x2 = line[2].toInt()
             val y2 = line[3].toInt()
             val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
-            if (length < 300) {
-                Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 35)
+            if (length < 280) {
+                Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 32)
             }
         }
 
         val cleaned = Mat()
-        Photo.inpaint(srcBGR, mask, cleaned, 18.0, Photo.INPAINT_TELEA)
+        Photo.inpaint(srcBGR, mask, cleaned, 14.0, Photo.INPAINT_TELEA)
 
         val result = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(cleaned, result)
