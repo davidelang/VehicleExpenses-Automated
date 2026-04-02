@@ -45,7 +45,13 @@ class VehicleViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name with original $referenceDashPhotoUrl")
-            val cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
+            var cleanedUrl: String? = null
+            try {
+                cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
+            } catch (e: Exception) {
+                Log.e("VehicleReferenceCleaning", "Cleaning failed, falling back to original photo", e)
+                cleanedUrl = referenceDashPhotoUrl
+            }
             val newVehicle = Vehicle(
                 name = name,
                 make = make,
@@ -60,21 +66,26 @@ class VehicleViewModel @Inject constructor(
                 odometerCropBottom = odometerCropRect?.bottom
             )
             repository.insert(newVehicle)
-            Log.i("VehicleReferenceCleaning", "Vehicle inserted with cleaned photo: $cleanedUrl")
+            Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted (cleaned=$cleanedUrl)")
         }
     }
 
     fun updateVehicle(vehicle: Vehicle) {
         viewModelScope.launch {
             Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
-            val cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
-                ?: vehicle.cleanedReferenceDashPhotoUrl
+            var cleanedUrl: String? = vehicle.cleanedReferenceDashPhotoUrl
+            try {
+                cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
+                    ?: vehicle.cleanedReferenceDashPhotoUrl
+            } catch (e: Exception) {
+                Log.e("VehicleReferenceCleaning", "Cleaning failed, keeping original", e)
+            }
             val updated = vehicle.copy(
                 referenceDashPhotoUrl = null,
                 cleanedReferenceDashPhotoUrl = cleanedUrl
             )
             repository.updateVehicle(updated)
-            Log.i("VehicleReferenceCleaning", "Vehicle updated with cleaned photo: $cleanedUrl")
+            Log.i("VehicleReferenceCleaning", "✅ Vehicle updated (cleaned=$cleanedUrl)")
         }
     }
 
@@ -120,22 +131,20 @@ class VehicleViewModel @Inject constructor(
             Log.e("VehicleReferenceCleaning", "Original file does not exist: $originalUrl")
             return null
         }
-        Log.i("VehicleReferenceCleaning", "Starting cleaning for: $originalUrl")
+        Log.i("VehicleReferenceCleaning", "Starting fast cleaning for: $originalUrl")
 
         val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath)
         if (originalBmp == null) {
             Log.e("VehicleReferenceCleaning", "Failed to decode original bitmap")
             return null
         }
-        Log.i("VehicleReferenceCleaning", "Decoded original bitmap (${originalBmp.width}x${originalBmp.height})")
 
         val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp)
         if (cleanedBmp == null) {
-            Log.e("VehicleReferenceCleaning", "ImageAlignmentUtils.createCleanedReference returned null")
+            Log.e("VehicleReferenceCleaning", "Fast cleaning returned null")
             originalBmp.recycle()
             return null
         }
-        Log.i("VehicleReferenceCleaning", "OpenCV cleaning succeeded")
 
         val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
         return try {

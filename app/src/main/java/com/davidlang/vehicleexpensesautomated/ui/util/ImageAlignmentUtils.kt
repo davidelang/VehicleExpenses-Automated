@@ -29,14 +29,12 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Creates 8 versions for the diagnostic grid:
-     *   0 = original
-     *   1-7 = increasingly aggressive tic removal
-     *   All variants are downscaled to max 1024 px wide for UI preview
+     * Creates 8 versions for the diagnostic grid (preview only).
+     * All variants are downscaled to max 1024 px wide.
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        // 0 = original (downscaled for grid)
+        // 0 = original (downscaled)
         val thumbW = if (original.width > 1024) 1024 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt()
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -47,13 +45,13 @@ object ImageAlignmentUtils {
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
         val paramSets = listOf(
-            Triple(30.0, 100.0, 5),   // 1 mild
-            Triple(25.0, 90.0, 6),    // 2
-            Triple(20.0, 80.0, 7),    // 3
-            Triple(15.0, 70.0, 8),    // 4
-            Triple(10.0, 60.0, 9),    // 5
-            Triple(5.0,  50.0, 10),   // 6
-            Triple(3.0,  40.0, 12)    // 7 apocalypse
+            Triple(30.0, 100.0, 5),
+            Triple(25.0, 90.0, 6),
+            Triple(20.0, 80.0, 7),
+            Triple(15.0, 70.0, 8),
+            Triple(10.0, 60.0, 9),
+            Triple(5.0,  50.0, 10),
+            Triple(3.0,  40.0, 12)
         )
 
         for ((cannyLow, cannyHigh, thickness) in paramSets) {
@@ -80,7 +78,6 @@ object ImageAlignmentUtils {
             val cleaned = Mat()
             Photo.inpaint(srcBGR, mask, cleaned, 8.0, Photo.INPAINT_TELEA)
 
-            // second pass
             val edges2 = Mat()
             Imgproc.Canny(cleaned, edges2, cannyLow * 0.8, cannyHigh * 0.8)
             val lines2 = Mat()
@@ -98,7 +95,6 @@ object ImageAlignmentUtils {
             }
             Photo.inpaint(cleaned, mask2, cleaned, 6.0, Photo.INPAINT_TELEA)
 
-            // green debug tint
             val debug = Mat()
             Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
             val greenTint = Mat.zeros(debug.size(), CvType.CV_8UC4)
@@ -108,7 +104,6 @@ object ImageAlignmentUtils {
             val result = Bitmap.createBitmap(debug.cols(), debug.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(debug, result)
 
-            // downscale for grid preview
             val gridBmp = if (result.width > 1024) {
                 val h = (1024f / result.width * result.height).toInt()
                 Bitmap.createScaledBitmap(result, 1024, h, true)
@@ -130,18 +125,57 @@ object ImageAlignmentUtils {
 
         src.release()
         srcBGR.release()
-        Log.i("VehicleReferenceCleaning", "✅ Created 8 diagnostic variants (0=original, 1-7=aggressive) for UI grid")
+        Log.i("VehicleReferenceCleaning", "✅ Created 8 diagnostic variants for UI grid")
         variants
     }
 
-    // Production cleaned reference (uses the 4th aggressive variant, full size)
+    /**
+     * FAST production cleaned reference - single pass only (4th aggressive variant)
+     * No 7-variant loop, no memory explosion on large photos.
+     */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
-        val variants = createDiagnosticVariants(original)
-        variants.getOrNull(4)?.let { thumbnail ->
-            // return the full-size version for production use
-            val full = Bitmap.createScaledBitmap(thumbnail, original.width, original.height, true)
-            full
+        Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
+        val src = Mat()
+        org.opencv.android.Utils.bitmapToMat(original, src)
+        val srcBGR = Mat()
+        Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
+
+        val gray = Mat()
+        Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
+        val edges = Mat()
+        Imgproc.Canny(gray, edges, 15.0, 70.0)
+        val lines = Mat()
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 30, 15.0, 5.0)
+
+        val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
+        for (i in 0 until lines.rows()) {
+            val line = lines.get(i, 0)
+            val x1 = line[0].toInt()
+            val y1 = line[1].toInt()
+            val x2 = line[2].toInt()
+            val y2 = line[3].toInt()
+            val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
+            if (length < 220) {
+                Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 8)
+            }
         }
+
+        val cleaned = Mat()
+        Photo.inpaint(srcBGR, mask, cleaned, 8.0, Photo.INPAINT_TELEA)
+
+        val result = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(cleaned, result)
+
+        src.release()
+        srcBGR.release()
+        gray.release()
+        edges.release()
+        lines.release()
+        mask.release()
+        cleaned.release()
+
+        Log.i("VehicleReferenceCleaning", "✅ Fast cleaning succeeded")
+        result
     }
 
     // unchanged alignImages function
@@ -192,7 +226,6 @@ object ImageAlignmentUtils {
             val dstPoints = MatOfPoint2f()
             val srcList = mutableListOf<Point>()
             val dstList = mutableListOf<Point>()
-
             goodMatches.forEach { match ->
                 val queryPt = queryKeypoints.toArray()[match.queryIdx].pt
                 val refPt = refKeypoints.toArray()[match.trainIdx].pt
@@ -203,7 +236,6 @@ object ImageAlignmentUtils {
             dstPoints.fromList(dstList)
 
             val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
-
             val confidence = goodMatches.size.toFloat() / matches.toList().size.toFloat()
 
             val warped = Mat()
