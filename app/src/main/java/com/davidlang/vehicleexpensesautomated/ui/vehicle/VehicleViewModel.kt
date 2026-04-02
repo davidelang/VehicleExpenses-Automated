@@ -37,6 +37,9 @@ class VehicleViewModel @Inject constructor(
     private val _radialSteps = MutableStateFlow<List<Bitmap>>(emptyList())
     val radialSteps: StateFlow<List<Bitmap>> = _radialSteps
 
+    private val _arcSteps = MutableStateFlow<List<Bitmap>>(emptyList())
+    val arcSteps: StateFlow<List<Bitmap>> = _arcSteps
+
     suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
     suspend fun createNewVehicleWithReference(
@@ -130,15 +133,19 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        // Old method (shrunk to only 3 useful variants + original)
+                        // Old method (shrunk)
                         val oldVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
                         _diagnosticVariants.value = oldVariants
 
-                        // NEW radial-line subtraction method — 4 step images
-                        val steps = ImageAlignmentUtils.createRadialLineRemovalSteps(bmp)
-                        _radialSteps.value = steps
+                        // Previous radial line method
+                        val radial = ImageAlignmentUtils.createRadialLineRemovalSteps(bmp)
+                        _radialSteps.value = radial
 
-                        Log.i("CropDebug", "✅ Grid updated with ${oldVariants.size} old variants + ${steps.size} radial steps")
+                        // NEW arc-mask method (full ring blackout)
+                        val arc = ImageAlignmentUtils.createArcMaskRemovalSteps(bmp)
+                        _arcSteps.value = arc
+
+                        Log.i("CropDebug", "✅ Grid updated with ${oldVariants.size} old variants + radial + arc steps")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }
@@ -146,7 +153,7 @@ class VehicleViewModel @Inject constructor(
                     Log.e("CropDebug", "File does not exist: $url")
                 }
             } catch (e: Exception) {
-                Log.e("CropDebug", "loadDiagnosticGrid FAILED — full stack trace below", e)
+                Log.e("CropDebug", "loadDiagnosticGrid FAILED", e)
                 e.printStackTrace()
             }
         }
