@@ -33,7 +33,6 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.OcrDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
-import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import kotlinx.coroutines.launch
@@ -97,6 +96,8 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize, variants=${diagnosticVariants.size}")
+
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
@@ -131,12 +132,12 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Trigger grid generation whenever a raw photo is picked (new vehicle flow)
+    // Trigger grid generation whenever a raw photo is picked
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             Log.i("CropDebug", "pickedPhotoUrl changed → loading diagnostic grid for $url")
             vehicleViewModel.loadDiagnosticGrid(url)
-            referencePhotoUrl = url  // use original for editing
+            referencePhotoUrl = url
         }
     }
 
@@ -156,11 +157,9 @@ fun ManageVehiclesScreen(
                     val cropRect = odometerCropRect?.let { r ->
                         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                     }
-                    Log.d("CropDebug", "Calling extractFromPhoto with cropRect=$cropRect")
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
-                    Log.d("CropDebug", "OCR result received — odometer=${result.odometer}, possible=${result.possibleOdometers.size}")
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
@@ -272,7 +271,7 @@ fun ManageVehiclesScreen(
             }
             Spacer(modifier = Modifier.height(8.dp))
             if (diagnosticVariants.isNotEmpty()) {
-                Text("Tic-Removal Diagnostic Grid (pick the best one)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
+                Text("Tic-Removal Diagnostic Grid", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
                 Column {
                     for (row in 0 until 4) {
@@ -312,7 +311,7 @@ fun ManageVehiclesScreen(
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(300.dp)  // FIXED HEIGHT — this was the missing piece
+                        .height(300.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
                             if (originalImageSize.x == 0f) originalImageSize = imageSize
@@ -442,7 +441,7 @@ fun ManageVehiclesScreen(
                                         odometerCropRect = odometerCropRect,
                                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                                     )
-                                    Toast.makeText(context, "New vehicle created with crop", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "New vehicle created with crop box", Toast.LENGTH_LONG).show()
                                 } else {
                                     editingVehicle?.let { vehicle ->
                                         vehicleViewModel.updateVehicle(
@@ -463,9 +462,12 @@ fun ManageVehiclesScreen(
                                                 landmarkCropBottom = landmarkCropRect?.bottom
                                             )
                                         )
-                                        Toast.makeText(context, "Vehicle updated with crop", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Vehicle updated with crop box", Toast.LENGTH_LONG).show()
                                     }
                                 }
+                            } catch (e: Exception) {
+                                Log.e("VehicleSave", "Save failed", e)
+                                Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
                             } finally {
                                 isSaving = false
                                 navController.popBackStack()
