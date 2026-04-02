@@ -68,6 +68,7 @@ fun ManageVehiclesScreen(
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     val diagnosticVariants by vehicleViewModel.diagnosticVariants.collectAsState()
+    val radialSteps by vehicleViewModel.radialSteps.collectAsState()
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
@@ -100,10 +101,9 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    // Full-screen dialog for the 8-variant grid (screenshot friendly)
     var showDiagnosticDialog by remember { mutableStateOf(false) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize, variants=${diagnosticVariants.size}")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, variants=${diagnosticVariants.size}, radialSteps=${radialSteps.size}")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -243,7 +243,6 @@ fun ManageVehiclesScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // === Original + CLEANED ===
             if (pickedPhotoUrl != null || referencePhotoUrl != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -280,48 +279,78 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // === Inline 8-variant grid (visible immediately after photo selection) ===
+            // === Shrunk old diagnostic grid (only Variants 1-3) ===
             if (diagnosticVariants.isNotEmpty()) {
-                Text("Tic-Removal Diagnostic Grid (8 variants)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
+                Text("Old Tic-Removal Grid (Variants 1-3 only)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
-                Column {
-                    for (row in 0 until 4) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            for (col in 0 until 2) {
-                                val index = row * 2 + col
-                                val bmp = diagnosticVariants.getOrNull(index)
-                                if (bmp != null) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = if (index == 0) "Original" else "Variant $index",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (index == 0) Color.Gray else Color(0xFF4CAF50)
-                                        )
-                                        Image(
-                                            bitmap = bmp.asImageBitmap(),
-                                            contentDescription = "Variant $index",
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(160.dp),
-                                            contentScale = ContentScale.Fit
-                                        )
-                                    }
-                                }
-                            }
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(700.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(diagnosticVariants) { bmp ->
+                        val index = diagnosticVariants.indexOf(bmp)
+                        Column {
+                            Text(
+                                text = if (index == 0) "Original" else "Variant $index",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (index == 0) Color.Gray else Color(0xFF4CAF50)
+                            )
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp),
+                                contentScale = ContentScale.Fit
+                            )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            if (diagnosticVariants.isNotEmpty()) {
-                Button(onClick = { showDiagnosticDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("📸 View Full Diagnostic Grid (screenshot friendly)")
+            // === NEW RADIAL LINE REMOVAL STEPS (exactly as you asked) ===
+            if (radialSteps.isNotEmpty()) {
+                Text("NEW Radial Line Subtraction Method — 4 Steps", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(700.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(radialSteps) { bmp ->
+                        val index = radialSteps.indexOf(bmp)
+                        val label = when (index) {
+                            0 -> "Original"
+                            1 -> "Extracted Radial Lines"
+                            2 -> "Inverted Radial Lines"
+                            3 -> "Final Merged (tic-free)"
+                            else -> "Step $index"
+                        }
+                        Column {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF2196F3)
+                            )
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
                 }
             }
 
@@ -514,60 +543,6 @@ fun ManageVehiclesScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
                     Text("Delete this vehicle")
-                }
-            }
-        }
-    }
-
-    // Full-screen diagnostic grid dialog
-    if (showDiagnosticDialog && diagnosticVariants.isNotEmpty()) {
-        Dialog(onDismissRequest = { showDiagnosticDialog = false }) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth(0.95f)
-                    .fillMaxHeight(0.9f)
-                    .padding(8.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "Diagnostic Grid — 8 Tic-Removal Variants",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(diagnosticVariants) { bmp ->
-                            Column {
-                                Text(
-                                    text = if (diagnosticVariants.indexOf(bmp) == 0) "Original" else "Variant ${diagnosticVariants.indexOf(bmp)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (diagnosticVariants.indexOf(bmp) == 0) Color.Gray else Color(0xFF4CAF50)
-                                )
-                                Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(220.dp),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                        }
-                    }
-                    Button(
-                        onClick = { showDiagnosticDialog = false },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Text("Close")
-                    }
                 }
             }
         }
