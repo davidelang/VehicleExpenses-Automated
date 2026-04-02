@@ -8,6 +8,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -97,7 +100,7 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    // NEW: dialog to show the full 8-variant grid so it doesn't disappear on save
+    // Full-screen dialog for the 8-variant grid (screenshot friendly)
     var showDiagnosticDialog by remember { mutableStateOf(false) }
 
     Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize, variants=${diagnosticVariants.size}")
@@ -277,7 +280,7 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // === Inline 8-variant grid (always visible when ready) ===
+            // === Inline 8-variant grid (visible immediately after photo selection) ===
             if (diagnosticVariants.isNotEmpty()) {
                 Text("Tic-Removal Diagnostic Grid (8 variants)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -316,7 +319,6 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // NEW BUTTON: open full-screen dialog so user can screenshot the grid
             if (diagnosticVariants.isNotEmpty()) {
                 Button(onClick = { showDiagnosticDialog = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("📸 View Full Diagnostic Grid (screenshot friendly)")
@@ -517,7 +519,7 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // === FULL-SCREEN DIAGNOSTIC GRID DIALOG (persistent, screenshot friendly) ===
+    // Full-screen diagnostic grid dialog
     if (showDiagnosticDialog && diagnosticVariants.isNotEmpty()) {
         Dialog(onDismissRequest = { showDiagnosticDialog = false }) {
             Card(
@@ -540,17 +542,16 @@ fun ManageVehiclesScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(diagnosticVariants.size) { index ->
-                            val bmp = diagnosticVariants[index]
+                        items(diagnosticVariants) { bmp ->
                             Column {
                                 Text(
-                                    text = if (index == 0) "Original" else "Variant $index",
+                                    text = if (diagnosticVariants.indexOf(bmp) == 0) "Original" else "Variant ${diagnosticVariants.indexOf(bmp)}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (index == 0) Color.Gray else Color(0xFF4CAF50)
+                                    color = if (diagnosticVariants.indexOf(bmp) == 0) Color.Gray else Color(0xFF4CAF50)
                                 )
                                 Image(
                                     bitmap = bmp.asImageBitmap(),
-                                    contentDescription = "Variant $index",
+                                    contentDescription = null,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(220.dp),
