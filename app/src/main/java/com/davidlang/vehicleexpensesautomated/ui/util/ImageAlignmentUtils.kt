@@ -33,20 +33,22 @@ object ImageAlignmentUtils {
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
         Log.i("ImageAlignment", "Starting createDiagnosticVariants on ${original.width}x${original.height} image")
-        // 0 = original (downscaled)
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
         Log.i("ImageAlignment", "Variant 0 (original) created")
+
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
+
         val paramSets = listOf(
-            Triple(14.0, 72.0, 14), // Variant 1
-            Triple(12.0, 68.0, 16), // Variant 2
-            Triple(11.0, 66.0, 17) // Variant 3
+            Triple(14.0, 72.0, 14),
+            Triple(12.0, 68.0, 16),
+            Triple(11.0, 66.0, 17)
         )
+
         for ((index, params) in paramSets.withIndex()) {
             val (cannyLow, cannyHigh, thickness) = params
             try {
@@ -104,31 +106,39 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * RADIAL LINE SUBTRACTION METHOD — restored exactly as it was (full thickness).
-     * Lines that *point at* the center are removed; no requirement that they physically reach the center.
+     * IMPROVED RADIAL LINE SUBTRACTION — tuned for real gauges (short/faint tics)
+     * Canny 5-50, Hough threshold 10, minLineLength 10, maxGap 3, thickness 12
      */
     suspend fun createRadialLineRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
-        Log.i("ImageAlignment", "Starting createRadialLineRemovalSteps on ${original.width}x${original.height} image")
+        Log.i("ImageAlignment", "Starting IMPROVED createRadialLineRemovalSteps on ${original.width}x${original.height} image")
+
         // Step 0: Original (downscaled)
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
+
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
         Core.bitwise_not(gray, gray)
+
         val blurred = Mat()
         Imgproc.GaussianBlur(gray, blurred, Size(3.0, 3.0), 0.0)
+
         val edges = Mat()
-        Imgproc.Canny(blurred, edges, 10.0, 60.0)
+        Imgproc.Canny(blurred, edges, 5.0, 50.0)   // lowered thresholds
+
         val lines = Mat()
-        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 15, 30.0, 5.0)
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, 10.0, 3.0)  // more sensitive
+
         val centerX = src.cols() / 2.0
         val centerY = src.rows() / 2.0
+
         val linesMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
         for (i in 0 until lines.rows()) {
             val line = lines.get(i, 0)
@@ -137,26 +147,29 @@ object ImageAlignmentUtils {
             val x2 = line[2]
             val y2 = line[3]
             val length = Math.hypot(x2 - x1, y2 - y1)
-            if (length < 30) continue
-            // Perpendicular distance to center line — identifies lines that *point at* the center.
-            // No additional "must reach center" requirement.
+            if (length < 10) continue
+
             val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
-            if (distToCenter < 40) {
-                Imgproc.line(linesMask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 14)
+            if (distToCenter < 40) {   // unchanged — correctly identifies lines pointing at center
+                Imgproc.line(linesMask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 12)
             }
         }
+
         val linesBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(linesMask, linesBmp)
         steps.add(linesBmp)
+
         Core.bitwise_not(linesMask, linesMask)
         val invertedBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(linesMask, invertedBmp)
         steps.add(invertedBmp)
+
         val cleaned = Mat()
         Photo.inpaint(srcBGR, linesMask, cleaned, 14.0, Photo.INPAINT_TELEA)
         val finalBmp = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(cleaned, finalBmp)
         steps.add(finalBmp)
+
         src.release()
         srcBGR.release()
         gray.release()
@@ -165,12 +178,13 @@ object ImageAlignmentUtils {
         lines.release()
         linesMask.release()
         cleaned.release()
-        Log.i("ImageAlignment", "✅ Finished createRadialLineRemovalSteps — 4 step images created")
+
+        Log.i("ImageAlignment", "✅ Finished IMPROVED radial steps — should now catch far more tics")
         steps
     }
 
     /**
-     * Production cleaning — unchanged (still uses the best sweet-spot from earlier tests)
+     * Production cleaning — unchanged
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")

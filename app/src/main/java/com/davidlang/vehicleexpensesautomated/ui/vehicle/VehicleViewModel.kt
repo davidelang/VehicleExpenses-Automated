@@ -130,15 +130,13 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        // Old method (shrunk to only 4 variants)
                         val oldVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
                         _diagnosticVariants.value = oldVariants
 
-                        // Radial line method (no arc-mask)
                         val radial = ImageAlignmentUtils.createRadialLineRemovalSteps(bmp)
                         _radialSteps.value = radial
 
-                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + radial steps")
+                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + improved radial steps")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }

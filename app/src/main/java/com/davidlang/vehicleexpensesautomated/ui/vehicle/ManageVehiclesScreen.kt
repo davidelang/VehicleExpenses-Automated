@@ -101,7 +101,7 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, variants=${diagnosticVariants.size}, radialSteps=${radialSteps.size}")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — radialSteps=${radialSteps.size}")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -123,7 +123,6 @@ fun ManageVehiclesScreen(
                 odometerReading = ""
                 pickedPhotoUrl = it.referenceDashPhotoUrl
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
-                Log.i("CropDebug", "Loaded vehicle ${it.id} — picked=$pickedPhotoUrl, cleaned=$referencePhotoUrl")
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
@@ -148,7 +147,6 @@ fun ManageVehiclesScreen(
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
-                Log.d("CropDebug", "Try OCR clicked — odometerCropRect=$odometerCropRect")
                 try {
                     var finalPath = photoPathOrUri
                     if (photoPathOrUri.startsWith("content://")) {
@@ -274,7 +272,6 @@ fun ManageVehiclesScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            // === OLD GRID (shrunk as requested) ===
             if (diagnosticVariants.isNotEmpty()) {
                 Text("Old Tic-Removal Grid (Variants 1-3 only)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -307,9 +304,8 @@ fun ManageVehiclesScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            // === RADIAL LINE METHOD (only remaining tic-removal method) ===
             if (radialSteps.isNotEmpty()) {
-                Text("Radial Line Subtraction Method — 4 Steps", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+                Text("Radial Line Subtraction Method — 4 Steps (improved)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
@@ -348,7 +344,6 @@ fun ManageVehiclesScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
             if (referencePhotoUrl != null) {
-                Log.i("CropDebug", "Using reference for crop/edit: $referencePhotoUrl")
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -356,7 +351,6 @@ fun ManageVehiclesScreen(
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
                             if (originalImageSize.x == 0f) originalImageSize = imageSize
-                            Log.d("CropDebug", "BoxWithConstraints measured: $imageSize")
                         }
                         .pointerInput(Unit) {
                             detectDragGestures(
@@ -364,7 +358,6 @@ fun ManageVehiclesScreen(
                                     dragStart = offset
                                     dragOffset = Offset.Zero
                                     currentDragRect = null
-                                    Log.d("CropDebug", "Drag START at $offset")
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
@@ -390,7 +383,6 @@ fun ManageVehiclesScreen(
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val newRect = Rect(left, top, right, bottom)
-                                        Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
                                         } else if (isEditingLandmark) {
@@ -471,7 +463,6 @@ fun ManageVehiclesScreen(
                         isSaving = true
                         scope.launch {
                             try {
-                                Log.i("VehicleSave", "Save button pressed — calling ViewModel (isNewVehicle=$isNewVehicle)")
                                 if (isNewVehicle) {
                                     vehicleViewModel.createNewVehicleWithReference(
                                         name = name,
@@ -507,7 +498,6 @@ fun ManageVehiclesScreen(
                                         Toast.makeText(context, "Vehicle updated with crop box", Toast.LENGTH_LONG).show()
                                     }
                                 }
-                                Log.i("VehicleSave", "Save completed successfully")
                             } catch (e: Exception) {
                                 Log.e("VehicleSave", "Save failed", e)
                                 Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
