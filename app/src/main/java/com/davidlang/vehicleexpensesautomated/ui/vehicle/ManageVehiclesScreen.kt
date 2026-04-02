@@ -132,7 +132,6 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Trigger grid generation whenever a raw photo is picked
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             Log.i("CropDebug", "pickedPhotoUrl changed → loading diagnostic grid for $url")
