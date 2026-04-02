@@ -29,12 +29,12 @@ object ImageAlignmentUtils {
     }
 
     // One-time preprocessing: remove speedometer ticks while keeping numbers
+    // Strengthened + visual debug tint so you can see it was processed
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         val src = Mat()
         try {
             org.opencv.android.Utils.bitmapToMat(original, src)
 
-            // Convert ARGB_8888 (4-channel BGRA) to 3-channel BGR for inpaint
             val srcBGR = Mat()
             Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
@@ -42,10 +42,10 @@ object ImageAlignmentUtils {
             Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
 
             val edges = Mat()
-            Imgproc.Canny(gray, edges, 50.0, 150.0)
+            Imgproc.Canny(gray, edges, 30.0, 120.0)  // lowered thresholds to catch more ticks
 
             val lines = Mat()
-            Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 50, 30.0, 10.0)
+            Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 40, 20.0, 8.0)  // more sensitive
 
             val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
             for (i in 0 until lines.rows()) {
@@ -54,17 +54,26 @@ object ImageAlignmentUtils {
                 val y1 = line[1].toInt()
                 val x2 = line[2].toInt()
                 val y2 = line[3].toInt()
-                if (Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 80) {
-                    Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 3)
+                val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
+                if (length < 120) {  // increased max length to catch longer ticks
+                    Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 6)  // thicker mask
                 }
             }
 
             val cleaned = Mat()
-            Photo.inpaint(srcBGR, mask, cleaned, 3.0, Photo.INPAINT_TELEA)
+            Photo.inpaint(srcBGR, mask, cleaned, 5.0, Photo.INPAINT_TELEA)  // stronger inpaint
 
-            val result = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(cleaned, result)
-            Log.i("VehicleReferenceCleaning", "✅ Created cleaned reference for ${result.width}x${result.height} image")
+            // Visual debug: add subtle green tint + brightness boost so it's obvious it's cleaned
+            val debug = Mat()
+            Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
+            val greenTint = Mat.zeros(debug.size(), CvType.CV_8UC4)
+            greenTint.setTo(Scalar(0.0, 40.0, 20.0, 0.0))
+            Core.addWeighted(debug, 1.0, greenTint, 0.3, 30.0, debug)  // green tint + brighter
+
+            val result = Bitmap.createBitmap(debug.cols(), debug.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(debug, result)
+
+            Log.i("VehicleReferenceCleaning", "✅ Created cleaned reference for ${result.width}x${result.height} image (with debug tint)")
             result
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "❌ Cleaning reference failed", e)
