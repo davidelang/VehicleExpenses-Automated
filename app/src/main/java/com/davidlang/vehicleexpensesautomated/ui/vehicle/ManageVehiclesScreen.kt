@@ -25,6 +25,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
@@ -95,6 +96,9 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
+
+    // NEW: dialog to show the full 8-variant grid so it doesn't disappear on save
+    var showDiagnosticDialog by remember { mutableStateOf(false) }
 
     Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize, variants=${diagnosticVariants.size}")
 
@@ -236,7 +240,7 @@ fun ManageVehiclesScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // === Original + CLEANED (always visible) ===
+            // === Original + CLEANED ===
             if (pickedPhotoUrl != null || referencePhotoUrl != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -273,7 +277,7 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // === 8-VARIANT DIAGNOSTIC GRID (higher placement) ===
+            // === Inline 8-variant grid (always visible when ready) ===
             if (diagnosticVariants.isNotEmpty()) {
                 Text("Tic-Removal Diagnostic Grid (8 variants)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -307,6 +311,15 @@ fun ManageVehiclesScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // NEW BUTTON: open full-screen dialog so user can screenshot the grid
+            if (diagnosticVariants.isNotEmpty()) {
+                Button(onClick = { showDiagnosticDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("📸 View Full Diagnostic Grid (screenshot friendly)")
                 }
             }
 
@@ -503,6 +516,62 @@ fun ManageVehiclesScreen(
             }
         }
     }
+
+    // === FULL-SCREEN DIAGNOSTIC GRID DIALOG (persistent, screenshot friendly) ===
+    if (showDiagnosticDialog && diagnosticVariants.isNotEmpty()) {
+        Dialog(onDismissRequest = { showDiagnosticDialog = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.9f)
+                    .padding(8.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "Diagnostic Grid — 8 Tic-Removal Variants",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(diagnosticVariants.size) { index ->
+                            val bmp = diagnosticVariants[index]
+                            Column {
+                                Text(
+                                    text = if (index == 0) "Original" else "Variant $index",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (index == 0) Color.Gray else Color(0xFF4CAF50)
+                                )
+                                Image(
+                                    bitmap = bmp.asImageBitmap(),
+                                    contentDescription = "Variant $index",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(220.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = { showDiagnosticDialog = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
+    }
+
     if (showEnlargedCrop && lastOcrDebugResult != null) {
         OcrDebugDialog(
             ocrResult = lastOcrDebugResult!!,
