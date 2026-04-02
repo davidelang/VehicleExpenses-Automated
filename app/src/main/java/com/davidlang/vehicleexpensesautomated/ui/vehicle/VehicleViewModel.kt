@@ -133,7 +133,7 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        // Old method (shrunk)
+                        // Old method (shrunk to only 4 variants)
                         val oldVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
                         _diagnosticVariants.value = oldVariants
 
@@ -141,7 +141,7 @@ class VehicleViewModel @Inject constructor(
                         val radial = ImageAlignmentUtils.createRadialLineRemovalSteps(bmp)
                         _radialSteps.value = radial
 
-                        // NEW arc-mask method (full ring blackout)
+                        // NEW arc-mask method
                         val arc = ImageAlignmentUtils.createArcMaskRemovalSteps(bmp)
                         _arcSteps.value = arc
 

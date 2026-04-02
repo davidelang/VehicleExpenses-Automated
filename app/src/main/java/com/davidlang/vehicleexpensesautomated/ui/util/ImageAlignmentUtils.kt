@@ -29,7 +29,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * OLD METHOD — kept exactly as requested (only original + Variants 1-3)
+     * OLD METHOD — kept exactly as requested (shrunk to only 4 variants: original + 1-3)
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -120,13 +120,88 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * NEW ARC-MASK REMOVAL METHOD — exactly as you requested
-     * Detects gauge center + inner/outer radius of the tic arc, then blacks out the entire ring.
-     * Returns exactly the 4 steps:
-     *   0 = Original
-     *   1 = Extracted Tic Arc Mask (full ring)
-     *   2 = Inverted Tic Arc Mask
-     *   3 = Final Merged (tic-free)
+     * OLD RADIAL LINE SUBTRACTION METHOD — restored exactly as it was (full thickness)
+     * Returns the 4 steps you asked for in the previous version.
+     */
+    suspend fun createRadialLineRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
+        val steps = mutableListOf<Bitmap>()
+        Log.i("ImageAlignment", "Starting createRadialLineRemovalSteps on ${original.width}x${original.height} image")
+
+        // Step 0: Original (downscaled)
+        val thumbW = if (original.width > 512) 512 else original.width
+        val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
+        steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+
+        val src = Mat()
+        org.opencv.android.Utils.bitmapToMat(original, src)
+        val srcBGR = Mat()
+        Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
+
+        val gray = Mat()
+        Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
+        Core.bitwise_not(gray, gray)
+
+        val blurred = Mat()
+        Imgproc.GaussianBlur(gray, blurred, Size(3.0, 3.0), 0.0)
+
+        val edges = Mat()
+        Imgproc.Canny(blurred, edges, 10.0, 60.0)
+
+        val lines = Mat()
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 15, 30.0, 5.0)
+
+        val centerX = src.cols() / 2.0
+        val centerY = src.rows() / 2.0
+
+        val linesMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
+        for (i in 0 until lines.rows()) {
+            val line = lines.get(i, 0)
+            val x1 = line[0]
+            val y1 = line[1]
+            val x2 = line[2]
+            val y2 = line[3]
+            val length = Math.hypot(x2 - x1, y2 - y1)
+
+            if (length < 30) continue
+
+            val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
+            if (distToCenter < 40) {
+                Imgproc.line(linesMask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 14)
+            }
+        }
+
+        val linesBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(linesMask, linesBmp)
+        steps.add(linesBmp)
+
+        Core.bitwise_not(linesMask, linesMask)
+        val invertedBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(linesMask, invertedBmp)
+        steps.add(invertedBmp)
+
+        val cleaned = Mat()
+        Photo.inpaint(srcBGR, linesMask, cleaned, 14.0, Photo.INPAINT_TELEA)
+
+        val finalBmp = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(cleaned, finalBmp)
+        steps.add(finalBmp)
+
+        src.release()
+        srcBGR.release()
+        gray.release()
+        blurred.release()
+        edges.release()
+        lines.release()
+        linesMask.release()
+        cleaned.release()
+
+        Log.i("ImageAlignment", "✅ Finished createRadialLineRemovalSteps — 4 step images created")
+        steps
+    }
+
+    /**
+     * NEW ARC-MASK REMOVAL METHOD — full ring blackout (center + inner/outer radius)
+     * Returns the 4 steps you asked for.
      */
     suspend fun createArcMaskRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
@@ -145,7 +220,6 @@ object ImageAlignmentUtils {
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
 
-        // Detect gauge circle (center + radius)
         val circles = Mat()
         Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 80, 300)
 
@@ -153,7 +227,6 @@ object ImageAlignmentUtils {
         val centerY = if (circles.cols() > 0) circles.get(0, 0)[1].toDouble() else src.rows() / 2.0
         val gaugeRadius = if (circles.cols() > 0) circles.get(0, 0)[2].toDouble() else 0.0
 
-        // Tic arc is typically just outside the numbers — inner/outer radius relative to gauge
         val innerRadius = gaugeRadius * 0.65
         val outerRadius = gaugeRadius * 0.85
 
@@ -161,18 +234,15 @@ object ImageAlignmentUtils {
         Imgproc.circle(arcMask, Point(centerX, centerY), outerRadius.toInt(), Scalar(255.0), -1)
         Imgproc.circle(arcMask, Point(centerX, centerY), innerRadius.toInt(), Scalar(0.0), -1)
 
-        // Step 1: Extracted Tic Arc Mask (full ring)
         val maskBmp = Bitmap.createBitmap(arcMask.cols(), arcMask.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(arcMask, maskBmp)
         steps.add(maskBmp)
 
-        // Step 2: Inverted Tic Arc Mask
         Core.bitwise_not(arcMask, arcMask)
         val invertedBmp = Bitmap.createBitmap(arcMask.cols(), arcMask.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(arcMask, invertedBmp)
         steps.add(invertedBmp)
 
-        // Step 3: Final Merged (tic-free)
         val cleaned = Mat()
         Photo.inpaint(srcBGR, arcMask, cleaned, 14.0, Photo.INPAINT_TELEA)
 
@@ -180,7 +250,6 @@ object ImageAlignmentUtils {
         org.opencv.android.Utils.matToBitmap(cleaned, finalBmp)
         steps.add(finalBmp)
 
-        // Cleanup
         src.release()
         srcBGR.release()
         gray.release()
@@ -193,7 +262,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Production cleaning — unchanged (still uses the best sweet-spot from earlier tests)
+     * Production cleaning — unchanged
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
