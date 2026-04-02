@@ -199,9 +199,9 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * NEW ARC-MASK REMOVAL METHOD — robust fallback for large tic ring
-     * Uses lenient HoughCircles + strong fallback to image center + wide radius range
-     * Blacks out the entire tic arc (inner/outer radius) exactly as you requested.
+     * NEW ARC-MASK REMOVAL METHOD — improved to reliably detect the LARGE gauge circle
+     * Uses stricter minRadius + largest-circle selection + stronger fallback.
+     * Blacks out the entire tic ring exactly as you requested.
      */
     suspend fun createArcMaskRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
@@ -220,28 +220,34 @@ object ImageAlignmentUtils {
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
 
-        // Detect gauge circle with very lenient parameters for large circles
+        // Lenient HoughCircles tuned for large gauge circles (not the small LCD)
         val circles = Mat()
-        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.2, 150.0, 70.0, 25.0, 100, 400)
+        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.5, 150.0, 70.0, 25.0, 120, 400)
 
         var centerX = src.cols() / 2.0
         var centerY = src.rows() / 2.0
-        var gaugeRadius = Math.min(src.cols(), src.rows()) * 0.42   // strong fallback
+        var gaugeRadius = Math.min(src.cols(), src.rows()) * 0.45   // strong fallback for large gauge
 
         if (circles.cols() > 0) {
-            // Take the largest detected circle
-            val largest = circles.get(0, 0)
-            centerX = largest[0]
-            centerY = largest[1]
-            gaugeRadius = largest[2]
-            Log.i("ImageAlignment", "Detected gauge circle at ($centerX, $centerY) radius $gaugeRadius")
+            // Take the LARGEST detected circle (the gauge)
+            var maxRadius = 0.0
+            for (i in 0 until circles.cols()) {
+                val c = circles.get(0, i)
+                if (c[2] > maxRadius) {
+                    maxRadius = c[2]
+                    centerX = c[0]
+                    centerY = c[1]
+                    gaugeRadius = c[2]
+                }
+            }
+            Log.i("ImageAlignment", "Detected largest gauge circle at ($centerX, $centerY) radius $gaugeRadius")
         } else {
             Log.i("ImageAlignment", "No circle detected — using strong fallback center + radius $gaugeRadius")
         }
 
-        // Wide tic ring that covers all tics on both dashboards you showed
-        val innerRadius = gaugeRadius * 0.55
-        val outerRadius = gaugeRadius * 0.92
+        // Wide tic ring that covers all tics on both dashboards
+        val innerRadius = gaugeRadius * 0.62
+        val outerRadius = gaugeRadius * 0.95
 
         val arcMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
         Imgproc.circle(arcMask, Point(centerX, centerY), outerRadius.toInt(), Scalar(255.0), -1)
