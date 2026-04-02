@@ -125,7 +125,7 @@ object ImageAlignmentUtils {
     // Production cleaned reference (uses the 4th aggressive variant)
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         val variants = createDiagnosticVariants(original)
-        variants.getOrNull(4) // 4th aggressive one = our new default
+        variants.getOrNull(4)
     }
 
     // unchanged alignImages function
