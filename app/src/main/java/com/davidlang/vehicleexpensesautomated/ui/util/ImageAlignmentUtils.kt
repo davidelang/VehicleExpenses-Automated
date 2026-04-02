@@ -29,43 +29,35 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Creates 8 versions of the reference image for diagnostics:
-     * 0 = original (no cleaning)
-     * 1–7 = increasingly aggressive tic removal
+     * Creates 8 versions for the diagnostic grid:
+     *   0 = original
+     *   1-7 = increasingly aggressive tic removal
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        variants.add(original.copy(original.config, true)) // index 0 = original
-
-        val params = listOf(
-            // 1: mild
-            Triple(30.0, 100.0, 5),
-            // 2: medium
-            Triple(25.0, 90.0, 6),
-            // 3: strong
-            Triple(20.0, 80.0, 7),
-            // 4: aggressive
-            Triple(15.0, 70.0, 8),
-            // 5: very aggressive
-            Triple(10.0, 60.0, 9),
-            // 6: nuclear
-            Triple(5.0, 50.0, 10),
-            // 7: apocalypse
-            Triple(3.0, 40.0, 12)
-        )
+        // 0 = original
+        variants.add(original.copy(original.config ?: Bitmap.Config.ARGB_8888, true))
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        for ((cannyLow, cannyHigh, thickness) in params) {
+        val paramSets = listOf(
+            Triple(30.0, 100.0, 5),   // 1 mild
+            Triple(25.0, 90.0, 6),    // 2
+            Triple(20.0, 80.0, 7),    // 3
+            Triple(15.0, 70.0, 8),    // 4
+            Triple(10.0, 60.0, 9),    // 5
+            Triple(5.0,  50.0, 10),   // 6
+            Triple(3.0,  40.0, 12)    // 7 apocalypse
+        )
+
+        for ((cannyLow, cannyHigh, thickness) in paramSets) {
             val gray = Mat()
             Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-
             val edges = Mat()
             Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
-
             val lines = Mat()
             Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 30, 15.0, 5.0)
 
@@ -85,7 +77,7 @@ object ImageAlignmentUtils {
             val cleaned = Mat()
             Photo.inpaint(srcBGR, mask, cleaned, 8.0, Photo.INPAINT_TELEA)
 
-            // Second pass
+            // second pass
             val edges2 = Mat()
             Imgproc.Canny(cleaned, edges2, cannyLow * 0.8, cannyHigh * 0.8)
             val lines2 = Mat()
@@ -103,7 +95,7 @@ object ImageAlignmentUtils {
             }
             Photo.inpaint(cleaned, mask2, cleaned, 6.0, Photo.INPAINT_TELEA)
 
-            // Green debug tint so we can instantly tell it's cleaned
+            // green debug tint
             val debug = Mat()
             Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
             val greenTint = Mat.zeros(debug.size(), CvType.CV_8UC4)
@@ -114,7 +106,6 @@ object ImageAlignmentUtils {
             org.opencv.android.Utils.matToBitmap(debug, result)
             variants.add(result)
 
-            // cleanup
             gray.release()
             edges.release()
             lines.release()
@@ -132,7 +123,13 @@ object ImageAlignmentUtils {
         variants
     }
 
-    // ... (rest of the file unchanged - alignImages remains exactly as it was)
+    // keep the old production function (uses the 4th aggressive variant)
+    suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
+        val variants = createDiagnosticVariants(original)
+        variants.getOrNull(4) // the 4th aggressive one is our new default
+    }
+
+    // ... unchanged alignImages function ...
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
