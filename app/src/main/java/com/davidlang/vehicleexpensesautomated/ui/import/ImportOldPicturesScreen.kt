@@ -35,11 +35,9 @@ fun ImportOldPicturesScreen(
     val vehicles by vehicleViewModel.vehicles.collectAsState()
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
     var photoPath by remember { mutableStateOf<String?>(null) }
-
     var odometer by remember { mutableStateOf("") }
     var gallons by remember { mutableStateOf("") }
     var cost by remember { mutableStateOf("") }
-
     var expanded by remember { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -66,7 +64,6 @@ fun ImportOldPicturesScreen(
                 result.odometer?.let { odometer = it }
                 result.gallons?.let { gallons = it }
                 result.cost?.let { cost = it }
-
                 Toast.makeText(
                     context,
                     "Auto-detected: odometer ${result.odometer ?: "—"} | gallons ${result.gallons ?: "—"} | cost ${result.cost ?: "—"}",
@@ -83,7 +80,6 @@ fun ImportOldPicturesScreen(
             if (newHash != null && vehicles.isNotEmpty()) {
                 var bestVehicle: Vehicle? = null
                 var bestSimilarity = 0.0
-
                 for (vehicle in vehicles) {
                     vehicle.referenceDashPhotoUrl?.let { refPath ->
                         val refHash = ImageHashUtils.computeHashFromFilePath(refPath)
@@ -109,15 +105,11 @@ fun ImportOldPicturesScreen(
             .padding(16.dp)
     ) {
         Text(text = "Import Old Pictures", style = MaterialTheme.typography.headlineMedium)
-
         Spacer(modifier = Modifier.height(8.dp))
-
         Button(onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
             Text("Pick Old Photo from Gallery")
         }
-
         Spacer(modifier = Modifier.height(16.dp))
-
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
                 value = selectedVehicle?.name ?: "Select vehicle",
@@ -129,7 +121,6 @@ fun ImportOldPicturesScreen(
                 readOnly = true,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
             )
-
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 vehicles.forEach { vehicle ->
                     DropdownMenuItem(
@@ -139,15 +130,11 @@ fun ImportOldPicturesScreen(
                 }
             }
         }
-
         Spacer(modifier = Modifier.height(16.dp))
-
         OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer (auto-filled)") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons (auto-filled)") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = cost, onValueChange = { cost = it }, label = { Text("Total Cost (auto-filled)") }, modifier = Modifier.fillMaxWidth())
-
         Spacer(modifier = Modifier.height(24.dp))
-
         Button(
             onClick = {
                 val vehicleId = selectedVehicle?.id ?: run {
@@ -172,9 +159,7 @@ fun ImportOldPicturesScreen(
         ) {
             Text("Import & Save as Fuel Entry")
         }
-
         Spacer(modifier = Modifier.height(8.dp))
-
         OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
             Text("Cancel")
         }

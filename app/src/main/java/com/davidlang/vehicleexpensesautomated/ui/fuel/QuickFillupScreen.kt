@@ -178,14 +178,15 @@ fun QuickFillupScreen(navController: NavHostController) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 24.dp)
-                        .height(200.dp)
+                        .padding(top = 24.dp)
+                        .weight(0.35f)
                 ) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                 }
                 Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(12.dp)
+                        .weight(0.65f)
+                        .padding(16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
                     ControlsContent(
@@ -350,36 +351,6 @@ private fun ControlsContent(
     }
 }
 
-private suspend fun processPhoto(
-    context: Context,
-    path: String,
-    selectedVehicleId: Int?,
-    vehicles: List<Vehicle>,
-    step: Int,
-    updateCropDebug: (String) -> Unit,
-    updateOcrResult: (String) -> Unit,
-    updateOpenCVDebug: (String) -> Unit,
-    updateOdometer: (Int) -> Unit,
-    updatePossibleOdometers: (List<String>) -> Unit,
-    updateShowConfirmation: (Boolean) -> Unit,
-    updateGallons: (Double) -> Unit,
-    updateCost: (Double) -> Unit,
-    cropRect: Rect?
-) {
-    val cropRectF = cropRect?.let { r ->
-        android.graphics.RectF(r.left, r.top, r.right, r.bottom)
-    }
-    val result = OdometerOcrUtils.extractFromPhoto(path, cropRectF)
-
-    updateOcrResult("Odometer: ${result.odometer ?: "—"} | Gallons: ${result.gallons ?: "—"} | Cost: ${result.cost ?: "—"}")
-    result.odometer?.toIntOrNull()?.let { updateOdometer(it) }
-    updatePossibleOdometers(result.possibleOdometers)
-    updateGallons(result.gallons?.toDoubleOrNull() ?: 0.0)
-    updateCost(result.cost?.toDoubleOrNull() ?: 0.0)
-    updateCropDebug("Crop sent to OCR")
-    updateOpenCVDebug("OpenCV completed")
-}
-
 private fun captureDashPhoto(
     context: Context,
     imageCapture: ImageCapture,
@@ -418,4 +389,33 @@ private fun captureDashPhoto(
             }
         }
     )
+}
+
+private suspend fun processPhoto(
+    context: Context,
+    path: String,
+    selectedVehicleId: Int?,
+    vehicles: List<Vehicle>,
+    step: Int,
+    updateCropDebug: (String) -> Unit,
+    updateOcrResult: (String) -> Unit,
+    updateOpenCVDebug: (String) -> Unit,
+    updateOdometer: (Int) -> Unit,
+    updatePossibleOdometers: (List<String>) -> Unit,
+    updateShowConfirmation: (Boolean) -> Unit,
+    updateGallons: (Double) -> Unit,
+    updateCost: (Double) -> Unit,
+    cropRect: Rect?
+) {
+    val cropRectF = cropRect?.let { r ->
+        android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+    }
+    val result = OdometerOcrUtils.extractFromPhoto(path, cropRectF)
+    updateOcrResult("Odometer: ${result.odometer ?: "—"} | Gallons: ${result.gallons ?: "—"} | Cost: ${result.cost ?: "—"}")
+    result.odometer?.toIntOrNull()?.let { updateOdometer(it) }
+    updatePossibleOdometers(result.possibleOdometers)
+    updateGallons(result.gallons?.toDoubleOrNull() ?: 0.0)
+    updateCost(result.cost?.toDoubleOrNull() ?: 0.0)
+    updateCropDebug("Crop sent to OCR")
+    updateOpenCVDebug("OpenCV completed")
 }
