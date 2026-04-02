@@ -74,7 +74,8 @@ fun ManageVehiclesScreen(
     var year by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
-    var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
+    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }     // original from PhotoPicker
+    var referencePhotoUrl by remember { mutableStateOf<String?>(null) } // cleaned version
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var landmarkCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
@@ -108,9 +109,9 @@ fun ManageVehiclesScreen(
                 year = it.year?.toString() ?: ""
                 licensePlate = it.licensePlate ?: ""
                 odometerReading = ""
-                // FORCE cleaned version (only image we keep)
+                pickedPhotoUrl = it.referenceDashPhotoUrl
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
-                Log.i("CropDebug", "Loaded vehicle ${it.id} — displaying CLEANED photo: $referencePhotoUrl")
+                Log.i("CropDebug", "Loaded vehicle ${it.id} — picked=$pickedPhotoUrl, cleaned=$referencePhotoUrl")
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
@@ -180,6 +181,7 @@ fun ManageVehiclesScreen(
                 year = ""
                 licensePlate = ""
                 odometerReading = ""
+                pickedPhotoUrl = null
                 referencePhotoUrl = null
                 odometerCropRect = null
                 landmarkCropRect = null
@@ -221,14 +223,54 @@ fun ManageVehiclesScreen(
             PhotoPicker(
                 photoStorageManager = settingsViewModel.photoStorageManager,
                 photoType = PhotoType.FUEL,
-                currentPhotoUrl = referencePhotoUrl,
-                onPhotoUrlChanged = { referencePhotoUrl = it }
+                currentPhotoUrl = pickedPhotoUrl,   // show original picked in picker
+                onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // === DIAGNOSTIC: show BOTH original picked + cleaned side-by-side ===
+            if (pickedPhotoUrl != null || referencePhotoUrl != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Original picked image
+                    if (pickedPhotoUrl != null) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Original Picked", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                            Box(modifier = Modifier.height(220.dp)) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(pickedPhotoUrl),
+                                    contentDescription = "Original picked image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+                    }
+
+                    // Cleaned version (with visual label)
+                    if (referencePhotoUrl != null) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("CLEANED (ticks removed)", style = MaterialTheme.typography.labelSmall, color = Color(0xFF4CAF50))
+                            Box(modifier = Modifier.height(220.dp)) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(referencePhotoUrl),
+                                    contentDescription = "Cleaned reference image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             if (referencePhotoUrl != null) {
-                Log.i("CropDebug", "Displaying reference photo: $referencePhotoUrl (forced cleaned version)")
+                Log.i("CropDebug", "Using cleaned reference for crop/edit: $referencePhotoUrl")
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -368,7 +410,7 @@ fun ManageVehiclesScreen(
                                         model = model,
                                         year = year.toIntOrNull(),
                                         licensePlate = licensePlate,
-                                        referenceDashPhotoUrl = referencePhotoUrl,
+                                        referenceDashPhotoUrl = pickedPhotoUrl,   // pass the original picked one
                                         odometerCropRect = odometerCropRect,
                                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                                     )
@@ -382,7 +424,7 @@ fun ManageVehiclesScreen(
                                                 model = model,
                                                 year = year.toIntOrNull(),
                                                 licensePlate = licensePlate,
-                                                referenceDashPhotoUrl = referencePhotoUrl,
+                                                referenceDashPhotoUrl = pickedPhotoUrl,
                                                 odometerCropLeft = odometerCropRect?.left,
                                                 odometerCropTop = odometerCropRect?.top,
                                                 odometerCropRight = odometerCropRect?.right,
