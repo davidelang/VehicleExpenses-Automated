@@ -305,7 +305,7 @@ fun ManageVehiclesScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
             if (radialSteps.isNotEmpty()) {
-                Text("Radial Line Subtraction Method — 4 Steps (improved)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+                Text("Radial Line Subtraction Method — 4 Steps (improved + CLAHE)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
