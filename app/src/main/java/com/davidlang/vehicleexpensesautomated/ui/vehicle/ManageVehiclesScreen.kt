@@ -86,6 +86,8 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize")
+
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
@@ -104,14 +106,17 @@ fun ManageVehiclesScreen(
                 year = it.year?.toString() ?: ""
                 licensePlate = it.licensePlate ?: ""
                 odometerReading = ""
-                // ALWAYS use the cleaned version for display
+                // ALWAYS use the cleaned version for display (this is the only image we keep)
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
+                Log.i("CropDebug", "Loaded vehicle ${it.id} — displaying cleaned photo: $referencePhotoUrl")
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
                 landmarkCropRect = it.landmarkCropLeft?.let { left ->
                     Rect(left, it.landmarkCropTop ?: 0f, it.landmarkCropRight ?: 1f, it.landmarkCropBottom ?: 1f)
                 }
+                isEditingOcrArea = false
+                isEditingLandmark = false
             }
         }
     }
@@ -119,6 +124,7 @@ fun ManageVehiclesScreen(
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
             scope.launch {
+                Log.d("CropDebug", "Try OCR clicked — odometerCropRect=$odometerCropRect")
                 try {
                     var finalPath = photoPathOrUri
                     if (photoPathOrUri.startsWith("content://")) {
@@ -131,9 +137,12 @@ fun ManageVehiclesScreen(
                     val cropRect = odometerCropRect?.let { r ->
                         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                     }
+                    Log.d("CropDebug", "Calling extractFromPhoto with cropRect=$cropRect")
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
+                    Log.d("CropDebug", "OCR result received — odometer=${result.odometer}, possible=${result.possibleOdometers.size}")
+
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
@@ -216,6 +225,7 @@ fun ManageVehiclesScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (referencePhotoUrl != null) {
+                Log.i("CropDebug", "Displaying reference photo: $referencePhotoUrl (should be the cleaned version)")
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
