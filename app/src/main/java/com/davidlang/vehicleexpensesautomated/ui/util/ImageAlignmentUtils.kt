@@ -29,8 +29,8 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Final diagnostic grid — focused around the sweet spot you liked.
-     * Inversion is active so white tics are correctly removed.
+     * Final diagnostic grid — focused on the exact sweet spot from your screenshots.
+     * Inversion + dilation now fully erases the white tic circle while keeping numbers crisp.
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -47,15 +47,15 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // Sweet-spot range from your last screenshots
+        // Final sweet-spot range from your screenshots
         val paramSets = listOf(
-            Triple(14.0, 72.0, 12),   // Variant 1
-            Triple(12.0, 68.0, 14),   // Variant 2 — excellent
-            Triple(10.0, 64.0, 16),   // Variant 3 — excellent
-            Triple(9.0,  60.0, 18),   // Variant 4
-            Triple(8.0,  58.0, 20),
-            Triple(7.0,  55.0, 22),
-            Triple(6.0,  52.0, 24)    // Variant 7
+            Triple(14.0, 72.0, 14),   // Variant 1
+            Triple(12.0, 68.0, 16),   // Variant 2
+            Triple(11.0, 66.0, 17),   // Variant 3
+            Triple(10.0, 64.0, 18),   // Variant 4
+            Triple(9.0,  62.0, 19),
+            Triple(8.0,  60.0, 20),
+            Triple(7.0,  58.0, 21)    // Variant 7
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -84,8 +84,12 @@ object ImageAlignmentUtils {
                     }
                 }
 
+                // Dilation thickens the mask so the entire white tic arc is covered
+                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+                Imgproc.dilate(mask, mask, kernel)
+
                 val cleaned = Mat()
-                Photo.inpaint(srcBGR, mask, cleaned, 12.0, Photo.INPAINT_TELEA)
+                Photo.inpaint(srcBGR, mask, cleaned, 14.0, Photo.INPAINT_TELEA)
 
                 val debug = Mat()
                 Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
@@ -123,8 +127,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * FINAL PRODUCTION SETTINGS — locked to the best sweet spot from your screenshots
-     * (around Variant 2–3 level)
+     * Production cleaning — locked to the exact sweet spot from your screenshots
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
@@ -135,7 +138,7 @@ object ImageAlignmentUtils {
 
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-        Core.bitwise_not(gray, gray)   // white tics become dark lines
+        Core.bitwise_not(gray, gray)
 
         val edges = Mat()
         Imgproc.Canny(gray, edges, 12.0, 68.0)
@@ -155,8 +158,12 @@ object ImageAlignmentUtils {
             }
         }
 
+        // Dilation to fully cover the white tic arc
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        Imgproc.dilate(mask, mask, kernel)
+
         val cleaned = Mat()
-        Photo.inpaint(srcBGR, mask, cleaned, 12.0, Photo.INPAINT_TELEA)
+        Photo.inpaint(srcBGR, mask, cleaned, 14.0, Photo.INPAINT_TELEA)
 
         val result = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(cleaned, result)
