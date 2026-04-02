@@ -37,9 +37,6 @@ class VehicleViewModel @Inject constructor(
     private val _radialSteps = MutableStateFlow<List<Bitmap>>(emptyList())
     val radialSteps: StateFlow<List<Bitmap>> = _radialSteps
 
-    private val _arcSteps = MutableStateFlow<List<Bitmap>>(emptyList())
-    val arcSteps: StateFlow<List<Bitmap>> = _arcSteps
-
     suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
     suspend fun createNewVehicleWithReference(
@@ -79,7 +76,7 @@ class VehicleViewModel @Inject constructor(
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.insert(newVehicle)
             }
-            Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted successfully")
+            Log.i("VehicleReferenceCleaning", "Vehicle inserted successfully")
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Insert failed", e)
             throw e
@@ -105,7 +102,7 @@ class VehicleViewModel @Inject constructor(
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.updateVehicle(updated)
             }
-            Log.i("VehicleReferenceCleaning", "✅ Vehicle updated successfully")
+            Log.i("VehicleReferenceCleaning", "Vehicle updated successfully")
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Update failed", e)
             throw e
@@ -137,15 +134,11 @@ class VehicleViewModel @Inject constructor(
                         val oldVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
                         _diagnosticVariants.value = oldVariants
 
-                        // Previous radial line method
+                        // Radial line method (no arc-mask)
                         val radial = ImageAlignmentUtils.createRadialLineRemovalSteps(bmp)
                         _radialSteps.value = radial
 
-                        // NEW arc-mask method
-                        val arc = ImageAlignmentUtils.createArcMaskRemovalSteps(bmp)
-                        _arcSteps.value = arc
-
-                        Log.i("CropDebug", "✅ Grid updated with ${oldVariants.size} old variants + radial + arc steps")
+                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + radial steps")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }

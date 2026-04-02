@@ -69,7 +69,6 @@ fun ManageVehiclesScreen(
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     val diagnosticVariants by vehicleViewModel.diagnosticVariants.collectAsState()
     val radialSteps by vehicleViewModel.radialSteps.collectAsState()
-    val arcSteps by vehicleViewModel.arcSteps.collectAsState()
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
@@ -102,9 +101,7 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    var showDiagnosticDialog by remember { mutableStateOf(false) }
-
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, variants=${diagnosticVariants.size}, radialSteps=${radialSteps.size}, arcSteps=${arcSteps.size}")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, variants=${diagnosticVariants.size}, radialSteps=${radialSteps.size}")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -243,7 +240,6 @@ fun ManageVehiclesScreen(
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
             Spacer(modifier = Modifier.height(8.dp))
-
             if (pickedPhotoUrl != null || referencePhotoUrl != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -277,9 +273,7 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
             // === OLD GRID (shrunk as requested) ===
             if (diagnosticVariants.isNotEmpty()) {
                 Text("Old Tic-Removal Grid (Variants 1-3 only)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
@@ -312,10 +306,8 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            // === PREVIOUS RADIAL LINE METHOD ===
+            // === RADIAL LINE METHOD (only remaining tic-removal method) ===
             if (radialSteps.isNotEmpty()) {
                 Text("Radial Line Subtraction Method — 4 Steps", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -354,51 +346,7 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            // === NEW ARC-MASK METHOD (full ring blackout) ===
-            if (arcSteps.isNotEmpty()) {
-                Text("NEW Arc-Mask Removal Method — 4 Steps (blacks out entire tic ring)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(700.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(arcSteps) { bmp ->
-                        val index = arcSteps.indexOf(bmp)
-                        val label = when (index) {
-                            0 -> "Original"
-                            1 -> "Extracted Tic Arc Mask"
-                            2 -> "Inverted Tic Arc Mask"
-                            3 -> "Final Merged (tic-free)"
-                            else -> "Step $index"
-                        }
-                        Column {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF2196F3)
-                            )
-                            Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(160.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             if (referencePhotoUrl != null) {
                 Log.i("CropDebug", "Using reference for crop/edit: $referencePhotoUrl")
                 BoxWithConstraints(
@@ -590,7 +538,6 @@ fun ManageVehiclesScreen(
             }
         }
     }
-
     if (showEnlargedCrop && lastOcrDebugResult != null) {
         OcrDebugDialog(
             ocrResult = lastOcrDebugResult!!,
