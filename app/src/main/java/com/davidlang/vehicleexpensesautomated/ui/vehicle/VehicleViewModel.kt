@@ -34,7 +34,7 @@ class VehicleViewModel @Inject constructor(
         model: String,
         year: Int?,
         licensePlate: String?,
-        referenceDashPhotoUrl: String?,
+        referenceDashPhotoUrl: String?,   // this is the local copy from PhotoPicker
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int
     ) {
@@ -46,8 +46,8 @@ class VehicleViewModel @Inject constructor(
                 model = model,
                 year = year,
                 licensePlate = licensePlate,
-                referenceDashPhotoUrl = referenceDashPhotoUrl,
-                cleanedReferenceDashPhotoUrl = cleanedUrl,
+                referenceDashPhotoUrl = null,               // we no longer keep original
+                cleanedReferenceDashPhotoUrl = cleanedUrl,  // this is the ONLY image we keep
                 odometerCropLeft = odometerCropRect?.left,
                 odometerCropTop = odometerCropRect?.top,
                 odometerCropRight = odometerCropRect?.right,
@@ -60,12 +60,16 @@ class VehicleViewModel @Inject constructor(
     fun updateVehicle(vehicle: Vehicle) {
         viewModelScope.launch {
             val cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
-            val updated = vehicle.copy(cleanedReferenceDashPhotoUrl = cleanedUrl)
+                ?: vehicle.cleanedReferenceDashPhotoUrl   // already cleaned
+            val updated = vehicle.copy(
+                referenceDashPhotoUrl = null,
+                cleanedReferenceDashPhotoUrl = cleanedUrl
+            )
             repository.updateVehicle(updated)
         }
     }
 
-    /** Guarantees a cleaned (tick-free) reference exists */
+    /** Guarantees a cleaned reference exists (only one file per vehicle) */
     suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
         val cleaned = vehicle.cleanedReferenceDashPhotoUrl
         if (cleaned != null) {
@@ -78,15 +82,35 @@ class VehicleViewModel @Inject constructor(
 
     private suspend fun createAndSaveCleanedReference(originalUrl: String): String? {
         val originalFile = File(originalUrl)
-        if (!originalFile.exists()) return null
-        val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath) ?: return null
-        val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp) ?: return null
+        if (!originalFile.exists()) {
+            Log.e("VehicleReferenceCleaning", "❌ Original file missing: $originalUrl")
+            return null
+        }
+        val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath)
+        if (originalBmp == null) {
+            Log.e("VehicleReferenceCleaning", "❌ Failed to decode: $originalUrl")
+            return null
+        }
+        val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp)
+        if (cleanedBmp == null) {
+            Log.e("VehicleReferenceCleaning", "❌ Cleaning failed for $originalUrl")
+            originalBmp.recycle()
+            return null
+        }
         val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
-        val out = java.io.FileOutputStream(cleanedFile)
-        cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-        out.close()
-        Log.i("VehicleReferenceCleaning", "✅ Saved cleaned reference: ${cleanedFile.absolutePath}")
-        return cleanedFile.absolutePath
+        return try {
+            val out = java.io.FileOutputStream(cleanedFile)
+            cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            out.close()
+            Log.i("VehicleReferenceCleaning", "✅ Saved (and only kept) cleaned reference: ${cleanedFile.absolutePath}")
+            cleanedFile.absolutePath
+        } catch (e: Exception) {
+            Log.e("VehicleReferenceCleaning", "❌ Failed to write cleaned file", e)
+            null
+        } finally {
+            originalBmp.recycle()
+            cleanedBmp.recycle()
+        }
     }
 
     fun deleteVehicle(vehicle: Vehicle) {
