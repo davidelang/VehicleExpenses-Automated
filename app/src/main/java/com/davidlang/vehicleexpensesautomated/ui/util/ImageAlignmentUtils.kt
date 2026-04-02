@@ -37,18 +37,15 @@ object ImageAlignmentUtils {
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
         Log.i("ImageAlignment", "Variant 0 (original) created")
-
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
-
         val paramSets = listOf(
             Triple(14.0, 72.0, 14),
             Triple(12.0, 68.0, 16),
             Triple(11.0, 66.0, 17)
         )
-
         for ((index, params) in paramSets.withIndex()) {
             val (cannyLow, cannyHigh, thickness) = params
             try {
@@ -106,12 +103,12 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * IMPROVED RADIAL LINE SUBTRACTION — tuned for real gauges (short/faint tics)
-     * Canny 5-50, Hough threshold 10, minLineLength 10, maxGap 3, thickness 12
+     * FURTHER IMPROVED RADIAL LINE SUBTRACTION
+     * Added CLAHE contrast enhancement + tuned thresholds for faint tics on real gauges.
      */
     suspend fun createRadialLineRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
-        Log.i("ImageAlignment", "Starting IMPROVED createRadialLineRemovalSteps on ${original.width}x${original.height} image")
+        Log.i("ImageAlignment", "Starting FURTHER-IMPROVED createRadialLineRemovalSteps on ${original.width}x${original.height} image")
 
         // Step 0: Original (downscaled)
         val thumbW = if (original.width > 512) 512 else original.width
@@ -123,18 +120,22 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
+        // === NEW: CLAHE contrast enhancement (handles dark gauges + glare) ===
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-        Core.bitwise_not(gray, gray)
+        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+        val equalized = Mat()
+        clahe.apply(gray, equalized)
+        Core.bitwise_not(equalized, equalized)
 
         val blurred = Mat()
-        Imgproc.GaussianBlur(gray, blurred, Size(3.0, 3.0), 0.0)
+        Imgproc.GaussianBlur(equalized, blurred, Size(3.0, 3.0), 0.0)
 
         val edges = Mat()
-        Imgproc.Canny(blurred, edges, 5.0, 50.0)   // lowered thresholds
+        Imgproc.Canny(blurred, edges, 5.0, 45.0)   // even more sensitive
 
         val lines = Mat()
-        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, 10.0, 3.0)  // more sensitive
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 8, 12.0, 4.0)
 
         val centerX = src.cols() / 2.0
         val centerY = src.rows() / 2.0
@@ -147,10 +148,10 @@ object ImageAlignmentUtils {
             val x2 = line[2]
             val y2 = line[3]
             val length = Math.hypot(x2 - x1, y2 - y1)
-            if (length < 10) continue
+            if (length < 12) continue
 
             val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
-            if (distToCenter < 40) {   // unchanged — correctly identifies lines pointing at center
+            if (distToCenter < 40) {
                 Imgproc.line(linesMask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 12)
             }
         }
@@ -173,13 +174,14 @@ object ImageAlignmentUtils {
         src.release()
         srcBGR.release()
         gray.release()
+        equalized.release()
         blurred.release()
         edges.release()
         lines.release()
         linesMask.release()
         cleaned.release()
 
-        Log.i("ImageAlignment", "✅ Finished IMPROVED radial steps — should now catch far more tics")
+        Log.i("ImageAlignment", "✅ Finished FURTHER-IMPROVED radial steps with CLAHE — should now match both latest gauges")
         steps
     }
 
