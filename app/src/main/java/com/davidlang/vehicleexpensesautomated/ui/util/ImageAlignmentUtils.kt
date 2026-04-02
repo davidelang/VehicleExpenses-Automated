@@ -29,15 +29,18 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Creates 8 versions for the diagnostic grid (preview only).
-     * All variants are downscaled to max 1024 px wide.
+     * Creates 8 diagnostic variants for the UI grid.
+     * HEAVILY downscaled (max 512 px wide) to be fast and memory-safe even on 4080x3072 photos.
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        // 0 = original (downscaled)
-        val thumbW = if (original.width > 1024) 1024 else original.width
-        val thumbH = (thumbW.toFloat() / original.width * original.height).toInt()
+        Log.i("ImageAlignment", "Starting createDiagnosticVariants on ${original.width}x${original.height} image")
+
+        // 0 = original (downscaled to max 512 px)
+        val thumbW = if (original.width > 512) 512 else original.width
+        val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+        Log.i("ImageAlignment", "Variant 0 (original downscaled) created")
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
@@ -54,84 +57,71 @@ object ImageAlignmentUtils {
             Triple(3.0,  40.0, 12)
         )
 
-        for ((cannyLow, cannyHigh, thickness) in paramSets) {
-            val gray = Mat()
-            Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-            val edges = Mat()
-            Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
-            val lines = Mat()
-            Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 30, 15.0, 5.0)
+        for ((index, params) in paramSets.withIndex()) {
+            val (cannyLow, cannyHigh, thickness) = params
+            try {
+                val gray = Mat()
+                Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
+                val edges = Mat()
+                Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
+                val lines = Mat()
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 30, 15.0, 5.0)
 
-            val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
-            for (i in 0 until lines.rows()) {
-                val line = lines.get(i, 0)
-                val x1 = line[0].toInt()
-                val y1 = line[1].toInt()
-                val x2 = line[2].toInt()
-                val y2 = line[3].toInt()
-                val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
-                if (length < 220) {
-                    Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness)
+                val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
+                for (i in 0 until lines.rows()) {
+                    val line = lines.get(i, 0)
+                    val x1 = line[0].toInt()
+                    val y1 = line[1].toInt()
+                    val x2 = line[2].toInt()
+                    val y2 = line[3].toInt()
+                    val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
+                    if (length < 220) {
+                        Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness)
+                    }
                 }
+
+                val cleaned = Mat()
+                Photo.inpaint(srcBGR, mask, cleaned, 8.0, Photo.INPAINT_TELEA)
+
+                val debug = Mat()
+                Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
+                val greenTint = Mat.zeros(debug.size(), CvType.CV_8UC4)
+                greenTint.setTo(Scalar(0.0, 55.0, 25.0, 0.0))
+                Core.addWeighted(debug, 1.0, greenTint, 0.4, 45.0, debug)
+
+                val result = Bitmap.createBitmap(debug.cols(), debug.rows(), Bitmap.Config.ARGB_8888)
+                org.opencv.android.Utils.matToBitmap(debug, result)
+
+                // Downscale aggressively for UI grid
+                val gridBmp = if (result.width > 512) {
+                    val h = (512f / result.width * result.height).toInt()
+                    Bitmap.createScaledBitmap(result, 512, h, true)
+                } else result
+
+                variants.add(gridBmp)
+                Log.i("ImageAlignment", "Variant ${index + 1} created successfully")
+
+                // Cleanup
+                gray.release()
+                edges.release()
+                lines.release()
+                mask.release()
+                cleaned.release()
+                debug.release()
+                if (result !== gridBmp) result.recycle()
+            } catch (e: Exception) {
+                Log.e("ImageAlignment", "Failed to create variant ${index + 1}", e)
             }
-
-            val cleaned = Mat()
-            Photo.inpaint(srcBGR, mask, cleaned, 8.0, Photo.INPAINT_TELEA)
-
-            val edges2 = Mat()
-            Imgproc.Canny(cleaned, edges2, cannyLow * 0.8, cannyHigh * 0.8)
-            val lines2 = Mat()
-            Imgproc.HoughLinesP(edges2, lines2, 1.0, Math.PI / 180, 25, 12.0, 4.0)
-            val mask2 = Mat.zeros(gray.size(), CvType.CV_8UC1)
-            for (i in 0 until lines2.rows()) {
-                val line = lines2.get(i, 0)
-                val x1 = line[0].toInt()
-                val y1 = line[1].toInt()
-                val x2 = line[2].toInt()
-                val y2 = line[3].toInt()
-                if (Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 200) {
-                    Imgproc.line(mask2, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness - 1)
-                }
-            }
-            Photo.inpaint(cleaned, mask2, cleaned, 6.0, Photo.INPAINT_TELEA)
-
-            val debug = Mat()
-            Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
-            val greenTint = Mat.zeros(debug.size(), CvType.CV_8UC4)
-            greenTint.setTo(Scalar(0.0, 55.0, 25.0, 0.0))
-            Core.addWeighted(debug, 1.0, greenTint, 0.4, 45.0, debug)
-
-            val result = Bitmap.createBitmap(debug.cols(), debug.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(debug, result)
-
-            val gridBmp = if (result.width > 1024) {
-                val h = (1024f / result.width * result.height).toInt()
-                Bitmap.createScaledBitmap(result, 1024, h, true)
-            } else result
-
-            variants.add(gridBmp)
-
-            gray.release()
-            edges.release()
-            lines.release()
-            mask.release()
-            cleaned.release()
-            edges2.release()
-            lines2.release()
-            mask2.release()
-            debug.release()
-            if (result !== gridBmp) result.recycle()
         }
 
         src.release()
         srcBGR.release()
-        Log.i("VehicleReferenceCleaning", "✅ Created 8 diagnostic variants for UI grid")
+        Log.i("ImageAlignment", "✅ Finished createDiagnosticVariants — ${variants.size} variants created")
         variants
     }
 
     /**
-     * FAST production cleaned reference - single pass only (4th aggressive variant)
-     * No 7-variant loop, no memory explosion on large photos.
+     * Fast single-pass cleaning for production (used when saving vehicle)
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
@@ -178,7 +168,6 @@ object ImageAlignmentUtils {
         result
     }
 
-    // unchanged alignImages function
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
