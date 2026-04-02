@@ -106,7 +106,7 @@ fun ManageVehiclesScreen(
                 year = it.year?.toString() ?: ""
                 licensePlate = it.licensePlate ?: ""
                 odometerReading = ""
-                // ALWAYS use the cleaned version for display (this is the only image we keep)
+                // ALWAYS use the cleaned version for display (the only image we keep)
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
                 Log.i("CropDebug", "Loaded vehicle ${it.id} — displaying cleaned photo: $referencePhotoUrl")
                 odometerCropRect = it.odometerCropLeft?.let { left ->
@@ -142,7 +142,6 @@ fun ManageVehiclesScreen(
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
                     Log.d("CropDebug", "OCR result received — odometer=${result.odometer}, possible=${result.possibleOdometers.size}")
-
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
@@ -232,10 +231,15 @@ fun ManageVehiclesScreen(
                         .height(300.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
+                            Log.d("CropDebug", "BoxWithConstraints measured: $imageSize")
                         }
                         .pointerInput(Unit) {
                             detectDragGestures(
-                                onDragStart = { offset -> dragStart = offset; dragOffset = Offset.Zero },
+                                onDragStart = { offset ->
+                                    dragStart = offset
+                                    dragOffset = Offset.Zero
+                                    Log.d("CropDebug", "Drag START at $offset")
+                                },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
                                     dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
@@ -250,8 +254,12 @@ fun ManageVehiclesScreen(
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val newRect = Rect(left, top, right, bottom)
-                                        if (isEditingOcrArea) odometerCropRect = newRect
-                                        else if (isEditingLandmark) landmarkCropRect = newRect
+                                        Log.d("CropDebug", "Drag END — normalized Rect=$newRect")
+                                        if (isEditingOcrArea) {
+                                            odometerCropRect = newRect
+                                        } else if (isEditingLandmark) {
+                                            landmarkCropRect = newRect
+                                        }
                                     }
                                     dragStart = null
                                     dragOffset = Offset.Zero
