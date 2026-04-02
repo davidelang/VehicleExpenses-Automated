@@ -29,7 +29,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * OLD METHOD — kept exactly as requested (shrunk to only 4 variants: original + 1-3)
+     * OLD METHOD — kept exactly as requested (only original + Variants 1-3)
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -46,7 +46,6 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // Only the 3 best variants from your last screenshots
         val paramSets = listOf(
             Triple(14.0, 72.0, 14),   // Variant 1
             Triple(12.0, 68.0, 16),   // Variant 2
@@ -121,10 +120,11 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * NEW RADIAL LINE SUBTRACTION METHOD — tuned for much better detection of the white tic circle.
+     * NEW RADIAL LINE SUBTRACTION METHOD — now extracts FULL thickness of white tics
+     * (threshold + dilation instead of Canny edges)
      * Returns exactly the 4 steps you asked for:
      *   0 = Original
-     *   1 = Extracted Radial Lines
+     *   1 = Extracted Radial Lines (full thickness)
      *   2 = Inverted Radial Lines
      *   3 = Final Merged (tic-free)
      */
@@ -146,43 +146,25 @@ object ImageAlignmentUtils {
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
         Core.bitwise_not(gray, gray)   // white tics become dark
 
-        // Pre-filter to reduce noise before edge detection
-        val blurred = Mat()
-        Imgproc.GaussianBlur(gray, blurred, Size(3.0, 3.0), 0.0)
+        // Step 1: Full-thickness extracted radial lines (threshold + dilation)
+        val binary = Mat()
+        Imgproc.threshold(gray, binary, 180.0, 255.0, Imgproc.THRESH_BINARY)   // keep only the darkest pixels (original white tics)
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        Imgproc.dilate(binary, binary, kernel, Point(-1.0, -1.0), 2)   // thicken to fill the tics solidly
 
-        val edges = Mat()
-        Imgproc.Canny(blurred, edges, 10.0, 60.0)   // tuned for radial tics
-
-        val lines = Mat()
-        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 15, 12.0, 3.0)   // lower threshold = more lines
-
-        val linesMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
-        for (i in 0 until lines.rows()) {
-            val line = lines.get(i, 0)
-            val x1 = line[0].toInt()
-            val y1 = line[1].toInt()
-            val x2 = line[2].toInt()
-            val y2 = line[3].toInt()
-            val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
-            if (length < 280 && length > 8) {   // catch short radial tics
-                Imgproc.line(linesMask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 12)
-            }
-        }
-
-        // Step 1: Extracted Radial Lines
-        val linesBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(linesMask, linesBmp)
+        val linesBmp = Bitmap.createBitmap(binary.cols(), binary.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(binary, linesBmp)
         steps.add(linesBmp)
 
-        // Step 2: Inverted Radial Lines
-        Core.bitwise_not(linesMask, linesMask)
-        val invertedBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(linesMask, invertedBmp)
+        // Step 2: Inverted radial lines
+        Core.bitwise_not(binary, binary)
+        val invertedBmp = Bitmap.createBitmap(binary.cols(), binary.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(binary, invertedBmp)
         steps.add(invertedBmp)
 
-        // Step 3: Final Merged (tic-free)
+        // Step 3: Final merged (tic-free)
         val cleaned = Mat()
-        Photo.inpaint(srcBGR, linesMask, cleaned, 14.0, Photo.INPAINT_TELEA)
+        Photo.inpaint(srcBGR, binary, cleaned, 14.0, Photo.INPAINT_TELEA)
 
         val finalBmp = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(cleaned, finalBmp)
@@ -192,10 +174,7 @@ object ImageAlignmentUtils {
         src.release()
         srcBGR.release()
         gray.release()
-        blurred.release()
-        edges.release()
-        lines.release()
-        linesMask.release()
+        binary.release()
         cleaned.release()
 
         Log.i("ImageAlignment", "✅ Finished createRadialLineRemovalSteps — 4 step images created")
