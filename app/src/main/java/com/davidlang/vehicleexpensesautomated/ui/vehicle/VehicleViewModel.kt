@@ -136,7 +136,7 @@ class VehicleViewModel @Inject constructor(
                         val radial = ImageAlignmentUtils.createRadialLineRemovalSteps(bmp)
                         _radialSteps.value = radial
 
-                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + FURTHER-IMPROVED radial steps (CLAHE)")
+                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + TUNED radial steps (CLAHE + erosion)")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }

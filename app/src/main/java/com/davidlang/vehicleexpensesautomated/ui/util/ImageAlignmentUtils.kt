@@ -103,12 +103,12 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * FURTHER IMPROVED RADIAL LINE SUBTRACTION
-     * Added CLAHE contrast enhancement + tuned thresholds for faint tics on real gauges.
+     * TUNED RADIAL LINE SUBTRACTION — CLAHE kept, but thresholds tightened + light erosion
+     * to eliminate the "cloud of specks" while still catching real tics.
      */
     suspend fun createRadialLineRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
-        Log.i("ImageAlignment", "Starting FURTHER-IMPROVED createRadialLineRemovalSteps on ${original.width}x${original.height} image")
+        Log.i("ImageAlignment", "Starting TUNED createRadialLineRemovalSteps on ${original.width}x${original.height} image")
 
         // Step 0: Original (downscaled)
         val thumbW = if (original.width > 512) 512 else original.width
@@ -120,7 +120,7 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // === NEW: CLAHE contrast enhancement (handles dark gauges + glare) ===
+        // CLAHE (kept — helps with dark gauges)
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
         val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
@@ -132,10 +132,10 @@ object ImageAlignmentUtils {
         Imgproc.GaussianBlur(equalized, blurred, Size(3.0, 3.0), 0.0)
 
         val edges = Mat()
-        Imgproc.Canny(blurred, edges, 5.0, 45.0)   // even more sensitive
+        Imgproc.Canny(blurred, edges, 8.0, 55.0)   // tightened
 
         val lines = Mat()
-        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 8, 12.0, 4.0)
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, 18.0, 3.0)
 
         val centerX = src.cols() / 2.0
         val centerY = src.rows() / 2.0
@@ -148,13 +148,17 @@ object ImageAlignmentUtils {
             val x2 = line[2]
             val y2 = line[3]
             val length = Math.hypot(x2 - x1, y2 - y1)
-            if (length < 12) continue
+            if (length < 18) continue
 
             val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
             if (distToCenter < 40) {
                 Imgproc.line(linesMask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 12)
             }
         }
+
+        // Light erosion to remove isolated specks
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
+        Imgproc.erode(linesMask, linesMask, kernel)
 
         val linesBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(linesMask, linesBmp)
@@ -181,7 +185,7 @@ object ImageAlignmentUtils {
         linesMask.release()
         cleaned.release()
 
-        Log.i("ImageAlignment", "✅ Finished FURTHER-IMPROVED radial steps with CLAHE — should now match both latest gauges")
+        Log.i("ImageAlignment", "✅ Finished TUNED radial steps — no more speck cloud")
         steps
     }
 
