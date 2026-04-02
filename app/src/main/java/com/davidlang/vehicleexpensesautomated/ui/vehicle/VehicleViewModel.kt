@@ -9,7 +9,9 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -25,6 +27,9 @@ class VehicleViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    private val _diagnosticVariants = MutableStateFlow<List<Bitmap>>(emptyList())
+    val diagnosticVariants: StateFlow<List<Bitmap>> = _diagnosticVariants
 
     suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
@@ -55,7 +60,7 @@ class VehicleViewModel @Inject constructor(
                 odometerCropBottom = odometerCropRect?.bottom
             )
             repository.insert(newVehicle)
-            Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted with cleaned photo: $cleanedUrl")
+            Log.i("VehicleReferenceCleaning", "Vehicle inserted with cleaned photo: $cleanedUrl")
         }
     }
 
@@ -69,7 +74,7 @@ class VehicleViewModel @Inject constructor(
                 cleanedReferenceDashPhotoUrl = cleanedUrl
             )
             repository.updateVehicle(updated)
-            Log.i("VehicleReferenceCleaning", "✅ Vehicle updated with cleaned photo: $cleanedUrl")
+            Log.i("VehicleReferenceCleaning", "Vehicle updated with cleaned photo: $cleanedUrl")
         }
     }
 
@@ -78,7 +83,7 @@ class VehicleViewModel @Inject constructor(
         if (cleaned != null) {
             val f = File(cleaned)
             if (f.exists()) {
-                Log.i("VehicleReferenceCleaning", "✅ Using existing cleaned reference for vehicle ${vehicle.id}: $cleaned")
+                Log.i("VehicleReferenceCleaning", "Using existing cleaned reference for vehicle ${vehicle.id}: $cleaned")
                 return cleaned
             }
         }
@@ -86,38 +91,61 @@ class VehicleViewModel @Inject constructor(
         return createAndSaveCleanedReference(originalUrl)
     }
 
+    fun loadDiagnosticGrid(url: String) {
+        viewModelScope.launch {
+            Log.i("CropDebug", "loadDiagnosticGrid called for: $url")
+            try {
+                val file = File(url)
+                if (file.exists()) {
+                    val bmp = BitmapFactory.decodeFile(file.absolutePath)
+                    if (bmp != null) {
+                        val newVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
+                        _diagnosticVariants.value = newVariants
+                        Log.i("CropDebug", "✅ Grid updated with ${newVariants.size} variants")
+                    } else {
+                        Log.e("CropDebug", "Failed to decode bitmap from $url")
+                    }
+                } else {
+                    Log.e("CropDebug", "File does not exist: $url")
+                }
+            } catch (e: Exception) {
+                Log.e("CropDebug", "Error generating diagnostic grid", e)
+            }
+        }
+    }
+
     private suspend fun createAndSaveCleanedReference(originalUrl: String): String? {
         val originalFile = File(originalUrl)
         if (!originalFile.exists()) {
-            Log.e("VehicleReferenceCleaning", "❌ Original file does not exist: $originalUrl")
+            Log.e("VehicleReferenceCleaning", "Original file does not exist: $originalUrl")
             return null
         }
-        Log.i("VehicleReferenceCleaning", "🔧 Starting cleaning for: $originalUrl")
+        Log.i("VehicleReferenceCleaning", "Starting cleaning for: $originalUrl")
 
         val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath)
         if (originalBmp == null) {
-            Log.e("VehicleReferenceCleaning", "❌ Failed to decode original bitmap")
+            Log.e("VehicleReferenceCleaning", "Failed to decode original bitmap")
             return null
         }
-        Log.i("VehicleReferenceCleaning", "✅ Decoded original bitmap (${originalBmp.width}x${originalBmp.height})")
+        Log.i("VehicleReferenceCleaning", "Decoded original bitmap (${originalBmp.width}x${originalBmp.height})")
 
         val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp)
         if (cleanedBmp == null) {
-            Log.e("VehicleReferenceCleaning", "❌ ImageAlignmentUtils.createCleanedReference returned null")
+            Log.e("VehicleReferenceCleaning", "ImageAlignmentUtils.createCleanedReference returned null")
             originalBmp.recycle()
             return null
         }
-        Log.i("VehicleReferenceCleaning", "✅ OpenCV cleaning succeeded")
+        Log.i("VehicleReferenceCleaning", "OpenCV cleaning succeeded")
 
         val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
         return try {
             val out = java.io.FileOutputStream(cleanedFile)
             cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
             out.close()
-            Log.i("VehicleReferenceCleaning", "✅ Saved cleaned reference: ${cleanedFile.absolutePath}")
+            Log.i("VehicleReferenceCleaning", "Saved cleaned reference: ${cleanedFile.absolutePath}")
             cleanedFile.absolutePath
         } catch (e: Exception) {
-            Log.e("VehicleReferenceCleaning", "❌ Failed to write cleaned file", e)
+            Log.e("VehicleReferenceCleaning", "Failed to write cleaned file", e)
             null
         } finally {
             originalBmp.recycle()
