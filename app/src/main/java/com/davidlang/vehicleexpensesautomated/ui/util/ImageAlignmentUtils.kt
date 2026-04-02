@@ -35,8 +35,7 @@ object ImageAlignmentUtils {
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        // 0 = original
-        variants.add(original.copy(original.config ?: Bitmap.Config.ARGB_8888, true))
+        variants.add(original.copy(original.config ?: Bitmap.Config.ARGB_8888, true)) // index 0 = original
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
@@ -123,13 +122,13 @@ object ImageAlignmentUtils {
         variants
     }
 
-    // keep the old production function (uses the 4th aggressive variant)
+    // Production cleaned reference (uses the 4th aggressive variant)
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         val variants = createDiagnosticVariants(original)
-        variants.getOrNull(4) // the 4th aggressive one is our new default
+        variants.getOrNull(4) // 4th aggressive one = our new default
     }
 
-    // ... unchanged alignImages function ...
+    // unchanged alignImages function
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
