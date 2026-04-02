@@ -29,9 +29,8 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * NEW LOGIC: invert grayscale before Canny so white tics become DARK lines.
-     * Hough now detects and removes the white tics instead of the black gaps.
-     * Parameter range narrowed to the sweet spot from your last screenshots.
+     * Final diagnostic grid — focused around the sweet spot you liked.
+     * Inversion is active so white tics are correctly removed.
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -48,15 +47,15 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // Sweet-spot ramp from your screenshots
+        // Sweet-spot range from your last screenshots
         val paramSets = listOf(
-            Triple(18.0, 80.0, 9),    // Variant 1 — safe start (good on both dashboards)
-            Triple(16.0, 75.0, 11),
-            Triple(14.0, 70.0, 13),
-            Triple(12.0, 65.0, 15),
-            Triple(10.0, 60.0, 17),
-            Triple(8.0,  55.0, 19),
-            Triple(6.0,  50.0, 21)    // Variant 7 — still controlled
+            Triple(14.0, 72.0, 12),   // Variant 1
+            Triple(12.0, 68.0, 14),   // Variant 2 — excellent
+            Triple(10.0, 64.0, 16),   // Variant 3 — excellent
+            Triple(9.0,  60.0, 18),   // Variant 4
+            Triple(8.0,  58.0, 20),
+            Triple(7.0,  55.0, 22),
+            Triple(6.0,  52.0, 24)    // Variant 7
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -64,9 +63,7 @@ object ImageAlignmentUtils {
             try {
                 val gray = Mat()
                 Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-
-                // === KEY FIX: invert grayscale so WHITE tics become DARK lines ===
-                Core.bitwise_not(gray, gray)
+                Core.bitwise_not(gray, gray)   // white tics become dark lines
 
                 val edges = Mat()
                 Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
@@ -126,7 +123,8 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Production cleaning — now also uses inversion so white tics are removed cleanly
+     * FINAL PRODUCTION SETTINGS — locked to the best sweet spot from your screenshots
+     * (around Variant 2–3 level)
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
@@ -137,10 +135,10 @@ object ImageAlignmentUtils {
 
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-        Core.bitwise_not(gray, gray)   // ← inversion so white tics become dark lines
+        Core.bitwise_not(gray, gray)   // white tics become dark lines
 
         val edges = Mat()
-        Imgproc.Canny(gray, edges, 12.0, 65.0)
+        Imgproc.Canny(gray, edges, 12.0, 68.0)
         val lines = Mat()
         Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 20, 15.0, 4.0)
 
@@ -153,7 +151,7 @@ object ImageAlignmentUtils {
             val y2 = line[3].toInt()
             val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
             if (length < 260) {
-                Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 18)
+                Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 16)
             }
         }
 
