@@ -66,6 +66,7 @@ fun ManageVehiclesScreen(
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
     var isNewVehicle by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
 
     var name by remember { mutableStateOf("") }
     var make by remember { mutableStateOf("") }
@@ -82,6 +83,7 @@ fun ManageVehiclesScreen(
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
+    var currentDragRect by remember { mutableStateOf<Rect?>(null) }
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
@@ -94,7 +96,7 @@ fun ManageVehiclesScreen(
         }
     }
 
-    LaunchedEffect(selectedVehicleId, vehicles) {  // added vehicles as key so list refresh forces reload
+    LaunchedEffect(selectedVehicleId, vehicles) {
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
             editingVehicle = vehicle
@@ -106,7 +108,7 @@ fun ManageVehiclesScreen(
                 year = it.year?.toString() ?: ""
                 licensePlate = it.licensePlate ?: ""
                 odometerReading = ""
-                // ALWAYS prefer the cleaned version (this is the ONLY image we keep)
+                // FORCE cleaned version (only image we keep)
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
                 Log.i("CropDebug", "Loaded vehicle ${it.id} — displaying CLEANED photo: $referencePhotoUrl")
                 odometerCropRect = it.odometerCropLeft?.let { left ->
@@ -117,6 +119,7 @@ fun ManageVehiclesScreen(
                 }
                 isEditingOcrArea = false
                 isEditingLandmark = false
+                currentDragRect = null
             }
         }
     }
@@ -180,6 +183,7 @@ fun ManageVehiclesScreen(
                 referencePhotoUrl = null
                 odometerCropRect = null
                 landmarkCropRect = null
+                currentDragRect = null
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -224,14 +228,13 @@ fun ManageVehiclesScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (referencePhotoUrl != null) {
-                Log.i("CropDebug", "Displaying reference photo: $referencePhotoUrl (should be cleaned version)")
+                Log.i("CropDebug", "Displaying reference photo: $referencePhotoUrl (forced cleaned version)")
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(300.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
-                            // Set originalImageSize once we have a real image size
                             if (originalImageSize.x == 0f) originalImageSize = imageSize
                             Log.d("CropDebug", "BoxWithConstraints measured: $imageSize")
                         }
@@ -240,11 +243,22 @@ fun ManageVehiclesScreen(
                                 onDragStart = { offset ->
                                     dragStart = offset
                                     dragOffset = Offset.Zero
+                                    currentDragRect = null
                                     Log.d("CropDebug", "Drag START at $offset")
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
                                     dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
+                                    val start = dragStart
+                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
+                                        val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
+                                        val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
+                                        val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        currentDragRect = Rect(left, top, right, bottom)
+                                    }
                                 },
                                 onDragEnd = {
                                     val start = dragStart
@@ -263,6 +277,7 @@ fun ManageVehiclesScreen(
                                             landmarkCropRect = newRect
                                         }
                                     }
+                                    currentDragRect = null
                                     dragStart = null
                                     dragOffset = Offset.Zero
                                 }
@@ -281,6 +296,13 @@ fun ManageVehiclesScreen(
                     } else Rect(0f, 0f, imageSize.x, imageSize.y)
 
                     Canvas(modifier = Modifier.fillMaxSize()) {
+                        currentDragRect?.let { rect ->
+                            val left = fitRect.left + rect.left * fitRect.width
+                            val top = fitRect.top + rect.top * fitRect.height
+                            val width = rect.width * fitRect.width
+                            val height = rect.height * fitRect.height
+                            drawRect(Color.Red, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
+                        }
                         odometerCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
                             val top = fitRect.top + rect.top * fitRect.height
@@ -335,46 +357,55 @@ fun ManageVehiclesScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        if (isNewVehicle) {
-                            vehicleViewModel.createNewVehicleWithReference(
-                                name = name,
-                                make = make,
-                                model = model,
-                                year = year.toIntOrNull(),
-                                licensePlate = licensePlate,
-                                referenceDashPhotoUrl = referencePhotoUrl,
-                                odometerCropRect = odometerCropRect,
-                                initialOdometer = odometerReading.toIntOrNull() ?: 0
-                            )
-                            Toast.makeText(context, "New vehicle created (cleaned photo only)", Toast.LENGTH_SHORT).show()
-                        } else {
-                            editingVehicle?.let { vehicle ->
-                                vehicleViewModel.updateVehicle(
-                                    vehicle.copy(
+                        if (isSaving) return@Button
+                        isSaving = true
+                        scope.launch {
+                            try {
+                                if (isNewVehicle) {
+                                    vehicleViewModel.createNewVehicleWithReference(
                                         name = name,
                                         make = make,
                                         model = model,
                                         year = year.toIntOrNull(),
                                         licensePlate = licensePlate,
                                         referenceDashPhotoUrl = referencePhotoUrl,
-                                        odometerCropLeft = odometerCropRect?.left,
-                                        odometerCropTop = odometerCropRect?.top,
-                                        odometerCropRight = odometerCropRect?.right,
-                                        odometerCropBottom = odometerCropRect?.bottom,
-                                        landmarkCropLeft = landmarkCropRect?.left,
-                                        landmarkCropTop = landmarkCropRect?.top,
-                                        landmarkCropRight = landmarkCropRect?.right,
-                                        landmarkCropBottom = landmarkCropRect?.bottom
+                                        odometerCropRect = odometerCropRect,
+                                        initialOdometer = odometerReading.toIntOrNull() ?: 0
                                     )
-                                )
-                                Toast.makeText(context, "Vehicle updated (cleaned photo only)", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "New vehicle created (cleaned photo only)", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    editingVehicle?.let { vehicle ->
+                                        vehicleViewModel.updateVehicle(
+                                            vehicle.copy(
+                                                name = name,
+                                                make = make,
+                                                model = model,
+                                                year = year.toIntOrNull(),
+                                                licensePlate = licensePlate,
+                                                referenceDashPhotoUrl = referencePhotoUrl,
+                                                odometerCropLeft = odometerCropRect?.left,
+                                                odometerCropTop = odometerCropRect?.top,
+                                                odometerCropRight = odometerCropRect?.right,
+                                                odometerCropBottom = odometerCropRect?.bottom,
+                                                landmarkCropLeft = landmarkCropRect?.left,
+                                                landmarkCropTop = landmarkCropRect?.top,
+                                                landmarkCropRight = landmarkCropRect?.right,
+                                                landmarkCropBottom = landmarkCropRect?.bottom
+                                            )
+                                        )
+                                        Toast.makeText(context, "Vehicle updated (cleaned photo only)", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } finally {
+                                isSaving = false
+                                navController.popBackStack()
                             }
                         }
-                        navController.popBackStack()
                     },
+                    enabled = !isSaving,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(if (isNewVehicle) "Create Vehicle" else "Save Changes")
+                    Text(if (isSaving) "Saving..." else if (isNewVehicle) "Create Vehicle" else "Save Changes")
                 }
 
                 Button(
