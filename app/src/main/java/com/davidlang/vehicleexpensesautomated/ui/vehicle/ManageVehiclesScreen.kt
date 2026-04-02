@@ -129,9 +129,10 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // generate diagnostic grid when a new photo is picked
-    LaunchedEffect(pickedPhotoUrl) {
-        pickedPhotoUrl?.let { url ->
+    // Generate diagnostic grid whenever we have a photo (new or existing cleaned)
+    LaunchedEffect(pickedPhotoUrl, referencePhotoUrl) {
+        val urlToUse = pickedPhotoUrl ?: referencePhotoUrl
+        urlToUse?.let { url ->
             scope.launch {
                 val file = File(url)
                 if (file.exists()) {
@@ -250,7 +251,44 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // === 2×4 DIAGNOSTIC GRID ===
+            // === Simple side-by-side (Original + CLEANED) - always visible ===
+            if (pickedPhotoUrl != null || referencePhotoUrl != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (pickedPhotoUrl != null) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Original Picked", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                            Box(modifier = Modifier.height(220.dp)) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(pickedPhotoUrl),
+                                    contentDescription = "Original",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+                    }
+                    if (referencePhotoUrl != null) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("CLEANED (ticks removed)", style = MaterialTheme.typography.labelSmall, color = Color(0xFF4CAF50))
+                            Box(modifier = Modifier.height(220.dp)) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(referencePhotoUrl),
+                                    contentDescription = "Cleaned",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // === Full 2×4 diagnostic grid ===
             if (diagnosticVariants.isNotEmpty()) {
                 Text("Tic-Removal Diagnostic Grid (pick the best one)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
