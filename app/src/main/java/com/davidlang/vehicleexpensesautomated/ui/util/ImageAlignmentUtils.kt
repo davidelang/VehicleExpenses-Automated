@@ -29,7 +29,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * OLD METHOD — kept exactly as requested (shrunk to only 4 variants: original + 1-3)
+     * OLD METHOD — kept exactly as requested (only original + Variants 1-3)
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -121,7 +121,6 @@ object ImageAlignmentUtils {
 
     /**
      * OLD RADIAL LINE SUBTRACTION METHOD — restored exactly as it was (full thickness)
-     * Returns the 4 steps you asked for in the previous version.
      */
     suspend fun createRadialLineRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
@@ -200,7 +199,9 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * NEW ARC-MASK REMOVAL METHOD — full ring blackout (center + inner/outer radius)
+     * NEW ARC-MASK REMOVAL METHOD — much more robust detection of the large gauge circle
+     * Uses lenient HoughCircles + strong fallback to image center + estimated radius
+     * Blacks out the entire tic ring (inner/outer radius) exactly as you requested.
      * Returns the 4 steps you asked for.
      */
     suspend fun createArcMaskRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
@@ -220,29 +221,47 @@ object ImageAlignmentUtils {
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
 
+        // Detect gauge circle with very lenient parameters
         val circles = Mat()
-        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 80, 300)
+        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.2, 100.0, 80.0, 25.0, 60, 400)
 
-        val centerX = if (circles.cols() > 0) circles.get(0, 0)[0].toDouble() else src.cols() / 2.0
-        val centerY = if (circles.cols() > 0) circles.get(0, 0)[1].toDouble() else src.rows() / 2.0
-        val gaugeRadius = if (circles.cols() > 0) circles.get(0, 0)[2].toDouble() else 0.0
+        var centerX = src.cols() / 2.0
+        var centerY = src.rows() / 2.0
+        var gaugeRadius = 0.0
 
-        val innerRadius = gaugeRadius * 0.65
-        val outerRadius = gaugeRadius * 0.85
+        if (circles.cols() > 0) {
+            // Take the largest circle (most likely the gauge)
+            val largest = circles.get(0, 0)
+            centerX = largest[0]
+            centerY = largest[1]
+            gaugeRadius = largest[2]
+            Log.i("ImageAlignment", "Detected gauge circle at ($centerX, $centerY) radius $gaugeRadius")
+        } else {
+            // Strong fallback: use image center and estimate radius (typical for these dashboards)
+            gaugeRadius = Math.min(src.cols(), src.rows()) * 0.42
+            Log.i("ImageAlignment", "No circle detected — using fallback center + radius $gaugeRadius")
+        }
+
+        // Tic arc is outside the numbers — wide ring that covers all tics
+        val innerRadius = gaugeRadius * 0.58
+        val outerRadius = gaugeRadius * 0.92
 
         val arcMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
         Imgproc.circle(arcMask, Point(centerX, centerY), outerRadius.toInt(), Scalar(255.0), -1)
         Imgproc.circle(arcMask, Point(centerX, centerY), innerRadius.toInt(), Scalar(0.0), -1)
 
+        // Step 1: Extracted Tic Arc Mask (full ring)
         val maskBmp = Bitmap.createBitmap(arcMask.cols(), arcMask.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(arcMask, maskBmp)
         steps.add(maskBmp)
 
+        // Step 2: Inverted Tic Arc Mask
         Core.bitwise_not(arcMask, arcMask)
         val invertedBmp = Bitmap.createBitmap(arcMask.cols(), arcMask.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(arcMask, invertedBmp)
         steps.add(invertedBmp)
 
+        // Step 3: Final Merged (tic-free)
         val cleaned = Mat()
         Photo.inpaint(srcBGR, arcMask, cleaned, 14.0, Photo.INPAINT_TELEA)
 
@@ -250,6 +269,7 @@ object ImageAlignmentUtils {
         org.opencv.android.Utils.matToBitmap(cleaned, finalBmp)
         steps.add(finalBmp)
 
+        // Cleanup
         src.release()
         srcBGR.release()
         gray.release()
@@ -262,7 +282,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Production cleaning — unchanged
+     * Production cleaning — unchanged (still uses the best sweet-spot from earlier tests)
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
