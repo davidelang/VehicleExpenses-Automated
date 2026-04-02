@@ -68,7 +68,7 @@ fun ManageVehiclesScreen(
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     val diagnosticVariants by vehicleViewModel.diagnosticVariants.collectAsState()
-    val radialSteps by vehicleViewModel.radialSteps.collectAsState()
+    val radialVariants by vehicleViewModel.radialVariants.collectAsState()
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
@@ -101,7 +101,7 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — radialSteps=${radialSteps.size}")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed — radialVariants=${radialVariants.size}")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -304,29 +304,23 @@ fun ManageVehiclesScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            if (radialSteps.isNotEmpty()) {
-                Text("Radial Line Subtraction Method — 4 Steps (improved + CLAHE + tuned)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+            // === NEW 7-PARAMETER RADIAL GRID ===
+            if (radialVariants.isNotEmpty()) {
+                Text("Radial Parameter Sweep — 7 Variants (fast testing)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(4),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(700.dp),
+                        .height(900.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(radialSteps) { bmp ->
-                        val index = radialSteps.indexOf(bmp)
-                        val label = when (index) {
-                            0 -> "Original"
-                            1 -> "Extracted Radial Lines"
-                            2 -> "Inverted Radial Lines"
-                            3 -> "Final Merged"
-                            else -> "Step $index"
-                        }
+                    items(radialVariants) { bmp ->
+                        val index = radialVariants.indexOf(bmp)
                         Column {
                             Text(
-                                text = label,
+                                text = if (index == 0) "Original" else "Param ${index}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFF2196F3)
                             )

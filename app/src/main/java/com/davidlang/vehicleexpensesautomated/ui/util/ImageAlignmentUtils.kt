@@ -103,90 +103,108 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * TUNED RADIAL LINE SUBTRACTION — CLAHE kept, but thresholds tightened + light erosion
-     * to eliminate the "cloud of specks" while still catching real tics.
+     * FAST PARAMETER SWEEP: 7 different radial line detection settings
+     * Used for quick iteration instead of single image.
      */
-    suspend fun createRadialLineRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
-        val steps = mutableListOf<Bitmap>()
-        Log.i("ImageAlignment", "Starting TUNED createRadialLineRemovalSteps on ${original.width}x${original.height} image")
+    suspend fun createRadialParameterVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
+        val variants = mutableListOf<Bitmap>()
+        Log.i("ImageAlignment", "Starting createRadialParameterVariants (7 param sets) on ${original.width}x${original.height} image")
 
         // Step 0: Original (downscaled)
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
-        steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+        variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // CLAHE (kept — helps with dark gauges)
-        val gray = Mat()
-        Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-        val equalized = Mat()
-        clahe.apply(gray, equalized)
-        Core.bitwise_not(equalized, equalized)
+        // 7 parameter combinations for fast testing
+        val paramSets = listOf(
+            // 1: Current tuned (CLAHE + moderate)
+            Triple(8.0, 55.0, 12),
+            // 2: More sensitive (lower thresholds)
+            Triple(5.0, 45.0, 10),
+            // 3: Less sensitive (higher thresholds)
+            Triple(12.0, 65.0, 15),
+            // 4: Very short lines only
+            Triple(6.0, 50.0, 8),
+            // 5: Longer lines only
+            Triple(10.0, 60.0, 20),
+            // 6: No CLAHE, classic
+            Triple(8.0, 55.0, 12),
+            // 7: Aggressive erosion + CLAHE
+            Triple(9.0, 52.0, 14)
+        )
 
-        val blurred = Mat()
-        Imgproc.GaussianBlur(equalized, blurred, Size(3.0, 3.0), 0.0)
+        for ((index, params) in paramSets.withIndex()) {
+            val (cannyLow, cannyHigh, houghThresh) = params
+            try {
+                val gray = Mat()
+                Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
+                val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+                val equalized = Mat()
+                clahe.apply(gray, equalized)
+                Core.bitwise_not(equalized, equalized)
 
-        val edges = Mat()
-        Imgproc.Canny(blurred, edges, 8.0, 55.0)   // tightened
+                val blurred = Mat()
+                Imgproc.GaussianBlur(equalized, blurred, Size(3.0, 3.0), 0.0)
 
-        val lines = Mat()
-        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, 18.0, 3.0)
+                val edges = Mat()
+                Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
 
-        val centerX = src.cols() / 2.0
-        val centerY = src.rows() / 2.0
+                val lines = Mat()
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, houghThresh, 18.0, 3.0)
 
-        val linesMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
-        for (i in 0 until lines.rows()) {
-            val line = lines.get(i, 0)
-            val x1 = line[0]
-            val y1 = line[1]
-            val x2 = line[2]
-            val y2 = line[3]
-            val length = Math.hypot(x2 - x1, y2 - y1)
-            if (length < 18) continue
+                val centerX = src.cols() / 2.0
+                val centerY = src.rows() / 2.0
 
-            val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
-            if (distToCenter < 40) {
-                Imgproc.line(linesMask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 12)
+                val linesMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
+                for (i in 0 until lines.rows()) {
+                    val line = lines.get(i, 0)
+                    val x1 = line[0]
+                    val y1 = line[1]
+                    val x2 = line[2]
+                    val y2 = line[3]
+                    val length = Math.hypot(x2 - x1, y2 - y1)
+                    if (length < 18) continue
+                    val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
+                    if (distToCenter < 40) {
+                        Imgproc.line(linesMask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 12)
+                    }
+                }
+
+                // Light erosion to kill specks
+                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
+                Imgproc.erode(linesMask, linesMask, kernel)
+
+                val resultBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
+                org.opencv.android.Utils.matToBitmap(linesMask, resultBmp)
+
+                val displayBmp = if (resultBmp.width > 512) {
+                    val h = (512f / resultBmp.width * resultBmp.height).toInt()
+                    Bitmap.createScaledBitmap(resultBmp, 512, h, true)
+                } else resultBmp
+
+                variants.add(displayBmp)
+                Log.i("ImageAlignment", "Radial param variant ${index + 1} created")
+
+                gray.release()
+                equalized.release()
+                blurred.release()
+                edges.release()
+                lines.release()
+                linesMask.release()
+                if (resultBmp !== displayBmp) resultBmp.recycle()
+            } catch (e: Exception) {
+                Log.e("ImageAlignment", "Failed to create radial param variant ${index + 1}", e)
             }
         }
-
-        // Light erosion to remove isolated specks
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
-        Imgproc.erode(linesMask, linesMask, kernel)
-
-        val linesBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(linesMask, linesBmp)
-        steps.add(linesBmp)
-
-        Core.bitwise_not(linesMask, linesMask)
-        val invertedBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(linesMask, invertedBmp)
-        steps.add(invertedBmp)
-
-        val cleaned = Mat()
-        Photo.inpaint(srcBGR, linesMask, cleaned, 14.0, Photo.INPAINT_TELEA)
-        val finalBmp = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(cleaned, finalBmp)
-        steps.add(finalBmp)
-
         src.release()
         srcBGR.release()
-        gray.release()
-        equalized.release()
-        blurred.release()
-        edges.release()
-        lines.release()
-        linesMask.release()
-        cleaned.release()
-
-        Log.i("ImageAlignment", "✅ Finished TUNED radial steps — no more speck cloud")
-        steps
+        Log.i("ImageAlignment", "✅ Finished createRadialParameterVariants — 7 param sets created")
+        variants
     }
 
     /**
