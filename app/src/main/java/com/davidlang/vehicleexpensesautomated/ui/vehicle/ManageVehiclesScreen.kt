@@ -18,7 +18,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -33,6 +32,7 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.OcrDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import kotlinx.coroutines.launch
@@ -74,8 +74,8 @@ fun ManageVehiclesScreen(
     var year by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
-    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }     // original from PhotoPicker
-    var referencePhotoUrl by remember { mutableStateOf<String?>(null) } // cleaned version
+    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var landmarkCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
@@ -88,6 +88,9 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
+
+    // NEW: diagnostic grid (original + 7 aggressive variants)
+    var diagnosticVariants by remember { mutableStateOf<List<Bitmap?>>(emptyList()) }
 
     Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize")
 
@@ -121,6 +124,22 @@ fun ManageVehiclesScreen(
                 isEditingOcrArea = false
                 isEditingLandmark = false
                 currentDragRect = null
+            }
+        }
+    }
+
+    // When a new picked photo arrives, generate the 8-variant diagnostic grid
+    LaunchedEffect(pickedPhotoUrl) {
+        pickedPhotoUrl?.let { url ->
+            scope.launch {
+                val file = File(url)
+                if (file.exists()) {
+                    val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                    if (bmp != null) {
+                        diagnosticVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
+                        Log.i("CropDebug", "✅ Generated 8 diagnostic variants for ${bmp.width}x${bmp.height} image")
+                    }
+                }
             }
         }
     }
@@ -186,6 +205,7 @@ fun ManageVehiclesScreen(
                 odometerCropRect = null
                 landmarkCropRect = null
                 currentDragRect = null
+                diagnosticVariants = emptyList()
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -223,46 +243,45 @@ fun ManageVehiclesScreen(
             PhotoPicker(
                 photoStorageManager = settingsViewModel.photoStorageManager,
                 photoType = PhotoType.FUEL,
-                currentPhotoUrl = pickedPhotoUrl,   // show original picked in picker
+                currentPhotoUrl = pickedPhotoUrl,
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // === DIAGNOSTIC: show BOTH original picked + cleaned side-by-side ===
-            if (pickedPhotoUrl != null || referencePhotoUrl != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Original picked image
-                    if (pickedPhotoUrl != null) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Original Picked", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Box(modifier = Modifier.height(220.dp)) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(pickedPhotoUrl),
-                                    contentDescription = "Original picked image",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit
-                                )
+            // === 2×4 DIAGNOSTIC GRID (original + 7 aggressive variants) ===
+            if (diagnosticVariants.isNotEmpty()) {
+                Text("Tic-Removal Diagnostic Grid (pick the best one)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
+                Spacer(modifier = Modifier.height(8.dp))
+                Column {
+                    for (row in 0 until 4) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            for (col in 0 until 2) {
+                                val index = row * 2 + col
+                                val bmp = diagnosticVariants.getOrNull(index)
+                                if (bmp != null) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (index == 0) "Original" else "Variant $index",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (index == 0) Color.Gray else Color(0xFF4CAF50)
+                                        )
+                                        Image(
+                                            bitmap = bmp.asImageBitmap(),
+                                            contentDescription = "Variant $index",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(160.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
-
-                    // Cleaned version (with visual label)
-                    if (referencePhotoUrl != null) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("CLEANED (ticks removed)", style = MaterialTheme.typography.labelSmall, color = Color(0xFF4CAF50))
-                            Box(modifier = Modifier.height(220.dp)) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(referencePhotoUrl),
-                                    contentDescription = "Cleaned reference image",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                        }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
@@ -410,7 +429,7 @@ fun ManageVehiclesScreen(
                                         model = model,
                                         year = year.toIntOrNull(),
                                         licensePlate = licensePlate,
-                                        referenceDashPhotoUrl = pickedPhotoUrl,   // pass the original picked one
+                                        referenceDashPhotoUrl = pickedPhotoUrl,
                                         odometerCropRect = odometerCropRect,
                                         initialOdometer = odometerReading.toIntOrNull() ?: 0
                                     )

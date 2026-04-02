@@ -28,23 +28,44 @@ object ImageAlignmentUtils {
         }
     }
 
-    // Aggressively remove speedometer ticks while keeping numbers
-    suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
+    /**
+     * Creates 8 versions of the reference image for diagnostics:
+     * 0 = original (no cleaning)
+     * 1–7 = increasingly aggressive tic removal
+     */
+    suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
+        val variants = mutableListOf<Bitmap>()
+        variants.add(original.copy(original.config, true)) // index 0 = original
+
+        val params = listOf(
+            // 1: mild
+            Triple(30.0, 100.0, 5),
+            // 2: medium
+            Triple(25.0, 90.0, 6),
+            // 3: strong
+            Triple(20.0, 80.0, 7),
+            // 4: aggressive
+            Triple(15.0, 70.0, 8),
+            // 5: very aggressive
+            Triple(10.0, 60.0, 9),
+            // 6: nuclear
+            Triple(5.0, 50.0, 10),
+            // 7: apocalypse
+            Triple(3.0, 40.0, 12)
+        )
+
         val src = Mat()
-        try {
-            org.opencv.android.Utils.bitmapToMat(original, src)
+        org.opencv.android.Utils.bitmapToMat(original, src)
+        val srcBGR = Mat()
+        Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-            val srcBGR = Mat()
-            Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
-
+        for ((cannyLow, cannyHigh, thickness) in params) {
             val gray = Mat()
             Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
 
-            // Much more sensitive edge detection
             val edges = Mat()
-            Imgproc.Canny(gray, edges, 20.0, 80.0)
+            Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
 
-            // Very aggressive line detection
             val lines = Mat()
             Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 30, 15.0, 5.0)
 
@@ -56,17 +77,17 @@ object ImageAlignmentUtils {
                 val x2 = line[2].toInt()
                 val y2 = line[3].toInt()
                 val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
-                if (length < 200) {  // catch longer ticks
-                    Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 8)  // much thicker mask
+                if (length < 220) {
+                    Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness)
                 }
             }
 
             val cleaned = Mat()
-            Photo.inpaint(srcBGR, mask, cleaned, 7.0, Photo.INPAINT_TELEA)  // stronger inpaint
+            Photo.inpaint(srcBGR, mask, cleaned, 8.0, Photo.INPAINT_TELEA)
 
-            // Second pass for stubborn ticks
+            // Second pass
             val edges2 = Mat()
-            Imgproc.Canny(cleaned, edges2, 15.0, 60.0)
+            Imgproc.Canny(cleaned, edges2, cannyLow * 0.8, cannyHigh * 0.8)
             val lines2 = Mat()
             Imgproc.HoughLinesP(edges2, lines2, 1.0, Math.PI / 180, 25, 12.0, 4.0)
             val mask2 = Mat.zeros(gray.size(), CvType.CV_8UC1)
@@ -76,32 +97,42 @@ object ImageAlignmentUtils {
                 val y1 = line[1].toInt()
                 val x2 = line[2].toInt()
                 val y2 = line[3].toInt()
-                if (Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 180) {
-                    Imgproc.line(mask2, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 6)
+                if (Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 200) {
+                    Imgproc.line(mask2, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness - 1)
                 }
             }
-            Photo.inpaint(cleaned, mask2, cleaned, 5.0, Photo.INPAINT_TELEA)
+            Photo.inpaint(cleaned, mask2, cleaned, 6.0, Photo.INPAINT_TELEA)
 
-            // Visible green debug tint + brightness boost
+            // Green debug tint so we can instantly tell it's cleaned
             val debug = Mat()
             Imgproc.cvtColor(cleaned, debug, Imgproc.COLOR_BGR2RGBA)
             val greenTint = Mat.zeros(debug.size(), CvType.CV_8UC4)
-            greenTint.setTo(Scalar(0.0, 50.0, 25.0, 0.0))
-            Core.addWeighted(debug, 1.0, greenTint, 0.35, 40.0, debug)
+            greenTint.setTo(Scalar(0.0, 55.0, 25.0, 0.0))
+            Core.addWeighted(debug, 1.0, greenTint, 0.4, 45.0, debug)
 
             val result = Bitmap.createBitmap(debug.cols(), debug.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(debug, result)
+            variants.add(result)
 
-            Log.i("VehicleReferenceCleaning", "✅ Created cleaned reference for ${result.width}x${result.height} image (aggressive + green tint)")
-            result
-        } catch (e: Exception) {
-            Log.e("VehicleReferenceCleaning", "❌ Cleaning reference failed", e)
-            null
-        } finally {
-            src.release()
+            // cleanup
+            gray.release()
+            edges.release()
+            lines.release()
+            mask.release()
+            cleaned.release()
+            edges2.release()
+            lines2.release()
+            mask2.release()
+            debug.release()
         }
+
+        src.release()
+        srcBGR.release()
+        Log.i("VehicleReferenceCleaning", "✅ Created 8 diagnostic variants (0=original, 1-7=aggressive)")
+        variants
     }
 
+    // ... (rest of the file unchanged - alignImages remains exactly as it was)
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
