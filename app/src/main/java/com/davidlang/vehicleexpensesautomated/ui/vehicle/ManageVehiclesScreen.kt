@@ -304,17 +304,17 @@ fun ManageVehiclesScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            // === NEW 7-PARAMETER RADIAL GRID ===
+            // === RADIAL PARAMETER SWEEP — 2-wide × 4-high for larger images ===
             if (radialVariants.isNotEmpty()) {
                 Text("Radial Parameter Sweep — 7 Variants (fast testing)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
+                    columns = GridCells.Fixed(2),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(900.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .height(1100.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(radialVariants) { bmp ->
                         val index = radialVariants.indexOf(bmp)
@@ -329,7 +329,7 @@ fun ManageVehiclesScreen(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(160.dp),
+                                    .height(240.dp),
                                 contentScale = ContentScale.Fit
                             )
                         }

@@ -103,12 +103,12 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * FAST PARAMETER SWEEP: 7 different radial line detection settings
-     * Used for quick iteration instead of single image.
+     * FAST PARAMETER SWEEP: 7 different radial line detection settings + polar as #7
+     * Polar transform cleanly removes radial tics without speck noise.
      */
     suspend fun createRadialParameterVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("ImageAlignment", "Starting createRadialParameterVariants (7 param sets) on ${original.width}x${original.height} image")
+        Log.i("ImageAlignment", "Starting createRadialParameterVariants (7 param sets + polar) on ${original.width}x${original.height} image")
 
         // Step 0: Original (downscaled)
         val thumbW = if (original.width > 512) 512 else original.width
@@ -120,21 +120,13 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // 7 parameter combinations for fast testing
+        // 6 Cartesian radial param sets + 1 polar
         val paramSets = listOf(
-            // 1: Current tuned (CLAHE + moderate)
             Triple(8.0, 55.0, 12),
-            // 2: More sensitive (lower thresholds)
             Triple(5.0, 45.0, 10),
-            // 3: Less sensitive (higher thresholds)
             Triple(12.0, 65.0, 15),
-            // 4: Very short lines only
             Triple(6.0, 50.0, 8),
-            // 5: Longer lines only
             Triple(10.0, 60.0, 20),
-            // 6: No CLAHE, classic
-            Triple(8.0, 55.0, 12),
-            // 7: Aggressive erosion + CLAHE
             Triple(9.0, 52.0, 14)
         )
 
@@ -175,7 +167,6 @@ object ImageAlignmentUtils {
                     }
                 }
 
-                // Light erosion to kill specks
                 val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
                 Imgproc.erode(linesMask, linesMask, kernel)
 
@@ -201,9 +192,53 @@ object ImageAlignmentUtils {
                 Log.e("ImageAlignment", "Failed to create radial param variant ${index + 1}", e)
             }
         }
+
+        // Param 7: Polar tic removal (clean radial tic removal)
+        try {
+            val gray = Mat()
+            Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
+            val center = Point(src.cols() / 2.0, src.rows() / 2.0)
+            val maxRadius = Math.max(src.cols(), src.rows()) / 2.0
+
+            val polar = Mat()
+            Imgproc.linearPolar(gray, polar, center, maxRadius, Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
+
+            val polarEdges = Mat()
+            Imgproc.Canny(polar, polarEdges, 30.0, 90.0)
+
+            val polarMask = Mat.zeros(polar.size(), CvType.CV_8UC1)
+            Imgproc.line(polarMask, Point(0.0, 0.0), Point(polar.cols().toDouble(), 0.0), Scalar(255.0), polar.rows() / 8) // remove horizontal tics in polar
+
+            val polarCleaned = Mat()
+            Photo.inpaint(polar, polarMask, polarCleaned, 5.0, Photo.INPAINT_TELEA)
+
+            val cartesian = Mat()
+            Imgproc.linearPolar(polarCleaned, cartesian, center, maxRadius, Imgproc.WARP_INVERSE_MAP + Imgproc.INTER_LINEAR)
+
+            val resultBmp = Bitmap.createBitmap(cartesian.cols(), cartesian.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(cartesian, resultBmp)
+
+            val displayBmp = if (resultBmp.width > 512) {
+                val h = (512f / resultBmp.width * resultBmp.height).toInt()
+                Bitmap.createScaledBitmap(resultBmp, 512, h, true)
+            } else resultBmp
+
+            variants.add(displayBmp)
+            Log.i("ImageAlignment", "Polar tic removal (Param 7) created — clean radial tics removed")
+            gray.release()
+            polar.release()
+            polarEdges.release()
+            polarMask.release()
+            polarCleaned.release()
+            cartesian.release()
+            if (resultBmp !== displayBmp) resultBmp.recycle()
+        } catch (e: Exception) {
+            Log.e("ImageAlignment", "Failed to create polar variant", e)
+        }
+
         src.release()
         srcBGR.release()
-        Log.i("ImageAlignment", "✅ Finished createRadialParameterVariants — 7 param sets created")
+        Log.i("ImageAlignment", "✅ Finished createRadialParameterVariants — 7 param sets + polar created")
         variants
     }
 
