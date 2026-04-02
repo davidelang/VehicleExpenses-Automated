@@ -39,6 +39,7 @@ class VehicleViewModel @Inject constructor(
         initialOdometer: Int
     ) {
         viewModelScope.launch {
+            Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name with original photo $referenceDashPhotoUrl")
             val cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
             val newVehicle = Vehicle(
                 name = name,
@@ -46,19 +47,21 @@ class VehicleViewModel @Inject constructor(
                 model = model,
                 year = year,
                 licensePlate = licensePlate,
-                referenceDashPhotoUrl = null,               // original is discarded
-                cleanedReferenceDashPhotoUrl = cleanedUrl,  // this is the ONLY image we keep
+                referenceDashPhotoUrl = null,
+                cleanedReferenceDashPhotoUrl = cleanedUrl,
                 odometerCropLeft = odometerCropRect?.left,
                 odometerCropTop = odometerCropRect?.top,
                 odometerCropRight = odometerCropRect?.right,
                 odometerCropBottom = odometerCropRect?.bottom
             )
             repository.insert(newVehicle)
+            Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted with cleaned photo: $cleanedUrl")
         }
     }
 
     fun updateVehicle(vehicle: Vehicle) {
         viewModelScope.launch {
+            Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
             val cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
                 ?: vehicle.cleanedReferenceDashPhotoUrl
             val updated = vehicle.copy(
@@ -66,10 +69,10 @@ class VehicleViewModel @Inject constructor(
                 cleanedReferenceDashPhotoUrl = cleanedUrl
             )
             repository.updateVehicle(updated)
+            Log.i("VehicleReferenceCleaning", "✅ Vehicle updated with cleaned photo: $cleanedUrl")
         }
     }
 
-    /** Guarantees the cleaned reference exists (only one file per vehicle) */
     suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
         val cleaned = vehicle.cleanedReferenceDashPhotoUrl
         if (cleaned != null) {
