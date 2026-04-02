@@ -32,10 +32,14 @@ object ImageAlignmentUtils {
      * Creates 8 versions for the diagnostic grid:
      *   0 = original
      *   1-7 = increasingly aggressive tic removal
+     *   All variants are downscaled to max 1024 px wide for UI preview
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        variants.add(original.copy(original.config ?: Bitmap.Config.ARGB_8888, true)) // index 0 = original
+        // 0 = original (downscaled for grid)
+        val thumbW = if (original.width > 1024) 1024 else original.width
+        val thumbH = (thumbW.toFloat() / original.width * original.height).toInt()
+        variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
@@ -103,7 +107,14 @@ object ImageAlignmentUtils {
 
             val result = Bitmap.createBitmap(debug.cols(), debug.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(debug, result)
-            variants.add(result)
+
+            // downscale for grid preview
+            val gridBmp = if (result.width > 1024) {
+                val h = (1024f / result.width * result.height).toInt()
+                Bitmap.createScaledBitmap(result, 1024, h, true)
+            } else result
+
+            variants.add(gridBmp)
 
             gray.release()
             edges.release()
@@ -114,18 +125,23 @@ object ImageAlignmentUtils {
             lines2.release()
             mask2.release()
             debug.release()
+            if (result !== gridBmp) result.recycle()
         }
 
         src.release()
         srcBGR.release()
-        Log.i("VehicleReferenceCleaning", "✅ Created 8 diagnostic variants (0=original, 1-7=aggressive)")
+        Log.i("VehicleReferenceCleaning", "✅ Created 8 diagnostic variants (0=original, 1-7=aggressive) for UI grid")
         variants
     }
 
-    // Production cleaned reference (uses the 4th aggressive variant)
+    // Production cleaned reference (uses the 4th aggressive variant, full size)
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         val variants = createDiagnosticVariants(original)
-        variants.getOrNull(4)
+        variants.getOrNull(4)?.let { thumbnail ->
+            // return the full-size version for production use
+            val full = Bitmap.createScaledBitmap(thumbnail, original.width, original.height, true)
+            full
+        }
     }
 
     // unchanged alignImages function

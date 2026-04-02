@@ -90,8 +90,8 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    // diagnostic grid (original + 7 aggressive variants)
-    var diagnosticVariants by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
+    // diagnostic grid (original + 7 aggressive variants) — use mutableStateListOf for reliable recomposition
+    var diagnosticVariants by remember { mutableStateOf(mutableStateListOf<Bitmap>()) }
 
     Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize, variants=${diagnosticVariants.size}")
 
@@ -129,23 +129,28 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Generate diagnostic grid whenever we have a photo (new or existing cleaned)
-    LaunchedEffect(pickedPhotoUrl, referencePhotoUrl) {
-        val urlToUse = pickedPhotoUrl ?: referencePhotoUrl
-        urlToUse?.let { url ->
+    // Generate diagnostic grid whenever we have a reference photo (new or existing)
+    LaunchedEffect(referencePhotoUrl) {
+        referencePhotoUrl?.let { url ->
             scope.launch {
-                Log.i("CropDebug", "Generating diagnostic grid for $url")
-                val file = File(url)
-                if (file.exists()) {
-                    val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
-                    if (bmp != null) {
-                        diagnosticVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
-                        Log.i("CropDebug", "✅ Generated 8 diagnostic variants for ${bmp.width}x${bmp.height} image")
+                Log.i("CropDebug", "Generating diagnostic grid for reference photo: $url")
+                try {
+                    val file = File(url)
+                    if (file.exists()) {
+                        val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                        if (bmp != null) {
+                            val newVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
+                            diagnosticVariants.clear()
+                            diagnosticVariants.addAll(newVariants)
+                            Log.i("CropDebug", "✅ Grid updated with ${newVariants.size} variants")
+                        } else {
+                            Log.e("CropDebug", "Failed to decode bitmap from $url")
+                        }
                     } else {
-                        Log.e("CropDebug", "Failed to decode bitmap from $url")
+                        Log.e("CropDebug", "File does not exist: $url")
                     }
-                } else {
-                    Log.e("CropDebug", "File does not exist: $url")
+                } catch (e: Exception) {
+                    Log.e("CropDebug", "Error generating diagnostic grid", e)
                 }
             }
         }
@@ -212,7 +217,7 @@ fun ManageVehiclesScreen(
                 odometerCropRect = null
                 landmarkCropRect = null
                 currentDragRect = null
-                diagnosticVariants = emptyList()
+                diagnosticVariants.clear()
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -256,7 +261,7 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // === Simple side-by-side (Original + CLEANED) - always visible ===
+            // === Simple side-by-side (Original + CLEANED) ===
             if (pickedPhotoUrl != null || referencePhotoUrl != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
