@@ -273,7 +273,7 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // === 8-VARIANT DIAGNOSTIC GRID (now higher and always visible when ready) ===
+            // === 8-VARIANT DIAGNOSTIC GRID (higher placement) ===
             if (diagnosticVariants.isNotEmpty()) {
                 Text("Tic-Removal Diagnostic Grid (8 variants)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))

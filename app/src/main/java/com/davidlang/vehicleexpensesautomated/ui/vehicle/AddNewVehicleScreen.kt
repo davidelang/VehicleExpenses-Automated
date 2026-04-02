@@ -168,18 +168,20 @@ fun AddNewVehicleScreen(
         Button(
             onClick = {
                 if (name.isNotBlank()) {
-                    vehicleViewModel.createNewVehicleWithReference(
-                        name = name,
-                        make = make,
-                        model = model,
-                        year = year.toIntOrNull() ?: 2025,
-                        licensePlate = licensePlate,
-                        referenceDashPhotoUrl = referencePhotoUrl,
-                        odometerCropRect = odometerCropRect,
-                        initialOdometer = odometerReading.toIntOrNull() ?: 0
-                    )
-                    Toast.makeText(context, "New vehicle created with odometer calibration", Toast.LENGTH_LONG).show()
-                    navController.popBackStack()
+                    scope.launch {
+                        vehicleViewModel.createNewVehicleWithReference(
+                            name = name,
+                            make = make,
+                            model = model,
+                            year = year.toIntOrNull() ?: 2025,
+                            licensePlate = licensePlate,
+                            referenceDashPhotoUrl = referencePhotoUrl,
+                            odometerCropRect = odometerCropRect,
+                            initialOdometer = odometerReading.toIntOrNull() ?: 0
+                        )
+                        Toast.makeText(context, "New vehicle created with odometer calibration", Toast.LENGTH_LONG).show()
+                        navController.popBackStack()
+                    }
                 } else {
                     Toast.makeText(context, "Vehicle name is required", Toast.LENGTH_SHORT).show()
                 }
