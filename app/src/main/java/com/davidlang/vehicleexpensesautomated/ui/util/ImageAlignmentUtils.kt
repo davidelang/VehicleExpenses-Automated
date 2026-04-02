@@ -29,8 +29,8 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Final diagnostic grid — focused on the exact sweet spot from your screenshots.
-     * Inversion + dilation now fully erases the white tic circle while keeping numbers crisp.
+     * OLD METHOD — shrunk to only Variants 1-3 as requested.
+     * Kept exactly as-is (no erasure of current code).
      */
     suspend fun createDiagnosticVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -47,15 +47,11 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // Final sweet-spot range from your screenshots
+        // Shrunk to only the 3 best variants from your last screenshots
         val paramSets = listOf(
             Triple(14.0, 72.0, 14),   // Variant 1
-            Triple(12.0, 68.0, 16),   // Variant 2
-            Triple(11.0, 66.0, 17),   // Variant 3
-            Triple(10.0, 64.0, 18),   // Variant 4
-            Triple(9.0,  62.0, 19),
-            Triple(8.0,  60.0, 20),
-            Triple(7.0,  58.0, 21)    // Variant 7
+            Triple(12.0, 68.0, 16),   // Variant 2 — excellent
+            Triple(11.0, 66.0, 17)    // Variant 3 — excellent
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -63,7 +59,7 @@ object ImageAlignmentUtils {
             try {
                 val gray = Mat()
                 Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-                Core.bitwise_not(gray, gray)   // white tics become dark lines
+                Core.bitwise_not(gray, gray)
 
                 val edges = Mat()
                 Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
@@ -84,7 +80,6 @@ object ImageAlignmentUtils {
                     }
                 }
 
-                // Dilation thickens the mask so the entire white tic arc is covered
                 val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
                 Imgproc.dilate(mask, mask, kernel)
 
@@ -127,7 +122,84 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Production cleaning — locked to the exact sweet spot from your screenshots
+     * NEW RADIAL-LINE SUBTRACTION METHOD (exactly as you asked)
+     * 1. Detect radial lines only
+     * 2. Copy them to new image
+     * 3. Invert that image
+     * 4. Merge back (inpaint) to erase the lines
+     * Returns 4 images: [original, extracted_lines, inverted_lines, final_merged]
+     */
+    suspend fun createRadialLineRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
+        val steps = mutableListOf<Bitmap>()
+        Log.i("ImageAlignment", "Starting createRadialLineRemovalSteps on ${original.width}x${original.height} image")
+
+        // Step 0: original (downscaled for grid)
+        val thumbW = if (original.width > 512) 512 else original.width
+        val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
+        steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+
+        val src = Mat()
+        org.opencv.android.Utils.bitmapToMat(original, src)
+        val srcBGR = Mat()
+        Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
+
+        val gray = Mat()
+        Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
+        Core.bitwise_not(gray, gray)   // white tics become dark
+
+        val edges = Mat()
+        Imgproc.Canny(gray, edges, 12.0, 68.0)
+
+        val lines = Mat()
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 20, 15.0, 4.0)
+
+        val linesMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
+        for (i in 0 until lines.rows()) {
+            val line = lines.get(i, 0)
+            val x1 = line[0].toInt()
+            val y1 = line[1].toInt()
+            val x2 = line[2].toInt()
+            val y2 = line[3].toInt()
+            val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
+            if (length < 260) {
+                Imgproc.line(linesMask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 18)
+            }
+        }
+
+        // Step 1: extracted radial lines
+        val linesBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(linesMask, linesBmp)
+        steps.add(linesBmp)
+
+        // Step 2: inverted radial lines
+        Core.bitwise_not(linesMask, linesMask)
+        val invertedBmp = Bitmap.createBitmap(linesMask.cols(), linesMask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(linesMask, invertedBmp)
+        steps.add(invertedBmp)
+
+        // Step 3: merge back (inpaint) to erase lines
+        val cleaned = Mat()
+        Photo.inpaint(srcBGR, linesMask, cleaned, 14.0, Photo.INPAINT_TELEA)
+
+        val finalBmp = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(cleaned, finalBmp)
+        steps.add(finalBmp)
+
+        // Cleanup
+        src.release()
+        srcBGR.release()
+        gray.release()
+        edges.release()
+        lines.release()
+        linesMask.release()
+        cleaned.release()
+
+        Log.i("ImageAlignment", "✅ Finished createRadialLineRemovalSteps — 4 step images created")
+        steps
+    }
+
+    /**
+     * Production cleaning — locked to the best sweet spot from your screenshots
      */
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting fast single-pass cleaning on full-size image")
@@ -158,7 +230,6 @@ object ImageAlignmentUtils {
             }
         }
 
-        // Dilation to fully cover the white tic arc
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
         Imgproc.dilate(mask, mask, kernel)
 
