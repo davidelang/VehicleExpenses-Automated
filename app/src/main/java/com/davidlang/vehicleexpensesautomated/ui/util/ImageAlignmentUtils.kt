@@ -199,10 +199,9 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * NEW ARC-MASK REMOVAL METHOD — much more robust detection of the large gauge circle
-     * Uses lenient HoughCircles + strong fallback to image center + estimated radius
-     * Blacks out the entire tic ring (inner/outer radius) exactly as you requested.
-     * Returns the 4 steps you asked for.
+     * NEW ARC-MASK REMOVAL METHOD — robust fallback for large tic ring
+     * Uses lenient HoughCircles + strong fallback to image center + wide radius range
+     * Blacks out the entire tic arc (inner/outer radius) exactly as you requested.
      */
     suspend fun createArcMaskRemovalSteps(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
@@ -221,29 +220,27 @@ object ImageAlignmentUtils {
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
 
-        // Detect gauge circle with very lenient parameters
+        // Detect gauge circle with very lenient parameters for large circles
         val circles = Mat()
-        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.2, 100.0, 80.0, 25.0, 60, 400)
+        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.2, 150.0, 70.0, 25.0, 100, 400)
 
         var centerX = src.cols() / 2.0
         var centerY = src.rows() / 2.0
-        var gaugeRadius = 0.0
+        var gaugeRadius = Math.min(src.cols(), src.rows()) * 0.42   // strong fallback
 
         if (circles.cols() > 0) {
-            // Take the largest circle (most likely the gauge)
+            // Take the largest detected circle
             val largest = circles.get(0, 0)
             centerX = largest[0]
             centerY = largest[1]
             gaugeRadius = largest[2]
             Log.i("ImageAlignment", "Detected gauge circle at ($centerX, $centerY) radius $gaugeRadius")
         } else {
-            // Strong fallback: use image center and estimate radius (typical for these dashboards)
-            gaugeRadius = Math.min(src.cols(), src.rows()) * 0.42
-            Log.i("ImageAlignment", "No circle detected — using fallback center + radius $gaugeRadius")
+            Log.i("ImageAlignment", "No circle detected — using strong fallback center + radius $gaugeRadius")
         }
 
-        // Tic arc is outside the numbers — wide ring that covers all tics
-        val innerRadius = gaugeRadius * 0.58
+        // Wide tic ring that covers all tics on both dashboards you showed
+        val innerRadius = gaugeRadius * 0.55
         val outerRadius = gaugeRadius * 0.92
 
         val arcMask = Mat.zeros(gray.size(), CvType.CV_8UC1)
