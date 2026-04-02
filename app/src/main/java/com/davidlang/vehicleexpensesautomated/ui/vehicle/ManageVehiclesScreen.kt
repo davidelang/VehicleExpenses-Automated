@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -89,8 +90,8 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    // NEW: diagnostic grid (original + 7 aggressive variants)
-    var diagnosticVariants by remember { mutableStateOf<List<Bitmap?>>(emptyList()) }
+    // diagnostic grid (original + 7 aggressive variants)
+    var diagnosticVariants by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
 
     Log.d("CropDebug", "ManageVehiclesScreen recomposed — isEditingOcrArea=$isEditingOcrArea, odometerCropRect=$odometerCropRect, imageSize=$imageSize")
 
@@ -128,7 +129,7 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // When a new picked photo arrives, generate the 8-variant diagnostic grid
+    // generate diagnostic grid when a new photo is picked
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             scope.launch {
@@ -249,7 +250,7 @@ fun ManageVehiclesScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // === 2×4 DIAGNOSTIC GRID (original + 7 aggressive variants) ===
+            // === 2×4 DIAGNOSTIC GRID ===
             if (diagnosticVariants.isNotEmpty()) {
                 Text("Tic-Removal Diagnostic Grid (pick the best one)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
