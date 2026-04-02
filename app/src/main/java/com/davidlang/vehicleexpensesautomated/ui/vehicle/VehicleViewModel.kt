@@ -9,11 +9,14 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -52,6 +55,7 @@ class VehicleViewModel @Inject constructor(
                 Log.e("VehicleReferenceCleaning", "Cleaning failed, falling back to original photo", e)
                 cleanedUrl = referenceDashPhotoUrl
             }
+
             val newVehicle = Vehicle(
                 name = name,
                 make = make,
@@ -65,8 +69,15 @@ class VehicleViewModel @Inject constructor(
                 odometerCropRight = odometerCropRect?.right,
                 odometerCropBottom = odometerCropRect?.bottom
             )
-            repository.insert(newVehicle)
-            Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted (cleaned=$cleanedUrl)")
+
+            try {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    repository.insert(newVehicle)
+                }
+                Log.i("VehicleReferenceCleaning", "✅ Vehicle inserted successfully")
+            } catch (e: Exception) {
+                Log.e("VehicleReferenceCleaning", "Insert failed", e)
+            }
         }
     }
 
@@ -80,12 +91,20 @@ class VehicleViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("VehicleReferenceCleaning", "Cleaning failed, keeping original", e)
             }
+
             val updated = vehicle.copy(
                 referenceDashPhotoUrl = null,
                 cleanedReferenceDashPhotoUrl = cleanedUrl
             )
-            repository.updateVehicle(updated)
-            Log.i("VehicleReferenceCleaning", "✅ Vehicle updated (cleaned=$cleanedUrl)")
+
+            try {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    repository.updateVehicle(updated)
+                }
+                Log.i("VehicleReferenceCleaning", "✅ Vehicle updated successfully")
+            } catch (e: Exception) {
+                Log.e("VehicleReferenceCleaning", "Update failed", e)
+            }
         }
     }
 
