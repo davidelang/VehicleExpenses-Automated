@@ -28,11 +28,11 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Experiment 1: Full cleaned dash image (6 images: original + 5 variants)
+     * Experiment 1: Full cleaned dash image (6 images) — more aggressive
      */
     suspend fun createExperiment1Cleaned(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp1", "Creating full cleaned images (6 variants)")
+        Log.i("Exp1", "Creating full cleaned images (6 aggressive variants)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -43,11 +43,11 @@ object ImageAlignmentUtils {
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
         val paramSets = listOf(
-            Triple(12.0, 68.0, 16),
-            Triple(10.0, 60.0, 14),
-            Triple(14.0, 72.0, 18),
-            Triple(8.0, 55.0, 12),
-            Triple(15.0, 75.0, 20)
+            Triple(5.0, 45.0, 20),   // very aggressive
+            Triple(8.0, 50.0, 18),
+            Triple(10.0, 55.0, 16),
+            Triple(12.0, 60.0, 14),
+            Triple(14.0, 65.0, 12)
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -59,7 +59,7 @@ object ImageAlignmentUtils {
                 val edges = Mat()
                 Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
                 val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 20, 15.0, 4.0)
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, 12.0, 3.0)
                 val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
                 for (i in 0 until lines.rows()) {
                     val line = lines.get(i, 0)
@@ -95,16 +95,16 @@ object ImageAlignmentUtils {
         }
         src.release()
         srcBGR.release()
-        Log.i("Exp1", "✅ 6 full cleaned images created")
+        Log.i("Exp1", "✅ 6 aggressive cleaned images created")
         variants
     }
 
     /**
-     * Experiment 2: Radial line masks (6 images)
+     * Experiment 2: Radial line masks (6 images) — lower thresholds
      */
     suspend fun createExperiment2RadialVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp2", "Starting radial line sweep (6 images)")
+        Log.i("Exp2", "Starting radial line sweep (6 images — lower thresholds)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -115,11 +115,11 @@ object ImageAlignmentUtils {
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
         val paramSets = listOf(
-            Triple(8.0, 55.0, 12),
-            Triple(5.0, 45.0, 10),
-            Triple(12.0, 65.0, 15),
-            Triple(6.0, 50.0, 8),
-            Triple(10.0, 60.0, 20)
+            Triple(4.0, 40.0, 8),
+            Triple(6.0, 45.0, 10),
+            Triple(8.0, 50.0, 12),
+            Triple(10.0, 55.0, 14),
+            Triple(12.0, 60.0, 15)
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -136,7 +136,7 @@ object ImageAlignmentUtils {
                 val edges = Mat()
                 Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
                 val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, houghThresh, 18.0, 3.0)
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, houghThresh, 12.0, 3.0)
 
                 val centerX = src.cols() / 2.0
                 val centerY = src.rows() / 2.0
@@ -148,7 +148,7 @@ object ImageAlignmentUtils {
                     val x2 = line[2]
                     val y2 = line[3]
                     val length = Math.hypot(x2 - x1, y2 - y1)
-                    if (length < 18) continue
+                    if (length < 12) continue
                     val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
                     if (distToCenter < 40) {
                         Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 12)
@@ -177,16 +177,16 @@ object ImageAlignmentUtils {
         }
         src.release()
         srcBGR.release()
-        Log.i("Exp2", "✅ 6 radial masks created")
+        Log.i("Exp2", "✅ 6 radial masks created (more sensitive)")
         variants
     }
 
     /**
-     * Experiment 3: Polar Tic Removal — pure mask only (6 images)
+     * Experiment 3: Polar Tic Removal — pure mask only (6 images, wider range)
      */
     suspend fun createExperiment3PolarVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp3", "Starting polar tic mask sweep (6 images)")
+        Log.i("Exp3", "Starting polar tic mask sweep (6 images — wider blur range)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -200,7 +200,7 @@ object ImageAlignmentUtils {
         val center = Point(src.cols() / 2.0, src.rows() / 2.0)
         val maxRadius = Math.max(src.cols(), src.rows()) / 2.0
 
-        val blurSizes = listOf(15f, 25f, 35f, 45f, 55f)
+        val blurSizes = listOf(10f, 20f, 30f, 40f, 50f, 60f)
 
         for ((index, blurSize) in blurSizes.withIndex()) {
             try {
@@ -210,7 +210,7 @@ object ImageAlignmentUtils {
                 Imgproc.GaussianBlur(polar, blurredPolar, Size(blurSize.toDouble(), 1.0), 0.0)
                 val ticMask = Mat()
                 Core.absdiff(polar, blurredPolar, ticMask)
-                Imgproc.threshold(ticMask, ticMask, 30.0, 255.0, Imgproc.THRESH_BINARY)
+                Imgproc.threshold(ticMask, ticMask, 20.0, 255.0, Imgproc.THRESH_BINARY)  // lower threshold
 
                 val resultBmp = Bitmap.createBitmap(ticMask.cols(), ticMask.rows(), Bitmap.Config.ARGB_8888)
                 org.opencv.android.Utils.matToBitmap(ticMask, resultBmp)
@@ -230,7 +230,7 @@ object ImageAlignmentUtils {
         src.release()
         srcBGR.release()
         gray.release()
-        Log.i("Exp3", "✅ 6 pure polar tic masks created")
+        Log.i("Exp3", "✅ 6 pure polar tic masks created (wider range)")
         variants
     }
 
@@ -239,7 +239,7 @@ object ImageAlignmentUtils {
      */
     suspend fun createExperiment4TextOnly(original: Bitmap, textBlocks: List<TextBlock>): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp4", "Creating text-only + masked-original (6 images)")
+        Log.i("Exp4", "Creating text-only + masked-original (logical AND)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -260,6 +260,7 @@ object ImageAlignmentUtils {
         } else textMask
         variants.add(displayTextMask)
 
+        // Logical AND masked-original
         val maskedOriginal = original.copy(Bitmap.Config.ARGB_8888, true)
         val maskedCanvas = android.graphics.Canvas(maskedOriginal)
         maskedCanvas.drawBitmap(original, 0f, 0f, null)
@@ -273,16 +274,16 @@ object ImageAlignmentUtils {
 
         textMask.recycle()
         maskedOriginal.recycle()
-        Log.i("Exp4", "✅ Text-only + masked-original created")
+        Log.i("Exp4", "✅ Text-only + masked-original (logical AND) created")
         variants
     }
 
     /**
-     * Experiment 5: Straight line segment masks (6 images)
+     * Experiment 5: Straight line segment masks (6 images) — lower minLength
      */
     suspend fun createExperiment5LineSegments(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp5", "Starting line segment sweep (6 images)")
+        Log.i("Exp5", "Starting line segment sweep (6 images — shorter tics)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -297,7 +298,7 @@ object ImageAlignmentUtils {
         val edges = Mat()
         Imgproc.Canny(gray, edges, 8.0, 55.0)
 
-        val minLengths = listOf(10, 15, 20, 25, 30)
+        val minLengths = listOf(5, 8, 12, 15, 20)
 
         for ((index, minLen) in minLengths.withIndex()) {
             try {
@@ -333,7 +334,7 @@ object ImageAlignmentUtils {
         srcBGR.release()
         gray.release()
         edges.release()
-        Log.i("Exp5", "✅ 6 line segment masks created")
+        Log.i("Exp5", "✅ 6 line segment masks created (shorter tics)")
         variants
     }
 
