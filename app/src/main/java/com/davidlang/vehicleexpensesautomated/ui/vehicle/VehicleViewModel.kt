@@ -139,23 +139,16 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        val exp1Steps = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
-                        _exp1Cleaned.value = exp1Steps
-
-                        val exp2Steps = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
-                        _exp2Radial.value = exp2Steps
-
-                        val exp3Steps = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
-                        _exp3Polar.value = exp3Steps
+                        _exp1Cleaned.value = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
+                        _exp2Radial.value = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
+                        _exp3Polar.value = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
 
                         val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(url)
-                        val textVariants = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
-                        _exp4TextOnly.value = textVariants
+                        _exp4TextOnly.value = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
 
-                        val exp5Steps = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
-                        _exp5LineSegments.value = exp5Steps
+                        _exp5LineSegments.value = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
 
-                        Log.i("CropDebug", "All 5 experiment grids loaded with red circle + explicit line overlays")
+                        Log.i("CropDebug", "All 5 experiment grids loaded with red center + explicit line overlays")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }
