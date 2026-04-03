@@ -127,33 +127,8 @@ class VehicleViewModel @Inject constructor(
         return createAndSaveCleanedReference(originalUrl)
     }
 
-    fun loadDiagnosticGrid(url: String) {
-        viewModelScope.launch {
-            Log.i("CropDebug", "loadDiagnosticGrid called for: $url")
-            try {
-                val file = File(url)
-                if (file.exists()) {
-                    val bmp = BitmapFactory.decodeFile(file.absolutePath)
-                    if (bmp != null) {
-                        // Experiments 1, 2, 3 and 5 calls removed — they are no longer run
-                        // (functions themselves are untouched, per first-pass request)
-
-                        val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(url)
-                        _exp4TextOnly.value = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
-
-                        Log.i("CropDebug", "Only Experiment 4 (text-only mask) is now executed")
-                    } else {
-                        Log.e("CropDebug", "Failed to decode bitmap from $url")
-                    }
-                } else {
-                    Log.e("CropDebug", "File does not exist: $url")
-                }
-            } catch (e: Exception) {
-                Log.e("CropDebug", "loadDiagnosticGrid FAILED", e)
-                e.printStackTrace()
-            }
-        }
-    }
+    // loadDiagnosticGrid removed entirely (per request)
+    // (this was the only place that called experiments 1-3 and 5)
 
     private suspend fun createAndSaveCleanedReference(originalUrl: String): String? {
         val originalFile = File(originalUrl)
