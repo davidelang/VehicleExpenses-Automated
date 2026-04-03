@@ -139,9 +139,9 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        // Exp 1 - full cleaned (1 image)
+                        // Exp 1 - full cleaned (6 images)
                         val cleaned = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
-                        _exp1Cleaned.value = listOfNotNull(cleaned)
+                        _exp1Cleaned.value = cleaned
 
                         // Exp 2 - radial masks (6 images)
                         val radial = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
