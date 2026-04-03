@@ -153,7 +153,6 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
     }
 }
 
-/** The rest of runFullExperiment, manualCropOdometer, drawCropBoxesOnReference, etc. remain unchanged */
 private suspend fun runFullExperiment(
     vehicles: List<Vehicle>,
     experimentDir: File,
@@ -161,7 +160,6 @@ private suspend fun runFullExperiment(
     context: android.content.Context,
     onProgress: (Float, String) -> Unit
 ): ExperimentResult {
-    // ... (unchanged from live GitHub version) ...
     val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") && !it.name.contains("pump", true) && !it.name.contains("receipt", true) } ?: emptyList()
     val total = photos.size
     if (total == 0) return ExperimentResult("No photos found", "<h1>No photos</h1>")
