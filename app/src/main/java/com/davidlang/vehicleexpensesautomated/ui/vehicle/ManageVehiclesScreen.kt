@@ -64,7 +64,7 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
 
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
-    var referencePhotoUrl by remember { mutableStateOf<String?>(null) } // cleaned only
+    var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
 
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var landmarkCropRect by remember { mutableStateOf<Rect?>(null) }
@@ -174,7 +174,6 @@ fun ManageVehiclesScreen(
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-
         // Vehicle selector dropdown
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
@@ -217,9 +216,7 @@ fun ManageVehiclesScreen(
                 )
             }
         }
-
         Spacer(modifier = Modifier.height(16.dp))
-
         if (isNewVehicle || editingVehicle != null) {
             PhotoPicker(
                 photoStorageManager = settingsViewModel.photoStorageManager,
@@ -227,30 +224,8 @@ fun ManageVehiclesScreen(
                 currentPhotoUrl = pickedPhotoUrl,
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // SINGLE cleaned preview only (text-only mask)
-            if (referencePhotoUrl != null) {
-                Text(
-                    text = "CLEANED (text-only mask)",
-                    color = Color(0xFF4CAF50),
-                    style = MaterialTheme.typography.labelSmall,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Box(modifier = Modifier.height(220.dp)) {
-                    Image(
-                        painter = rememberAsyncImagePainter(referencePhotoUrl),
-                        contentDescription = "Cleaned reference",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
-                }
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            // Crop editing tools on the cleaned preview
+            // ONLY the interactive crop editor remains (removed the old top debug image)
             if (referencePhotoUrl != null) {
                 BoxWithConstraints(
                     modifier = Modifier
