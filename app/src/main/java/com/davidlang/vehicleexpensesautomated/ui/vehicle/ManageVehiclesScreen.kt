@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -8,9 +9,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -20,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -37,25 +34,11 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.OcrDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import kotlinx.coroutines.launch
 import java.io.File
-
-private fun calculateFitImageRect(
-    containerWidth: Float,
-    containerHeight: Float,
-    imageWidth: Float,
-    imageHeight: Float
-): Rect {
-    if (imageWidth <= 0f || imageHeight <= 0f) return Rect(0f, 0f, containerWidth, containerHeight)
-    val scale = minOf(containerWidth / imageWidth, containerHeight / imageHeight)
-    val scaledWidth = imageWidth * scale
-    val scaledHeight = imageHeight * scale
-    val left = (containerWidth - scaledWidth) / 2f
-    val top = (containerHeight - scaledHeight) / 2f
-    return Rect(left, top, left + scaledWidth, top + scaledHeight)
-}
 
 @Composable
 fun ManageVehiclesScreen(
@@ -67,11 +50,6 @@ fun ManageVehiclesScreen(
     val scope = rememberCoroutineScope()
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
-    val exp1Cleaned by vehicleViewModel.exp1Cleaned.collectAsState()
-    val exp2Radial by vehicleViewModel.exp2Radial.collectAsState()
-    val exp3Polar by vehicleViewModel.exp3Polar.collectAsState()
-    val exp4TextOnly by vehicleViewModel.exp4TextOnly.collectAsState()
-    val exp5LineSegments by vehicleViewModel.exp5LineSegments.collectAsState()
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
@@ -86,7 +64,7 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
 
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
-    var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
+    var referencePhotoUrl by remember { mutableStateOf<String?>(null) } // cleaned only
 
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var landmarkCropRect by remember { mutableStateOf<Rect?>(null) }
@@ -103,8 +81,6 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
-
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -132,18 +108,28 @@ fun ManageVehiclesScreen(
                 landmarkCropRect = it.landmarkCropLeft?.let { left ->
                     Rect(left, it.landmarkCropTop ?: 0f, it.landmarkCropRight ?: 1f, it.landmarkCropBottom ?: 1f)
                 }
-                isEditingOcrArea = false
-                isEditingLandmark = false
-                currentDragRect = null
             }
         }
     }
 
+    // Immediate cleaning after photo pick — show ONLY the cleaned version
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
-            Log.i("CropDebug", "pickedPhotoUrl changed → loading 5 experiment grids for $url")
-            vehicleViewModel.loadDiagnosticGrid(url)
-            referencePhotoUrl = url
+            try {
+                val bmp = BitmapFactory.decodeFile(url) ?: return@let
+                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                if (cleanedBmp != null) {
+                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
+                    val out = java.io.FileOutputStream(tempFile)
+                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    out.close()
+                    referencePhotoUrl = tempFile.absolutePath
+                    cleanedBmp.recycle()
+                    Log.i("ManageVehicles", "Immediate cleaned preview ready")
+                }
+            } catch (e: Exception) {
+                Log.e("ManageVehicles", "Immediate cleaning failed", e)
+            }
         }
     }
 
@@ -188,28 +174,8 @@ fun ManageVehiclesScreen(
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = {
-                selectedVehicleId = null
-                editingVehicle = null
-                isNewVehicle = true
-                name = ""
-                make = ""
-                model = ""
-                year = ""
-                licensePlate = ""
-                odometerReading = ""
-                pickedPhotoUrl = null
-                referencePhotoUrl = null
-                odometerCropRect = null
-                landmarkCropRect = null
-                currentDragRect = null
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Add New Vehicle")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
+
+        // Vehicle selector dropdown
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
@@ -230,9 +196,30 @@ fun ManageVehiclesScreen(
                         }
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text("Add New Vehicle") },
+                    onClick = {
+                        selectedVehicleId = null
+                        editingVehicle = null
+                        isNewVehicle = true
+                        name = ""
+                        make = ""
+                        model = ""
+                        year = ""
+                        licensePlate = ""
+                        odometerReading = ""
+                        pickedPhotoUrl = null
+                        referencePhotoUrl = null
+                        odometerCropRect = null
+                        landmarkCropRect = null
+                        dropdownExpanded = false
+                    }
+                )
             }
         }
+
         Spacer(modifier = Modifier.height(16.dp))
+
         if (isNewVehicle || editingVehicle != null) {
             PhotoPicker(
                 photoStorageManager = settingsViewModel.photoStorageManager,
@@ -241,126 +228,29 @@ fun ManageVehiclesScreen(
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
             Spacer(modifier = Modifier.height(8.dp))
-            if (pickedPhotoUrl != null || referencePhotoUrl != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (pickedPhotoUrl != null) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Original Picked", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Box(modifier = Modifier.height(220.dp)) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(pickedPhotoUrl),
-                                    contentDescription = "Original",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                        }
-                    }
-                    if (referencePhotoUrl != null) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("CLEANED (ticks removed)", style = MaterialTheme.typography.labelSmall, color = Color(0xFF4CAF50))
-                            Box(modifier = Modifier.height(220.dp)) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(referencePhotoUrl),
-                                    contentDescription = "Cleaned",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                        }
-                    }
+
+            // SINGLE cleaned preview only (text-only mask)
+            if (referencePhotoUrl != null) {
+                Text(
+                    text = "CLEANED (text-only mask)",
+                    color = Color(0xFF4CAF50),
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Box(modifier = Modifier.height(220.dp)) {
+                    Image(
+                        painter = rememberAsyncImagePainter(referencePhotoUrl),
+                        contentDescription = "Cleaned reference",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
                 }
             }
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Experiment 1 - step-by-step pipeline (taller grid)
-            if (exp1Cleaned.isNotEmpty()) {
-                Text("Experiment 1 — Step-by-step Preprocessing Pipeline", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxWidth().height(1400.dp), // tall for steps
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(exp1Cleaned) { bmp ->
-                        Image(bitmap = bmp.asImageBitmap(), contentDescription = "Exp1 Step", modifier = Modifier.fillMaxWidth().height(195.dp), contentScale = ContentScale.Fit)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Experiment 2 - step-by-step pipeline
-            if (exp2Radial.isNotEmpty()) {
-                Text("Experiment 2 — Step-by-step Radial Lines Pipeline", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxWidth().height(1100.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(exp2Radial) { bmp ->
-                        Image(bitmap = bmp.asImageBitmap(), contentDescription = "Exp2 Step", modifier = Modifier.fillMaxWidth().height(195.dp), contentScale = ContentScale.Fit)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Experiment 3 - step-by-step pipeline
-            if (exp3Polar.isNotEmpty()) {
-                Text("Experiment 3 — Step-by-step Polar Tic Removal Pipeline", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxWidth().height(1100.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(exp3Polar) { bmp ->
-                        Image(bitmap = bmp.asImageBitmap(), contentDescription = "Exp3 Step", modifier = Modifier.fillMaxWidth().height(195.dp), contentScale = ContentScale.Fit)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Experiment 4 - unchanged
-            if (exp4TextOnly.isNotEmpty()) {
-                Text("Experiment 4 — Text-Only Mask", style = MaterialTheme.typography.titleSmall, color = Color(0xFFFF9800))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxWidth().height(950.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(exp4TextOnly) { bmp ->
-                        Image(bitmap = bmp.asImageBitmap(), contentDescription = "Exp4", modifier = Modifier.fillMaxWidth().height(195.dp), contentScale = ContentScale.Fit)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Experiment 5 - step-by-step pipeline
-            if (exp5LineSegments.isNotEmpty()) {
-                Text("Experiment 5 — Step-by-step Straight Line Pipeline", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxWidth().height(1100.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(exp5LineSegments) { bmp ->
-                        Image(bitmap = bmp.asImageBitmap(), contentDescription = "Exp5 Step", modifier = Modifier.fillMaxWidth().height(195.dp), contentScale = ContentScale.Fit)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
+            // Crop editing tools on the cleaned preview
             if (referencePhotoUrl != null) {
                 BoxWithConstraints(
                     modifier = Modifier
@@ -573,4 +463,19 @@ fun ManageVehiclesScreen(
             confirmButton = { Button(onClick = { showOdometerConfirmation = false }) { Text("Cancel") } }
         )
     }
+}
+
+private fun calculateFitImageRect(
+    containerWidth: Float,
+    containerHeight: Float,
+    imageWidth: Float,
+    imageHeight: Float
+): Rect {
+    if (imageWidth <= 0f || imageHeight <= 0f) return Rect(0f, 0f, containerWidth, containerHeight)
+    val scale = minOf(containerWidth / imageWidth, containerHeight / imageHeight)
+    val scaledWidth = imageWidth * scale
+    val scaledHeight = imageHeight * scale
+    val left = (containerWidth - scaledWidth) / 2f
+    val top = (containerHeight - scaledHeight) / 2f
+    return Rect(left, top, left + scaledWidth, top + scaledHeight)
 }
