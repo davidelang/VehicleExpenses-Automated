@@ -153,7 +153,6 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
     }
 }
 
-/** Updated to use ensureCleanedReference for both alignment and report thumbnail */
 private suspend fun runFullExperiment(
     vehicles: List<Vehicle>,
     experimentDir: File,
@@ -164,14 +163,11 @@ private suspend fun runFullExperiment(
     val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") && !it.name.contains("pump", true) && !it.name.contains("receipt", true) } ?: emptyList()
     val total = photos.size
     if (total == 0) return ExperimentResult("No photos found", "<h1>No photos</h1>")
-
     val results = mutableListOf<PhotoResult>()
     var success = 0
-
     photos.forEachIndexed { index, file ->
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
-
         var bestScore = 0f
         var bestVehicleName = "No match"
         var alignedBitmap: Bitmap? = null
@@ -179,14 +175,12 @@ private suspend fun runFullExperiment(
         var extractedOdometer: String? = null
         var inliersCount = 0
         var alignmentMessage = ""
-
         vehicles.forEach { vehicle ->
             val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
             val refFile = File(refUrl)
             if (!refFile.exists()) return@forEach
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
-
             val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
             if (alignment.success && alignment.confidence > bestScore) {
                 bestScore = alignment.confidence
@@ -197,7 +191,6 @@ private suspend fun runFullExperiment(
                 inliersCount = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
             }
         }
-
         if (alignedBitmap != null) {
             val matchedVehicle = vehicles.find { it.name == bestVehicleName }
             if (matchedVehicle != null && bestVehicleName != "No match") {
@@ -207,15 +200,12 @@ private suspend fun runFullExperiment(
             val out = java.io.FileOutputStream(tempAlignedFile)
             alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
             out.close()
-
             val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
             extractedOdometer = ocrResult.odometer
             if (odometerCropBitmap == null) odometerCropBitmap = ocrResult.croppedBitmap
             tempAlignedFile.delete()
             if (ocrResult.odometer != null) success++
         }
-
-        // Report thumbnail now guaranteed clean
         val referenceWithCrop = if (bestVehicleName != "No match") {
             vehicles.find { it.name == bestVehicleName }?.let { v ->
                 val refUrl = viewModel.ensureCleanedReference(v) ?: v.referenceDashPhotoUrl
@@ -228,7 +218,6 @@ private suspend fun runFullExperiment(
                 } else null
             }
         } else null
-
         results.add(PhotoResult(
             photoName = file.name,
             vehicle = bestVehicleName,
@@ -242,7 +231,6 @@ private suspend fun runFullExperiment(
             odometer = extractedOdometer
         ))
     }
-
     onProgress(1f, "Generating visual report...")
     val html = buildRichHtmlReport(results, total)
     val summary = "Processed $total photos — $success successful alignments"
@@ -272,7 +260,6 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
     val canvas = Canvas(bitmap)
     val paint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.RED }
     val landmarkPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.GREEN }
-
     vehicle.odometerCropLeft?.let { left ->
         val l = left * bitmap.width
         val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height
