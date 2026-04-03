@@ -112,26 +112,8 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Immediate cleaning after photo pick — show ONLY the cleaned version
-    LaunchedEffect(pickedPhotoUrl) {
-        pickedPhotoUrl?.let { url ->
-            try {
-                val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
-                if (cleanedBmp != null) {
-                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
-                    val out = java.io.FileOutputStream(tempFile)
-                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    out.close()
-                    referencePhotoUrl = tempFile.absolutePath
-                    cleanedBmp.recycle()
-                    Log.i("ManageVehicles", "Immediate cleaned preview ready")
-                }
-            } catch (e: Exception) {
-                Log.e("ManageVehicles", "Immediate cleaning failed", e)
-            }
-        }
-    }
+    // Immediate cleaning preview removed (per request — no auto-preview after pick)
+    // User stated there should not be a flow that shows the preview right after picking a photo
 
     val tryOcr: () -> Unit = {
         referencePhotoUrl?.let { photoPathOrUri ->
@@ -225,7 +207,7 @@ fun ManageVehiclesScreen(
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
             Spacer(modifier = Modifier.height(16.dp))
-            // ONLY the interactive crop editor remains (removed the old top debug image)
+            // Interactive crop editor only (no auto-preview)
             if (referencePhotoUrl != null) {
                 BoxWithConstraints(
                     modifier = Modifier
