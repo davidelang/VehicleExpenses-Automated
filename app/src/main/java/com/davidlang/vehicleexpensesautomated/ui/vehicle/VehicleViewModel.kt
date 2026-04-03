@@ -148,7 +148,7 @@ class VehicleViewModel @Inject constructor(
 
                         _exp5LineSegments.value = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
 
-                        Log.i("CropDebug", "All 5 experiment grids loaded with red center + explicit line overlays")
+                        Log.i("CropDebug", "All 5 experiment grids loaded")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }
