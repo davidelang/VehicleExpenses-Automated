@@ -43,11 +43,11 @@ object ImageAlignmentUtils {
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
         val paramSets = listOf(
-            Triple(5.0, 45.0, 20),   // very aggressive
-            Triple(8.0, 50.0, 18),
-            Triple(10.0, 55.0, 16),
-            Triple(12.0, 60.0, 14),
-            Triple(14.0, 65.0, 12)
+            Triple(4.0, 35.0, 25),   // extremely aggressive
+            Triple(6.0, 40.0, 22),
+            Triple(8.0, 45.0, 20),
+            Triple(10.0, 50.0, 18),
+            Triple(12.0, 55.0, 16)
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -59,7 +59,7 @@ object ImageAlignmentUtils {
                 val edges = Mat()
                 Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
                 val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, 12.0, 3.0)
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, 12.0, 2.0)
                 val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
                 for (i in 0 until lines.rows()) {
                     val line = lines.get(i, 0)
@@ -72,8 +72,9 @@ object ImageAlignmentUtils {
                         Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness)
                     }
                 }
-                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
                 Imgproc.dilate(mask, mask, kernel)
+                Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
                 val cleaned = Mat()
                 Photo.inpaint(srcBGR, mask, cleaned, 14.0, Photo.INPAINT_TELEA)
                 val resultBmp = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
@@ -100,11 +101,11 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Experiment 2: Radial line masks (6 images) — lower thresholds
+     * Experiment 2: Radial line masks (6 images) — lower thresholds + thicker lines
      */
     suspend fun createExperiment2RadialVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp2", "Starting radial line sweep (6 images — lower thresholds)")
+        Log.i("Exp2", "Starting radial line sweep (6 images — lower thresholds + thick lines)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -115,11 +116,11 @@ object ImageAlignmentUtils {
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
         val paramSets = listOf(
-            Triple(4.0, 40.0, 8),
-            Triple(6.0, 45.0, 10),
-            Triple(8.0, 50.0, 12),
-            Triple(10.0, 55.0, 14),
-            Triple(12.0, 60.0, 15)
+            Triple(3.0, 30.0, 8),
+            Triple(5.0, 35.0, 10),
+            Triple(7.0, 40.0, 12),
+            Triple(9.0, 45.0, 14),
+            Triple(11.0, 50.0, 16)
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -136,7 +137,7 @@ object ImageAlignmentUtils {
                 val edges = Mat()
                 Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
                 val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, houghThresh, 12.0, 3.0)
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, houghThresh, 12.0, 2.0)
 
                 val centerX = src.cols() / 2.0
                 val centerY = src.rows() / 2.0
@@ -151,11 +152,12 @@ object ImageAlignmentUtils {
                     if (length < 12) continue
                     val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
                     if (distToCenter < 40) {
-                        Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 12)
+                        Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 20)  // thick solid lines
                     }
                 }
-                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
-                Imgproc.erode(mask, mask, kernel)
+                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+                Imgproc.dilate(mask, mask, kernel)
+                Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
 
                 val resultBmp = Bitmap.createBitmap(mask.cols(), mask.rows(), Bitmap.Config.ARGB_8888)
                 org.opencv.android.Utils.matToBitmap(mask, resultBmp)
@@ -177,16 +179,16 @@ object ImageAlignmentUtils {
         }
         src.release()
         srcBGR.release()
-        Log.i("Exp2", "✅ 6 radial masks created (more sensitive)")
+        Log.i("Exp2", "✅ 6 radial masks created (thick solid lines)")
         variants
     }
 
     /**
-     * Experiment 3: Polar Tic Removal — pure mask only (6 images, wider range)
+     * Experiment 3: Polar Tic Removal — pure mask only (6 images — wider + lower threshold)
      */
     suspend fun createExperiment3PolarVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp3", "Starting polar tic mask sweep (6 images — wider blur range)")
+        Log.i("Exp3", "Starting polar tic mask sweep (6 images — wider blur + lower threshold)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -200,7 +202,7 @@ object ImageAlignmentUtils {
         val center = Point(src.cols() / 2.0, src.rows() / 2.0)
         val maxRadius = Math.max(src.cols(), src.rows()) / 2.0
 
-        val blurSizes = listOf(10f, 20f, 30f, 40f, 50f, 60f)
+        val blurSizes = listOf(8f, 15f, 25f, 35f, 45f, 55f)
 
         for ((index, blurSize) in blurSizes.withIndex()) {
             try {
@@ -210,7 +212,7 @@ object ImageAlignmentUtils {
                 Imgproc.GaussianBlur(polar, blurredPolar, Size(blurSize.toDouble(), 1.0), 0.0)
                 val ticMask = Mat()
                 Core.absdiff(polar, blurredPolar, ticMask)
-                Imgproc.threshold(ticMask, ticMask, 20.0, 255.0, Imgproc.THRESH_BINARY)  // lower threshold
+                Imgproc.threshold(ticMask, ticMask, 15.0, 255.0, Imgproc.THRESH_BINARY)  // lower threshold
 
                 val resultBmp = Bitmap.createBitmap(ticMask.cols(), ticMask.rows(), Bitmap.Config.ARGB_8888)
                 org.opencv.android.Utils.matToBitmap(ticMask, resultBmp)
@@ -230,7 +232,7 @@ object ImageAlignmentUtils {
         src.release()
         srcBGR.release()
         gray.release()
-        Log.i("Exp3", "✅ 6 pure polar tic masks created (wider range)")
+        Log.i("Exp3", "✅ 6 pure polar tic masks created")
         variants
     }
 
@@ -260,7 +262,7 @@ object ImageAlignmentUtils {
         } else textMask
         variants.add(displayTextMask)
 
-        // Logical AND masked-original
+        // Logical AND masked-original (only content inside white text boxes)
         val maskedOriginal = original.copy(Bitmap.Config.ARGB_8888, true)
         val maskedCanvas = android.graphics.Canvas(maskedOriginal)
         maskedCanvas.drawBitmap(original, 0f, 0f, null)
@@ -279,11 +281,11 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Experiment 5: Straight line segment masks (6 images) — lower minLength
+     * Experiment 5: Straight line segment masks (6 images) — lower minLength + thicker
      */
     suspend fun createExperiment5LineSegments(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp5", "Starting line segment sweep (6 images — shorter tics)")
+        Log.i("Exp5", "Starting line segment sweep (6 images — shorter tics + thick lines)")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -296,14 +298,14 @@ object ImageAlignmentUtils {
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
         Core.bitwise_not(gray, gray)
         val edges = Mat()
-        Imgproc.Canny(gray, edges, 8.0, 55.0)
+        Imgproc.Canny(gray, edges, 5.0, 40.0)
 
         val minLengths = listOf(5, 8, 12, 15, 20)
 
         for ((index, minLen) in minLengths.withIndex()) {
             try {
                 val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, minLen.toDouble(), 3.0)
+                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, minLen.toDouble(), 2.0)
                 val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
                 for (i in 0 until lines.rows()) {
                     val line = lines.get(i, 0)
@@ -311,10 +313,11 @@ object ImageAlignmentUtils {
                     val y1 = line[1]
                     val x2 = line[2]
                     val y2 = line[3]
-                    Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 8)
+                    Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 18)  // thick solid lines
                 }
-                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
-                Imgproc.erode(mask, mask, kernel)
+                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+                Imgproc.dilate(mask, mask, kernel)
+                Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
 
                 val resultBmp = Bitmap.createBitmap(mask.cols(), mask.rows(), Bitmap.Config.ARGB_8888)
                 org.opencv.android.Utils.matToBitmap(mask, resultBmp)
@@ -334,7 +337,7 @@ object ImageAlignmentUtils {
         srcBGR.release()
         gray.release()
         edges.release()
-        Log.i("Exp5", "✅ 6 line segment masks created (shorter tics)")
+        Log.i("Exp5", "✅ 6 line segment masks created (thick solid lines)")
         variants
     }
 
