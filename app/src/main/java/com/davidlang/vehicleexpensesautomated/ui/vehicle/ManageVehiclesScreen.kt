@@ -304,7 +304,6 @@ fun ManageVehiclesScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            // === RADIAL PARAMETER SWEEP — 2-wide × 4-high for larger images ===
             if (radialVariants.isNotEmpty()) {
                 Text("Radial Parameter Sweep — 7 Variants (fast testing)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -312,9 +311,9 @@ fun ManageVehiclesScreen(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(1100.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .height(950.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(radialVariants) { bmp ->
                         val index = radialVariants.indexOf(bmp)
@@ -329,7 +328,7 @@ fun ManageVehiclesScreen(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(240.dp),
+                                    .height(195.dp),
                                 contentScale = ContentScale.Fit
                             )
                         }

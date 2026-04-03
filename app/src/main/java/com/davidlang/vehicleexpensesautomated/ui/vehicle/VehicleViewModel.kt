@@ -136,7 +136,7 @@ class VehicleViewModel @Inject constructor(
                         val radialParams = ImageAlignmentUtils.createRadialParameterVariants(bmp)
                         _radialVariants.value = radialParams
 
-                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + 7 radial parameter variants (including polar)")
+                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + 7 radial parameter variants (refined polar)")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }
