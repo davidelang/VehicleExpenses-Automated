@@ -7,7 +7,6 @@ import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.TextRecognitionOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -36,7 +35,7 @@ data class OcrResult(
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
     val openCvProcessedBitmap: Bitmap? = null,
-    val textBlocks: List<TextBlock> = emptyList()   // NEW for text-only experiment
+    val textBlocks: List<TextBlock> = emptyList()   // NEW for Experiment 4
 )
 
 object OdometerOcrUtils {
@@ -157,7 +156,7 @@ object OdometerOcrUtils {
             // Stage 1: Raw cropped
             append(runBothEngines(bitmap, "Raw Cropped"))
 
-            // ML Kit text blocks for experiment 4
+            // ML Kit text blocks for Experiment 4
             try {
                 val image = InputImage.fromBitmap(bitmap, 0)
                 val visionText: Text = suspendCancellableCoroutine { cont ->
@@ -174,7 +173,7 @@ object OdometerOcrUtils {
                 Log.e("OdometerOcr", "ML Kit text blocks failed", e)
             }
 
-            // Stage 2-4 (grayscale, binary, morphology) unchanged
+            // Stage 2: Grayscale
             val grayMat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
             Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
@@ -183,6 +182,7 @@ object OdometerOcrUtils {
             append(runBothEngines(grayBmp, "Grayscale"))
             grayMat.release()
 
+            // Stage 3: Binary threshold
             val threshMat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, threshMat)
             val gray2 = Mat()
@@ -194,6 +194,7 @@ object OdometerOcrUtils {
             gray2.release()
             threshMat.release()
 
+            // Stage 4: Morphology
             val (openCvResult, processedBmp) = runOpenCvPreprocessingStages(bitmap)
             append(openCvResult)
             openCvProcessedBitmap = processedBmp
