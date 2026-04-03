@@ -43,6 +43,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
 import android.widget.Toast
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 
 @Composable
 fun QuickFillupScreen(navController: NavHostController) {
@@ -79,6 +82,10 @@ fun QuickFillupScreen(navController: NavHostController) {
     var dropdownExpanded by remember { mutableStateOf(false) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
 
+    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var isCleaning by remember { mutableStateOf(false) }
+
     LaunchedEffect(selectedVehicleId) {
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
@@ -87,6 +94,30 @@ fun QuickFillupScreen(navController: NavHostController) {
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
                 Log.d("CropDebug", "QuickFillupScreen loaded vehicle crop rect: $odometerCropRect")
+            }
+        }
+    }
+
+    // IMMEDIATE CLEANING (single routine) as soon as photo is selected
+    LaunchedEffect(pickedPhotoUrl) {
+        pickedPhotoUrl?.let { url ->
+            isCleaning = true
+            try {
+                val bmp = BitmapFactory.decodeFile(url) ?: return@let
+                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                if (cleanedBmp != null) {
+                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
+                    val out = java.io.FileOutputStream(tempFile)
+                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    out.close()
+                    cleanedPhotoUrl = tempFile.absolutePath
+                    cleanedBmp.recycle()
+                    Log.i("QuickFill", "Immediate cleaned image ready for OCR/alignment")
+                }
+            } catch (e: Exception) {
+                Log.e("QuickFill", "Immediate cleaning failed", e)
+            } finally {
+                isCleaning = false
             }
         }
     }
@@ -226,7 +257,6 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         }
     }
-
     if (showAlignedDialog && lastOcrDebugResult != null) {
         OcrDebugDialog(
             ocrResult = lastOcrDebugResult!!,
@@ -239,7 +269,6 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         )
     }
-
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
