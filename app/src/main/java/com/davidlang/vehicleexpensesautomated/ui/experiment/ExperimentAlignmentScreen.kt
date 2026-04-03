@@ -203,6 +203,7 @@ private suspend fun runFullExperiment(
         var extractedOdometer: String? = null
         var inliersCount = 0
         var alignmentMessage = ""
+        var debugInfo = ""
         vehicles.forEach { vehicle ->
             val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
@@ -217,6 +218,7 @@ private suspend fun runFullExperiment(
                 alignmentMessage = alignment.message
                 val inliersMatch = Regex("with (\\d+) inliers").find(alignment.message)
                 inliersCount = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                debugInfo = "inliers=${inliersCount} conf=${"%.1f".format(bestScore*100)}% msg=${alignmentMessage}"
             }
         }
         if (alignedBitmap != null) {
@@ -252,6 +254,7 @@ private suspend fun runFullExperiment(
             confidence = bestScore,
             inliersCount = inliersCount,
             alignmentMessage = alignmentMessage,
+            debugInfo = debugInfo,
             originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
             alignedBase64 = bitmapToBase64(alignedBitmap, 120),
             cleanedDashBase64 = bitmapToBase64(cleanedBmp, 120),
@@ -312,6 +315,7 @@ private data class PhotoResult(
     val confidence: Float,
     val inliersCount: Int,
     val alignmentMessage: String,
+    val debugInfo: String,
     val originalThumbBase64: String,
     val alignedBase64: String,
     val cleanedDashBase64: String,
@@ -330,7 +334,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>Original</th><th>Cleaned Dash</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        appendLine("<tr><th>Original</th><th>Cleaned Dash</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Debug Info</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
         results.forEach { r ->
             appendLine("<tr>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
@@ -341,6 +345,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.vehicle}</td>")
             appendLine("<td>${r.inliersCount}</td>")
             appendLine("<td>${r.alignmentMessage}</td>")
+            appendLine("<td>${r.debugInfo}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
             appendLine("</tr>")
