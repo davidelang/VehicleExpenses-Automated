@@ -139,28 +139,28 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        // Exp 1 - full cleaned
+                        // Exp 1 - full cleaned (1 image)
                         val cleaned = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
                         _exp1Cleaned.value = listOfNotNull(cleaned)
 
-                        // Exp 2 - radial masks
+                        // Exp 2 - radial masks (6 images)
                         val radial = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
                         _exp2Radial.value = radial
 
-                        // Exp 3 - polar masks
+                        // Exp 3 - polar masks (6 images)
                         val polar = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
                         _exp3Polar.value = polar
 
-                        // Exp 4 - text-only (requires OCR)
+                        // Exp 4 - text-only + masked-original (6 images)
                         val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(url)
-                        val textOnly = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
-                        _exp4TextOnly.value = listOf(textOnly)
+                        val textVariants = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
+                        _exp4TextOnly.value = textVariants
 
-                        // Exp 5 - line segment masks
+                        // Exp 5 - line segment masks (6 images)
                         val lines = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
                         _exp5LineSegments.value = lines
 
-                        Log.i("CropDebug", "All 5 experiment grids loaded")
+                        Log.i("CropDebug", "All 5 experiment grids loaded (6 images each)")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }

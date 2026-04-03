@@ -28,10 +28,10 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Experiment 1: Full cleaned dash image (tics removed) — original production method
+     * Experiment 1: Full cleaned dash image (tics removed)
      */
     suspend fun createExperiment1Cleaned(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
-        Log.i("Exp1", "Creating full cleaned image (tics removed)")
+        Log.i("Exp1", "Creating full cleaned image")
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
@@ -73,11 +73,11 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Experiment 2: Radial line parameter sweep — returns ONLY the line mask (black background, white lines)
+     * Experiment 2: Radial line masks (6 images: original + 5 variants)
      */
     suspend fun createExperiment2RadialVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp2", "Starting radial line sweep (masks only)")
+        Log.i("Exp2", "Starting radial line sweep")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -92,8 +92,7 @@ object ImageAlignmentUtils {
             Triple(5.0, 45.0, 10),
             Triple(12.0, 65.0, 15),
             Triple(6.0, 50.0, 8),
-            Triple(10.0, 60.0, 20),
-            Triple(9.0, 52.0, 14)
+            Triple(10.0, 60.0, 20)
         )
 
         for ((index, params) in paramSets.withIndex()) {
@@ -151,16 +150,16 @@ object ImageAlignmentUtils {
         }
         src.release()
         srcBGR.release()
-        Log.i("Exp2", "✅ Radial line masks created")
+        Log.i("Exp2", "✅ Radial masks created")
         variants
     }
 
     /**
-     * Experiment 3: Polar transformation sweep — 7 variants, returns ONLY the line mask
+     * Experiment 3: Polar Tic Removal — now returns pure mask only (6 images)
      */
     suspend fun createExperiment3PolarVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp3", "Starting polar sweep (masks only)")
+        Log.i("Exp3", "Starting polar tic mask sweep")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -174,9 +173,9 @@ object ImageAlignmentUtils {
         val center = Point(src.cols() / 2.0, src.rows() / 2.0)
         val maxRadius = Math.max(src.cols(), src.rows()) / 2.0
 
-        val polarParams = listOf(15f, 25f, 35f, 45f, 55f, 65f, 75f) // blur kernel sizes for difference
+        val blurSizes = listOf(15f, 25f, 35f, 45f, 55f, 65f)
 
-        for ((index, blurSize) in polarParams.withIndex()) {
+        for ((index, blurSize) in blurSizes.withIndex()) {
             try {
                 val polar = Mat()
                 Imgproc.linearPolar(gray, polar, center, maxRadius, Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
@@ -185,13 +184,9 @@ object ImageAlignmentUtils {
                 val ticMask = Mat()
                 Core.absdiff(polar, blurredPolar, ticMask)
                 Imgproc.threshold(ticMask, ticMask, 30.0, 255.0, Imgproc.THRESH_BINARY)
-                val polarCleaned = Mat()
-                Photo.inpaint(polar, ticMask, polarCleaned, 7.0, Photo.INPAINT_TELEA)
-                val cartesian = Mat()
-                Imgproc.linearPolar(polarCleaned, cartesian, center, maxRadius, Imgproc.WARP_INVERSE_MAP + Imgproc.INTER_LINEAR)
 
-                val resultBmp = Bitmap.createBitmap(cartesian.cols(), cartesian.rows(), Bitmap.Config.ARGB_8888)
-                org.opencv.android.Utils.matToBitmap(cartesian, resultBmp)
+                val resultBmp = Bitmap.createBitmap(ticMask.cols(), ticMask.rows(), Bitmap.Config.ARGB_8888)
+                org.opencv.android.Utils.matToBitmap(ticMask, resultBmp)
                 val display = if (resultBmp.width > 512) {
                     val h = (512f / resultBmp.width * resultBmp.height).toInt()
                     Bitmap.createScaledBitmap(resultBmp, 512, h, true)
@@ -200,8 +195,6 @@ object ImageAlignmentUtils {
                 polar.release()
                 blurredPolar.release()
                 ticMask.release()
-                polarCleaned.release()
-                cartesian.release()
                 if (resultBmp !== display) resultBmp.recycle()
             } catch (e: Exception) {
                 Log.e("Exp3", "Failed polar variant ${index + 1}", e)
@@ -210,39 +203,61 @@ object ImageAlignmentUtils {
         src.release()
         srcBGR.release()
         gray.release()
-        Log.i("Exp3", "✅ Polar masks created")
+        Log.i("Exp3", "✅ Polar tic masks created (pure mask only)")
         variants
     }
 
     /**
-     * Experiment 4: Text-only image — returns clean black background with white text/boxes only
+     * Experiment 4: Text-Only Mask + Masked-Original (shows content inside text boxes)
      */
-    suspend fun createExperiment4TextOnly(original: Bitmap, textBlocks: List<TextBlock>): Bitmap = withContext(Dispatchers.IO) {
-        Log.i("Exp4", "Creating text-only image from ${textBlocks.size} blocks")
-        val bmp = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bmp)
-        val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.WHITE
-            style = android.graphics.Paint.Style.FILL
-            textSize = 48f
-        }
+    suspend fun createExperiment4TextOnly(original: Bitmap, textBlocks: List<TextBlock>): List<Bitmap> = withContext(Dispatchers.IO) {
+        val variants = mutableListOf<Bitmap>()
+        Log.i("Exp4", "Creating text-only + masked-original images")
+        val thumbW = if (original.width > 512) 512 else original.width
+        val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
+        variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+
+        // Text-only mask
+        val textMask = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(textMask)
         val bgPaint = android.graphics.Paint().apply { color = android.graphics.Color.BLACK; style = android.graphics.Paint.Style.FILL }
+        val textPaint = android.graphics.Paint().apply { color = android.graphics.Color.WHITE; style = android.graphics.Paint.Style.FILL; textSize = 48f }
         canvas.drawRect(0f, 0f, original.width.toFloat(), original.height.toFloat(), bgPaint)
         textBlocks.forEach { block ->
             val r = block.boundingBox
-            canvas.drawRect(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat(), paint)
-            canvas.drawText(block.text, r.left.toFloat(), r.bottom.toFloat(), paint)
+            canvas.drawRect(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat(), textPaint)
+            canvas.drawText(block.text, r.left.toFloat(), r.bottom.toFloat(), textPaint)
         }
-        Log.i("Exp4", "✅ Text-only image created")
-        bmp
+        val displayTextMask = if (textMask.width > 512) {
+            val h = (512f / textMask.width * textMask.height).toInt()
+            Bitmap.createScaledBitmap(textMask, 512, h, true)
+        } else textMask
+        variants.add(displayTextMask)
+
+        // Masked-original (only text areas visible)
+        val maskedOriginal = original.copy(Bitmap.Config.ARGB_8888, true)
+        val maskedCanvas = android.graphics.Canvas(maskedOriginal)
+        maskedCanvas.drawBitmap(original, 0f, 0f, null)
+        val maskPaint = android.graphics.Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN) }
+        maskedCanvas.drawBitmap(textMask, 0f, 0f, maskPaint)
+        val displayMasked = if (maskedOriginal.width > 512) {
+            val h = (512f / maskedOriginal.width * maskedOriginal.height).toInt()
+            Bitmap.createScaledBitmap(maskedOriginal, 512, h, true)
+        } else maskedOriginal
+        variants.add(displayMasked)
+
+        textMask.recycle()
+        maskedOriginal.recycle()
+        Log.i("Exp4", "✅ Text-only + masked-original created")
+        variants
     }
 
     /**
-     * Experiment 5: Stand-alone straight line segments — returns ONLY the line mask
+     * Experiment 5: Straight line segment masks (6 images)
      */
     suspend fun createExperiment5LineSegments(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("Exp5", "Starting line segment sweep (masks only)")
+        Log.i("Exp5", "Starting line segment sweep")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
         variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
@@ -257,9 +272,9 @@ object ImageAlignmentUtils {
         val edges = Mat()
         Imgproc.Canny(gray, edges, 8.0, 55.0)
 
-        val paramSets = listOf(10, 15, 20, 25, 30, 35, 40) // minLineLength
+        val minLengths = listOf(10, 15, 20, 25, 30)
 
-        for ((index, minLen) in paramSets.withIndex()) {
+        for ((index, minLen) in minLengths.withIndex()) {
             try {
                 val lines = Mat()
                 Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 12, minLen.toDouble(), 3.0)
