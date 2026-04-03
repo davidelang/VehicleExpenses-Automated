@@ -62,9 +62,9 @@ object ImageAlignmentUtils {
         return bmp
     }
 
-    // Production cleaning — final text-only mask (Experiment 4)
+    // Production cleaning — simplified text-only mask (final version of old Exp 4)
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
-        Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning (Exp 4)")
+        Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning")
 
         val tempFile = File.createTempFile("ocr_temp", ".jpg")
         val out = java.io.FileOutputStream(tempFile)
@@ -113,7 +113,7 @@ object ImageAlignmentUtils {
         textMask.recycle()
         dilatedMask.recycle()
 
-        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned with text-only mask (Exp 4)")
+        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned with text-only mask")
         result
     }
 
