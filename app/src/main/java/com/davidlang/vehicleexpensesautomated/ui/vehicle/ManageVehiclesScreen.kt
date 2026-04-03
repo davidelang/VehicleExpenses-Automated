@@ -82,6 +82,9 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
+    // NEW: loading state for cleaning
+    var isCleaning by remember { mutableStateOf(false) }
+
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().id
@@ -112,9 +115,10 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // IMMEDIATE CLEANING AS SOON AS PHOTO IS SELECTED
+    // IMMEDIATE CLEANING + SPINNER as soon as photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
+            isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
                 val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
@@ -129,6 +133,8 @@ fun ManageVehiclesScreen(
                 }
             } catch (e: Exception) {
                 Log.e("ManageVehicles", "Immediate cleaning failed", e)
+            } finally {
+                isCleaning = false
             }
         }
     }
@@ -225,8 +231,24 @@ fun ManageVehiclesScreen(
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
             Spacer(modifier = Modifier.height(16.dp))
-            // Interactive crop editor on the CLEANED image
-            if (referencePhotoUrl != null) {
+
+            // Show spinner while cleaning is in progress
+            if (isCleaning) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = "Cleaning image...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
+            } else if (referencePhotoUrl != null) {
+                // Interactive crop editor on the CLEANED image
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
