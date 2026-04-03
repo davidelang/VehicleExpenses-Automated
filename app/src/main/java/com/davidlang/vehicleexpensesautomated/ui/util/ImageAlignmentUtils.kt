@@ -12,7 +12,6 @@ import org.opencv.core.*
 import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
 import org.opencv.calib3d.Calib3d
-import org.opencv.photo.Photo
 import java.io.File
 
 data class AlignmentResult(
