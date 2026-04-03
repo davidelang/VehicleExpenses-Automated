@@ -61,9 +61,9 @@ object ImageAlignmentUtils {
         return bmp
     }
 
-    // Production cleaning — simplified text-only mask (final version of old Exp 4)
+    // Production cleaning — text-only mask, now saved as grayscale to match alignment usage
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
-        Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning")
+        Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning (grayscale output)")
 
         val tempFile = File.createTempFile("ocr_temp", ".jpg")
         val out = java.io.FileOutputStream(tempFile)
@@ -103,16 +103,21 @@ object ImageAlignmentUtils {
         val maskedMat = Mat()
         Core.bitwise_and(origMat, maskMat, maskedMat)
 
-        val result = Bitmap.createBitmap(maskedMat.cols(), maskedMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(maskedMat, result)
+        // Convert final result to grayscale (matches the condition used in alignImages)
+        val grayMat = Mat()
+        Imgproc.cvtColor(maskedMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+
+        val result = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(grayMat, result)
 
         origMat.release()
         maskMat.release()
         maskedMat.release()
+        grayMat.release()
         textMask.recycle()
         dilatedMask.recycle()
 
-        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned with text-only mask")
+        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned with text-only mask (grayscale)")
         result
     }
 
