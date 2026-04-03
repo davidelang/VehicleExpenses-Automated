@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.import
 
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,6 +22,10 @@ import com.davidlang.vehicleexpensesautomated.ui.util.ImageHashUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
+import java.io.File
 
 @Composable
 fun ImportOldPicturesScreen(
@@ -40,6 +45,34 @@ fun ImportOldPicturesScreen(
     var cost by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
 
+    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var isCleaning by remember { mutableStateOf(false) }
+
+    // IMMEDIATE CLEANING (single routine) as soon as photo is selected
+    LaunchedEffect(pickedPhotoUrl) {
+        pickedPhotoUrl?.let { url ->
+            isCleaning = true
+            try {
+                val bmp = BitmapFactory.decodeFile(url) ?: return@let
+                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                if (cleanedBmp != null) {
+                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
+                    val out = java.io.FileOutputStream(tempFile)
+                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    out.close()
+                    cleanedPhotoUrl = tempFile.absolutePath
+                    cleanedBmp.recycle()
+                    Log.i("ImportOldPictures", "Cleaned image ready for import")
+                }
+            } catch (e: Exception) {
+                Log.e("ImportOldPictures", "Cleaning failed", e)
+            } finally {
+                isCleaning = false
+            }
+        }
+    }
+
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -48,6 +81,7 @@ fun ImportOldPicturesScreen(
                 try {
                     val copiedPath = settingsViewModel.photoStorageManager.savePhotoFromUri(it, PhotoType.FUEL)
                     photoPath = copiedPath
+                    pickedPhotoUrl = copiedPath
                     Toast.makeText(context, "Old photo imported", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(context, "Failed to import photo", Toast.LENGTH_LONG).show()

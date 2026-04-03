@@ -32,7 +32,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
-
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
@@ -55,14 +54,42 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             scope.launch {
                 status = "Extracting ZIP..."
                 val success = extractZipToPhotos(uri, experimentDir, context)
-                status = if (success) "✅ ZIP extracted successfully!" else "❌ Failed to extract ZIP"
+                status = if (success) "ZIP extracted successfully!" else "Failed to extract ZIP"
             }
         }
     }
+    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var isCleaning by remember { mutableStateOf(false) }
+
+    // IMMEDIATE CLEANING (single routine) as soon as photo is selected
+    LaunchedEffect(pickedPhotoUrl) {
+        pickedPhotoUrl?.let { url ->
+            isCleaning = true
+            try {
+                val bmp = BitmapFactory.decodeFile(url) ?: return@let
+                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                if (cleanedBmp != null) {
+                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
+                    val out = java.io.FileOutputStream(tempFile)
+                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    out.close()
+                    cleanedPhotoUrl = tempFile.absolutePath
+                    cleanedBmp.recycle()
+                    Log.i("Experiment", "Cleaned image ready for alignment test")
+                }
+            } catch (e: Exception) {
+                Log.e("Experiment", "Cleaning failed", e)
+            } finally {
+                isCleaning = false
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!experimentDir.exists()) experimentDir.mkdirs()
         val count = experimentDir.listFiles()?.size ?: 0
-        status = if (count == 0) "⚠️ Folder is empty.\nUse the buttons below." else "✅ $count photos ready."
+        status = if (count == 0) "Folder is empty.\nUse the buttons below." else "$count photos ready."
     }
     Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
         Column(
@@ -94,7 +121,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                     isRunning = true
                     progress = 0f
                     currentPhoto = ""
-                    status = "🚀 Starting alignment test..."
+                    status = "Starting alignment test..."
                     scope.launch {
                         try {
                             val result = runFullExperiment(vehicles, experimentDir, viewModel, context) { p, name ->
@@ -105,10 +132,10 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                             val htmlFile = File(reportDir, "alignment_report_$timestamp.html")
                             htmlFile.writeText(result.htmlReport)
                             reportPath = htmlFile.absolutePath
-                            status = "✅ Test complete!\n${result.summary}"
+                            status = "Test complete!\n${result.summary}"
                             Log.i(TAG, "Report written: ${htmlFile.absolutePath} (${htmlFile.length() / 1024} KB)")
                         } catch (e: Exception) {
-                            status = "❌ Report generation failed: ${e.message}"
+                            status = "Report generation failed: ${e.message}"
                             Log.e(TAG, "Report generation failed", e)
                         } finally {
                             isRunning = false
@@ -118,11 +145,11 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                 enabled = !isRunning && experimentDir.listFiles()?.isNotEmpty() == true,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (isRunning) "Running..." else "🚀 Run Alignment Experiment Now")
+                Text(if (isRunning) "Running..." else "Run Alignment Experiment Now")
             }
             if (reportPath != null) {
                 Button(onClick = { Toast.makeText(context, "Report: $reportPath", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("📄 Open Latest Report")
+                    Text("Open Latest Report")
                 }
             }
             Button(onClick = { navController?.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
@@ -148,7 +175,7 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
         }
         true
     } catch (e: Exception) {
-        Log.e("ExperimentAlignment", "ZIP extraction failed", e)
+        Log.e(TAG, "ZIP extraction failed", e)
         false
     }
 }
