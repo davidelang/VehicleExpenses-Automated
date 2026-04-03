@@ -31,11 +31,20 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    private val _diagnosticVariants = MutableStateFlow<List<Bitmap>>(emptyList())
-    val diagnosticVariants: StateFlow<List<Bitmap>> = _diagnosticVariants
+    private val _exp1Cleaned = MutableStateFlow<List<Bitmap>>(emptyList())
+    val exp1Cleaned: StateFlow<List<Bitmap>> = _exp1Cleaned
 
-    private val _radialVariants = MutableStateFlow<List<Bitmap>>(emptyList())
-    val radialVariants: StateFlow<List<Bitmap>> = _radialVariants
+    private val _exp2Radial = MutableStateFlow<List<Bitmap>>(emptyList())
+    val exp2Radial: StateFlow<List<Bitmap>> = _exp2Radial
+
+    private val _exp3Polar = MutableStateFlow<List<Bitmap>>(emptyList())
+    val exp3Polar: StateFlow<List<Bitmap>> = _exp3Polar
+
+    private val _exp4TextOnly = MutableStateFlow<List<Bitmap>>(emptyList())
+    val exp4TextOnly: StateFlow<List<Bitmap>> = _exp4TextOnly
+
+    private val _exp5LineSegments = MutableStateFlow<List<Bitmap>>(emptyList())
+    val exp5LineSegments: StateFlow<List<Bitmap>> = _exp5LineSegments
 
     suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
@@ -130,13 +139,28 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        val oldVariants = ImageAlignmentUtils.createDiagnosticVariants(bmp)
-                        _diagnosticVariants.value = oldVariants
+                        // Exp 1 - full cleaned
+                        val cleaned = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
+                        _exp1Cleaned.value = listOfNotNull(cleaned)
 
-                        val radialParams = ImageAlignmentUtils.createRadialParameterVariants(bmp)
-                        _radialVariants.value = radialParams
+                        // Exp 2 - radial masks
+                        val radial = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
+                        _exp2Radial.value = radial
 
-                        Log.i("CropDebug", "Grid updated with ${oldVariants.size} old variants + 7 radial parameter variants (refined polar)")
+                        // Exp 3 - polar masks
+                        val polar = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
+                        _exp3Polar.value = polar
+
+                        // Exp 4 - text-only (requires OCR)
+                        val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(url)
+                        val textOnly = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
+                        _exp4TextOnly.value = listOf(textOnly)
+
+                        // Exp 5 - line segment masks
+                        val lines = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
+                        _exp5LineSegments.value = lines
+
+                        Log.i("CropDebug", "All 5 experiment grids loaded")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }

@@ -7,6 +7,7 @@ import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognitionOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -21,6 +22,11 @@ import com.googlecode.tesseract.android.TessBaseAPI
 import kotlin.math.ceil
 import kotlin.math.floor
 
+data class TextBlock(
+    val text: String,
+    val boundingBox: android.graphics.Rect
+)
+
 data class OcrResult(
     val odometer: String?,
     val possibleOdometers: List<String>,
@@ -29,7 +35,8 @@ data class OcrResult(
     val debugText: String,
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
-    val openCvProcessedBitmap: Bitmap? = null
+    val openCvProcessedBitmap: Bitmap? = null,
+    val textBlocks: List<TextBlock> = emptyList()   // NEW for text-only experiment
 )
 
 object OdometerOcrUtils {
@@ -121,11 +128,9 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null)
+        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
 
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null)
-
-        Log.d("OCRStage", "Stage 0 - Full image loaded, size ${bitmap.width}x${bitmap.height}")
+        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
 
         var croppedBitmap: Bitmap? = null
         if (cropRect != null) {
@@ -136,27 +141,40 @@ object OdometerOcrUtils {
             val right = ceil(cropRect.right * origW).toInt().coerceAtMost(origW)
             val bottom = ceil(cropRect.bottom * origH).toInt().coerceAtMost(origH)
 
-            Log.d("CropDebug", "Crop rect applied → left=$left top=$top right=$right bottom=$bottom (original ${origW}x${origH})")
-
             if (right > left && bottom > top) {
                 croppedBitmap = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
                 bitmap.recycle()
                 bitmap = croppedBitmap
-                Log.d("OCRStage", "Stage 1 - Crop applied, new size ${bitmap.width}x${bitmap.height}")
-            } else {
-                Log.w("CropDebug", "Invalid crop rect after calculation — using full image")
             }
         }
 
         var openCvProcessedBitmap: Bitmap? = null
+        var textBlocks = mutableListOf<TextBlock>()
 
         val debugText = buildString {
             appendLine("=== OCR DEBUG (multi-stage) ===\n")
 
-            // Stage 1: Raw cropped - this is the one used for default odometer
+            // Stage 1: Raw cropped
             append(runBothEngines(bitmap, "Raw Cropped"))
 
-            // Stage 2: Grayscale
+            // ML Kit text blocks for experiment 4
+            try {
+                val image = InputImage.fromBitmap(bitmap, 0)
+                val visionText: Text = suspendCancellableCoroutine { cont ->
+                    recognizer.process(image)
+                        .addOnSuccessListener { cont.resume(it) }
+                        .addOnFailureListener { cont.resumeWithException(it) }
+                }
+                visionText.textBlocks.forEach { block ->
+                    block.boundingBox?.let { box ->
+                        textBlocks.add(TextBlock(block.text, box))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("OdometerOcr", "ML Kit text blocks failed", e)
+            }
+
+            // Stage 2-4 (grayscale, binary, morphology) unchanged
             val grayMat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
             Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
@@ -165,7 +183,6 @@ object OdometerOcrUtils {
             append(runBothEngines(grayBmp, "Grayscale"))
             grayMat.release()
 
-            // Stage 3: Binary threshold
             val threshMat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, threshMat)
             val gray2 = Mat()
@@ -177,62 +194,27 @@ object OdometerOcrUtils {
             gray2.release()
             threshMat.release()
 
-            // Stage 4: Morphology (OpenCV cleaning)
             val (openCvResult, processedBmp) = runOpenCvPreprocessingStages(bitmap)
             append(openCvResult)
             openCvProcessedBitmap = processedBmp
         }
 
-        // Extract odometer from raw cropped Tesseract result (default value)
         val rawTesseract = runTesseract(bitmap)
-        val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("B", "8").replace("S", "5").replace("Z", "2").replace("L", "1").replace(" ", "").replace("\n", "").replace("\r", "")
+        val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
 
-        val odoRegex = "\\b\\d{4,8}\\b".toRegex()
-        val possibleOdometers = mutableListOf<String>()
-        var odometer: String? = null
-        odoRegex.findAll(cleanRaw).forEach { match ->
-            val value = match.value
-            possibleOdometers.add(value)
-            if (odometer == null || value.length > (odometer?.length ?: 0)) odometer = value
-        }
-
-        val gallonsRegex = "\\b(\\d{1,2}\\.\\d{1,3})\\s*(?:gal|gallons)\\b".toRegex(RegexOption.IGNORE_CASE)
-        val costRegex = "\\$?(\\d{1,3}\\.\\d{2})".toRegex()
-        var gallons: String? = null
-        var cost: String? = null
-
-        val image = InputImage.fromBitmap(bitmap, 0)
-        val visionText: Text = try {
-            suspendCancellableCoroutine { continuation ->
-                recognizer.process(image)
-                    .addOnSuccessListener { continuation.resume(it) }
-                    .addOnFailureListener { e -> continuation.resumeWithException(e) }
-            }
-        } catch (e: Exception) {
-            Log.e("OdometerOcr", "ML Kit error", e)
-            bitmap.recycle()
-            return@withContext OcrResult(null, emptyList(), null, null, "ML Kit error", photoPath, null)
-        }
-
-        visionText.textBlocks.forEach { block ->
-            val blockText = block.text
-            gallonsRegex.find(blockText)?.groupValues?.get(1)?.let { gallons = it }
-            costRegex.find(blockText)?.groupValues?.get(1)?.let { cost = it }
-        }
-
-        if (croppedBitmap == null) {
-            bitmap.recycle()
-        }
+        val possible = mutableListOf<String>()
+        if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
 
         OcrResult(
-            odometer = odometer,   // Default = Tesseract on raw cropped image
-            possibleOdometers = possibleOdometers.distinct().sortedByDescending { it.length },
-            gallons = gallons,
-            cost = cost,
+            odometer = cleanRaw.takeIf { it.length in 4..6 },
+            possibleOdometers = possible,
+            gallons = null,
+            cost = null,
             debugText = debugText.toString(),
             originalPhotoPath = photoPath,
             croppedBitmap = croppedBitmap,
-            openCvProcessedBitmap = openCvProcessedBitmap
+            openCvProcessedBitmap = openCvProcessedBitmap,
+            textBlocks = textBlocks
         )
     }
 }

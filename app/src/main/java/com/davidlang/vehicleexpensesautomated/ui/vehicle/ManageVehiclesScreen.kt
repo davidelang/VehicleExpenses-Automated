@@ -67,8 +67,11 @@ fun ManageVehiclesScreen(
     val scope = rememberCoroutineScope()
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
-    val diagnosticVariants by vehicleViewModel.diagnosticVariants.collectAsState()
-    val radialVariants by vehicleViewModel.radialVariants.collectAsState()
+    val exp1Cleaned by vehicleViewModel.exp1Cleaned.collectAsState()
+    val exp2Radial by vehicleViewModel.exp2Radial.collectAsState()
+    val exp3Polar by vehicleViewModel.exp3Polar.collectAsState()
+    val exp4TextOnly by vehicleViewModel.exp4TextOnly.collectAsState()
+    val exp5LineSegments by vehicleViewModel.exp5LineSegments.collectAsState()
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
@@ -101,7 +104,7 @@ fun ManageVehiclesScreen(
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
 
-    Log.d("CropDebug", "ManageVehiclesScreen recomposed — radialVariants=${radialVariants.size}")
+    Log.d("CropDebug", "ManageVehiclesScreen recomposed")
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -138,7 +141,7 @@ fun ManageVehiclesScreen(
 
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
-            Log.i("CropDebug", "pickedPhotoUrl changed → loading diagnostic grid for $url")
+            Log.i("CropDebug", "pickedPhotoUrl changed → loading 5 experiment grids for $url")
             vehicleViewModel.loadDiagnosticGrid(url)
             referencePhotoUrl = url
         }
@@ -272,40 +275,10 @@ fun ManageVehiclesScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            if (diagnosticVariants.isNotEmpty()) {
-                Text("Old Tic-Removal Grid (Variants 1-3 only)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(700.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(diagnosticVariants) { bmp ->
-                        val index = diagnosticVariants.indexOf(bmp)
-                        Column {
-                            Text(
-                                text = if (index == 0) "Original" else "Variant $index",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (index == 0) Color.Gray else Color(0xFF4CAF50)
-                            )
-                            Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(160.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            if (radialVariants.isNotEmpty()) {
-                Text("Radial Parameter Sweep — 7 Variants (fast testing)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+
+            // Experiment 1 - full cleaned image
+            if (exp1Cleaned.isNotEmpty()) {
+                Text("Experiment 1 — Full Cleaned Dash (tics removed)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF4CAF50))
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
@@ -315,27 +288,124 @@ fun ManageVehiclesScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(radialVariants) { bmp ->
-                        val index = radialVariants.indexOf(bmp)
-                        Column {
-                            Text(
-                                text = if (index == 0) "Original" else "Param ${index}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF2196F3)
-                            )
-                            Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(195.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
+                    items(exp1Cleaned) { bmp ->
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Exp1 Cleaned",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(195.dp),
+                            contentScale = ContentScale.Fit
+                        )
                     }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Experiment 2 - radial line masks
+            if (exp2Radial.isNotEmpty()) {
+                Text("Experiment 2 — Radial Lines (masks only)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(950.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(exp2Radial) { bmp ->
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Exp2 Radial",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(195.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Experiment 3 - polar masks
+            if (exp3Polar.isNotEmpty()) {
+                Text("Experiment 3 — Polar Tic Removal (masks only)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(950.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(exp3Polar) { bmp ->
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Exp3 Polar",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(195.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Experiment 4 - text only
+            if (exp4TextOnly.isNotEmpty()) {
+                Text("Experiment 4 — Text-Only Mask", style = MaterialTheme.typography.titleSmall, color = Color(0xFFFF9800))
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(950.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(exp4TextOnly) { bmp ->
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Exp4 Text",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(195.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Experiment 5 - line segments
+            if (exp5LineSegments.isNotEmpty()) {
+                Text("Experiment 5 — Straight Line Segments (masks only)", style = MaterialTheme.typography.titleSmall, color = Color(0xFF2196F3))
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(950.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(exp5LineSegments) { bmp ->
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Exp5 Lines",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(195.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
             if (referencePhotoUrl != null) {
                 BoxWithConstraints(
                     modifier = Modifier
