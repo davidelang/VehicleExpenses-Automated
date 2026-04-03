@@ -31,6 +31,7 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
+    // All experiment StateFlows kept (code was never supposed to be removed)
     private val _exp1Cleaned = MutableStateFlow<List<Bitmap>>(emptyList())
     val exp1Cleaned: StateFlow<List<Bitmap>> = _exp1Cleaned
 
@@ -58,12 +59,12 @@ class VehicleViewModel @Inject constructor(
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int
     ) {
-        Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name with original $referenceDashPhotoUrl")
+        Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name")
         var cleanedUrl: String? = null
         try {
             cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
         } catch (e: Exception) {
-            Log.e("VehicleReferenceCleaning", "Cleaning failed, falling back to original photo", e)
+            Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
             cleanedUrl = referenceDashPhotoUrl
         }
 
@@ -85,7 +86,6 @@ class VehicleViewModel @Inject constructor(
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.insert(newVehicle)
             }
-            Log.i("VehicleReferenceCleaning", "Vehicle inserted successfully")
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Insert failed", e)
             throw e
@@ -99,7 +99,7 @@ class VehicleViewModel @Inject constructor(
             cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
                 ?: vehicle.cleanedReferenceDashPhotoUrl
         } catch (e: Exception) {
-            Log.e("VehicleReferenceCleaning", "Cleaning failed, keeping original", e)
+            Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
         }
 
         val updated = vehicle.copy(
@@ -111,7 +111,6 @@ class VehicleViewModel @Inject constructor(
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.updateVehicle(updated)
             }
-            Log.i("VehicleReferenceCleaning", "Vehicle updated successfully")
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Update failed", e)
             throw e
@@ -122,10 +121,7 @@ class VehicleViewModel @Inject constructor(
         val cleaned = vehicle.cleanedReferenceDashPhotoUrl
         if (cleaned != null) {
             val f = File(cleaned)
-            if (f.exists()) {
-                Log.i("VehicleReferenceCleaning", "Using existing cleaned reference for vehicle ${vehicle.id}: $cleaned")
-                return cleaned
-            }
+            if (f.exists()) return cleaned
         }
         val originalUrl = vehicle.referenceDashPhotoUrl ?: return null
         return createAndSaveCleanedReference(originalUrl)
@@ -168,7 +164,6 @@ class VehicleViewModel @Inject constructor(
             Log.e("VehicleReferenceCleaning", "Original file does not exist: $originalUrl")
             return null
         }
-        Log.i("VehicleReferenceCleaning", "Starting fast cleaning for: $originalUrl")
 
         val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath)
         if (originalBmp == null) {
@@ -178,7 +173,7 @@ class VehicleViewModel @Inject constructor(
 
         val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp)
         if (cleanedBmp == null) {
-            Log.e("VehicleReferenceCleaning", "Fast cleaning returned null")
+            Log.e("VehicleReferenceCleaning", "Text-mask cleaning returned null")
             originalBmp.recycle()
             return null
         }
@@ -188,7 +183,7 @@ class VehicleViewModel @Inject constructor(
             val out = java.io.FileOutputStream(cleanedFile)
             cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
             out.close()
-            Log.i("VehicleReferenceCleaning", "Saved cleaned reference: ${cleanedFile.absolutePath}")
+            Log.i("VehicleReferenceCleaning", "Saved cleaned reference (text-only mask)")
             cleanedFile.absolutePath
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Failed to write cleaned file", e)
