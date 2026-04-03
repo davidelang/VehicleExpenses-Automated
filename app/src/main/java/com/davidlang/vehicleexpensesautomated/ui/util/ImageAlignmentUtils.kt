@@ -13,6 +13,7 @@ import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
 import org.opencv.calib3d.Calib3d
 import org.opencv.photo.Photo
+import java.io.File
 
 data class AlignmentResult(
     val success: Boolean,
@@ -61,9 +62,7 @@ object ImageAlignmentUtils {
         return bmp
     }
 
-    // ===================================================================
-    // All experiment functions kept exactly as before (red circle + line overlays)
-    // ===================================================================
+    // All 5 experiment functions restored exactly as they existed at commit 195bf87
     suspend fun createExperiment1Cleaned(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<Bitmap>()
         val thumbW = if (original.width > 512) 512 else original.width
@@ -130,7 +129,7 @@ object ImageAlignmentUtils {
         bmp2.recycle()
         bmp3.recycle()
         bmp4.recycle()
-        Log.i("Exp1", "Experiment 1 kept")
+        Log.i("Exp1", "Experiment 1 restored")
         steps
     }
 
@@ -194,7 +193,7 @@ object ImageAlignmentUtils {
         mask.release()
         bmp1.recycle()
         bmp2.recycle()
-        Log.i("Exp2", "Experiment 2 kept")
+        Log.i("Exp2", "Experiment 2 restored")
         steps
     }
 
@@ -250,7 +249,7 @@ object ImageAlignmentUtils {
         blurredPolar.release()
         ticMask.release()
         bmpLinesOrig.recycle()
-        Log.i("Exp3", "Experiment 3 kept")
+        Log.i("Exp3", "Experiment 3 restored")
         steps
     }
 
@@ -312,7 +311,7 @@ object ImageAlignmentUtils {
         textMask.recycle()
         dilatedMask.recycle()
         maskedBitmap.recycle()
-        Log.i("Exp4", "Experiment 4 kept")
+        Log.i("Exp4", "Experiment 4 restored")
         variants
     }
 
@@ -358,15 +357,23 @@ object ImageAlignmentUtils {
         lines.release()
         mask.release()
         bmp1.recycle()
-        Log.i("Exp5", "Experiment 5 kept")
+        Log.i("Exp5", "Experiment 5 restored")
         steps
     }
 
-    // Production cleaning uses the working Exp 4 text-only mask
+    // Production cleaning — fixed Exp 4 text-only mask (no longer black)
     suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
         Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning (Exp 4)")
 
-        val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto("")
+        // Write bitmap to real temp file so OCR works
+        val tempFile = File.createTempFile("ocr_temp", ".jpg")
+        val out = java.io.FileOutputStream(tempFile)
+        original.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        out.close()
+
+        val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
+
+        tempFile.delete()
 
         val textMask = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(textMask)
