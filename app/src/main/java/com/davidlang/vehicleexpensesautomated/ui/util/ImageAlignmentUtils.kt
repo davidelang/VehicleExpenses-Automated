@@ -103,12 +103,12 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * FAST PARAMETER SWEEP: 7 different radial line detection settings + polar as #7
-     * Polar transform cleanly removes radial tics without speck noise.
+     * FAST PARAMETER SWEEP: 7 different radial line detection settings + improved polar (Param 7)
+     * Polar now uses horizontal-blur-difference to isolate ONLY radial tics.
      */
     suspend fun createRadialParameterVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
-        Log.i("ImageAlignment", "Starting createRadialParameterVariants (7 param sets + polar) on ${original.width}x${original.height} image")
+        Log.i("ImageAlignment", "Starting createRadialParameterVariants (7 param sets + refined polar) on ${original.width}x${original.height} image")
 
         // Step 0: Original (downscaled)
         val thumbW = if (original.width > 512) 512 else original.width
@@ -120,7 +120,6 @@ object ImageAlignmentUtils {
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        // 6 Cartesian radial param sets + 1 polar
         val paramSets = listOf(
             Triple(8.0, 55.0, 12),
             Triple(5.0, 45.0, 10),
@@ -193,7 +192,7 @@ object ImageAlignmentUtils {
             }
         }
 
-        // Param 7: Polar tic removal (clean radial tic removal)
+        // Param 7: Refined polar tic removal — only radial tics (horizontal in polar)
         try {
             val gray = Mat()
             Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
@@ -203,14 +202,17 @@ object ImageAlignmentUtils {
             val polar = Mat()
             Imgproc.linearPolar(gray, polar, center, maxRadius, Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
 
-            val polarEdges = Mat()
-            Imgproc.Canny(polar, polarEdges, 30.0, 90.0)
+            // Horizontal blur to smear radial tics
+            val blurredPolar = Mat()
+            Imgproc.GaussianBlur(polar, blurredPolar, Size(21.0, 1.0), 0.0)
 
-            val polarMask = Mat.zeros(polar.size(), CvType.CV_8UC1)
-            Imgproc.line(polarMask, Point(0.0, 0.0), Point(polar.cols().toDouble(), 0.0), Scalar(255.0), polar.rows() / 8) // remove horizontal tics in polar
+            // Difference isolates only the tics
+            val ticMask = Mat()
+            Core.absdiff(polar, blurredPolar, ticMask)
+            Imgproc.threshold(ticMask, ticMask, 30.0, 255.0, Imgproc.THRESH_BINARY)
 
             val polarCleaned = Mat()
-            Photo.inpaint(polar, polarMask, polarCleaned, 5.0, Photo.INPAINT_TELEA)
+            Photo.inpaint(polar, ticMask, polarCleaned, 7.0, Photo.INPAINT_TELEA)
 
             val cartesian = Mat()
             Imgproc.linearPolar(polarCleaned, cartesian, center, maxRadius, Imgproc.WARP_INVERSE_MAP + Imgproc.INTER_LINEAR)
@@ -224,21 +226,22 @@ object ImageAlignmentUtils {
             } else resultBmp
 
             variants.add(displayBmp)
-            Log.i("ImageAlignment", "Polar tic removal (Param 7) created — clean radial tics removed")
+            Log.i("ImageAlignment", "Refined polar tic removal (Param 7) created — ONLY radial tics removed")
+
             gray.release()
             polar.release()
-            polarEdges.release()
-            polarMask.release()
+            blurredPolar.release()
+            ticMask.release()
             polarCleaned.release()
             cartesian.release()
             if (resultBmp !== displayBmp) resultBmp.recycle()
         } catch (e: Exception) {
-            Log.e("ImageAlignment", "Failed to create polar variant", e)
+            Log.e("ImageAlignment", "Failed to create refined polar variant", e)
         }
 
         src.release()
         srcBGR.release()
-        Log.i("ImageAlignment", "✅ Finished createRadialParameterVariants — 7 param sets + polar created")
+        Log.i("ImageAlignment", "✅ Finished createRadialParameterVariants — 7 param sets + refined polar created")
         variants
     }
 
