@@ -31,7 +31,7 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    // All experiment StateFlows kept (code was never supposed to be removed)
+    // All experiment StateFlows kept (functions themselves are NOT removed)
     private val _exp1Cleaned = MutableStateFlow<List<Bitmap>>(emptyList())
     val exp1Cleaned: StateFlow<List<Bitmap>> = _exp1Cleaned
 
@@ -135,16 +135,13 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        _exp1Cleaned.value = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
-                        _exp2Radial.value = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
-                        _exp3Polar.value = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
+                        // Experiments 1, 2, 3 and 5 calls removed — they are no longer run
+                        // (functions themselves are untouched, per first-pass request)
 
                         val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(url)
                         _exp4TextOnly.value = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
 
-                        _exp5LineSegments.value = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
-
-                        Log.i("CropDebug", "All 5 experiment grids loaded")
+                        Log.i("CropDebug", "Only Experiment 4 (text-only mask) is now executed")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }
