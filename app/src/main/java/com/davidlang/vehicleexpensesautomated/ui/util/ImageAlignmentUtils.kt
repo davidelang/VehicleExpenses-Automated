@@ -28,170 +28,172 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Experiment 1: Full cleaned dash image (6 images) — more aggressive
+     * Experiment 1: Step-by-step preprocessing pipeline (left = cumulative image, right = detection/mask)
+     * Steps: Original → Grayscale+invert → Canny → Hough mask → Dilated mask → Inpainted
      */
     suspend fun createExperiment1Cleaned(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
-        val variants = mutableListOf<Bitmap>()
-        Log.i("Exp1", "Creating full cleaned images (6 aggressive variants)")
+        val steps = mutableListOf<Bitmap>()
+        Log.i("Exp1", "Creating step-by-step pipeline for Exp1")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
-        variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+        steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true)) // Step 0: Original (left)
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        val paramSets = listOf(
-            Triple(4.0, 35.0, 25),   // extremely aggressive
-            Triple(6.0, 40.0, 22),
-            Triple(8.0, 45.0, 20),
-            Triple(10.0, 50.0, 18),
-            Triple(12.0, 55.0, 16)
-        )
+        // Step 1: Grayscale + invert
+        val gray1 = Mat()
+        Imgproc.cvtColor(srcBGR, gray1, Imgproc.COLOR_BGR2GRAY)
+        Core.bitwise_not(gray1, gray1)
+        val bmp1 = Bitmap.createBitmap(gray1.cols(), gray1.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(gray1, bmp1)
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // left: pre
+        val mask1 = Mat.zeros(gray1.size(), CvType.CV_8UC1) // placeholder right (full detection later)
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // right: detection (will be replaced in full run)
 
-        for ((index, params) in paramSets.withIndex()) {
-            val (cannyLow, cannyHigh, thickness) = params
-            try {
-                val gray = Mat()
-                Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-                Core.bitwise_not(gray, gray)
-                val edges = Mat()
-                Imgproc.Canny(gray, edges, cannyLow, cannyHigh)
-                val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, 12.0, 2.0)
-                val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
-                for (i in 0 until lines.rows()) {
-                    val line = lines.get(i, 0)
-                    val x1 = line[0].toInt()
-                    val y1 = line[1].toInt()
-                    val x2 = line[2].toInt()
-                    val y2 = line[3].toInt()
-                    val length = Math.hypot((x2 - x1).toDouble(), (y2 - y1).toDouble())
-                    if (length < 260) {
-                        Imgproc.line(mask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), thickness)
-                    }
-                }
-                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
-                Imgproc.dilate(mask, mask, kernel)
-                Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
-                val cleaned = Mat()
-                Photo.inpaint(srcBGR, mask, cleaned, 14.0, Photo.INPAINT_TELEA)
-                val resultBmp = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
-                org.opencv.android.Utils.matToBitmap(cleaned, resultBmp)
-                val display = if (resultBmp.width > 512) {
-                    val h = (512f / resultBmp.width * resultBmp.height).toInt()
-                    Bitmap.createScaledBitmap(resultBmp, 512, h, true)
-                } else resultBmp
-                variants.add(display)
-                gray.release()
-                edges.release()
-                lines.release()
-                mask.release()
-                cleaned.release()
-                if (resultBmp !== display) resultBmp.recycle()
-            } catch (e: Exception) {
-                Log.e("Exp1", "Failed variant ${index + 1}", e)
-            }
+        // Step 2: Canny
+        val edges = Mat()
+        Imgproc.Canny(gray1, edges, 5.0, 45.0)
+        val bmp2 = Bitmap.createBitmap(edges.cols(), edges.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(edges, bmp2)
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // left: pre
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // right: detection
+
+        // Step 3: Hough lines mask
+        val lines = Mat()
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, 12.0, 2.0)
+        val houghMask = Mat.zeros(gray1.size(), CvType.CV_8UC1)
+        for (i in 0 until lines.rows()) {
+            val line = lines.get(i, 0)
+            val x1 = line[0].toInt()
+            val y1 = line[1].toInt()
+            val x2 = line[2].toInt()
+            val y2 = line[3].toInt()
+            Imgproc.line(houghMask, Point(x1.toDouble(), y1.toDouble()), Point(x2.toDouble(), y2.toDouble()), Scalar(255.0), 20)
         }
+        val bmp3 = Bitmap.createBitmap(houghMask.cols(), houghMask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(houghMask, bmp3)
+        steps.add(Bitmap.createScaledBitmap(bmp3, thumbW, thumbH, true)) // left: pre
+        steps.add(Bitmap.createScaledBitmap(bmp3, thumbW, thumbH, true)) // right: detection
+
+        // Step 4: Dilated mask
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
+        Imgproc.dilate(houghMask, houghMask, kernel)
+        Imgproc.morphologyEx(houghMask, houghMask, Imgproc.MORPH_CLOSE, kernel)
+        val bmp4 = Bitmap.createBitmap(houghMask.cols(), houghMask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(houghMask, bmp4)
+        steps.add(Bitmap.createScaledBitmap(bmp4, thumbW, thumbH, true)) // left: pre
+        steps.add(Bitmap.createScaledBitmap(bmp4, thumbW, thumbH, true)) // right: detection
+
+        // Step 5: Inpainted final
+        val cleaned = Mat()
+        Photo.inpaint(srcBGR, houghMask, cleaned, 14.0, Photo.INPAINT_TELEA)
+        val bmp5 = Bitmap.createBitmap(cleaned.cols(), cleaned.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(cleaned, bmp5)
+        steps.add(Bitmap.createScaledBitmap(bmp5, thumbW, thumbH, true)) // left: pre
+        steps.add(Bitmap.createScaledBitmap(bmp5, thumbW, thumbH, true)) // right: detection
+
         src.release()
         srcBGR.release()
-        Log.i("Exp1", "✅ 6 aggressive cleaned images created")
-        variants
+        gray1.release()
+        edges.release()
+        lines.release()
+        houghMask.release()
+        cleaned.release()
+        bmp1.recycle()
+        bmp2.recycle()
+        bmp3.recycle()
+        bmp4.recycle()
+        Log.i("Exp1", "✅ Step-by-step pipeline created (2-wide grid)")
+        steps
     }
 
     /**
-     * Experiment 2: Radial line masks (6 images) — lower thresholds + thicker lines
+     * Experiment 2: Step-by-step radial line pipeline (left = pre, right = mask)
      */
     suspend fun createExperiment2RadialVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
-        val variants = mutableListOf<Bitmap>()
-        Log.i("Exp2", "Starting radial line sweep (6 images — lower thresholds + thick lines)")
+        val steps = mutableListOf<Bitmap>()
+        Log.i("Exp2", "Creating step-by-step radial pipeline")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
-        variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+        steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true)) // Original left
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
         val srcBGR = Mat()
         Imgproc.cvtColor(src, srcBGR, Imgproc.COLOR_RGBA2BGR)
 
-        val paramSets = listOf(
-            Triple(3.0, 30.0, 8),
-            Triple(5.0, 35.0, 10),
-            Triple(7.0, 40.0, 12),
-            Triple(9.0, 45.0, 14),
-            Triple(11.0, 50.0, 16)
-        )
+        // Step 1: Grayscale + CLAHE + invert
+        val gray = Mat()
+        Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
+        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+        val equalized = Mat()
+        clahe.apply(gray, equalized)
+        Core.bitwise_not(equalized, equalized)
+        val bmp1 = Bitmap.createBitmap(equalized.cols(), equalized.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(equalized, bmp1)
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // left
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // right (placeholder)
 
-        for ((index, params) in paramSets.withIndex()) {
-            val (cannyLow, cannyHigh, houghThresh) = params
-            try {
-                val gray = Mat()
-                Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
-                val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-                val equalized = Mat()
-                clahe.apply(gray, equalized)
-                Core.bitwise_not(equalized, equalized)
-                val blurred = Mat()
-                Imgproc.GaussianBlur(equalized, blurred, Size(3.0, 3.0), 0.0)
-                val edges = Mat()
-                Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
-                val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, houghThresh, 12.0, 2.0)
+        // Step 2: Blur + Canny
+        val blurred = Mat()
+        Imgproc.GaussianBlur(equalized, blurred, Size(3.0, 3.0), 0.0)
+        val edges = Mat()
+        Imgproc.Canny(blurred, edges, 4.0, 40.0)
+        val bmp2 = Bitmap.createBitmap(edges.cols(), edges.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(edges, bmp2)
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // left
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // right
 
-                val centerX = src.cols() / 2.0
-                val centerY = src.rows() / 2.0
-                val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
-                for (i in 0 until lines.rows()) {
-                    val line = lines.get(i, 0)
-                    val x1 = line[0]
-                    val y1 = line[1]
-                    val x2 = line[2]
-                    val y2 = line[3]
-                    val length = Math.hypot(x2 - x1, y2 - y1)
-                    if (length < 12) continue
-                    val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
-                    if (distToCenter < 40) {
-                        Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 20)  // thick solid lines
-                    }
-                }
-                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-                Imgproc.dilate(mask, mask, kernel)
-                Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
-
-                val resultBmp = Bitmap.createBitmap(mask.cols(), mask.rows(), Bitmap.Config.ARGB_8888)
-                org.opencv.android.Utils.matToBitmap(mask, resultBmp)
-                val display = if (resultBmp.width > 512) {
-                    val h = (512f / resultBmp.width * resultBmp.height).toInt()
-                    Bitmap.createScaledBitmap(resultBmp, 512, h, true)
-                } else resultBmp
-                variants.add(display)
-                gray.release()
-                equalized.release()
-                blurred.release()
-                edges.release()
-                lines.release()
-                mask.release()
-                if (resultBmp !== display) resultBmp.recycle()
-            } catch (e: Exception) {
-                Log.e("Exp2", "Failed variant ${index + 1}", e)
+        // Step 3: Hough radial mask
+        val lines = Mat()
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 8, 12.0, 2.0)
+        val centerX = src.cols() / 2.0
+        val centerY = src.rows() / 2.0
+        val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
+        for (i in 0 until lines.rows()) {
+            val line = lines.get(i, 0)
+            val x1 = line[0]
+            val y1 = line[1]
+            val x2 = line[2]
+            val y2 = line[3]
+            val length = Math.hypot(x2 - x1, y2 - y1)
+            if (length < 12) continue
+            val distToCenter = Math.abs((y2 - y1) * (x1 - centerX) - (x2 - x1) * (y1 - centerY)) / length
+            if (distToCenter < 40) {
+                Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 20)
             }
         }
+        val bmp3 = Bitmap.createBitmap(mask.cols(), mask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(mask, bmp3)
+        steps.add(Bitmap.createScaledBitmap(bmp3, thumbW, thumbH, true)) // left
+        steps.add(Bitmap.createScaledBitmap(bmp3, thumbW, thumbH, true)) // right
+
         src.release()
         srcBGR.release()
-        Log.i("Exp2", "✅ 6 radial masks created (thick solid lines)")
-        variants
+        gray.release()
+        equalized.release()
+        blurred.release()
+        edges.release()
+        lines.release()
+        mask.release()
+        bmp1.recycle()
+        bmp2.recycle()
+        Log.i("Exp2", "✅ Step-by-step radial pipeline created")
+        steps
     }
 
     /**
-     * Experiment 3: Polar Tic Removal — pure mask only (6 images — wider + lower threshold)
+     * Experiment 3: Step-by-step polar pipeline (left = pre, right = mask)
      */
     suspend fun createExperiment3PolarVariants(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
-        val variants = mutableListOf<Bitmap>()
-        Log.i("Exp3", "Starting polar tic mask sweep (6 images — wider blur + lower threshold)")
+        val steps = mutableListOf<Bitmap>()
+        Log.i("Exp3", "Creating step-by-step polar pipeline")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
-        variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+        steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true)) // Original
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
@@ -202,42 +204,38 @@ object ImageAlignmentUtils {
         val center = Point(src.cols() / 2.0, src.rows() / 2.0)
         val maxRadius = Math.max(src.cols(), src.rows()) / 2.0
 
-        val blurSizes = listOf(8f, 15f, 25f, 35f, 45f, 55f)
+        // Step 1: Linear polar
+        val polar = Mat()
+        Imgproc.linearPolar(gray, polar, center, maxRadius, Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
+        val bmp1 = Bitmap.createBitmap(polar.cols(), polar.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(polar, bmp1)
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // left
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // right
 
-        for ((index, blurSize) in blurSizes.withIndex()) {
-            try {
-                val polar = Mat()
-                Imgproc.linearPolar(gray, polar, center, maxRadius, Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
-                val blurredPolar = Mat()
-                Imgproc.GaussianBlur(polar, blurredPolar, Size(blurSize.toDouble(), 1.0), 0.0)
-                val ticMask = Mat()
-                Core.absdiff(polar, blurredPolar, ticMask)
-                Imgproc.threshold(ticMask, ticMask, 15.0, 255.0, Imgproc.THRESH_BINARY)  // lower threshold
+        // Step 2: Horizontal blur + diff + threshold (tic mask)
+        val blurredPolar = Mat()
+        Imgproc.GaussianBlur(polar, blurredPolar, Size(25.0, 1.0), 0.0)
+        val ticMask = Mat()
+        Core.absdiff(polar, blurredPolar, ticMask)
+        Imgproc.threshold(ticMask, ticMask, 15.0, 255.0, Imgproc.THRESH_BINARY)
+        val bmp2 = Bitmap.createBitmap(ticMask.cols(), ticMask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(ticMask, bmp2)
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // left
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // right
 
-                val resultBmp = Bitmap.createBitmap(ticMask.cols(), ticMask.rows(), Bitmap.Config.ARGB_8888)
-                org.opencv.android.Utils.matToBitmap(ticMask, resultBmp)
-                val display = if (resultBmp.width > 512) {
-                    val h = (512f / resultBmp.width * resultBmp.height).toInt()
-                    Bitmap.createScaledBitmap(resultBmp, 512, h, true)
-                } else resultBmp
-                variants.add(display)
-                polar.release()
-                blurredPolar.release()
-                ticMask.release()
-                if (resultBmp !== display) resultBmp.recycle()
-            } catch (e: Exception) {
-                Log.e("Exp3", "Failed polar variant ${index + 1}", e)
-            }
-        }
         src.release()
         srcBGR.release()
         gray.release()
-        Log.i("Exp3", "✅ 6 pure polar tic masks created")
-        variants
+        polar.release()
+        blurredPolar.release()
+        ticMask.release()
+        bmp1.recycle()
+        Log.i("Exp3", "✅ Step-by-step polar pipeline created")
+        steps
     }
 
     /**
-     * Experiment 4: Text-Only Mask + Masked-Original (logical AND)
+     * Experiment 4: Text-Only Mask + Masked-Original (logical AND) — unchanged
      */
     suspend fun createExperiment4TextOnly(original: Bitmap, textBlocks: List<TextBlock>): List<Bitmap> = withContext(Dispatchers.IO) {
         val variants = mutableListOf<Bitmap>()
@@ -262,7 +260,7 @@ object ImageAlignmentUtils {
         } else textMask
         variants.add(displayTextMask)
 
-        // Logical AND masked-original (only content inside white text boxes)
+        // Logical AND masked-original
         val maskedOriginal = original.copy(Bitmap.Config.ARGB_8888, true)
         val maskedCanvas = android.graphics.Canvas(maskedOriginal)
         maskedCanvas.drawBitmap(original, 0f, 0f, null)
@@ -281,14 +279,14 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Experiment 5: Straight line segment masks (6 images) — lower minLength + thicker
+     * Experiment 5: Step-by-step straight line pipeline (left = pre, right = mask)
      */
     suspend fun createExperiment5LineSegments(original: Bitmap): List<Bitmap> = withContext(Dispatchers.IO) {
-        val variants = mutableListOf<Bitmap>()
-        Log.i("Exp5", "Starting line segment sweep (6 images — shorter tics + thick lines)")
+        val steps = mutableListOf<Bitmap>()
+        Log.i("Exp5", "Creating step-by-step line segment pipeline")
         val thumbW = if (original.width > 512) 512 else original.width
         val thumbH = (thumbW.toFloat() / original.width * original.height).toInt().coerceAtMost(512)
-        variants.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true))
+        steps.add(Bitmap.createScaledBitmap(original, thumbW, thumbH, true)) // Original
 
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(original, src)
@@ -297,48 +295,41 @@ object ImageAlignmentUtils {
         val gray = Mat()
         Imgproc.cvtColor(srcBGR, gray, Imgproc.COLOR_BGR2GRAY)
         Core.bitwise_not(gray, gray)
+
+        // Step 1: Canny
         val edges = Mat()
         Imgproc.Canny(gray, edges, 5.0, 40.0)
+        val bmp1 = Bitmap.createBitmap(edges.cols(), edges.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(edges, bmp1)
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // left
+        steps.add(Bitmap.createScaledBitmap(bmp1, thumbW, thumbH, true)) // right
 
-        val minLengths = listOf(5, 8, 12, 15, 20)
-
-        for ((index, minLen) in minLengths.withIndex()) {
-            try {
-                val lines = Mat()
-                Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, minLen.toDouble(), 2.0)
-                val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
-                for (i in 0 until lines.rows()) {
-                    val line = lines.get(i, 0)
-                    val x1 = line[0]
-                    val y1 = line[1]
-                    val x2 = line[2]
-                    val y2 = line[3]
-                    Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 18)  // thick solid lines
-                }
-                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-                Imgproc.dilate(mask, mask, kernel)
-                Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
-
-                val resultBmp = Bitmap.createBitmap(mask.cols(), mask.rows(), Bitmap.Config.ARGB_8888)
-                org.opencv.android.Utils.matToBitmap(mask, resultBmp)
-                val display = if (resultBmp.width > 512) {
-                    val h = (512f / resultBmp.width * resultBmp.height).toInt()
-                    Bitmap.createScaledBitmap(resultBmp, 512, h, true)
-                } else resultBmp
-                variants.add(display)
-                lines.release()
-                mask.release()
-                if (resultBmp !== display) resultBmp.recycle()
-            } catch (e: Exception) {
-                Log.e("Exp5", "Failed variant ${index + 1}", e)
-            }
+        // Step 2: Hough lines mask
+        val lines = Mat()
+        Imgproc.HoughLinesP(edges, lines, 1.0, Math.PI / 180, 10, 5.0, 2.0)
+        val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
+        for (i in 0 until lines.rows()) {
+            val line = lines.get(i, 0)
+            val x1 = line[0]
+            val y1 = line[1]
+            val x2 = line[2]
+            val y2 = line[3]
+            Imgproc.line(mask, Point(x1, y1), Point(x2, y2), Scalar(255.0), 18)
         }
+        val bmp2 = Bitmap.createBitmap(mask.cols(), mask.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(mask, bmp2)
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // left
+        steps.add(Bitmap.createScaledBitmap(bmp2, thumbW, thumbH, true)) // right
+
         src.release()
         srcBGR.release()
         gray.release()
         edges.release()
-        Log.i("Exp5", "✅ 6 line segment masks created (thick solid lines)")
-        variants
+        lines.release()
+        mask.release()
+        bmp1.recycle()
+        Log.i("Exp5", "✅ Step-by-step line segment pipeline created")
+        steps
     }
 
     /**

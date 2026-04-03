@@ -139,28 +139,28 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        // Exp 1 - 6 aggressive cleaned images
-                        val cleaned = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
-                        _exp1Cleaned.value = cleaned
+                        // Exp 1 - step-by-step pipeline
+                        val exp1Steps = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
+                        _exp1Cleaned.value = exp1Steps
 
-                        // Exp 2 - 6 radial masks
-                        val radial = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
-                        _exp2Radial.value = radial
+                        // Exp 2 - step-by-step pipeline
+                        val exp2Steps = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
+                        _exp2Radial.value = exp2Steps
 
-                        // Exp 3 - 6 polar masks
-                        val polar = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
-                        _exp3Polar.value = polar
+                        // Exp 3 - step-by-step pipeline
+                        val exp3Steps = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
+                        _exp3Polar.value = exp3Steps
 
-                        // Exp 4 - text-only + masked-original
+                        // Exp 4 - text-only + masked-original (unchanged)
                         val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(url)
                         val textVariants = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
                         _exp4TextOnly.value = textVariants
 
-                        // Exp 5 - 6 line segment masks
-                        val lines = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
-                        _exp5LineSegments.value = lines
+                        // Exp 5 - step-by-step pipeline
+                        val exp5Steps = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
+                        _exp5LineSegments.value = exp5Steps
 
-                        Log.i("CropDebug", "All 5 experiment grids loaded (6 images each)")
+                        Log.i("CropDebug", "All 5 experiment grids loaded with step-by-step pipelines")
                     } else {
                         Log.e("CropDebug", "Failed to decode bitmap from $url")
                     }
