@@ -196,14 +196,7 @@ private suspend fun runFullExperiment(
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
         val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBitmap)
-        var bestScore = 0f
-        var bestVehicleName = "No match"
-        var alignedBitmap: Bitmap? = null
-        var odometerCropBitmap: Bitmap? = null
-        var extractedOdometer: String? = null
-        var inliersCount = 0
-        var alignmentMessage = ""
-        var debugInfo = ""
+        val scoredVehicles = mutableListOf<Triple<String, Float, Int>>()
         vehicles.forEach { vehicle ->
             val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
@@ -211,14 +204,36 @@ private suspend fun runFullExperiment(
             if (!refFile.exists()) return@forEach
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
             val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
-            if (alignment.success && alignment.confidence > bestScore) {
-                bestScore = alignment.confidence
-                bestVehicleName = vehicle.name
-                alignedBitmap = alignment.alignedImage
-                alignmentMessage = alignment.message
+            if (alignment.success) {
                 val inliersMatch = Regex("with (\\d+) inliers").find(alignment.message)
-                inliersCount = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                debugInfo = "inliers=${inliersCount} conf=${"%.1f".format(bestScore*100)}% msg=${alignmentMessage}"
+                val inliers = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                scoredVehicles.add(Triple(vehicle.name, alignment.confidence, inliers))
+            }
+        }
+        val top3 = scoredVehicles.sortedByDescending { it.second }.take(3)
+        val top3String = top3.joinToString(", ") { "${it.first}:${it.third}(${String.format("%.1f", it.second*100)}%)" }
+        var bestScore = 0f
+        var bestVehicleName = "No match"
+        var alignedBitmap: Bitmap? = null
+        var odometerCropBitmap: Bitmap? = null
+        var extractedOdometer: String? = null
+        var inliersCount = 0
+        var alignmentMessage = ""
+        if (top3.isNotEmpty()) {
+            bestVehicleName = top3[0].first
+            bestScore = top3[0].second
+            inliersCount = top3[0].third
+            alignmentMessage = "Aligned with $inliersCount inliers (${String.format("%.1f", bestScore*100)}%)"
+            val matchedVehicle = vehicles.find { it.name == bestVehicleName }
+            if (matchedVehicle != null) {
+                val refUrl = viewModel.ensureCleanedReference(matchedVehicle) ?: matchedVehicle.referenceDashPhotoUrl
+                if (refUrl != null) {
+                    val refFile = File(refUrl)
+                    if (refFile.exists()) {
+                        val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
+                        alignedBitmap = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12).alignedImage
+                    }
+                }
             }
         }
         if (alignedBitmap != null) {
@@ -254,7 +269,7 @@ private suspend fun runFullExperiment(
             confidence = bestScore,
             inliersCount = inliersCount,
             alignmentMessage = alignmentMessage,
-            debugInfo = debugInfo,
+            topMatches = top3String,
             originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
             alignedBase64 = bitmapToBase64(alignedBitmap, 120),
             cleanedDashBase64 = bitmapToBase64(cleanedBmp, 120),
@@ -315,7 +330,7 @@ private data class PhotoResult(
     val confidence: Float,
     val inliersCount: Int,
     val alignmentMessage: String,
-    val debugInfo: String,
+    val topMatches: String,
     val originalThumbBase64: String,
     val alignedBase64: String,
     val cleanedDashBase64: String,
@@ -334,7 +349,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>Original</th><th>Cleaned Dash</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Debug Info</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        appendLine("<tr><th>Original</th><th>Cleaned Dash</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
         results.forEach { r ->
             appendLine("<tr>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
@@ -345,7 +360,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.vehicle}</td>")
             appendLine("<td>${r.inliersCount}</td>")
             appendLine("<td>${r.alignmentMessage}</td>")
-            appendLine("<td>${r.debugInfo}</td>")
+            appendLine("<td>${r.topMatches}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
             appendLine("</tr>")
