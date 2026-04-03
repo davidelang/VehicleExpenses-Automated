@@ -195,6 +195,7 @@ private suspend fun runFullExperiment(
     photos.forEachIndexed { index, file ->
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
+        val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBitmap)
         var bestScore = 0f
         var bestVehicleName = "No match"
         var alignedBitmap: Bitmap? = null
@@ -253,6 +254,7 @@ private suspend fun runFullExperiment(
             alignmentMessage = alignmentMessage,
             originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
             alignedBase64 = bitmapToBase64(alignedBitmap, 120),
+            cleanedDashBase64 = bitmapToBase64(cleanedBmp, 120),
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
             referenceBase64 = bitmapToBase64(referenceWithCrop, 120),
             odometer = extractedOdometer
@@ -312,6 +314,7 @@ private data class PhotoResult(
     val alignmentMessage: String,
     val originalThumbBase64: String,
     val alignedBase64: String,
+    val cleanedDashBase64: String,
     val odometerCropBase64: String,
     val referenceBase64: String,
     val odometer: String?
@@ -327,10 +330,11 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>Original</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        appendLine("<tr><th>Original</th><th>Cleaned Dash</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Vehicle Reference + Crops</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
         results.forEach { r ->
             appendLine("<tr>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
+            appendLine("<td><img src='data:image/jpeg;base64,${r.cleanedDashBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.alignedBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.odometerCropBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.referenceBase64}'></td>")
