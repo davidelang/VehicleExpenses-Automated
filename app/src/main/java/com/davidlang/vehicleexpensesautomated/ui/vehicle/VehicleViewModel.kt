@@ -139,24 +139,24 @@ class VehicleViewModel @Inject constructor(
                 if (file.exists()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        // Exp 1 - full cleaned (6 images)
+                        // Exp 1 - 6 aggressive cleaned images
                         val cleaned = ImageAlignmentUtils.createExperiment1Cleaned(bmp)
                         _exp1Cleaned.value = cleaned
 
-                        // Exp 2 - radial masks (6 images)
+                        // Exp 2 - 6 radial masks
                         val radial = ImageAlignmentUtils.createExperiment2RadialVariants(bmp)
                         _exp2Radial.value = radial
 
-                        // Exp 3 - polar masks (6 images)
+                        // Exp 3 - 6 polar masks
                         val polar = ImageAlignmentUtils.createExperiment3PolarVariants(bmp)
                         _exp3Polar.value = polar
 
-                        // Exp 4 - text-only + masked-original (6 images)
+                        // Exp 4 - text-only + masked-original
                         val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(url)
                         val textVariants = ImageAlignmentUtils.createExperiment4TextOnly(bmp, ocrResult.textBlocks)
                         _exp4TextOnly.value = textVariants
 
-                        // Exp 5 - line segment masks (6 images)
+                        // Exp 5 - 6 line segment masks
                         val lines = ImageAlignmentUtils.createExperiment5LineSegments(bmp)
                         _exp5LineSegments.value = lines
 
