@@ -64,10 +64,8 @@ fun AddNewVehicleScreen(
                     referencePhotoUrl = tempFile.absolutePath
                     referenceTextBlocks = textBlocks
                     cleanedBmp.recycle()
-                    Log.i("AddNewVehicle", "Immediate cleaned image + text blocks ready")
                 }
             } catch (e: Exception) {
-                Log.e("AddNewVehicle", "Immediate cleaning failed", e)
             } finally {
                 isCleaning = false
             }
