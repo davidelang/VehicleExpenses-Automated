@@ -67,7 +67,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
                     val out = java.io.FileOutputStream(tempFile)
@@ -193,7 +193,7 @@ private suspend fun runFullExperiment(
     photos.forEachIndexed { index, file ->
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
-        val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBitmap)
+        val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(originalBitmap)
         val scoredVehicles = mutableListOf<Triple<String, Float, Int>>()
         vehicles.forEach { vehicle ->
             val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
