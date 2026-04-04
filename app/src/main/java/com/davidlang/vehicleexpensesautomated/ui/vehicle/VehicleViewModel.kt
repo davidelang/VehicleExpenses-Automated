@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -19,7 +20,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
-import com.google.gson.Gson
 
 @HiltViewModel
 class VehicleViewModel @Inject constructor(
@@ -57,11 +57,11 @@ class VehicleViewModel @Inject constructor(
     ) {
         Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name")
         var cleanedUrl: String? = null
-        var textBlocksJson: String? = null
+        var textBlocksString: String? = null
         try {
             val result = referenceDashPhotoUrl?.let { createAndSaveCleanedReferenceWithText(it) }
             cleanedUrl = result?.first
-            textBlocksJson = result?.second
+            textBlocksString = result?.second
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
             cleanedUrl = referenceDashPhotoUrl
@@ -82,7 +82,7 @@ class VehicleViewModel @Inject constructor(
             otherTextCropTop = null,
             otherTextCropRight = null,
             otherTextCropBottom = null,
-            referenceTextBlocks = textBlocksJson
+            referenceTextBlocks = textBlocksString
         )
         try {
             withContext(NonCancellable + Dispatchers.IO) {
@@ -97,11 +97,11 @@ class VehicleViewModel @Inject constructor(
     suspend fun updateVehicle(vehicle: Vehicle) {
         Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
         var cleanedUrl: String? = vehicle.cleanedReferenceDashPhotoUrl
-        var textBlocksJson: String? = vehicle.referenceTextBlocks
+        var textBlocksString: String? = vehicle.referenceTextBlocks
         try {
             val result = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReferenceWithText(it) }
             cleanedUrl = result?.first
-            textBlocksJson = result?.second
+            textBlocksString = result?.second
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
         }
@@ -112,7 +112,7 @@ class VehicleViewModel @Inject constructor(
             otherTextCropTop = vehicle.otherTextCropTop,
             otherTextCropRight = vehicle.otherTextCropRight,
             otherTextCropBottom = vehicle.otherTextCropBottom,
-            referenceTextBlocks = textBlocksJson
+            referenceTextBlocks = textBlocksString
         )
         try {
             withContext(NonCancellable + Dispatchers.IO) {
@@ -157,14 +157,16 @@ class VehicleViewModel @Inject constructor(
         out.close()
         val ocrResult = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
         tempFile.delete()
-        val textBlocksJson = Gson().toJson(ocrResult.textBlocks)
+        val textBlocksString = ocrResult.textBlocks.joinToString("|") { block ->
+            "${block.text}:${block.boundingBox.left},${block.boundingBox.top},${block.boundingBox.right},${block.boundingBox.bottom}"
+        }
         val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
         return try {
             val out2 = java.io.FileOutputStream(cleanedFile)
             cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out2)
             out2.close()
             Log.i("VehicleReferenceCleaning", "Saved cleaned reference with text blocks")
-            Pair(cleanedFile.absolutePath, textBlocksJson)
+            Pair(cleanedFile.absolutePath, textBlocksString)
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Failed to write cleaned file", e)
             null

@@ -366,7 +366,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.topMatches}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
-            appendLine("<td>${r.referenceTextBlocks.replace("\n", "<br>")}</td>")
+            appendLine("<td>${r.referenceTextBlocks.replace("\n", "<br>").replace("|", "<br>")}</td>")
             appendLine("</tr>")
         }
         appendLine("</table></body></html>")
@@ -386,10 +386,9 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
     for (row in dataRows) {
         val rowSize = row.length + 2L
         if (currentSize + rowSize > maxSizeKB * 1024L && currentChunk.isNotEmpty()) {
-            // Complete current chunk with full rows only
             val pageNum = files.size + 1
             val pageHtml = buildString {
-                if (files.isEmpty()) appendLine(header)  // header only on first file
+                if (files.isEmpty()) appendLine(header)
                 appendLine("<table>")
                 appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
                 currentChunk.forEach { appendLine(it) }
