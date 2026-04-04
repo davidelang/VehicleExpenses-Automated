@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -46,10 +47,10 @@ class VehicleViewModel @Inject constructor(
         model: String,
         year: Int?,
         licensePlate: String?,
-        cleanedReferenceDashPhotoUrl: String?,
+        cleanedReferenceDashPhotoUrl: String?,   // always provided by screen
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
-        referenceTextBlocks: String?
+        referenceTextBlocks: String?             // always provided by screen
     ) {
         Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name (using pre-cleaned data)")
 
