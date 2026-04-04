@@ -20,9 +20,9 @@ data class Vehicle(
     val odometerCropTop: Float? = null,
     val odometerCropRight: Float? = null,
     val odometerCropBottom: Float? = null,
-    val otherTextCropLeft: Float? = null,   // renamed from landmarkCrop
+    val otherTextCropLeft: Float? = null,     // renamed from landmarkCropLeft
     val otherTextCropTop: Float? = null,
     val otherTextCropRight: Float? = null,
     val otherTextCropBottom: Float? = null,
-    val referenceTextBlocks: String? = null  // new structured text (JSON)
+    val referenceTextBlocks: String? = null   // new structured text storage
 )

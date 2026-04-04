@@ -362,7 +362,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.topMatches}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
-            appendLine("<td>${r.vehicle}</td>")  // placeholder for text blocks (will be populated later)
+            appendLine("<td>${r.vehicle}</td>")  // placeholder until text blocks are populated
             appendLine("</tr>")
         }
         appendLine("</table></body></html>")
