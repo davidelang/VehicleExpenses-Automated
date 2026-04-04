@@ -270,11 +270,11 @@ private suspend fun runFullExperiment(
             inliersCount = inliersCount,
             alignmentMessage = alignmentMessage,
             topMatches = top3String,
-            originalThumbBase64 = bitmapToBase64(originalBitmap, 120),
-            alignedBase64 = bitmapToBase64(alignedBitmap, 120),
-            cleanedDashBase64 = bitmapToBase64(cleanedBmp, 120),
-            odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
-            referenceBase64 = bitmapToBase64(referenceWithCrop, 120),
+            originalThumbBase64 = bitmapToBase64(originalBitmap, 240),
+            alignedBase64 = bitmapToBase64(alignedBitmap, 240),
+            cleanedDashBase64 = bitmapToBase64(cleanedBmp, 240),
+            odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 240),
+            referenceBase64 = bitmapToBase64(referenceWithCrop, 240),
             odometer = extractedOdometer,
             referenceTextBlocks = referenceTextBlocks,
             dashTextBlocks = dashTextBlocks ?: ""
@@ -349,7 +349,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     return buildString {
         appendLine("<html><head><title>Alignment Experiment - $time</title>")
-        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top; } img { max-width: 280px; height: auto; }</style></head><body>")
+        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top; } img { max-width: 240px; height: auto; }</style></head><body>")
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")

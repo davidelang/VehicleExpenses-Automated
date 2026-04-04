@@ -65,9 +65,16 @@ object ImageAlignmentUtils {
         val result = Bitmap.createBitmap(maskedMat.cols(), maskedMat.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(maskedMat, result)
 
+        // Convert result to grayscale (as expected for cleaning/alignment)
+        val grayMat = Mat()
+        Imgproc.cvtColor(maskedMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+        val grayBitmap = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(grayMat, grayBitmap)
+
         origMat.release()
         matMask.release()
         maskedMat.release()
+        grayMat.release()
         kernel.release()
         mask.recycle()
 
@@ -75,8 +82,8 @@ object ImageAlignmentUtils {
             "${block.text}:${block.boundingBox.left},${block.boundingBox.top},${block.boundingBox.right},${block.boundingBox.bottom}"
         }
 
-        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned + text extracted in one pass")
-        Pair(result, textBlocksString)
+        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned + text extracted in one pass (grayscale)")
+        Pair(grayBitmap, textBlocksString)
     }
 
     // alignImages remains unchanged
