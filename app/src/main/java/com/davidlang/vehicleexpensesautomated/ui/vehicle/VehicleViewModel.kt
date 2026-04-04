@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import com.google.gson.Gson
 
 @HiltViewModel
 class VehicleViewModel @Inject constructor(
@@ -56,8 +57,11 @@ class VehicleViewModel @Inject constructor(
     ) {
         Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name")
         var cleanedUrl: String? = null
+        var textBlocksJson: String? = null
         try {
-            cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
+            val result = referenceDashPhotoUrl?.let { createAndSaveCleanedReferenceWithText(it) }
+            cleanedUrl = result?.first
+            textBlocksJson = result?.second
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
             cleanedUrl = referenceDashPhotoUrl
@@ -78,7 +82,7 @@ class VehicleViewModel @Inject constructor(
             otherTextCropTop = null,
             otherTextCropRight = null,
             otherTextCropBottom = null,
-            referenceTextBlocks = null
+            referenceTextBlocks = textBlocksJson
         )
         try {
             withContext(NonCancellable + Dispatchers.IO) {
@@ -93,9 +97,11 @@ class VehicleViewModel @Inject constructor(
     suspend fun updateVehicle(vehicle: Vehicle) {
         Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
         var cleanedUrl: String? = vehicle.cleanedReferenceDashPhotoUrl
+        var textBlocksJson: String? = vehicle.referenceTextBlocks
         try {
-            cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
-                ?: vehicle.cleanedReferenceDashPhotoUrl
+            val result = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReferenceWithText(it) }
+            cleanedUrl = result?.first
+            textBlocksJson = result?.second
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
         }
@@ -106,7 +112,7 @@ class VehicleViewModel @Inject constructor(
             otherTextCropTop = vehicle.otherTextCropTop,
             otherTextCropRight = vehicle.otherTextCropRight,
             otherTextCropBottom = vehicle.otherTextCropBottom,
-            referenceTextBlocks = vehicle.referenceTextBlocks
+            referenceTextBlocks = textBlocksJson
         )
         try {
             withContext(NonCancellable + Dispatchers.IO) {
@@ -125,10 +131,10 @@ class VehicleViewModel @Inject constructor(
             if (f.exists()) return cleaned
         }
         val originalUrl = vehicle.referenceDashPhotoUrl ?: return null
-        return createAndSaveCleanedReference(originalUrl)
+        return createAndSaveCleanedReferenceWithText(originalUrl)?.first
     }
 
-    private suspend fun createAndSaveCleanedReference(originalUrl: String): String? {
+    private suspend fun createAndSaveCleanedReferenceWithText(originalUrl: String): Pair<String?, String?>? {
         val originalFile = File(originalUrl)
         if (!originalFile.exists()) {
             Log.e("VehicleReferenceCleaning", "Original file does not exist: $originalUrl")
@@ -145,13 +151,20 @@ class VehicleViewModel @Inject constructor(
             originalBmp.recycle()
             return null
         }
+        val tempFile = File.createTempFile("ocr_temp", ".jpg")
+        val out = java.io.FileOutputStream(tempFile)
+        originalBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        out.close()
+        val ocrResult = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
+        tempFile.delete()
+        val textBlocksJson = Gson().toJson(ocrResult.textBlocks)
         val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
         return try {
-            val out = java.io.FileOutputStream(cleanedFile)
-            cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-            out.close()
-            Log.i("VehicleReferenceCleaning", "Saved cleaned reference (text-only mask)")
-            cleanedFile.absolutePath
+            val out2 = java.io.FileOutputStream(cleanedFile)
+            cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out2)
+            out2.close()
+            Log.i("VehicleReferenceCleaning", "Saved cleaned reference with text blocks")
+            Pair(cleanedFile.absolutePath, textBlocksJson)
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Failed to write cleaned file", e)
             null
