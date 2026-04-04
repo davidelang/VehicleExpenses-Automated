@@ -201,7 +201,16 @@ private suspend fun runFullExperiment(
             val refFile = File(refUrl)
             if (!refFile.exists()) return@forEach
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
-            val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12)
+
+            // Pass the crop boxes so the odometer and other-text regions are masked out on the reference
+            val odometerCrop = vehicle.odometerCropLeft?.let {
+                android.graphics.RectF(it, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
+            }
+            val otherTextCrop = vehicle.otherTextCropLeft?.let {
+                android.graphics.RectF(it, vehicle.otherTextCropTop ?: 0f, vehicle.otherTextCropRight ?: 1f, vehicle.otherTextCropBottom ?: 1f)
+            }
+
+            val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12, odometerCrop, otherTextCrop)
             if (alignment.success) {
                 val inliersMatch = Regex("with (\\d+) inliers").find(alignment.message)
                 val inliers = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -230,7 +239,15 @@ private suspend fun runFullExperiment(
                     val refFile = File(refUrl)
                     if (refFile.exists()) {
                         val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
-                        alignedBitmap = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12).alignedImage
+
+                        val odometerCrop = matchedVehicle.odometerCropLeft?.let {
+                            android.graphics.RectF(it, matchedVehicle.odometerCropTop ?: 0f, matchedVehicle.odometerCropRight ?: 1f, matchedVehicle.odometerCropBottom ?: 1f)
+                        }
+                        val otherTextCrop = matchedVehicle.otherTextCropLeft?.let {
+                            android.graphics.RectF(it, matchedVehicle.otherTextCropTop ?: 0f, matchedVehicle.otherTextCropRight ?: 1f, matchedVehicle.otherTextCropBottom ?: 1f)
+                        }
+
+                        alignedBitmap = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12, odometerCrop, otherTextCrop).alignedImage
                     }
                 }
                 referenceTextBlocks = matchedVehicle.referenceTextBlocks ?: ""
