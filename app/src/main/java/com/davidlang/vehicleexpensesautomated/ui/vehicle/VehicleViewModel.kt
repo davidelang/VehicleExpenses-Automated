@@ -27,17 +27,6 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    private val _exp1Cleaned = MutableStateFlow<List<Bitmap>>(emptyList())
-    val exp1Cleaned: StateFlow<List<Bitmap>> = _exp1Cleaned
-    private val _exp2Radial = MutableStateFlow<List<Bitmap>>(emptyList())
-    val exp2Radial: StateFlow<List<Bitmap>> = _exp2Radial
-    private val _exp3Polar = MutableStateFlow<List<Bitmap>>(emptyList())
-    val exp3Polar: StateFlow<List<Bitmap>> = _exp3Polar
-    private val _exp4TextOnly = MutableStateFlow<List<Bitmap>>(emptyList())
-    val exp4TextOnly: StateFlow<List<Bitmap>> = _exp4TextOnly
-    private val _exp5LineSegments = MutableStateFlow<List<Bitmap>>(emptyList())
-    val exp5LineSegments: StateFlow<List<Bitmap>> = _exp5LineSegments
-
     suspend fun getVehicleById(id: Int): Vehicle? = repository.getVehicleById(id)
 
     suspend fun createNewVehicleWithReference(
