@@ -349,9 +349,10 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
-        results.forEach { r ->
+        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        results.forEachIndexed { index, r ->
             appendLine("<tr>")
+            appendLine("<td>${index + 1}</td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.cleanedDashBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.referenceBase64}'></td>")
