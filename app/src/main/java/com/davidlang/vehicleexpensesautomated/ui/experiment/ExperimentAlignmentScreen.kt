@@ -201,15 +201,12 @@ private suspend fun runFullExperiment(
             val refFile = File(refUrl)
             if (!refFile.exists()) return@forEach
             val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
-
-            // Pass the crop boxes so the odometer and other-text regions are masked out on the reference
             val odometerCrop = vehicle.odometerCropLeft?.let {
                 android.graphics.RectF(it, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
             }
             val otherTextCrop = vehicle.otherTextCropLeft?.let {
                 android.graphics.RectF(it, vehicle.otherTextCropTop ?: 0f, vehicle.otherTextCropRight ?: 1f, vehicle.otherTextCropBottom ?: 1f)
             }
-
             val alignment = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12, odometerCrop, otherTextCrop)
             if (alignment.success) {
                 val inliersMatch = Regex("with (\\d+) inliers").find(alignment.message)
@@ -224,6 +221,7 @@ private suspend fun runFullExperiment(
         var alignedBitmap: Bitmap? = null
         var odometerCropBitmap: Bitmap? = null
         var extractedOdometer: String? = null
+        var fullImageOcr: String? = null
         var inliersCount = 0
         var alignmentMessage = ""
         var referenceTextBlocks = ""
@@ -239,14 +237,12 @@ private suspend fun runFullExperiment(
                     val refFile = File(refUrl)
                     if (refFile.exists()) {
                         val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
-
                         val odometerCrop = matchedVehicle.odometerCropLeft?.let {
                             android.graphics.RectF(it, matchedVehicle.odometerCropTop ?: 0f, matchedVehicle.odometerCropRight ?: 1f, matchedVehicle.odometerCropBottom ?: 1f)
                         }
                         val otherTextCrop = matchedVehicle.otherTextCropLeft?.let {
                             android.graphics.RectF(it, matchedVehicle.otherTextCropTop ?: 0f, matchedVehicle.otherTextCropRight ?: 1f, matchedVehicle.otherTextCropBottom ?: 1f)
                         }
-
                         alignedBitmap = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, minInliers = 12, odometerCrop, otherTextCrop).alignedImage
                     }
                 }
@@ -262,9 +258,13 @@ private suspend fun runFullExperiment(
             val out = java.io.FileOutputStream(tempAlignedFile)
             alignedBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
             out.close()
+            // Main cropped OCR
             val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
             extractedOdometer = ocrResult.odometer
             if (odometerCropBitmap == null) odometerCropBitmap = ocrResult.croppedBitmap
+            // Always run full image OCR + deduplicate against cleaning text blocks
+            val fullOcrResult = OdometerOcrUtils.extractFullImageOcr(tempAlignedFile.absolutePath, ocrResult.textBlocks)
+            fullImageOcr = fullOcrResult.odometer
             tempAlignedFile.delete()
             if (ocrResult.odometer != null) success++
         }
@@ -293,6 +293,7 @@ private suspend fun runFullExperiment(
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 240),
             referenceBase64 = bitmapToBase64(referenceWithCrop, 240),
             odometer = extractedOdometer,
+            fullImageOcr = fullImageOcr,
             referenceTextBlocks = referenceTextBlocks,
             dashTextBlocks = dashTextBlocks ?: ""
         ))
@@ -356,6 +357,7 @@ private data class PhotoResult(
     val odometerCropBase64: String,
     val referenceBase64: String,
     val odometer: String?,
+    val fullImageOcr: String?,
     val referenceTextBlocks: String,
     val dashTextBlocks: String
 )
@@ -370,7 +372,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
+        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Full Image OCR</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
         results.forEachIndexed { index, r ->
             appendLine("<tr>")
             appendLine("<td>${index + 1}</td>")
@@ -384,6 +386,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.alignmentMessage}</td>")
             appendLine("<td>${r.topMatches}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
+            appendLine("<td>${r.fullImageOcr ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
             appendLine("<td>${r.referenceTextBlocks.replace("\n", "<br>").replace("|", "<br>")}</td>")
             appendLine("<td>${r.dashTextBlocks.replace("\n", "<br>").replace("|", "<br>")}</td>")
@@ -399,11 +402,9 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
     val header = lines.take(headerEndIndex).joinToString("\n")
     val footer = lines.drop(headerEndIndex).dropWhile { it.trim().startsWith("<tr>") }.joinToString("\n")
     val dataRows = lines.drop(headerEndIndex).takeWhile { it.trim().startsWith("<tr>") }
-
     val files = mutableListOf<File>()
     var currentChunk = mutableListOf<String>()
     var currentSize = 0L
-
     for (row in dataRows) {
         val rowSize = row.length + 2L
         if (currentSize + rowSize > maxSizeKB * 1024L && currentChunk.isNotEmpty()) {
@@ -416,14 +417,12 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
             val file = File(reportDir, "alignment_report_${timestamp}_part${pageNum}.html")
             file.writeText(pageHtml)
             files.add(file)
-
             currentChunk = mutableListOf()
             currentSize = 0L
         }
         currentChunk.add(row)
         currentSize += rowSize
     }
-
     if (currentChunk.isNotEmpty()) {
         val pageNum = files.size + 1
         val pageHtml = buildString {
