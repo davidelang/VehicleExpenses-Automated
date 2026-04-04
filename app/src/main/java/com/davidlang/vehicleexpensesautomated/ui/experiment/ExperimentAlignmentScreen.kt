@@ -362,7 +362,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.topMatches}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
-            appendLine("<td>${r.vehicle}</td>")  // placeholder until text blocks are populated
+            appendLine("<td>${r.vehicle}</td>")  // placeholder for text blocks
             appendLine("</tr>")
         }
         appendLine("</table></body></html>")
@@ -376,7 +376,7 @@ private fun writeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: 
     val dataRows = lines.dropWhile { !it.trim().startsWith("<tr>") }.dropLastWhile { !it.trim().startsWith("</tr>") }
 
     val files = mutableListOf<File>()
-    val chunkSize = 20
+    val chunkSize = 20   // exactly 20 data rows per report
     for (i in dataRows.indices step chunkSize) {
         val chunk = dataRows.subList(i, minOf(i + chunkSize, dataRows.size))
         val pageNum = (i / chunkSize) + 1
