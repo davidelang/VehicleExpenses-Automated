@@ -53,7 +53,7 @@ class VehicleViewModel @Inject constructor(
         referenceDashPhotoUrl: String?,
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
-        referenceTextBlocks: String? = null   // now passed in
+        referenceTextBlocks: String? = null
     ) {
         Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name")
         var cleanedUrl: String? = null
