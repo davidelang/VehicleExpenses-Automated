@@ -62,7 +62,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
 
-    // IMMEDIATE CLEANING (single routine) as soon as photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
@@ -129,11 +128,10 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                                 currentPhoto = name
                             }
                             val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-                            val htmlFile = File(reportDir, "alignment_report_$timestamp.html")
-                            htmlFile.writeText(result.htmlReport)
-                            reportPath = htmlFile.absolutePath
-                            status = "Test complete!\n${result.summary}"
-                            Log.i(TAG, "Report written: ${htmlFile.absolutePath} (${htmlFile.length() / 1024} KB)")
+                            val htmlFiles = writeSplitHtmlReports(result.htmlReport, reportDir, timestamp)
+                            reportPath = htmlFiles.firstOrNull()?.absolutePath
+                            status = "Test complete!\n${result.summary}\n${htmlFiles.size} report files written"
+                            Log.i(TAG, "Reports written: ${htmlFiles.size} files")
                         } catch (e: Exception) {
                             status = "Report generation failed: ${e.message}"
                             Log.e(TAG, "Report generation failed", e)
@@ -148,8 +146,8 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                 Text(if (isRunning) "Running..." else "Run Alignment Experiment Now")
             }
             if (reportPath != null) {
-                Button(onClick = { Toast.makeText(context, "Report: $reportPath", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Open Latest Report")
+                Button(onClick = { Toast.makeText(context, "Reports written to: $reportPath (and siblings)", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Open Latest Reports")
                 }
             }
             Button(onClick = { navController?.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
@@ -314,11 +312,11 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
         val b = (vehicle.odometerCropBottom ?: 1f) * bitmap.height
         canvas.drawRect(l, t, r, b, paint)
     }
-    vehicle.landmarkCropLeft?.let { left ->
+    vehicle.otherTextCropLeft?.let { left ->
         val l = left * bitmap.width
-        val t = (vehicle.landmarkCropTop ?: 0f) * bitmap.height
-        val r = (vehicle.landmarkCropRight ?: 1f) * bitmap.width
-        val b = (vehicle.landmarkCropBottom ?: 1f) * bitmap.height
+        val t = (vehicle.otherTextCropTop ?: 0f) * bitmap.height
+        val r = (vehicle.otherTextCropRight ?: 1f) * bitmap.width
+        val b = (vehicle.otherTextCropBottom ?: 1f) * bitmap.height
         canvas.drawRect(l, t, r, b, landmarkPaint)
     }
     return bitmap
@@ -345,11 +343,11 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     return buildString {
         appendLine("<html><head><title>Alignment Experiment - $time</title>")
-        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top; } img { max-width: 140px; height: auto; }</style></head><body>")
+        appendLine("<style>table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top; } img { max-width: 280px; height: auto; }</style></head><body>")
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th></tr>")
+        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
         results.forEachIndexed { index, r ->
             appendLine("<tr>")
             appendLine("<td>${index + 1}</td>")
@@ -364,10 +362,37 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.topMatches}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
+            appendLine("<td>${r.vehicle}</td>")  // placeholder for text blocks (will be populated later)
             appendLine("</tr>")
         }
         appendLine("</table></body></html>")
     }
+}
+
+private fun writeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String): List<File> {
+    val lines = fullHtml.lines()
+    val header = lines.takeWhile { !it.trim().startsWith("<tr>") }.joinToString("\n")
+    val footer = lines.takeLastWhile { !it.trim().startsWith("<tr>") }.joinToString("\n")
+    val dataRows = lines.dropWhile { !it.trim().startsWith("<tr>") }.dropLastWhile { !it.trim().startsWith("</tr>") }
+
+    val files = mutableListOf<File>()
+    val chunkSize = 20
+    for (i in dataRows.indices step chunkSize) {
+        val chunk = dataRows.subList(i, minOf(i + chunkSize, dataRows.size))
+        val pageNum = (i / chunkSize) + 1
+        val pageHtml = buildString {
+            appendLine(header)
+            appendLine("<table>")
+            appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
+            chunk.forEach { appendLine(it) }
+            appendLine("</table>")
+            appendLine(footer)
+        }
+        val file = File(reportDir, "alignment_report_${timestamp}_part${pageNum}.html")
+        file.writeText(pageHtml)
+        files.add(file)
+    }
+    return files
 }
 
 private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
