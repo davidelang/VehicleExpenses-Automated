@@ -48,41 +48,31 @@ fun ManageVehiclesScreen(
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
-
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
-
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
     var isNewVehicle by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
-
     var name by remember { mutableStateOf("") }
     var make by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
-
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
-    var landmarkCropRect by remember { mutableStateOf<Rect?>(null) }
-
+    var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }   // renamed
     var isEditingOcrArea by remember { mutableStateOf(false) }
-    var isEditingLandmark by remember { mutableStateOf(false) }
-
+    var isEditingOtherText by remember { mutableStateOf(false) }        // renamed
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
     var currentDragRect by remember { mutableStateOf<Rect?>(null) }
-
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
-
-    // NEW: loading state for cleaning
     var isCleaning by remember { mutableStateOf(false) }
 
     LaunchedEffect(vehicles) {
@@ -108,14 +98,13 @@ fun ManageVehiclesScreen(
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
-                landmarkCropRect = it.landmarkCropLeft?.let { left ->
-                    Rect(left, it.landmarkCropTop ?: 0f, it.landmarkCropRight ?: 1f, it.landmarkCropBottom ?: 1f)
+                otherTextCropRect = it.otherTextCropLeft?.let { left ->
+                    Rect(left, it.otherTextCropTop ?: 0f, it.otherTextCropRight ?: 1f, it.otherTextCropBottom ?: 1f)
                 }
             }
         }
     }
 
-    // IMMEDIATE CLEANING + SPINNER as soon as photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
@@ -180,7 +169,7 @@ fun ManageVehiclesScreen(
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        // Vehicle selector dropdown
+
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
@@ -216,13 +205,15 @@ fun ManageVehiclesScreen(
                         pickedPhotoUrl = null
                         referencePhotoUrl = null
                         odometerCropRect = null
-                        landmarkCropRect = null
+                        otherTextCropRect = null
                         dropdownExpanded = false
                     }
                 )
             }
         }
+
         Spacer(modifier = Modifier.height(16.dp))
+
         if (isNewVehicle || editingVehicle != null) {
             PhotoPicker(
                 photoStorageManager = settingsViewModel.photoStorageManager,
@@ -232,7 +223,6 @@ fun ManageVehiclesScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Show spinner while cleaning is in progress
             if (isCleaning) {
                 Box(
                     modifier = Modifier
@@ -248,7 +238,6 @@ fun ManageVehiclesScreen(
                     )
                 }
             } else if (referencePhotoUrl != null) {
-                // Interactive crop editor on the CLEANED image
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -290,8 +279,8 @@ fun ManageVehiclesScreen(
                                         val newRect = Rect(left, top, right, bottom)
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
-                                        } else if (isEditingLandmark) {
-                                            landmarkCropRect = newRect
+                                        } else if (isEditingOtherText) {
+                                            otherTextCropRect = newRect
                                         }
                                     }
                                     currentDragRect = null
@@ -325,7 +314,7 @@ fun ManageVehiclesScreen(
                             val height = rect.height * fitRect.height
                             drawRect(Color.Blue, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
                         }
-                        landmarkCropRect?.let { rect ->
+                        otherTextCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
                             val top = fitRect.top + rect.top * fitRect.height
                             val width = rect.width * fitRect.width
@@ -335,13 +324,14 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
+
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingLandmark = false }, modifier = Modifier.weight(1f)) {
+                Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingOtherText = false }, modifier = Modifier.weight(1f)) {
                     Text(if (isEditingOcrArea) "Done Editing Odometer" else "Edit Odometer Crop")
                 }
-                Button(onClick = { isEditingLandmark = !isEditingLandmark; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) {
-                    Text(if (isEditingLandmark) "Done Editing Landmark" else "Edit Landmark Crop")
+                Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) {
+                    Text(if (isEditingOtherText) "Done Editing Other Text" else "Edit Other Text Crop")
                 }
             }
             if (odometerCropRect != null) {
@@ -354,12 +344,14 @@ fun ManageVehiclesScreen(
                 Text("Try OCR Now")
             }
             Spacer(modifier = Modifier.height(24.dp))
+
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text("Make") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Year") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text("License Plate") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = odometerReading, onValueChange = { odometerReading = it }, label = { Text("Initial Odometer") }, modifier = Modifier.fillMaxWidth())
+
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -394,10 +386,10 @@ fun ManageVehiclesScreen(
                                                 odometerCropTop = odometerCropRect?.top,
                                                 odometerCropRight = odometerCropRect?.right,
                                                 odometerCropBottom = odometerCropRect?.bottom,
-                                                landmarkCropLeft = landmarkCropRect?.left,
-                                                landmarkCropTop = landmarkCropRect?.top,
-                                                landmarkCropRight = landmarkCropRect?.right,
-                                                landmarkCropBottom = landmarkCropRect?.bottom
+                                                otherTextCropLeft = otherTextCropRect?.left,
+                                                otherTextCropTop = otherTextCropRect?.top,
+                                                otherTextCropRight = otherTextCropRect?.right,
+                                                otherTextCropBottom = otherTextCropRect?.bottom
                                             )
                                         )
                                         Toast.makeText(context, "Vehicle updated with crop box", Toast.LENGTH_LONG).show()
@@ -433,6 +425,7 @@ fun ManageVehiclesScreen(
             }
         }
     }
+
     if (showEnlargedCrop && lastOcrDebugResult != null) {
         OcrDebugDialog(
             ocrResult = lastOcrDebugResult!!,
@@ -444,6 +437,7 @@ fun ManageVehiclesScreen(
             }
         )
     }
+
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
