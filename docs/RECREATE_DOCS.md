@@ -10,50 +10,34 @@ When the user asks you to recreate all files in the docs directory:
    - Ends with the git add, commit, and push commands for all docs files
    - Runs the exact required command: ./gradlew clean build; git describe
 
-**New requirement (added 2026-03-31):**
+**New requirement (added 2026-03-31):**  
 - Always include docs/API.md in the recreation. This file must contain a complete list of every public function, class, object, and data class in the repo, with the file it lives in, its purpose, and parameters.
 
-**New requirement (added 2026-04-03):**
+**New requirement (added 2026-04-03):**  
 
 ## Instructions to Grok: What docs must exist and what they must contain
 
 When the user asks you to create, update, or recreate documentation, you MUST produce exactly these files with the following contents:
 
-1. **README.md**  
-   - Project overview  
-   - How to build and run the app  
-   - Quick start guide for users  
-   - Link to the full documentation index
+1. **README.md** — Project overview, build instructions, quick start.
+2. **docs/API.md** — Complete list of every public class, data class, object, function, constructor with file path, purpose, parameters, return type.
+3. **docs/ARCHITECTURE.md** — High-level architecture and data flow.
+4. **docs/RECREATE_DOCS.md** (this file) — Must always contain the latest instructions for Grok.
+5. **docs/CHANGELOG.md** — Chronological list of changes.
+6. **docs/USER_GUIDE.md** — End-user instructions.
+7. **docs/DEVELOPER_GUIDE.md** — How to extend the system.
 
-2. **docs/API.md**  
-   - Complete list of every public class, data class, object, function, and constructor  
-   - For each item: file path, purpose, parameters/fields, return type, and usage notes  
-   - Organized by package/module
+## STRICT VERIFICATION RULE (added 2026-04-04) — THIS IS THE MOST IMPORTANT RULE
 
-3. **docs/ARCHITECTURE.md**  
-   - High-level architecture diagram description  
-   - Explanation of main modules (UI, data, util, etc.)  
-   - How data flows between layers (Room, ViewModel, Compose, OpenCV, OCR)
+**Before any patch that adds, changes, or references ANY class, object, function, data class, or public API (even ones you have seen in previous conversations):**
 
-4. **docs/RECREATE_DOCS.md** (this file)  
-   - Must always contain the latest instructions for Grok on how to recreate docs  
-   - Must include this exact section listing what docs to create
+1. You **MUST** first call `browse_page` on the exact file that defines that class/function.
+2. You must paste the full verbatim content of that file into your thinking trace.
+3. You must explicitly confirm the import path and exact signature before writing any code that uses it.
+4. If you cannot fetch the file, output exactly:  
+   **"I am unable to verify reference — aborting and waiting for your next instruction."**
 
-5. **docs/CHANGELOG.md**  
-   - Chronological list of major changes with dates and commit hashes  
-   - Summary of each release or significant patch
-
-6. **docs/USER_GUIDE.md**  
-   - Step-by-step instructions for end users (adding vehicles, taking photos, quick fill-up, viewing reports)  
-   - Explanation of crop boxes and OCR
-
-7. **docs/DEVELOPER_GUIDE.md**  
-   - How to add a new vehicle type  
-   - How to extend the alignment / OCR system  
-   - How to run experiments and interpret reports
-
-When recreating docs, always use the exact content fetched from GitHub for existing files and only add/update the sections above if the user explicitly asks or if the file is missing.
+This rule overrides all previous assumptions and must be followed on every single patch, every time. No exceptions.
 
 This file itself must never be overwritten or deleted unless the user explicitly asks.
 
-You can’t perform that action at this time.
