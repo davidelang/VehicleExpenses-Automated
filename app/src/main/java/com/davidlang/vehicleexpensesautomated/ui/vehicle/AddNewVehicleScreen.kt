@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.net.Uri
 import android.widget.Toast
@@ -22,6 +24,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlinx.coroutines.launch
 import java.io.File
@@ -34,15 +37,42 @@ fun AddNewVehicleScreen(
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
-
     var name by remember { mutableStateOf("") }
     var make by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
+    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
+    var referenceTextBlocks by remember { mutableStateOf<String?>(null) } // pre-extracted
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
+    var isCleaning by remember { mutableStateOf(false) }
+
+    // Single-pass cleaning + text extraction when photo is selected (same as ManageVehiclesScreen)
+    LaunchedEffect(pickedPhotoUrl) {
+        pickedPhotoUrl?.let { url ->
+            isCleaning = true
+            try {
+                val bmp = BitmapFactory.decodeFile(url) ?: return@let
+                val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
+                if (cleanedBmp != null) {
+                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
+                    val out = java.io.FileOutputStream(tempFile)
+                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    out.close()
+                    referencePhotoUrl = tempFile.absolutePath
+                    referenceTextBlocks = textBlocks
+                    cleanedBmp.recycle()
+                    Log.i("AddNewVehicle", "Immediate cleaned image + text blocks ready")
+                }
+            } catch (e: Exception) {
+                Log.e("AddNewVehicle", "Immediate cleaning failed", e)
+            } finally {
+                isCleaning = false
+            }
+        }
+    }
 
     LaunchedEffect(referencePhotoUrl, odometerCropRect) {
         referencePhotoUrl?.let { photoPathOrUri ->
@@ -51,9 +81,7 @@ fun AddNewVehicleScreen(
                 if (photoPathOrUri.startsWith("content://")) {
                     val tempFile = File.createTempFile("ocr_vehicle", ".jpg", context.cacheDir)
                     context.contentResolver.openInputStream(Uri.parse(photoPathOrUri))?.use { input ->
-                        tempFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
                     }
                     finalPath = tempFile.absolutePath
                 }
@@ -80,47 +108,52 @@ fun AddNewVehicleScreen(
             label = { Text("Vehicle Name (required)") },
             modifier = Modifier.fillMaxWidth()
         )
-
         OutlinedTextField(
             value = make,
             onValueChange = { make = it },
             label = { Text("Make (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
-
         OutlinedTextField(
             value = model,
             onValueChange = { model = it },
             label = { Text("Model (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
-
         OutlinedTextField(
             value = year,
             onValueChange = { year = it },
             label = { Text("Year (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
-
         OutlinedTextField(
             value = licensePlate,
             onValueChange = { licensePlate = it },
             label = { Text("License Plate (optional)") },
             modifier = Modifier.fillMaxWidth()
         )
-
         Spacer(modifier = Modifier.height(8.dp))
 
         PhotoPicker(
             photoStorageManager = settingsViewModel.photoStorageManager,
             photoType = PhotoType.FUEL,
-            currentPhotoUrl = referencePhotoUrl,
-            onPhotoUrlChanged = { referencePhotoUrl = it }
+            currentPhotoUrl = pickedPhotoUrl,
+            onPhotoUrlChanged = { pickedPhotoUrl = it }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (referencePhotoUrl != null) {
+        if (isCleaning) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+                Text(text = "Cleaning image...", modifier = Modifier.padding(top = 16.dp))
+            }
+        } else if (referencePhotoUrl != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -175,9 +208,10 @@ fun AddNewVehicleScreen(
                             model = model,
                             year = year.toIntOrNull() ?: 2025,
                             licensePlate = licensePlate,
-                            referenceDashPhotoUrl = referencePhotoUrl,
+                            cleanedReferenceDashPhotoUrl = referencePhotoUrl,   // always provided
                             odometerCropRect = odometerCropRect,
-                            initialOdometer = odometerReading.toIntOrNull() ?: 0
+                            initialOdometer = odometerReading.toIntOrNull() ?: 0,
+                            referenceTextBlocks = referenceTextBlocks           // always provided
                         )
                         Toast.makeText(context, "New vehicle created with odometer calibration", Toast.LENGTH_LONG).show()
                         navController.popBackStack()
