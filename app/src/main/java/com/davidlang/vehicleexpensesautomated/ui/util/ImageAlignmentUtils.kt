@@ -30,44 +30,14 @@ object ImageAlignmentUtils {
         }
     }
 
-    private fun detectSpeedometerCenter(original: Bitmap): Point? = try {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(original, mat)
-        val gray = Mat()
-        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY)
-        val circles = Mat()
-        Imgproc.HoughCircles(gray, circles, Imgproc.HOUGH_GRADIENT, 1.0, 50.0, 100.0, 30.0, 80, 200)
-        mat.release()
-        gray.release()
-        if (circles.rows() > 0) {
-            val c = circles.get(0, 0)
-            Point(c[0], c[1])
-        } else null
-    } catch (e: Exception) {
-        null
-    }
-
-    private fun drawRedCenter(original: Bitmap, center: Point?): Bitmap {
-        val bmp = original.copy(Bitmap.Config.ARGB_8888, true)
-        center?.let {
-            val canvas = Canvas(bmp)
-            val paint = Paint().apply {
-                color = Color.RED
-                style = Paint.Style.STROKE
-                strokeWidth = 8f
-            }
-            canvas.drawCircle(it.x.toFloat(), it.y.toFloat(), 120f, paint)
-        }
-        return bmp
-    }
-
-    // Production cleaning — text-only mask, kept in COLOR
-    suspend fun createCleanedReference(original: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
-        Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning (color output)")
+    // Returns Pair<cleanedBitmap, textBlocksString> so we only do OCR once
+    suspend fun createCleanedReference(original: Bitmap): Pair<Bitmap?, String?> = withContext(Dispatchers.IO) {
+        Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning + text extraction")
         val tempFile = File.createTempFile("ocr_temp", ".jpg")
         val out = java.io.FileOutputStream(tempFile)
         original.compress(Bitmap.CompressFormat.JPEG, 90, out)
         out.close()
+
         val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
         tempFile.delete()
 
@@ -101,11 +71,15 @@ object ImageAlignmentUtils {
         kernel.release()
         mask.recycle()
 
-        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned with text-only mask (color)")
-        result
+        val textBlocksString = ocrResult.textBlocks.joinToString("|") { block ->
+            "${block.text}:${block.boundingBox.left},${block.boundingBox.top},${block.boundingBox.right},${block.boundingBox.bottom}"
+        }
+
+        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned + text extracted in one pass")
+        Pair(result, textBlocksString)
     }
 
-    // Updated alignImages — ignores OCR and other-text crops on REFERENCE only
+    // alignImages remains unchanged
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
@@ -119,7 +93,6 @@ object ImageAlignmentUtils {
             org.opencv.android.Utils.bitmapToMat(reference, refMat)
             org.opencv.android.Utils.bitmapToMat(query, queryMat)
 
-            // Mask out crop regions on REFERENCE only (black them out before ORB)
             val refMasked = refMat.clone()
             if (odometerCrop != null) {
                 val left = (odometerCrop.left * refMat.cols()).toInt().coerceAtLeast(0)
