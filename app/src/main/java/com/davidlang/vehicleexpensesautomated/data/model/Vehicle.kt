@@ -15,13 +15,14 @@ data class Vehicle(
     val vin: String? = null,
     val notes: String? = null,
     val referenceDashPhotoUrl: String? = null,
-    val cleanedReferenceDashPhotoUrl: String? = null,  // ticks removed for better matching
+    val cleanedReferenceDashPhotoUrl: String? = null,
     val odometerCropLeft: Float? = null,
     val odometerCropTop: Float? = null,
     val odometerCropRight: Float? = null,
     val odometerCropBottom: Float? = null,
-    val landmarkCropLeft: Float? = null,
-    val landmarkCropTop: Float? = null,
-    val landmarkCropRight: Float? = null,
-    val landmarkCropBottom: Float? = null
+    val otherTextCropLeft: Float? = null,   // renamed from landmarkCrop
+    val otherTextCropTop: Float? = null,
+    val otherTextCropRight: Float? = null,
+    val otherTextCropBottom: Float? = null,
+    val referenceTextBlocks: String? = null  // new structured text (JSON)
 )

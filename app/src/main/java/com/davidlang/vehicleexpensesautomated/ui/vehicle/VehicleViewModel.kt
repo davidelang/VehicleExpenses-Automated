@@ -31,19 +31,14 @@ class VehicleViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    // All experiment StateFlows kept (functions themselves are NOT removed)
     private val _exp1Cleaned = MutableStateFlow<List<Bitmap>>(emptyList())
     val exp1Cleaned: StateFlow<List<Bitmap>> = _exp1Cleaned
-
     private val _exp2Radial = MutableStateFlow<List<Bitmap>>(emptyList())
     val exp2Radial: StateFlow<List<Bitmap>> = _exp2Radial
-
     private val _exp3Polar = MutableStateFlow<List<Bitmap>>(emptyList())
     val exp3Polar: StateFlow<List<Bitmap>> = _exp3Polar
-
     private val _exp4TextOnly = MutableStateFlow<List<Bitmap>>(emptyList())
     val exp4TextOnly: StateFlow<List<Bitmap>> = _exp4TextOnly
-
     private val _exp5LineSegments = MutableStateFlow<List<Bitmap>>(emptyList())
     val exp5LineSegments: StateFlow<List<Bitmap>> = _exp5LineSegments
 
@@ -67,7 +62,6 @@ class VehicleViewModel @Inject constructor(
             Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
             cleanedUrl = referenceDashPhotoUrl
         }
-
         val newVehicle = Vehicle(
             name = name,
             make = make,
@@ -79,9 +73,13 @@ class VehicleViewModel @Inject constructor(
             odometerCropLeft = odometerCropRect?.left,
             odometerCropTop = odometerCropRect?.top,
             odometerCropRight = odometerCropRect?.right,
-            odometerCropBottom = odometerCropRect?.bottom
+            odometerCropBottom = odometerCropRect?.bottom,
+            otherTextCropLeft = null,
+            otherTextCropTop = null,
+            otherTextCropRight = null,
+            otherTextCropBottom = null,
+            referenceTextBlocks = null
         )
-
         try {
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.insert(newVehicle)
@@ -101,12 +99,15 @@ class VehicleViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
         }
-
         val updated = vehicle.copy(
             referenceDashPhotoUrl = null,
-            cleanedReferenceDashPhotoUrl = cleanedUrl
+            cleanedReferenceDashPhotoUrl = cleanedUrl,
+            otherTextCropLeft = vehicle.otherTextCropLeft,
+            otherTextCropTop = vehicle.otherTextCropTop,
+            otherTextCropRight = vehicle.otherTextCropRight,
+            otherTextCropBottom = vehicle.otherTextCropBottom,
+            referenceTextBlocks = vehicle.referenceTextBlocks
         )
-
         try {
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.updateVehicle(updated)
@@ -127,29 +128,23 @@ class VehicleViewModel @Inject constructor(
         return createAndSaveCleanedReference(originalUrl)
     }
 
-    // loadDiagnosticGrid removed entirely (per request)
-    // (this was the only place that called experiments 1-3 and 5)
-
     private suspend fun createAndSaveCleanedReference(originalUrl: String): String? {
         val originalFile = File(originalUrl)
         if (!originalFile.exists()) {
             Log.e("VehicleReferenceCleaning", "Original file does not exist: $originalUrl")
             return null
         }
-
         val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath)
         if (originalBmp == null) {
             Log.e("VehicleReferenceCleaning", "Failed to decode original bitmap")
             return null
         }
-
         val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp)
         if (cleanedBmp == null) {
             Log.e("VehicleReferenceCleaning", "Text-mask cleaning returned null")
             originalBmp.recycle()
             return null
         }
-
         val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
         return try {
             val out = java.io.FileOutputStream(cleanedFile)
