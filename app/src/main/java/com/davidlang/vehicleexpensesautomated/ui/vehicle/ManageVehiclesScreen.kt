@@ -61,10 +61,11 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
+    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }   // NEW
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
-    var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }   // renamed
+    var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
-    var isEditingOtherText by remember { mutableStateOf(false) }        // renamed
+    var isEditingOtherText by remember { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
@@ -95,6 +96,7 @@ fun ManageVehiclesScreen(
                 odometerReading = ""
                 pickedPhotoUrl = it.referenceDashPhotoUrl
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
+                referenceTextBlocks = it.referenceTextBlocks
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
@@ -105,20 +107,22 @@ fun ManageVehiclesScreen(
         }
     }
 
+    // Single-pass cleaning + text extraction when photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
                     val out = java.io.FileOutputStream(tempFile)
                     cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
                     out.close()
                     referencePhotoUrl = tempFile.absolutePath
+                    referenceTextBlocks = textBlocks
                     cleanedBmp.recycle()
-                    Log.i("ManageVehicles", "Immediate cleaned image ready for cropping")
+                    Log.i("ManageVehicles", "Immediate cleaned image + text blocks ready")
                 }
             } catch (e: Exception) {
                 Log.e("ManageVehicles", "Immediate cleaning failed", e)
@@ -204,6 +208,7 @@ fun ManageVehiclesScreen(
                         odometerReading = ""
                         pickedPhotoUrl = null
                         referencePhotoUrl = null
+                        referenceTextBlocks = null
                         odometerCropRect = null
                         otherTextCropRect = null
                         dropdownExpanded = false
@@ -369,7 +374,8 @@ fun ManageVehiclesScreen(
                                         licensePlate = licensePlate,
                                         referenceDashPhotoUrl = pickedPhotoUrl,
                                         odometerCropRect = odometerCropRect,
-                                        initialOdometer = odometerReading.toIntOrNull() ?: 0
+                                        initialOdometer = odometerReading.toIntOrNull() ?: 0,
+                                        referenceTextBlocks = referenceTextBlocks
                                     )
                                     Toast.makeText(context, "New vehicle created with crop box", Toast.LENGTH_LONG).show()
                                 } else {
@@ -389,7 +395,8 @@ fun ManageVehiclesScreen(
                                                 otherTextCropLeft = otherTextCropRect?.left,
                                                 otherTextCropTop = otherTextCropRect?.top,
                                                 otherTextCropRight = otherTextCropRect?.right,
-                                                otherTextCropBottom = otherTextCropRect?.bottom
+                                                otherTextCropBottom = otherTextCropRect?.bottom,
+                                                referenceTextBlocks = referenceTextBlocks
                                             )
                                         )
                                         Toast.makeText(context, "Vehicle updated with crop box", Toast.LENGTH_LONG).show()
