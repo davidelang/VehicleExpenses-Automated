@@ -193,7 +193,7 @@ private suspend fun runFullExperiment(
     photos.forEachIndexed { index, file ->
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
-        val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(originalBitmap)
+        val (cleanedBmp, dashTextBlocks) = ImageAlignmentUtils.createCleanedReference(originalBitmap)
         val scoredVehicles = mutableListOf<Triple<String, Float, Int>>()
         vehicles.forEach { vehicle ->
             val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
@@ -276,7 +276,8 @@ private suspend fun runFullExperiment(
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 120),
             referenceBase64 = bitmapToBase64(referenceWithCrop, 120),
             odometer = extractedOdometer,
-            referenceTextBlocks = referenceTextBlocks
+            referenceTextBlocks = referenceTextBlocks,
+            dashTextBlocks = dashTextBlocks ?: ""
         ))
     }
     onProgress(1f, "Generating visual report...")
@@ -338,7 +339,8 @@ private data class PhotoResult(
     val odometerCropBase64: String,
     val referenceBase64: String,
     val odometer: String?,
-    val referenceTextBlocks: String
+    val referenceTextBlocks: String,
+    val dashTextBlocks: String
 )
 
 private data class ExperimentResult(val summary: String, val htmlReport: String)
@@ -351,7 +353,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
+        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
         results.forEachIndexed { index, r ->
             appendLine("<tr>")
             appendLine("<td>${index + 1}</td>")
@@ -367,6 +369,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
             appendLine("<td>${r.referenceTextBlocks.replace("\n", "<br>").replace("|", "<br>")}</td>")
+            appendLine("<td>${r.dashTextBlocks.replace("\n", "<br>").replace("|", "<br>")}</td>")
             appendLine("</tr>")
         }
         appendLine("</table></body></html>")
@@ -375,9 +378,10 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
 
 private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String, maxSizeKB: Int = 300): List<File> {
     val lines = fullHtml.lines()
-    val header = lines.takeWhile { !it.trim().startsWith("<tr>") }.joinToString("\n")
-    val footer = lines.takeLastWhile { !it.trim().startsWith("<tr>") }.joinToString("\n")
-    val dataRows = lines.dropWhile { !it.trim().startsWith("<tr>") }.dropLastWhile { !it.trim().startsWith("</tr>") }
+    val headerEndIndex = lines.indexOfFirst { it.trim().startsWith("<tr>") } + 1
+    val header = lines.take(headerEndIndex).joinToString("\n")
+    val footer = lines.drop(headerEndIndex).dropWhile { it.trim().startsWith("<tr>") }.joinToString("\n")
+    val dataRows = lines.drop(headerEndIndex).takeWhile { it.trim().startsWith("<tr>") }
 
     val files = mutableListOf<File>()
     var currentChunk = mutableListOf<String>()
@@ -388,11 +392,8 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
         if (currentSize + rowSize > maxSizeKB * 1024L && currentChunk.isNotEmpty()) {
             val pageNum = files.size + 1
             val pageHtml = buildString {
-                if (files.isEmpty()) appendLine(header)
-                appendLine("<table>")
-                appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
+                appendLine(header)
                 currentChunk.forEach { appendLine(it) }
-                appendLine("</table>")
                 appendLine(footer)
             }
             val file = File(reportDir, "alignment_report_${timestamp}_part${pageNum}.html")
@@ -409,11 +410,8 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
     if (currentChunk.isNotEmpty()) {
         val pageNum = files.size + 1
         val pageHtml = buildString {
-            if (files.isEmpty()) appendLine(header)
-            appendLine("<table>")
-            appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
+            appendLine(header)
             currentChunk.forEach { appendLine(it) }
-            appendLine("</table>")
             appendLine(footer)
         }
         val file = File(reportDir, "alignment_report_${timestamp}_part${pageNum}.html")
