@@ -49,7 +49,7 @@ fun AddNewVehicleScreen(
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
 
-    // Single-pass cleaning + text extraction when photo is selected (same as ManageVehiclesScreen)
+    // Single-pass cleaning + text extraction when photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
@@ -208,10 +208,10 @@ fun AddNewVehicleScreen(
                             model = model,
                             year = year.toIntOrNull() ?: 2025,
                             licensePlate = licensePlate,
-                            cleanedReferenceDashPhotoUrl = referencePhotoUrl,   // always provided
+                            cleanedReferenceDashPhotoUrl = referencePhotoUrl,
                             odometerCropRect = odometerCropRect,
                             initialOdometer = odometerReading.toIntOrNull() ?: 0,
-                            referenceTextBlocks = referenceTextBlocks           // always provided
+                            referenceTextBlocks = referenceTextBlocks
                         )
                         Toast.makeText(context, "New vehicle created with odometer calibration", Toast.LENGTH_LONG).show()
                         navController.popBackStack()

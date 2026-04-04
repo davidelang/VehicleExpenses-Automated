@@ -368,10 +368,10 @@ fun ManageVehiclesScreen(
                                         model = model,
                                         year = year.toIntOrNull(),
                                         licensePlate = licensePlate,
-                                        cleanedReferenceDashPhotoUrl = referencePhotoUrl,   // always provided
+                                        cleanedReferenceDashPhotoUrl = referencePhotoUrl,
                                         odometerCropRect = odometerCropRect,
                                         initialOdometer = odometerReading.toIntOrNull() ?: 0,
-                                        referenceTextBlocks = referenceTextBlocks           // always provided
+                                        referenceTextBlocks = referenceTextBlocks
                                     )
                                     Toast.makeText(context, "New vehicle created with crop box", Toast.LENGTH_LONG).show()
                                 } else {
