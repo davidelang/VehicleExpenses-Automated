@@ -128,7 +128,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                                 currentPhoto = name
                             }
                             val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-                            val htmlFiles = writeSplitHtmlReports(result.htmlReport, reportDir, timestamp)
+                            val htmlFiles = writeSizeSplitHtmlReports(result.htmlReport, reportDir, timestamp, maxSizeKB = 300)
                             reportPath = htmlFiles.firstOrNull()?.absolutePath
                             status = "Test complete!\n${result.summary}\n${htmlFiles.size} report files written"
                             Log.i(TAG, "Reports written: ${htmlFiles.size} files")
@@ -362,29 +362,53 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
             appendLine("<td>${r.topMatches}</td>")
             appendLine("<td>${r.odometer ?: "—"}</td>")
             appendLine("<td>${"%.1f".format(r.confidence * 100)}%</td>")
-            appendLine("<td>${r.vehicle}</td>")  // placeholder for text blocks
+            appendLine("<td>${r.vehicle}</td>")  // placeholder
             appendLine("</tr>")
         }
         appendLine("</table></body></html>")
     }
 }
 
-private fun writeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String): List<File> {
+private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String, maxSizeKB: Int = 300): List<File> {
     val lines = fullHtml.lines()
     val header = lines.takeWhile { !it.trim().startsWith("<tr>") }.joinToString("\n")
     val footer = lines.takeLastWhile { !it.trim().startsWith("<tr>") }.joinToString("\n")
     val dataRows = lines.dropWhile { !it.trim().startsWith("<tr>") }.dropLastWhile { !it.trim().startsWith("</tr>") }
 
     val files = mutableListOf<File>()
-    val chunkSize = 20   // exactly 20 data rows per report
-    for (i in dataRows.indices step chunkSize) {
-        val chunk = dataRows.subList(i, minOf(i + chunkSize, dataRows.size))
-        val pageNum = (i / chunkSize) + 1
+    var currentChunk = mutableListOf<String>()
+    var currentSize = 0L
+
+    for (row in dataRows) {
+        val rowSize = row.length + 2L  // approximate bytes
+        if (currentSize + rowSize > maxSizeKB * 1024L && currentChunk.isNotEmpty()) {
+            val pageNum = files.size + 1
+            val pageHtml = buildString {
+                appendLine(header)
+                appendLine("<table>")
+                appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
+                currentChunk.forEach { appendLine(it) }
+                appendLine("</table>")
+                appendLine(footer)
+            }
+            val file = File(reportDir, "alignment_report_${timestamp}_part${pageNum}.html")
+            file.writeText(pageHtml)
+            files.add(file)
+
+            currentChunk = mutableListOf()
+            currentSize = 0L
+        }
+        currentChunk.add(row)
+        currentSize += rowSize
+    }
+
+    if (currentChunk.isNotEmpty()) {
+        val pageNum = files.size + 1
         val pageHtml = buildString {
             appendLine(header)
             appendLine("<table>")
             appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Confidence</th><th>Reference Text Blocks</th></tr>")
-            chunk.forEach { appendLine(it) }
+            currentChunk.forEach { appendLine(it) }
             appendLine("</table>")
             appendLine(footer)
         }
