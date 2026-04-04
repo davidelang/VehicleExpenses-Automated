@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }   // pre-extracted
+    var referenceTextBlocks by remember { mutableStateOf<String?>(null) } // pre-extracted
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
@@ -368,10 +368,10 @@ fun ManageVehiclesScreen(
                                         model = model,
                                         year = year.toIntOrNull(),
                                         licensePlate = licensePlate,
-                                        referenceDashPhotoUrl = pickedPhotoUrl,
+                                        cleanedReferenceDashPhotoUrl = referencePhotoUrl,   // always provided
                                         odometerCropRect = odometerCropRect,
                                         initialOdometer = odometerReading.toIntOrNull() ?: 0,
-                                        referenceTextBlocks = referenceTextBlocks
+                                        referenceTextBlocks = referenceTextBlocks           // always provided
                                     )
                                     Toast.makeText(context, "New vehicle created with crop box", Toast.LENGTH_LONG).show()
                                 } else {
@@ -383,7 +383,7 @@ fun ManageVehiclesScreen(
                                                 model = model,
                                                 year = year.toIntOrNull(),
                                                 licensePlate = licensePlate,
-                                                referenceDashPhotoUrl = pickedPhotoUrl,
+                                                cleanedReferenceDashPhotoUrl = referencePhotoUrl,
                                                 odometerCropLeft = odometerCropRect?.left,
                                                 odometerCropTop = odometerCropRect?.top,
                                                 odometerCropRight = odometerCropRect?.right,

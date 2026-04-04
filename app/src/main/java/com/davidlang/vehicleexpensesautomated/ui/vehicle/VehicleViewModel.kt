@@ -1,13 +1,10 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
-import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -17,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -50,19 +46,13 @@ class VehicleViewModel @Inject constructor(
         model: String,
         year: Int?,
         licensePlate: String?,
-        referenceDashPhotoUrl: String?,
+        cleanedReferenceDashPhotoUrl: String?,   // always provided by screen
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
-        referenceTextBlocks: String? = null
+        referenceTextBlocks: String?             // always provided by screen
     ) {
-        Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name")
-        var cleanedUrl: String? = null
-        try {
-            cleanedUrl = referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
-        } catch (e: Exception) {
-            Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
-            cleanedUrl = referenceDashPhotoUrl
-        }
+        Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name (using pre-cleaned data)")
+
         val newVehicle = Vehicle(
             name = name,
             make = make,
@@ -70,7 +60,7 @@ class VehicleViewModel @Inject constructor(
             year = year,
             licensePlate = licensePlate,
             referenceDashPhotoUrl = null,
-            cleanedReferenceDashPhotoUrl = cleanedUrl,
+            cleanedReferenceDashPhotoUrl = cleanedReferenceDashPhotoUrl,
             odometerCropLeft = odometerCropRect?.left,
             odometerCropTop = odometerCropRect?.top,
             odometerCropRight = odometerCropRect?.right,
@@ -81,6 +71,7 @@ class VehicleViewModel @Inject constructor(
             otherTextCropBottom = null,
             referenceTextBlocks = referenceTextBlocks
         )
+
         try {
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.insert(newVehicle)
@@ -92,23 +83,18 @@ class VehicleViewModel @Inject constructor(
     }
 
     suspend fun updateVehicle(vehicle: Vehicle) {
-        Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
-        var cleanedUrl: String? = vehicle.cleanedReferenceDashPhotoUrl
-        try {
-            cleanedUrl = vehicle.referenceDashPhotoUrl?.let { createAndSaveCleanedReference(it) }
-                ?: vehicle.cleanedReferenceDashPhotoUrl
-        } catch (e: Exception) {
-            Log.e("VehicleReferenceCleaning", "Cleaning failed", e)
-        }
+        Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id} (using pre-cleaned data)")
+
         val updated = vehicle.copy(
             referenceDashPhotoUrl = null,
-            cleanedReferenceDashPhotoUrl = cleanedUrl,
+            cleanedReferenceDashPhotoUrl = vehicle.cleanedReferenceDashPhotoUrl,
             otherTextCropLeft = vehicle.otherTextCropLeft,
             otherTextCropTop = vehicle.otherTextCropTop,
             otherTextCropRight = vehicle.otherTextCropRight,
             otherTextCropBottom = vehicle.otherTextCropBottom,
             referenceTextBlocks = vehicle.referenceTextBlocks
         )
+
         try {
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.updateVehicle(updated)
@@ -122,44 +108,10 @@ class VehicleViewModel @Inject constructor(
     suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
         val cleaned = vehicle.cleanedReferenceDashPhotoUrl
         if (cleaned != null) {
-            val f = File(cleaned)
+            val f = java.io.File(cleaned)
             if (f.exists()) return cleaned
         }
-        val originalUrl = vehicle.referenceDashPhotoUrl ?: return null
-        return createAndSaveCleanedReference(originalUrl)
-    }
-
-    private suspend fun createAndSaveCleanedReference(originalUrl: String): String? {
-        val originalFile = File(originalUrl)
-        if (!originalFile.exists()) {
-            Log.e("VehicleReferenceCleaning", "Original file does not exist: $originalUrl")
-            return null
-        }
-        val originalBmp = BitmapFactory.decodeFile(originalFile.absolutePath)
-        if (originalBmp == null) {
-            Log.e("VehicleReferenceCleaning", "Failed to decode original bitmap")
-            return null
-        }
-        val cleanedBmp = ImageAlignmentUtils.createCleanedReference(originalBmp).first
-        if (cleanedBmp == null) {
-            Log.e("VehicleReferenceCleaning", "Text-mask cleaning returned null")
-            originalBmp.recycle()
-            return null
-        }
-        val cleanedFile = File(originalFile.parent, "cleaned_${originalFile.name}")
-        return try {
-            val out = java.io.FileOutputStream(cleanedFile)
-            cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-            out.close()
-            Log.i("VehicleReferenceCleaning", "Saved cleaned reference")
-            cleanedFile.absolutePath
-        } catch (e: Exception) {
-            Log.e("VehicleReferenceCleaning", "Failed to write cleaned file", e)
-            null
-        } finally {
-            originalBmp.recycle()
-            cleanedBmp.recycle()
-        }
+        return null
     }
 
     fun deleteVehicle(vehicle: Vehicle) {
