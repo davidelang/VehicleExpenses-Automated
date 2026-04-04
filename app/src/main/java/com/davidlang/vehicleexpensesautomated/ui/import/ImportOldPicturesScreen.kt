@@ -36,7 +36,6 @@ fun ImportOldPicturesScreen(
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
-
     val vehicles by vehicleViewModel.vehicles.collectAsState()
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
     var photoPath by remember { mutableStateOf<String?>(null) }
@@ -44,26 +43,27 @@ fun ImportOldPicturesScreen(
     var gallons by remember { mutableStateOf("") }
     var cost by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
-
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
 
-    // IMMEDIATE CLEANING (single routine) as soon as photo is selected
+    // Single-pass cleaning + text extraction when photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
                     val out = java.io.FileOutputStream(tempFile)
                     cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
                     out.close()
                     cleanedPhotoUrl = tempFile.absolutePath
+                    referenceTextBlocks = textBlocks
                     cleanedBmp.recycle()
-                    Log.i("ImportOldPictures", "Cleaned image ready for import")
+                    Log.i("ImportOldPictures", "Cleaned image + text blocks ready")
                 }
             } catch (e: Exception) {
                 Log.e("ImportOldPictures", "Cleaning failed", e)

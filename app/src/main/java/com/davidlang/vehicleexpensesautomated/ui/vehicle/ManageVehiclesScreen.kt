@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }   // NEW
+    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
@@ -236,11 +236,7 @@ fun ManageVehiclesScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
-                    Text(
-                        text = "Cleaning image...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 16.dp)
-                    )
+                    Text(text = "Cleaning image...", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
                 }
             } else if (referencePhotoUrl != null) {
                 BoxWithConstraints(

@@ -1,5 +1,4 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
-
 import android.content.Context
 import android.net.Uri
 import android.util.Log
@@ -54,7 +53,6 @@ fun QuickFillupScreen(navController: NavHostController) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
@@ -81,9 +79,9 @@ fun QuickFillupScreen(navController: NavHostController) {
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var dropdownExpanded by remember { mutableStateOf(false) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
-
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedVehicleId) {
@@ -98,21 +96,22 @@ fun QuickFillupScreen(navController: NavHostController) {
         }
     }
 
-    // IMMEDIATE CLEANING (single routine) as soon as photo is selected
+    // Single-pass cleaning + text extraction when photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val cleanedBmp = ImageAlignmentUtils.createCleanedReference(bmp)
+                val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
                     val out = java.io.FileOutputStream(tempFile)
                     cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
                     out.close()
                     cleanedPhotoUrl = tempFile.absolutePath
+                    referenceTextBlocks = textBlocks
                     cleanedBmp.recycle()
-                    Log.i("QuickFill", "Immediate cleaned image ready for OCR/alignment")
+                    Log.i("QuickFill", "Immediate cleaned image + text blocks ready")
                 }
             } catch (e: Exception) {
                 Log.e("QuickFill", "Immediate cleaning failed", e)
@@ -133,7 +132,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 lastPhotoPath = tempFile.absolutePath
-                Log.d("OcrDebug", "Gallery: lastPhotoPath set to: $lastPhotoPath (file exists = ${tempFile.exists()})")
+                Log.d("OcrDebug", "Gallery: lastPhotoPath set to: $lastPhotoPath")
                 val cropRectF = odometerCropRect?.let { r ->
                     android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                 }
@@ -257,6 +256,7 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         }
     }
+
     if (showAlignedDialog && lastOcrDebugResult != null) {
         OcrDebugDialog(
             ocrResult = lastOcrDebugResult!!,
@@ -269,6 +269,7 @@ fun QuickFillupScreen(navController: NavHostController) {
             }
         )
     }
+
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
@@ -296,7 +297,6 @@ fun QuickFillupScreen(navController: NavHostController) {
         )
     }
 }
-
 @Composable
 private fun ControlsContent(
     step: Int,
@@ -379,7 +379,6 @@ private fun ControlsContent(
         Text("Run Alignment Experiment (test new function)")
     }
 }
-
 private fun captureDashPhoto(
     context: Context,
     imageCapture: ImageCapture,
@@ -411,7 +410,7 @@ private fun captureDashPhoto(
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 val path = photoFile.absolutePath
                 updateLastPhotoPath(path)
-                Log.d("OcrDebug", "Camera: lastPhotoPath set to: $path (file exists = ${photoFile.exists()})")
+                Log.d("OcrDebug", "Camera: lastPhotoPath set to: $path")
                 scope.launch {
                     processPhoto(context, path, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
                 }
@@ -419,7 +418,6 @@ private fun captureDashPhoto(
         }
     )
 }
-
 private suspend fun processPhoto(
     context: Context,
     path: String,
