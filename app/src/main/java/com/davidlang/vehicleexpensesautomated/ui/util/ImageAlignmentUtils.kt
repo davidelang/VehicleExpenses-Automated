@@ -1,4 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
+
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -13,12 +14,23 @@ import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
 import org.opencv.calib3d.Calib3d
 import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+
+// Required for helper functions
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+
 data class AlignmentResult(
     val success: Boolean,
     val alignedImage: Bitmap?,
     val confidence: Float,
-    val message: String
+    val message: String,
+    val refKeypoints: Int = 0,
+    val queryKeypoints: Int = 0,
+    val goodMatchesCount: Int = 0,
+    val method: String = "feature"
 )
+
 object ImageAlignmentUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
@@ -27,6 +39,7 @@ object ImageAlignmentUtils {
             Log.i("ImageAlignment", "OpenCV initialized successfully")
         }
     }
+
     suspend fun createCleanedReference(
         original: Bitmap,
         odometerCrop: RectF? = null,
@@ -76,16 +89,112 @@ object ImageAlignmentUtils {
         val textBlocksString = ocrResult.textBlocks.joinToString("|") { block ->
             "${block.text}:${block.boundingBox.left},${block.boundingBox.top},${block.boundingBox.right},${block.boundingBox.bottom}"
         }
-        Log.i("VehicleReferenceCleaning", "✅ Reference cleaned + text extracted (crop-aware)")
+        Log.i("VehicleReferenceCleaning", "Reference cleaned + text extracted (crop-aware)")
         Pair(grayBitmap, textBlocksString)
     }
+
+    private fun argMatch(refBlocks: List<OdometerOcrUtils.TextBlock>, queryBlocks: List<OdometerOcrUtils.TextBlock>): Float {
+        if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
+        var score = 0f
+        for (r in refBlocks) {
+            for (q in queryBlocks) {
+                val textSim = if (r.text == q.text) 1f else 0.5f * (1f - levenshtein(r.text, q.text).toFloat() / max(r.text.length, q.text.length))
+                val boxSim = boxIoU(r.boundingBox, q.boundingBox)
+                score += textSim * boxSim
+            }
+        }
+        return score / (refBlocks.size * queryBlocks.size)
+    }
+
+    private fun levenshtein(s1: String, s2: String): Int {
+        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
+        for (i in 0..s1.length) dp[i][0] = i
+        for (j in 0..s2.length) dp[0][j] = j
+        for (i in 1..s1.length) {
+            for (j in 1..s2.length) {
+                val cost = if (s1[i-1] == s2[j-1]) 0 else 1
+                dp[i][j] = minOf(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost)
+            }
+        }
+        return dp[s1.length][s2.length]
+    }
+
+    private fun boxIoU(r1: android.graphics.Rect, r2: android.graphics.Rect): Float {
+        val interLeft = max(r1.left, r2.left)
+        val interTop = max(r1.top, r2.top)
+        val interRight = min(r1.right, r2.right)
+        val interBottom = min(r1.bottom, r2.bottom)
+        if (interLeft >= interRight || interTop >= interBottom) return 0f
+        val interArea = (interRight - interLeft) * (interBottom - interTop).toFloat()
+        val area1 = (r1.right - r1.left) * (r1.bottom - r1.top).toFloat()
+        val area2 = (r2.right - r2.left) * (r2.bottom - r2.top).toFloat()
+        return interArea / (area1 + area2 - interArea)
+    }
+
+    private fun histogramMatch(refBlocks: List<OdometerOcrUtils.TextBlock>, queryBlocks: List<OdometerOcrUtils.TextBlock>): Float {
+        val gridSize = 5
+        val refHist = IntArray(gridSize * gridSize)
+        val queryHist = IntArray(gridSize * gridSize)
+        val refWords = mutableSetOf<String>()
+        val queryWords = mutableSetOf<String>()
+        for (b in refBlocks) {
+            val gx = (b.boundingBox.centerX() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
+            val gy = (b.boundingBox.centerY() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
+            refHist[gx + gy * gridSize]++
+            refWords.add(b.text.lowercase())
+        }
+        for (b in queryBlocks) {
+            val gx = (b.boundingBox.centerX() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
+            val gy = (b.boundingBox.centerY() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
+            queryHist[gx + gy * gridSize]++
+            queryWords.add(b.text.lowercase())
+        }
+        var histScore = 0f
+        for (i in refHist.indices) {
+            histScore += min(refHist[i], queryHist[i]).toFloat()
+        }
+        val textScore = refWords.intersect(queryWords).size.toFloat() / max(refWords.size, queryWords.size)
+        return (histScore / (refBlocks.size + queryBlocks.size)) * 0.6f + textScore * 0.4f
+    }
+
+    private fun embeddingMatch(refBlocks: List<OdometerOcrUtils.TextBlock>, queryBlocks: List<OdometerOcrUtils.TextBlock>): Float {
+        val allWords = (refBlocks + queryBlocks).map { it.text.lowercase() }.toSet()
+        val refVec = FloatArray(allWords.size)
+        val queryVec = FloatArray(allWords.size)
+        val wordMap = allWords.withIndex().associate { it.value to it.index }
+        for (b in refBlocks) {
+            val idx = wordMap[b.text.lowercase()] ?: continue
+            refVec[idx] += 1f
+        }
+        for (b in queryBlocks) {
+            val idx = wordMap[b.text.lowercase()] ?: continue
+            queryVec[idx] += 1f
+        }
+        var dot = 0f
+        var normRef = 0f
+        var normQuery = 0f
+        for (i in refVec.indices) {
+            dot += refVec[i] * queryVec[i]
+            normRef += refVec[i] * refVec[i]
+            normQuery += queryVec[i] * queryVec[i]
+        }
+        val textSim = if (normRef > 0 && normQuery > 0) dot / (kotlin.math.sqrt(normRef) * kotlin.math.sqrt(normQuery)) else 0f
+        var layoutSim = 0f
+        for (r in refBlocks) {
+            for (q in queryBlocks) {
+                layoutSim += boxIoU(r.boundingBox, q.boundingBox)
+            }
+        }
+        layoutSim /= (refBlocks.size * queryBlocks.size).toFloat()
+        return textSim * 0.7f + layoutSim * 0.3f
+    }
+
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
         minInliers: Int = 15,
         odometerCrop: android.graphics.RectF? = null,
-        otherTextCrop: android.graphics.RectF? = null,
-        useAffineFallback: Boolean = true
+        otherTextCrop: android.graphics.RectF? = null
     ): AlignmentResult = withContext(Dispatchers.IO) {
         val refMat = Mat()
         val queryMat = Mat()
@@ -124,8 +233,10 @@ object ImageAlignmentUtils {
             val queryDescriptors = Mat()
             orb.detectAndCompute(refGray, Mat(), refKeypoints, refDescriptors)
             orb.detectAndCompute(queryGray, Mat(), queryKeypoints, queryDescriptors)
+            val refKpCount = refKeypoints.rows()
+            val queryKpCount = queryKeypoints.rows()
             if (refDescriptors.empty() || queryDescriptors.empty()) {
-                return@withContext AlignmentResult(false, null, 0f, "Not enough features detected")
+                return@withContext AlignmentResult(false, null, 0f, "Not enough features detected", refKpCount, queryKpCount, 0, "feature")
             }
             val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
             val matches = MatOfDMatch()
@@ -140,8 +251,9 @@ object ImageAlignmentUtils {
                     goodMatches.add(m)
                 }
             }
-            if (goodMatches.size < minInliers) {
-                return@withContext AlignmentResult(false, null, 0f, "Only ${goodMatches.size} good matches (need $minInliers)")
+            val goodMatchesCount = goodMatches.size
+            if (goodMatchesCount < minInliers) {
+                return@withContext AlignmentResult(false, null, 0f, "Only $goodMatchesCount good matches (need $minInliers)", refKpCount, queryKpCount, goodMatchesCount, "feature")
             }
             val srcPoints = MatOfPoint2f()
             val dstPoints = MatOfPoint2f()
@@ -155,16 +267,8 @@ object ImageAlignmentUtils {
             }
             srcPoints.fromList(srcList)
             dstPoints.fromList(dstList)
-            var homography = Mat()
-            if (useAffineFallback && goodMatches.size < 30) {
-                homography = Calib3d.estimateAffine2D(srcPoints, dstPoints)
-                if (homography.empty()) {
-                    homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
-                }
-            } else {
-                homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
-            }
-            val confidence = goodMatches.size.toFloat() / matchList.size.toFloat()
+            val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
+            val confidence = goodMatchesCount.toFloat() / matchList.size.toFloat()
             val warped = Mat()
             Imgproc.warpPerspective(queryMat, warped, homography, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
             val alignedBitmap = Bitmap.createBitmap(warped.cols(), warped.rows(), Bitmap.Config.ARGB_8888)
@@ -176,14 +280,38 @@ object ImageAlignmentUtils {
                 success = true,
                 alignedImage = alignedBitmap,
                 confidence = confidence,
-                message = "Aligned with ${goodMatches.size} inliers (${"%.1f".format(confidence * 100)}%)"
+                message = "Aligned with $goodMatchesCount inliers (${"%.1f".format(confidence * 100)}%)",
+                refKeypoints = refKpCount,
+                queryKeypoints = queryKpCount,
+                goodMatchesCount = goodMatchesCount,
+                method = "feature"
             )
         } catch (e: Exception) {
             Log.e("ImageAlignment", "Alignment failed", e)
-            AlignmentResult(false, null, 0f, "Exception: ${e.message}")
+            AlignmentResult(false, null, 0f, "Exception: ${e.message}", 0, 0, 0, "feature")
         } finally {
             refMat.release()
             queryMat.release()
         }
+    }
+
+    suspend fun matchWithAllMethods(
+        reference: Bitmap,
+        query: Bitmap,
+        refOcr: OdometerOcrUtils.OcrResult,
+        queryOcr: OdometerOcrUtils.OcrResult,
+        odometerCrop: android.graphics.RectF? = null,
+        otherTextCrop: android.graphics.RectF? = null
+    ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
+        val results = mutableMapOf<String, AlignmentResult>()
+        val featureResult = alignImages(reference, query, 15, odometerCrop, otherTextCrop)
+        results["feature"] = featureResult
+        val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        results["arg"] = AlignmentResult(true, null, argScore, "ARG score: ${"%.2f".format(argScore)}", method = "arg")
+        val histScore = histogramMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        results["histogram"] = AlignmentResult(true, null, histScore, "Histogram+text score: ${"%.2f".format(histScore)}", method = "histogram")
+        val embScore = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        results["embedding"] = AlignmentResult(true, null, embScore, "Embedding proxy score: ${"%.2f".format(embScore)}", method = "embedding")
+        results
     }
 }
