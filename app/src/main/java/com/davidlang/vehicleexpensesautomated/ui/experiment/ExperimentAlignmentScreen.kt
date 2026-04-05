@@ -437,7 +437,7 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
         currentChunk.add(row)
         currentSize += rowSize
     }
-    if (currentChunk.isNotEmpty()) {
+    if (currentChunk.isNotEmpty() || files.isEmpty()) {
         val pageNum = files.size + 1
         val pageHtml = buildString {
             appendLine(header)
