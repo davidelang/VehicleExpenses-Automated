@@ -17,10 +17,10 @@ import java.io.File
 import kotlin.math.max
 import kotlin.math.min
 
-// Required for helper functions
+// Correct top-level imports (data classes are not nested)
+import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
+import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
-import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.TextBlock
-import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.OcrResult
 
 data class AlignmentResult(
     val success: Boolean,
@@ -52,7 +52,7 @@ object ImageAlignmentUtils {
         val out = java.io.FileOutputStream(tempFile)
         original.compress(Bitmap.CompressFormat.JPEG, 90, out)
         out.close()
-        val ocrResult = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
+        val ocrResult = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
         tempFile.delete()
         val mask = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(mask)
