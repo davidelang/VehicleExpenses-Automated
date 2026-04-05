@@ -191,6 +191,7 @@ private suspend fun runFullExperiment(
         val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
         val (cleanedBmp, dashTextBlocks) = ImageAlignmentUtils.createCleanedReference(originalBitmap)
         val scoredVehicles = mutableListOf<Triple<String, Float, Int>>()
+        val alignedImages = mutableMapOf<String, String>()
         vehicles.forEach { vehicle ->
             val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
@@ -208,6 +209,9 @@ private suspend fun runFullExperiment(
                 val inliersMatch = Regex("with (\\d+) inliers").find(alignment.message)
                 val inliers = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
                 scoredVehicles.add(Triple(vehicle.name, alignment.confidence, inliers))
+                alignedImages[vehicle.name] = bitmapToBase64(alignment.alignedImage, 240)
+            } else {
+                alignedImages[vehicle.name] = PLACEHOLDER_BASE64
             }
         }
         val top3 = scoredVehicles.sortedByDescending { it.second }.take(3)
@@ -288,6 +292,7 @@ private suspend fun runFullExperiment(
             referenceBase64 = bitmapToBase64(referenceWithCrop, 240),
             odometer = extractedOdometer,
             fullImageOcr = fullImageOcr,
+            alignedImages = alignedImages,
             referenceTextBlocks = referenceTextBlocks,
             dashTextBlocks = dashTextBlocks ?: ""
         ))
@@ -369,6 +374,7 @@ private data class PhotoResult(
     val referenceBase64: String,
     val odometer: String?,
     val fullImageOcr: String?,
+    val alignedImages: Map<String, String>,
     val referenceTextBlocks: String,
     val dashTextBlocks: String
 )
@@ -393,7 +399,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, vehicles
             appendLine("<td><img src='data:image/jpeg;base64,${r.cleanedDashBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.referenceBase64}'></td>")
             vehicles.forEach { v ->
-                val alignedForThisVehicle = if (r.vehicle == v.name) r.alignedBase64 else PLACEHOLDER_BASE64
+                val alignedForThisVehicle = r.alignedImages[v.name] ?: PLACEHOLDER_BASE64
                 appendLine("<td><img src='data:image/jpeg;base64,$alignedForThisVehicle'></td>")
             }
             appendLine("<td>${r.vehicle}</td>")
