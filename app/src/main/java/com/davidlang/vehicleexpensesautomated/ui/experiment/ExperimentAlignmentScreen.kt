@@ -293,7 +293,7 @@ private suspend fun runFullExperiment(
         ))
     }
     onProgress(1f, "Generating visual report...")
-    val html = buildRichHtmlReport(results, total)
+    val html = buildRichHtmlReport(results, total, vehicles)
     val summary = "Processed $total photos — $success successful alignments"
     return ExperimentResult(summary, html)
 }
@@ -373,7 +373,7 @@ private data class PhotoResult(
     val dashTextBlocks: String
 )
 private data class ExperimentResult(val summary: String, val htmlReport: String)
-private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String {
+private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, vehicles: List<Vehicle>): String {
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     return buildString {
         appendLine("<html><head><title>Alignment Experiment - $time</title>")
@@ -381,15 +381,21 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>OCR Steps</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
+        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th>")
+        vehicles.forEach { v ->
+            appendLine("<th>${v.name} Aligned</th>")
+        }
+        appendLine("<th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Full Image OCR</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
         results.forEachIndexed { index, r ->
             appendLine("<tr>")
             appendLine("<td>${index + 1}</td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.cleanedDashBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.referenceBase64}'></td>")
-            appendLine("<td><img src='data:image/jpeg;base64,${r.alignedBase64}'></td>")
-            appendLine("<td><img src='data:image/jpeg;base64,${r.odometerCropBase64}'></td>")
+            vehicles.forEach { v ->
+                val alignedForThisVehicle = if (r.vehicle == v.name) r.alignedBase64 else PLACEHOLDER_BASE64
+                appendLine("<td><img src='data:image/jpeg;base64,$alignedForThisVehicle'></td>")
+            }
             appendLine("<td>${r.vehicle}</td>")
             appendLine("<td>${r.inliersCount}</td>")
             appendLine("<td>${r.alignmentMessage}</td>")
