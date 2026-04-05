@@ -27,7 +27,6 @@ object ImageAlignmentUtils {
             Log.i("ImageAlignment", "OpenCV initialized successfully")
         }
     }
-    // Updated to accept crop rects so text inside crops is NOT masked out (keeps it for full OCR)
     suspend fun createCleanedReference(
         original: Bitmap,
         odometerCrop: RectF? = null,
@@ -48,7 +47,6 @@ object ImageAlignmentUtils {
         ocrResult.textBlocks.forEach { block ->
             val r = block.boundingBox
             val blockRect = RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
-            // Skip text blocks that are completely inside the crop boxes
             val insideOdometer = odometerCrop != null && odometerCrop.contains(blockRect)
             val insideOtherText = otherTextCrop != null && otherTextCrop.contains(blockRect)
             if (!insideOdometer && !insideOtherText) {
@@ -81,13 +79,13 @@ object ImageAlignmentUtils {
         Log.i("VehicleReferenceCleaning", "✅ Reference cleaned + text extracted (crop-aware)")
         Pair(grayBitmap, textBlocksString)
     }
-    // alignImages remains unchanged
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
         minInliers: Int = 15,
         odometerCrop: android.graphics.RectF? = null,
-        otherTextCrop: android.graphics.RectF? = null
+        otherTextCrop: android.graphics.RectF? = null,
+        useAffineFallback: Boolean = true
     ): AlignmentResult = withContext(Dispatchers.IO) {
         val refMat = Mat()
         val queryMat = Mat()
@@ -157,7 +155,15 @@ object ImageAlignmentUtils {
             }
             srcPoints.fromList(srcList)
             dstPoints.fromList(dstList)
-            val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
+            var homography = Mat()
+            if (useAffineFallback && goodMatches.size < 30) {
+                homography = Calib3d.estimateAffine2D(srcPoints, dstPoints)
+                if (homography.empty()) {
+                    homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
+                }
+            } else {
+                homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
+            }
             val confidence = goodMatches.size.toFloat() / matchList.size.toFloat()
             val warped = Mat()
             Imgproc.warpPerspective(queryMat, warped, homography, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
