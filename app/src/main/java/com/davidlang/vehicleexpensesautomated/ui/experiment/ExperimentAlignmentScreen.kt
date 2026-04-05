@@ -192,6 +192,7 @@ private suspend fun runFullExperiment(
         val (cleanedBmp, dashTextBlocks) = ImageAlignmentUtils.createCleanedReference(originalBitmap)
         val scoredVehicles = mutableListOf<Triple<String, Float, Int>>()
         val alignedImages = mutableMapOf<String, String>()
+        val referenceImages = mutableMapOf<String, String>()
         vehicles.forEach { vehicle ->
             val refUrl = viewModel.ensureCleanedReference(vehicle) ?: vehicle.referenceDashPhotoUrl
             if (refUrl == null) return@forEach
@@ -213,6 +214,8 @@ private suspend fun runFullExperiment(
             } else {
                 alignedImages[vehicle.name] = PLACEHOLDER_BASE64
             }
+            val referenceBmp = drawCropBoxesOnReference(refBmp, vehicle)
+            referenceImages[vehicle.name] = bitmapToBase64(referenceBmp, 240)
         }
         val top3 = scoredVehicles.sortedByDescending { it.second }.take(3)
         val top3String = top3.joinToString(", ") { "${it.first}:${it.third}(${String.format("%.1f", it.second*100)}%)" }
@@ -266,18 +269,6 @@ private suspend fun runFullExperiment(
             tempAlignedFile.delete()
             if (ocrResult.odometer != null) success++
         }
-        val referenceWithCrop = if (bestVehicleName != "No match") {
-            vehicles.find { it.name == bestVehicleName }?.let { v ->
-                val refUrl = viewModel.ensureCleanedReference(v) ?: v.referenceDashPhotoUrl
-                if (refUrl != null) {
-                    val refFile = File(refUrl)
-                    if (refFile.exists()) {
-                        val refBmp = BitmapFactory.decodeFile(refFile.absolutePath)
-                        drawCropBoxesOnReference(refBmp, v)
-                    } else null
-                } else null
-            }
-        } else null
         results.add(PhotoResult(
             photoName = file.name,
             vehicle = bestVehicleName,
@@ -289,10 +280,10 @@ private suspend fun runFullExperiment(
             alignedBase64 = bitmapToBase64(alignedBitmap, 240),
             cleanedDashBase64 = bitmapToBase64(cleanedBmp, 240),
             odometerCropBase64 = bitmapToBase64(odometerCropBitmap, 240),
-            referenceBase64 = bitmapToBase64(referenceWithCrop, 240),
             odometer = extractedOdometer,
             fullImageOcr = fullImageOcr,
             alignedImages = alignedImages,
+            referenceImages = referenceImages,
             referenceTextBlocks = referenceTextBlocks,
             dashTextBlocks = dashTextBlocks ?: ""
         ))
@@ -371,10 +362,10 @@ private data class PhotoResult(
     val alignedBase64: String,
     val cleanedDashBase64: String,
     val odometerCropBase64: String,
-    val referenceBase64: String,
     val odometer: String?,
     val fullImageOcr: String?,
     val alignedImages: Map<String, String>,
+    val referenceImages: Map<String, String>,
     val referenceTextBlocks: String,
     val dashTextBlocks: String
 )
@@ -387,9 +378,9 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, vehicles
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th>")
+        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th>")
         vehicles.forEach { v ->
-            appendLine("<th>${v.name} Aligned</th>")
+            appendLine("<th>${v.name} Ref</th><th>${v.name} Aligned</th>")
         }
         appendLine("<th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Full Image OCR</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
         results.forEachIndexed { index, r ->
@@ -397,10 +388,13 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, vehicles
             appendLine("<td>${index + 1}</td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
             appendLine("<td><img src='data:image/jpeg;base64,${r.cleanedDashBase64}'></td>")
-            appendLine("<td><img src='data:image/jpeg;base64,${r.referenceBase64}'></td>")
             vehicles.forEach { v ->
-                val alignedForThisVehicle = r.alignedImages[v.name] ?: PLACEHOLDER_BASE64
-                appendLine("<td><img src='data:image/jpeg;base64,$alignedForThisVehicle'></td>")
+                val refImg = r.referenceImages[v.name] ?: PLACEHOLDER_BASE64
+                val alignedImg = r.alignedImages[v.name] ?: PLACEHOLDER_BASE64
+                val isBest = (r.vehicle == v.name)
+                val style = if (isBest) " style=\"background-color: #90EE90;\"" else ""
+                appendLine("<td$style><img src='data:image/jpeg;base64,$refImg'></td>")
+                appendLine("<td$style><img src='data:image/jpeg;base64,$alignedImg'></td>")
             }
             appendLine("<td>${r.vehicle}</td>")
             appendLine("<td>${r.inliersCount}</td>")
