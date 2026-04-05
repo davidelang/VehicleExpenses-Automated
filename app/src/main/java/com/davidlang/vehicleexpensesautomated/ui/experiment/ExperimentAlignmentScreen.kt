@@ -1,5 +1,4 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
-
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -35,7 +34,6 @@ import java.util.zip.ZipInputStream
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
-
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     val context = LocalContext.current
@@ -62,7 +60,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
-
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
@@ -85,7 +82,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             }
         }
     }
-
     LaunchedEffect(Unit) {
         if (!experimentDir.exists()) experimentDir.mkdirs()
         val count = experimentDir.listFiles()?.size ?: 0
@@ -157,7 +153,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
         }
     }
 }
-
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: android.content.Context): Boolean {
     return try {
         context.contentResolver.openInputStream(uri)?.use { input ->
@@ -178,7 +173,6 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
         false
     }
 }
-
 private suspend fun runFullExperiment(
     vehicles: List<Vehicle>,
     experimentDir: File,
@@ -303,7 +297,6 @@ private suspend fun runFullExperiment(
     val summary = "Processed $total photos — $success successful alignments"
     return ExperimentResult(summary, html)
 }
-
 private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle, debugDir: File, photoName: String): Bitmap? {
     val leftF = vehicle.odometerCropLeft ?: return null
     val topF = vehicle.odometerCropTop ?: 0f
@@ -326,7 +319,6 @@ private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle, debugDir: File
     val finalBottom = (bottom + padY).coerceAtMost(h)
     return try {
         val cropped = Bitmap.createBitmap(aligned, finalLeft, finalTop, finalRight - finalLeft, finalBottom - finalTop)
-        // Save to debug folder if OCR will likely fail (for the photos you flagged)
         if (photoName.contains("105") || photoName.contains("99") || photoName.contains("96") || photoName.contains("97") ||
             photoName.contains("56") || photoName.contains("54") || photoName.contains("49")) {
             val debugFile = File(debugDir, "crop_${photoName}")
@@ -341,7 +333,6 @@ private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle, debugDir: File
         null
     }
 }
-
 private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap? {
     if (refBmp == null) return null
     val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
@@ -364,7 +355,6 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
     }
     return bitmap
 }
-
 private data class PhotoResult(
     val photoName: String,
     val vehicle: String,
@@ -382,9 +372,7 @@ private data class PhotoResult(
     val referenceTextBlocks: String,
     val dashTextBlocks: String
 )
-
 private data class ExperimentResult(val summary: String, val htmlReport: String)
-
 private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String {
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     return buildString {
@@ -393,7 +381,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total | <b>Images optimized (&lt;300 KB total)</b></p>")
         appendLine("<table>")
-        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>Full Image OCR</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
+        appendLine("<tr><th>#</th><th>Original</th><th>Cleaned Dash</th><th>Vehicle Reference + Crops</th><th>Aligned (Munged)</th><th>Odometer Crop</th><th>Matched Vehicle</th><th>Inliers</th><th>Alignment Info</th><th>Top 3 Matches</th><th>Extracted Odometer</th><th>OCR Steps</th><th>Confidence</th><th>Reference Text Blocks</th><th>Dash Text Blocks</th></tr>")
         results.forEachIndexed { index, r ->
             appendLine("<tr>")
             appendLine("<td>${index + 1}</td>")
@@ -416,12 +404,11 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
         appendLine("</table></body></html>")
     }
 }
-
 private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String, maxSizeKB: Int = 300): List<File> {
     val lines = fullHtml.lines()
-    val headerEndIndex = lines.indexOfFirst { it.trim().startsWith("<tr>") } + 1
+    val headerEndIndex = lines.indexOfFirst { it.trim().startsWith("<tr>") && it.contains("Original") } + 1
     val header = lines.take(headerEndIndex).joinToString("\n")
-    val footer = lines.drop(headerEndIndex).dropWhile { it.trim().startsWith("<tr>") }.joinToString("\n")
+    val footer = lines.dropWhile { it.trim().startsWith("<tr>") && it.contains("Original") }.joinToString("\n")
     val dataRows = lines.drop(headerEndIndex).takeWhile { it.trim().startsWith("<tr>") }
     val files = mutableListOf<File>()
     var currentChunk = mutableListOf<String>()
@@ -457,7 +444,6 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
     }
     return files
 }
-
 private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
     val bmp = bitmap ?: createPlaceholderBitmap()
     val scaled = if (bmp.width > maxWidth) {
@@ -469,7 +455,6 @@ private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
     val bytes = out.toByteArray()
     return Base64.encodeToString(bytes, Base64.DEFAULT)
 }
-
 private fun createPlaceholderBitmap(): Bitmap {
     val bmp = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bmp)
