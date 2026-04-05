@@ -82,30 +82,18 @@ object OdometerOcrUtils {
             "(Tesseract error: ${e.message})"
         }
     }
-    private fun runOpenCvPreprocessingStages(bitmap: Bitmap): Pair<String, Bitmap?> {
-        return try {
-            val mat = Mat()
-            org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-            val gray = Mat()
-            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
-            val thresh = Mat()
-            Imgproc.threshold(gray, thresh, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
-            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-            val morph = Mat()
-            Imgproc.morphologyEx(thresh, morph, Imgproc.MORPH_OPEN, kernel)
-            Imgproc.morphologyEx(morph, morph, Imgproc.MORPH_CLOSE, kernel)
-            val resultBmp = Bitmap.createBitmap(morph.cols(), morph.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(morph, resultBmp)
-            mat.release()
-            gray.release()
-            thresh.release()
-            morph.release()
-            kernel.release()
-            "OpenCV processed (morphology)" to resultBmp
-        } catch (e: Exception) {
-            Log.e("OdometerOcr", "OpenCV preprocessing failed", e)
-            "(OpenCV error)" to null
-        }
+    // Lighter pipeline for cropped OCR (no heavy morphology)
+    private fun runLightCropOcr(bitmap: Bitmap): String {
+        val grayMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
+        Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+        val thresh = Mat()
+        Imgproc.adaptiveThreshold(grayMat, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+        val resultBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(thresh, resultBmp)
+        grayMat.release()
+        thresh.release()
+        return runTesseract(resultBmp)
     }
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
@@ -152,19 +140,11 @@ object OdometerOcrUtils {
             org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
             append(runBothEngines(grayBmp, "Grayscale"))
             grayMat.release()
-            val threshMat = Mat()
-            org.opencv.android.Utils.bitmapToMat(bitmap, threshMat)
-            val gray2 = Mat()
-            Imgproc.cvtColor(threshMat, gray2, Imgproc.COLOR_RGB2GRAY)
-            Imgproc.threshold(gray2, threshMat, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
-            val threshBmp = Bitmap.createBitmap(threshMat.cols(), threshMat.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(threshMat, threshBmp)
-            append(runBothEngines(threshBmp, "Binary Threshold"))
-            gray2.release()
-            threshMat.release()
-            val (openCvResult, processedBmp) = runOpenCvPreprocessingStages(bitmap)
-            append(openCvResult)
-            openCvProcessedBitmap = processedBmp
+            // Light crop OCR (adaptive threshold only)
+            val lightOcr = runLightCropOcr(bitmap)
+            appendLine("--- Light Crop OCR (adaptive threshold) ---")
+            appendLine("Tesseract: $lightOcr")
+            appendLine()
         }
         val rawTesseract = runTesseract(bitmap)
         val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
@@ -182,7 +162,6 @@ object OdometerOcrUtils {
             textBlocks = textBlocks
         )
     }
-    // New lightweight full-image OCR for aligned images (less pre-processing)
     suspend fun extractFullImageOcr(photoPath: String, deduplicateWith: List<TextBlock>? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
@@ -196,7 +175,6 @@ object OdometerOcrUtils {
         val possible = mutableListOf<String>()
         if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
         val textBlocks = mutableListOf<TextBlock>()
-        // Deduplicate against cleaning text blocks
         val cleaningTexts = deduplicateWith?.map { it.text }?.toSet() ?: emptySet()
         if (cleanRaw.isNotEmpty() && !cleaningTexts.contains(cleanRaw)) {
             textBlocks.add(TextBlock(cleanRaw, android.graphics.Rect(0, 0, bitmap.width, bitmap.height)))
