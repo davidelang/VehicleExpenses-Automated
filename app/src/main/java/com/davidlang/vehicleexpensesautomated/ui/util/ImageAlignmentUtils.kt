@@ -19,6 +19,8 @@ import kotlin.math.min
 
 // Required for helper functions
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.TextBlock
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils.OcrResult
 
 data class AlignmentResult(
     val success: Boolean,
@@ -93,7 +95,7 @@ object ImageAlignmentUtils {
         Pair(grayBitmap, textBlocksString)
     }
 
-    private fun argMatch(refBlocks: List<OdometerOcrUtils.TextBlock>, queryBlocks: List<OdometerOcrUtils.TextBlock>): Float {
+    private fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
         if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
         var score = 0f
         for (r in refBlocks) {
@@ -131,7 +133,7 @@ object ImageAlignmentUtils {
         return interArea / (area1 + area2 - interArea)
     }
 
-    private fun histogramMatch(refBlocks: List<OdometerOcrUtils.TextBlock>, queryBlocks: List<OdometerOcrUtils.TextBlock>): Float {
+    private fun histogramMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
         val gridSize = 5
         val refHist = IntArray(gridSize * gridSize)
         val queryHist = IntArray(gridSize * gridSize)
@@ -157,7 +159,7 @@ object ImageAlignmentUtils {
         return (histScore / (refBlocks.size + queryBlocks.size)) * 0.6f + textScore * 0.4f
     }
 
-    private fun embeddingMatch(refBlocks: List<OdometerOcrUtils.TextBlock>, queryBlocks: List<OdometerOcrUtils.TextBlock>): Float {
+    private fun embeddingMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
         val allWords = (refBlocks + queryBlocks).map { it.text.lowercase() }.toSet()
         val refVec = FloatArray(allWords.size)
         val queryVec = FloatArray(allWords.size)
@@ -298,8 +300,8 @@ object ImageAlignmentUtils {
     suspend fun matchWithAllMethods(
         reference: Bitmap,
         query: Bitmap,
-        refOcr: OdometerOcrUtils.OcrResult,
-        queryOcr: OdometerOcrUtils.OcrResult,
+        refOcr: OcrResult,
+        queryOcr: OcrResult,
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
