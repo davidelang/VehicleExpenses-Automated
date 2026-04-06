@@ -2,6 +2,9 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.RectF
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -102,7 +105,7 @@ object OdometerOcrUtils {
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
-            // EXACT same calculation as manualCropOdometer and the blue box drawing
+            // EXACT same calculation as manualCropOdometer so blue box and OCR crop are pixel-identical
             val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
             val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
             val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
