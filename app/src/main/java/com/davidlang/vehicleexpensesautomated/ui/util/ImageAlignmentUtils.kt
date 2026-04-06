@@ -89,12 +89,12 @@ object ImageAlignmentUtils {
 
         val resultBitmap = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
         val resultCanvas = Canvas(resultBitmap)
-        resultCanvas.drawBitmap(original, 0f, 0f, null)
-        resultCanvas.drawBitmap(mask, 0f, 0f, null)
+        resultCanvas.drawBitmap(original, 0f, 0f, null)   // original first
+        resultCanvas.drawBitmap(mask, 0f, 0f, null)       // then white text areas on top
 
         mask.recycle()
 
-        Log.i("VehicleReferenceCleaning", "ML Kit text-box cleaning complete — only text areas masked")
+        Log.i("VehicleReferenceCleaning", "ML Kit text-box cleaning complete — only text areas masked white on original")
         Pair(resultBitmap, textBlocksString)
     }
 
