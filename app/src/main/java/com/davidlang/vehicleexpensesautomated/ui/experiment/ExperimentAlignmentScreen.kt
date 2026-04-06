@@ -224,12 +224,12 @@ fun DebugCleaningPipelineScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 8.dp, vertical = 4.dp),  // very tight padding
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(steps) { step ->
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.padding(8.dp)) {  // tight card padding
+                    Row(modifier = Modifier.padding(8.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(step.description, style = MaterialTheme.typography.titleMedium)
                             Image(
@@ -237,7 +237,7 @@ fun DebugCleaningPipelineScreen(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(130.dp)   // smaller images
+                                    .height(130.dp)
                             )
                         }
                         Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
@@ -259,22 +259,27 @@ data class CleaningDebugStep(
 
 private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDebugStep) -> Unit) = withContext(Dispatchers.IO) {
     try {
-        val rawText = OdometerOcrUtils.runRawOcr(original).first
-        onStep(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), rawText))
+        val (rawText, rawBlocks) = OdometerOcrUtils.runRawOcr(original)
+        val rawAnnotated = OdometerOcrUtils.annotateImageWithBoxes(original, rawBlocks)
+        onStep(CleaningDebugStep("Raw original", rawAnnotated, rawText))
 
         val grayMat = Mat()
         org.opencv.android.Utils.bitmapToMat(original, grayMat)
         Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
         val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
-        onStep(CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(grayBmp).first))
+        val (grayText, grayBlocks) = OdometerOcrUtils.runRawOcr(grayBmp)
+        val grayAnnotated = OdometerOcrUtils.annotateImageWithBoxes(grayBmp, grayBlocks)
+        onStep(CleaningDebugStep("Grayscale", grayAnnotated, grayText))
 
         val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
         val enhanced = Mat()
         clahe.apply(grayMat, enhanced)
         val enhancedBmp = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
-        onStep(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(enhancedBmp).first))
+        val (claheText, claheBlocks) = OdometerOcrUtils.runRawOcr(enhancedBmp)
+        val claheAnnotated = OdometerOcrUtils.annotateImageWithBoxes(enhancedBmp, claheBlocks)
+        onStep(CleaningDebugStep("CLAHE enhanced", claheAnnotated, claheText))
 
         val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
         if (cleanedBmp != null) {
