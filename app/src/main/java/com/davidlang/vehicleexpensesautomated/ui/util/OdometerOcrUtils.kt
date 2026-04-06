@@ -51,12 +51,13 @@ object OdometerOcrUtils {
                 return "(Tesseract init failed)" to emptyList()
             }
 
-            // Preprocess for reliable block detection (grayscale + adaptive threshold)
+            // Preprocess for reliable block detection (grayscale + adaptive threshold + invert)
             val grayMat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
             Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
             val thresh = Mat()
             Imgproc.adaptiveThreshold(grayMat, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+            Core.bitwise_not(thresh, thresh)  // invert so text is white on black (better for Tesseract)
             val preprocessedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(thresh, preprocessedBmp)
             grayMat.release()
