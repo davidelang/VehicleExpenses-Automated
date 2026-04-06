@@ -65,6 +65,7 @@ object ImageAlignmentUtils {
                 .addOnFailureListener { continuation.resume(null) }
         } ?: return@withContext null to null
 
+        // Create mask: black background + white rectangles in text areas
         val mask = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(mask)
         val bgPaint = Paint().apply { color = Color.BLACK; style = Paint.Style.FILL }
@@ -87,14 +88,25 @@ object ImageAlignmentUtils {
             }
         }
 
-        val resultBitmap = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
-        val resultCanvas = Canvas(resultBitmap)
-        resultCanvas.drawBitmap(original, 0f, 0f, null)   // original first
-        resultCanvas.drawBitmap(mask, 0f, 0f, null)       // then white text areas on top
+        // Convert mask and original to OpenCV mats
+        val maskMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(mask, maskMat)
+        val origMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(original, origMat)
+
+        // Bitwise AND → keep original pixels in text areas, black everywhere else
+        val cleanedMat = Mat()
+        Core.bitwise_and(origMat, maskMat, cleanedMat)
+
+        val resultBitmap = Bitmap.createBitmap(cleanedMat.cols(), cleanedMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(cleanedMat, resultBitmap)
 
         mask.recycle()
+        maskMat.release()
+        origMat.release()
+        cleanedMat.release()
 
-        Log.i("VehicleReferenceCleaning", "ML Kit text-box cleaning complete — only text areas masked white on original")
+        Log.i("VehicleReferenceCleaning", "ML Kit text-box cleaning complete — text areas from original, background blacked out")
         Pair(resultBitmap, textBlocksString)
     }
 
