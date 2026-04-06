@@ -224,12 +224,12 @@ fun DebugCleaningPipelineScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 8.dp, vertical = 4.dp),  // very tight padding
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(steps) { step ->
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.padding(12.dp)) {
+                    Row(modifier = Modifier.padding(8.dp)) {  // tight card padding
                         Column(modifier = Modifier.weight(1f)) {
                             Text(step.description, style = MaterialTheme.typography.titleMedium)
                             Image(
@@ -237,10 +237,10 @@ fun DebugCleaningPipelineScreen(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(160.dp)
+                                    .height(130.dp)   // smaller images
                             )
                         }
-                        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                             Text("Tesseract text:", style = MaterialTheme.typography.titleSmall)
                             Text(step.ocrText, style = MaterialTheme.typography.bodyMedium)
                         }
