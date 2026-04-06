@@ -13,8 +13,6 @@ import org.opencv.android.OpenCVLoader
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import java.io.File
-import kotlin.math.ceil
-import kotlin.math.floor
 import com.googlecode.tesseract.android.TessBaseAPI
 
 data class TextBlock(
