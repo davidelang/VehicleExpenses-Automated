@@ -224,7 +224,7 @@ fun DebugCleaningPipelineScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 8.dp, vertical = 4.dp),  // minimal padding
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(steps) { step ->
@@ -237,7 +237,7 @@ fun DebugCleaningPipelineScreen(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(160.dp)   // smaller images for better fit
+                                    .height(160.dp)
                             )
                         }
                         Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
