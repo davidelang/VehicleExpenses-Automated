@@ -40,7 +40,7 @@ object OdometerOcrUtils {
         }
     }
 
-    // Single Tesseract pass that returns BOTH raw text and blocks
+    // Single Tesseract pass with strong preprocessing for reliable block detection
     private fun runTesseractWithBlocks(bitmap: Bitmap): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
@@ -51,16 +51,30 @@ object OdometerOcrUtils {
                 return "(Tesseract init failed)" to emptyList()
             }
 
-            // Preprocess for reliable block detection (grayscale + adaptive threshold + invert)
-            val grayMat = Mat()
-            org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
-            Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+            // Strong preprocessing for dashboard digits (CLAHE + adaptive threshold + invert)
+            val mat = Mat()
+            org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+            val gray = Mat()
+            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+
+            // CLAHE for better contrast on dark dashboards
+            val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+            val enhanced = Mat()
+            clahe.apply(gray, enhanced)
+
+            // Adaptive threshold
             val thresh = Mat()
-            Imgproc.adaptiveThreshold(grayMat, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
-            Core.bitwise_not(thresh, thresh)  // invert so text is white on black (better for Tesseract)
+            Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+
+            // Invert so text is white on black (Tesseract likes this)
+            Core.bitwise_not(thresh, thresh)
+
             val preprocessedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(thresh, preprocessedBmp)
-            grayMat.release()
+
+            mat.release()
+            gray.release()
+            enhanced.release()
             thresh.release()
 
             tess.setImage(preprocessedBmp)
