@@ -23,6 +23,7 @@ import kotlin.coroutines.suspendCoroutine
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
@@ -58,7 +59,7 @@ object ImageAlignmentUtils {
         val inputImage = InputImage.fromBitmap(original, 0)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-        val result = suspendCoroutine { continuation ->
+        val result = suspendCoroutine<Text?> { continuation ->
             recognizer.process(inputImage)
                 .addOnSuccessListener { continuation.resume(it) }
                 .addOnFailureListener { continuation.resume(null) }
