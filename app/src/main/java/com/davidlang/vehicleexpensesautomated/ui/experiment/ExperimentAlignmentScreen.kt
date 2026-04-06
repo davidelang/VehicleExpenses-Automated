@@ -73,7 +73,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
     var showDebugDialog by remember { mutableStateOf(false) }
-    var debugSteps by remember { mutableStateOf<List<CleaningDebugStep>>(emptyList()) }
+    var debugSteps by remember { mutableStateOf<MutableList<CleaningDebugStep>>(mutableListOf()) }
 
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
@@ -163,11 +163,15 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                     val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
                     if (photos.isNotEmpty()) {
                         scope.launch {
+                            Log.i(TAG, "Debug button clicked - starting pipeline")
                             val firstPhoto = photos.first()
                             val originalBitmap = BitmapFactory.decodeFile(firstPhoto.absolutePath) ?: return@launch
-                            val steps = debugCleaningPipeline(originalBitmap)
-                            debugSteps = steps
+                            debugSteps.clear()
                             showDebugDialog = true
+                            val steps = debugCleaningPipeline(originalBitmap) { step ->
+                                debugSteps.add(step)
+                            }
+                            Log.i(TAG, "Debug pipeline completed with ${steps.size} steps")
                         }
                     } else {
                         Toast.makeText(context, "No photos in experiment folder", Toast.LENGTH_SHORT).show()
@@ -227,10 +231,12 @@ data class CleaningDebugStep(
     val ocrText: String
 )
 
-private suspend fun debugCleaningPipeline(original: Bitmap): List<CleaningDebugStep> = withContext(Dispatchers.IO) {
+private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDebugStep) -> Unit): List<CleaningDebugStep> = withContext(Dispatchers.IO) {
     val steps = mutableListOf<CleaningDebugStep>()
     try {
-        steps.add(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(original).first))
+        val rawStep = CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(original).first)
+        steps.add(rawStep)
+        onStep(rawStep)
 
         // Grayscale
         val grayMat = Mat()
@@ -238,7 +244,9 @@ private suspend fun debugCleaningPipeline(original: Bitmap): List<CleaningDebugS
         Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
         val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
-        steps.add(CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(grayBmp).first))
+        val grayStep = CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(grayBmp).first)
+        steps.add(grayStep)
+        onStep(grayStep)
 
         // CLAHE
         val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
@@ -246,35 +254,45 @@ private suspend fun debugCleaningPipeline(original: Bitmap): List<CleaningDebugS
         clahe.apply(grayMat, enhanced)
         val enhancedBmp = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
-        steps.add(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(enhancedBmp).first))
+        val claheStep = CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(enhancedBmp).first)
+        steps.add(claheStep)
+        onStep(claheStep)
 
         // Threshold
         val thresh = Mat()
         Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
         val threshBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(thresh, threshBmp)
-        steps.add(CleaningDebugStep("Threshold", threshBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(threshBmp).first))
+        val threshStep = CleaningDebugStep("Threshold", threshBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(threshBmp).first)
+        steps.add(threshStep)
+        onStep(threshStep)
 
         // Dilated
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
         Imgproc.dilate(thresh, thresh, kernel)
         val dilatedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(thresh, dilatedBmp)
-        steps.add(CleaningDebugStep("Dilated", dilatedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(dilatedBmp).first))
+        val dilatedStep = CleaningDebugStep("Dilated", dilatedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(dilatedBmp).first)
+        steps.add(dilatedStep)
+        onStep(dilatedStep)
 
         // Inverted
         Core.bitwise_not(thresh, thresh)
         val invertedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(thresh, invertedBmp)
-        steps.add(CleaningDebugStep("Inverted", invertedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(invertedBmp).first))
+        val invertedStep = CleaningDebugStep("Inverted", invertedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(invertedBmp).first)
+        steps.add(invertedStep)
+        onStep(invertedStep)
 
         // Final cleaned
         val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
         if (cleanedBmp != null) {
-            steps.add(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
+            val finalStep = CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A")
+            steps.add(finalStep)
+            onStep(finalStep)
         }
 
-        // Clean up
+        // Cleanup
         grayMat.release()
         enhanced.release()
         thresh.release()
@@ -286,7 +304,9 @@ private suspend fun debugCleaningPipeline(original: Bitmap): List<CleaningDebugS
         threshBmp.recycle()
     } catch (e: Exception) {
         Log.e(TAG, "Debug pipeline crashed", e)
-        steps.add(CleaningDebugStep("Pipeline crashed: ${e.message}", original.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
+        val crashStep = CleaningDebugStep("Pipeline crashed: ${e.message}", original.copy(Bitmap.Config.ARGB_8888, true), "N/A")
+        steps.add(crashStep)
+        onStep(crashStep)
     }
     steps
 }
