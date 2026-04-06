@@ -105,7 +105,7 @@ object OdometerOcrUtils {
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
-            // EXACT same calculation as manualCropOdometer so blue box and OCR crop are pixel-identical
+            // EXACT same calculation as manualCropOdometer and the blue box drawing
             val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
             val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
             val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
