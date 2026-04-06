@@ -72,7 +72,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
-    var showDebugDialog by remember { mutableStateOf(false) }
+    var showDebugScreen by remember { mutableStateOf(false) }
     val debugSteps = remember { mutableStateListOf<CleaningDebugStep>() }
 
     LaunchedEffect(pickedPhotoUrl) {
@@ -104,125 +104,148 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
         status = if (count == 0) "Folder is empty.\nUse the buttons below." else "$count photos ready."
     }
     Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
-        Column(
+        if (showDebugScreen) {
+            DebugCleaningPipelineScreen(
+                steps = debugSteps,
+                onClose = { showDebugScreen = false }
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(text = status, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+                if (isRunning) {
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
+                }
+                Button(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
+                    context.startActivity(intent)
+                    Toast.makeText(context, "Opened Amazon Photos — tap 'Download all'", Toast.LENGTH_LONG).show()
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Open Amazon Photos Album (100+ images)")
+                }
+                Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Extract Downloaded ZIP")
+                }
+                Button(
+                    onClick = {
+                        if (isRunning) return@Button
+                        isRunning = true
+                        progress = 0f
+                        currentPhoto = ""
+                        status = "Starting alignment test..."
+                        scope.launch {
+                            try {
+                                val result = runFullExperiment(vehicles, experimentDir, debugCropDir, viewModel, context) { p, name ->
+                                    progress = p
+                                    currentPhoto = name
+                                }
+                                val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+                                val htmlFiles = writeSizeSplitHtmlReports(result.htmlReport, reportDir, timestamp, maxSizeKB = 300)
+                                reportPath = htmlFiles.firstOrNull()?.absolutePath
+                                status = "Test complete!\n${result.summary}\n${htmlFiles.size} report files written"
+                                Log.i(TAG, "Reports written: ${htmlFiles.size} files")
+                            } catch (e: Exception) {
+                                status = "Report generation failed: ${e.message}"
+                                Log.e(TAG, "Report generation failed", e)
+                            } finally {
+                                isRunning = false
+                            }
+                        }
+                    },
+                    enabled = !isRunning && experimentDir.listFiles()?.isNotEmpty() == true,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isRunning) "Running..." else "Run Alignment Experiment Now")
+                }
+                Button(
+                    onClick = {
+                        val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
+                        if (photos.isNotEmpty()) {
+                            scope.launch {
+                                Log.i(TAG, "Debug button clicked - starting pipeline")
+                                debugSteps.clear()
+                                showDebugScreen = true
+                                val firstPhoto = photos.first()
+                                val originalBitmap = BitmapFactory.decodeFile(firstPhoto.absolutePath) ?: return@launch
+                                debugCleaningPipeline(originalBitmap) { step ->
+                                    debugSteps.add(step)
+                                    Log.i(TAG, "Step completed: ${step.description} → Text: ${step.ocrText}")
+                                }
+                                Log.i(TAG, "Debug pipeline completed with ${debugSteps.size} steps")
+                            }
+                        } else {
+                            Toast.makeText(context, "No photos in experiment folder", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Debug Cleaning Pipeline (first photo)")
+                }
+                if (reportPath != null) {
+                    Button(onClick = { Toast.makeText(context, "Reports written to: $reportPath (and siblings)", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open Latest Reports")
+                    }
+                }
+                Button(onClick = { navController?.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Back to Quick Fill-up")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DebugCleaningPipelineScreen(
+    steps: List<CleaningDebugStep>,
+    onClose: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Cleaning Pipeline Debug") },
+                navigationIcon = {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = status, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-            if (isRunning) {
-                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
-            }
-            Button(onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
-                context.startActivity(intent)
-                Toast.makeText(context, "Opened Amazon Photos — tap 'Download all'", Toast.LENGTH_LONG).show()
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text("Open Amazon Photos Album (100+ images)")
-            }
-            Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
-                Text("Extract Downloaded ZIP")
-            }
-            Button(
-                onClick = {
-                    if (isRunning) return@Button
-                    isRunning = true
-                    progress = 0f
-                    currentPhoto = ""
-                    status = "Starting alignment test..."
-                    scope.launch {
-                        try {
-                            val result = runFullExperiment(vehicles, experimentDir, debugCropDir, viewModel, context) { p, name ->
-                                progress = p
-                                currentPhoto = name
-                            }
-                            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-                            val htmlFiles = writeSizeSplitHtmlReports(result.htmlReport, reportDir, timestamp, maxSizeKB = 300)
-                            reportPath = htmlFiles.firstOrNull()?.absolutePath
-                            status = "Test complete!\n${result.summary}\n${htmlFiles.size} report files written"
-                            Log.i(TAG, "Reports written: ${htmlFiles.size} files")
-                        } catch (e: Exception) {
-                            status = "Report generation failed: ${e.message}"
-                            Log.e(TAG, "Report generation failed", e)
-                        } finally {
-                            isRunning = false
+            items(steps) { step ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(step.description, style = MaterialTheme.typography.titleMedium)
+                            Image(
+                                bitmap = step.image.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
+                            Text("Tesseract text:", style = MaterialTheme.typography.titleSmall)
+                            Text(step.ocrText, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                },
-                enabled = !isRunning && experimentDir.listFiles()?.isNotEmpty() == true,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (isRunning) "Running..." else "Run Alignment Experiment Now")
-            }
-            Button(
-                onClick = {
-                    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
-                    if (photos.isNotEmpty()) {
-                        scope.launch {
-                            Log.i(TAG, "Debug button clicked - starting pipeline")
-                            debugSteps.clear()
-                            showDebugDialog = true
-                            val firstPhoto = photos.first()
-                            val originalBitmap = BitmapFactory.decodeFile(firstPhoto.absolutePath) ?: return@launch
-                            debugCleaningPipeline(originalBitmap) { step ->
-                                debugSteps.add(step)
-                                Log.i(TAG, "Step completed: ${step.description} → Text: ${step.ocrText}")
-                            }
-                            Log.i(TAG, "Debug pipeline completed with ${debugSteps.size} steps")
-                        }
-                    } else {
-                        Toast.makeText(context, "No photos in experiment folder", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Debug Cleaning Pipeline (first photo)")
-            }
-            if (reportPath != null) {
-                Button(onClick = { Toast.makeText(context, "Reports written to: $reportPath (and siblings)", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Open Latest Reports")
                 }
-            }
-            Button(onClick = { navController?.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
-                Text("Back to Quick Fill-up")
             }
         }
-    }
-
-    if (showDebugDialog) {
-        AlertDialog(
-            onDismissRequest = { showDebugDialog = false },
-            title = { Text("Cleaning Pipeline Debug") },
-            text = {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(debugSteps) { step ->
-                        Row(modifier = Modifier.padding(8.dp)) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(step.description, style = MaterialTheme.typography.labelSmall)
-                                Image(
-                                    bitmap = step.image.asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(200.dp)
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Tesseract text:", style = MaterialTheme.typography.labelSmall)
-                                Text(step.ocrText, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDebugDialog = false }) {
-                    Text("Close")
-                }
-            }
-        )
     }
 }
 
@@ -254,7 +277,7 @@ private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDeb
         org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
         onStep(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(enhancedBmp).first))
 
-        // Final cleaned only (threshold and beyond destroy the image)
+        // Final cleaned only
         val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
         if (cleanedBmp != null) {
             onStep(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
