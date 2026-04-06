@@ -170,7 +170,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
                             val originalBitmap = BitmapFactory.decodeFile(firstPhoto.absolutePath) ?: return@launch
                             debugCleaningPipeline(originalBitmap) { step ->
                                 debugSteps.add(step)
-                                Log.i(TAG, "Debug step added: ${step.description}")
+                                Log.i(TAG, "Step completed: ${step.description} → Text: ${step.ocrText}")
                             }
                             Log.i(TAG, "Debug pipeline completed with ${debugSteps.size} steps")
                         }
@@ -234,7 +234,7 @@ data class CleaningDebugStep(
 
 private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDebugStep) -> Unit) = withContext(Dispatchers.IO) {
     try {
-        // Raw original — pure raw OCR with alphanumeric whitelist
+        // Raw original — pure raw OCR
         val rawText = OdometerOcrUtils.runRawOcr(original).first
         onStep(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), rawText))
 
@@ -254,27 +254,7 @@ private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDeb
         org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
         onStep(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(enhancedBmp).first))
 
-        // Threshold
-        val thresh = Mat()
-        Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
-        val threshBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(thresh, threshBmp)
-        onStep(CleaningDebugStep("Threshold", threshBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(threshBmp).first))
-
-        // Dilated
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
-        Imgproc.dilate(thresh, thresh, kernel)
-        val dilatedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(thresh, dilatedBmp)
-        onStep(CleaningDebugStep("Dilated", dilatedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(dilatedBmp).first))
-
-        // Inverted
-        Core.bitwise_not(thresh, thresh)
-        val invertedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(thresh, invertedBmp)
-        onStep(CleaningDebugStep("Inverted", invertedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(invertedBmp).first))
-
-        // Final cleaned
+        // Final cleaned only (threshold and beyond destroy the image)
         val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
         if (cleanedBmp != null) {
             onStep(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
@@ -283,13 +263,8 @@ private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDeb
         // cleanup
         grayMat.release()
         enhanced.release()
-        thresh.release()
-        kernel.release()
-        dilatedBmp.recycle()
-        invertedBmp.recycle()
         grayBmp.recycle()
         enhancedBmp.recycle()
-        threshBmp.recycle()
     } catch (e: Exception) {
         Log.e(TAG, "Debug pipeline crashed", e)
         onStep(CleaningDebugStep("Pipeline crashed: ${e.message}", original.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
