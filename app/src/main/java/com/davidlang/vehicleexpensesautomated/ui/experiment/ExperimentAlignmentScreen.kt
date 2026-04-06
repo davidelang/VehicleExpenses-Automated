@@ -234,8 +234,8 @@ data class CleaningDebugStep(
 
 private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDebugStep) -> Unit) = withContext(Dispatchers.IO) {
     try {
-        // Raw original — no preprocessing, alphanumeric whitelist only
-        val rawText = OdometerOcrUtils.extractFromPhotoRaw(original).first
+        // Raw original — pure raw OCR with alphanumeric whitelist
+        val rawText = OdometerOcrUtils.runRawOcr(original).first
         onStep(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), rawText))
 
         // Grayscale
@@ -244,7 +244,7 @@ private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDeb
         Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
         val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
-        onStep(CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(grayBmp).first))
+        onStep(CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(grayBmp).first))
 
         // CLAHE
         val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
@@ -252,27 +252,27 @@ private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDeb
         clahe.apply(grayMat, enhanced)
         val enhancedBmp = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
-        onStep(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(enhancedBmp).first))
+        onStep(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(enhancedBmp).first))
 
         // Threshold
         val thresh = Mat()
         Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
         val threshBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(thresh, threshBmp)
-        onStep(CleaningDebugStep("Threshold", threshBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(threshBmp).first))
+        onStep(CleaningDebugStep("Threshold", threshBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(threshBmp).first))
 
         // Dilated
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
         Imgproc.dilate(thresh, thresh, kernel)
         val dilatedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(thresh, dilatedBmp)
-        onStep(CleaningDebugStep("Dilated", dilatedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(dilatedBmp).first))
+        onStep(CleaningDebugStep("Dilated", dilatedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(dilatedBmp).first))
 
         // Inverted
         Core.bitwise_not(thresh, thresh)
         val invertedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(thresh, invertedBmp)
-        onStep(CleaningDebugStep("Inverted", invertedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(invertedBmp).first))
+        onStep(CleaningDebugStep("Inverted", invertedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(invertedBmp).first))
 
         // Final cleaned
         val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
