@@ -13,7 +13,6 @@ import java.io.File
 import kotlin.math.ceil
 import kotlin.math.floor
 import com.googlecode.tesseract.android.TessBaseAPI
-import com.googlecode.tesseract.android.PageIteratorLevel
 
 data class TextBlock(
     val text: String,
@@ -60,12 +59,12 @@ object OdometerOcrUtils {
             val iterator = tess.getResultIterator()
             if (iterator != null) {
                 do {
-                    val text = iterator.getUTF8Text(PageIteratorLevel.RIL_TEXTLINE) ?: continue
-                    val rect = iterator.getBoundingRect(PageIteratorLevel.RIL_TEXTLINE)
+                    val text = iterator.getUTF8Text(TessBaseAPI.PageIteratorLevel.RIL_TEXTLINE) ?: continue
+                    val rect = iterator.getBoundingRect(TessBaseAPI.PageIteratorLevel.RIL_TEXTLINE)
                     if (rect != null && text.isNotBlank()) {
                         blocks.add(TextBlock(text.trim(), rect))
                     }
-                } while (iterator.next(PageIteratorLevel.RIL_TEXTLINE))
+                } while (iterator.next(TessBaseAPI.PageIteratorLevel.RIL_TEXTLINE))
             }
 
             tess.clear()
