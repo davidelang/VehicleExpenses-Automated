@@ -40,7 +40,7 @@ object OdometerOcrUtils {
         }
     }
 
-    // Single Tesseract pass with strong preprocessing for reliable block detection
+    // Strong preprocessing + single Tesseract pass for reliable block detection
     private fun runTesseractWithBlocks(bitmap: Bitmap): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
@@ -51,14 +51,14 @@ object OdometerOcrUtils {
                 return "(Tesseract init failed)" to emptyList()
             }
 
-            // Strong preprocessing for dashboard digits (CLAHE + adaptive threshold + invert)
+            // Strong preprocessing for dashboard digits
             val mat = Mat()
             org.opencv.android.Utils.bitmapToMat(bitmap, mat)
             val gray = Mat()
             Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
 
-            // CLAHE for better contrast on dark dashboards
-            val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+            // CLAHE for contrast
+            val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
             val enhanced = Mat()
             clahe.apply(gray, enhanced)
 
@@ -66,7 +66,11 @@ object OdometerOcrUtils {
             val thresh = Mat()
             Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
 
-            // Invert so text is white on black (Tesseract likes this)
+            // Dilate to connect broken digits
+            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
+            Imgproc.dilate(thresh, thresh, kernel)
+
+            // Invert so text is white on black (Tesseract prefers this)
             Core.bitwise_not(thresh, thresh)
 
             val preprocessedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
@@ -76,6 +80,7 @@ object OdometerOcrUtils {
             gray.release()
             enhanced.release()
             thresh.release()
+            kernel.release()
 
             tess.setImage(preprocessedBmp)
 
