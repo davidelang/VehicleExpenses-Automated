@@ -16,6 +16,13 @@ import org.opencv.calib3d.Calib3d
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
+
+// ML Kit imports (added for createCleanedReference)
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.google.mlkit.vision.common.InputImage
 
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
@@ -51,7 +58,11 @@ object ImageAlignmentUtils {
         val inputImage = InputImage.fromBitmap(original, 0)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-        val result = recognizer.process(inputImage).await()
+        val result = suspendCoroutine { continuation ->
+            recognizer.process(inputImage)
+                .addOnSuccessListener { continuation.resume(it) }
+                .addOnFailureListener { continuation.resume(null) }
+        } ?: return@withContext null to null
 
         val mask = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(mask)
