@@ -19,7 +19,7 @@ import kotlin.math.min
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-// ML Kit imports (added for createCleanedReference)
+// ML Kit imports (only for createCleanedReference)
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.google.mlkit.vision.common.InputImage
