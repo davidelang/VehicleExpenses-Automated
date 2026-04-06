@@ -13,6 +13,7 @@ import java.io.File
 import kotlin.math.ceil
 import kotlin.math.floor
 import com.googlecode.tesseract.android.TessBaseAPI
+import com.googlecode.tesseract.android.PageIteratorLevel
 
 data class TextBlock(
     val text: String,
@@ -40,7 +41,7 @@ object OdometerOcrUtils {
         }
     }
 
-    // Single Tesseract pass that returns BOTH raw text and blocks
+    // Single Tesseract pass (preprocessed for reliable block detection)
     private fun runTesseractWithBlocks(bitmap: Bitmap): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
@@ -50,24 +51,37 @@ object OdometerOcrUtils {
                 tess.clear()
                 return "(Tesseract init failed)" to emptyList()
             }
-            tess.setImage(bitmap)
 
-            // Get full text
+            // Preprocess for better block detection (same as light crop)
+            val grayMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(bitmap, grayMat)
+            Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+            val thresh = Mat()
+            Imgproc.adaptiveThreshold(grayMat, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+            val preprocessedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(thresh, preprocessedBmp)
+            grayMat.release()
+            thresh.release()
+
+            tess.setImage(preprocessedBmp)
+
+            // Get full text (from preprocessed image)
             val fullText = tess.getUTF8Text()?.trim() ?: "(no text)"
 
             // Get blocks using iterator (one pass)
             val iterator = tess.getResultIterator()
             if (iterator != null) {
                 do {
-                    val text = iterator.getUTF8Text(TessBaseAPI.PageIteratorLevel.RIL_TEXTLINE) ?: continue
-                    val rect = iterator.getBoundingRect(TessBaseAPI.PageIteratorLevel.RIL_TEXTLINE)
+                    val text = iterator.getUTF8Text(PageIteratorLevel.RIL_TEXTLINE) ?: continue
+                    val rect = iterator.getBoundingRect(PageIteratorLevel.RIL_TEXTLINE)
                     if (rect != null && text.isNotBlank()) {
                         blocks.add(TextBlock(text.trim(), rect))
                     }
-                } while (iterator.next(TessBaseAPI.PageIteratorLevel.RIL_TEXTLINE))
+                } while (iterator.next(PageIteratorLevel.RIL_TEXTLINE))
             }
 
             tess.clear()
+            preprocessedBmp.recycle()
             return fullText to blocks
         } catch (e: Exception) {
             Log.e("OdometerOcr", "Tesseract failed", e)
