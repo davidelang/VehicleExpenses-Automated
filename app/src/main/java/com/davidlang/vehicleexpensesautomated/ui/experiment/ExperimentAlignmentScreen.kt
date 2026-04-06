@@ -274,6 +274,7 @@ private suspend fun debugCleaningPipeline(original: Bitmap): List<CleaningDebugS
             steps.add(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
         }
 
+        // Clean up
         grayMat.release()
         enhanced.release()
         thresh.release()
