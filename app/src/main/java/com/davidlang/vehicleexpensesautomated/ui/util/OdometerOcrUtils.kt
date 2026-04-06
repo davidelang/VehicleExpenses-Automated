@@ -93,6 +93,7 @@ object OdometerOcrUtils {
         return annotated
     }
 
+    /** Shared helper — identical to manualCropOdometer so blue box and OCR crop are pixel-identical */
     private fun cropBitmap(bitmap: Bitmap, cropRect: RectF): Bitmap? {
         val origW = bitmap.width
         val origH = bitmap.height
