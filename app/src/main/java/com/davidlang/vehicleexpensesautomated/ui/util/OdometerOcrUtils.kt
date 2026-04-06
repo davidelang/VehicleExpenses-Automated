@@ -40,7 +40,46 @@ object OdometerOcrUtils {
         }
     }
 
-    // Strong preprocessing + single Tesseract pass
+    // Raw Tesseract (no preprocessing, alphanumeric whitelist only) — for debug "Raw original" step
+    fun extractFromPhotoRaw(bitmap: Bitmap): Pair<String, List<TextBlock>> {
+        val tess = TessBaseAPI()
+        val blocks = mutableListOf<TextBlock>()
+        try {
+            val tessDataPath = "/data/user/0/com.davidlang.vehicleexpensesautomated/files"
+            if (!tess.init(tessDataPath, "eng")) {
+                tess.clear()
+                return "(Tesseract init failed)" to emptyList()
+            }
+
+            // Limit to English alphanumeric only
+            tess.setVariable("tessedit_char_whitelist", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+
+            tess.setImage(bitmap)
+
+            val fullText = tess.getUTF8Text()?.trim() ?: "(no text)"
+
+            val iterator = tess.getResultIterator()
+            if (iterator != null) {
+                do {
+                    val text = iterator.getUTF8Text(TessBaseAPI.PageIteratorLevel.RIL_WORD) ?: continue
+                    val rect = iterator.getBoundingRect(TessBaseAPI.PageIteratorLevel.RIL_WORD)
+                    if (rect != null && text.isNotBlank()) {
+                        blocks.add(TextBlock(text.trim(), rect))
+                    }
+                } while (iterator.next(TessBaseAPI.PageIteratorLevel.RIL_WORD))
+            }
+
+            tess.clear()
+            return fullText to blocks
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "Raw Tesseract failed", e)
+            return "(Raw Tesseract error: ${e.message})" to emptyList()
+        } finally {
+            tess.clear()
+        }
+    }
+
+    // Strong preprocessing + single Tesseract pass (used for all other steps)
     private fun runTesseractWithBlocks(bitmap: Bitmap): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
@@ -102,6 +141,8 @@ object OdometerOcrUtils {
             tess.clear()
         }
     }
+
+    fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runTesseractWithBlocks(bitmap)
 
     private fun runLightCropOcr(bitmap: Bitmap): String {
         val grayMat = Mat()
