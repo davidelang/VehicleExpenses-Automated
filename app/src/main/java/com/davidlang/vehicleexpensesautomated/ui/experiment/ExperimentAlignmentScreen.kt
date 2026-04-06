@@ -29,7 +29,9 @@ import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
