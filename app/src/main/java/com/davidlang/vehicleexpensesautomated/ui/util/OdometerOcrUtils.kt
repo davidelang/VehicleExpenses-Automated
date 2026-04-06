@@ -93,7 +93,6 @@ object OdometerOcrUtils {
         return annotated
     }
 
-    /** Shared helper — identical to manualCropOdometer so blue box and OCR crop are pixel-identical */
     private fun cropBitmap(bitmap: Bitmap, cropRect: RectF): Bitmap? {
         val origW = bitmap.width
         val origH = bitmap.height
@@ -101,6 +100,7 @@ object OdometerOcrUtils {
         val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
         val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
         val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
+        Log.i("CropDebug", "cropBitmap: cropRect=$cropRect, image=${origW}x${origH}, pixels=left=$left top=$top right=$right bottom=$bottom")
         if (right <= left || bottom <= top) return null
         return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
     }
