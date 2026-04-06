@@ -40,8 +40,8 @@ object OdometerOcrUtils {
         }
     }
 
-    // Raw Tesseract (no preprocessing, alphanumeric whitelist only) — for debug "Raw original" step
-    fun extractFromPhotoRaw(bitmap: Bitmap): Pair<String, List<TextBlock>> {
+    // Pure raw Tesseract (no preprocessing, alphanumeric whitelist only) — used for every debug step
+    fun runRawOcr(bitmap: Bitmap): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
         try {
@@ -51,7 +51,6 @@ object OdometerOcrUtils {
                 return "(Tesseract init failed)" to emptyList()
             }
 
-            // Limit to English alphanumeric only
             tess.setVariable("tessedit_char_whitelist", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
 
             tess.setImage(bitmap)
@@ -79,7 +78,7 @@ object OdometerOcrUtils {
         }
     }
 
-    // Strong preprocessing + single Tesseract pass (used for all other steps)
+    // Strong preprocessing + Tesseract (used only by the normal cleaning flow)
     private fun runTesseractWithBlocks(bitmap: Bitmap): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
@@ -142,7 +141,7 @@ object OdometerOcrUtils {
         }
     }
 
-    fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runTesseractWithBlocks(bitmap)
+    fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runRawOcr(bitmap)
 
     private fun runLightCropOcr(bitmap: Bitmap): String {
         val grayMat = Mat()
