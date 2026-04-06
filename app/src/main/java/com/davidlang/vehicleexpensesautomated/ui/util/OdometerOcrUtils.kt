@@ -2,6 +2,9 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.RectF
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +78,21 @@ object OdometerOcrUtils {
         } finally {
             tess.clear()
         }
+    }
+
+    fun annotateImageWithBoxes(original: Bitmap, blocks: List<TextBlock>): Bitmap {
+        val annotated = original.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(annotated)
+        val paint = Paint().apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 6f
+            color = Color.RED
+        }
+        for (block in blocks) {
+            val rect = block.boundingBox
+            canvas.drawRect(rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat(), paint)
+        }
+        return annotated
     }
 
     fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runRawOcr(bitmap)
