@@ -2,9 +2,6 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.RectF
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -80,21 +77,6 @@ object OdometerOcrUtils {
         }
     }
 
-    fun annotateImageWithBoxes(original: Bitmap, blocks: List<TextBlock>): Bitmap {
-        val annotated = original.copy(Bitmap.Config.ARGB_8888, true)
-        val canvas = Canvas(annotated)
-        val paint = Paint().apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 6f
-            color = Color.RED
-        }
-        for (block in blocks) {
-            val rect = block.boundingBox
-            canvas.drawRect(rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat(), paint)
-        }
-        return annotated
-    }
-
     fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runRawOcr(bitmap)
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
@@ -105,7 +87,7 @@ object OdometerOcrUtils {
         if (cropRect != null) {
             val origW = bitmap.width
             val origH = bitmap.height
-            // EXACT same calculation as manualCropOdometer so blue box and OCR crop are pixel-identical
+            // EXACT same calculation as manualCropOdometer and the blue box drawing
             val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
             val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
             val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
