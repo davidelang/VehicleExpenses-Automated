@@ -63,6 +63,8 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var isCleaning by remember { mutableStateOf(false) }
+    var showDebugDialog by remember { mutableStateOf(false) }
+    var debugSteps by remember { mutableStateOf<List<CleaningDebugStep>>(emptyList()) }
 
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
@@ -147,6 +149,25 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             ) {
                 Text(if (isRunning) "Running..." else "Run Alignment Experiment Now")
             }
+            Button(
+                onClick = {
+                    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
+                    if (photos.isNotEmpty()) {
+                        scope.launch {
+                            val firstPhoto = photos.first()
+                            val originalBitmap = BitmapFactory.decodeFile(firstPhoto.absolutePath) ?: return@launch
+                            val steps = debugCleaningPipeline(originalBitmap)
+                            debugSteps = steps
+                            showDebugDialog = true
+                        }
+                    } else {
+                        Toast.makeText(context, "No photos in experiment folder", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Debug Cleaning Pipeline (first photo)")
+            }
             if (reportPath != null) {
                 Button(onClick = { Toast.makeText(context, "Reports written to: $reportPath (and siblings)", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
                     Text("Open Latest Reports")
@@ -157,6 +178,55 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             }
         }
     }
+
+    if (showDebugDialog) {
+        AlertDialog(
+            onDismissRequest = { showDebugDialog = false },
+            title = { Text("Cleaning Pipeline Debug") },
+            text = {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(debugSteps) { step ->
+                        Row(modifier = Modifier.padding(8.dp)) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(step.description, style = MaterialTheme.typography.labelSmall)
+                                Image(
+                                    bitmap = step.image.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(200.dp)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Tesseract text:", style = MaterialTheme.typography.labelSmall)
+                                Text(step.ocrText, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDebugDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+}
+
+data class CleaningDebugStep(
+    val description: String,
+    val image: Bitmap,
+    val ocrText: String
+)
+
+private suspend fun debugCleaningPipeline(original: Bitmap): List<CleaningDebugStep> = withContext(Dispatchers.IO) {
+    val steps = mutableListOf<CleaningDebugStep>()
+    steps.add(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
+
+    val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
+    if (cleanedBmp != null) {
+        steps.add(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
+    }
+    steps
 }
 
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: android.content.Context): Boolean {
@@ -449,21 +519,15 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
     }
 }
 
-// Fixed report splitter — always writes at least one file
 private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String, maxSizeKB: Int = 300): List<File> {
-    val files = mutableListOf<File>()
-    if (fullHtml.isEmpty()) return files
-
     val lines = fullHtml.lines()
     val headerEndIndex = lines.indexOfFirst { it.trim().startsWith("<tr>") && it.contains("Original") } + 1
     val header = lines.take(headerEndIndex).joinToString("\n")
-    val footer = "</table></body></html>"
-
+    val footer = lines.dropWhile { it.trim().startsWith("<tr>") && it.contains("Original") }.joinToString("\n")
     val dataRows = lines.drop(headerEndIndex).takeWhile { it.trim().startsWith("<tr>") }
-
+    val files = mutableListOf<File>()
     var currentChunk = mutableListOf<String>()
     var currentSize = 0L
-
     for (row in dataRows) {
         val rowSize = row.length + 2L
         if (currentSize + rowSize > maxSizeKB * 1024L && currentChunk.isNotEmpty()) {
@@ -482,8 +546,6 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
         currentChunk.add(row)
         currentSize += rowSize
     }
-
-    // Always write the final chunk (even if small)
     if (currentChunk.isNotEmpty()) {
         val pageNum = files.size + 1
         val pageHtml = buildString {
@@ -495,7 +557,6 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
         file.writeText(pageHtml)
         files.add(file)
     }
-
     return files
 }
 
