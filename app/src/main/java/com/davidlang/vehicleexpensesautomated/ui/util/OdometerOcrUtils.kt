@@ -95,6 +95,18 @@ object OdometerOcrUtils {
         return annotated
     }
 
+    /** Shared helper — identical to manualCropOdometer so blue box and OCR crop are pixel-identical */
+    private fun cropBitmap(bitmap: Bitmap, cropRect: RectF): Bitmap? {
+        val origW = bitmap.width
+        val origH = bitmap.height
+        val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
+        val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
+        val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
+        val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
+        if (right <= left || bottom <= top) return null
+        return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+    }
+
     fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runRawOcr(bitmap)
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
@@ -103,15 +115,8 @@ object OdometerOcrUtils {
         var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
         var croppedBitmap: Bitmap? = null
         if (cropRect != null) {
-            val origW = bitmap.width
-            val origH = bitmap.height
-            // EXACT same calculation as manualCropOdometer and the blue box drawing
-            val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
-            val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
-            val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
-            val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
-            if (right > left && bottom > top) {
-                croppedBitmap = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+            croppedBitmap = cropBitmap(bitmap, cropRect)
+            if (croppedBitmap != null) {
                 bitmap.recycle()
                 bitmap = croppedBitmap
             }
