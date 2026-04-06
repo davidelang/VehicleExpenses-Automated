@@ -449,15 +449,21 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int): String 
     }
 }
 
+// Fixed report splitter — always writes at least one file
 private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String, maxSizeKB: Int = 300): List<File> {
+    val files = mutableListOf<File>()
+    if (fullHtml.isEmpty()) return files
+
     val lines = fullHtml.lines()
     val headerEndIndex = lines.indexOfFirst { it.trim().startsWith("<tr>") && it.contains("Original") } + 1
     val header = lines.take(headerEndIndex).joinToString("\n")
-    val footer = lines.dropWhile { it.trim().startsWith("<tr>") && it.contains("Original") }.joinToString("\n")
+    val footer = "</table></body></html>"
+
     val dataRows = lines.drop(headerEndIndex).takeWhile { it.trim().startsWith("<tr>") }
-    val files = mutableListOf<File>()
+
     var currentChunk = mutableListOf<String>()
     var currentSize = 0L
+
     for (row in dataRows) {
         val rowSize = row.length + 2L
         if (currentSize + rowSize > maxSizeKB * 1024L && currentChunk.isNotEmpty()) {
@@ -476,6 +482,8 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
         currentChunk.add(row)
         currentSize += rowSize
     }
+
+    // Always write the final chunk (even if small)
     if (currentChunk.isNotEmpty()) {
         val pageNum = files.size + 1
         val pageHtml = buildString {
@@ -487,6 +495,7 @@ private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timesta
         file.writeText(pageHtml)
         files.add(file)
     }
+
     return files
 }
 
