@@ -97,10 +97,10 @@ object OdometerOcrUtils {
     private fun cropBitmap(bitmap: Bitmap, cropRect: RectF): Bitmap? {
         val origW = bitmap.width
         val origH = bitmap.height
-        val left = floor(cropRect.left * origW).toInt().coerceAtLeast(0)
-        val top = floor(cropRect.top * origH).toInt().coerceAtLeast(0)
-        val right = ceil(cropRect.right * origW).toInt().coerceAtMost(origW)
-        val bottom = ceil(cropRect.bottom * origH).toInt().coerceAtMost(origH)
+        val left = (cropRect.left * origW).toInt().coerceAtLeast(0)
+        val top = (cropRect.top * origH).toInt().coerceAtLeast(0)
+        val right = (cropRect.right * origW).toInt().coerceAtMost(origW)
+        val bottom = (cropRect.bottom * origH).toInt().coerceAtMost(origH)
         Log.i("CropDebug", "cropBitmap: cropRect=$cropRect, image=${origW}x${origH}, pixels=left=$left top=$top right=$right bottom=$bottom")
         if (right <= left || bottom <= top) return null
         return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
