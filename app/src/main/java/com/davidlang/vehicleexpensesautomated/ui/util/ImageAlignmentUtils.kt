@@ -17,7 +17,6 @@ import java.io.File
 import kotlin.math.max
 import kotlin.math.min
 
-// Correct top-level imports (data classes are not nested)
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -47,52 +46,44 @@ object ImageAlignmentUtils {
         odometerCrop: RectF? = null,
         otherTextCrop: RectF? = null
     ): Pair<Bitmap?, String?> = withContext(Dispatchers.IO) {
-        Log.i("VehicleReferenceCleaning", "Starting text-only mask cleaning + text extraction")
-        val tempFile = File.createTempFile("ocr_temp", ".jpg")
-        val out = java.io.FileOutputStream(tempFile)
-        original.compress(Bitmap.CompressFormat.JPEG, 90, out)
-        out.close()
-        val ocrResult = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
-        tempFile.delete()
+        Log.i("VehicleReferenceCleaning", "ML Kit text-box detection (last working version)")
+
+        val inputImage = InputImage.fromBitmap(original, 0)
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+        val result = recognizer.process(inputImage).await()
+
         val mask = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(mask)
         val bgPaint = Paint().apply { color = Color.BLACK; style = Paint.Style.FILL }
         canvas.drawRect(0f, 0f, original.width.toFloat(), original.height.toFloat(), bgPaint)
-        val textPaint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL; textSize = 48f }
-        ocrResult.textBlocks.forEach { block ->
-            val r = block.boundingBox
-            val blockRect = RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
-            val insideOdometer = odometerCrop != null && odometerCrop.contains(blockRect)
-            val insideOtherText = otherTextCrop != null && otherTextCrop.contains(blockRect)
-            if (!insideOdometer && !insideOtherText) {
-                canvas.drawRect(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat(), textPaint)
+
+        val textPaint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL }
+
+        val textBlocksString = buildString {
+            result.textBlocks.forEach { block ->
+                val r = block.boundingBox ?: return@forEach
+                val blockRect = RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
+
+                val insideOdometer = odometerCrop != null && odometerCrop.contains(blockRect)
+                val insideOtherText = otherTextCrop != null && otherTextCrop.contains(blockRect)
+
+                if (!insideOdometer && !insideOtherText) {
+                    canvas.drawRect(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat(), textPaint)
+                    append("${block.text}:${r.left},${r.top},${r.right},${r.bottom}|")
+                }
             }
         }
-        val matMask = Mat()
-        org.opencv.android.Utils.bitmapToMat(mask, matMask)
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-        Imgproc.dilate(matMask, matMask, kernel)
-        val origMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(original, origMat)
-        val maskedMat = Mat()
-        Core.bitwise_and(origMat, matMask, maskedMat)
-        val result = Bitmap.createBitmap(maskedMat.cols(), maskedMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(maskedMat, result)
-        val grayMat = Mat()
-        Imgproc.cvtColor(maskedMat, grayMat, Imgproc.COLOR_RGB2GRAY)
-        val grayBitmap = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(grayMat, grayBitmap)
-        origMat.release()
-        matMask.release()
-        maskedMat.release()
-        grayMat.release()
-        kernel.release()
+
+        val resultBitmap = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+        val resultCanvas = Canvas(resultBitmap)
+        resultCanvas.drawBitmap(original, 0f, 0f, null)
+        resultCanvas.drawBitmap(mask, 0f, 0f, null)
+
         mask.recycle()
-        val textBlocksString = ocrResult.textBlocks.joinToString("|") { block ->
-            "${block.text}:${block.boundingBox.left},${block.boundingBox.top},${block.boundingBox.right},${block.boundingBox.bottom}"
-        }
-        Log.i("VehicleReferenceCleaning", "Reference cleaned + text extracted (crop-aware)")
-        Pair(grayBitmap, textBlocksString)
+
+        Log.i("VehicleReferenceCleaning", "ML Kit text-box cleaning complete — only text areas masked")
+        Pair(resultBitmap, textBlocksString)
     }
 
     private fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
