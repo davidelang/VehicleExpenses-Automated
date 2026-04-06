@@ -224,12 +224,12 @@ fun DebugCleaningPipelineScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 8.dp, vertical = 4.dp),  // minimal padding
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(steps) { step ->
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.padding(16.dp)) {
+                    Row(modifier = Modifier.padding(12.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(step.description, style = MaterialTheme.typography.titleMedium)
                             Image(
@@ -237,10 +237,10 @@ fun DebugCleaningPipelineScreen(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(220.dp)
+                                    .height(160.dp)   // smaller images for better fit
                             )
                         }
-                        Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
+                        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("Tesseract text:", style = MaterialTheme.typography.titleSmall)
                             Text(step.ocrText, style = MaterialTheme.typography.bodyMedium)
                         }
@@ -259,11 +259,9 @@ data class CleaningDebugStep(
 
 private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDebugStep) -> Unit) = withContext(Dispatchers.IO) {
     try {
-        // Raw original — pure raw OCR
         val rawText = OdometerOcrUtils.runRawOcr(original).first
         onStep(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), rawText))
 
-        // Grayscale
         val grayMat = Mat()
         org.opencv.android.Utils.bitmapToMat(original, grayMat)
         Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
@@ -271,7 +269,6 @@ private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDeb
         org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
         onStep(CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(grayBmp).first))
 
-        // CLAHE
         val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
         val enhanced = Mat()
         clahe.apply(grayMat, enhanced)
@@ -279,13 +276,11 @@ private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDeb
         org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
         onStep(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.runRawOcr(enhancedBmp).first))
 
-        // Final cleaned only
         val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
         if (cleanedBmp != null) {
             onStep(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
         }
 
-        // cleanup
         grayMat.release()
         enhanced.release()
         grayBmp.recycle()
