@@ -229,56 +229,64 @@ data class CleaningDebugStep(
 
 private suspend fun debugCleaningPipeline(original: Bitmap): List<CleaningDebugStep> = withContext(Dispatchers.IO) {
     val steps = mutableListOf<CleaningDebugStep>()
-    steps.add(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(original).first))
+    try {
+        steps.add(CleaningDebugStep("Raw original", original.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(original).first))
 
-    // Grayscale
-    val grayMat = Mat()
-    org.opencv.android.Utils.bitmapToMat(original, grayMat)
-    Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
-    val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
-    org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
-    steps.add(CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(grayBmp).first))
-    grayMat.release()
+        // Grayscale
+        val grayMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(original, grayMat)
+        Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+        val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
+        steps.add(CleaningDebugStep("Grayscale", grayBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(grayBmp).first))
 
-    // CLAHE
-    val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
-    val enhanced = Mat()
-    clahe.apply(grayMat, enhanced)
-    val enhancedBmp = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
-    org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
-    steps.add(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(enhancedBmp).first))
-    enhanced.release()
+        // CLAHE
+        val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
+        val enhanced = Mat()
+        clahe.apply(grayMat, enhanced)
+        val enhancedBmp = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
+        steps.add(CleaningDebugStep("CLAHE enhanced", enhancedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(enhancedBmp).first))
 
-    // Threshold
-    val thresh = Mat()
-    Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
-    val threshBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-    org.opencv.android.Utils.matToBitmap(thresh, threshBmp)
-    steps.add(CleaningDebugStep("Threshold", threshBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(threshBmp).first))
-    thresh.release()
+        // Threshold
+        val thresh = Mat()
+        Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+        val threshBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(thresh, threshBmp)
+        steps.add(CleaningDebugStep("Threshold", threshBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(threshBmp).first))
 
-    // Dilated
-    val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
-    Imgproc.dilate(thresh, thresh, kernel)
-    val dilatedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-    org.opencv.android.Utils.matToBitmap(thresh, dilatedBmp)
-    steps.add(CleaningDebugStep("Dilated", dilatedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(dilatedBmp).first))
-    thresh.release()
-    kernel.release()
+        // Dilated
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
+        Imgproc.dilate(thresh, thresh, kernel)
+        val dilatedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(thresh, dilatedBmp)
+        steps.add(CleaningDebugStep("Dilated", dilatedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(dilatedBmp).first))
 
-    // Inverted
-    Core.bitwise_not(thresh, thresh)
-    val invertedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-    org.opencv.android.Utils.matToBitmap(thresh, invertedBmp)
-    steps.add(CleaningDebugStep("Inverted", invertedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(invertedBmp).first))
-    thresh.release()
+        // Inverted
+        Core.bitwise_not(thresh, thresh)
+        val invertedBmp = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(thresh, invertedBmp)
+        steps.add(CleaningDebugStep("Inverted", invertedBmp.copy(Bitmap.Config.ARGB_8888, true), OdometerOcrUtils.extractFromPhotoForDebug(invertedBmp).first))
 
-    // Final cleaned (from the real cleaning routine)
-    val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
-    if (cleanedBmp != null) {
-        steps.add(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
+        // Final cleaned
+        val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
+        if (cleanedBmp != null) {
+            steps.add(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
+        }
+
+        grayMat.release()
+        enhanced.release()
+        thresh.release()
+        kernel.release()
+        dilatedBmp.recycle()
+        invertedBmp.recycle()
+        grayBmp.recycle()
+        enhancedBmp.recycle()
+        threshBmp.recycle()
+    } catch (e: Exception) {
+        Log.e(TAG, "Debug pipeline crashed", e)
+        steps.add(CleaningDebugStep("Pipeline crashed: ${e.message}", original.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
     }
-
     steps
 }
 
