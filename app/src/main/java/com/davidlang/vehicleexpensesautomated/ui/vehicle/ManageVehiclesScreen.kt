@@ -300,14 +300,18 @@ fun ManageVehiclesScreen(
                     val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
                         calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                     } else Rect(0f, 0f, imageSize.x, imageSize.y)
-                    Canvas(modifier = Modifier.fillMaxSize()) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .key(currentDragRect)   // forces recomposition when currentDragRect changes
+                    ) {
                         currentDragRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
                             val top = fitRect.top + rect.top * fitRect.height
                             val width = rect.width * fitRect.width
                             val height = rect.height * fitRect.height
                             drawRect(Color.Red, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
-                            Log.i("CropDebug", "Canvas drawing red preview - screen coords left=$left top=$top width=$width height=$height")
+                            Log.i("CropDebug", "Canvas drawing RED preview - screen coords left=$left top=$top width=$width height=$height")
                         }
                         odometerCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
