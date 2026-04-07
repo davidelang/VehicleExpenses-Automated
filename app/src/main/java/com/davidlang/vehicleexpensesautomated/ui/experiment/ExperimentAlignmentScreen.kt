@@ -550,21 +550,32 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
         appendLine("<table>")
         
         // Dynamic Headers
-        appendLine("<tr><th>#</th><th>Original & Cleaned</th>")
+        appendLine("<tr>")
+        appendLine("<th># & Photo</th>")
+        appendLine("<th>Original & Cleaned</th>")
         allVehicles.forEach { vehicle ->
-            appendLine("<th colspan='2'>${vehicle.name} (Ref & Aligned)</th>")
+            appendLine("<th>${vehicle.name} Match</th>")
         }
-        appendLine("<th>Matched Vehicle</th><th>Details & OCR</th><th>Consensus Breakdown</th></tr>")
+        appendLine("<th>Final Result</th>")
+        appendLine("<th>Consensus Breakdown</th>")
+        appendLine("</tr>")
 
         results.forEachIndexed { index, r ->
             appendLine("<tr>")
+            // Column 1: Index and Filename
             appendLine("<td>${index + 1}<br><br><b>${r.photoName}</b></td>")
+            
+            // Column 2: Photo state
             appendLine("<td>")
-            appendLine("<img src='data:image/jpeg;base64,${r.originalThumbBase64}'><br>Original<br>")
-            appendLine("<img src='data:image/jpeg;base64,${r.cleanedDashBase64}'><br>Cleaned")
+            if (r.originalThumbBase64.isNotEmpty()) {
+                appendLine("<img src='data:image/jpeg;base64,${r.originalThumbBase64}'><br>Original<br>")
+            }
+            if (r.cleanedDashBase64.isNotEmpty()) {
+                appendLine("<img src='data:image/jpeg;base64,${r.cleanedDashBase64}'><br>Cleaned")
+            }
             appendLine("</td>")
 
-            // Dynamic Vehicle Cells
+            // Dynamic Vehicle Match Columns (3+)
             allVehicles.forEach { vehicle ->
                 val vRes = r.allVehicleResults.find { it.vehicleName == vehicle.name }
                 val isWinner = r.matchedVehicle == vehicle.name
@@ -572,35 +583,33 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
                 
                 appendLine("<td class='$winnerClass'>")
                 if (vRes != null) {
-                    appendLine("<img src='data:image/jpeg;base64,${vRes.referenceBase64}'><br>Ref")
-                } else appendLine("N/A")
-                appendLine("</td>")
-                
-                appendLine("<td class='$winnerClass'>")
-                if (vRes != null && vRes.alignedBase64.isNotEmpty()) {
-                    appendLine("<img src='data:image/jpeg;base64,${vRes.alignedBase64}'>")
-                } else {
-                    appendLine("<div style='width:100px; height:50px; background:#eee; display:flex; align-items:center; justify-content:center;'>No Alignment</div>")
-                }
-                if (vRes != null) {
+                    if (vRes.referenceBase64.isNotEmpty()) {
+                        appendLine("<b>Reference:</b><br><img src='data:image/jpeg;base64,${vRes.referenceBase64}'><br>")
+                    }
+                    if (vRes.alignedBase64.isNotEmpty()) {
+                        appendLine("<b>Aligned:</b><br><img src='data:image/jpeg;base64,${vRes.alignedBase64}'><br>")
+                    } else {
+                        appendLine("<div style='background:#fee; padding:10px;'>No Alignment</div>")
+                    }
                     val msgClass = if (vRes.message.contains("pinwheel")) "pinwheel" else ""
-                    appendLine("<br><span class='$msgClass'>${vRes.message}</span>")
+                    appendLine("<span class='$msgClass'>${vRes.message}</span>")
+                } else {
+                    appendLine("No Data")
                 }
                 appendLine("</td>")
             }
 
-            appendLine("<td><b>${r.matchedVehicle}</b><br>(${"%.1f".format(r.finalConfidence * 100)}%)</td>")
-            
+            // Final Result Column
             appendLine("<td>")
+            appendLine("<b>Matched:</b> ${r.matchedVehicle}<br>")
+            appendLine("<b>Confidence:</b> ${"%.1f".format(r.finalConfidence * 100)}%<br>")
             appendLine("<b>Odometer:</b> ${r.odometer ?: "FAILED"}<br>")
             if (r.odometerCropBase64.isNotEmpty()) {
-                appendLine("<img src='data:image/jpeg;base64,${r.odometerCropBase64}'><br>")
+                appendLine("<img src='data:image/jpeg;base64,${r.odometerCropBase64}'>")
             }
-            appendLine("<div class='score-box'>")
-            appendLine("<b>Ref Text:</b><br>${r.referenceTextBlocks.replace("|", "<br>")}")
-            appendLine("</div>")
             appendLine("</td>")
 
+            // Breakdown Column
             appendLine("<td>")
             val winnerRes = r.allVehicleResults.find { it.vehicleName == r.matchedVehicle }
             if (winnerRes != null) {
@@ -608,6 +617,7 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
                 winnerRes.methodScores.forEach { (method, score) ->
                     appendLine("<b>$method:</b> ${"%.3f".format(score)}<br>")
                 }
+                appendLine("<b>Ref Blocks:</b><br>${r.referenceTextBlocks.replace("|", "<br>")}")
                 appendLine("</div>")
             }
             appendLine("</td>")
