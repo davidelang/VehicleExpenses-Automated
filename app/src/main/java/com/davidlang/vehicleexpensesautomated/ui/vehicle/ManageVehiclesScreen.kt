@@ -257,9 +257,9 @@ fun ManageVehiclesScreen(
                                 onDrag = { change, dragAmount ->
                                     change.consume()
                                     dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
-                                    Log.i("CropDebug", "onDrag called - dragAmount=$dragAmount, dragOffset=$dragOffset  (editOdometer=$isEditingOcrArea, editOtherText=$isEditingOtherText) imageSize=$imageSize originalImageSize=$originalImageSize")
+                                    Log.i("CropDebug", "onDrag called - dragAmount=$dragAmount, dragOffset=$dragOffset  imageSize=$imageSize originalImageSize=$originalImageSize")
                                     val start = dragStart
-                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
+                                    if (start != null) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
@@ -275,7 +275,7 @@ fun ManageVehiclesScreen(
                                 onDragEnd = {
                                     Log.i("CropDebug", "onDragEnd called  (editOdometer=$isEditingOcrArea, editOtherText=$isEditingOtherText)")
                                     val start = dragStart
-                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
+                                    if (start != null) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
