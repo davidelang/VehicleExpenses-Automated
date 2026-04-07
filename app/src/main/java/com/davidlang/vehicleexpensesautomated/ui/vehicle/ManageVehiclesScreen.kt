@@ -97,13 +97,23 @@ fun ManageVehiclesScreen(
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
                 referenceTextBlocks = it.referenceTextBlocks
                 
-                // CRITICAL: Update originalImageSize when loading an existing vehicle
+                // CRITICAL: Update originalImageSize when loading an existing vehicle, respecting EXIF
                 referencePhotoUrl?.let { path ->
                     try {
                         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         BitmapFactory.decodeFile(path, options)
                         if (options.outWidth > 0 && options.outHeight > 0) {
-                            originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
+                            val ei = android.media.ExifInterface(path)
+                            val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+                            
+                            val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || 
+                                           orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
+                                           
+                            originalImageSize = if (isSwapped) {
+                                Offset(options.outHeight.toFloat(), options.outWidth.toFloat())
+                            } else {
+                                Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e("ManageVehicles", "Failed to get dimensions for $path", e)
@@ -127,7 +137,9 @@ fun ManageVehiclesScreen(
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
                 val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
-                    // Update originalImageSize to the CLEANED dimensions
+                    // Update originalImageSize to the CLEANED dimensions, respecting any rotation
+                    // Since cleanedBmp is already oriented correctly by our preprocessing, 
+                    // we can use its width/height directly.
                     originalImageSize = Offset(cleanedBmp.width.toFloat(), cleanedBmp.height.toFloat())
                     
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
@@ -139,7 +151,18 @@ fun ManageVehiclesScreen(
                     cleanedBmp.recycle()
                     Log.i("ManageVehicles", "Immediate cleaned image ready, size=$originalImageSize")
                 } else {
-                    originalImageSize = Offset(bmp.width.toFloat(), bmp.height.toFloat())
+                    // Fallback to raw bitmap dimensions, respecting EXIF if possible
+                    url.let { path ->
+                        val ei = android.media.ExifInterface(path)
+                        val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+                        val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || 
+                                       orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
+                        originalImageSize = if (isSwapped) {
+                            Offset(bmp.height.toFloat(), bmp.width.toFloat())
+                        } else {
+                            Offset(bmp.width.toFloat(), bmp.height.toFloat())
+                        }
+                    }
                 }
                 bmp.recycle()
             } catch (e: Exception) {
@@ -260,7 +283,7 @@ fun ManageVehiclesScreen(
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
                         }
-                        .pointerInput(isEditingOcrArea, isEditingOtherText) {
+                        .pointerInput(isEditingOcrArea, isEditingOtherText, imageSize, originalImageSize) {
                             if (!isEditingOcrArea && !isEditingOtherText) {
                                 Log.i("CropDebug", "Drag ignored - no edit mode active")
                                 return@pointerInput
@@ -274,6 +297,7 @@ fun ManageVehiclesScreen(
                                     change.consume()
                                     val start = dragStart
                                     val end = change.position
+                                    
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         
@@ -289,7 +313,10 @@ fun ManageVehiclesScreen(
                                 onDragEnd = {
                                     val start = dragStart
                                     val finalDrag = currentDragRect
-                                    if (start != null && finalDrag != null) {
+
+                                    if (start != null && finalDrag != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
+                                        // currentDragRect is already normalized (0-1), 
+                                        // but we keep the checks for consistency.
                                         if (isEditingOcrArea) {
                                             odometerCropRect = finalDrag
                                         } else if (isEditingOtherText) {
@@ -308,9 +335,14 @@ fun ManageVehiclesScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
                     )
-                    val fitRect = if (imageSize.x > 0f && imageSize.y > 0f && originalImageSize.x > 0f && originalImageSize.y > 0f) {
-                        calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
-                    } else Rect(0f, 0f, imageSize.x, imageSize.y)
+
+                    val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
+                    val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { maxHeight.toPx() }
+
+                    val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
+                        calculateFitImageRect(pxW, pxH, originalImageSize.x, originalImageSize.y)
+                    } else Rect(0f, 0f, pxW, pxH)
+
                     key(currentDragRect) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             currentDragRect?.let { rect ->
