@@ -303,7 +303,7 @@ fun ManageVehiclesScreen(
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .key(currentDragRect)   // forces recomposition when currentDragRect changes
+                            .key(currentDragRect)   // forces recomposition when red preview changes
                     ) {
                         currentDragRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
