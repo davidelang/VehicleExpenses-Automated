@@ -248,6 +248,7 @@ fun ManageVehiclesScreen(
                                     dragStart = offset
                                     dragOffset = Offset.Zero
                                     currentDragRect = null
+                                    Log.i("CropDebug", "Drag started at $offset")
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
@@ -261,6 +262,7 @@ fun ManageVehiclesScreen(
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         currentDragRect = Rect(left, top, right, bottom)
+                                        Log.i("CropDebug", "Dragging: currentDragRect=$currentDragRect")
                                     }
                                 },
                                 onDragEnd = {
@@ -274,6 +276,7 @@ fun ManageVehiclesScreen(
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val newRect = Rect(left, top, right, bottom)
+                                        Log.i("CropDebug", "Drag ended - newRect=$newRect (original size)")
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
                                         } else if (isEditingOtherText) {
