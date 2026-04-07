@@ -539,6 +539,21 @@ private data class ExperimentResult(val summary: String, val htmlReport: String)
 
 private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehicles: List<Vehicle>): String {
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+    
+    // CALCULATE SUMMARY STATS
+    val routines = listOf("feature", "arg", "histogram", "embedding", "consensus")
+    val routineStats = routines.associateWith { routine ->
+        val correct = results.count { r ->
+            // A routine is 'correct' if its top pick for this photo was the actually matched vehicle
+            // Since we don't have 'ground truth' labels, we use the consensus winner as proxy 
+            // OR we can just report the average confidence.
+            // For now, let's report average confidence and win-rate vs final consensus.
+            true 
+        }
+        val avgConfidence = results.flatMap { it.allVehicleResults }.filter { it.vehicleName == it.vehicleName }.mapNotNull { it.methodScores[routine] }.average()
+        avgConfidence
+    }
+
     return buildString {
         appendLine("<html><head><title>Alignment Experiment - $time</title>")
         appendLine("<style>")
@@ -548,9 +563,20 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
         appendLine(".score-box { text-align: left; font-size: 10px; background: #f9f9f9; padding: 4px; border-radius: 4px; }")
         appendLine(".winner { background-color: #e6ffed; border: 2px solid #28a745; }")
         appendLine(".pinwheel { color: #d73a49; font-weight: bold; }")
+        appendLine(".summary-table { width: auto; margin-bottom: 20px; background: #f0f7ff; }")
         appendLine("</style></head><body>")
         appendLine("<h1>Alignment Experiment Report</h1>")
         appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total</p>")
+        
+        // Summary Table
+        appendLine("<table class='summary-table'>")
+        appendLine("<tr><th>Routine</th><th>Avg Confidence</th></tr>")
+        routines.forEach { r ->
+            val avg = results.flatMap { it.allVehicleResults }.mapNotNull { it.methodScores[r] }.average()
+            appendLine("<tr><td><b>$r</b></td><td>${"%.1f".format(avg * 100)}%</td></tr>")
+        }
+        appendLine("</table>")
+
         appendLine("<table>")
         
         // Dynamic Headers
