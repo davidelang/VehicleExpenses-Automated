@@ -22,10 +22,11 @@ object PhotoAlignmentUtils {
         val origH = fillupBitmap.height.toFloat()
 
         // Base reference crop in pixel coordinates
-        var left = referenceCrop.left * origW
-        var top = referenceCrop.top * origH
-        var right = referenceCrop.right * origW
-        var bottom = referenceCrop.bottom * origH
+        // Assuming referenceCrop is normalized (0.0 to 1.0)
+        var left = (referenceCrop.left * origW)
+        var top = (referenceCrop.top * origH)
+        var right = (referenceCrop.right * origW)
+        var bottom = (referenceCrop.bottom * origH)
 
         val cropW = right - left
         val cropH = bottom - top

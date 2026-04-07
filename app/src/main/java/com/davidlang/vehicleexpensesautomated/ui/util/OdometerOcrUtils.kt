@@ -108,10 +108,33 @@ object OdometerOcrUtils {
 
     fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runRawOcr(bitmap)
 
+    private fun rotateImageIfRequired(img: Bitmap, path: String): Bitmap {
+        val ei = android.media.ExifInterface(path)
+        val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+
+        return when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> rotateImage(img, 90f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> rotateImage(img, 180f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> rotateImage(img, 270f)
+            else -> img
+        }
+    }
+
+    private fun rotateImage(img: Bitmap, degree: Float): Bitmap {
+        val matrix = android.graphics.Matrix()
+        matrix.postRotate(degree)
+        val rotatedImg = Bitmap.createBitmap(img, 0, 0, img.width, img.height, matrix, true)
+        img.recycle()
+        return rotatedImg
+    }
+
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
-        var bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
+        
+        var rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
+        var bitmap = rotateImageIfRequired(rawBitmap, photoPath)
+        
         var croppedBitmap: Bitmap? = null
         if (cropRect != null) {
             croppedBitmap = cropBitmap(bitmap, cropRect)
@@ -148,7 +171,8 @@ object OdometerOcrUtils {
     suspend fun extractFullImageOcr(photoPath: String, deduplicateWith: List<TextBlock>? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
-        val bitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
+        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
+        val bitmap = rotateImageIfRequired(rawBitmap, photoPath)
         val (rawTesseract, _) = runRawOcr(bitmap)
         val debugText = buildString {
             appendLine("=== FULL IMAGE OCR (light) ===\n")

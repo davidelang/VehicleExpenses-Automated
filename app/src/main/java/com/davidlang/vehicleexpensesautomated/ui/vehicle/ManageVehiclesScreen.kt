@@ -67,7 +67,6 @@ fun ManageVehiclesScreen(
     var isEditingOcrArea by remember { mutableStateOf(false) }
     var isEditingOtherText by remember { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
     var currentDragRect by remember { mutableStateOf<Rect?>(null) }
@@ -97,6 +96,20 @@ fun ManageVehiclesScreen(
                 pickedPhotoUrl = it.referenceDashPhotoUrl
                 referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
                 referenceTextBlocks = it.referenceTextBlocks
+                
+                // CRITICAL: Update originalImageSize when loading an existing vehicle
+                referencePhotoUrl?.let { path ->
+                    try {
+                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeFile(path, options)
+                        if (options.outWidth > 0 && options.outHeight > 0) {
+                            originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ManageVehicles", "Failed to get dimensions for $path", e)
+                    }
+                }
+
                 odometerCropRect = it.odometerCropLeft?.let { left ->
                     Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
                 }
@@ -112,9 +125,11 @@ fun ManageVehiclesScreen(
             isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                originalImageSize = Offset(bmp.width.toFloat(), bmp.height.toFloat())
                 val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
+                    // Update originalImageSize to the CLEANED dimensions
+                    originalImageSize = Offset(cleanedBmp.width.toFloat(), cleanedBmp.height.toFloat())
+                    
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
                     val out = java.io.FileOutputStream(tempFile)
                     cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
@@ -122,8 +137,11 @@ fun ManageVehiclesScreen(
                     referencePhotoUrl = tempFile.absolutePath
                     referenceTextBlocks = textBlocks
                     cleanedBmp.recycle()
-                    Log.i("ManageVehicles", "Immediate cleaned image + text blocks ready")
+                    Log.i("ManageVehicles", "Immediate cleaned image ready, size=$originalImageSize")
+                } else {
+                    originalImageSize = Offset(bmp.width.toFloat(), bmp.height.toFloat())
                 }
+                bmp.recycle()
             } catch (e: Exception) {
                 Log.e("ManageVehicles", "Immediate cleaning failed", e)
             } finally {
@@ -250,49 +268,36 @@ fun ManageVehiclesScreen(
                             detectDragGestures(
                                 onDragStart = { offset ->
                                     dragStart = offset
-                                    dragOffset = Offset.Zero
                                     currentDragRect = null
-                                    Log.i("CropDebug", "onDragStart - offset=$offset  (editOdometer=$isEditingOcrArea, editOtherText=$isEditingOtherText)")
                                 },
-                                onDrag = { change, dragAmount ->
+                                onDrag = { change, _ ->
                                     change.consume()
-                                    dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
-                                    Log.i("CropDebug", "onDrag called - dragAmount=$dragAmount, dragOffset=$dragOffset  imageSize=$imageSize originalImageSize=$originalImageSize")
                                     val start = dragStart
-                                    if (start != null) {
+                                    val end = change.position
+                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
-                                        val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
+                                        
+                                        // Normalize relative to the fitRect area
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        
                                         currentDragRect = Rect(left, top, right, bottom)
-                                        Log.i("CropDebug", "Dragging - currentDragRect=$currentDragRect")
-                                    } else {
-                                        Log.i("CropDebug", "onDrag condition failed - start=$start imageSize=$imageSize originalImageSize=$originalImageSize")
                                     }
                                 },
                                 onDragEnd = {
-                                    Log.i("CropDebug", "onDragEnd called  (editOdometer=$isEditingOcrArea, editOtherText=$isEditingOtherText)")
                                     val start = dragStart
-                                    if (start != null) {
-                                        val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
-                                        val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                                        val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                                        val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                                        val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                                        val newRect = Rect(left, top, right, bottom)
-                                        Log.i("CropDebug", "Drag ended - newRect=$newRect (original size)")
+                                    val finalDrag = currentDragRect
+                                    if (start != null && finalDrag != null) {
                                         if (isEditingOcrArea) {
-                                            odometerCropRect = newRect
+                                            odometerCropRect = finalDrag
                                         } else if (isEditingOtherText) {
-                                            otherTextCropRect = newRect
+                                            otherTextCropRect = finalDrag
                                         }
                                     }
                                     currentDragRect = null
                                     dragStart = null
-                                    dragOffset = Offset.Zero
                                 }
                             )
                         }
@@ -303,7 +308,7 @@ fun ManageVehiclesScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
                     )
-                    val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
+                    val fitRect = if (imageSize.x > 0f && imageSize.y > 0f && originalImageSize.x > 0f && originalImageSize.y > 0f) {
                         calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                     } else Rect(0f, 0f, imageSize.x, imageSize.y)
                     key(currentDragRect) {
