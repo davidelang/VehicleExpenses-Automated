@@ -107,7 +107,6 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Load the actual bitmap dimensions so cropRect is relative to the original image
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
