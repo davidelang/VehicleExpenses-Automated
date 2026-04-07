@@ -300,7 +300,7 @@ fun ManageVehiclesScreen(
                     val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
                         calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                     } else Rect(0f, 0f, imageSize.x, imageSize.y)
-                    key(currentDragRect) {
+                    key(currentDragRect) {   // forces recomposition when red preview changes
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             currentDragRect?.let { rect ->
                                 val left = fitRect.left + rect.left * fitRect.width
