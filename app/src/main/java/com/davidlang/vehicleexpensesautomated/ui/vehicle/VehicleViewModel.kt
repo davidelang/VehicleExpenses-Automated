@@ -47,20 +47,19 @@ class VehicleViewModel @Inject constructor(
         model: String,
         year: Int?,
         licensePlate: String?,
-        cleanedReferenceDashPhotoUrl: String?,   // always provided by screen
+        referenceDashPhotoUrl: String?,
+        cleanedReferenceDashPhotoUrl: String?,
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
-        referenceTextBlocks: String?             // always provided by screen
+        referenceTextBlocks: String?
     ) {
-        Log.i("VehicleReferenceCleaning", "createNewVehicleWithReference called for $name (using pre-cleaned data)")
-
         val newVehicle = Vehicle(
             name = name,
             make = make,
             model = model,
             year = year,
             licensePlate = licensePlate,
-            referenceDashPhotoUrl = null,
+            referenceDashPhotoUrl = referenceDashPhotoUrl,
             cleanedReferenceDashPhotoUrl = cleanedReferenceDashPhotoUrl,
             odometerCropLeft = odometerCropRect?.left,
             odometerCropTop = odometerCropRect?.top,
@@ -84,21 +83,11 @@ class VehicleViewModel @Inject constructor(
     }
 
     suspend fun updateVehicle(vehicle: Vehicle) {
-        Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id} (using pre-cleaned data)")
-
-        val updated = vehicle.copy(
-            referenceDashPhotoUrl = null,
-            cleanedReferenceDashPhotoUrl = vehicle.cleanedReferenceDashPhotoUrl,
-            otherTextCropLeft = vehicle.otherTextCropLeft,
-            otherTextCropTop = vehicle.otherTextCropTop,
-            otherTextCropRight = vehicle.otherTextCropRight,
-            otherTextCropBottom = vehicle.otherTextCropBottom,
-            referenceTextBlocks = vehicle.referenceTextBlocks
-        )
+        Log.i("VehicleReferenceCleaning", "updateVehicle called for ${vehicle.id}")
 
         try {
             withContext(NonCancellable + Dispatchers.IO) {
-                repository.updateVehicle(updated)
+                repository.updateVehicle(vehicle)
             }
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Update failed", e)

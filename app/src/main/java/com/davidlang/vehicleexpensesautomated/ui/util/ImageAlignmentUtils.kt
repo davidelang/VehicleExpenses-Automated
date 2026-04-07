@@ -285,6 +285,23 @@ object ImageAlignmentUtils {
             srcPoints.fromList(srcList)
             dstPoints.fromList(dstList)
             val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
+            
+            // GEOMETRIC SANITY CHECK
+            // A valid homography for a dash photo shouldn't have extreme shearing or flipping
+            val h00 = homography.get(0, 0)[0]
+            val h01 = homography.get(0, 1)[0]
+            val h10 = homography.get(1, 0)[0]
+            val h11 = homography.get(1, 1)[0]
+            val det = h00 * h11 - h01 * h10
+            
+            // Check for reasonable scale (approx 0.5x to 2.0x) and no flipping (det > 0)
+            val isSane = det > 0.2 && det < 5.0 && Math.abs(h01) < 0.8 && Math.abs(h10) < 0.8
+            
+            if (!isSane) {
+                homography.release()
+                return@withContext AlignmentResult(false, null, 0f, "Homography failed sanity check (pinwheel detected)", refKpCount, queryKpCount, goodMatchesCount, "feature")
+            }
+
             val confidence = goodMatchesCount.toFloat() / matchList.size.toFloat()
             val warped = Mat()
             Imgproc.warpPerspective(queryMat, warped, homography, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
@@ -321,14 +338,25 @@ object ImageAlignmentUtils {
         otherTextCrop: android.graphics.RectF? = null
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
+        
         val featureResult = alignImages(reference, query, 15, odometerCrop, otherTextCrop)
         results["feature"] = featureResult
+        
         val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks)
         results["arg"] = AlignmentResult(true, null, argScore, "ARG score: ${"%.2f".format(argScore)}", method = "arg")
+        
         val histScore = histogramMatch(refOcr.textBlocks, queryOcr.textBlocks)
         results["histogram"] = AlignmentResult(true, null, histScore, "Histogram+text score: ${"%.2f".format(histScore)}", method = "histogram")
+        
         val embScore = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
         results["embedding"] = AlignmentResult(true, null, embScore, "Embedding proxy score: ${"%.2f".format(embScore)}", method = "embedding")
+        
+        // Consensus: Weighted average of multiple metrics
+        // Feature score is normalized relative to minInliers
+        val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 50f).coerceIn(0f, 1f) else 0f
+        val consensusScore = (featScoreNorm * 0.4f) + (argScore * 0.2f) + (histScore * 0.2f) + (embScore * 0.2f)
+        results["consensus"] = AlignmentResult(true, null, consensusScore, "Consensus score: ${"%.2f".format(consensusScore)}", method = "consensus")
+        
         results
     }
 }
