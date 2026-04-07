@@ -254,7 +254,6 @@ fun ManageVehiclesScreen(
                                     change.consume()
                                     dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
                                     val start = dragStart
-                                    // UNCONDITIONAL - always calculate so red preview works
                                     if (imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
@@ -306,7 +305,7 @@ fun ManageVehiclesScreen(
                             val width = rect.width * fitRect.width
                             val height = rect.height * fitRect.height
                             drawRect(Color.Red, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
-                            Log.i("CropDebug", "Canvas drawing red preview: rect=$rect")
+                            Log.i("CropDebug", "Canvas drawing red preview rect=$rect")
                         }
                         odometerCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
@@ -318,7 +317,7 @@ fun ManageVehiclesScreen(
                         otherTextCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
                             val top = fitRect.top + rect.top * fitRect.height
-                            the width = rect.width * fitRect.width
+                            val width = rect.width * fitRect.width
                             val height = rect.height * fitRect.height
                             drawRect(Color.Green, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
                         }
