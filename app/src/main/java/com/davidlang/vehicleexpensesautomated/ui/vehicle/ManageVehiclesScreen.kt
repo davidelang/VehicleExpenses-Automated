@@ -112,9 +112,15 @@ fun ManageVehiclesScreen(
             isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
+                // First, set size based on the raw photo so calculation has a baseline
                 originalImageSize = Offset(bmp.width.toFloat(), bmp.height.toFloat())
+                
                 val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
+                    // CRITICAL: Update originalImageSize to the CLEANED image's dimensions,
+                    // as this is what is actually displayed and used for cropping.
+                    originalImageSize = Offset(cleanedBmp.width.toFloat(), cleanedBmp.height.toFloat())
+                    
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
                     val out = java.io.FileOutputStream(tempFile)
                     cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
@@ -122,7 +128,7 @@ fun ManageVehiclesScreen(
                     referencePhotoUrl = tempFile.absolutePath
                     referenceTextBlocks = textBlocks
                     cleanedBmp.recycle()
-                    Log.i("ManageVehicles", "Immediate cleaned image + text blocks ready")
+                    Log.i("ManageVehicles", "Immediate cleaned image size: ${originalImageSize.x}x${originalImageSize.y}")
                 }
             } catch (e: Exception) {
                 Log.e("ManageVehicles", "Immediate cleaning failed", e)
@@ -240,6 +246,7 @@ fun ManageVehiclesScreen(
                         .height(300.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
+                            Log.d("ManageVehicles", "Container size changed: ${imageSize.x}x${imageSize.y}")
                         }
                         .pointerInput(isEditingOcrArea, isEditingOtherText) {
                             if (!isEditingOcrArea && !isEditingOtherText) {
@@ -295,7 +302,7 @@ fun ManageVehiclesScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
                     )
-                    val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
+                    val fitRect = if (imageSize.x > 0f && imageSize.y > 0f && originalImageSize.x > 0f && originalImageSize.y > 0f) {
                         calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                     } else Rect(0f, 0f, imageSize.x, imageSize.y)
                     key(currentDragRect) {
