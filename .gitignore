@@ -28,6 +28,9 @@ kotlin-daemon-*.out
 .vscode/
 *.code-workspace
 
+# Dev / AI Interaction
+dev-ai-interaction/
+
 # Misc
 .DS_Store
 Thumbs.db
