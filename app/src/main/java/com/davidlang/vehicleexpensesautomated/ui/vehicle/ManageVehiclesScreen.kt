@@ -270,10 +270,8 @@ fun ManageVehiclesScreen(
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         currentDragRect = Rect(left, top, right, bottom)
-<<<<<<< HEAD
                                     } else {
-=======
->>>>>>> 79989e7691a37dfffc4180a095e1f648f1fa3f90
+                                        currentDragRect = null
                                     }
                                 },
                                 onDragEnd = {
