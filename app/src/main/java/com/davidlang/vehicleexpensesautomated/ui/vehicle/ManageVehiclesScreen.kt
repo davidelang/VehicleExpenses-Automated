@@ -242,8 +242,7 @@ fun ManageVehiclesScreen(
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
                         }
-                        .pointerInput(Unit) {
-                            // ONLY enable drag when an edit mode is active
+                        .pointerInput(isEditingOcrArea, isEditingOtherText) {   // re-evaluate when edit mode changes
                             if (!isEditingOcrArea && !isEditingOtherText) {
                                 Log.i("CropDebug", "Drag ignored - no edit mode active")
                                 return@pointerInput
@@ -305,8 +304,7 @@ fun ManageVehiclesScreen(
                     val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
                         calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                     } else Rect(0f, 0f, imageSize.x, imageSize.y)
-                    // Force recomposition when the live drag rect changes
-                    key(currentDragRect) {
+                    key(currentDragRect) {   // forces Canvas to redraw when red preview changes
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             currentDragRect?.let { rect ->
                                 val left = fitRect.left + rect.left * fitRect.width
