@@ -307,7 +307,7 @@ fun ManageVehiclesScreen(
                             val width = rect.width * fitRect.width
                             val height = rect.height * fitRect.height
                             drawRect(Color.Red, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
-                            Log.i("CropDebug", "Canvas drawing red preview rect=$rect")
+                            Log.i("CropDebug", "Canvas drawing red preview - screen coords left=$left top=$top width=$width height=$height")
                         }
                         odometerCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
