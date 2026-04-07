@@ -61,7 +61,7 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-    var referenceTextBlocks by remember { mutableStateOf<String?>(null) } // pre-extracted
+    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
@@ -107,7 +107,6 @@ fun ManageVehiclesScreen(
         }
     }
 
-    // Single-pass cleaning + text extraction when photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
@@ -173,7 +172,6 @@ fun ManageVehiclesScreen(
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
@@ -216,9 +214,7 @@ fun ManageVehiclesScreen(
                 )
             }
         }
-
         Spacer(modifier = Modifier.height(16.dp))
-
         if (isNewVehicle || editingVehicle != null) {
             PhotoPicker(
                 photoStorageManager = settingsViewModel.photoStorageManager,
@@ -227,7 +223,6 @@ fun ManageVehiclesScreen(
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
             Spacer(modifier = Modifier.height(16.dp))
-
             if (isCleaning) {
                 Box(
                     modifier = Modifier
@@ -273,6 +268,7 @@ fun ManageVehiclesScreen(
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
+                                        // Calculate cropRect relative to the ORIGINAL image size, not the fitted UI size
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
@@ -325,7 +321,6 @@ fun ManageVehiclesScreen(
                     }
                 }
             }
-
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingOtherText = false }, modifier = Modifier.weight(1f)) {
@@ -345,14 +340,12 @@ fun ManageVehiclesScreen(
                 Text("Try OCR Now")
             }
             Spacer(modifier = Modifier.height(24.dp))
-
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text("Make") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Year") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text("License Plate") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = odometerReading, onValueChange = { odometerReading = it }, label = { Text("Initial Odometer") }, modifier = Modifier.fillMaxWidth())
-
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -428,7 +421,6 @@ fun ManageVehiclesScreen(
             }
         }
     }
-
     if (showEnlargedCrop && lastOcrDebugResult != null) {
         OcrDebugDialog(
             ocrResult = lastOcrDebugResult!!,
@@ -440,7 +432,6 @@ fun ManageVehiclesScreen(
             }
         )
     }
-
     if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
         AlertDialog(
             onDismissRequest = { showOdometerConfirmation = false },
