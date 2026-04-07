@@ -257,7 +257,7 @@ fun ManageVehiclesScreen(
                                 onDrag = { change, dragAmount ->
                                     change.consume()
                                     dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
-                                    Log.i("CropDebug", "onDrag called - dragAmount=$dragAmount, dragOffset=$dragOffset  (editOdometer=$isEditingOcrArea, editOtherText=$isEditingOtherText)")
+                                    Log.i("CropDebug", "onDrag called - dragAmount=$dragAmount, dragOffset=$dragOffset  (editOdometer=$isEditingOcrArea, editOtherText=$isEditingOtherText) imageSize=$imageSize originalImageSize=$originalImageSize")
                                     val start = dragStart
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
@@ -268,6 +268,8 @@ fun ManageVehiclesScreen(
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         currentDragRect = Rect(left, top, right, bottom)
                                         Log.i("CropDebug", "Dragging - currentDragRect=$currentDragRect")
+                                    } else {
+                                        Log.i("CropDebug", "onDrag condition failed - start=$start imageSize=$imageSize originalImageSize=$originalImageSize")
                                     }
                                 },
                                 onDragEnd = {
