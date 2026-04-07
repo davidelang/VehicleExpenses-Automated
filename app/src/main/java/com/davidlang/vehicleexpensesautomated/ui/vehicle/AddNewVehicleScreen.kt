@@ -206,6 +206,7 @@ fun AddNewVehicleScreen(
                             model = model,
                             year = year.toIntOrNull() ?: 2025,
                             licensePlate = licensePlate,
+                            referenceDashPhotoUrl = pickedPhotoUrl,
                             cleanedReferenceDashPhotoUrl = referencePhotoUrl,
                             odometerCropRect = odometerCropRect,
                             initialOdometer = odometerReading.toIntOrNull() ?: 0,
