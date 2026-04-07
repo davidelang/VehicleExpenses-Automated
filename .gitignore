@@ -30,6 +30,8 @@ kotlin-daemon-*.out
 
 # Dev / AI Interaction
 dev-ai-interaction/
+bin/
+lib/
 
 # Misc
 .DS_Store
