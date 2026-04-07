@@ -107,11 +107,13 @@ fun ManageVehiclesScreen(
         }
     }
 
+    // Load the actual bitmap dimensions so cropRect is relative to the original image
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
             isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
+                originalImageSize = Offset(bmp.width.toFloat(), bmp.height.toFloat())
                 val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
                     val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
@@ -240,7 +242,6 @@ fun ManageVehiclesScreen(
                         .height(300.dp)
                         .onSizeChanged { size ->
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
-                            if (originalImageSize.x == 0f) originalImageSize = imageSize
                         }
                         .pointerInput(Unit) {
                             detectDragGestures(
@@ -268,7 +269,7 @@ fun ManageVehiclesScreen(
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        // Calculate cropRect relative to the ORIGINAL image size, not the fitted UI size
+                                        // Calculate cropRect relative to the ORIGINAL image size
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
