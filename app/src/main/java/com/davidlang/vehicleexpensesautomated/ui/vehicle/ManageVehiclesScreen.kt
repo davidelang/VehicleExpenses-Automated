@@ -262,7 +262,7 @@ fun ManageVehiclesScreen(
                                     change.consume()
                                     dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
                                     val start = dragStart
-                                    if (start != null) {
+                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
@@ -270,12 +270,15 @@ fun ManageVehiclesScreen(
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         currentDragRect = Rect(left, top, right, bottom)
+<<<<<<< HEAD
                                     } else {
+=======
+>>>>>>> 79989e7691a37dfffc4180a095e1f648f1fa3f90
                                     }
                                 },
                                 onDragEnd = {
                                     val start = dragStart
-                                    if (start != null) {
+                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
@@ -335,14 +338,12 @@ fun ManageVehiclesScreen(
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
-                    val wasEditing = isEditingOcrArea
                     isEditingOcrArea = !isEditingOcrArea
                     isEditingOtherText = false
                 }, modifier = Modifier.weight(1f)) {
                     Text(if (isEditingOcrArea) "Done Editing Odometer" else "Edit Odometer Crop")
                 }
                 Button(onClick = {
-                    val wasEditing = isEditingOtherText
                     isEditingOtherText = !isEditingOtherText
                     isEditingOcrArea = false
                 }, modifier = Modifier.weight(1f)) {
