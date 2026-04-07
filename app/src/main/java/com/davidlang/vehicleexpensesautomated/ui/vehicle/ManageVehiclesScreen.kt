@@ -253,9 +253,9 @@ fun ManageVehiclesScreen(
                                 onDrag = { change, dragAmount ->
                                     change.consume()
                                     dragOffset = Offset(dragOffset.x + dragAmount.x, dragOffset.y + dragAmount.y)
+                                    Log.i("CropDebug", "onDrag called - dragAmount=$dragAmount, current dragOffset=$dragOffset")
                                     val start = dragStart
-                                    Log.i("CropDebug", "onDrag called - dragAmount=$dragAmount, dragOffset=$dragOffset")
-                                    if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
+                                    if (imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
@@ -267,8 +267,8 @@ fun ManageVehiclesScreen(
                                     }
                                 },
                                 onDragEnd = {
+                                    Log.i("CropDebug", "onDragEnd called")
                                     val start = dragStart
-                                    Log.i("CropDebug", "onDragEnd called - dragStart=$start")
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
@@ -319,8 +319,8 @@ fun ManageVehiclesScreen(
                         otherTextCropRect?.let { rect ->
                             val left = fitRect.left + rect.left * fitRect.width
                             val top = fitRect.top + rect.top * fitRect.height
-                            the width = rect.width * fitRect.width
-                            the height = rect.height * fitRect.height
+                            val width = rect.width * fitRect.width
+                            val height = rect.height * fitRect.height
                             drawRect(Color.Green, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
                         }
                     }
