@@ -617,12 +617,19 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
                         appendLine("<b>Reference:</b><br><img src='data:image/jpeg;base64,${vRes.referenceBase64}'><br>")
                     }
                     if (vRes.alignedBase64.isNotEmpty()) {
-                        appendLine("<b>Aligned:</b><br><img src='data:image/jpeg;base64,${vRes.alignedBase64}'><br>")
+                        appendLine("<b>Aligned Result:</b><br><img src='data:image/jpeg;base64,${vRes.alignedBase64}'><br>")
                     } else {
-                        appendLine("<div style='background:#fee; padding:10px;'>No Alignment</div>")
+                        appendLine("<div style='background:#fee; padding:10px;'>Alignment Failed or Rejected</div>")
+                    }
+                    
+                    // Show Method-Specific Scores for THIS vehicle
+                    appendLine("<div class='score-box'>")
+                    vRes.methodScores.forEach { (method, score) ->
+                        appendLine("<b>$method:</b> ${"%.3f".format(score)}<br>")
                     }
                     val msgClass = if (vRes.message.contains("pinwheel")) "pinwheel" else ""
                     appendLine("<span class='$msgClass'>${vRes.message}</span>")
+                    appendLine("</div>")
                 } else {
                     appendLine("No Data")
                 }
