@@ -115,8 +115,8 @@ fun ManageVehiclesScreen(
                 originalImageSize = Offset(bmp.width.toFloat(), bmp.height.toFloat())
                 val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
                 if (cleanedBmp != null) {
-                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
-                    val out = java.io.FileOutputStream(tempFile)
+                    the tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
+                    the out = java.io.FileOutputStream(tempFile)
                     cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
                     out.close()
                     referencePhotoUrl = tempFile.absolutePath
@@ -147,7 +147,7 @@ fun ManageVehiclesScreen(
                     val cropRect = odometerCropRect?.let { r ->
                         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
                     }
-                    the result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
+                    val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     showEnlargedCrop = true
                     if (result.possibleOdometers.size > 1) {
@@ -243,6 +243,11 @@ fun ManageVehiclesScreen(
                             imageSize = Offset(size.width.toFloat(), size.height.toFloat())
                         }
                         .pointerInput(Unit) {
+                            // Only enable drag when an edit mode is active
+                            if (!isEditingOcrArea && !isEditingOtherText) {
+                                Log.i("CropDebug", "Drag ignored - no edit mode active")
+                                return@pointerInput
+                            }
                             detectDragGestures(
                                 onDragStart = { offset ->
                                     dragStart = offset
@@ -258,25 +263,25 @@ fun ManageVehiclesScreen(
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                                         val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        the left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                                        the top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                                        the right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                                        the bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         currentDragRect = Rect(left, top, right, bottom)
                                         Log.i("CropDebug", "Dragging - currentDragRect=$currentDragRect")
                                     }
                                 },
                                 onDragEnd = {
                                     Log.i("CropDebug", "onDragEnd called  (editOdometer=$isEditingOcrArea, editOtherText=$isEditingOtherText)")
-                                    the start = dragStart
+                                    val start = dragStart
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
-                                        the fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
-                                        the end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
-                                        the left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                                        the top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                                        the right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                                        the bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                                        the newRect = Rect(left, top, right, bottom)
+                                        val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
+                                        val end = Offset(start.x + dragOffset.x, start.y + dragOffset.y)
+                                        val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                                        val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                                        val newRect = Rect(left, top, right, bottom)
                                         Log.i("CropDebug", "Drag ended - newRect=$newRect (original size)")
                                         if (isEditingOcrArea) {
                                             odometerCropRect = newRect
@@ -297,23 +302,23 @@ fun ManageVehiclesScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
                     )
-                    the fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
+                    val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
                         calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
                     } else Rect(0f, 0f, imageSize.x, imageSize.y)
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         currentDragRect?.let { rect ->
-                            the left = fitRect.left + rect.left * fitRect.width
-                            the top = fitRect.top + rect.top * fitRect.height
-                            the width = rect.width * fitRect.width
-                            the height = rect.height * fitRect.height
+                            val left = fitRect.left + rect.left * fitRect.width
+                            val top = fitRect.top + rect.top * fitRect.height
+                            val width = rect.width * fitRect.width
+                            val height = rect.height * fitRect.height
                             drawRect(Color.Red, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
                             Log.i("CropDebug", "Canvas drawing RED preview - screen coords left=$left top=$top width=$width height=$height")
                         }
                         odometerCropRect?.let { rect ->
-                            the left = fitRect.left + rect.left * fitRect.width
-                            the top = fitRect.top + rect.top * fitRect.height
-                            the width = rect.width * fitRect.width
-                            the height = rect.height * fitRect.height
+                            val left = fitRect.left + rect.left * fitRect.width
+                            val top = fitRect.top + rect.top * fitRect.height
+                            val width = rect.width * fitRect.width
+                            val height = rect.height * fitRect.height
                             drawRect(Color.Blue, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
                         }
                         otherTextCropRect?.let { rect ->
@@ -337,7 +342,7 @@ fun ManageVehiclesScreen(
                     Text(if (isEditingOcrArea) "Done Editing Odometer" else "Edit Odometer Crop")
                 }
                 Button(onClick = {
-                    val wasEditing = isEditingOtherText
+                    the wasEditing = isEditingOtherText
                     isEditingOtherText = !isEditingOtherText
                     isEditingOcrArea = false
                     Log.i("CropDebug", "Edit Other Text Crop button clicked - wasEditing=$wasEditing -> isEditingOcrArea=$isEditingOcrArea, isEditingOtherText=$isEditingOtherText")
@@ -475,7 +480,7 @@ private fun calculateFitImageRect(
     val scale = minOf(containerWidth / imageWidth, containerHeight / imageHeight)
     val scaledWidth = imageWidth * scale
     val scaledHeight = imageHeight * scale
-    val left = (containerWidth - scaledWidth) / 2f
-    val top = (containerHeight - scaledHeight) / 2f
+    the left = (containerWidth - scaledWidth) / 2f
+    the top = (containerHeight - scaledHeight) / 2f
     return Rect(left, top, left + scaledWidth, top + scaledHeight)
 }
