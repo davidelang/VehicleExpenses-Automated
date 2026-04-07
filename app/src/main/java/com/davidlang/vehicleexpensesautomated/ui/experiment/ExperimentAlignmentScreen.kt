@@ -331,6 +331,17 @@ private suspend fun runFullExperiment(
     val results = mutableListOf<PhotoResult>()
     var success = 0
     
+    // CACHE REFERENCE DATA
+    data class CachedRef(val vehicle: Vehicle, val bmp: Bitmap, val ocr: OcrResult)
+    val cachedRefs = vehicles.mapNotNull { vehicle ->
+        val url = vehicle.referenceDashPhotoUrl ?: vehicle.cleanedReferenceDashPhotoUrl ?: return@mapNotNull null
+        val file = File(url)
+        if (!file.exists()) return@mapNotNull null
+        val bmp = BitmapFactory.decodeFile(url) ?: return@mapNotNull null
+        val ocr = OdometerOcrUtils.extractFromPhoto(url)
+        CachedRef(vehicle, bmp, ocr)
+    }
+
     photos.forEachIndexed { index, file ->
         onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
         try {
@@ -339,39 +350,58 @@ private suspend fun runFullExperiment(
             val queryOcr = OdometerOcrUtils.extractFromPhoto(file.absolutePath)
             
             val vehicleMatchResults = mutableListOf<VehicleMatchResult>()
+            val methodWinners = mutableMapOf<String, String>()
+            val methodTopScores = mutableMapOf<String, Float>()
             
-            vehicles.forEach { vehicle ->
-                val refUrl = vehicle.referenceDashPhotoUrl ?: vehicle.cleanedReferenceDashPhotoUrl
-                if (refUrl == null) return@forEach
-                val refFile = File(refUrl)
-                if (!refFile.exists()) return@forEach
-                val refBmp = BitmapFactory.decodeFile(refFile.absolutePath) ?: return@forEach
-                
-                val odometerCrop = vehicle.odometerCropLeft?.let {
-                    android.graphics.RectF(it, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
+            cachedRefs.forEach { ref ->
+                val odometerCrop = ref.vehicle.odometerCropLeft?.let {
+                    android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f)
                 }
-                val otherTextCrop = vehicle.otherTextCropLeft?.let {
-                    android.graphics.RectF(it, vehicle.otherTextCropTop ?: 0f, vehicle.otherTextCropRight ?: 1f, vehicle.otherTextCropBottom ?: 1f)
+                val otherTextCrop = ref.vehicle.otherTextCropLeft?.let {
+                    android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f)
                 }
                 
-                val refOcr = OdometerOcrUtils.extractFromPhoto(refFile.absolutePath)
-                val allResults = ImageAlignmentUtils.matchWithAllMethods(refBmp, originalBitmap, refOcr, queryOcr, odometerCrop, otherTextCrop)
-                
-                // Consensus result for this specific vehicle
+                // 1. MATCHING (for scoring)
+                val allResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCrop, otherTextCrop)
                 val consensusRes = allResults["consensus"] ?: allResults["feature"]!!
                 val featureRes = allResults["feature"]!!
                 
                 val inliersMatch = Regex("with (\\d+) inliers").find(featureRes.message ?: "")
                 val inliers = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
                 
-                // Store the result including the aligned image for THIS vehicle
+                // Track winners
+                allResults.forEach { (method, res) ->
+                    val currentBest = methodTopScores[method] ?: -1f
+                    if (res.confidence > currentBest) {
+                        methodTopScores[method] = res.confidence
+                        methodWinners[method] = ref.vehicle.name
+                    }
+                }
+
+                // 2. DUAL ALIGNMENT (for visual report)
+                // Full-to-Full
+                val fullAlign = ImageAlignmentUtils.alignImages(ref.bmp, originalBitmap, 10, odometerCrop, otherTextCrop)
+                
+                // Cleaned-to-Cleaned
+                val refCleanedUrl = ref.vehicle.cleanedReferenceDashPhotoUrl
+                val cleanedAlignBase64 = if (refCleanedUrl != null && cleanedBmp != null) {
+                    val refCleanedBmp = BitmapFactory.decodeFile(refCleanedUrl)
+                    if (refCleanedBmp != null) {
+                        val res = ImageAlignmentUtils.alignImages(refCleanedBmp, cleanedBmp, 10, odometerCrop, otherTextCrop)
+                        val b64 = if (res.alignedImage != null) bitmapToBase64(res.alignedImage, 180) else ""
+                        refCleanedBmp.recycle()
+                        b64
+                    } else ""
+                } else ""
+                
                 vehicleMatchResults.add(VehicleMatchResult(
-                    vehicleName = vehicle.name,
+                    vehicleName = ref.vehicle.name,
                     score = consensusRes.confidence,
                     inliers = inliers,
                     message = consensusRes.message,
-                    referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(refBmp, vehicle), 200),
-                    alignedBase64 = if (featureRes.alignedImage != null) bitmapToBase64(featureRes.alignedImage, 200) else "",
+                    referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(ref.bmp, ref.vehicle), 180),
+                    fullAlignedBase64 = if (fullAlign.alignedImage != null) bitmapToBase64(fullAlign.alignedImage, 180) else "",
+                    cleanedAlignedBase64 = cleanedAlignBase64,
                     methodScores = allResults.mapValues { it.value.confidence }
                 ))
             }
@@ -385,49 +415,43 @@ private suspend fun runFullExperiment(
             var referenceTextBlocks = ""
 
             if (winner != null && winner.vehicleName != "No match") {
-                val matchedVehicle = vehicles.find { it.name == winner.vehicleName }
-                if (matchedVehicle != null) {
-                    referenceTextBlocks = matchedVehicle.referenceTextBlocks ?: ""
+                val winnerRef = cachedRefs.find { it.vehicle.name == winner.vehicleName }
+                if (winnerRef != null) {
+                    referenceTextBlocks = winnerRef.vehicle.referenceTextBlocks ?: ""
                     
-                    // Re-run JUST the winner's alignment to get the bitmap for OCR
-                    val refUrl = matchedVehicle.referenceDashPhotoUrl ?: matchedVehicle.cleanedReferenceDashPhotoUrl
-                    if (refUrl != null) {
-                        val refBmp = BitmapFactory.decodeFile(refUrl)
-                        if (refBmp != null) {
-                            val odometerCrop = matchedVehicle.odometerCropLeft?.let {
-                                android.graphics.RectF(it, matchedVehicle.odometerCropTop ?: 0f, matchedVehicle.odometerCropRight ?: 1f, matchedVehicle.odometerCropBottom ?: 1f)
-                            }
-                            val otherTextCrop = matchedVehicle.otherTextCropLeft?.let {
-                                android.graphics.RectF(it, matchedVehicle.otherTextCropTop ?: 0f, matchedVehicle.otherTextCropRight ?: 1f, matchedVehicle.otherTextCropBottom ?: 1f)
-                            }
-                            
-                            val finalAlign = ImageAlignmentUtils.alignImages(refBmp, originalBitmap, 15, odometerCrop, otherTextCrop)
-                            
-                            if (finalAlign.alignedImage != null) {
-                                val cropBmp = manualCropOdometer(finalAlign.alignedImage, matchedVehicle, debugCropDir, file.name)
-                                odometerCropBase64 = bitmapToBase64(cropBmp, 200)
-                                
-                                val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
-                                val out = java.io.FileOutputStream(tempAlignedFile)
-                                finalAlign.alignedImage.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                                out.close()
-                                val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
-                                extractedOdometer = ocrResult.odometer
-                                tempAlignedFile.delete()
-                                if (ocrResult.odometer != null) success++
-                            }
-                        }
+                    val odometerCrop = winnerRef.vehicle.odometerCropLeft?.let {
+                        android.graphics.RectF(it, winnerRef.vehicle.odometerCropTop ?: 0f, winnerRef.vehicle.odometerCropRight ?: 1f, winnerRef.vehicle.odometerCropBottom ?: 1f)
+                    }
+                    val otherTextCrop = winnerRef.vehicle.otherTextCropLeft?.let {
+                        android.graphics.RectF(it, winnerRef.vehicle.otherTextCropTop ?: 0f, winnerRef.vehicle.otherTextCropRight ?: 1f, winnerRef.vehicle.otherTextCropBottom ?: 1f)
+                    }
+                    val finalAlign = ImageAlignmentUtils.alignImages(winnerRef.bmp, originalBitmap, 10, odometerCrop, otherTextCrop)
+                    
+                    if (finalAlign.alignedImage != null) {
+                        val cropBmp = manualCropOdometer(finalAlign.alignedImage, winnerRef.vehicle, debugCropDir, file.name)
+                        odometerCropBase64 = bitmapToBase64(cropBmp, 200)
+                        
+                        val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
+                        val out = java.io.FileOutputStream(tempAlignedFile)
+                        finalAlign.alignedImage.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        out.close()
+                        val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
+                        extractedOdometer = ocrResult.odometer
+                        tempAlignedFile.delete()
+                        if (ocrResult.odometer != null) success++
                     }
                 }
             }
+
+            val methodWinnersString = methodWinners.entries.joinToString("<br>") { "<b>${it.key}:</b> ${it.value}" }
 
             results.add(PhotoResult(
                 photoName = file.name,
                 matchedVehicle = matchedVehicleName,
                 finalConfidence = matchedConfidence,
-                alignmentMessage = winner?.message ?: "No Match Found",
-                originalThumbBase64 = bitmapToBase64(originalBitmap, 200),
-                cleanedDashBase64 = bitmapToBase64(cleanedBmp, 200),
+                alignmentMessage = (winner?.message ?: "No Match Found") + "<br><br><b>Method Picks:</b><br>$methodWinnersString",
+                originalThumbBase64 = bitmapToBase64(originalBitmap, 180),
+                cleanedDashBase64 = bitmapToBase64(cleanedBmp, 180),
                 odometerCropBase64 = odometerCropBase64,
                 odometer = extractedOdometer,
                 referenceTextBlocks = referenceTextBlocks,
@@ -451,6 +475,9 @@ private suspend fun runFullExperiment(
             ))
         }
     }
+    // Cleanup cached bitmaps
+    cachedRefs.forEach { it.bmp.recycle() }
+    
     onProgress(1f, "Generating visual report...")
     val html = buildRichHtmlReport(results, total, vehicles)
     val summary = "Processed $total photos — $success successful alignments"
@@ -517,7 +544,8 @@ private data class VehicleMatchResult(
     val inliers: Int,
     val message: String,
     val referenceBase64: String,
-    val alignedBase64: String,
+    val fullAlignedBase64: String,
+    val cleanedAlignedBase64: String,
     val methodScores: Map<String, Float>
 )
 
@@ -542,24 +570,13 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
     
     // CALCULATE SUMMARY STATS
     val routines = listOf("feature", "arg", "histogram", "embedding", "consensus")
-    val routineStats = routines.associateWith { routine ->
-        val correct = results.count { r ->
-            // A routine is 'correct' if its top pick for this photo was the actually matched vehicle
-            // Since we don't have 'ground truth' labels, we use the consensus winner as proxy 
-            // OR we can just report the average confidence.
-            // For now, let's report average confidence and win-rate vs final consensus.
-            true 
-        }
-        val avgConfidence = results.flatMap { it.allVehicleResults }.filter { it.vehicleName == it.vehicleName }.mapNotNull { it.methodScores[routine] }.average()
-        avgConfidence
-    }
 
     return buildString {
         appendLine("<html><head><title>Alignment Experiment - $time</title>")
         appendLine("<style>")
         appendLine("table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 12px; }")
         appendLine("th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; }")
-        appendLine("img { max-width: 200px; height: auto; border: 1px solid #eee; }")
+        appendLine("img { max-width: 180px; height: auto; border: 1px solid #eee; }")
         appendLine(".score-box { text-align: left; font-size: 10px; background: #f9f9f9; padding: 4px; border-radius: 4px; }")
         appendLine(".winner { background-color: #e6ffed; border: 2px solid #28a745; }")
         appendLine(".pinwheel { color: #d73a49; font-weight: bold; }")
@@ -584,10 +601,10 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
         appendLine("<th># & Photo</th>")
         appendLine("<th>Original & Cleaned</th>")
         allVehicles.forEach { vehicle ->
-            appendLine("<th>${vehicle.name} Match</th>")
+            appendLine("<th>${vehicle.name} Match (Full vs Cleaned)</th>")
         }
         appendLine("<th>Final Result</th>")
-        appendLine("<th>Consensus Breakdown</th>")
+        appendLine("<th>Breakdown</th>")
         appendLine("</tr>")
 
         results.forEachIndexed { index, r ->
@@ -616,13 +633,13 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
                     if (vRes.referenceBase64.isNotEmpty()) {
                         appendLine("<b>Reference:</b><br><img src='data:image/jpeg;base64,${vRes.referenceBase64}'><br>")
                     }
-                    if (vRes.alignedBase64.isNotEmpty()) {
-                        appendLine("<b>Aligned Result:</b><br><img src='data:image/jpeg;base64,${vRes.alignedBase64}'><br>")
-                    } else {
-                        appendLine("<div style='background:#fee; padding:10px;'>Alignment Failed or Rejected</div>")
+                    if (vRes.fullAlignedBase64.isNotEmpty()) {
+                        appendLine("<b>Full Alignment:</b><br><img src='data:image/jpeg;base64,${vRes.fullAlignedBase64}'><br>")
+                    }
+                    if (vRes.cleanedAlignedBase64.isNotEmpty()) {
+                        appendLine("<b>Cleaned Alignment:</b><br><img src='data:image/jpeg;base64,${vRes.cleanedAlignedBase64}'><br>")
                     }
                     
-                    // Show Method-Specific Scores for THIS vehicle
                     appendLine("<div class='score-box'>")
                     vRes.methodScores.forEach { (method, score) ->
                         appendLine("<b>$method:</b> ${"%.3f".format(score)}<br>")
@@ -651,9 +668,6 @@ private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehic
             val winnerRes = r.allVehicleResults.find { it.vehicleName == r.matchedVehicle }
             if (winnerRes != null) {
                 appendLine("<div class='score-box'>")
-                winnerRes.methodScores.forEach { (method, score) ->
-                    appendLine("<b>$method:</b> ${"%.3f".format(score)}<br>")
-                }
                 appendLine("<b>Ref Blocks:</b><br>${r.referenceTextBlocks.replace("|", "<br>")}")
                 appendLine("</div>")
             }
