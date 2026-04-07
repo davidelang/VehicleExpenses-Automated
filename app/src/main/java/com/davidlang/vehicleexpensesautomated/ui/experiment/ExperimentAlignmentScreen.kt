@@ -357,17 +357,21 @@ private suspend fun runFullExperiment(
                 val refOcr = OdometerOcrUtils.extractFromPhoto(refFile.absolutePath)
                 val allResults = ImageAlignmentUtils.matchWithAllMethods(refBmp, originalBitmap, refOcr, queryOcr, odometerCrop, otherTextCrop)
                 
-                val bestResult = allResults["consensus"] ?: allResults["feature"]!!
-                val inliersMatch = Regex("with (\\d+) inliers").find(allResults["feature"]?.message ?: "")
+                // Consensus result for this specific vehicle
+                val consensusRes = allResults["consensus"] ?: allResults["feature"]!!
+                val featureRes = allResults["feature"]!!
+                
+                val inliersMatch = Regex("with (\\d+) inliers").find(featureRes.message ?: "")
                 val inliers = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
                 
+                // Store the result including the aligned image for THIS vehicle
                 vehicleMatchResults.add(VehicleMatchResult(
                     vehicleName = vehicle.name,
-                    score = bestResult.confidence,
+                    score = consensusRes.confidence,
                     inliers = inliers,
-                    message = bestResult.message,
+                    message = consensusRes.message,
                     referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(refBmp, vehicle), 200),
-                    alignedBase64 = if (bestResult.alignedImage != null) bitmapToBase64(bestResult.alignedImage, 200) else "",
+                    alignedBase64 = if (featureRes.alignedImage != null) bitmapToBase64(featureRes.alignedImage, 200) else "",
                     methodScores = allResults.mapValues { it.value.confidence }
                 ))
             }
