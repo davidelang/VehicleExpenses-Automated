@@ -73,7 +73,6 @@ fun ManageVehiclesScreen(
     var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
-    var isCleaning by remember { mutableStateOf(false) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -94,7 +93,7 @@ fun ManageVehiclesScreen(
                 licensePlate = it.licensePlate ?: ""
                 odometerReading = ""
                 pickedPhotoUrl = it.referenceDashPhotoUrl
-                referencePhotoUrl = it.cleanedReferenceDashPhotoUrl ?: it.referenceDashPhotoUrl
+                referencePhotoUrl = it.referenceDashPhotoUrl
                 referenceTextBlocks = it.referenceTextBlocks
                 
                 // CRITICAL: Update originalImageSize when loading an existing vehicle, respecting EXIF
@@ -132,43 +131,30 @@ fun ManageVehiclesScreen(
 
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
-            isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
-                if (cleanedBmp != null) {
-                    // Update originalImageSize to the CLEANED dimensions, respecting any rotation
-                    // Since cleanedBmp is already oriented correctly by our preprocessing, 
-                    // we can use its width/height directly.
-                    originalImageSize = Offset(cleanedBmp.width.toFloat(), cleanedBmp.height.toFloat())
-                    
-                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
-                    val out = java.io.FileOutputStream(tempFile)
-                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    out.close()
-                    referencePhotoUrl = tempFile.absolutePath
-                    referenceTextBlocks = textBlocks
-                    cleanedBmp.recycle()
-                    Log.i("ManageVehicles", "Immediate cleaned image ready, size=$originalImageSize")
+                referencePhotoUrl = url
+                
+                // Respect EXIF orientation for dimensions
+                val ei = android.media.ExifInterface(url)
+                val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+                val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || 
+                                orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
+                
+                originalImageSize = if (isSwapped) {
+                    Offset(bmp.height.toFloat(), bmp.width.toFloat())
                 } else {
-                    // Fallback to raw bitmap dimensions, respecting EXIF if possible
-                    url.let { path ->
-                        val ei = android.media.ExifInterface(path)
-                        val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
-                        val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || 
-                                       orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
-                        originalImageSize = if (isSwapped) {
-                            Offset(bmp.height.toFloat(), bmp.width.toFloat())
-                        } else {
-                            Offset(bmp.width.toFloat(), bmp.height.toFloat())
-                        }
-                    }
+                    Offset(bmp.width.toFloat(), bmp.height.toFloat())
+                }
+                
+                // OCR pass to find reference text blocks
+                scope.launch {
+                    val result = OdometerOcrUtils.extractFromPhoto(url)
+                    referenceTextBlocks = result.textBlocks.joinToString("|") { "${it.text}:${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
                 }
                 bmp.recycle()
             } catch (e: Exception) {
-                Log.e("ManageVehicles", "Immediate cleaning failed", e)
-            } finally {
-                isCleaning = false
+                Log.e("ManageVehicles", "Image loading failed", e)
             }
         }
     }
@@ -265,17 +251,7 @@ fun ManageVehiclesScreen(
                 onPhotoUrlChanged = { pickedPhotoUrl = it }
             )
             Spacer(modifier = Modifier.height(16.dp))
-            if (isCleaning) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                    Text(text = "Cleaning image...", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
-                }
-            } else if (referencePhotoUrl != null) {
+            if (referencePhotoUrl != null) {
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -422,7 +398,7 @@ fun ManageVehiclesScreen(
                                         year = year.toIntOrNull(),
                                         licensePlate = licensePlate,
                                         referenceDashPhotoUrl = pickedPhotoUrl,
-                                        cleanedReferenceDashPhotoUrl = referencePhotoUrl,
+                                        cleanedReferenceDashPhotoUrl = null,
                                         odometerCropRect = odometerCropRect,
                                         initialOdometer = odometerReading.toIntOrNull() ?: 0,
                                         referenceTextBlocks = referenceTextBlocks
@@ -438,7 +414,7 @@ fun ManageVehiclesScreen(
                                                 year = year.toIntOrNull(),
                                                 licensePlate = licensePlate,
                                                 referenceDashPhotoUrl = pickedPhotoUrl,
-                                                cleanedReferenceDashPhotoUrl = referencePhotoUrl,
+                                                cleanedReferenceDashPhotoUrl = null,
                                                 odometerCropLeft = odometerCropRect?.left,
                                                 odometerCropTop = odometerCropRect?.top,
                                                 odometerCropRight = odometerCropRect?.right,

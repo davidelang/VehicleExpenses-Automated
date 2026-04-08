@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -47,27 +48,22 @@ fun AddNewVehicleScreen(
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var referenceTextBlocks by remember { mutableStateOf<String?>(null) } // pre-extracted
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
-    var isCleaning by remember { mutableStateOf(false) }
 
-    // Single-pass cleaning + text extraction when photo is selected
+    // Single-pass text extraction when photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
-            isCleaning = true
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
-                if (cleanedBmp != null) {
-                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
-                    val out = java.io.FileOutputStream(tempFile)
-                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    out.close()
-                    referencePhotoUrl = tempFile.absolutePath
-                    referenceTextBlocks = textBlocks
-                    cleanedBmp.recycle()
+                referencePhotoUrl = url
+                
+                // OCR pass to find reference text blocks
+                scope.launch {
+                    val result = OdometerOcrUtils.extractFromPhoto(url)
+                    referenceTextBlocks = result.textBlocks.joinToString("|") { "${it.text}:${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
                 }
+                bmp.recycle()
             } catch (e: Exception) {
-            } finally {
-                isCleaning = false
+                Log.e("AddNewVehicle", "Image loading failed", e)
             }
         }
     }
@@ -141,17 +137,7 @@ fun AddNewVehicleScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (isCleaning) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-                Text(text = "Cleaning image...", modifier = Modifier.padding(top = 16.dp))
-            }
-        } else if (referencePhotoUrl != null) {
+        if (referencePhotoUrl != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -207,7 +193,7 @@ fun AddNewVehicleScreen(
                             year = year.toIntOrNull() ?: 2025,
                             licensePlate = licensePlate,
                             referenceDashPhotoUrl = pickedPhotoUrl,
-                            cleanedReferenceDashPhotoUrl = referencePhotoUrl,
+                            cleanedReferenceDashPhotoUrl = null,
                             odometerCropRect = odometerCropRect,
                             initialOdometer = odometerReading.toIntOrNull() ?: 0,
                             referenceTextBlocks = referenceTextBlocks
