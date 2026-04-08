@@ -32,6 +32,12 @@ data class OcrResult(
     val textBlocks: List<TextBlock> = emptyList()
 )
 
+data class OcrStepResult(
+    val stageName: String,
+    val bitmap: Bitmap,
+    val text: String?
+)
+
 object OdometerOcrUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
@@ -76,6 +82,58 @@ object OdometerOcrUtils {
         } finally {
             tess.clear()
         }
+    }
+
+    suspend fun runMultiStepOcr(crop: Bitmap, context: android.content.Context): List<OcrStepResult> = withContext(Dispatchers.IO) {
+        val steps = mutableListOf<OcrStepResult>()
+        
+        // 0. Raw
+        val (text0, _) = runRawOcr(crop)
+        steps.add(OcrStepResult("Raw", crop.copy(Bitmap.Config.ARGB_8888, true), text0))
+        
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(crop, mat)
+        
+        // 1. Grayscale
+        val gray = Mat()
+        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        val bmpGray = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(gray, bmpGray)
+        val (text1, _) = runRawOcr(bmpGray)
+        steps.add(OcrStepResult("Grayscale", bmpGray, text1))
+        
+        // 2. Bilateral Filter (Noise reduction)
+        val filtered = Mat()
+        Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
+        val bmpFiltered = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(filtered, bmpFiltered)
+        val (text2, _) = runRawOcr(bmpFiltered)
+        steps.add(OcrStepResult("Bilateral", bmpFiltered, text2))
+        
+        // 3. CLAHE (Contrast)
+        val enhanced = Mat()
+        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+        clahe.apply(filtered, enhanced)
+        val bmpEnhanced = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(enhanced, bmpEnhanced)
+        val (text3, _) = runRawOcr(bmpEnhanced)
+        steps.add(OcrStepResult("CLAHE", bmpEnhanced, text3))
+        
+        // 4. Adaptive Threshold
+        val thresh = Mat()
+        Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+        val bmpThresh = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(thresh, bmpThresh)
+        val (text4, _) = runRawOcr(bmpThresh)
+        steps.add(OcrStepResult("Threshold", bmpThresh, text4))
+        
+        mat.release()
+        gray.release()
+        filtered.release()
+        enhanced.release()
+        thresh.release()
+        
+        steps
     }
 
     fun annotateImageWithBoxes(original: Bitmap, blocks: List<TextBlock>): Bitmap {
