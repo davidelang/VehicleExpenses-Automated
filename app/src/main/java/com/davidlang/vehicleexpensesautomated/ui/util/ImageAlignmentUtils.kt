@@ -463,11 +463,16 @@ object ImageAlignmentUtils {
                              (argScore * 0.10f) + 
                              (ancScore * 0.10f)
 
-        if (ancScore < 0 || hasWordVeto) {
+        var finalMessage = "Consensus score: ${"%.2f".format(consensusScore)}"
+        if (ancScore < 0) {
             consensusScore = -1.0f
+            finalMessage = "VETO (Anchor mismatch)"
+        } else if (hasWordVeto) {
+            consensusScore = -1.0f
+            finalMessage = "VETO (Distinctive word mismatch)"
         }
                              
-        results["consensus"] = AlignmentResult(true, null, consensusScore, "Consensus score: ${"%.2f".format(consensusScore)}", method = "consensus", wordVeto = hasWordVeto)
+        results["consensus"] = AlignmentResult(true, null, consensusScore, finalMessage, method = "consensus", wordVeto = hasWordVeto)
         
         results
     }
