@@ -55,6 +55,8 @@ object ImageAlignmentUtils {
         var score = 0f
         var totalWeight = 0f
         
+        val refWords = refBlocks.map { it.text.lowercase().trim() }.toSet()
+        
         for (r in refBlocks) {
             val word = r.text.lowercase().trim()
             val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
@@ -67,7 +69,21 @@ object ImageAlignmentUtils {
                 }
             }
         }
-        return if (totalWeight > 0) score / totalWeight else 0f
+        
+        // Negative voting: penalize words found in query that are NOT in reference
+        // but ARE known to exist in other vehicles (i.e. they are in globalWordCounts).
+        var penalty = 0f
+        for (q in queryBlocks) {
+            val word = q.text.lowercase().trim()
+            if (!refWords.contains(word) && globalWordCounts.containsKey(word)) {
+                // It's a word known from other vehicles, but not this one.
+                // Rare words (low global count) have a higher penalty weight.
+                val weight = 1.0f / globalWordCounts[word]!!.toFloat()
+                penalty += weight * 0.5f // Weight the penalty
+            }
+        }
+        
+        return if (totalWeight > 0) (score - penalty) / totalWeight else 0f
     }
 
     fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
@@ -75,14 +91,24 @@ object ImageAlignmentUtils {
         val anchors = listOf("MPH", "KM/H", "160", "140", "120", "100", "80", "60", "40", "20", "PRNDL", "TRIP", "ODO")
         var matchCount = 0
         var totalPossible = 0
-        anchors.forEach { anchor ->
+        
+        for (anchor in anchors) {
             val inRef = refBlocks.any { it.text.contains(anchor, ignoreCase = true) }
+            val inQuery = queryBlocks.any { it.text.contains(anchor, ignoreCase = true) }
+            
+            if (inQuery && !inRef) {
+                // HARD VETO: This anchor exists on the dash we are looking at, 
+                // but NOT on the reference for this vehicle. 
+                // Therefore it cannot be this vehicle.
+                return -1.0f
+            }
+            
             if (inRef) {
                 totalPossible++
-                val inQuery = queryBlocks.any { it.text.contains(anchor, ignoreCase = true) }
                 if (inQuery) matchCount++
             }
         }
+        
         if (totalPossible == 0) return 0f
         return matchCount.toFloat() / totalPossible.toFloat()
     }
@@ -268,7 +294,23 @@ object ImageAlignmentUtils {
             }
             srcPoints.fromList(srcList)
             dstPoints.fromList(dstList)
-            val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
+            val mask = Mat()
+            val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0, mask)
+            
+            var inlierCount = 0
+            if (!homography.empty()) {
+                for (i in 0 until mask.rows()) {
+                    if (mask.get(i, 0)[0].toInt() == 1) {
+                        inlierCount++
+                    }
+                }
+            }
+            mask.release()
+
+            if (homography.empty() || inlierCount < minInliers) {
+                if (!homography.empty()) homography.release()
+                return@withContext AlignmentResult(false, null, 0f, "Homography failed or too few inliers ($inlierCount < $minInliers)", refKpCount, queryKpCount, goodMatchesCount, "feature")
+            }
             
             // GEOMETRIC SANITY CHECK
             val h00 = homography.get(0, 0)[0]
@@ -276,14 +318,16 @@ object ImageAlignmentUtils {
             val h10 = homography.get(1, 0)[0]
             val h11 = homography.get(1, 1)[0]
             val det = h00 * h11 - h01 * h10
-            val isSane = det > 0.04 && det < 25.0 && Math.abs(h01) < 1.2 && Math.abs(h10) < 1.2
+            
+            // Stricter sanity checks to prevent "wedges of color" (severe perspective skew/scale)
+            val isSane = det > 0.1 && det < 10.0 && Math.abs(h01) < 0.5 && Math.abs(h10) < 0.5
             
             if (!isSane) {
                 homography.release()
-                return@withContext AlignmentResult(false, null, 0f, "Homography failed sanity check (det=${"%.2f".format(det)})", refKpCount, queryKpCount, goodMatchesCount, "feature")
+                return@withContext AlignmentResult(false, null, 0f, "Homography failed sanity check (det=${"%.2f".format(det)}, skewX=${"%.2f".format(h01)}, skewY=${"%.2f".format(h10)})", refKpCount, queryKpCount, inlierCount, "feature")
             }
 
-            val confidence = goodMatchesCount.toFloat() / matchList.size.toFloat()
+            val confidence = inlierCount.toFloat() / matchList.size.toFloat()
             val warped = Mat()
             Imgproc.warpPerspective(queryMat, warped, homography, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
             val alignedBitmap = Bitmap.createBitmap(warped.cols(), warped.rows(), Bitmap.Config.ARGB_8888)
@@ -348,11 +392,15 @@ object ImageAlignmentUtils {
         // Anchors are useful but prone to accidental matches on speedo numbers.
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
         
-        val consensusScore = (featScoreNorm * 0.35f) + 
+        var consensusScore = (featScoreNorm * 0.35f) + 
                              (embScore * 0.35f) + 
                              (histScore * 0.10f) + 
                              (argScore * 0.10f) + 
                              (ancScore * 0.10f)
+
+        if (ancScore < 0) {
+            consensusScore = -1.0f
+        }
                              
         results["consensus"] = AlignmentResult(true, null, consensusScore, "Consensus score: ${"%.2f".format(consensusScore)}", method = "consensus")
         

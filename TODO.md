@@ -1,6 +1,11 @@
 # Vehicle Expenses Automated — TODO List
 
 ## High Priority (next)
+- Improve GlobalWordCounts (IDF) calculation:
+  - Extract text and compute local word counts per-image as they are loaded/updated in the Manage Vehicles page.
+  - When a vehicle is saved or created, re-process the aggregate global word counts across all vehicles.
+  - Store results in GlobalMetadata or similar for efficient access during matching.
+
 
 ## Medium Priority
 
