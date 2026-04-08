@@ -225,7 +225,7 @@ private suspend fun runFullExperiment(
                 }
                 
                 // Matching
-                val allOtherRefs = cachedRefs.map { it.ocr.textBlocks }
+                val allOtherRefs = cachedRefs.map { it.ocr }
                 val allResults = ImageAlignmentUtils.matchWithAllMethods(
                     ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCropF, otherTextCropF, 
                     skipExpensiveORB = true, globalWordCounts = globalWordCounts, 
@@ -428,7 +428,7 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
             ZipInputStream(input).use { zip ->
                 var entry = zip.nextEntry
                 while (entry != null) {
-                    if (!entry.isDirectory && entry.name.lowercase().matches(Regex(".*\\\\.(jpg|jpeg|png)$"))) {
+                    if (!entry.isDirectory && entry.name.lowercase().matches(Regex(".*\\.(jpg|jpeg|png)$"))) {
                         val outFile = File(targetDir, entry.name.substringAfterLast('/'))
                         outFile.outputStream().use { output -> zip.copyTo(output) }
                     }
