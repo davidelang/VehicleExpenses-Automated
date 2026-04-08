@@ -322,8 +322,20 @@ object ImageAlignmentUtils {
         val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks)
         results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor (${System.currentTimeMillis()-t0}ms)", method = "anchor")
         
-        val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 50f).coerceIn(0f, 1f) else 0f
-        val consensusScore = (featScoreNorm * 0.1f) + (argScore * 0.1f) + (histScore * 0.1f) + (embScore * 0.3f) + (ancScore * 0.4f)
+        // 3. CONSENSUS SCORING
+        // ORB features and Embeddings are our most discriminative signals.
+        // Anchors are useful but prone to accidental matches on speedo numbers.
+        val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
+        
+        // Count how many routines this vehicle 'won' (voted by the caller)
+        // Note: The 'consensus' itself isn't a voter, it's the result.
+        
+        val consensusScore = (featScoreNorm * 0.35f) + 
+                             (embScore * 0.35f) + 
+                             (histScore * 0.10f) + 
+                             (argScore * 0.10f) + 
+                             (ancScore * 0.10f)
+                             
         results["consensus"] = AlignmentResult(true, null, consensusScore, "Consensus score: ${"%.2f".format(consensusScore)}", method = "consensus")
         
         results
