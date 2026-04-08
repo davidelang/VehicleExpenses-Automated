@@ -181,12 +181,43 @@ private suspend fun runFullExperiment(
     }
 
     // NEW: Calculate Global Word Significance (Inverse Document Frequency)
-    // Map of word -> count of vehicles that contain it
+    // AND Discover unique "Golden Anchors" for each vehicle.
     val globalWordCounts = mutableMapOf<String, Int>()
+    val dynamicAnchors = mutableMapOf<String, String>() // word -> vehicleName
+    val wordPool = mutableMapOf<String, MutableSet<String>>() // word -> list of vehicles that have it
+
     cachedRefs.forEach { ref ->
-        val uniqueWords = ref.ocr.textBlocks.map { it.text.lowercase().trim() }.toSet()
-        uniqueWords.forEach { word ->
+        // Exclude variable crop zones from landmark discovery
+        val odoCrop = ref.vehicle.odometerCropLeft?.let {
+            android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f)
+        }
+        val otherCrop = ref.vehicle.otherTextCropLeft?.let {
+            android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f)
+        }
+
+        val refWords = ref.ocr.textBlocks
+            .filter { block -> 
+                // Coordinate-based exclusion (normalize Ref coordinates)
+                val bx = block.boundingBox.centerX().toFloat() / ref.ocr.imageWidth.toFloat()
+                val by = block.boundingBox.centerY().toFloat() / ref.ocr.imageHeight.toFloat()
+                val inOdo = odoCrop?.let { bx >= it.left && bx <= it.right && by >= it.top && by <= it.bottom } ?: false
+                val inOther = otherCrop?.let { bx >= it.left && bx <= it.right && by >= it.top && by <= it.bottom } ?: false
+                !inOdo && !inOther
+            }
+            .map { it.text.lowercase().trim() }
+            .filter { it.length >= 3 }
+            .toSet()
+
+        refWords.forEach { word ->
             globalWordCounts[word] = (globalWordCounts[word] ?: 0) + 1
+            wordPool.getOrPut(word) { mutableSetOf() }.add(ref.vehicle.name)
+        }
+    }
+
+    // A "Golden Anchor" is a word that appears in exactly ONE vehicle's reference image
+    wordPool.forEach { (word, vehicleSet) ->
+        if (vehicleSet.size == 1) {
+            dynamicAnchors[word] = vehicleSet.first()
         }
     }
 
@@ -229,7 +260,9 @@ private suspend fun runFullExperiment(
                 val allResults = ImageAlignmentUtils.matchWithAllMethods(
                     ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCropF, otherTextCropF, 
                     skipExpensiveORB = true, globalWordCounts = globalWordCounts, 
-                    allOtherRefs = allOtherRefs
+                    allOtherRefs = allOtherRefs,
+                    dynamicAnchors = dynamicAnchors,
+                    currentVehicleName = ref.vehicle.name
                 )
                 val consensusRes = allResults["consensus"]!!
                 
