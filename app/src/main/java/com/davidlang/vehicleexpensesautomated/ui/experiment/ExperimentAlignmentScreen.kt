@@ -75,7 +75,8 @@ data class PhotoResult(
     val odometer: String?,
     val referenceTextBlocks: String,
     val dashTextBlocks: String,
-    val allVehicleResults: List<VehicleMatchResult>
+    val allVehicleResults: List<VehicleMatchResult>,
+    val methodWinners: Map<String, String> = emptyMap()
 )
 
 data class ExperimentResult(val summary: String, val htmlReport: String)
