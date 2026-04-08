@@ -12,17 +12,13 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -37,16 +33,13 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.opencv.android.OpenCVLoader
-import org.opencv.core.*
-import org.opencv.imgproc.Imgproc
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
-import org.json.JSONArray
-import org.json.JSONObject
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
@@ -56,11 +49,9 @@ data class CachedRef(val vehicle: Vehicle, val bmp: Bitmap, val ocr: OcrResult)
 data class VehicleMatchResult(
     val vehicleName: String,
     val score: Float,
-    val inliers: Int,
     val message: String,
     val referenceBase64: String,
     val fullAlignedBase64: String,
-    val cleanedAlignedBase64: String,
     val fullOcrSteps: List<OcrStepResult> = emptyList(),
     val anchorOcrSteps: List<OcrStepResult> = emptyList(),
     val methodScores: Map<String, Float>
@@ -70,20 +61,11 @@ data class PhotoResult(
     val photoName: String,
     val matchedVehicle: String,
     val finalConfidence: Float,
-    val alignmentMessage: String,
     val originalThumbBase64: String,
-    val cleanedDashBase64: String,
-    val odometerCropBase64: String,
-    val odometer: String?,
-    val referenceTextBlocks: String,
-    val dashTextBlocks: String,
     val allVehicleResults: List<VehicleMatchResult>,
-    val methodWinners: Map<String, String> = emptyMap()
+    val methodWinners: Map<String, String> = emptyMap(),
+    val odometer: String? = null
 )
-
-data class ExperimentResult(val summary: String, val htmlReport: String)
-
-private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
 
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
@@ -97,8 +79,8 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
     var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var currentPhoto by remember { mutableStateOf("") }
-    var reportPath by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    
     val zipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             scope.launch {
@@ -108,229 +90,321 @@ fun ExperimentAlignmentScreen(navController: NavHostController? = null) {
             }
         }
     }
-    var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
-    var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
-    var isCleaning by remember { mutableStateOf(false) }
-    var showDebugScreen by remember { mutableStateOf(false) }
-    val debugSteps = remember { mutableStateListOf<CleaningDebugStep>() }
-
-    LaunchedEffect(pickedPhotoUrl) {
-        pickedPhotoUrl?.let { url ->
-            isCleaning = true
-            try {
-                val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(bmp)
-                if (cleanedBmp != null) {
-                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
-                    val out = java.io.FileOutputStream(tempFile)
-                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    out.close()
-                    cleanedPhotoUrl = tempFile.absolutePath
-                    cleanedBmp.recycle()
-                    Log.i("Experiment", "Cleaned image ready for alignment test")
-                }
-            } catch (e: Exception) {
-                Log.e("Experiment", "Cleaning failed", e)
-            } finally {
-                isCleaning = false
-            }
-        }
-    }
 
     LaunchedEffect(Unit) {
         if (!experimentDir.exists()) experimentDir.mkdirs()
         val count = experimentDir.listFiles()?.size ?: 0
         status = if (count == 0) "Folder is empty.\nUse the buttons below." else "$count photos ready."
     }
-    Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
-        if (showDebugScreen) {
-            DebugCleaningPipelineScreen(
-                steps = debugSteps,
-                onClose = { showDebugScreen = false }
-            )
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(text = status, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-                if (isRunning) {
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                    Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
-                }
-                Button(onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
-                    context.startActivity(intent)
-                    Toast.makeText(context, "Opened Amazon Photos — tap 'Download all'", Toast.LENGTH_LONG).show()
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Open Amazon Photos Album (100+ images)")
-                }
-                Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Extract Downloaded ZIP")
-                }
-                Button(
-                    onClick = {
-                        if (isRunning) return@Button
-                        isRunning = true
-                        progress = 0f
-                        currentPhoto = ""
-                        status = "Starting alignment test..."
-                        scope.launch {
-                            try {
-                                val result = runFullExperiment(vehicles, experimentDir, debugCropDir, viewModel, context) { p, name ->
-                                    progress = p
-                                    currentPhoto = name
-                                }
-                                val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-                                val htmlFiles = writeSizeSplitHtmlReports(result.htmlReport, reportDir, timestamp, maxSizeKB = 300)
-                                reportPath = htmlFiles.firstOrNull()?.absolutePath
-                                status = "Test complete!\n${result.summary}\n${htmlFiles.size} report files written"
-                                Log.i(TAG, "Reports written: ${htmlFiles.size} files")
-                            } catch (e: Exception) {
-                                status = "Report generation failed: ${e.message}"
-                                Log.e(TAG, "Report generation failed", e)
-                            } finally {
-                                isRunning = false
-                            }
-                        }
-                    },
-                    enabled = !isRunning && experimentDir.listFiles()?.isNotEmpty() == true,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (isRunning) "Running..." else "Run Alignment Experiment Now")
-                }
-                Button(
-                    onClick = {
-                        val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") } ?: emptyList()
-                        if (photos.isNotEmpty()) {
-                            scope.launch {
-                                Log.i(TAG, "Debug button clicked - starting pipeline")
-                                debugSteps.clear()
-                                showDebugScreen = true
-                                val firstPhoto = photos.first()
-                                val originalBitmap = BitmapFactory.decodeFile(firstPhoto.absolutePath) ?: return@launch
-                                debugCleaningPipeline(originalBitmap) { step ->
-                                    debugSteps.add(step)
-                                    Log.i(TAG, "Step completed: ${step.description} → Text: ${step.ocrText}")
-                                }
-                                Log.i(TAG, "Debug pipeline completed with ${debugSteps.size} steps")
-                            }
-                        } else {
-                            Toast.makeText(context, "No photos in experiment folder", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Debug Cleaning Pipeline (first photo)")
-                }
-                if (reportPath != null) {
-                    Button(onClick = { Toast.makeText(context, "Reports written to: $reportPath (and siblings)", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open Latest Reports")
-                    }
-                }
-                Button(onClick = { navController?.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Back to Quick Fill-up")
-                }
-            }
-        }
-    }
-}
 
-@Composable
-fun DebugCleaningPipelineScreen(
-    steps: List<CleaningDebugStep>,
-    onClose: () -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Cleaning Pipeline Debug") },
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        LazyColumn(
+    Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(steps) { step ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.padding(8.dp)) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(step.description, style = MaterialTheme.typography.titleMedium)
-                            Image(
-                                bitmap = step.image.asImageBitmap(),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(130.dp)
-                            )
-                        }
-                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                            Text("Tesseract text:", style = MaterialTheme.typography.titleSmall)
-                            Text(step.ocrText, style = MaterialTheme.typography.bodyMedium)
+            Text(text = status, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+            if (isRunning) {
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                Text(text = currentPhoto.ifEmpty { "Processing..." }, style = MaterialTheme.typography.bodyMedium)
+            }
+            Button(onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
+                context.startActivity(intent)
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Open Amazon Photos Album")
+            }
+            Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
+                Text("Extract Downloaded ZIP")
+            }
+            Button(
+                onClick = {
+                    if (isRunning) return@Button
+                    isRunning = true
+                    progress = 0f
+                    currentPhoto = ""
+                    status = "Starting experiment..."
+                    scope.launch {
+                        try {
+                            val summary = runFullExperiment(vehicles, experimentDir, reportDir, debugCropDir, context) { p, name ->
+                                progress = p
+                                currentPhoto = name
+                            }
+                            status = "Test complete!\n$summary"
+                        } catch (e: Exception) {
+                            status = "Error: ${e.message}"
+                            Log.e(TAG, "Experiment failed", e)
+                        } finally {
+                            isRunning = false
                         }
                     }
-                }
+                },
+                enabled = !isRunning && experimentDir.listFiles()?.isNotEmpty() == true,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isRunning) "Running..." else "Run Alignment Experiment Now")
+            }
+            Button(onClick = { navController?.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Back to Quick Fill-up")
             }
         }
     }
 }
 
-data class CleaningDebugStep(
-    val description: String,
-    val image: Bitmap,
-    val ocrText: String
-)
-
-private suspend fun debugCleaningPipeline(original: Bitmap, onStep: (CleaningDebugStep) -> Unit) = withContext(Dispatchers.IO) {
-    try {
-        val (rawText, rawBlocks) = OdometerOcrUtils.runRawOcr(original)
-        val rawAnnotated = OdometerOcrUtils.annotateImageWithBoxes(original, rawBlocks)
-        onStep(CleaningDebugStep("Raw original", rawAnnotated, rawText))
-
-        val grayMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(original, grayMat)
-        Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
-        val grayBmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(grayMat, grayBmp)
-        val (grayText, grayBlocks) = OdometerOcrUtils.runRawOcr(grayBmp)
-        val grayAnnotated = OdometerOcrUtils.annotateImageWithBoxes(grayBmp, grayBlocks)
-        onStep(CleaningDebugStep("Grayscale", grayAnnotated, grayText))
-
-        val clahe = Imgproc.createCLAHE(3.0, Size(8.0, 8.0))
-        val enhanced = Mat()
-        clahe.apply(grayMat, enhanced)
-        val enhancedBmp = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(enhanced, enhancedBmp)
-        val (claheText, claheBlocks) = OdometerOcrUtils.runRawOcr(enhancedBmp)
-        val claheAnnotated = OdometerOcrUtils.annotateImageWithBoxes(enhancedBmp, claheBlocks)
-        onStep(CleaningDebugStep("CLAHE enhanced", claheAnnotated, claheText))
-
-        val (cleanedBmp, _) = ImageAlignmentUtils.createCleanedReference(original)
-        if (cleanedBmp != null) {
-            onStep(CleaningDebugStep("Final cleaned", cleanedBmp.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
-        }
-
-        grayMat.release()
-        enhanced.release()
-        grayBmp.recycle()
-        enhancedBmp.recycle()
-    } catch (e: Exception) {
-        Log.e(TAG, "Debug pipeline crashed", e)
-        onStep(CleaningDebugStep("Pipeline crashed: ${e.message}", original.copy(Bitmap.Config.ARGB_8888, true), "N/A"))
+private suspend fun runFullExperiment(
+    vehicles: List<Vehicle>,
+    experimentDir: File,
+    reportDir: File,
+    debugCropDir: File,
+    context: android.content.Context,
+    onProgress: (Float, String) -> Unit
+): String = withContext(Dispatchers.IO) {
+    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") && !it.name.contains("pump", true) && !it.name.contains("receipt", true) } ?: emptyList()
+    val total = photos.size
+    if (total == 0) return@withContext "No photos found"
+    
+    var successCount = 0
+    val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+    val jsonArray = JSONArray()
+    
+    // Cache references
+    val cachedRefs = vehicles.mapNotNull { vehicle ->
+        val url = vehicle.referenceDashPhotoUrl ?: return@mapNotNull null
+        val file = File(url)
+        if (!file.exists()) return@mapNotNull null
+        val bmp = BitmapFactory.decodeFile(url) ?: return@mapNotNull null
+        val ocr = OdometerOcrUtils.extractFromPhoto(url)
+        CachedRef(vehicle, bmp, ocr)
     }
+
+    var currentPage = 1
+    var currentSize = 0L
+    val maxSizeKB = 2000
+    val maxSizeBytes = maxSizeKB * 1024L
+    val reportFiles = mutableListOf<File>()
+    
+    fun startNewFile(): File {
+        val f = File(reportDir, "alignment_report_${timestamp}_part${currentPage}.html")
+        f.writeText(buildHtmlHeader(timestamp, total, vehicles))
+        reportFiles.add(f); currentPage++; currentSize = 0L
+        return f
+    }
+    var currentFile = startNewFile()
+    val footer = "</table></body></html>"
+
+    photos.forEachIndexed { index, file ->
+        onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
+        try {
+            val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
+            val queryOcr = OdometerOcrUtils.extractFromPhoto(file.absolutePath)
+            
+            val vehicleMatchResults = mutableListOf<VehicleMatchResult>()
+            val methodWinners = mutableMapOf<String, String>()
+            val methodTopScores = mutableMapOf<String, Float>()
+            
+            cachedRefs.forEach { ref ->
+                val odometerCropF = ref.vehicle.odometerCropLeft?.let {
+                    android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f)
+                }
+                val otherTextCropF = ref.vehicle.otherTextCropLeft?.let {
+                    android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f)
+                }
+                
+                // Matching
+                val allResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCropF, otherTextCropF, skipExpensiveORB = true)
+                val consensusRes = allResults["consensus"]!!
+                
+                allResults.forEach { (m, res) ->
+                    if (res.confidence > (methodTopScores[m] ?: -1f)) {
+                        methodTopScores[m] = res.confidence; methodWinners[m] = ref.vehicle.name
+                    }
+                }
+
+                // Dual Alignment & OCR
+                val alignRes = ImageAlignmentUtils.alignImages(ref.bmp, originalBitmap, 10, odometerCropF, otherTextCropF)
+                var fullSteps = emptyList<OcrStepResult>()
+                if (alignRes.success && alignRes.alignedImage != null) {
+                    val crop = manualCropOdometer(alignRes.alignedImage, ref.vehicle, debugCropDir, file.name)
+                    if (crop != null) fullSteps = OdometerOcrUtils.runMultiStepOcr(crop, context)
+                }
+                
+                var anchorSteps = emptyList<OcrStepResult>()
+                if (odometerCropF != null) {
+                    val proj = ImageAlignmentUtils.projectCropViaAnchor(
+                        ref.ocr.textBlocks, queryOcr.textBlocks, odometerCropF,
+                        ref.bmp.width, ref.bmp.height, originalBitmap.width, originalBitmap.height
+                    )
+                    if (proj != null) {
+                        val crop = manualCropFromRectF(originalBitmap, proj, ref.vehicle, debugCropDir, "anc_" + file.name)
+                        if (crop != null) anchorSteps = OdometerOcrUtils.runMultiStepOcr(crop, context)
+                    }
+                }
+                
+                vehicleMatchResults.add(VehicleMatchResult(
+                    vehicleName = ref.vehicle.name,
+                    score = consensusRes.confidence,
+                    message = alignRes.message,
+                    referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(ref.bmp, ref.vehicle), 180),
+                    fullAlignedBase64 = if (alignRes.alignedImage != null) bitmapToBase64(alignRes.alignedImage, 180) else "",
+                    fullOcrSteps = fullSteps,
+                    anchorOcrSteps = anchorSteps,
+                    methodScores = allResults.mapValues { it.value.confidence }
+                ))
+            }
+            
+            val winner = vehicleMatchResults.maxByOrNull { it.score }
+            var extractedOdometer: String? = null
+            if (winner != null && winner.vehicleName != "No match") {
+                val best = winner.fullOcrSteps.find { it.text != null } ?: winner.anchorOcrSteps.find { it.text != null }
+                if (best != null) { extractedOdometer = best.text; successCount++ }
+            }
+
+            val photoResult = PhotoResult(
+                photoName = file.name,
+                matchedVehicle = winner?.vehicleName ?: "No match",
+                finalConfidence = winner?.score ?: 0f,
+                originalThumbBase64 = bitmapToBase64(originalBitmap, 180),
+                allVehicleResults = vehicleMatchResults,
+                methodWinners = methodWinners,
+                odometer = extractedOdometer
+            )
+            
+            val rowHtml = buildHtmlRow(photoResult, index, vehicles)
+            if (currentSize + rowHtml.length > maxSizeBytes) {
+                currentFile.appendText(footer); currentFile = startNewFile()
+            }
+            currentFile.appendText(rowHtml); currentSize += rowHtml.length
+
+            val jsonRow = JSONObject().apply {
+                put("file", file.name); put("winner", photoResult.matchedVehicle); put("confidence", photoResult.finalConfidence.toDouble()); put("odometer", extractedOdometer ?: "FAILED")
+                val mWins = JSONObject(); methodWinners.forEach { (m, w) -> mWins.put(m, w) }; put("method_winners", mWins)
+            }
+            jsonArray.put(jsonRow)
+
+        } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
+    }
+    
+    currentFile.appendText(footer)
+    try {
+        val jsonFile = File(reportDir, "alignment_results_${timestamp}.json")
+        jsonFile.writeText(jsonArray.toString(2))
+    } catch (e: Exception) { Log.e(TAG, "Failed JSON write", e) }
+
+    cachedRefs.forEach { it.bmp.recycle() }
+    "Processed $total. ${reportFiles.size} parts + JSON."
+}
+
+private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>): String = buildString {
+    appendLine("<html><head><title>Alignment Experiment - $time</title>")
+    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10px; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; } img { max-width: 150px; height: auto; border: 1px solid #eee; } .score-box { text-align: left; font-size: 9px; background: #f9f9f9; padding: 4px; border-radius: 4px; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }</style></head><body>")
+    appendLine("<h1>Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th># & Photo</th><th>Original</th>")
+    allVehicles.forEach { v ->
+        appendLine("<th>${v.name} Match</th><th>${v.name} Full OCR</th><th>${v.name} Anchor OCR</th>")
+    }
+    appendLine("<th>Final Result</th></tr>")
+}
+
+private fun buildHtmlRow(r: PhotoResult, index: Int, allVehicles: List<Vehicle>): String = buildString {
+    appendLine("<tr><td>${index + 1}<br><b>${r.photoName}</b></td><td><img src='data:image/jpeg;base64,${r.originalThumbBase64}'></td>")
+    allVehicles.forEach { vehicle ->
+        val vRes = r.allVehicleResults.find { it.vehicleName == vehicle.name }
+        val winnerClass = if (r.matchedVehicle == vehicle.name) "winner" else ""
+        appendLine("<td class='$winnerClass'>")
+        if (vRes != null) {
+            appendLine("<img src='data:image/jpeg;base64,${vRes.referenceBase64}'><br>")
+            appendLine("<div style='margin-bottom:5px;'>")
+            r.methodWinners.forEach { (m, winnerName) ->
+                if (winnerName == vehicle.name) {
+                    val color = when(m) {
+                        "feature" -> "#90EE90"; "arg" -> "#87CEEB"; "histogram" -> "#FFA500"
+                        "embedding" -> "#BA55D3"; "anchor" -> "#FFB6C1"; "consensus" -> "#FFD700"
+                        else -> "#CCCCCC"
+                    }
+                    appendLine("<span style='background-color:$color; padding:2px 4px; border-radius:3px; margin-right:2px; font-weight:bold; border:1px solid #666;'>${m.uppercase().take(1)}</span>")
+                }
+            }
+            appendLine("</div><div class='score-box'>")
+            vRes.methodScores.forEach { (m, s) -> appendLine("<b>$m:</b> ${"%.3f".format(s)}<br>") }
+            appendLine("</div>")
+        } else appendLine("N/A")
+        appendLine("</td>")
+        appendLine("<td class='$winnerClass'>")
+        vRes?.fullOcrSteps?.forEach { step ->
+            val b64 = bitmapToBase64(step.bitmap, 120)
+            val ocrText = step.text ?: ""
+            appendLine("<div class='ocr-step'><small>${step.stageName}</small><br><img src='data:image/jpeg;base64,$b64'><br><b>OCR: $ocrText</b></div>")
+        }
+        appendLine("</td>")
+        appendLine("<td class='$winnerClass'>")
+        vRes?.anchorOcrSteps?.forEach { step ->
+            val b64 = bitmapToBase64(step.bitmap, 120)
+            val ocrText = step.text ?: ""
+            appendLine("<div class='ocr-step'><small>${step.stageName}</small><br><img src='data:image/jpeg;base64,$b64'><br><b>OCR: $ocrText</b></div>")
+        }
+        appendLine("</td>")
+    }
+    appendLine("<td><b>Winner:</b> ${r.matchedVehicle}<br><b>OCR:</b> ${r.odometer ?: "FAIL"}</td></tr>")
+}
+
+private fun manualCropOdometer(aligned: Bitmap?, vehicle: Vehicle, debugDir: File, photoName: String): Bitmap? {
+    if (aligned == null) return null
+    val leftF = vehicle.odometerCropLeft ?: return null
+    val topF = vehicle.odometerCropTop ?: 0f
+    val rightF = vehicle.odometerCropRight ?: 1f
+    val bottomF = vehicle.odometerCropBottom ?: 1f
+    val w = aligned.width; val h = aligned.height
+    val left = (leftF * w).toInt().coerceAtLeast(0); val top = (topF * h).toInt().coerceAtLeast(0)
+    val right = (rightF * w).toInt().coerceAtMost(w); val bottom = (bottomF * h).toInt().coerceAtMost(h)
+    val cropW = right - left; val cropH = bottom - top
+    if (cropW < 1 || cropH < 1) return null
+    return try {
+        val cropped = Bitmap.createBitmap(aligned, left, top, cropW, cropH)
+        val debugFile = File(debugDir, "crop_${vehicle.name}_${photoName}.jpg")
+        val out = java.io.FileOutputStream(debugFile); cropped.compress(Bitmap.CompressFormat.JPEG, 90, out); out.close()
+        cropped
+    } catch (e: Exception) { null }
+}
+
+private fun manualCropFromRectF(bmp: Bitmap, rect: android.graphics.RectF, vehicle: Vehicle, debugDir: File, name: String): Bitmap? {
+    val w = bmp.width; val h = bmp.height
+    val left = (rect.left * w).toInt().coerceAtLeast(0); val top = (rect.top * h).toInt().coerceAtLeast(0)
+    val right = (rect.right * w).toInt().coerceAtMost(w); val bottom = (rect.bottom * h).toInt().coerceAtMost(h)
+    val cropW = right - left; val cropH = bottom - top
+    if (cropW < 1 || cropH < 1) return null
+    return try {
+        val cropped = Bitmap.createBitmap(bmp, left, top, cropW, cropH)
+        val debugFile = File(debugDir, "crop_${vehicle.name}_${name}.jpg")
+        val out = java.io.FileOutputStream(debugFile); cropped.compress(Bitmap.CompressFormat.JPEG, 90, out); out.close()
+        cropped
+    } catch (e: Exception) { null }
+}
+
+private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap? {
+    if (refBmp == null) return null
+    val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(bitmap)
+    val paint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.RED }
+    vehicle.odometerCropLeft?.let { left ->
+        val l = left * bitmap.width; val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height
+        val r = (vehicle.odometerCropRight ?: 1f) * bitmap.width; val b = (vehicle.odometerCropBottom ?: 1f) * bitmap.height
+        canvas.drawRect(l, t, r, b, paint)
+    }
+    return bitmap
+}
+
+private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
+    if (bitmap == null) return ""
+    val scaled = if (bitmap.width > maxWidth) {
+        val scale = maxWidth.toFloat() / bitmap.width
+        Bitmap.createScaledBitmap(bitmap, maxWidth, (bitmap.height * scale).toInt(), true)
+    } else bitmap
+    val out = ByteArrayOutputStream()
+    scaled.compress(Bitmap.CompressFormat.JPEG, 50, out)
+    return Base64.encodeToString(out.toByteArray(), Base64.DEFAULT)
 }
 
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: android.content.Context): Boolean {
@@ -339,7 +413,7 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
             ZipInputStream(input).use { zip ->
                 var entry = zip.nextEntry
                 while (entry != null) {
-                    if (!entry.isDirectory && entry.name.lowercase().matches(Regex(".*\\.(jpg|jpeg|png)$"))) {
+                    if (!entry.isDirectory && entry.name.lowercase().matches(Regex(".*\\\\.(jpg|jpeg|png)$"))) {
                         val outFile = File(targetDir, entry.name.substringAfterLast('/'))
                         outFile.outputStream().use { output -> zip.copyTo(output) }
                     }
@@ -348,435 +422,5 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
             }
         }
         true
-    } catch (e: Exception) {
-        Log.e(TAG, "ZIP extraction failed", e)
-        false
-    }
-}
-
-private suspend fun runFullExperiment(
-    vehicles: List<Vehicle>,
-    experimentDir: File,
-    debugCropDir: File,
-    viewModel: VehicleViewModel,
-    context: android.content.Context,
-    onProgress: (Float, String) -> Unit
-): ExperimentResult {
-    val photos = experimentDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png") && !it.name.contains("pump", true) && !it.name.contains("receipt", true) } ?: emptyList()
-    val total = photos.size
-    if (total == 0) return ExperimentResult("No photos found", "<h1>No photos</h1>")
-    val results = mutableListOf<PhotoResult>()
-    var success = 0
-    val jsonArray = JSONArray()
-    
-    // CACHE REFERENCE DATA
-    val cachedRefs = vehicles.mapNotNull { vehicle ->
-        val url = vehicle.referenceDashPhotoUrl ?: vehicle.cleanedReferenceDashPhotoUrl ?: return@mapNotNull null
-        val file = File(url)
-        if (!file.exists()) return@mapNotNull null
-        val bmp = BitmapFactory.decodeFile(url) ?: return@mapNotNull null
-        val ocr = OdometerOcrUtils.extractFromPhoto(url)
-        CachedRef(vehicle, bmp, ocr)
-    }
-
-    photos.forEachIndexed { index, file ->
-        onProgress((index.toFloat() / total), "Processing ${file.name} (${index+1}/$total)")
-        try {
-            val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
-            val (cleanedBmp, dashTextBlocks) = ImageAlignmentUtils.createCleanedReference(originalBitmap)
-            val queryOcr = OdometerOcrUtils.extractFromPhoto(file.absolutePath)
-            
-            val vehicleMatchResults = mutableListOf<VehicleMatchResult>()
-            val methodWinners = mutableMapOf<String, String>()
-            val methodTopScores = mutableMapOf<String, Float>()
-            
-            cachedRefs.forEach { ref ->
-                val odometerCrop = ref.vehicle.odometerCropLeft?.let {
-                    android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f)
-                }
-                val otherTextCrop = ref.vehicle.otherTextCropLeft?.let {
-                    android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f)
-                }
-                
-                // 1. MATCHING (for scoring)
-                val allResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCrop, otherTextCrop)
-                val consensusRes = allResults["consensus"] ?: allResults["feature"]!!
-                val featureRes = allResults["feature"]!!
-                
-                val inliersMatch = Regex("with (\\d+) inliers").find(featureRes.message ?: "")
-                val inliers = inliersMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                
-                // Track winners
-                allResults.forEach { (method, res) ->
-                    val currentBest = methodTopScores[method] ?: -1f
-                    if (res.confidence > currentBest) {
-                        methodTopScores[method] = res.confidence
-                        methodWinners[method] = ref.vehicle.name
-                    }
-                }
-
-                // 2. DUAL ALIGNMENT (for visual report)
-                // Full-to-Full
-                val fullAlign = ImageAlignmentUtils.alignImages(ref.bmp, originalBitmap, 10, odometerCrop, otherTextCrop)
-                
-                // Cleaned-to-Cleaned
-                val refCleanedUrl = ref.vehicle.cleanedReferenceDashPhotoUrl
-                val cleanedAlignBase64 = if (refCleanedUrl != null && cleanedBmp != null) {
-                    val refCleanedBmp = BitmapFactory.decodeFile(refCleanedUrl)
-                    if (refCleanedBmp != null) {
-                        val res = ImageAlignmentUtils.alignImages(refCleanedBmp, cleanedBmp, 10, odometerCrop, otherTextCrop)
-                        val b64 = if (res.alignedImage != null) bitmapToBase64(res.alignedImage, 180) else ""
-                        refCleanedBmp.recycle()
-                        b64
-                    } else ""
-                } else ""
-                
-                vehicleMatchResults.add(VehicleMatchResult(
-                    vehicleName = ref.vehicle.name,
-                    score = consensusRes.confidence,
-                    inliers = inliers,
-                    message = consensusRes.message,
-                    referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(ref.bmp, ref.vehicle), 180),
-                    fullAlignedBase64 = if (fullAlign.alignedImage != null) bitmapToBase64(fullAlign.alignedImage, 180) else "",
-                    cleanedAlignedBase64 = cleanedAlignBase64,
-                    methodScores = allResults.mapValues { it.value.confidence }
-                ))
-            }
-            
-            val winner = vehicleMatchResults.maxByOrNull { it.score }
-            val matchedVehicleName = winner?.vehicleName ?: "No match"
-            val matchedConfidence = winner?.score ?: 0f
-            
-            var extractedOdometer: String? = null
-            var odometerCropBase64 = ""
-            var referenceTextBlocks = ""
-
-            if (winner != null && winner.vehicleName != "No match") {
-                val winnerRef = cachedRefs.find { it.vehicle.name == winner.vehicleName }
-                if (winnerRef != null) {
-                    referenceTextBlocks = winnerRef.vehicle.referenceTextBlocks ?: ""
-                    
-                    val odometerCrop = winnerRef.vehicle.odometerCropLeft?.let {
-                        android.graphics.RectF(it, winnerRef.vehicle.odometerCropTop ?: 0f, winnerRef.vehicle.odometerCropRight ?: 1f, winnerRef.vehicle.odometerCropBottom ?: 1f)
-                    }
-                    val otherTextCrop = winnerRef.vehicle.otherTextCropLeft?.let {
-                        android.graphics.RectF(it, winnerRef.vehicle.otherTextCropTop ?: 0f, winnerRef.vehicle.otherTextCropRight ?: 1f, winnerRef.vehicle.otherTextCropBottom ?: 1f)
-                    }
-                    val finalAlign = ImageAlignmentUtils.alignImages(winnerRef.bmp, originalBitmap, 10, odometerCrop, otherTextCrop)
-                    
-                    if (finalAlign.alignedImage != null) {
-                        val cropBmp = manualCropOdometer(finalAlign.alignedImage, winnerRef.vehicle, debugCropDir, file.name)
-                        odometerCropBase64 = bitmapToBase64(cropBmp, 200)
-                        
-                        val tempAlignedFile = File(context.cacheDir, "aligned_${file.name}")
-                        val out = java.io.FileOutputStream(tempAlignedFile)
-                        finalAlign.alignedImage.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                        out.close()
-                        val ocrResult = OdometerOcrUtils.extractFromPhoto(tempAlignedFile.absolutePath)
-                        extractedOdometer = ocrResult.odometer
-                        tempAlignedFile.delete()
-                        if (ocrResult.odometer != null) success++
-                    }
-                }
-            }
-
-            val photoResult = PhotoResult(
-                photoName = file.name,
-                matchedVehicle = matchedVehicleName,
-                finalConfidence = matchedConfidence,
-                alignmentMessage = (winner?.message ?: "No Match Found"),
-                originalThumbBase64 = bitmapToBase64(originalBitmap, 180),
-                cleanedDashBase64 = bitmapToBase64(cleanedBmp, 180),
-                odometerCropBase64 = odometerCropBase64,
-                odometer = extractedOdometer,
-                referenceTextBlocks = referenceTextBlocks,
-                dashTextBlocks = dashTextBlocks ?: "",
-                allVehicleResults = vehicleMatchResults,
-                methodWinners = methodWinners
-            )
-            results.add(photoResult)
-
-            // Machine readable data
-            val jsonRow = JSONObject().apply {
-                put("file", file.name)
-                put("winner", matchedVehicleName)
-                put("confidence", matchedConfidence)
-                put("odometer", extractedOdometer ?: "FAILED")
-                val methods = JSONObject()
-                methodWinners.forEach { (m, win) -> methods.put(m, win) }
-                put("method_winners", methods)
-            }
-            jsonArray.put(jsonRow)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to process ${file.name}", e)
-            results.add(PhotoResult(
-                photoName = file.name,
-                matchedVehicle = "ERROR",
-                finalConfidence = 0f,
-                alignmentMessage = "Error: ${e.message}",
-                originalThumbBase64 = "",
-                cleanedDashBase64 = "",
-                odometerCropBase64 = "",
-                odometer = null,
-                referenceTextBlocks = "",
-                dashTextBlocks = "",
-                allVehicleResults = emptyList()
-            ))
-        }
-    }
-    // Cleanup cached bitmaps
-    cachedRefs.forEach { it.bmp.recycle() }
-    
-    // Machine readable export
-    try {
-        val reportDir = File(context.filesDir, "experiment_reports")
-        val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-        val jsonFile = File(reportDir, "alignment_results_${timestamp}.json")
-        jsonFile.writeText(jsonArray.toString(2))
-        Log.i(TAG, "JSON results written to ${jsonFile.absolutePath}")
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to write JSON results", e)
-    }
-
-    onProgress(1f, "Generating visual report...")
-    val html = buildRichHtmlReport(results, total, vehicles)
-    val summary = "Processed $total photos — $success successful alignments"
-    return ExperimentResult(summary, html)
-}
-
-private fun manualCropOdometer(aligned: Bitmap, vehicle: Vehicle, debugDir: File, photoName: String): Bitmap? {
-    val leftF = vehicle.odometerCropLeft ?: return null
-    val topF = vehicle.odometerCropTop ?: 0f
-    val rightF = vehicle.odometerCropRight ?: 1f
-    val bottomF = vehicle.odometerCropBottom ?: 1f
-    val w = aligned.width
-    val h = aligned.height
-    val left = (leftF * w).toInt().coerceAtLeast(0)
-    val top = (topF * h).toInt().coerceAtLeast(0)
-    val right = (rightF * w).toInt().coerceAtMost(w)
-    val bottom = (bottomF * h).toInt().coerceAtMost(h)
-    val cropW = right - left
-    val cropH = bottom - top
-    if (cropW < 1 || cropH < 1) return null
-    return try {
-        val cropped = Bitmap.createBitmap(aligned, left, top, cropW, cropH)
-        if (photoName.contains("105") || photoName.contains("99") || photoName.contains("96") || photoName.contains("97") ||
-            photoName.contains("56") || photoName.contains("54") || photoName.contains("49")) {
-            val debugFile = File(debugDir, "crop_${photoName}")
-            val out = java.io.FileOutputStream(debugFile)
-            cropped.compress(Bitmap.CompressFormat.JPEG, 90, out)
-            out.close()
-            Log.i(TAG, "Saved debug crop for photo $photoName to ${debugFile.absolutePath}")
-        }
-        cropped
-    } catch (e: Exception) {
-        Log.e(TAG, "Manual crop failed", e)
-        null
-    }
-}
-
-private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap? {
-    if (refBmp == null) return null
-    val bitmap = refBmp.copy(Bitmap.Config.ARGB_8888, true)
-    val canvas = Canvas(bitmap)
-    val paint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.RED }
-    val landmarkPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; color = Color.GREEN }
-    vehicle.odometerCropLeft?.let { left ->
-        val l = left * bitmap.width
-        val t = (vehicle.odometerCropTop ?: 0f) * bitmap.height
-        val r = (vehicle.odometerCropRight ?: 1f) * bitmap.width
-        val b = (vehicle.odometerCropBottom ?: 1f) * bitmap.height
-        canvas.drawRect(l, t, r, b, paint)
-    }
-    vehicle.otherTextCropLeft?.let { left ->
-        val l = left * bitmap.width
-        val t = (vehicle.otherTextCropTop ?: 0f) * bitmap.height
-        val r = (vehicle.otherTextCropRight ?: 1f) * bitmap.width
-        val b = (vehicle.otherTextCropBottom ?: 1f) * bitmap.height
-        canvas.drawRect(l, t, r, b, landmarkPaint)
-    }
-    return bitmap
-}
-
-private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehicles: List<Vehicle>): String {
-    val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-    
-    // CALCULATE SUMMARY STATS
-    val routines = listOf("feature", "arg", "histogram", "embedding", "consensus")
-
-    return buildString {
-        appendLine("<html><head><title>Alignment Experiment - $time</title>")
-        appendLine("<style>")
-        appendLine("table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 12px; }")
-        appendLine("th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; }")
-        appendLine("img { max-width: 180px; height: auto; border: 1px solid #eee; }")
-        appendLine(".score-box { text-align: left; font-size: 10px; background: #f9f9f9; padding: 4px; border-radius: 4px; }")
-        appendLine(".winner { background-color: #e6ffed; border: 2px solid #28a745; }")
-        appendLine(".pinwheel { color: #d73a49; font-weight: bold; }")
-        appendLine(".summary-table { width: auto; margin-bottom: 20px; background: #f0f7ff; }")
-        appendLine("</style></head><body>")
-        appendLine("<h1>Alignment Experiment Report</h1>")
-        appendLine("<p><b>Run:</b> $time | <b>Total photos:</b> $total</p>")
-        
-        // Summary Table
-        appendLine("<table class='summary-table'>")
-        appendLine("<tr><th>Routine</th><th>Avg Confidence</th></tr>")
-        routines.forEach { r ->
-            val avg = results.flatMap { it.allVehicleResults }.mapNotNull { it.methodScores[r] }.average()
-            appendLine("<tr><td><b>$r</b></td><td>${"%.1f".format(avg * 100)}%</td></tr>")
-        }
-        appendLine("</table>")
-
-        appendLine("<table>")
-        
-        // Dynamic Headers
-        appendLine("<tr>")
-        appendLine("<th># & Photo</th>")
-        appendLine("<th>Original & Cleaned</th>")
-        allVehicles.forEach { vehicle ->
-            appendLine("<th>${vehicle.name} Match (Full vs Cleaned)</th>")
-        }
-        appendLine("<th>Final Result</th>")
-        appendLine("<th>Breakdown</th>")
-        appendLine("</tr>")
-
-        results.forEachIndexed { index, r ->
-            appendLine("<tr>")
-            // Column 1: Index and Filename
-            appendLine("<td>${index + 1}<br><br><b>${r.photoName}</b></td>")
-            
-            // Column 2: Photo state
-            appendLine("<td>")
-            if (r.originalThumbBase64.isNotEmpty()) {
-                appendLine("<img src='data:image/jpeg;base64,${r.originalThumbBase64}'><br>Original<br>")
-            }
-            if (r.cleanedDashBase64.isNotEmpty()) {
-                appendLine("<img src='data:image/jpeg;base64,${r.cleanedDashBase64}'><br>Cleaned")
-            }
-            appendLine("</td>")
-
-            // Dynamic Vehicle Match Columns (3+)
-            allVehicles.forEach { vehicle ->
-                val vRes = r.allVehicleResults.find { it.vehicleName == vehicle.name }
-                val isWinner = r.matchedVehicle == vehicle.name
-                val winnerClass = if (isWinner) "winner" else ""
-                
-                appendLine("<td class='$winnerClass'>")
-                if (vRes != null) {
-                    if (vRes.referenceBase64.isNotEmpty()) {
-                        appendLine("<b>Reference:</b><br><img src='data:image/jpeg;base64,${vRes.referenceBase64}'><br>")
-                    }
-                    if (vRes.fullAlignedBase64.isNotEmpty()) {
-                        appendLine("<b>Full Alignment:</b><br><img src='data:image/jpeg;base64,${vRes.fullAlignedBase64}'><br>")
-                    }
-                    if (vRes.cleanedAlignedBase64.isNotEmpty()) {
-                        appendLine("<b>Cleaned Alignment:</b><br><img src='data:image/jpeg;base64,${vRes.cleanedAlignedBase64}'><br>")
-                    }
-                    
-                    appendLine("<div class='score-box'>")
-                    vRes.methodScores.forEach { (method, score) ->
-                        appendLine("<b>$method:</b> ${"%.3f".format(score)}<br>")
-                    }
-                    val msgClass = if (vRes.message.contains("pinwheel")) "pinwheel" else ""
-                    appendLine("<span class='$msgClass'>${vRes.message}</span>")
-                    appendLine("</div>")
-                } else {
-                    appendLine("No Data")
-                }
-                appendLine("</td>")
-            }
-
-            // Final Result Column
-            appendLine("<td>")
-            appendLine("<b>Matched:</b> ${r.matchedVehicle}<br>")
-            appendLine("<b>Confidence:</b> ${"%.1f".format(r.finalConfidence * 100)}%<br>")
-            appendLine("<b>Odometer:</b> ${r.odometer ?: "FAILED"}<br>")
-            if (r.odometerCropBase64.isNotEmpty()) {
-                appendLine("<img src='data:image/jpeg;base64,${r.odometerCropBase64}'>")
-            }
-            appendLine("</td>")
-
-            // Breakdown Column
-            appendLine("<td>")
-            val winnerRes = r.allVehicleResults.find { it.vehicleName == r.matchedVehicle }
-            if (winnerRes != null) {
-                appendLine("<div class='score-box'>")
-                appendLine("<b>Ref Blocks:</b><br>${r.referenceTextBlocks.replace("|", "<br>")}")
-                appendLine("</div>")
-            }
-            appendLine("</td>")
-            appendLine("</tr>")
-        }
-        appendLine("</table></body></html>")
-    }
-}
-
-private fun writeSizeSplitHtmlReports(fullHtml: String, reportDir: File, timestamp: String, maxSizeKB: Int = 300): List<File> {
-    Log.i("Experiment", "Writing split reports, total HTML length: ${fullHtml.length}")
-    
-    val headerEndMatch = Regex("<tr><th>#</th>.*?</tr>").find(fullHtml)
-    if (headerEndMatch == null) {
-        Log.e("Experiment", "Could not find table header in HTML report")
-        // Fallback: write the whole thing to one file if we can't split it cleanly
-        val file = File(reportDir, "alignment_report_${timestamp}_full.html")
-        file.writeText(fullHtml)
-        return listOf(file)
-    }
-    
-    val headerEndIndex = headerEndMatch.range.last + 1
-    val header = fullHtml.substring(0, headerEndIndex)
-    val footer = "</table></body></html>"
-    val dataContent = fullHtml.substring(headerEndIndex).removeSuffix(footer)
-    
-    // Split by <tr> but keep the tag. We use a positive lookahead to split BEFORE <tr>
-    val rows = dataContent.split(Regex("(?=<tr>)")).filter { it.isNotBlank() }
-    
-    Log.i("Experiment", "Splitting report: ${rows.size} rows found")
-    
-    val files = mutableListOf<File>()
-    var currentChunk = StringBuilder()
-    var currentSize = 0L
-    val maxSizeBytes = maxSizeKB * 1024L
-
-    for (row in rows) {
-        if (currentSize + row.length > maxSizeBytes && currentChunk.isNotEmpty()) {
-            val pageNum = files.size + 1
-            val file = File(reportDir, "alignment_report_${timestamp}_part${pageNum}.html")
-            file.writeText(header + "\n" + currentChunk.toString() + "\n" + footer)
-            files.add(file)
-            currentChunk = StringBuilder()
-            currentSize = 0L
-        }
-        currentChunk.append(row)
-        currentSize += row.length
-    }
-    
-    if (currentChunk.isNotEmpty()) {
-        val pageNum = files.size + 1
-        val file = File(reportDir, "alignment_report_${timestamp}_part${pageNum}.html")
-        file.writeText(header + "\n" + currentChunk.toString() + "\n" + footer)
-        files.add(file)
-    }
-    
-    Log.i("Experiment", "Report split into ${files.size} files")
-    return files
-}
-
-private fun bitmapToBase64(bitmap: Bitmap?, maxWidth: Int): String {
-    val bmp = bitmap ?: createPlaceholderBitmap()
-    val scaled = if (bmp.width > maxWidth) {
-        val scale = maxWidth.toFloat() / bmp.width
-        Bitmap.createScaledBitmap(bmp, maxWidth, (bmp.height * scale).toInt(), true)
-    } else bmp
-    val out = ByteArrayOutputStream()
-    scaled.compress(Bitmap.CompressFormat.JPEG, 50, out)
-    val bytes = out.toByteArray()
-    return Base64.encodeToString(bytes, Base64.DEFAULT)
-}
-
-private fun createPlaceholderBitmap(): Bitmap {
-    val bmp = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-    canvas.drawColor(Color.GRAY)
-    return bmp
+    } catch (e: Exception) { Log.e(TAG, "ZIP extraction failed", e); false }
 }
