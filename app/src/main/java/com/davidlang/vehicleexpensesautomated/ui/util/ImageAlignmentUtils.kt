@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Point
+import android.graphics.Rect
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,15 +50,24 @@ object ImageAlignmentUtils {
         return interArea / (area1 + area2 - interArea)
     }
 
-    private fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
+    private fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, globalWordCounts: Map<String, Int> = emptyMap()): Float {
         if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
         var score = 0f
+        var totalWeight = 0f
+        
         for (r in refBlocks) {
+            val word = r.text.lowercase().trim()
+            val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
+            totalWeight += weight
+            
             for (q in queryBlocks) {
-                if (r.text.lowercase() == q.text.lowercase()) score += 1.0f
+                if (word == q.text.lowercase().trim()) {
+                    score += weight
+                    break // Only match once per reference block
+                }
             }
         }
-        return score / max(refBlocks.size, queryBlocks.size)
+        return if (totalWeight > 0) score / totalWeight else 0f
     }
 
     fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
@@ -138,18 +149,23 @@ object ImageAlignmentUtils {
         return (histScore / (refBlocks.size + queryBlocks.size)) * 0.6f + textScore * 0.4f
     }
 
-    private fun embeddingMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
-        val allWords = (refBlocks + queryBlocks).map { it.text.lowercase() }.toSet()
+    private fun embeddingMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, globalWordCounts: Map<String, Int> = emptyMap()): Float {
+        val allWords = (refBlocks + queryBlocks).map { it.text.lowercase().trim() }.toSet()
         val refVec = FloatArray(allWords.size)
         val queryVec = FloatArray(allWords.size)
         val wordMap = allWords.withIndex().associate { it.value to it.index }
+        
         for (b in refBlocks) {
-            val idx = wordMap[b.text.lowercase()] ?: continue
-            refVec[idx] += 1f
+            val word = b.text.lowercase().trim()
+            val idx = wordMap[word] ?: continue
+            val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
+            refVec[idx] += weight
         }
         for (b in queryBlocks) {
-            val idx = wordMap[b.text.lowercase()] ?: continue
-            queryVec[idx] += 1f
+            val word = b.text.lowercase().trim()
+            val idx = wordMap[word] ?: continue
+            val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
+            queryVec[idx] += weight
         }
         var dot = 0f
         var normRef = 0f
@@ -189,8 +205,10 @@ object ImageAlignmentUtils {
                 val right = (odometerCrop.right * refMat.cols()).toInt().coerceAtMost(refMat.cols())
                 val bottom = (odometerCrop.bottom * refMat.rows()).toInt().coerceAtMost(refMat.rows())
                 if (right > left && bottom > top) {
-                    val roi = Rect(left, top, right - left, bottom - top)
-                    refMasked.submat(roi).setTo(Scalar(0.0, 0.0, 0.0))
+                    val roi = org.opencv.core.Rect(left, top, right - left, bottom - top)
+                    val sub = refMasked.submat(roi)
+                    sub.setTo(Scalar(0.0, 0.0, 0.0))
+                    sub.release()
                 }
             }
             if (otherTextCrop != null) {
@@ -199,8 +217,10 @@ object ImageAlignmentUtils {
                 val right = (otherTextCrop.right * refMat.cols()).toInt().coerceAtMost(refMat.cols())
                 val bottom = (otherTextCrop.bottom * refMat.rows()).toInt().coerceAtMost(refMat.rows())
                 if (right > left && bottom > top) {
-                    val roi = Rect(left, top, right - left, bottom - top)
-                    refMasked.submat(roi).setTo(Scalar(0.0, 0.0, 0.0))
+                    val roi = org.opencv.core.Rect(left, top, right - left, bottom - top)
+                    val sub = refMasked.submat(roi)
+                    sub.setTo(Scalar(0.0, 0.0, 0.0))
+                    sub.release()
                 }
             }
             val refGray = Mat()
@@ -238,8 +258,8 @@ object ImageAlignmentUtils {
             }
             val srcPoints = MatOfPoint2f()
             val dstPoints = MatOfPoint2f()
-            val srcList = mutableListOf<Point>()
-            val dstList = mutableListOf<Point>()
+            val srcList = mutableListOf<org.opencv.core.Point>()
+            val dstList = mutableListOf<org.opencv.core.Point>()
             goodMatches.forEach { match ->
                 val queryPt = queryKeypoints.toArray()[match.queryIdx].pt
                 val refPt = refKeypoints.toArray()[match.trainIdx].pt
@@ -297,7 +317,8 @@ object ImageAlignmentUtils {
         queryOcr: OcrResult,
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null,
-        skipExpensiveORB: Boolean = false
+        skipExpensiveORB: Boolean = false,
+        globalWordCounts: Map<String, Int> = emptyMap()
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         
@@ -307,7 +328,7 @@ object ImageAlignmentUtils {
         results["feature"] = featureResult.copy(message = featureResult.message + " (${System.currentTimeMillis()-t0}ms)")
         
         t0 = System.currentTimeMillis()
-        val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts)
         results["arg"] = AlignmentResult(true, null, argScore, "ARG (${System.currentTimeMillis()-t0}ms)", method = "arg")
         
         t0 = System.currentTimeMillis()
@@ -315,7 +336,7 @@ object ImageAlignmentUtils {
         results["histogram"] = AlignmentResult(true, null, histScore, "Hist (${System.currentTimeMillis()-t0}ms)", method = "histogram")
         
         t0 = System.currentTimeMillis()
-        val embScore = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        val embScore = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts)
         results["embedding"] = AlignmentResult(true, null, embScore, "Emb (${System.currentTimeMillis()-t0}ms)", method = "embedding")
         
         t0 = System.currentTimeMillis()
@@ -326,9 +347,6 @@ object ImageAlignmentUtils {
         // ORB features and Embeddings are our most discriminative signals.
         // Anchors are useful but prone to accidental matches on speedo numbers.
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
-        
-        // Count how many routines this vehicle 'won' (voted by the caller)
-        // Note: The 'consensus' itself isn't a voter, it's the result.
         
         val consensusScore = (featScoreNorm * 0.35f) + 
                              (embScore * 0.35f) + 
