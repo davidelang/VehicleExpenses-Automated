@@ -47,6 +47,36 @@ import java.util.zip.ZipInputStream
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
+
+data class CachedRef(val vehicle: Vehicle, val bmp: Bitmap, val ocr: OcrResult)
+
+data class VehicleMatchResult(
+    val vehicleName: String,
+    val score: Float,
+    val inliers: Int,
+    val message: String,
+    val referenceBase64: String,
+    val fullAlignedBase64: String,
+    val cleanedAlignedBase64: String,
+    val methodScores: Map<String, Float>
+)
+
+data class PhotoResult(
+    val photoName: String,
+    val matchedVehicle: String,
+    val finalConfidence: Float,
+    val alignmentMessage: String,
+    val originalThumbBase64: String,
+    val cleanedDashBase64: String,
+    val odometerCropBase64: String,
+    val odometer: String?,
+    val referenceTextBlocks: String,
+    val dashTextBlocks: String,
+    val allVehicleResults: List<VehicleMatchResult>
+)
+
+data class ExperimentResult(val summary: String, val htmlReport: String)
+
 private const val PLACEHOLDER_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAEAAAAAmZmAADypwAADVkAABPQAAAKWwAAAAAAAAAAbWx1YwAAAAAAAAABAAAADGVuVVMAAAAgAAAAHABHAG8AbwBnAGwAZQAgAEkAbgBjAC4AIAAyADAAMQA2/9sAQwAQCwwODAoQDg0OEhEQExgoGhgWFhgxIyUdKDozPTw5Mzg3QEhcTkBEV0U3OFBtUVdfYmdoZz5NcXlwZHhcZWdj/8AACwgACgAOAQERAP/EABUAAQEAAAAAAAAAAAAAAAAAAAIG/8QAGREBAQEBAQAAAAAAAAAAAAAAACERAQH/4gAgTVBGAE1NACoAAAAIAAGwAAAHAAAABDAxMDAAAAAA/9oACAEBAAA/AMLx6QmsoA8bqyd82tjpPLNjX4MlFUA9FKiv/9k="
 
 @Composable
@@ -333,7 +363,6 @@ private suspend fun runFullExperiment(
     var success = 0
     
     // CACHE REFERENCE DATA
-    data class CachedRef(val vehicle: Vehicle, val bmp: Bitmap, val ocr: OcrResult)
     val cachedRefs = vehicles.mapNotNull { vehicle ->
         val url = vehicle.referenceDashPhotoUrl ?: vehicle.cleanedReferenceDashPhotoUrl ?: return@mapNotNull null
         val file = File(url)
@@ -538,33 +567,6 @@ private fun drawCropBoxesOnReference(refBmp: Bitmap?, vehicle: Vehicle): Bitmap?
     }
     return bitmap
 }
-
-private data class VehicleMatchResult(
-    val vehicleName: String,
-    val score: Float,
-    val inliers: Int,
-    val message: String,
-    val referenceBase64: String,
-    val fullAlignedBase64: String,
-    val cleanedAlignedBase64: String,
-    val methodScores: Map<String, Float>
-)
-
-private data class PhotoResult(
-    val photoName: String,
-    val matchedVehicle: String,
-    val finalConfidence: Float,
-    val alignmentMessage: String,
-    val originalThumbBase64: String,
-    val cleanedDashBase64: String,
-    val odometerCropBase64: String,
-    val odometer: String?,
-    val referenceTextBlocks: String,
-    val dashTextBlocks: String,
-    val allVehicleResults: List<VehicleMatchResult>
-)
-
-private data class ExperimentResult(val summary: String, val htmlReport: String)
 
 private fun buildRichHtmlReport(results: List<PhotoResult>, total: Int, allVehicles: List<Vehicle>): String {
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
