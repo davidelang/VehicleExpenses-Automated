@@ -431,28 +431,37 @@ private fun pickBestOdometer(fullSteps: List<OcrStepResult>, anchorSteps: List<O
 
     val errorStrings = listOf("(no text)", "(Tesseract init failed)", "FAILED")
     
-    // 1. Normalize and filter candidate strings
-    val candidates = allSteps.mapNotNull { step ->
-        val raw = step.text ?: return@mapNotNull null
-        if (raw in errorStrings || raw.isBlank()) return@mapNotNull null
+    // 1. Normalize and score candidates
+    // We give higher weight to stages we know are better (Grayscale, Bilateral)
+    val scoredCandidates = mutableMapOf<String, Float>()
+    
+    allSteps.forEach { step ->
+        val raw = step.text ?: return@forEach
+        if (raw in errorStrings || raw.isBlank()) return@forEach
         
-        // Basic normalization: remove spaces, common OCR misreads
         val clean = raw.replace(" ", "")
                        .replace("I", "1").replace("l", "1")
                        .replace("O", "0").replace("o", "0")
                        .replace("S", "5").replace("s", "5")
                        .replace("B", "8")
         
-        // Extract first sequence of 4-7 digits
         val match = Regex("""\d{4,7}""").find(clean)
-        match?.value
+        val digits = match?.value ?: return@forEach
+        
+        val weight = when(step.stageName) {
+            "Grayscale" -> 1.5f
+            "Bilateral" -> 1.5f
+            "Raw" -> 1.0f
+            "CLAHE" -> 0.5f
+            "Threshold" -> 0.5f
+            else -> 1.0f
+        }
+        
+        scoredCandidates[digits] = (scoredCandidates[digits] ?: 0f) + weight
     }
 
-    if (candidates.isEmpty()) return null
+    if (scoredCandidates.isEmpty()) return null
 
-    // 2. Voting / Selection
-    // For now, just pick the most common one, or the first one if all unique.
-    // Given my HTML findings, earlier stages (Raw/Grayscale) are often better.
-    // So let's just pick the first valid one we found.
-    return candidates.firstOrNull()
+    // 2. Pick the candidate with the highest total weight
+    return scoredCandidates.maxByOrNull { it.value }?.key
 }
