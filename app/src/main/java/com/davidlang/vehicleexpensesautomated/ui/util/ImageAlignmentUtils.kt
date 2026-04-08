@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,13 +12,9 @@ import org.opencv.core.*
 import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
 import org.opencv.calib3d.Calib3d
-import java.io.File
 import kotlin.math.max
 import kotlin.math.min
-
-import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
-import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
-import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import kotlin.math.sqrt
 
 data class AlignmentResult(
     val success: Boolean,
@@ -39,6 +34,18 @@ object ImageAlignmentUtils {
         } else {
             Log.i("ImageAlignment", "OpenCV initialized successfully")
         }
+    }
+
+    private fun boxIoU(r1: android.graphics.Rect, r2: android.graphics.Rect): Float {
+        val interLeft = max(r1.left, r2.left)
+        val interTop = max(r1.top, r2.top)
+        val interRight = min(r1.right, r2.right)
+        val interBottom = min(r1.bottom, r2.bottom)
+        if (interRight <= interLeft || interBottom <= interTop) return 0f
+        val interArea = (interRight - interLeft) * (interBottom - interTop).toFloat()
+        val area1 = (r1.right - r1.left) * (r1.bottom - r1.top).toFloat()
+        val area2 = (r2.right - r2.left) * (r2.bottom - r2.top).toFloat()
+        return interArea / (area1 + area2 - interArea)
     }
 
     private fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
@@ -105,31 +112,6 @@ object ImageAlignmentUtils {
         return null
     }
 
-    private fun levenshtein(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                val cost = if (s1[i-1] == s2[j-1]) 0 else 1
-                dp[i][j] = minOf(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost)
-            }
-        }
-        return dp[s1.length][s2.length]
-    }
-
-    private fun boxIoU(r1: android.graphics.Rect, r2: android.graphics.Rect): Float {
-        val interLeft = max(r1.left, r2.left)
-        val interTop = max(r1.top, r2.top)
-        val interRight = min(r1.right, r2.right)
-        val interBottom = min(r1.bottom, r2.bottom)
-        if (interLeft >= interRight || interTop >= interBottom) return 0f
-        val interArea = (interRight - interLeft) * (interBottom - interTop).toFloat()
-        val area1 = (r1.right - r1.left) * (r1.bottom - r1.top).toFloat()
-        val area2 = (r2.right - r2.left) * (r2.bottom - r2.top).toFloat()
-        return interArea / (area1 + area2 - interArea)
-    }
-
     private fun histogramMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
         val gridSize = 5
         val refHist = IntArray(gridSize * gridSize)
@@ -177,7 +159,7 @@ object ImageAlignmentUtils {
             normRef += refVec[i] * refVec[i]
             normQuery += queryVec[i] * queryVec[i]
         }
-        val textSim = if (normRef > 0 && normQuery > 0) dot / (kotlin.math.sqrt(normRef) * kotlin.math.sqrt(normQuery)) else 0f
+        val textSim = if (normRef > 0 && normQuery > 0) dot / (sqrt(normRef.toDouble()).toFloat() * sqrt(normQuery.toDouble()).toFloat()) else 0f
         var layoutSim = 0f
         for (r in refBlocks) {
             for (q in queryBlocks) {
@@ -268,14 +250,12 @@ object ImageAlignmentUtils {
             dstPoints.fromList(dstList)
             val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0)
             
-            // GEOMETRIC SANITY CHECK - Relaxed for wide/tight zoom variations
+            // GEOMETRIC SANITY CHECK
             val h00 = homography.get(0, 0)[0]
             val h01 = homography.get(0, 1)[0]
             val h10 = homography.get(1, 0)[0]
             val h11 = homography.get(1, 1)[0]
             val det = h00 * h11 - h01 * h10
-            
-            // Lenient check for scale (approx 0.2x to 5.0x) and no extreme flipping
             val isSane = det > 0.04 && det < 25.0 && Math.abs(h01) < 1.2 && Math.abs(h10) < 1.2
             
             if (!isSane) {
