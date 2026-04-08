@@ -110,9 +110,32 @@ object OdometerOcrUtils {
         val (text2, _) = runRawOcr(bmpFiltered)
         steps.add(OcrStepResult("Bilateral", bmpFiltered, text2))
         
+        // 3. CLAHE (Contrast Limited Adaptive Histogram Equalization) + Adaptive Threshold
+        val clahe = Imgproc.createCLAHE(1.5, org.opencv.core.Size(8.0, 8.0)) // low clipLimit to avoid hollowing
+        val claheMat = Mat()
+        clahe.apply(gray, claheMat)
+        val adaptiveThresh = Mat()
+        // Block size 15, constant 5.0 (less sensitive to noise than default)
+        Imgproc.adaptiveThreshold(claheMat, adaptiveThresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 15, 5.0)
+        val bmpAdaptive = Bitmap.createBitmap(adaptiveThresh.cols(), adaptiveThresh.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(adaptiveThresh, bmpAdaptive)
+        val (text3, _) = runRawOcr(bmpAdaptive)
+        steps.add(OcrStepResult("CLAHE+Adapt", bmpAdaptive, text3))
+        
+        // 4. OTSU Threshold (Good for high contrast, e.g. OLED screens)
+        val otsuThresh = Mat()
+        Imgproc.threshold(gray, otsuThresh, 0.0, 255.0, Imgproc.THRESH_BINARY or Imgproc.THRESH_OTSU)
+        val bmpOtsu = Bitmap.createBitmap(otsuThresh.cols(), otsuThresh.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(otsuThresh, bmpOtsu)
+        val (text4, _) = runRawOcr(bmpOtsu)
+        steps.add(OcrStepResult("Otsu", bmpOtsu, text4))
+
         mat.release()
         gray.release()
         filtered.release()
+        claheMat.release()
+        adaptiveThresh.release()
+        otsuThresh.release()
         
         steps
     }
