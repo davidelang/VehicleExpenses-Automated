@@ -26,7 +26,8 @@ data class AlignmentResult(
     val refKeypoints: Int = 0,
     val queryKeypoints: Int = 0,
     val goodMatchesCount: Int = 0,
-    val method: String = "feature"
+    val method: String = "feature",
+    val wordVeto: Boolean = false
 )
 
 object ImageAlignmentUtils {
@@ -38,26 +39,34 @@ object ImageAlignmentUtils {
         }
     }
 
-    private fun boxIoU(r1: android.graphics.Rect, r2: android.graphics.Rect): Float {
-        val interLeft = max(r1.left, r2.left)
-        val interTop = max(r1.top, r2.top)
-        val interRight = min(r1.right, r2.right)
-        val interBottom = min(r1.bottom, r2.bottom)
-        if (interRight <= interLeft || interBottom <= interTop) return 0f
-        val interArea = (interRight - interLeft) * (interBottom - interTop).toFloat()
-        val area1 = (r1.right - r1.left) * (r1.bottom - r1.top).toFloat()
-        val area2 = (r2.right - r2.left) * (r2.bottom - r2.top).toFloat()
-        return interArea / (area1 + area2 - interArea)
+    private fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, imgW: Int, imgH: Int): Boolean {
+        if (crop == null || imgW == 0 || imgH == 0) return false
+        val bx = block.boundingBox.centerX().toFloat() / imgW.toFloat()
+        val by = block.boundingBox.centerY().toFloat() / imgH.toFloat()
+        return bx >= crop.left && bx <= crop.right && by >= crop.top && by <= crop.bottom
     }
 
-    private fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, globalWordCounts: Map<String, Int> = emptyMap()): Float {
+    private fun argMatch(
+        refBlocks: List<TextBlock>, 
+        queryBlocks: List<TextBlock>, 
+        globalWordCounts: Map<String, Int> = emptyMap(),
+        refOdoCrop: android.graphics.RectF? = null,
+        refOtherCrop: android.graphics.RectF? = null,
+        refW: Int = 0,
+        refH: Int = 0
+    ): Float {
         if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
+        
+        // Filter out blocks in crop zones for reference
+        val filteredRef = refBlocks.filter { !isBlockInCrop(it, refOdoCrop, refW, refH) && !isBlockInCrop(it, refOtherCrop, refW, refH) }
+        if (filteredRef.isEmpty()) return 0f
+
         var score = 0f
         var totalWeight = 0f
         
-        val refWords = refBlocks.map { it.text.lowercase().trim() }.toSet()
+        val refWords = filteredRef.map { it.text.lowercase().trim() }.toSet()
         
-        for (r in refBlocks) {
+        for (r in filteredRef) {
             val word = r.text.lowercase().trim()
             val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
             totalWeight += weight
@@ -70,42 +79,55 @@ object ImageAlignmentUtils {
             }
         }
         
-        // Negative voting: penalize words found in query that are NOT in reference
-        // but ARE known to exist in other vehicles (i.e. they are in globalWordCounts).
+        // Soft penalty for words found in query that are NOT in reference
+        // but ARE known to exist in other vehicles.
         var penalty = 0f
         for (q in queryBlocks) {
             val word = q.text.lowercase().trim()
             if (!refWords.contains(word) && globalWordCounts.containsKey(word)) {
-                // It's a word known from other vehicles, but not this one.
-                // Rare words (low global count) have a higher penalty weight.
                 val weight = 1.0f / globalWordCounts[word]!!.toFloat()
-                penalty += weight * 0.5f // Weight the penalty
+                penalty += weight * 0.5f 
             }
         }
         
         return if (totalWeight > 0) (score - penalty) / totalWeight else 0f
     }
 
-    fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, allOtherRefs: List<List<TextBlock>> = emptyList()): Float {
+    fun anchorMatch(
+        refBlocks: List<TextBlock>, 
+        queryBlocks: List<TextBlock>, 
+        allOtherRefs: List<OcrResult> = emptyList(),
+        refOdoCrop: android.graphics.RectF? = null,
+        refOtherCrop: android.graphics.RectF? = null,
+        refW: Int = 0,
+        refH: Int = 0
+    ): Float {
         if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
+        
+        // 1. Define standard anchors
         val anchors = listOf("MPH", "KM/H", "160", "140", "120", "100", "80", "60", "40", "20", "PRNDL", "TRIP", "ODO")
+        
+        // 2. Filter blocks
+        val filteredRef = refBlocks.filter { !isBlockInCrop(it, refOdoCrop, refW, refH) && !isBlockInCrop(it, refOtherCrop, refW, refH) }
+        val refWords = filteredRef.map { it.text.lowercase().trim() }.toSet()
+        
         var matchCount = 0
         var totalPossible = 0
         
         for (anchor in anchors) {
-            val inRef = refBlocks.any { it.text.contains(anchor, ignoreCase = true) }
-            val inQuery = queryBlocks.any { it.text.contains(anchor, ignoreCase = true) }
+            val anchorLower = anchor.lowercase()
+            val inRef = refWords.any { it.contains(anchorLower) }
+            val inQuery = queryBlocks.any { it.text.lowercase().contains(anchorLower) }
             
             if (inQuery && !inRef) {
-                // Potential Veto. But only if we KNOW another vehicle has this anchor.
-                // This prevents vetoing due to poor OCR on the current reference.
+                // Check if any other vehicle actually HAS this anchor in its non-crop zones
                 val knownByOthers = allOtherRefs.any { other -> 
-                    other.any { it.text.contains(anchor, ignoreCase = true) }
+                    val otherFiltered = other.textBlocks.filter { !isBlockInCrop(it, null, other.imageWidth, other.imageHeight) } // we don't have other's crops easily here
+                    otherFiltered.any { it.text.lowercase().contains(anchorLower) }
                 }
                 
                 if (knownByOthers) {
-                    // HARD VETO: Found in query, missing in this ref, but known to exist in others.
-                    return -1.0f
+                    return -1.0f // HARD VETO
                 }
             }
             
@@ -115,6 +137,11 @@ object ImageAlignmentUtils {
             }
         }
         
+        // 3. New: Dynamic Word Veto (Not in standard anchor list)
+        // If a word is NOT in current ref, but is in another ref, and is NOT in a query crop zone...
+        // For now, standard anchors are safer for hard vetoes. 
+        // We'll stick to the anchor list for -1.0 and use ARG for soft penalties.
+
         if (totalPossible == 0) return 0f
         return matchCount.toFloat() / totalPossible.toFloat()
     }
@@ -369,7 +396,7 @@ object ImageAlignmentUtils {
         otherTextCrop: android.graphics.RectF? = null,
         skipExpensiveORB: Boolean = false,
         globalWordCounts: Map<String, Int> = emptyMap(),
-        allOtherRefs: List<List<TextBlock>> = emptyList()
+        allOtherRefs: List<OcrResult> = emptyList()
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         
@@ -379,7 +406,7 @@ object ImageAlignmentUtils {
         results["feature"] = featureResult.copy(message = featureResult.message + " (${System.currentTimeMillis()-t0}ms)")
         
         t0 = System.currentTimeMillis()
-        val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts)
+        val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
         results["arg"] = AlignmentResult(true, null, argScore, "ARG (${System.currentTimeMillis()-t0}ms)", method = "arg")
         
         t0 = System.currentTimeMillis()
@@ -391,25 +418,44 @@ object ImageAlignmentUtils {
         results["embedding"] = AlignmentResult(true, null, embScore, "Emb (${System.currentTimeMillis()-t0}ms)", method = "embedding")
         
         t0 = System.currentTimeMillis()
-        val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, allOtherRefs)
+        val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, allOtherRefs, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
         results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor (${System.currentTimeMillis()-t0}ms)", method = "anchor")
         
         // 3. CONSENSUS SCORING
-        // ORB features and Embeddings are our most discriminative signals.
-        // Anchors are useful but prone to accidental matches on speedo numbers.
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
         
+        // Word Veto: any distinctive word found in query that belongs to another vehicle but NOT this one
+        var hasWordVeto = false
+        val refWords = refOcr.textBlocks.filter { !isBlockInCrop(it, odometerCrop, refOcr.imageWidth, refOcr.imageHeight) && !isBlockInCrop(it, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight) }.map { it.text.lowercase().trim() }.toSet()
+        
+        for (q in queryOcr.textBlocks) {
+            val word = q.text.lowercase().trim()
+            if (word.length < 3) continue
+            if (!refWords.contains(word)) {
+                // If it's a distinctive word for another vehicle, hard veto
+                val belongsToOther = allOtherRefs.any { other -> 
+                    // check if distinctive for 'other'
+                    val otherWords = other.textBlocks.map { it.text.lowercase().trim() }.toSet()
+                    otherWords.contains(word)
+                }
+                if (belongsToOther) {
+                    hasWordVeto = true
+                    break
+                }
+            }
+        }
+
         var consensusScore = (featScoreNorm * 0.35f) + 
                              (embScore * 0.35f) + 
                              (histScore * 0.10f) + 
                              (argScore * 0.10f) + 
                              (ancScore * 0.10f)
 
-        if (ancScore < 0) {
+        if (ancScore < 0 || hasWordVeto) {
             consensusScore = -1.0f
         }
                              
-        results["consensus"] = AlignmentResult(true, null, consensusScore, "Consensus score: ${"%.2f".format(consensusScore)}", method = "consensus")
+        results["consensus"] = AlignmentResult(true, null, consensusScore, "Consensus score: ${"%.2f".format(consensusScore)}", method = "consensus", wordVeto = hasWordVeto)
         
         results
     }

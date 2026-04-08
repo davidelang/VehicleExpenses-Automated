@@ -29,7 +29,9 @@ data class OcrResult(
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
     val openCvProcessedBitmap: Bitmap? = null,
-    val textBlocks: List<TextBlock> = emptyList()
+    val textBlocks: List<TextBlock> = emptyList(),
+    val imageWidth: Int = 0,
+    val imageHeight: Int = 0
 )
 
 data class OcrStepResult(
@@ -226,7 +228,9 @@ object OdometerOcrUtils {
             originalPhotoPath = photoPath,
             croppedBitmap = croppedBitmap,
             openCvProcessedBitmap = null,
-            textBlocks = textBlocks
+            textBlocks = textBlocks,
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height
         )
     }
 
@@ -235,7 +239,7 @@ object OdometerOcrUtils {
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
         val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
         val bitmap = rotateImageIfRequired(rawBitmap, photoPath)
-        val (rawTesseract, _) = runRawOcr(bitmap)
+        val (rawTesseract, textBlocksOut) = runRawOcr(bitmap)
         val debugText = buildString {
             appendLine("=== FULL IMAGE OCR (light) ===\n")
             appendLine("Tesseract: $rawTesseract")
@@ -243,11 +247,9 @@ object OdometerOcrUtils {
         val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
         val possible = mutableListOf<String>()
         if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
-        val textBlocks = mutableListOf<TextBlock>()
+        val textBlocks = textBlocksOut.toMutableList()
         val cleaningTexts = deduplicateWith?.map { it.text }?.toSet() ?: emptySet()
-        if (cleanRaw.isNotEmpty() && !cleaningTexts.contains(cleanRaw)) {
-            textBlocks.add(TextBlock(cleanRaw, android.graphics.Rect(0, 0, bitmap.width, bitmap.height)))
-        }
+        
         OcrResult(
             odometer = cleanRaw.takeIf { it.length in 4..6 },
             possibleOdometers = possible,
@@ -257,7 +259,9 @@ object OdometerOcrUtils {
             originalPhotoPath = photoPath,
             croppedBitmap = null,
             openCvProcessedBitmap = null,
-            textBlocks = textBlocks
+            textBlocks = textBlocks,
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height
         )
     }
 }
