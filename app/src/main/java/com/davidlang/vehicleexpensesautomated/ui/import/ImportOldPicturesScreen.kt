@@ -44,31 +44,16 @@ fun ImportOldPicturesScreen(
     var cost by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
-    var cleanedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
-    var isCleaning by remember { mutableStateOf(false) }
 
-    // Single-pass cleaning + text extraction when photo is selected
+    // Single-pass text extraction when photo is selected
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
-            isCleaning = true
             try {
-                val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                val (cleanedBmp, textBlocks) = ImageAlignmentUtils.createCleanedReference(bmp)
-                if (cleanedBmp != null) {
-                    val tempFile = File(context.cacheDir, "temp_cleaned_${System.currentTimeMillis()}.jpg")
-                    val out = java.io.FileOutputStream(tempFile)
-                    cleanedBmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    out.close()
-                    cleanedPhotoUrl = tempFile.absolutePath
-                    referenceTextBlocks = textBlocks
-                    cleanedBmp.recycle()
-                    Log.i("ImportOldPictures", "Cleaned image + text blocks ready")
-                }
+                val result = OdometerOcrUtils.extractFromPhoto(url)
+                referenceTextBlocks = result.textBlocks.joinToString("|") { "${it.text}:${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
             } catch (e: Exception) {
-                Log.e("ImportOldPictures", "Cleaning failed", e)
-            } finally {
-                isCleaning = false
+                Log.e("ImportOldPictures", "Text extraction failed", e)
             }
         }
     }

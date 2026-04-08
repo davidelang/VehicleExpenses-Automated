@@ -16,14 +16,6 @@ import org.opencv.calib3d.Calib3d
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
-
-// ML Kit imports (only for createCleanedReference)
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.Text
 
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
@@ -47,67 +39,6 @@ object ImageAlignmentUtils {
         } else {
             Log.i("ImageAlignment", "OpenCV initialized successfully")
         }
-    }
-
-    suspend fun createCleanedReference(
-        original: Bitmap,
-        odometerCrop: RectF? = null,
-        otherTextCrop: RectF? = null
-    ): Pair<Bitmap?, String?> = withContext(Dispatchers.IO) {
-        Log.i("VehicleReferenceCleaning", "ML Kit text-box detection (last working version)")
-
-        val inputImage = InputImage.fromBitmap(original, 0)
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-        val result = suspendCoroutine<Text?> { continuation ->
-            recognizer.process(inputImage)
-                .addOnSuccessListener { continuation.resume(it) }
-                .addOnFailureListener { continuation.resume(null) }
-        } ?: return@withContext null to null
-
-        // Create mask: black background + white rectangles in text areas
-        val mask = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(mask)
-        val bgPaint = Paint().apply { color = Color.BLACK; style = Paint.Style.FILL }
-        canvas.drawRect(0f, 0f, original.width.toFloat(), original.height.toFloat(), bgPaint)
-
-        val textPaint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL }
-
-        val textBlocksString = buildString {
-            result.textBlocks.forEach { block ->
-                val r = block.boundingBox ?: return@forEach
-                val blockRect = RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
-
-                val insideOdometer = odometerCrop != null && odometerCrop.contains(blockRect)
-                val insideOtherText = otherTextCrop != null && otherTextCrop.contains(blockRect)
-
-                if (!insideOdometer && !insideOtherText) {
-                    canvas.drawRect(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat(), textPaint)
-                    append("${block.text}:${r.left},${r.top},${r.right},${r.bottom}|")
-                }
-            }
-        }
-
-        // Convert mask and original to OpenCV mats
-        val maskMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(mask, maskMat)
-        val origMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(original, origMat)
-
-        // Bitwise AND → keep original pixels in text areas, black everywhere else
-        val cleanedMat = Mat()
-        Core.bitwise_and(origMat, maskMat, cleanedMat)
-
-        val resultBitmap = Bitmap.createBitmap(cleanedMat.cols(), cleanedMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(cleanedMat, resultBitmap)
-
-        mask.recycle()
-        maskMat.release()
-        origMat.release()
-        cleanedMat.release()
-
-        Log.i("VehicleReferenceCleaning", "ML Kit text-box cleaning complete — text areas from original, background blacked out")
-        Pair(resultBitmap, textBlocksString)
     }
 
     private fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
