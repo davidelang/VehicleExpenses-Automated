@@ -112,7 +112,9 @@ object ImageAlignmentUtils {
         refOdoCrop: android.graphics.RectF? = null,
         refOtherCrop: android.graphics.RectF? = null,
         refW: Int = 0,
-        refH: Int = 0
+        refH: Int = 0,
+        dynamicAnchors: Map<String, String> = emptyMap(),
+        currentVehicleName: String = ""
     ): Float {
         if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
         
@@ -149,10 +151,16 @@ object ImageAlignmentUtils {
             }
         }
         
-        // 3. New: Dynamic Word Veto (Not in standard anchor list)
-        // If a word is NOT in current ref, but is in another ref, and is NOT in a query crop zone...
-        // For now, standard anchors are safer for hard vetoes. 
-        // We'll stick to the anchor list for -1.0 and use ARG for soft penalties.
+        // 3. Dynamic Golden Anchor Veto
+        for (q in queryBlocks) {
+            val word = q.text.lowercase().trim()
+            if (word.length < 3) continue
+            val belongsTo = dynamicAnchors[word]
+            if (belongsTo != null && belongsTo != currentVehicleName) {
+                // This word is unique to another vehicle!
+                return -1.0f
+            }
+        }
 
         if (totalPossible == 0) return 0f
         return matchCount.toFloat() / totalPossible.toFloat()
