@@ -259,8 +259,8 @@ private suspend fun runFullExperiment(
             val winner = vehicleMatchResults.maxByOrNull { it.score }
             var extractedOdometer: String? = null
             if (winner != null && winner.vehicleName != "No match") {
-                val best = winner.fullOcrSteps.find { it.text != null } ?: winner.anchorOcrSteps.find { it.text != null }
-                if (best != null) { extractedOdometer = best.text; successCount++ }
+                extractedOdometer = pickBestOdometer(winner.fullOcrSteps, winner.anchorOcrSteps)
+                if (extractedOdometer != null) successCount++
             }
 
             val photoResult = PhotoResult(
@@ -423,4 +423,36 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: andro
         }
         true
     } catch (e: Exception) { Log.e(TAG, "ZIP extraction failed", e); false }
+}
+
+private fun pickBestOdometer(fullSteps: List<OcrStepResult>, anchorSteps: List<OcrStepResult>): String? {
+    val allSteps = fullSteps + anchorSteps
+    if (allSteps.isEmpty()) return null
+
+    val errorStrings = listOf("(no text)", "(Tesseract init failed)", "FAILED")
+    
+    // 1. Normalize and filter candidate strings
+    val candidates = allSteps.mapNotNull { step ->
+        val raw = step.text ?: return@mapNotNull null
+        if (raw in errorStrings || raw.isBlank()) return@mapNotNull null
+        
+        // Basic normalization: remove spaces, common OCR misreads
+        val clean = raw.replace(" ", "")
+                       .replace("I", "1").replace("l", "1")
+                       .replace("O", "0").replace("o", "0")
+                       .replace("S", "5").replace("s", "5")
+                       .replace("B", "8")
+        
+        // Extract first sequence of 4-7 digits
+        val match = Regex("""\d{4,7}""").find(clean)
+        match?.value
+    }
+
+    if (candidates.isEmpty()) return null
+
+    // 2. Voting / Selection
+    // For now, just pick the most common one, or the first one if all unique.
+    // Given my HTML findings, earlier stages (Raw/Grayscale) are often better.
+    // So let's just pick the first valid one we found.
+    return candidates.firstOrNull()
 }

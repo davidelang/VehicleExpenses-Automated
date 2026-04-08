@@ -52,6 +52,9 @@ signing.properties
 app/src/main/assets/*
 app/src/main/res/raw/*
 
+# Experiment Reports
+alignment_report_*.html
+alignment_results_*.json
 
 # Extra explicit ignores for caches and generated code
 **/build/
