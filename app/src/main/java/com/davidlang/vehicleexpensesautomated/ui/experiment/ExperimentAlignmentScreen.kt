@@ -45,6 +45,8 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
+import org.json.JSONArray
+import org.json.JSONObject
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
@@ -365,6 +367,7 @@ private suspend fun runFullExperiment(
     if (total == 0) return ExperimentResult("No photos found", "<h1>No photos</h1>")
     val results = mutableListOf<PhotoResult>()
     var success = 0
+    val jsonArray = JSONArray()
     
     // CACHE REFERENCE DATA
     val cachedRefs = vehicles.mapNotNull { vehicle ->
@@ -477,21 +480,33 @@ private suspend fun runFullExperiment(
                 }
             }
 
-            val methodWinnersString = methodWinners.entries.joinToString("<br>") { "<b>${it.key}:</b> ${it.value}" }
-
-            results.add(PhotoResult(
+            val photoResult = PhotoResult(
                 photoName = file.name,
                 matchedVehicle = matchedVehicleName,
                 finalConfidence = matchedConfidence,
-                alignmentMessage = (winner?.message ?: "No Match Found") + "<br><br><b>Method Picks:</b><br>$methodWinnersString",
+                alignmentMessage = (winner?.message ?: "No Match Found"),
                 originalThumbBase64 = bitmapToBase64(originalBitmap, 180),
                 cleanedDashBase64 = bitmapToBase64(cleanedBmp, 180),
                 odometerCropBase64 = odometerCropBase64,
                 odometer = extractedOdometer,
                 referenceTextBlocks = referenceTextBlocks,
                 dashTextBlocks = dashTextBlocks ?: "",
-                allVehicleResults = vehicleMatchResults
-            ))
+                allVehicleResults = vehicleMatchResults,
+                methodWinners = methodWinners
+            )
+            results.add(photoResult)
+
+            // Machine readable data
+            val jsonRow = JSONObject().apply {
+                put("file", file.name)
+                put("winner", matchedVehicleName)
+                put("confidence", matchedConfidence)
+                put("odometer", extractedOdometer ?: "FAILED")
+                val methods = JSONObject()
+                methodWinners.forEach { (m, win) -> methods.put(m, win) }
+                put("method_winners", methods)
+            }
+            jsonArray.put(jsonRow)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to process ${file.name}", e)
             results.add(PhotoResult(
@@ -512,6 +527,17 @@ private suspend fun runFullExperiment(
     // Cleanup cached bitmaps
     cachedRefs.forEach { it.bmp.recycle() }
     
+    // Machine readable export
+    try {
+        val reportDir = File(context.filesDir, "experiment_reports")
+        val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+        val jsonFile = File(reportDir, "alignment_results_${timestamp}.json")
+        jsonFile.writeText(jsonArray.toString(2))
+        Log.i(TAG, "JSON results written to ${jsonFile.absolutePath}")
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to write JSON results", e)
+    }
+
     onProgress(1f, "Generating visual report...")
     val html = buildRichHtmlReport(results, total, vehicles)
     val summary = "Processed $total photos — $success successful alignments"
