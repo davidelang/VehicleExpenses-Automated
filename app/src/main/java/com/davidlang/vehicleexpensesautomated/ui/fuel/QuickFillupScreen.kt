@@ -383,26 +383,93 @@ private fun captureDashPhoto(
     cropRect: Rect?,
     updateLastPhotoPath: (String) -> Unit
 ) {
-    val photoFile = File.createTempFile("dash_", ".jpg", context.cacheDir)
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-    imageCapture.takePicture(
-        outputOptions,
-        cameraExecutor,
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onError(exception: ImageCaptureException) {
-                Toast.makeText(context, "Camera error", Toast.LENGTH_SHORT).show()
+    val paths = mutableListOf<String>()
+    
+    // We'll take 3 photos in sequence: Flash ON -> Flash OFF -> Flash ON
+    fun takeNext(index: Int) {
+        if (index >= 3) {
+            // All photos captured, process the best one (or consensus)
+            val bestPath = paths.firstOrNull() ?: return
+            updateLastPhotoPath(bestPath)
+            scope.launch {
+                processBurstPhotos(context, paths, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
             }
-            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                val path = photoFile.absolutePath
-                updateLastPhotoPath(path)
-                Log.d("OcrDebug", "Camera: lastPhotoPath set to: $path")
-                scope.launch {
-                    processPhoto(context, path, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
+            return
+        }
+
+        // Configure flash for this shot
+        imageCapture.flashMode = when(index) {
+            0 -> ImageCapture.FLASH_MODE_ON
+            1 -> ImageCapture.FLASH_MODE_OFF
+            else -> ImageCapture.FLASH_MODE_ON
+        }
+
+        val photoFile = File.createTempFile("burst_${index}_", ".jpg", context.cacheDir)
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        imageCapture.takePicture(
+            outputOptions,
+            cameraExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e("BurstCamera", "Photo $index failed", exception)
+                    takeNext(index + 1) // Continue burst even if one fails
+                }
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    paths.add(photoFile.absolutePath)
+                    // Small delay to allow for slight hand movement/exposure adjustment
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        takeNext(index + 1)
+                    }, 250)
                 }
             }
-        }
-    )
+        )
+    }
+
+    Toast.makeText(context, "Capturing burst...", Toast.LENGTH_SHORT).show()
+    takeNext(0)
 }
+
+private suspend fun processBurstPhotos(
+    context: Context,
+    paths: List<String>,
+    selectedVehicleId: Int?,
+    vehicles: List<Vehicle>,
+    step: Int,
+    updateCropDebug: (String) -> Unit,
+    updateOcrResult: (String) -> Unit,
+    updateOpenCVDebug: (String) -> Unit,
+    updateOdometer: (Int) -> Unit,
+    updatePossibleOdometers: (List<String>) -> Unit,
+    updateShowConfirmation: (Boolean) -> Unit,
+    updateGallons: (Double) -> Unit,
+    updateCost: (Double) -> Unit,
+    cropRect: Rect?
+) {
+    val cropRectF = cropRect?.let { r ->
+        android.graphics.RectF(r.left, r.top, r.right, r.bottom)
+    }
+
+    // Run OCR on all paths and look for consensus
+    val results = paths.map { path ->
+        OdometerOcrUtils.extractFromPhoto(path, cropRectF)
+    }
+
+    // For now, let's pick the "Best" result based on digit confidence/count
+    val bestResult = results.maxByOrNull { it.odometer?.length ?: 0 } ?: results.first()
+    
+    // Aggregate possible odometers from all burst frames
+    val allPossible = results.flatMap { it.possibleOdometers }.distinct()
+
+    updateOcrResult("Burst Odo: ${bestResult.odometer ?: "—"} | Gallons: ${bestResult.gallons ?: "—"}")
+    bestResult.odometer?.toIntOrNull()?.let { updateOdometer(it) }
+    updatePossibleOdometers(allPossible)
+    updateGallons(bestResult.gallons?.toDoubleOrNull() ?: 0.0)
+    updateCost(bestResult.cost?.toDoubleOrNull() ?: 0.0)
+    updateCropDebug("Burst processed (${results.size} frames)")
+    updateOpenCVDebug("Burst consensus complete")
+}
+
 private suspend fun processPhoto(
     context: Context,
     path: String,
