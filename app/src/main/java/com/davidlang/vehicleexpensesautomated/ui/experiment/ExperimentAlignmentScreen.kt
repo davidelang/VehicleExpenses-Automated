@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
+import com.davidlang.vehicleexpensesautomated.ui.util.OcrStepResult
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -58,6 +59,8 @@ data class VehicleMatchResult(
     val referenceBase64: String,
     val fullAlignedBase64: String,
     val cleanedAlignedBase64: String,
+    val fullOcrSteps: List<OcrStepResult> = emptyList(),
+    val anchorOcrSteps: List<OcrStepResult> = emptyList(),
     val methodScores: Map<String, Float>
 )
 
