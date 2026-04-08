@@ -110,18 +110,9 @@ object OdometerOcrUtils {
         val (text2, _) = runRawOcr(bmpFiltered)
         steps.add(OcrStepResult("Bilateral", bmpFiltered, text2))
         
-        // 3. Adaptive Threshold (Applied directly to Bilateral output)
-        val thresh = Mat()
-        Imgproc.adaptiveThreshold(filtered, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
-        val bmpThresh = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(thresh, bmpThresh)
-        val (text3, _) = runRawOcr(bmpThresh)
-        steps.add(OcrStepResult("Threshold", bmpThresh, text3))
-        
         mat.release()
         gray.release()
         filtered.release()
-        thresh.release()
         
         steps
     }

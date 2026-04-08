@@ -2,7 +2,7 @@
   {
     "file": "PXL_20250703_031510594.jpg",
     "winner": "Honda",
-    "confidence": 0.08164595812559128,
+    "confidence": 0.03196858987212181,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -15,22 +15,22 @@
   },
   {
     "file": "PXL_20260214_204037399.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.07306002825498581,
-    "odometer": "FAILED",
+    "winner": "Honda",
+    "confidence": 0.0987732857465744,
+    "odometer": "195822",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Ford Van",
       "anchor": "Honda",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250503_221559784.jpg",
     "winner": "Honda",
-    "confidence": 0.07381545007228851,
+    "confidence": 0.11161239445209503,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -44,8 +44,8 @@
   {
     "file": "PXL_20250823_031601174.jpg",
     "winner": "Honda",
-    "confidence": 0.4500511884689331,
-    "odometer": "ra yi",
+    "confidence": 0.1642630398273468,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -58,7 +58,7 @@
   {
     "file": "PXL_20250408_222657099.jpg",
     "winner": "Honda",
-    "confidence": 0.08351631462574005,
+    "confidence": 0.12983959913253784,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -72,8 +72,8 @@
   {
     "file": "PXL_20221227_164550455.jpg",
     "winner": "Honda",
-    "confidence": 0.17457018792629242,
-    "odometer": "BN",
+    "confidence": 0.0776817798614502,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -85,22 +85,22 @@
   },
   {
     "file": "PXL_20230902_175447476.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.3016510307788849,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.13218368589878082,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250426_084148700.jpg",
     "winner": "Honda",
-    "confidence": 0.08318544179201126,
+    "confidence": 0.12865619361400604,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -114,8 +114,8 @@
   {
     "file": "PXL_20250802_215947597.jpg",
     "winner": "Honda",
-    "confidence": 0.4478229880332947,
-    "odometer": "",
+    "confidence": 0.1827402263879776,
+    "odometer": "188514",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -128,8 +128,8 @@
   {
     "file": "PXL_20240414_010409990.jpg",
     "winner": "Ford Van",
-    "confidence": 0.2879856824874878,
-    "odometer": "2078an",
+    "confidence": 0.08841385692358017,
+    "odometer": "2078",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -141,36 +141,36 @@
   },
   {
     "file": "PXL_20250521_001438093.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.28901875019073486,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.16708816587924957,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20240114_162249446.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.17047744989395142,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.10223277658224106,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20231120_002342751.jpg",
     "winner": "Honda",
-    "confidence": 0.07892021536827087,
+    "confidence": 0.10914003849029541,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -183,22 +183,22 @@
   },
   {
     "file": "PXL_20231223_074744139.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.14970487356185913,
-    "odometer": "250520",
+    "winner": "Honda",
+    "confidence": 0.06363560259342194,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250501_160404035.jpg",
     "winner": "Ford Van",
-    "confidence": 0.14741641283035278,
+    "confidence": 0.047763578593730927,
     "odometer": "213706",
     "method_winners": {
       "feature": "Honda",
@@ -211,37 +211,37 @@
   },
   {
     "file": "PXL_20221128_172727575.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.2895910143852234,
-    "odometer": "200852",
+    "winner": "Honda",
+    "confidence": 0.16149891912937164,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20240521_025048701.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.28632816672325134,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.15542300045490265,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20240722_200247194.jpg",
     "winner": "Honda",
-    "confidence": 0.5045105218887329,
-    "odometer": "",
+    "confidence": 0.23821422457695007,
+    "odometer": "39100",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -253,23 +253,23 @@
   },
   {
     "file": "PXL_20240630_010940332.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.28495103120803833,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.10256984829902649,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250425_030458607.jpg",
     "winner": "Honda",
-    "confidence": 0.3571258783340454,
-    "odometer": "hviiff\ne",
+    "confidence": 0.20312616229057312,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -282,7 +282,7 @@
   {
     "file": "PXL_20250423_023559600.jpg",
     "winner": "Honda",
-    "confidence": 0.07078446447849274,
+    "confidence": 0.10958760976791382,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -295,22 +295,22 @@
   },
   {
     "file": "PXL_20240928_000421593.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.1722063422203064,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.15617720782756805,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20240326_014544434.jpg",
     "winner": "Honda",
-    "confidence": 0.3092291057109833,
+    "confidence": 0.17712442576885223,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -323,23 +323,23 @@
   },
   {
     "file": "PXL_20240228_211149372.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.2958759069442749,
-    "odometer": "206864",
+    "winner": "Honda",
+    "confidence": 0.15296626091003418,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20241123_194434912.jpg",
     "winner": "Honda",
-    "confidence": 0.16337653994560242,
-    "odometer": "1\nf",
+    "confidence": 0.10893317312002182,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -352,8 +352,8 @@
   {
     "file": "PXL_20250528_213413013.jpg",
     "winner": "Honda",
-    "confidence": 0.2530542314052582,
-    "odometer": "2 3 DidgCERDAEg\n2l s j T o Ve L y\nz S ALY oF b\n4 S t 3\ni y b N\nWaAhcmmeELSNawh 1\nB Pel TSEReT Laeemt Fg 7",
+    "confidence": 0.10914752632379532,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -366,8 +366,8 @@
   {
     "file": "PXL_20221126_210323823.jpg",
     "winner": "Honda",
-    "confidence": 0.14250054955482483,
-    "odometer": "J",
+    "confidence": 0.12995922565460205,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -379,37 +379,37 @@
   },
   {
     "file": "PXL_20250516_042433134.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.18188674747943878,
-    "odometer": "Y Sl SamsT",
+    "winner": "Honda",
+    "confidence": 0.14056852459907532,
+    "odometer": "186067",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250706_184143625.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.4084066152572632,
-    "odometer": "bl",
+    "winner": "Honda",
+    "confidence": 0.1652546525001526,
+    "odometer": "1210",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20240101_024956643.jpg",
     "winner": "Honda",
-    "confidence": 0.2171749770641327,
-    "odometer": "1 w\ne 0   7gw yh\ni    OY   vnlk\nRt 3RS\na r FLLZ Nfgikwrxx\nmti i3  QRN",
+    "confidence": 0.1554010659456253,
+    "odometer": "5155",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -422,7 +422,7 @@
   {
     "file": "PXL_20231226_184304633.jpg",
     "winner": "Honda",
-    "confidence": 0.015253715217113495,
+    "confidence": 0.015296000987291336,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -436,8 +436,8 @@
   {
     "file": "PXL_20241222_023748794.jpg",
     "winner": "Honda",
-    "confidence": 0.3561822772026062,
-    "odometer": "b TB\nv g adnNLETeAC S\nLIy u n 5\n21 S s  b il\nl 3 i v\nI o 3 A\ne  l A b 2 ai\n1 l a N V 5 l l\nVfl y i J v e  4  v 3\nQ e T v 3 z\no f g  Moy X l\nX 3 J\n1 I\nh Pa 4 p t e o ll4\nL i r O y l\nAY v b v\no o l",
+    "confidence": 0.16679641604423523,
+    "odometer": "5000510",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -450,7 +450,7 @@
   {
     "file": "PXL_20241213_043757761.jpg",
     "winner": "Honda",
-    "confidence": 0.061416156589984894,
+    "confidence": 0.10786224901676178,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -464,7 +464,7 @@
   {
     "file": "PXL_20250814_231132905.jpg",
     "winner": "Honda",
-    "confidence": 0.5123756527900696,
+    "confidence": 0.2464750111103058,
     "odometer": "189297",
     "method_winners": {
       "feature": "Honda",
@@ -478,8 +478,8 @@
   {
     "file": "PXL_20250717_212329894.jpg",
     "winner": "Honda",
-    "confidence": 0.48465776443481445,
-    "odometer": "DEsTTlEr9FATNeL GeTEET\nGochieRTEEReioneRg\nRN gslzukmn i\n5 2 f Lif wii hul sg3vsifEhW  TSR\nTRt\ne\nAEETLELToaaehoRBAIRTaDSnSaaS\n2B fAsifaagams e\nTURTDRNES BT3RSkt At\nW eSO\nLA  Cfnu4 iehabBaleNTERNEE E",
+    "confidence": 0.20104078948497772,
+    "odometer": "4555",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -491,37 +491,37 @@
   },
   {
     "file": "PXL_20250702_022359163.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.3059188723564148,
-    "odometer": "214500",
+    "winner": "Honda",
+    "confidence": 0.1363484263420105,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20221121_021330418.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.29971158504486084,
-    "odometer": "TS 9963",
+    "winner": "Honda",
+    "confidence": 0.15638361871242523,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20241222_085729122.jpg",
     "winner": "Honda",
-    "confidence": 0.40732088685035706,
-    "odometer": "3304y",
+    "confidence": 0.20922216773033142,
+    "odometer": "3304",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -534,8 +534,8 @@
   {
     "file": "PXL_20231221_212942380.jpg",
     "winner": "Ford Van",
-    "confidence": 0.2170456051826477,
-    "odometer": "w4 v ALK 8FSAN\nuf gqv l 5 3 2 s 1 12  7 b i \nM sy u  ws g w\nv 1 y B\nan n Oi ry e\nYy yv GEReYBPTLAY PR\nv s s i\na 4 ikk in B\nBRNNlee JEEREeY",
+    "confidence": 0.11905528604984283,
+    "odometer": "1532511",
     "method_winners": {
       "feature": "Honda",
       "arg": "Ford Van",
@@ -548,8 +548,8 @@
   {
     "file": "PXL_20250511_013420011.jpg",
     "winner": "Honda",
-    "confidence": 0.21798092126846313,
-    "odometer": "Ly",
+    "confidence": 0.17008672654628754,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -561,22 +561,22 @@
   },
   {
     "file": "PXL_20240807_024119718.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.41147881746292114,
-    "odometer": "B",
+    "winner": "Honda",
+    "confidence": 0.1355465054512024,
+    "odometer": "80704",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250303_171845363.jpg",
     "winner": "Ford Van",
-    "confidence": 0.02877107821404934,
+    "confidence": 0.02939959242939949,
     "odometer": "2115009",
     "method_winners": {
       "feature": "Honda",
@@ -590,8 +590,8 @@
   {
     "file": "PXL_20230225_040513730.jpg",
     "winner": "Honda",
-    "confidence": 0.20578472316265106,
-    "odometer": "e w\n7\no",
+    "confidence": 0.1420086920261383,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -604,8 +604,8 @@
   {
     "file": "PXL_20240608_004525260.jpg",
     "winner": "Honda",
-    "confidence": 0.14291808009147644,
-    "odometer": "",
+    "confidence": 0.13092249631881714,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -618,8 +618,8 @@
   {
     "file": "PXL_20241127_072217484.jpg",
     "winner": "Honda",
-    "confidence": 0.357032835483551,
-    "odometer": "l 81588",
+    "confidence": 0.17760181427001953,
+    "odometer": "181588",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -632,7 +632,7 @@
   {
     "file": "PXL_20250706_212749789.jpg",
     "winner": "Honda",
-    "confidence": 0.09537030756473541,
+    "confidence": 0.1372276395559311,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -646,11 +646,11 @@
   {
     "file": "PXL_20240808_210822326.jpg",
     "winner": "Ford Van",
-    "confidence": 0.43488314747810364,
+    "confidence": 0.14733457565307617,
     "odometer": "209662",
     "method_winners": {
       "feature": "Honda",
-      "arg": "Honda",
+      "arg": "Ford Van",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
@@ -660,7 +660,7 @@
   {
     "file": "PXL_20250626_205136552.jpg",
     "winner": "Ford Van",
-    "confidence": 0.1968880295753479,
+    "confidence": 0.10368284583091736,
     "odometer": "21417",
     "method_winners": {
       "feature": "Honda",
@@ -673,37 +673,37 @@
   },
   {
     "file": "PXL_20231226_204408016.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.18230779469013214,
-    "odometer": "N",
+    "winner": "Honda",
+    "confidence": 0.11279629915952682,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250830_221704199.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.4164729118347168,
-    "odometer": "1BI",
+    "winner": "Honda",
+    "confidence": 0.15054041147232056,
+    "odometer": "130025",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250426_023457157.jpg",
     "winner": "Ford Van",
-    "confidence": 0.29211631417274475,
-    "odometer": "wr\ni I N i\n512997",
+    "confidence": 0.09260791540145874,
+    "odometer": "812997",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -715,23 +715,23 @@
   },
   {
     "file": "PXL_20241227_224746982.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.2998078763484955,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.1930016428232193,
+    "odometer": "183428",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20231025_020334543.jpg",
     "winner": "Honda",
-    "confidence": 0.39846071600914,
-    "odometer": "a4",
+    "confidence": 0.2144775688648224,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -743,22 +743,22 @@
   },
   {
     "file": "PXL_20241202_143316001.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.2992633283138275,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.1892675906419754,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250822_062125905.jpg",
     "winner": "Honda",
-    "confidence": 0.09673880785703659,
+    "confidence": 0.1400168389081955,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -772,7 +772,7 @@
   {
     "file": "PXL_20250426_042715458.jpg",
     "winner": "Honda",
-    "confidence": 0.08749200403690338,
+    "confidence": 0.14031223952770233,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -786,8 +786,8 @@
   {
     "file": "PXL_20250808_233724036.jpg",
     "winner": "Honda",
-    "confidence": 0.464285671710968,
-    "odometer": "19915TRF",
+    "confidence": 0.1758878231048584,
+    "odometer": "18916",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -800,7 +800,7 @@
   {
     "file": "PXL_20250202_041642429.jpg",
     "winner": "Honda",
-    "confidence": 0.07220868021249771,
+    "confidence": 0.11125659942626953,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -814,8 +814,8 @@
   {
     "file": "PXL_20230206_014610459.jpg",
     "winner": "Ford Van",
-    "confidence": 0.41951364278793335,
-    "odometer": "2",
+    "confidence": 0.11976591497659683,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -828,8 +828,8 @@
   {
     "file": "PXL_20241104_013653378.jpg",
     "winner": "Honda",
-    "confidence": 0.3497112989425659,
-    "odometer": "r",
+    "confidence": 0.1781574785709381,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -842,8 +842,8 @@
   {
     "file": "PXL_20241130_183014239.jpg",
     "winner": "Honda",
-    "confidence": 0.49977827072143555,
-    "odometer": "",
+    "confidence": 0.2375839352607727,
+    "odometer": "181967",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -856,8 +856,8 @@
   {
     "file": "PXL_20240717_235836312.jpg",
     "winner": "Honda",
-    "confidence": 0.4919830560684204,
-    "odometer": "e",
+    "confidence": 0.2157890498638153,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -869,50 +869,50 @@
   },
   {
     "file": "PXL_20250811_211505129.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.2797495424747467,
-    "odometer": "J Q x\nA\nn",
+    "winner": "Honda",
+    "confidence": 0.09680582582950592,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250415_212532819.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.2770189344882965,
-    "odometer": "a",
+    "winner": "Honda",
+    "confidence": 0.10580983757972717,
+    "odometer": "7311",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20241007_023422754.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.1722923070192337,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.13150760531425476,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20240131_012901847.jpg",
     "winner": "Honda",
-    "confidence": 0.08280529081821442,
+    "confidence": 0.12129711359739304,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -925,23 +925,23 @@
   },
   {
     "file": "PXL_20250101_020003075.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.28304070234298706,
-    "odometer": "x 21",
+    "winner": "Honda",
+    "confidence": 0.10296475887298584,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250617_052448094.jpg",
     "winner": "Honda",
-    "confidence": 0.14489376544952393,
-    "odometer": "oDeg",
+    "confidence": 0.13049094378948212,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -954,7 +954,7 @@
   {
     "file": "PXL_20250709_002855745.jpg",
     "winner": "Honda",
-    "confidence": 0.09058260917663574,
+    "confidence": 0.13620905578136444,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -967,36 +967,36 @@
   },
   {
     "file": "PXL_20250726_210805791.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.29973936080932617,
-    "odometer": "TFS2N",
+    "winner": "Honda",
+    "confidence": 0.13810458779335022,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20240408_002732237.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.27811649441719055,
-    "odometer": "cUq",
+    "winner": "Honda",
+    "confidence": 0.1628786325454712,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250501_084517622.jpg",
     "winner": "Honda",
-    "confidence": 0.10222271084785461,
+    "confidence": 0.14418348670005798,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -1009,23 +1009,23 @@
   },
   {
     "file": "PXL_20250428_205350684.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.16757389903068542,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.13091446459293365,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250224_001211760.jpg",
     "winner": "Honda",
-    "confidence": 0.16049087047576904,
-    "odometer": "Ll\nA\n 1",
+    "confidence": 0.14981471002101898,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1038,8 +1038,8 @@
   {
     "file": "PXL_20240708_222128626.jpg",
     "winner": "Honda",
-    "confidence": 0.43927913904190063,
-    "odometer": "",
+    "confidence": 0.14295527338981628,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1051,23 +1051,23 @@
   },
   {
     "file": "PXL_20241230_191430410.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.15687403082847595,
-    "odometer": "",
+    "winner": "Honda",
+    "confidence": 0.16093716025352478,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20241213_220009436.jpg",
     "winner": "Honda",
-    "confidence": 0.34838151931762695,
-    "odometer": "B",
+    "confidence": 0.19470399618148804,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1080,7 +1080,7 @@
   {
     "file": "PXL_20251029_033416182.jpg",
     "winner": "Honda",
-    "confidence": 0.4953843951225281,
+    "confidence": 0.24886000156402588,
     "odometer": "193154",
     "method_winners": {
       "feature": "Honda",
@@ -1094,11 +1094,11 @@
   {
     "file": "PXL_20251004_023759106.jpg",
     "winner": "Honda",
-    "confidence": 0.2506284713745117,
-    "odometer": "",
+    "confidence": 0.10845617949962616,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
-      "arg": "Honda",
+      "arg": "Ford Van",
       "histogram": "Honda",
       "embedding": "Ford Van",
       "anchor": "Honda",
@@ -1108,8 +1108,8 @@
   {
     "file": "PXL_20250930_091557623.jpg",
     "winner": "Honda",
-    "confidence": 0.48570406436920166,
-    "odometer": "1 o 0 f y i L0 p\nWY N",
+    "confidence": 0.2163085639476776,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1122,7 +1122,7 @@
   {
     "file": "PXL_20251007_161354948.jpg",
     "winner": "Ford Van",
-    "confidence": 0.4390152096748352,
+    "confidence": 0.1656424105167389,
     "odometer": "217391",
     "method_winners": {
       "feature": "Honda",
@@ -1136,7 +1136,7 @@
   {
     "file": "PXL_20251120_015007108.jpg",
     "winner": "Honda",
-    "confidence": 0.08499369025230408,
+    "confidence": 0.13069891929626465,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -1150,11 +1150,11 @@
   {
     "file": "PXL_20260219_050700938.jpg",
     "winner": "Ford Van",
-    "confidence": 0.43010491132736206,
-    "odometer": "",
+    "confidence": 0.14326049387454987,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
-      "arg": "Honda",
+      "arg": "Ford Van",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
@@ -1164,7 +1164,7 @@
   {
     "file": "PXL_20260114_015705078.jpg",
     "winner": "Honda",
-    "confidence": 0.12303394824266434,
+    "confidence": 0.15958893299102783,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -1177,23 +1177,23 @@
   },
   {
     "file": "PXL_20250926_022901809.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.4095012843608856,
-    "odometer": "s",
+    "winner": "Honda",
+    "confidence": 0.15522915124893188,
+    "odometer": "11111",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20260301_235951560.jpg",
     "winner": "Honda",
-    "confidence": 0.1818562150001526,
-    "odometer": "",
+    "confidence": 0.15549999475479126,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1206,8 +1206,8 @@
   {
     "file": "PXL_20251107_063835900.jpg",
     "winner": "Honda",
-    "confidence": 0.14564821124076843,
-    "odometer": "",
+    "confidence": 0.14079512655735016,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1220,8 +1220,8 @@
   {
     "file": "PXL_20251111_071548876.jpg",
     "winner": "Honda",
-    "confidence": 0.22726963460445404,
-    "odometer": "1",
+    "confidence": 0.16324032843112946,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1234,8 +1234,8 @@
   {
     "file": "PXL_20260202_225134355.jpg",
     "winner": "Honda",
-    "confidence": 0.4011062681674957,
-    "odometer": "T e Lok Wwa e e 75\net  iieru g fl lugf vp SN corat\nV EN s o ynl f fi HJ o tr\nfolarMSEY QiEGWQ P",
+    "confidence": 0.21087804436683655,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1247,8 +1247,8 @@
   },
   {
     "file": "PXL_20251107_035038501.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.17261990904808044,
+    "winner": "Honda",
+    "confidence": 0.13451553881168365,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -1256,14 +1256,14 @@
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20260219_033502973.jpg",
     "winner": "Honda",
-    "confidence": 0.15880641341209412,
-    "odometer": "a at N er\n 41 a o n Q\nRS",
+    "confidence": 0.1423778086900711,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1276,8 +1276,8 @@
   {
     "file": "PXL_20250926_031238909.jpg",
     "winner": "Honda",
-    "confidence": 0.5228294134140015,
-    "odometer": "l I171M\nvguaau",
+    "confidence": 0.23916703462600708,
+    "odometer": "11171",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1290,8 +1290,8 @@
   {
     "file": "PXL_20251108_025019715.jpg",
     "winner": "Ford Van",
-    "confidence": 0.7937491536140442,
-    "odometer": "",
+    "confidence": 0.531040608882904,
+    "odometer": "518466",
     "method_winners": {
       "feature": "Honda",
       "arg": "Ford Van",
@@ -1304,8 +1304,8 @@
   {
     "file": "PXL_20251220_040526451.jpg",
     "winner": "Honda",
-    "confidence": 0.15138208866119385,
-    "odometer": "",
+    "confidence": 0.14767806231975555,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1318,8 +1318,8 @@
   {
     "file": "PXL_20251103_023836420.jpg",
     "winner": "Honda",
-    "confidence": 0.21269533038139343,
-    "odometer": "",
+    "confidence": 0.14996325969696045,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1332,8 +1332,8 @@
   {
     "file": "PXL_20251111_012726344.jpg",
     "winner": "Honda",
-    "confidence": 0.08246723562479019,
-    "odometer": "hASN",
+    "confidence": 0.12716326117515564,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1345,51 +1345,51 @@
   },
   {
     "file": "PXL_20260131_030140613.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.42879658937454224,
-    "odometer": "124",
+    "winner": "Honda",
+    "confidence": 0.19426456093788147,
+    "odometer": "194835",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20251016_031755285.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.33148807287216187,
-    "odometer": "aAC",
+    "winner": "Honda",
+    "confidence": 0.15963491797447205,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20250930_065600932.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.44986075162887573,
-    "odometer": "0",
+    "winner": "Honda",
+    "confidence": 0.18456706404685974,
+    "odometer": "91160",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20260312_033121064.jpg",
     "winner": "Honda",
-    "confidence": 0.799375057220459,
-    "odometer": "",
+    "confidence": 0.5220487117767334,
+    "odometer": "197989",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1401,23 +1401,23 @@
   },
   {
     "file": "PXL_20250926_214754121.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.4088194966316223,
-    "odometer": "el",
+    "winner": "Honda",
+    "confidence": 0.1742900311946869,
+    "odometer": "91478",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20251223_044121075.jpg",
     "winner": "Honda",
-    "confidence": 0.2512894570827484,
-    "odometer": "RECTRRD",
+    "confidence": 0.10787288844585419,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
@@ -1429,50 +1429,50 @@
   },
   {
     "file": "PXL_20250911_213911901.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.16330918669700623,
-    "odometer": "216979",
+    "winner": "Honda",
+    "confidence": 0.15107128024101257,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20251022_023302713.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.445867121219635,
-    "odometer": "R",
+    "winner": "Honda",
+    "confidence": 0.1936846524477005,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20260311_180305582.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.43241727352142334,
-    "odometer": "3",
+    "winner": "Honda",
+    "confidence": 0.17275814712047577,
+    "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   },
   {
     "file": "PXL_20260302_020501285.jpg",
     "winner": "Honda",
-    "confidence": 0.0901685282588005,
+    "confidence": 0.13302336633205414,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -1486,7 +1486,7 @@
   {
     "file": "PXL_20260220_061131814.jpg",
     "winner": "Honda",
-    "confidence": 0.08552204072475433,
+    "confidence": 0.1277378797531128,
     "odometer": "FAILED",
     "method_winners": {
       "feature": "Honda",
@@ -1499,16 +1499,16 @@
   },
   {
     "file": "PXL_20250906_000810606.jpg",
-    "winner": "Ford Van",
-    "confidence": 0.29299959540367126,
-    "odometer": "NL",
+    "winner": "Honda",
+    "confidence": 0.14918115735054016,
+    "odometer": "180387",
     "method_winners": {
       "feature": "Honda",
       "arg": "Honda",
       "histogram": "Honda",
       "embedding": "Honda",
       "anchor": "Ford Van",
-      "consensus": "Ford Van"
+      "consensus": "Honda"
     }
   }
 ]
