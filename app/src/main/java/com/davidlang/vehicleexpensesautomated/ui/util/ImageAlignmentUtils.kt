@@ -46,6 +46,18 @@ object ImageAlignmentUtils {
         return bx >= crop.left && bx <= crop.right && by >= crop.top && by <= crop.bottom
     }
 
+    private fun boxIoU(r1: android.graphics.Rect, r2: android.graphics.Rect): Float {
+        val interLeft = max(r1.left, r2.left)
+        val interTop = max(r1.top, r2.top)
+        val interRight = min(r1.right, r2.right)
+        val interBottom = min(r1.bottom, r2.bottom)
+        if (interRight <= interLeft || interBottom <= interTop) return 0f
+        val interArea = (interRight - interLeft) * (interBottom - interTop).toFloat()
+        val area1 = (r1.right - r1.left) * (r1.bottom - r1.top).toFloat()
+        val area2 = (r2.right - r2.left) * (r2.bottom - r2.top).toFloat()
+        return interArea / (area1 + area2 - interArea)
+    }
+
     private fun argMatch(
         refBlocks: List<TextBlock>, 
         queryBlocks: List<TextBlock>, 
