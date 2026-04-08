@@ -413,7 +413,9 @@ object ImageAlignmentUtils {
         otherTextCrop: android.graphics.RectF? = null,
         skipExpensiveORB: Boolean = false,
         globalWordCounts: Map<String, Int> = emptyMap(),
-        allOtherRefs: List<OcrResult> = emptyList()
+        allOtherRefs: List<OcrResult> = emptyList(),
+        dynamicAnchors: Map<String, String> = emptyMap(),
+        currentVehicleName: String = ""
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         
@@ -435,7 +437,7 @@ object ImageAlignmentUtils {
         results["embedding"] = AlignmentResult(true, null, embScore, "Emb (${System.currentTimeMillis()-t0}ms)", method = "embedding")
         
         t0 = System.currentTimeMillis()
-        val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, allOtherRefs, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
+        val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, allOtherRefs, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight, dynamicAnchors, currentVehicleName)
         results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor (${System.currentTimeMillis()-t0}ms)", method = "anchor")
         
         // 3. CONSENSUS SCORING
