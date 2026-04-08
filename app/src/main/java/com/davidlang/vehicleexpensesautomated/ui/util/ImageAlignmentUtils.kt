@@ -115,12 +115,63 @@ object ImageAlignmentUtils {
         var score = 0f
         for (r in refBlocks) {
             for (q in queryBlocks) {
-                val textSim = if (r.text == q.text) 1f else 0.5f * (1f - levenshtein(r.text, q.text).toFloat() / max(r.text.length, q.text.length))
-                val boxSim = boxIoU(r.boundingBox, q.boundingBox)
-                score += textSim * boxSim
+                if (r.text.lowercase() == q.text.lowercase()) score += 1.0f
             }
         }
-        return score / (refBlocks.size * queryBlocks.size)
+        return score / max(refBlocks.size, queryBlocks.size)
+    }
+
+    fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
+        if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
+        val anchors = listOf("MPH", "KM/H", "160", "140", "120", "100", "80", "60", "40", "20", "PRNDL", "TRIP", "ODO")
+        var matchCount = 0
+        var totalPossible = 0
+        anchors.forEach { anchor ->
+            val inRef = refBlocks.any { it.text.contains(anchor, ignoreCase = true) }
+            if (inRef) {
+                totalPossible++
+                val inQuery = queryBlocks.any { it.text.contains(anchor, ignoreCase = true) }
+                if (inQuery) matchCount++
+            }
+        }
+        if (totalPossible == 0) return 0f
+        return matchCount.toFloat() / totalPossible.toFloat()
+    }
+
+    fun projectCropViaAnchor(
+        refBlocks: List<TextBlock>,
+        queryBlocks: List<TextBlock>,
+        refCrop: android.graphics.RectF,
+        refW: Int,
+        refH: Int,
+        queryW: Int,
+        queryH: Int
+    ): android.graphics.RectF? {
+        val anchors = listOf("MPH", "KM/H", "160", "140", "120", "100", "80", "60", "40", "20", "PRNDL", "ODO", "TRIP")
+        for (anchorText in anchors) {
+            val refAnchor = refBlocks.find { it.text.contains(anchorText, ignoreCase = true) }
+            val queryAnchor = queryBlocks.find { it.text.contains(anchorText, ignoreCase = true) }
+            if (refAnchor != null && queryAnchor != null) {
+                val rA = refAnchor.boundingBox
+                val qA = queryAnchor.boundingBox
+                val scaleX = qA.width().toFloat() / rA.width().toFloat()
+                val scaleY = qA.height().toFloat() / rA.height().toFloat()
+                val avgScale = (scaleX + scaleY) / 2f
+                val refCropPx = android.graphics.RectF(refCrop.left * refW, refCrop.top * refH, refCrop.right * refW, refCrop.bottom * refH)
+                val dx = refCropPx.centerX() - rA.centerX()
+                val dy = refCropPx.centerY() - rA.centerY()
+                val qCenterX = qA.centerX() + (dx * avgScale)
+                val qCenterY = qA.centerY() + (dy * avgScale)
+                val qWidth = refCropPx.width() * avgScale
+                val qHeight = refCropPx.height() * avgScale
+                val qLeft = (qCenterX - qWidth / 2f) / queryW
+                val qTop = (qCenterY - qHeight / 2f) / queryH
+                val qRight = (qCenterX + qWidth / 2f) / queryW
+                val qBottom = (qCenterY + qHeight / 2f) / queryH
+                return android.graphics.RectF(qLeft.coerceIn(0f, 1f), qTop.coerceIn(0f, 1f), qRight.coerceIn(0f, 1f), qBottom.coerceIn(0f, 1f))
+            }
+        }
+        return null
     }
 
     private fun levenshtein(s1: String, s2: String): Int {
@@ -334,33 +385,34 @@ object ImageAlignmentUtils {
         refOcr: OcrResult,
         queryOcr: OcrResult,
         odometerCrop: android.graphics.RectF? = null,
-        otherTextCrop: android.graphics.RectF? = null
+        otherTextCrop: android.graphics.RectF? = null,
+        skipExpensiveORB: Boolean = false
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         
-        val t0 = System.currentTimeMillis()
-        val featureResult = alignImages(reference, query, 10, odometerCrop, otherTextCrop)
-        val tFeature = System.currentTimeMillis() - t0
-        results["feature"] = featureResult.copy(message = featureResult.message + " (${tFeature}ms)")
+        var t0 = System.currentTimeMillis()
+        val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped") 
+                           else alignImages(reference, query, 10, odometerCrop, otherTextCrop)
+        results["feature"] = featureResult.copy(message = featureResult.message + " (${System.currentTimeMillis()-t0}ms)")
         
-        val t1 = System.currentTimeMillis()
+        t0 = System.currentTimeMillis()
         val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks)
-        val tArg = System.currentTimeMillis() - t1
-        results["arg"] = AlignmentResult(true, null, argScore, "ARG score: ${"%.2f".format(argScore)} (${tArg}ms)", method = "arg")
+        results["arg"] = AlignmentResult(true, null, argScore, "ARG (${System.currentTimeMillis()-t0}ms)", method = "arg")
         
-        val t2 = System.currentTimeMillis()
+        t0 = System.currentTimeMillis()
         val histScore = histogramMatch(refOcr.textBlocks, queryOcr.textBlocks)
-        val tHist = System.currentTimeMillis() - t2
-        results["histogram"] = AlignmentResult(true, null, histScore, "Histogram+text score: ${"%.2f".format(histScore)} (${tHist}ms)", method = "histogram")
+        results["histogram"] = AlignmentResult(true, null, histScore, "Hist (${System.currentTimeMillis()-t0}ms)", method = "histogram")
         
-        val t3 = System.currentTimeMillis()
+        t0 = System.currentTimeMillis()
         val embScore = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
-        val tEmb = System.currentTimeMillis() - t3
-        results["embedding"] = AlignmentResult(true, null, embScore, "Embedding proxy score: ${"%.2f".format(embScore)} (${tEmb}ms)", method = "embedding")
+        results["embedding"] = AlignmentResult(true, null, embScore, "Emb (${System.currentTimeMillis()-t0}ms)", method = "embedding")
         
-        // Consensus: Weighted average of multiple metrics
+        t0 = System.currentTimeMillis()
+        val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor (${System.currentTimeMillis()-t0}ms)", method = "anchor")
+        
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 50f).coerceIn(0f, 1f) else 0f
-        val consensusScore = (featScoreNorm * 0.4f) + (argScore * 0.2f) + (histScore * 0.2f) + (embScore * 0.2f)
+        val consensusScore = (featScoreNorm * 0.1f) + (argScore * 0.1f) + (histScore * 0.1f) + (embScore * 0.3f) + (ancScore * 0.4f)
         results["consensus"] = AlignmentResult(true, null, consensusScore, "Consensus score: ${"%.2f".format(consensusScore)}", method = "consensus")
         
         results
