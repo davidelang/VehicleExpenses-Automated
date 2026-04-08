@@ -340,10 +340,12 @@ object ImageAlignmentUtils {
             srcPoints.fromList(srcList)
             dstPoints.fromList(dstList)
             val mask = Mat()
-            val homography = Calib3d.findHomography(srcPoints, dstPoints, Calib3d.RANSAC, 5.0, mask)
+            // USE AFFINE PARTIAL 2D (4-DOF: Translation, Rotation, Scale)
+            // This prevents "pinwheel/wedge" distortion by strictly forbidding perspective/tilt changes.
+            val affine = Calib3d.estimateAffinePartial2D(srcPoints, dstPoints, mask, Calib3d.RANSAC, 3.0)
             
             var inlierCount = 0
-            if (!homography.empty()) {
+            if (!affine.empty()) {
                 for (i in 0 until mask.rows()) {
                     if (mask.get(i, 0)[0].toInt() == 1) {
                         inlierCount++
@@ -352,33 +354,36 @@ object ImageAlignmentUtils {
             }
             mask.release()
 
-            if (homography.empty() || inlierCount < minInliers) {
-                if (!homography.empty()) homography.release()
-                return@withContext AlignmentResult(false, null, 0f, "Homography failed or too few inliers ($inlierCount < $minInliers)", refKpCount, queryKpCount, goodMatchesCount, "feature")
+            if (affine.empty() || inlierCount < minInliers) {
+                if (!affine.empty()) affine.release()
+                return@withContext AlignmentResult(false, null, 0f, "Affine alignment failed or too few inliers ($inlierCount < $minInliers)", refKpCount, queryKpCount, goodMatchesCount, "feature")
             }
             
-            // GEOMETRIC SANITY CHECK
-            val h00 = homography.get(0, 0)[0]
-            val h01 = homography.get(0, 1)[0]
-            val h10 = homography.get(1, 0)[0]
-            val h11 = homography.get(1, 1)[0]
-            val det = h00 * h11 - h01 * h10
+            // AFFINE SANITY CHECK
+            // Matrix structure: [ cos(th)*s, -sin(th)*s, tx ]
+            //                   [ sin(th)*s,  cos(th)*s, ty ]
+            val a00 = affine.get(0, 0)[0]
+            val a01 = affine.get(0, 1)[0]
+            val a10 = affine.get(1, 0)[0]
+            val a11 = affine.get(1, 1)[0]
             
-            // Stricter sanity checks to prevent "wedges of color" (severe perspective skew/scale)
-            val isSane = det > 0.1 && det < 10.0 && Math.abs(h01) < 0.5 && Math.abs(h10) < 0.5
+            // Determinant of the 2x2 part is the squared scale
+            val det = a00 * a11 - a01 * a10
+            // Scale should be roughly 1.0 (between 0.5x and 2.0x)
+            val isSane = det > 0.25 && det < 4.0
             
             if (!isSane) {
-                homography.release()
-                return@withContext AlignmentResult(false, null, 0f, "Homography failed sanity check (det=${"%.2f".format(det)}, skewX=${"%.2f".format(h01)}, skewY=${"%.2f".format(h10)})", refKpCount, queryKpCount, inlierCount, "feature")
+                affine.release()
+                return@withContext AlignmentResult(false, null, 0f, "Affine failed sanity check (scaleSq=${"%.2f".format(det)})", refKpCount, queryKpCount, inlierCount, "feature")
             }
 
             val confidence = inlierCount.toFloat() / matchList.size.toFloat()
             val warped = Mat()
-            Imgproc.warpPerspective(queryMat, warped, homography, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
+            Imgproc.warpAffine(queryMat, warped, affine, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
             val alignedBitmap = Bitmap.createBitmap(warped.cols(), warped.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(warped, alignedBitmap)
             warped.release()
-            homography.release()
+            affine.release()
             refMasked.release()
             AlignmentResult(
                 success = true,

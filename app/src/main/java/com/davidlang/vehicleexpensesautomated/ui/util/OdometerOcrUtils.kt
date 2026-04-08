@@ -49,7 +49,7 @@ object OdometerOcrUtils {
         }
     }
 
-    fun runRawOcr(bitmap: Bitmap): Pair<String, List<TextBlock>> {
+    fun runRawOcr(bitmap: Bitmap, whitelist: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
         try {
@@ -59,7 +59,7 @@ object OdometerOcrUtils {
                 return "(Tesseract init failed)" to emptyList()
             }
 
-            tess.setVariable("tessedit_char_whitelist", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+            tess.setVariable("tessedit_char_whitelist", whitelist)
 
             tess.setImage(bitmap)
 
@@ -88,9 +88,10 @@ object OdometerOcrUtils {
 
     suspend fun runMultiStepOcr(crop: Bitmap, context: android.content.Context): List<OcrStepResult> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<OcrStepResult>()
+        val numericWhitelist = "0123456789"
         
         // 0. Raw
-        val (text0, _) = runRawOcr(crop)
+        val (text0, _) = runRawOcr(crop, numericWhitelist)
         steps.add(OcrStepResult("Raw", crop.copy(Bitmap.Config.ARGB_8888, true), text0))
         
         val mat = Mat()
@@ -101,7 +102,7 @@ object OdometerOcrUtils {
         Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
         val bmpGray = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(gray, bmpGray)
-        val (text1, _) = runRawOcr(bmpGray)
+        val (text1, _) = runRawOcr(bmpGray, numericWhitelist)
         steps.add(OcrStepResult("Grayscale", bmpGray, text1))
         
         // 2. Bilateral Filter (Noise reduction)
@@ -109,7 +110,7 @@ object OdometerOcrUtils {
         Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
         val bmpFiltered = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(filtered, bmpFiltered)
-        val (text2, _) = runRawOcr(bmpFiltered)
+        val (text2, _) = runRawOcr(bmpFiltered, numericWhitelist)
         steps.add(OcrStepResult("Bilateral", bmpFiltered, text2))
         
         // 3. CLAHE (Contrast Limited Adaptive Histogram Equalization) + Adaptive Threshold
@@ -121,7 +122,7 @@ object OdometerOcrUtils {
         Imgproc.adaptiveThreshold(claheMat, adaptiveThresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
         val bmpAdaptive = Bitmap.createBitmap(adaptiveThresh.cols(), adaptiveThresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(adaptiveThresh, bmpAdaptive)
-        val (text3, _) = runRawOcr(bmpAdaptive)
+        val (text3, _) = runRawOcr(bmpAdaptive, numericWhitelist)
         steps.add(OcrStepResult("CLAHE+Adapt", bmpAdaptive, text3))
         
         // 4. OTSU Threshold (Good for high contrast, e.g. OLED screens)
@@ -129,7 +130,7 @@ object OdometerOcrUtils {
         Imgproc.threshold(gray, otsuThresh, 0.0, 255.0, Imgproc.THRESH_BINARY or Imgproc.THRESH_OTSU)
         val bmpOtsu = Bitmap.createBitmap(otsuThresh.cols(), otsuThresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(otsuThresh, bmpOtsu)
-        val (text4, _) = runRawOcr(bmpOtsu)
+        val (text4, _) = runRawOcr(bmpOtsu, numericWhitelist)
         steps.add(OcrStepResult("Otsu", bmpOtsu, text4))
 
         mat.release()
