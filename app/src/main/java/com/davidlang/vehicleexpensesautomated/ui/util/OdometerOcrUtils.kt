@@ -111,12 +111,12 @@ object OdometerOcrUtils {
         steps.add(OcrStepResult("Bilateral", bmpFiltered, text2))
         
         // 3. CLAHE (Contrast Limited Adaptive Histogram Equalization) + Adaptive Threshold
-        val clahe = Imgproc.createCLAHE(1.5, org.opencv.core.Size(8.0, 8.0)) // low clipLimit to avoid hollowing
+        val clahe = Imgproc.createCLAHE(1.2, org.opencv.core.Size(8.0, 8.0)) // lowered clipLimit
         val claheMat = Mat()
         clahe.apply(gray, claheMat)
         val adaptiveThresh = Mat()
-        // Block size 15, constant 5.0 (less sensitive to noise than default)
-        Imgproc.adaptiveThreshold(claheMat, adaptiveThresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 15, 5.0)
+        // Block size 11, constant 2.0 (more sensitive to detail than 15/5.0)
+        Imgproc.adaptiveThreshold(claheMat, adaptiveThresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
         val bmpAdaptive = Bitmap.createBitmap(adaptiveThresh.cols(), adaptiveThresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(adaptiveThresh, bmpAdaptive)
         val (text3, _) = runRawOcr(bmpAdaptive)

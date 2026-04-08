@@ -225,7 +225,12 @@ private suspend fun runFullExperiment(
                 }
                 
                 // Matching
-                val allResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCropF, otherTextCropF, skipExpensiveORB = true, globalWordCounts = globalWordCounts)
+                val allOtherRefs = cachedRefs.map { it.ocr.textBlocks }
+                val allResults = ImageAlignmentUtils.matchWithAllMethods(
+                    ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCropF, otherTextCropF, 
+                    skipExpensiveORB = true, globalWordCounts = globalWordCounts, 
+                    allOtherRefs = allOtherRefs
+                )
                 val consensusRes = allResults["consensus"]!!
                 
                 allResults.forEach { (m, res) ->

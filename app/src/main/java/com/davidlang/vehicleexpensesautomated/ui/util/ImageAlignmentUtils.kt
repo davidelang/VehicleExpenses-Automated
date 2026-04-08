@@ -86,7 +86,7 @@ object ImageAlignmentUtils {
         return if (totalWeight > 0) (score - penalty) / totalWeight else 0f
     }
 
-    fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
+    fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, allOtherRefs: List<List<TextBlock>> = emptyList()): Float {
         if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
         val anchors = listOf("MPH", "KM/H", "160", "140", "120", "100", "80", "60", "40", "20", "PRNDL", "TRIP", "ODO")
         var matchCount = 0
@@ -97,10 +97,16 @@ object ImageAlignmentUtils {
             val inQuery = queryBlocks.any { it.text.contains(anchor, ignoreCase = true) }
             
             if (inQuery && !inRef) {
-                // HARD VETO: This anchor exists on the dash we are looking at, 
-                // but NOT on the reference for this vehicle. 
-                // Therefore it cannot be this vehicle.
-                return -1.0f
+                // Potential Veto. But only if we KNOW another vehicle has this anchor.
+                // This prevents vetoing due to poor OCR on the current reference.
+                val knownByOthers = allOtherRefs.any { other -> 
+                    other.any { it.text.contains(anchor, ignoreCase = true) }
+                }
+                
+                if (knownByOthers) {
+                    // HARD VETO: Found in query, missing in this ref, but known to exist in others.
+                    return -1.0f
+                }
             }
             
             if (inRef) {
@@ -362,7 +368,8 @@ object ImageAlignmentUtils {
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null,
         skipExpensiveORB: Boolean = false,
-        globalWordCounts: Map<String, Int> = emptyMap()
+        globalWordCounts: Map<String, Int> = emptyMap(),
+        allOtherRefs: List<List<TextBlock>> = emptyList()
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         
@@ -384,7 +391,7 @@ object ImageAlignmentUtils {
         results["embedding"] = AlignmentResult(true, null, embScore, "Emb (${System.currentTimeMillis()-t0}ms)", method = "embedding")
         
         t0 = System.currentTimeMillis()
-        val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, allOtherRefs)
         results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor (${System.currentTimeMillis()-t0}ms)", method = "anchor")
         
         // 3. CONSENSUS SCORING
