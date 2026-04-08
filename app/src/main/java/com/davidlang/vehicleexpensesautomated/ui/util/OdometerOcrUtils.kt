@@ -239,9 +239,25 @@ object OdometerOcrUtils {
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
         val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
         val bitmap = rotateImageIfRequired(rawBitmap, photoPath)
-        val (rawTesseract, textBlocksOut) = runRawOcr(bitmap)
+        
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat()
+        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        val filtered = Mat()
+        Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
+        
+        val preprocessed = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(filtered, preprocessed)
+        
+        val (rawTesseract, textBlocksOut) = runRawOcr(preprocessed)
+        
+        mat.release()
+        gray.release()
+        filtered.release()
+        
         val debugText = buildString {
-            appendLine("=== FULL IMAGE OCR (light) ===\n")
+            appendLine("=== FULL IMAGE OCR (preprocessed) ===\n")
             appendLine("Tesseract: $rawTesseract")
         }
         val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
