@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.photo
 
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -8,14 +9,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import java.io.File
 
 @Composable
 fun PhotoAnalysisScreen(
@@ -32,31 +29,36 @@ fun PhotoAnalysisScreen(
     LaunchedEffect(photoUri) {
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                val image = InputImage.fromFilePath(context, photoUri)
-                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                val result = recognizer.process(image).await()
-                val text = result.text
+                // Copy uri to temp file for Tesseract processing
+                val tempFile = File.createTempFile("analysis_", ".jpg", context.cacheDir)
+                context.contentResolver.openInputStream(photoUri)?.use { input ->
+                    tempFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                
+                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
+                val fullText = result.textBlocks.joinToString(" ") { it.text }
+                tempFile.delete()
 
                 if (isVehicleDetection) {
-                    val plate = Regex("[A-Z0-9]{3,8}").find(text)?.value
-                    val odo = extractOdometer(text)
+                    val plate = Regex("[A-Z0-9]{3,8}").find(fullText)?.value
+                    val odo = extractOdometer(fullText)
                     if (plate != null) {
-                        onVehicleDetected(1, "Toyota Camry (auto-matched)")
+                        onVehicleDetected(1, "Auto-matched Vehicle")
                         onDataExtracted(null, odo, null, null, null, null)
                         status = "Vehicle + odometer detected!"
                     } else {
                         onManualEntry()
                     }
                 } else {
-                    // Pump photo: gallons + cost extraction (US pump style)
-                    val gallons = extractGallons(text)
-                    val cost = extractCost(text)
-                    val odo = extractOdometer(text)
-                    val desc = extractDescription(text)
+                    val gallons = extractGallons(fullText)
+                    val cost = extractCost(fullText)
+                    val odo = extractOdometer(fullText)
+                    val desc = extractDescription(fullText)
                     onDataExtracted(null, odo, gallons, cost, null, desc)
-                    status = if (gallons != null && cost != null) "Pump data extracted!" else "Review extracted values"
+                    status = if (gallons != null && cost != null) "Data extracted!" else "Review values"
                 }
             } catch (e: Exception) {
+                Log.e("PhotoAnalysis", "Analysis failed", e)
                 onManualEntry()
             }
         }
@@ -70,6 +72,7 @@ fun PhotoAnalysisScreen(
         ) {
             CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
+            @Suppress("DEPRECATION")
             Text(status, style = MaterialTheme.typography.bodyLarge)
         }
     }
@@ -79,8 +82,3 @@ private fun extractGallons(text: String): Double? = Regex("""(\d+\.\d+)\s*GAL"""
 private fun extractCost(text: String): Double? = Regex("""\$?(\d+\.\d{2})""").find(text)?.groupValues?.get(1)?.toDouble()
 private fun extractOdometer(text: String): Int? = Regex("""\b(\d{4,7})\b""").findAll(text).map { it.value.toInt() }.maxOrNull()
 private fun extractDescription(text: String): String? = text.lines().firstOrNull { it.length > 10 }
-
-private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T = suspendCancellableCoroutine { cont ->
-    addOnSuccessListener { cont.resume(it) }
-    addOnFailureListener { cont.resumeWithException(it) }
-}
