@@ -452,7 +452,6 @@ private fun pickBestOdometer(fullSteps: List<OcrStepResult>, anchorSteps: List<O
             "Grayscale" -> 1.5f
             "Bilateral" -> 1.5f
             "Raw" -> 1.0f
-            "CLAHE" -> 0.5f
             "Threshold" -> 0.5f
             else -> 1.0f
         }
