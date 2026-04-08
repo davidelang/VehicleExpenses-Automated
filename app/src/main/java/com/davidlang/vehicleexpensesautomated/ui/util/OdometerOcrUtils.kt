@@ -110,27 +110,17 @@ object OdometerOcrUtils {
         val (text2, _) = runRawOcr(bmpFiltered)
         steps.add(OcrStepResult("Bilateral", bmpFiltered, text2))
         
-        // 3. CLAHE (Contrast)
-        val enhanced = Mat()
-        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-        clahe.apply(filtered, enhanced)
-        val bmpEnhanced = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(enhanced, bmpEnhanced)
-        val (text3, _) = runRawOcr(bmpEnhanced)
-        steps.add(OcrStepResult("CLAHE", bmpEnhanced, text3))
-        
-        // 4. Adaptive Threshold
+        // 3. Adaptive Threshold (Applied directly to Bilateral output)
         val thresh = Mat()
-        Imgproc.adaptiveThreshold(enhanced, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+        Imgproc.adaptiveThreshold(filtered, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
         val bmpThresh = Bitmap.createBitmap(thresh.cols(), thresh.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(thresh, bmpThresh)
-        val (text4, _) = runRawOcr(bmpThresh)
-        steps.add(OcrStepResult("Threshold", bmpThresh, text4))
+        val (text3, _) = runRawOcr(bmpThresh)
+        steps.add(OcrStepResult("Threshold", bmpThresh, text3))
         
         mat.release()
         gray.release()
         filtered.release()
-        enhanced.release()
         thresh.release()
         
         steps
