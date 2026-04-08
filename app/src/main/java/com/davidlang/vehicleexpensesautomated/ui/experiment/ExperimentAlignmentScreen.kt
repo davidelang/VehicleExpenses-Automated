@@ -170,7 +170,6 @@ private suspend fun runFullExperiment(
     var successCount = 0
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val jsonArray = JSONArray()
-    
     // Cache references
     val cachedRefs = vehicles.mapNotNull { vehicle ->
         val url = vehicle.referenceDashPhotoUrl ?: return@mapNotNull null
@@ -181,6 +180,17 @@ private suspend fun runFullExperiment(
         CachedRef(vehicle, bmp, ocr)
     }
 
+    // NEW: Calculate Global Word Significance (Inverse Document Frequency)
+    // Map of word -> count of vehicles that contain it
+    val globalWordCounts = mutableMapOf<String, Int>()
+    cachedRefs.forEach { ref ->
+        val uniqueWords = ref.ocr.textBlocks.map { it.text.lowercase().trim() }.toSet()
+        uniqueWords.forEach { word ->
+            globalWordCounts[word] = (globalWordCounts[word] ?: 0) + 1
+        }
+    }
+
+    // Streaming State
     var currentPage = 1
     var currentSize = 0L
     val maxSizeKB = 2000
@@ -215,7 +225,7 @@ private suspend fun runFullExperiment(
                 }
                 
                 // Matching
-                val allResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCropF, otherTextCropF, skipExpensiveORB = true)
+                val allResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocr, queryOcr, odometerCropF, otherTextCropF, skipExpensiveORB = true, globalWordCounts = globalWordCounts)
                 val consensusRes = allResults["consensus"]!!
                 
                 allResults.forEach { (m, res) ->
