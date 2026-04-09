@@ -14,6 +14,10 @@ import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import java.io.File
 import com.googlecode.tesseract.android.TessBaseAPI
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.tasks.await
 
 data class TextBlock(
     val text: String,
@@ -94,6 +98,20 @@ object OdometerOcrUtils {
         val (text0, _) = runRawOcr(crop, numericWhitelist)
         steps.add(OcrStepResult("Raw", crop.copy(Bitmap.Config.ARGB_8888, true), text0))
         
+        // 0.5 Advanced (ML Kit - TPU Optimized)
+        val mlKitText = runMlKitOcr(crop)
+        steps.add(OcrStepResult("ML Kit", crop.copy(Bitmap.Config.ARGB_8888, true), mlKitText))
+
+        // 0.75 TFLite Custom (Mechanical Digits)
+        try {
+            val tfliteEngine = TfLiteOcrEngine(context)
+            val tfliteText = tfliteEngine.runInference(crop)
+            steps.add(OcrStepResult("TFLite", crop.copy(Bitmap.Config.ARGB_8888, true), tfliteText))
+            tfliteEngine.close()
+        } catch (e: Exception) {
+            steps.add(OcrStepResult("TFLite", crop.copy(Bitmap.Config.ARGB_8888, true), "(Error)"))
+        }
+
         val mat = Mat()
         org.opencv.android.Utils.bitmapToMat(crop, mat)
         
@@ -209,14 +227,29 @@ object OdometerOcrUtils {
             }
         }
 
-        val (rawTesseract, textBlocks) = runRawOcr(bitmap)
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat()
+        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        val filtered = Mat()
+        Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
+        
+        val preprocessed = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(filtered, preprocessed)
+        
+        // USE ML KIT FOR FULL IMAGE SCAN
+        val (rawText, textBlocks) = runMlKitOcrFull(preprocessed)
+        
+        mat.release()
+        gray.release()
+        filtered.release()
 
         val debugText = buildString {
-            appendLine("=== OCR DEBUG (ML Kit reverted) ===\n")
-            appendLine("Tesseract: $rawTesseract")
+            appendLine("=== OCR DEBUG (preprocessed) ===\n")
+            appendLine("ML Kit Text: $rawText")
         }
 
-        val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
+        val cleanRaw = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
         val possible = mutableListOf<String>()
         if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
 
@@ -258,14 +291,13 @@ object OdometerOcrUtils {
         filtered.release()
         
         val debugText = buildString {
-            appendLine("=== FULL IMAGE OCR (preprocessed) ===\n")
+            appendLine("=== FULL IMAGE OCR (preprocessed Tesseract) ===\n")
             appendLine("Tesseract: $rawTesseract")
         }
         val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
         val possible = mutableListOf<String>()
         if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
         val textBlocks = textBlocksOut.toMutableList()
-        val cleaningTexts = deduplicateWith?.map { it.text }?.toSet() ?: emptySet()
         
         OcrResult(
             odometer = cleanRaw.takeIf { it.length in 4..6 },
@@ -280,5 +312,48 @@ object OdometerOcrUtils {
             imageWidth = bitmap.width,
             imageHeight = bitmap.height
         )
+    }
+
+    private suspend fun runMlKitOcr(bitmap: Bitmap): String {
+        return try {
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val result = recognizer.process(image).await()
+            // Filter: Alpha-numeric and /
+            val filtered = result.text.filter { it.isLetterOrDigit() || it == '/' }
+            if (filtered.isEmpty()) "(no text)" else filtered
+        } catch (e: Exception) {
+            "(ML Kit Error: ${e.message})"
+        }
+    }
+
+    private suspend fun runMlKitOcrFull(bitmap: Bitmap): Pair<String, List<TextBlock>> {
+        return try {
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val result = recognizer.process(image).await()
+            val blocks = mutableListOf<TextBlock>()
+            val filteredText = StringBuilder()
+            
+            for (block in result.textBlocks) {
+                for (line in block.lines) {
+                    for (element in line.elements) {
+                        val rect = element.boundingBox
+                        // Filter word: keep alphanumeric and /
+                        val rawWord = element.text
+                        val filteredWord = rawWord.filter { it.isLetterOrDigit() || it == '/' }.trim()
+                        
+                        if (rect != null && filteredWord.isNotBlank()) {
+                            blocks.add(TextBlock(filteredWord, rect))
+                            filteredText.append(filteredWord).append(" ")
+                        }
+                    }
+                }
+            }
+            filteredText.toString().trim() to blocks
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "ML Kit failed", e)
+            "(ML Kit error: ${e.message})" to emptyList()
+        }
     }
 }

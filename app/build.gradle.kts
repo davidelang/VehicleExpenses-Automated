@@ -56,6 +56,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("com.google.android.gms:play-services-auth:21.0.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     // Coil for image thumbnails
     implementation("io.coil-kt:coil-compose:2.6.0")
     // Room DB
@@ -86,6 +87,10 @@ dependencies {
     implementation("org.opencv:opencv:4.10.0")
     // Tesseract (main OCR engine)
     implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+    // TFLite core
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
 
 // No more PaddleOCR validation — model has been removed
