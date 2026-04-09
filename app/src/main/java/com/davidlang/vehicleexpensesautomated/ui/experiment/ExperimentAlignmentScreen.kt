@@ -208,9 +208,13 @@ private suspend fun runExperiment(
         val tessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
         val mlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
         
+        val annotatedBmp = drawCropBoxesOnReference(bmp, v)
+        val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
+        annotatedBmp.recycle()
+
         ReferenceCache(
             vehicle = v,
-            referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(bmp, v), 80),
+            referenceBase64 = refBase64,
             fullOcrText = mapOf("Tesseract" to (tessOcr.debugText), "ML Kit" to (mlKitOcr.debugText)),
             ocrResult = mlKitOcr, // Use ML Kit for anchor matching
             bmp = bmp
@@ -285,8 +289,8 @@ private suspend fun runExperiment(
                 // Alignment Previews
                 val orbRes = matchResults["feature"]!!
                 val hubRes = matchResults["hub"]!!
-                val orbBase64 = if (orbRes.success && orbRes.alignedImage != null) bitmapToBase64(orbRes.alignedImage, 70) else ""
-                val hubBase64 = if (hubRes.success && hubRes.alignedImage != null) bitmapToBase64(hubRes.alignedImage, 70) else ""
+                val orbBase64 = if (orbRes.success && orbRes.alignedImage != null) createScaledBase64(orbRes.alignedImage, 400, 70) else ""
+                val hubBase64 = if (hubRes.success && hubRes.alignedImage != null) createScaledBase64(hubRes.alignedImage, 400, 70) else ""
                 
                 // OCR Strategy Trace (Phase 1: Raw only)
                 // We'll simulate the Trace Columns here
@@ -440,6 +444,20 @@ private fun buildHtmlRowFoundation(
     // Column 6: Summary
     appendLine("<td><b>Winner:</b> $winnerName<br><b>Conf:</b> ${"%.2f".format(bestConf)}<br><b>Odometer:</b> $pickedOdo</td>")
     appendLine("</tr>")
+}
+
+private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
+    val q = quality.coerceIn(0, 100)
+    val width = targetWidth.coerceAtMost(bitmap.width)
+    val height = (width.toFloat() / bitmap.width * bitmap.height).toInt()
+    if (width <= 0 || height <= 0) return ""
+    
+    val scaled = Bitmap.createScaledBitmap(bitmap, width, height, true)
+    val outputStream = ByteArrayOutputStream()
+    scaled.compress(Bitmap.CompressFormat.JPEG, q, outputStream)
+    val base64 = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+    scaled.recycle()
+    return base64
 }
 
 private fun bitmapToBase64(bitmap: Bitmap, quality: Int): String {
