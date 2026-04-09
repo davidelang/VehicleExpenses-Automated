@@ -1,11 +1,11 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Point
-import android.graphics.Rect
+import android.graphics.RectF
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,9 +13,9 @@ import org.opencv.android.OpenCVLoader
 import org.opencv.core.*
 import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
+import org.opencv.video.Video
 import org.opencv.calib3d.Calib3d
-import kotlin.math.max
-import kotlin.math.min
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 data class AlignmentResult(
@@ -28,458 +28,225 @@ data class AlignmentResult(
     val goodMatchesCount: Int = 0,
     val method: String = "feature",
     val wordVeto: Boolean = false,
-    val timeMs: Long = 0
+    val vetoReason: String = "",
+    val timeMs: Long = 0,
+    val tierReached: Int = 0
 )
 
 object ImageAlignmentUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
             Log.e("ImageAlignment", "OpenCV initialization failed!")
-        } else {
-            Log.i("ImageAlignment", "OpenCV initialized successfully")
         }
-    }
-
-    private fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, imgW: Int, imgH: Int): Boolean {
-        if (crop == null || imgW == 0 || imgH == 0) return false
-        val bx = block.boundingBox.centerX().toFloat() / imgW.toFloat()
-        val by = block.boundingBox.centerY().toFloat() / imgH.toFloat()
-        return bx >= crop.left && bx <= crop.right && by >= crop.top && by <= crop.bottom
-    }
-
-    private fun boxIoU(r1: android.graphics.Rect, r2: android.graphics.Rect): Float {
-        val interLeft = max(r1.left, r2.left)
-        val interTop = max(r1.top, r2.top)
-        val interRight = min(r1.right, r2.right)
-        val interBottom = min(r1.bottom, r2.bottom)
-        if (interRight <= interLeft || interBottom <= interTop) return 0f
-        val interArea = (interRight - interLeft) * (interBottom - interTop).toFloat()
-        val area1 = (r1.right - r1.left) * (r1.bottom - r1.top).toFloat()
-        val area2 = (r2.right - r2.left) * (r2.bottom - r2.top).toFloat()
-        return interArea / (area1 + area2 - interArea)
-    }
-
-    private fun argMatch(
-        refBlocks: List<TextBlock>, 
-        queryBlocks: List<TextBlock>, 
-        globalWordCounts: Map<String, Int> = emptyMap(),
-        refOdoCrop: android.graphics.RectF? = null,
-        refOtherCrop: android.graphics.RectF? = null,
-        refW: Int = 0,
-        refH: Int = 0
-    ): Float {
-        if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
-        
-        // Filter out blocks in crop zones for reference
-        val filteredRef = refBlocks.filter { !isBlockInCrop(it, refOdoCrop, refW, refH) && !isBlockInCrop(it, refOtherCrop, refW, refH) }
-        if (filteredRef.isEmpty()) return 0f
-
-        var score = 0f
-        var totalWeight = 0f
-        
-        val refWords = filteredRef.map { it.text.lowercase().trim() }.toSet()
-        
-        for (r in filteredRef) {
-            val word = r.text.lowercase().trim()
-            val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
-            totalWeight += weight
-            
-            for (q in queryBlocks) {
-                if (word == q.text.lowercase().trim()) {
-                    score += weight
-                    break // Only match once per reference block
-                }
-            }
-        }
-        
-        // Soft penalty for words found in query that are NOT in reference
-        // but ARE known to exist in other vehicles.
-        var penalty = 0f
-        for (q in queryBlocks) {
-            val word = q.text.lowercase().trim()
-            if (!refWords.contains(word) && globalWordCounts.containsKey(word)) {
-                val weight = 1.0f / globalWordCounts[word]!!.toFloat()
-                penalty += weight * 0.5f 
-            }
-        }
-        
-        return if (totalWeight > 0) (score - penalty) / totalWeight else 0f
-    }
-
-    fun anchorMatch(
-        refBlocks: List<TextBlock>, 
-        queryBlocks: List<TextBlock>, 
-        allOtherRefs: List<OcrResult> = emptyList(),
-        refOdoCrop: android.graphics.RectF? = null,
-        refOtherCrop: android.graphics.RectF? = null,
-        refW: Int = 0,
-        refH: Int = 0,
-        dynamicAnchors: Map<String, String> = emptyMap(),
-        currentVehicleName: String = ""
-    ): Float {
-        if (refBlocks.isEmpty() || queryBlocks.isEmpty()) return 0f
-        
-        // 1. Define standard anchors
-        val anchors = listOf("MPH", "KM/H", "160", "140", "120", "100", "80", "60", "40", "20", "PRNDL", "TRIP", "ODO")
-        
-        // 2. Filter blocks
-        val filteredRef = refBlocks.filter { !isBlockInCrop(it, refOdoCrop, refW, refH) && !isBlockInCrop(it, refOtherCrop, refW, refH) }
-        val refWords = filteredRef.map { it.text.lowercase().trim() }.toSet()
-        
-        var matchCount = 0
-        var totalPossible = 0
-        
-        for (anchor in anchors) {
-            val anchorLower = anchor.lowercase()
-            val inRef = refWords.any { it.contains(anchorLower) }
-            val inQuery = queryBlocks.any { it.text.lowercase().contains(anchorLower) }
-            
-            if (inQuery && !inRef) {
-                // Check if any other vehicle actually HAS this anchor in its non-crop zones
-                val knownByOthers = allOtherRefs.any { other -> 
-                    val otherFiltered = other.textBlocks.filter { !isBlockInCrop(it, null, other.imageWidth, other.imageHeight) } // we don't have other's crops easily here
-                    otherFiltered.any { it.text.lowercase().contains(anchorLower) }
-                }
-                
-                if (knownByOthers) {
-                    return -1.0f // HARD VETO
-                }
-            }
-            
-            if (inRef) {
-                totalPossible++
-                if (inQuery) matchCount++
-            }
-        }
-        
-        // 3. Dynamic Golden Anchor Veto
-        for (q in queryBlocks) {
-            val word = q.text.lowercase().trim()
-            if (word.length < 3) continue
-            val belongsTo = dynamicAnchors[word]
-            if (belongsTo != null && belongsTo != currentVehicleName) {
-                // This word is unique to another vehicle!
-                return -1.0f
-            }
-        }
-
-        if (totalPossible == 0) return 0f
-        return matchCount.toFloat() / totalPossible.toFloat()
-    }
-
-    fun projectCropViaAnchor(
-        refBlocks: List<TextBlock>,
-        queryBlocks: List<TextBlock>,
-        refCrop: android.graphics.RectF,
-        refW: Int,
-        refH: Int,
-        queryW: Int,
-        queryH: Int
-    ): android.graphics.RectF? {
-        val anchors = listOf("MPH", "KM/H", "160", "140", "120", "100", "80", "60", "40", "20", "PRNDL", "ODO", "TRIP")
-        for (anchorText in anchors) {
-            val refAnchor = refBlocks.find { it.text.contains(anchorText, ignoreCase = true) }
-            val queryAnchor = queryBlocks.find { it.text.contains(anchorText, ignoreCase = true) }
-            if (refAnchor != null && queryAnchor != null) {
-                val rA = refAnchor.boundingBox
-                val qA = queryAnchor.boundingBox
-                val scaleX = qA.width().toFloat() / rA.width().toFloat()
-                val scaleY = qA.height().toFloat() / rA.height().toFloat()
-                val avgScale = (scaleX + scaleY) / 2f
-                val refCropPx = android.graphics.RectF(refCrop.left * refW, refCrop.top * refH, refCrop.right * refW, refCrop.bottom * refH)
-                val dx = refCropPx.centerX() - rA.centerX()
-                val dy = refCropPx.centerY() - rA.centerY()
-                val qCenterX = qA.centerX() + (dx * avgScale)
-                val qCenterY = qA.centerY() + (dy * avgScale)
-                val qWidth = refCropPx.width() * avgScale
-                val qHeight = refCropPx.height() * avgScale
-                val qLeft = (qCenterX - qWidth / 2f) / queryW
-                val qTop = (qCenterY - qHeight / 2f) / queryH
-                val qRight = (qCenterX + qWidth / 2f) / queryW
-                val qBottom = (qCenterY + qHeight / 2f) / queryH
-                return android.graphics.RectF(qLeft.coerceIn(0f, 1f), qTop.coerceIn(0f, 1f), qRight.coerceIn(0f, 1f), qBottom.coerceIn(0f, 1f))
-            }
-        }
-        return null
-    }
-
-    private fun histogramMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
-        val gridSize = 5
-        val refHist = IntArray(gridSize * gridSize)
-        val queryHist = IntArray(gridSize * gridSize)
-        val refWords = mutableSetOf<String>()
-        val queryWords = mutableSetOf<String>()
-        for (b in refBlocks) {
-            val gx = (b.boundingBox.centerX() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
-            val gy = (b.boundingBox.centerY() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
-            refHist[gx + gy * gridSize]++
-            refWords.add(b.text.lowercase())
-        }
-        for (b in queryBlocks) {
-            val gx = (b.boundingBox.centerX() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
-            val gy = (b.boundingBox.centerY() / 1000f * gridSize).toInt().coerceIn(0, gridSize-1)
-            queryHist[gx + gy * gridSize]++
-            queryWords.add(b.text.lowercase())
-        }
-        var histScore = 0f
-        for (i in refHist.indices) {
-            histScore += min(refHist[i], queryHist[i]).toFloat()
-        }
-        val textScore = refWords.intersect(queryWords).size.toFloat() / max(refWords.size, queryWords.size)
-        return (histScore / (refBlocks.size + queryBlocks.size)) * 0.6f + textScore * 0.4f
-    }
-
-    private fun embeddingMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, globalWordCounts: Map<String, Int> = emptyMap()): Float {
-        val allWords = (refBlocks + queryBlocks).map { it.text.lowercase().trim() }.toSet()
-        val refVec = FloatArray(allWords.size)
-        val queryVec = FloatArray(allWords.size)
-        val wordMap = allWords.withIndex().associate { it.value to it.index }
-        
-        for (b in refBlocks) {
-            val word = b.text.lowercase().trim()
-            val idx = wordMap[word] ?: continue
-            val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
-            refVec[idx] += weight
-        }
-        for (b in queryBlocks) {
-            val word = b.text.lowercase().trim()
-            val idx = wordMap[word] ?: continue
-            val weight = 1.0f / (globalWordCounts[word] ?: 1).toFloat()
-            queryVec[idx] += weight
-        }
-        var dot = 0f
-        var normRef = 0f
-        var normQuery = 0f
-        for (i in refVec.indices) {
-            dot += refVec[i] * queryVec[i]
-            normRef += refVec[i] * refVec[i]
-            normQuery += queryVec[i] * queryVec[i]
-        }
-        val textSim = if (normRef > 0 && normQuery > 0) dot / (sqrt(normRef.toDouble()).toFloat() * sqrt(normQuery.toDouble()).toFloat()) else 0f
-        var layoutSim = 0f
-        for (r in refBlocks) {
-            for (q in queryBlocks) {
-                layoutSim += boxIoU(r.boundingBox, q.boundingBox)
-            }
-        }
-        layoutSim /= (refBlocks.size * queryBlocks.size).toFloat()
-        return textSim * 0.7f + layoutSim * 0.3f
     }
 
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
-        minInliers: Int = 15,
+        minInliers: Int = 10,
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null
     ): AlignmentResult = withContext(Dispatchers.IO) {
         val refMat = Mat()
         val queryMat = Mat()
-        try {
-            org.opencv.android.Utils.bitmapToMat(reference, refMat)
-            org.opencv.android.Utils.bitmapToMat(query, queryMat)
-            val refMasked = refMat.clone()
-            if (odometerCrop != null) {
-                val left = (odometerCrop.left * refMat.cols()).toInt().coerceAtLeast(0)
-                val top = (odometerCrop.top * refMat.rows()).toInt().coerceAtLeast(0)
-                val right = (odometerCrop.right * refMat.cols()).toInt().coerceAtMost(refMat.cols())
-                val bottom = (odometerCrop.bottom * refMat.rows()).toInt().coerceAtMost(refMat.rows())
-                if (right > left && bottom > top) {
-                    val roi = org.opencv.core.Rect(left, top, right - left, bottom - top)
-                    val sub = refMasked.submat(roi)
-                    sub.setTo(Scalar(0.0, 0.0, 0.0))
-                    sub.release()
-                }
-            }
-            if (otherTextCrop != null) {
-                val left = (otherTextCrop.left * refMat.cols()).toInt().coerceAtLeast(0)
-                val top = (otherTextCrop.top * refMat.rows()).toInt().coerceAtLeast(0)
-                val right = (otherTextCrop.right * refMat.cols()).toInt().coerceAtMost(refMat.cols())
-                val bottom = (otherTextCrop.bottom * refMat.rows()).toInt().coerceAtMost(refMat.rows())
-                if (right > left && bottom > top) {
-                    val roi = org.opencv.core.Rect(left, top, right - left, bottom - top)
-                    val sub = refMasked.submat(roi)
-                    sub.setTo(Scalar(0.0, 0.0, 0.0))
-                    sub.release()
-                }
-            }
-            val refGray = Mat()
-            val queryGray = Mat()
-            Imgproc.cvtColor(refMasked, refGray, Imgproc.COLOR_RGB2GRAY)
-            Imgproc.cvtColor(queryMat, queryGray, Imgproc.COLOR_RGB2GRAY)
-            val orb = ORB.create(500)
-            val refKeypoints = MatOfKeyPoint()
-            val queryKeypoints = MatOfKeyPoint()
-            val refDescriptors = Mat()
-            val queryDescriptors = Mat()
-            orb.detectAndCompute(refGray, Mat(), refKeypoints, refDescriptors)
-            orb.detectAndCompute(queryGray, Mat(), queryKeypoints, queryDescriptors)
-            val refKpCount = refKeypoints.rows()
-            val queryKpCount = queryKeypoints.rows()
-            if (refDescriptors.empty() || queryDescriptors.empty()) {
-                return@withContext AlignmentResult(false, null, 0f, "Not enough features detected", refKpCount, queryKpCount, 0, "feature")
-            }
-            val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
-            val matches = MatOfDMatch()
-            matcher.match(queryDescriptors, refDescriptors, matches)
-            val goodMatches = mutableListOf<DMatch>()
-            val matchList = matches.toList()
-            val minDist = matchList.minOfOrNull { it.distance } ?: 0f
-            for (i in 0 until matchList.size - 1) {
-                val m = matchList[i]
-                val n = matchList[i + 1]
-                if (m.distance < 0.75 * n.distance && m.distance < 2.5 * minDist) {
-                    goodMatches.add(m)
-                }
-            }
-            val goodMatchesCount = goodMatches.size
-            if (goodMatchesCount < minInliers) {
-                return@withContext AlignmentResult(false, null, 0f, "Only $goodMatchesCount good matches (need $minInliers)", refKpCount, queryKpCount, goodMatchesCount, "feature")
-            }
-            val srcPoints = MatOfPoint2f()
-            val dstPoints = MatOfPoint2f()
-            val srcList = mutableListOf<org.opencv.core.Point>()
-            val dstList = mutableListOf<org.opencv.core.Point>()
-            goodMatches.forEach { match ->
-                val queryPt = queryKeypoints.toArray()[match.queryIdx].pt
-                val refPt = refKeypoints.toArray()[match.trainIdx].pt
-                srcList.add(queryPt)
-                dstList.add(refPt)
-            }
-            srcPoints.fromList(srcList)
-            dstPoints.fromList(dstList)
-            val mask = Mat()
-            // USE AFFINE PARTIAL 2D (4-DOF: Translation, Rotation, Scale)
-            // This prevents "pinwheel/wedge" distortion by strictly forbidding perspective/tilt changes.
-            val affine = Calib3d.estimateAffinePartial2D(srcPoints, dstPoints, mask, Calib3d.RANSAC, 3.0)
-            
-            var inlierCount = 0
-            if (!affine.empty()) {
-                for (i in 0 until mask.rows()) {
-                    if (mask.get(i, 0)[0].toInt() == 1) {
-                        inlierCount++
-                    }
-                }
-            }
-            mask.release()
+        
+        org.opencv.android.Utils.bitmapToMat(reference, refMat)
+        org.opencv.android.Utils.bitmapToMat(query, queryMat)
+        
+        val orb = ORB.create(1000) 
+        val kp1 = MatOfKeyPoint()
+        val kp2 = MatOfKeyPoint()
+        val desc1 = Mat()
+        val desc2 = Mat()
 
-            if (affine.empty() || inlierCount < minInliers) {
-                if (!affine.empty()) affine.release()
-                return@withContext AlignmentResult(false, null, 0f, "Affine alignment failed or too few inliers ($inlierCount < $minInliers)", refKpCount, queryKpCount, goodMatchesCount, "feature")
-            }
-            
-            // AFFINE SANITY CHECK
-            // Matrix structure: [ cos(th)*s, -sin(th)*s, tx ]
-            //                   [ sin(th)*s,  cos(th)*s, ty ]
-            val a00 = affine.get(0, 0)[0]
-            val a01 = affine.get(0, 1)[0]
-            val a10 = affine.get(1, 0)[0]
-            val a11 = affine.get(1, 1)[0]
-            
-            // Determinant of the 2x2 part is the squared scale
-            val det = a00 * a11 - a01 * a10
-            // LOOSENED FOR EXPERIMENT: allow extreme scale changes
-            val isSane = det > 0.0025 && det < 400.0
-            
-            if (!isSane) {
-                affine.release()
-                return@withContext AlignmentResult(false, null, 0f, "Affine failed sanity check (scaleSq=${"%.2f".format(det)})", refKpCount, queryKpCount, inlierCount, "feature")
-            }
+        orb.detectAndCompute(refMat, Mat(), kp1, desc1)
+        orb.detectAndCompute(queryMat, Mat(), kp2, desc2)
 
-            val confidence = inlierCount.toFloat() / matchList.size.toFloat()
-            val warped = Mat()
-            Imgproc.warpAffine(queryMat, warped, affine, Size(refMat.cols().toDouble(), refMat.rows().toDouble()))
-            val alignedBitmap = Bitmap.createBitmap(warped.cols(), warped.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(warped, alignedBitmap)
-            warped.release()
-            affine.release()
-            refMasked.release()
-            AlignmentResult(
-                success = true,
-                alignedImage = alignedBitmap,
-                confidence = confidence,
-                message = "Aligned with $goodMatchesCount inliers (${"%.1f".format(confidence * 100)}%)",
-                refKeypoints = refKpCount,
-                queryKeypoints = queryKpCount,
-                goodMatchesCount = goodMatchesCount,
-                method = "feature"
-            )
-        } catch (e: Exception) {
-            Log.e("ImageAlignment", "Alignment failed", e)
-            AlignmentResult(false, null, 0f, "Exception: ${e.message}", 0, 0, 0, "feature")
-        } finally {
-            refMat.release()
-            queryMat.release()
+        if (desc1.empty() || desc2.empty()) {
+            refMat.release(); queryMat.release()
+            return@withContext AlignmentResult(false, null, 0f, "Descriptors empty")
         }
+
+        val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
+        val matches = mutableListOf<MatOfDMatch>()
+        matcher.knnMatch(desc1, desc2, matches, 2)
+
+        val goodMatches = mutableListOf<DMatch>()
+        for (match in matches) {
+            val m = match.toArray()
+            if (m.size >= 2 && m[0].distance < 0.75 * m[1].distance) {
+                goodMatches.add(m[0])
+            }
+        }
+
+        if (goodMatches.size < minInliers) {
+            refMat.release(); queryMat.release()
+            return@withContext AlignmentResult(false, null, 0f, "Too few matches (${goodMatches.size})")
+        }
+
+        val srcPoints = MatOfPoint2f()
+        val dstPoints = MatOfPoint2f()
+        val srcList = mutableListOf<org.opencv.core.Point>()
+        val dstList = mutableListOf<org.opencv.core.Point>()
+
+        val kp1Array = kp1.toArray()
+        val kp2Array = kp2.toArray()
+
+        for (match in goodMatches) {
+            srcList.add(kp1Array[match.queryIdx].pt)
+            dstList.add(kp2Array[match.trainIdx].pt)
+        }
+        srcPoints.fromList(srcList)
+        dstPoints.fromList(dstList)
+
+        val inliers = Mat()
+        val affineMatrix = Calib3d.estimateAffinePartial2D(dstPoints, srcPoints, inliers)
+
+        if (affineMatrix.empty()) {
+            refMat.release(); queryMat.release()
+            return@withContext AlignmentResult(false, null, 0f, "Affine matrix empty")
+        }
+
+        val a = affineMatrix.get(0, 0)?.get(0) ?: 0.0
+        val b = affineMatrix.get(0, 1)?.get(0) ?: 0.0
+        val det = a * a + b * b
+        val isSane = det > 0.0001 && det < 1000.0
+
+        if (!isSane) {
+            refMat.release(); queryMat.release()
+            return@withContext AlignmentResult(false, null, 0f, "Alignment abandoned: Scale determinant ($det) insane")
+        }
+
+        val alignedMat = Mat()
+        Imgproc.warpAffine(queryMat, alignedMat, affineMatrix, refMat.size())
+
+        val alignedBitmap = Bitmap.createBitmap(alignedMat.cols(), alignedMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(alignedMat, alignedBitmap)
+
+        refMat.release(); queryMat.release(); alignedMat.release()
+
+        val confidence = goodMatches.size / 100f
+        AlignmentResult(true, alignedBitmap, confidence, "ORB Affine Success", kp1Array.size, kp2Array.size, goodMatches.size)
     }
 
     suspend fun hubAlign(reference: Bitmap, query: Bitmap): AlignmentResult = withContext(Dispatchers.IO) {
         val refMat = Mat()
         val queryMat = Mat()
-        val refGray = Mat()
-        val queryGray = Mat()
-        try {
-            org.opencv.android.Utils.bitmapToMat(reference, refMat)
-            org.opencv.android.Utils.bitmapToMat(query, queryMat)
-            Imgproc.cvtColor(refMat, refGray, Imgproc.COLOR_RGB2GRAY)
-            Imgproc.cvtColor(queryMat, queryGray, Imgproc.COLOR_RGB2GRAY)
+        org.opencv.android.Utils.bitmapToMat(reference, refMat)
+        org.opencv.android.Utils.bitmapToMat(query, queryMat)
 
-            Imgproc.GaussianBlur(refGray, refGray, Size(9.0, 9.0), 2.0)
-            Imgproc.GaussianBlur(queryGray, queryGray, Size(9.0, 9.0), 2.0)
+        val grayRef = Mat()
+        val grayQuery = Mat()
+        Imgproc.cvtColor(refMat, grayRef, Imgproc.COLOR_RGB2GRAY)
+        Imgproc.cvtColor(queryMat, grayQuery, Imgproc.COLOR_RGB2GRAY)
 
-            val refCircles = Mat()
-            val queryCircles = Mat()
+        Imgproc.GaussianBlur(grayRef, grayRef, Size(9.0, 9.0), 2.0)
+        Imgproc.GaussianBlur(grayQuery, grayQuery, Size(9.0, 9.0), 2.0)
 
-            Imgproc.HoughCircles(refGray, refCircles, Imgproc.HOUGH_GRADIENT, 1.0, refGray.rows() / 4.0, 100.0, 30.0, 50, 300)
-            Imgproc.HoughCircles(queryGray, queryCircles, Imgproc.HOUGH_GRADIENT, 1.0, queryGray.rows() / 4.0, 100.0, 30.0, 50, 300)
+        val circlesRef = Mat()
+        Imgproc.HoughCircles(grayRef, circlesRef, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
 
-            if (refCircles.cols() == 0 || queryCircles.cols() == 0) {
-                return@withContext AlignmentResult(false, null, 0f, "No hubs detected", method = "hub")
-            }
+        val circlesQuery = Mat()
+        Imgproc.HoughCircles(grayQuery, circlesQuery, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
 
-            // Heuristic: Pick the circle closest to the horizontal center of the image
-            fun getBestCircle(circles: Mat, w: Int, h: Int): DoubleArray {
-                var bestIdx = 0
-                var minDist = Double.MAX_VALUE
-                for (i in 0 until circles.cols()) {
-                    val c = circles.get(0, i)
-                    val dist = Math.abs(c[0] - (w/2.0))
-                    if (dist < minDist) {
-                        minDist = dist; bestIdx = i
-                    }
-                }
-                return circles.get(0, bestIdx)
-            }
+        if (circlesRef.cols() > 0 && circlesQuery.cols() > 0) {
+            val cRef = circlesRef.get(0, 0)
+            val cQue = circlesQuery.get(0, 0)
 
-            val cRef = getBestCircle(refCircles, refMat.cols(), refMat.rows())
-            val cQuery = getBestCircle(queryCircles, queryMat.cols(), queryMat.rows())
-            
-            val pRef = org.opencv.core.Point(cRef[0], cRef[1])
-            val pQuery = org.opencv.core.Point(cQuery[0], cQuery[1])
-            val rRef = cRef[2]
-            val rQuery = cQuery[2]
+            val tx = cRef[0] - cQue[0]
+            val ty = cRef[1] - cQue[1]
+            val scale = cRef[2] / cQue[2]
 
-            val scale = rQuery.toFloat() / rRef.toFloat()
-            val affine = Mat(2, 3, CvType.CV_32F)
-            // Construct affine for Translation + Scale
-            affine.put(0, 0, scale.toDouble(), 0.0, pQuery.x - (pRef.x * scale))
-            affine.put(1, 0, 0.0, scale.toDouble(), pQuery.y - (pRef.y * scale))
+            val matrix = Mat.zeros(2, 3, CvType.CV_64F)
+            matrix.put(0, 0, scale, 0.0, tx)
+            matrix.put(1, 0, 0.0, scale, ty)
 
-            val warped = Mat()
-            Imgproc.warpAffine(queryMat, warped, affine, Size(refMat.cols().toDouble(), refMat.rows().toDouble()), Imgproc.INTER_LINEAR + Imgproc.WARP_INVERSE_MAP)
-            
-            val alignedBitmap = Bitmap.createBitmap(warped.cols(), warped.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(warped, alignedBitmap)
-            
-            warped.release()
-            affine.release()
-            
-            AlignmentResult(true, alignedBitmap, 0.8f, "Hub aligned (${"%.0f".format(pQuery.x)},${"%.0f".format(pQuery.y)})", method = "hub")
-        } catch (e: Exception) {
-            AlignmentResult(false, null, 0f, "Hub error: ${e.message}", method = "hub")
-        } finally {
-            refMat.release(); queryMat.release(); refGray.release(); queryGray.release()
+            val alignedMat = Mat()
+            Imgproc.warpAffine(queryMat, alignedMat, matrix, refMat.size())
+
+            val alignedBitmap = Bitmap.createBitmap(alignedMat.cols(), alignedMat.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(alignedMat, alignedBitmap)
+
+            refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release(); alignedMat.release()
+            return@withContext AlignmentResult(true, alignedBitmap, 0.8f, "Hub aligned (${cRef[0].toInt()},${cRef[1].toInt()})", method = "hub")
         }
+
+        refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release()
+        AlignmentResult(false, null, 0f, "Hub Alignment Abandoned", method = "hub")
+    }
+
+    fun histogramMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
+        val refHist = getDensityProfile(refBlocks)
+        val queryHist = getDensityProfile(queryBlocks)
+        var dot = 0f
+        var normRef = 0f
+        var normQuery = 0f
+        for (i in 0 until 100) {
+            dot += refHist[i] * queryHist[i]
+            normRef += refHist[i] * refHist[i]
+            normQuery += queryHist[i] * queryHist[i]
+        }
+        val denom = sqrt(normRef * normQuery)
+        return if (denom > 0) dot / denom else 0f
+    }
+
+    private fun getDensityProfile(blocks: List<TextBlock>): FloatArray {
+        val profile = FloatArray(100)
+        blocks.forEach { 
+            val idx = (it.boundingBox.centerY() / 3000f * 100).toInt().coerceIn(0, 99)
+            profile[idx] += 1f
+        }
+        return profile
+    }
+
+    fun embeddingMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, globalWordCounts: Map<String, Int>): Float {
+        val refWords = refBlocks.map { it.text.lowercase() }.toSet()
+        val queryWords = queryBlocks.map { it.text.lowercase() }.toSet()
+        val intersect = refWords.intersect(queryWords)
+        if (refWords.isEmpty()) return 0f
+        return intersect.size.toFloat() / refWords.size.toFloat()
+    }
+
+    fun argMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, globalWordCounts: Map<String, Int>, crop: android.graphics.RectF?, otherCrop: android.graphics.RectF?, w: Int, h: Int): Float {
+        val refSet = refBlocks.filter { !isBlockInCrop(it, crop, w, h) && !isBlockInCrop(it, otherCrop, w, h) }.map { it.text.lowercase() }.toSet()
+        val querySet = queryBlocks.map { it.text.lowercase() }.toSet()
+        if (refSet.isEmpty()) return 0f
+        val matches = refSet.intersect(querySet)
+        return matches.size.toFloat() / refSet.size.toFloat()
+    }
+
+    fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, allOtherRefs: List<OcrResult>, crop: android.graphics.RectF?, otherCrop: android.graphics.RectF?, w: Int, h: Int, dynamicAnchors: Map<String, String>, currentVehicleName: String): Float {
+        for (q in queryBlocks) {
+            val word = q.text.lowercase().trim()
+            if (word.length < 3) continue
+            val belongsTo = dynamicAnchors[word]
+            if (belongsTo != null && belongsTo != currentVehicleName) return -1.0f 
+        }
+        val myAnchors = dynamicAnchors.filter { it.value == currentVehicleName }.keys
+        if (myAnchors.isEmpty()) return 0.5f 
+        val found = queryBlocks.map { it.text.lowercase().trim() }.intersect(myAnchors)
+        return found.size.toFloat() / myAnchors.size.toFloat()
+    }
+
+    fun projectCropViaAnchor(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, crop: android.graphics.RectF, refW: Int, refH: Int, queryW: Int, queryH: Int): android.graphics.RectF? {
+        val refAnchors = refBlocks.filter { it.text.length >= 3 }
+        val queryAnchors = queryBlocks.filter { it.text.length >= 3 }
+        for (ra in refAnchors) {
+            val match = queryAnchors.find { it.text == ra.text }
+            if (match != null) {
+                val dx = (match.boundingBox.centerX().toFloat() / queryW) - (ra.boundingBox.centerX().toFloat() / refW)
+                val dy = (match.boundingBox.centerY().toFloat() / queryH) - (ra.boundingBox.centerY().toFloat() / refH)
+                return android.graphics.RectF(crop.left + dx, crop.top + dy, crop.right + dx, crop.bottom + dy)
+            }
+        }
+        return null
+    }
+
+    private fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
+        if (crop == null) return false
+        val bx = block.boundingBox.centerX().toFloat() / w
+        val by = block.boundingBox.centerY().toFloat() / h
+        return crop.contains(bx, by)
     }
 
     suspend fun matchWithAllMethods(
@@ -493,47 +260,53 @@ object ImageAlignmentUtils {
         globalWordCounts: Map<String, Int> = emptyMap(),
         allOtherRefs: List<OcrResult> = emptyList(),
         dynamicAnchors: Map<String, String> = emptyMap(),
-        currentVehicleName: String = ""
+        currentVehicleName: String = "",
+        onLog: (suspend (String) -> Unit)? = null
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         
+        onLog?.invoke("Aligning: ORB Feature...")
         var t0 = System.currentTimeMillis()
         val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped", method = "feature", timeMs = 0) 
                            else alignImages(reference, query, 10, odometerCrop, otherTextCrop)
         val tOrb = System.currentTimeMillis() - t0
         results["feature"] = featureResult.copy(timeMs = tOrb)
         
+        onLog?.invoke("Aligning: Hub Mechanical...")
         t0 = System.currentTimeMillis()
         val hubResult = hubAlign(reference, query)
         val tHub = System.currentTimeMillis() - t0
         results["hub"] = hubResult.copy(timeMs = tHub)
         
+        onLog?.invoke("Matching: ARG Engine...")
         t0 = System.currentTimeMillis()
         val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
         val tArg = System.currentTimeMillis() - t0
         results["arg"] = AlignmentResult(true, null, argScore, "ARG", method = "arg", timeMs = tArg)
         
+        onLog?.invoke("Matching: Histogram Engine...")
         t0 = System.currentTimeMillis()
         val histScore = histogramMatch(refOcr.textBlocks, queryOcr.textBlocks)
         val tHist = System.currentTimeMillis() - t0
         results["histogram"] = AlignmentResult(true, null, histScore, "Hist", method = "histogram", timeMs = tHist)
         
+        onLog?.invoke("Matching: Embedding Engine...")
         t0 = System.currentTimeMillis()
         val embScore = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts)
         val tEmb = System.currentTimeMillis() - t0
         results["embedding"] = AlignmentResult(true, null, embScore, "Emb", method = "embedding", timeMs = tEmb)
         
+        onLog?.invoke("Matching: Dynamic Anchors...")
         t0 = System.currentTimeMillis()
         val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, allOtherRefs, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight, dynamicAnchors, currentVehicleName)
         val tAnc = System.currentTimeMillis() - t0
         results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor", method = "anchor", timeMs = tAnc)
         
-        // 3. CONSENSUS SCORING
         val tCons0 = System.currentTimeMillis()
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
         
-        // Word Veto check (Discovery logic)
         var hasWordVeto = false
+        var vetoWord = ""
         val refWords = refOcr.textBlocks.filter { !isBlockInCrop(it, odometerCrop, refOcr.imageWidth, refOcr.imageHeight) && !isBlockInCrop(it, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight) }.map { it.text.lowercase().trim() }.toSet()
         
         for (q in queryOcr.textBlocks) {
@@ -545,33 +318,44 @@ object ImageAlignmentUtils {
                 }
                 if (belongsToOther) {
                     hasWordVeto = true
+                    vetoWord = word
                     break
                 }
             }
         }
 
-        var consensusScore = (featScoreNorm * 0.35f) + 
-                             (embScore * 0.35f) + 
-                             (histScore * 0.10f) + 
-                             (argScore * 0.10f) + 
-                             (ancScore * 0.10f)
-
-        var finalMessage = "Consensus score: ${"%.2f".format(consensusScore)}"
-        
-        val myGoldenAnchors = dynamicAnchors.filter { it.value == currentVehicleName }.keys.take(5).joinToString(",")
-        finalMessage += " | Landmarks: [$myGoldenAnchors]"
+        var consensusScore = (featScoreNorm * 0.05f) + (embScore * 0.40f) + (histScore * 0.40f) + (argScore * 0.10f) + (ancScore * 0.05f)
+        var finalMessage = "Consensus score: ${"%.2f".format(consensusScore)} | Landmarks: [${dynamicAnchors.filter { it.value == currentVehicleName }.keys.take(5).joinToString(",")}]"
 
         if (ancScore < 0) {
             consensusScore = -1.0f
             finalMessage = "VETO (Anchor mismatch)"
         } else if (hasWordVeto) {
             consensusScore = -1.0f
-            finalMessage = "VETO (Distinctive word mismatch)"
+            finalMessage = "VETO (Word: '$vetoWord')"
         }
         
         val tCons = System.currentTimeMillis() - tCons0
-        results["consensus"] = AlignmentResult(true, null, consensusScore, finalMessage, method = "consensus", wordVeto = hasWordVeto, timeMs = tCons)
+        results["consensus"] = AlignmentResult(true, null, consensusScore, finalMessage, method = "consensus", wordVeto = hasWordVeto, vetoReason = vetoWord, timeMs = tCons)
+        
+        val tTier0 = System.currentTimeMillis()
+        val tieredResult = calculateTieredMatch(results, hasWordVeto, vetoWord)
+        results["tiered"] = tieredResult.copy(timeMs = System.currentTimeMillis() - tTier0)
         
         results
+    }
+
+    private fun calculateTieredMatch(results: Map<String, AlignmentResult>, hasVeto: Boolean, vetoWord: String): AlignmentResult {
+        if (hasVeto) return AlignmentResult(true, null, -1f, "TIER 0: VETO (Word: '$vetoWord')", method = "tiered", wordVeto = true, tierReached = 0)
+        val hist = results["histogram"]?.confidence ?: 0f
+        val emb = results["embedding"]?.confidence ?: 0f
+        val arg = results["arg"]?.confidence ?: 0f
+        val feat = results["feature"]?.confidence ?: 0f
+
+        if (hist > 0.85f) return AlignmentResult(true, null, hist, "TIER 1: Histogram High-Conf", method = "tiered", tierReached = 1)
+        if ((hist > 0.5f && emb > 0.5f) || (hist > 0.5f && arg > 0.5f)) return AlignmentResult(true, null, hist.coerceAtLeast(emb), "TIER 2: Text Agreement", method = "tiered", tierReached = 2)
+        if (feat > 0.3f) return AlignmentResult(true, null, feat, "TIER 3: Spatial Feature Match", method = "tiered", tierReached = 3)
+
+        return AlignmentResult(false, null, 0f, "TIER 4: Inconclusive - Ask User", method = "tiered", tierReached = 4)
     }
 }
