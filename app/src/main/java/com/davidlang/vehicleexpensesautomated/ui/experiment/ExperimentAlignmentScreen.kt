@@ -252,6 +252,10 @@ private suspend fun runExperiment(
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
             val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
             
+            // Phase 2b: dashboard images
+            val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap)
+            val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
+            
             // Global Discovery OCR
             val t0 = System.currentTimeMillis()
             val queryOcrTess = OdometerOcrUtils.extractFullImageOcr(file.absolutePath)
@@ -363,6 +367,10 @@ private suspend fun runExperiment(
             withContext(Dispatchers.Main) {
                 onProgress(PhotoResultSummary(file.name, winnerName, bestConf, pickedOdometer), (index + 1).toFloat() / total)
             }
+            
+            // Phase 2b recycling
+            grayBitmap.recycle()
+            bileBitmap.recycle()
             originalBitmap.recycle()
 
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
