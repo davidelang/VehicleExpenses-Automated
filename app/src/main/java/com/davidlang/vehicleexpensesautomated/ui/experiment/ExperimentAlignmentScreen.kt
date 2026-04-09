@@ -314,15 +314,15 @@ private suspend fun runExperiment(
                     }
                 }
                 
-                val finalAlignBase64 = if (alignRes.alignedImage != null) bitmapToBase64(alignRes.alignedImage, 180) else if (alignRescued && hubRes.alignedImage != null) bitmapToBase64(hubRes.alignedImage, 180) else ""
-                
+                val finalAlignBase64 = if (alignRes.alignedImage != null) bitmapToBase64(alignRes.alignedImage, 70) else if (alignRescued && hubRes.alignedImage != null) bitmapToBase64(hubRes.alignedImage, 70) else ""
+
                 vehicleMatchResults.add(VehicleMatchResult(
                     vehicleName = ref.vehicle.name,
                     score = allResults["consensus"]?.confidence ?: 0f,
-                    message = "${alignRes.message} | ${hubRes.message}" + (if (alignRescued) " | ORB Rescued by Hub" else ""),
-                    referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(ref.bmp, ref.vehicle), 180),
+                    message = "${alignRes.message} | ${hubRes.message} | DashText: [${queryOcrMl.textBlocks.joinToString(",") { it.text }}]" + (if (alignRescued) " | ORB Rescued by Hub" else ""),
+                    referenceBase64 = bitmapToBase64(drawCropBoxesOnReference(ref.bmp, ref.vehicle), 70),
                     fullAlignedBase64 = finalAlignBase64,
-                    hubAlignedBase64 = if (hubRes.alignedImage != null) bitmapToBase64(hubRes.alignedImage, 180) else "",
+                    hubAlignedBase64 = if (hubRes.alignedImage != null) bitmapToBase64(hubRes.alignedImage, 70) else "",
                     fullOcrSteps = fullSteps,
                     hubOcrSteps = hubSteps,
                     anchorOcrSteps = anchorSteps,
@@ -345,7 +345,7 @@ private suspend fun runExperiment(
                 photoName = file.name,
                 matchedVehicle = winner?.vehicleName ?: "No match",
                 finalConfidence = winner?.allMethodResults?.get("tiered")?.confidence ?: 0f,
-                originalThumbBase64 = bitmapToBase64(originalBitmap, 180),
+                originalThumbBase64 = bitmapToBase64(originalBitmap, 80),
                 allVehicleResults = vehicleMatchResults,
                 methodWinners = methodWinners,
                 odometer = extractedOdometer
@@ -425,9 +425,10 @@ private fun buildOcrStepHtml(steps: List<OcrStepResult>): String = buildString {
     steps.forEach { step -> appendLine("<div class='ocr-step'><b>${step.stageName}:</b> ${step.text ?: "-"}<br></div>") }
 }
 
-private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 100): String {
+private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
+    val q = quality.coerceIn(0, 100)
     val outputStream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+    bitmap.compress(Bitmap.CompressFormat.JPEG, q, outputStream)
     return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 }
 
