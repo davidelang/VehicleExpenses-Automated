@@ -55,6 +55,57 @@ object OdometerOcrUtils {
         }
     }
 
+    fun applyGrayscale(bitmap: Bitmap): Bitmap {
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat()
+        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        val out = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(gray, out)
+        mat.release(); gray.release()
+        return out
+    }
+
+    fun applyBilateral(bitmap: Bitmap): Bitmap {
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat()
+        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
+        val filtered = Mat()
+        Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
+        val out = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(filtered, out)
+        mat.release(); gray.release(); filtered.release()
+        return out
+    }
+
+    fun applyClahe(bitmap: Bitmap): Bitmap {
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat()
+        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
+        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+        val outMat = Mat()
+        clahe.apply(gray, outMat)
+        val out = Bitmap.createBitmap(outMat.cols(), outMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(outMat, out)
+        mat.release(); gray.release(); outMat.release()
+        return out
+    }
+
+    fun applyOtsu(bitmap: Bitmap): Bitmap {
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat()
+        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
+        val threshed = Mat()
+        Imgproc.threshold(gray, threshed, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+        val out = Bitmap.createBitmap(threshed.cols(), threshed.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(threshed, out)
+        mat.release(); gray.release(); threshed.release()
+        return out
+    }
+
     fun runRawOcr(bitmap: Bitmap, whitelist: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"): Pair<String, List<TextBlock>> {
         val tess = TessBaseAPI()
         val blocks = mutableListOf<TextBlock>()
@@ -214,64 +265,24 @@ object OdometerOcrUtils {
     }
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
-        val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
-        
         val loc = LocationUtils.getLatLongFromExif(photoPath)
+        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed decode", photoPath, null, null, emptyList())
+        val rotated = rotateImageIfRequired(rawBitmap, photoPath)
         
-        var rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
-        var bitmap = rotateImageIfRequired(rawBitmap, photoPath)
-        
-        var croppedBitmap: Bitmap? = null
+        var bitmap = rotated
         if (cropRect != null) {
-            croppedBitmap = cropBitmap(bitmap, cropRect)
-            if (croppedBitmap != null) {
-                bitmap.recycle()
-                bitmap = croppedBitmap
+            val cropped = cropBitmap(rotated, cropRect)
+            if (cropped != null) {
+                if (rotated != cropped) rotated.recycle()
+                bitmap = cropped
             }
         }
 
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
-        val filtered = Mat()
-        Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
+        val res = extractFromPhotoBitmap(bitmap)
+        if (bitmap != rotated) bitmap.recycle()
+        rotated.recycle()
         
-        val preprocessed = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(filtered, preprocessed)
-        
-        // USE ML KIT FOR FULL IMAGE SCAN
-        val (rawText, textBlocks) = runMlKitOcrFull(preprocessed)
-        
-        mat.release()
-        gray.release()
-        filtered.release()
-
-        val debugText = buildString {
-            appendLine("=== OCR DEBUG (preprocessed) ===\n")
-            appendLine("ML Kit Text: $rawText")
-        }
-
-        val cleanRaw = rawText.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
-        val possible = mutableListOf<String>()
-        if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
-
-        OcrResult(
-            odometer = cleanRaw.takeIf { it.length in 4..6 },
-            possibleOdometers = possible,
-            gallons = null,
-            cost = null,
-            debugText = debugText.toString(),
-            originalPhotoPath = photoPath,
-            croppedBitmap = croppedBitmap,
-            openCvProcessedBitmap = null,
-            textBlocks = textBlocks,
-            imageWidth = bitmap.width,
-            imageHeight = bitmap.height,
-            latitude = loc?.latitude,
-            longitude = loc?.longitude
-        )
+        res.copy(originalPhotoPath = photoPath, latitude = loc?.latitude, longitude = loc?.longitude)
     }
 
     suspend fun extractFullImageOcr(photoPath: String, deduplicateWith: List<TextBlock>? = null): OcrResult = withContext(Dispatchers.IO) {
@@ -338,8 +349,8 @@ object OdometerOcrUtils {
         }
     }
 
-    private suspend fun runMlKitOcrFull(bitmap: Bitmap): Pair<String, List<TextBlock>> {
-        return try {
+    suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+        try {
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             val image = InputImage.fromBitmap(bitmap, 0)
             val result = recognizer.process(image).await()
@@ -350,7 +361,6 @@ object OdometerOcrUtils {
                 for (line in block.lines) {
                     for (element in line.elements) {
                         val rect = element.boundingBox
-                        // Filter word: keep alphanumeric and /
                         val rawWord = element.text
                         val filteredWord = rawWord.filter { it.isLetterOrDigit() || it == '/' }.trim()
                         
@@ -361,10 +371,15 @@ object OdometerOcrUtils {
                     }
                 }
             }
-            filteredText.toString().trim() to blocks
+            val finalOcrText = filteredText.toString().trim()
+            OcrResult(
+                odometer = null, possibleOdometers = emptyList(), gallons = null, cost = null,
+                debugText = finalOcrText, textBlocks = blocks,
+                imageWidth = bitmap.width, imageHeight = bitmap.height
+            )
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit failed", e)
-            "(ML Kit error: ${e.message})" to emptyList()
+            OcrResult(null, emptyList(), null, null, "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
         }
     }
 }
