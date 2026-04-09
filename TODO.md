@@ -8,6 +8,15 @@
 
 
 ## Medium Priority
+- EXIF Location Extraction:
+  - Extract lat/long from image EXIF data when recording a fillup.
+  - Store lat/long in the database.
+  - Add a "location" text field to the database.
+  - Update impacted areas: Room schema, Quick Fill page, Import page, Google Sheets sync, and CSV import/export.
+- Automated Gas Station Lookup:
+  - Implement a non-interfering background task to lookup lat/long coordinates.
+  - If a gas station is found at the location, populate the "location" field with the station information.
+
 
 ## Low Priority / Future
 - Landmark crop box UI improvements:
