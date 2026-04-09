@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrStepResult
+import com.davidlang.vehicleexpensesautomated.ui.util.AlignmentResult
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -59,7 +60,8 @@ data class VehicleMatchResult(
     val methodScores: Map<String, Float>,
     val wordVeto: Boolean = false,
     val queryTesseractFullOcr: String = "",
-    val queryMlKitFullOcr: String = ""
+    val queryMlKitFullOcr: String = "",
+    val allMethodResults: Map<String, AlignmentResult> = emptyMap()
 )
 
 data class PhotoResult(
@@ -321,7 +323,8 @@ private suspend fun runFullExperiment(
                     methodScores = allResults.mapValues { it.value.confidence },
                     wordVeto = consensusRes.wordVeto,
                     queryTesseractFullOcr = queryOcrTess.textBlocks.joinToString(",") { it.text },
-                    queryMlKitFullOcr = queryOcrMl.textBlocks.joinToString(",") { it.text }
+                    queryMlKitFullOcr = queryOcrMl.textBlocks.joinToString(",") { it.text },
+                    allMethodResults = allResults
                 ))
             }
             
@@ -349,8 +352,38 @@ private suspend fun runFullExperiment(
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
             val jsonRow = JSONObject().apply {
-                put("file", file.name); put("winner", photoResult.matchedVehicle); put("confidence", photoResult.finalConfidence.toDouble()); put("odometer", extractedOdometer ?: "FAILED")
-                put("wordVeto", winner?.wordVeto ?: false)
+                put("file", file.name)
+                put("winner", photoResult.matchedVehicle)
+                put("confidence", photoResult.finalConfidence.toDouble())
+                put("odometer", extractedOdometer ?: "FAILED")
+                
+                // Detailed Metrics per Algorithm (using the new allMethodResults for accuracy)
+                val metrics = JSONObject()
+                winner?.allMethodResults?.forEach { (m, res) ->
+                    val mObj = JSONObject()
+                    mObj.put("score", res.confidence.toDouble())
+                    mObj.put("time_ms", res.timeMs)
+                    mObj.put("status", if (res.success) "Success" else "Failed/Abandoned")
+                    mObj.put("message", res.message)
+                    metrics.put(m, mObj)
+                }
+                put("algorithm_metrics", metrics)
+
+                // Veto Details
+                val vetoes = JSONObject()
+                photoResult.allVehicleResults.forEach { vRes ->
+                    if (vRes.wordVeto || vRes.score < 0) {
+                        vetoes.put(vRes.vehicleName, vRes.message)
+                    }
+                }
+                put("veto_details", vetoes)
+
+                // OCR Discovery Text
+                val discovery = JSONObject()
+                discovery.put("tesseract", queryOcrTess.textBlocks.joinToString(",") { it.text })
+                discovery.put("mlkit", queryOcrMl.textBlocks.joinToString(",") { it.text })
+                put("ocr_discovery", discovery)
+
                 val mWins = JSONObject(); methodWinners.forEach { (m, w) -> mWins.put(m, w) }; put("method_winners", mWins)
             }
             jsonArray.put(jsonRow)

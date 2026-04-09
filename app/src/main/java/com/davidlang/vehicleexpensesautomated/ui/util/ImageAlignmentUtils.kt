@@ -27,7 +27,8 @@ data class AlignmentResult(
     val queryKeypoints: Int = 0,
     val goodMatchesCount: Int = 0,
     val method: String = "feature",
-    val wordVeto: Boolean = false
+    val wordVeto: Boolean = false,
+    val timeMs: Long = 0
 )
 
 object ImageAlignmentUtils {
@@ -377,8 +378,8 @@ object ImageAlignmentUtils {
             
             // Determinant of the 2x2 part is the squared scale
             val det = a00 * a11 - a01 * a10
-            // Scale should be roughly 1.0 (between 0.5x and 2.0x)
-            val isSane = det > 0.25 && det < 4.0
+            // LOOSENED FOR EXPERIMENT: allow extreme scale changes
+            val isSane = det > 0.0025 && det < 400.0
             
             if (!isSane) {
                 affine.release()
@@ -412,6 +413,75 @@ object ImageAlignmentUtils {
         }
     }
 
+    suspend fun hubAlign(reference: Bitmap, query: Bitmap): AlignmentResult = withContext(Dispatchers.IO) {
+        val refMat = Mat()
+        val queryMat = Mat()
+        val refGray = Mat()
+        val queryGray = Mat()
+        try {
+            org.opencv.android.Utils.bitmapToMat(reference, refMat)
+            org.opencv.android.Utils.bitmapToMat(query, queryMat)
+            Imgproc.cvtColor(refMat, refGray, Imgproc.COLOR_RGB2GRAY)
+            Imgproc.cvtColor(queryMat, queryGray, Imgproc.COLOR_RGB2GRAY)
+
+            Imgproc.GaussianBlur(refGray, refGray, Size(9.0, 9.0), 2.0)
+            Imgproc.GaussianBlur(queryGray, queryGray, Size(9.0, 9.0), 2.0)
+
+            val refCircles = Mat()
+            val queryCircles = Mat()
+
+            Imgproc.HoughCircles(refGray, refCircles, Imgproc.HOUGH_GRADIENT, 1.0, refGray.rows() / 4.0, 100.0, 30.0, 50, 300)
+            Imgproc.HoughCircles(queryGray, queryCircles, Imgproc.HOUGH_GRADIENT, 1.0, queryGray.rows() / 4.0, 100.0, 30.0, 50, 300)
+
+            if (refCircles.cols() == 0 || queryCircles.cols() == 0) {
+                return@withContext AlignmentResult(false, null, 0f, "No hubs detected", method = "hub")
+            }
+
+            // Heuristic: Pick the circle closest to the horizontal center of the image
+            fun getBestCircle(circles: Mat, w: Int, h: Int): DoubleArray {
+                var bestIdx = 0
+                var minDist = Double.MAX_VALUE
+                for (i in 0 until circles.cols()) {
+                    val c = circles.get(0, i)
+                    val dist = Math.abs(c[0] - (w/2.0))
+                    if (dist < minDist) {
+                        minDist = dist; bestIdx = i
+                    }
+                }
+                return circles.get(0, bestIdx)
+            }
+
+            val cRef = getBestCircle(refCircles, refMat.cols(), refMat.rows())
+            val cQuery = getBestCircle(queryCircles, queryMat.cols(), queryMat.rows())
+            
+            val pRef = org.opencv.core.Point(cRef[0], cRef[1])
+            val pQuery = org.opencv.core.Point(cQuery[0], cQuery[1])
+            val rRef = cRef[2]
+            val rQuery = cQuery[2]
+
+            val scale = rQuery.toFloat() / rRef.toFloat()
+            val affine = Mat(2, 3, CvType.CV_32F)
+            // Construct affine for Translation + Scale
+            affine.put(0, 0, scale.toDouble(), 0.0, pQuery.x - (pRef.x * scale))
+            affine.put(1, 0, 0.0, scale.toDouble(), pQuery.y - (pRef.y * scale))
+
+            val warped = Mat()
+            Imgproc.warpAffine(queryMat, warped, affine, Size(refMat.cols().toDouble(), refMat.rows().toDouble()), Imgproc.INTER_LINEAR + Imgproc.WARP_INVERSE_MAP)
+            
+            val alignedBitmap = Bitmap.createBitmap(warped.cols(), warped.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(warped, alignedBitmap)
+            
+            warped.release()
+            affine.release()
+            
+            AlignmentResult(true, alignedBitmap, 0.8f, "Hub aligned (${"%.0f".format(pQuery.x)},${"%.0f".format(pQuery.y)})", method = "hub")
+        } catch (e: Exception) {
+            AlignmentResult(false, null, 0f, "Hub error: ${e.message}", method = "hub")
+        } finally {
+            refMat.release(); queryMat.release(); refGray.release(); queryGray.release()
+        }
+    }
+
     suspend fun matchWithAllMethods(
         reference: Bitmap,
         query: Bitmap,
@@ -428,30 +498,41 @@ object ImageAlignmentUtils {
         val results = mutableMapOf<String, AlignmentResult>()
         
         var t0 = System.currentTimeMillis()
-        val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped") 
+        val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped", method = "feature", timeMs = 0) 
                            else alignImages(reference, query, 10, odometerCrop, otherTextCrop)
-        results["feature"] = featureResult.copy(message = featureResult.message + " (${System.currentTimeMillis()-t0}ms)")
+        val tOrb = System.currentTimeMillis() - t0
+        results["feature"] = featureResult.copy(timeMs = tOrb)
+        
+        t0 = System.currentTimeMillis()
+        val hubResult = hubAlign(reference, query)
+        val tHub = System.currentTimeMillis() - t0
+        results["hub"] = hubResult.copy(timeMs = tHub)
         
         t0 = System.currentTimeMillis()
         val argScore = argMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
-        results["arg"] = AlignmentResult(true, null, argScore, "ARG (${System.currentTimeMillis()-t0}ms)", method = "arg")
+        val tArg = System.currentTimeMillis() - t0
+        results["arg"] = AlignmentResult(true, null, argScore, "ARG", method = "arg", timeMs = tArg)
         
         t0 = System.currentTimeMillis()
         val histScore = histogramMatch(refOcr.textBlocks, queryOcr.textBlocks)
-        results["histogram"] = AlignmentResult(true, null, histScore, "Hist (${System.currentTimeMillis()-t0}ms)", method = "histogram")
+        val tHist = System.currentTimeMillis() - t0
+        results["histogram"] = AlignmentResult(true, null, histScore, "Hist", method = "histogram", timeMs = tHist)
         
         t0 = System.currentTimeMillis()
         val embScore = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks, globalWordCounts)
-        results["embedding"] = AlignmentResult(true, null, embScore, "Emb (${System.currentTimeMillis()-t0}ms)", method = "embedding")
+        val tEmb = System.currentTimeMillis() - t0
+        results["embedding"] = AlignmentResult(true, null, embScore, "Emb", method = "embedding", timeMs = tEmb)
         
         t0 = System.currentTimeMillis()
         val ancScore = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, allOtherRefs, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight, dynamicAnchors, currentVehicleName)
-        results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor (${System.currentTimeMillis()-t0}ms)", method = "anchor")
+        val tAnc = System.currentTimeMillis() - t0
+        results["anchor"] = AlignmentResult(true, null, ancScore, "Anchor", method = "anchor", timeMs = tAnc)
         
         // 3. CONSENSUS SCORING
+        val tCons0 = System.currentTimeMillis()
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
         
-        // Word Veto: any distinctive word found in query that belongs to another vehicle but NOT this one
+        // Word Veto check (Discovery logic)
         var hasWordVeto = false
         val refWords = refOcr.textBlocks.filter { !isBlockInCrop(it, odometerCrop, refOcr.imageWidth, refOcr.imageHeight) && !isBlockInCrop(it, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight) }.map { it.text.lowercase().trim() }.toSet()
         
@@ -459,11 +540,8 @@ object ImageAlignmentUtils {
             val word = q.text.lowercase().trim()
             if (word.length < 3) continue
             if (!refWords.contains(word)) {
-                // If it's a distinctive word for another vehicle, hard veto
                 val belongsToOther = allOtherRefs.any { other -> 
-                    // check if distinctive for 'other'
-                    val otherWords = other.textBlocks.map { it.text.lowercase().trim() }.toSet()
-                    otherWords.contains(word)
+                    other.textBlocks.any { it.text.lowercase().trim() == word }
                 }
                 if (belongsToOther) {
                     hasWordVeto = true
@@ -479,6 +557,10 @@ object ImageAlignmentUtils {
                              (ancScore * 0.10f)
 
         var finalMessage = "Consensus score: ${"%.2f".format(consensusScore)}"
+        
+        val myGoldenAnchors = dynamicAnchors.filter { it.value == currentVehicleName }.keys.take(5).joinToString(",")
+        finalMessage += " | Landmarks: [$myGoldenAnchors]"
+
         if (ancScore < 0) {
             consensusScore = -1.0f
             finalMessage = "VETO (Anchor mismatch)"
@@ -486,8 +568,9 @@ object ImageAlignmentUtils {
             consensusScore = -1.0f
             finalMessage = "VETO (Distinctive word mismatch)"
         }
-                             
-        results["consensus"] = AlignmentResult(true, null, consensusScore, finalMessage, method = "consensus", wordVeto = hasWordVeto)
+        
+        val tCons = System.currentTimeMillis() - tCons0
+        results["consensus"] = AlignmentResult(true, null, consensusScore, finalMessage, method = "consensus", wordVeto = hasWordVeto, timeMs = tCons)
         
         results
     }
