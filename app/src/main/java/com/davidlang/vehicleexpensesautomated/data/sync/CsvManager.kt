@@ -61,18 +61,18 @@ class CsvManager @Inject constructor(
 
     private suspend fun getFuelCsv(): String {
         val fuel = fuelRepository.getAllEntries().first()
-        val sb = StringBuilder("ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL,Partial Fill\n")
+        val sb = StringBuilder("ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL,Partial Fill,Latitude,Longitude,Location\n")
         fuel.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""},${it.isPartialFill}\n")
+            sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""},${it.isPartialFill},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""}\n")
         }
         return sb.toString()
     }
 
     private suspend fun getExpenseCsv(): String {
         val expenses = expenseRepository.getAllEntries().first()
-        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path\n")
+        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path,Latitude,Longitude,Location\n")
         expenses.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.date},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""}\n")
+            sb.append("${it.id},${it.vehicleId},${it.date},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""}\n")
         }
         return sb.toString()
     }
@@ -136,7 +136,10 @@ class CsvManager @Inject constructor(
                     cost = parts[4].toDoubleOrNull() ?: 0.0,
                     timestamp = parts[5].toLongOrNull() ?: System.currentTimeMillis(),
                     photoUrl = parts[6].ifBlank { null },
-                    isPartialFill = parts[7].toBoolean()
+                    isPartialFill = parts[7].toBoolean(),
+                    latitude = if (parts.size > 8) parts[8].toDoubleOrNull() else null,
+                    longitude = if (parts.size > 9) parts[9].toDoubleOrNull() else null,
+                    location = if (parts.size > 10) parts[10].ifBlank { null } else null
                 )
                 fuelRepository.insertFuelEntry(fuel)
             }
@@ -155,7 +158,10 @@ class CsvManager @Inject constructor(
                     description = parts[5],
                     date = parts[2].toLongOrNull() ?: System.currentTimeMillis(),
                     category = parts[4],
-                    receiptImagePath = parts[6].ifBlank { null }
+                    receiptImagePath = parts[6].ifBlank { null },
+                    latitude = if (parts.size > 7) parts[7].toDoubleOrNull() else null,
+                    longitude = if (parts.size > 8) parts[8].toDoubleOrNull() else null,
+                    location = if (parts.size > 9) parts[9].ifBlank { null } else null
                 )
                 expenseRepository.insertExpenseEntry(expense)
             }

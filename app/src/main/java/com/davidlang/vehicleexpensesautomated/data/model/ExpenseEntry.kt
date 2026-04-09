@@ -12,5 +12,8 @@ data class ExpenseEntry(
     val date: Long,
     val photoUrl: String? = null,
     val category: String = "Other",
-    val receiptImagePath: String? = null
+    val receiptImagePath: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val location: String? = null
 )

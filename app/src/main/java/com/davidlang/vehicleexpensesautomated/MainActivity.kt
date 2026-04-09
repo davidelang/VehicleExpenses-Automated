@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
                                 composable("settings") { SettingsScreen() }
                                 composable("help") { HelpScreen() }
                                 composable("about") { AboutScreen() }
-                                composable("experiment") { ExperimentAlignmentScreen() }
+                                composable("experiment") { ExperimentAlignmentScreen(navController = navController) }
                             }
                         }
                     }

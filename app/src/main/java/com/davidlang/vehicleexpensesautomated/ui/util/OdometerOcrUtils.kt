@@ -35,7 +35,9 @@ data class OcrResult(
     val openCvProcessedBitmap: Bitmap? = null,
     val textBlocks: List<TextBlock> = emptyList(),
     val imageWidth: Int = 0,
-    val imageHeight: Int = 0
+    val imageHeight: Int = 0,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 data class OcrStepResult(
@@ -90,7 +92,7 @@ object OdometerOcrUtils {
         }
     }
 
-    suspend fun runMultiStepOcr(crop: Bitmap, context: android.content.Context): List<OcrStepResult> = withContext(Dispatchers.IO) {
+    suspend fun runMultiStepOcr(crop: Bitmap, context: android.content.Context, tfliteEngine: TfLiteOcrEngine? = null): List<OcrStepResult> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<OcrStepResult>()
         val numericWhitelist = "0123456789"
         
@@ -104,10 +106,10 @@ object OdometerOcrUtils {
 
         // 0.75 TFLite Custom (Mechanical Digits)
         try {
-            val tfliteEngine = TfLiteOcrEngine(context)
-            val tfliteText = tfliteEngine.runInference(crop)
+            val engine = tfliteEngine ?: TfLiteOcrEngine(context)
+            val tfliteText = engine.runInference(crop)
             steps.add(OcrStepResult("TFLite", crop.copy(Bitmap.Config.ARGB_8888, true), tfliteText))
-            tfliteEngine.close()
+            if (tfliteEngine == null) engine.close()
         } catch (e: Exception) {
             steps.add(OcrStepResult("TFLite", crop.copy(Bitmap.Config.ARGB_8888, true), "(Error)"))
         }
@@ -215,6 +217,8 @@ object OdometerOcrUtils {
         val file = File(photoPath)
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
         
+        val loc = LocationUtils.getLatLongFromExif(photoPath)
+        
         var rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
         var bitmap = rotateImageIfRequired(rawBitmap, photoPath)
         
@@ -264,13 +268,18 @@ object OdometerOcrUtils {
             openCvProcessedBitmap = null,
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height
+            imageHeight = bitmap.height,
+            latitude = loc?.latitude,
+            longitude = loc?.longitude
         )
     }
 
     suspend fun extractFullImageOcr(photoPath: String, deduplicateWith: List<TextBlock>? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
         if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
+        
+        val loc = LocationUtils.getLatLongFromExif(photoPath)
+        
         val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
         val bitmap = rotateImageIfRequired(rawBitmap, photoPath)
         
@@ -310,7 +319,9 @@ object OdometerOcrUtils {
             openCvProcessedBitmap = null,
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height
+            imageHeight = bitmap.height,
+            latitude = loc?.latitude,
+            longitude = loc?.longitude
         )
     }
 
