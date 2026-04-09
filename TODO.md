@@ -1,5 +1,18 @@
 # Vehicle Expenses Automated — TODO List
 
+## Critical Recovery (Re-implement lost work)
+- **Identity & Matching:**
+  - [ ] **Tiered Identity Module:** Replace weighted consensus with hierarchical logic (Veto -> Histogram -> Agreement -> Spatial -> Ask User).
+  - [ ] **Dynamic Veto Frequency Filter:** Implement global frequency check to disqualify common words (e.g., "mph") from being anchors. Fixes "Honda Bias".
+  - [ ] **Strict "No Match" Logic:** Ensure "No match" is reported if Tiers 1-3 fail or all are vetoed.
+- **OCR Engines:**
+  - [ ] **PaddleOCR (PP-OCRv4) via TFLite:** Re-integrate Paddle models using stable TFLite runtime.
+- **Experiment Harness:**
+  - [ ] **Visibility:** Add real-time granular progress logging (e.g., "Matching vs Honda...", "OCR on crop...").
+- **Location Features:**
+  - [ ] **Automated Gas Station Lookup:** Re-implement `LocationLookupWorker` for background geocoding.
+  - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.
+
 ## High Priority (next)
 - Improve GlobalWordCounts (IDF) calculation:
   - Extract text and compute local word counts per-image as they are loaded/updated in the Manage Vehicles page.
@@ -13,9 +26,6 @@
   - Store lat/long in the database.
   - Add a "location" text field to the database.
   - Update impacted areas: Room schema, Quick Fill page, Import page, Google Sheets sync, and CSV import/export.
-- Automated Gas Station Lookup:
-  - Implement a non-interfering background task to lookup lat/long coordinates.
-  - If a gas station is found at the location, populate the "location" field with the station information.
 
 
 ## Low Priority / Future
@@ -32,6 +42,9 @@
 - UI polish for dark mode / tablet
 
 ## Completed
+- [1511259] Stability & Report UI Fix: Implement bitmap recycling and fix quality crash
+- [82592c0] EXIF Location Extraction (Centralized in OdometerOcrUtils)
+- [82592c0] Final Visibility & Rescue Build (ORB Rescue fallbacks)
 - Automatic OCR on every photo capture
 - Camera-first flow + Gallery-only import
 - Reference dash photo auto-matching
@@ -40,4 +53,4 @@
 - New-vehicle creation flow
 - Alignment Experiment screen with live progress and ZIP extraction
 
-Last updated: 2026-03-31
+Last updated: 2026-04-09
