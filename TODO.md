@@ -8,7 +8,7 @@
 - **OCR Engines:**
   - [ ] **PaddleOCR (PP-OCRv4) via TFLite:** Re-integrate Paddle models using stable TFLite runtime.
 - **Deep Trace Report (Phased):**
-  - [ ] **Phase 1: Foundation:** New column layout (Global Discovery, Match/Align, 3x Odo Traces per vehicle, Summary). Includes timing, specific veto words, and cached reference data. Flex-ready for engine/strategy changes.
+  - [x] **Phase 1: Foundation:** New column layout (Global Discovery, Match/Align, 3x Odo Traces per vehicle, Summary). Includes timing, specific veto words, and cached reference data. Flex-ready for engine/strategy changes.
   - [ ] **Phase 2: Deep OCR Trace:** Expand Global and Odo columns to show pre-processing steps (Grayscale, Bilateral, CLAHE, OTSU) + OCR grid for each.
   - [ ] **Phase 3: Hub + Needle:** Implement needle-based rotational correction and add as a 3rd alignment strategy.
 - **Location Features:**
@@ -27,6 +27,7 @@
 - **Traceability:** HTML and JSON reports must maintain parity and provide a frame-by-frame trace of how data is processed.
 
 ## Completed
+- [754e3e1] Deep Trace Report (Phase 1): Column layout, caching, and timing foundational structure.
 - [1511259] Stability & Report UI Fix: Implement bitmap recycling and fix quality crash
 - [82592c0] EXIF Location Extraction (Centralized in OdometerOcrUtils)
 - [82592c0] Final Visibility & Rescue Build (ORB Rescue fallbacks)
