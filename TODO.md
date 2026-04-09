@@ -15,6 +15,9 @@
   - [ ] **Automated Gas Station Lookup:** Re-implement `LocationLookupWorker` for background geocoding.
   - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.
 
+## Bug Fixes / Tasks
+- [ ] **Reference Image Rendering:** Fix missing "Other Text" (blue) crop boxes in reference dash previews. Currently, only the red odometer box is shown.
+
 ## High Priority (next)
 - Improve GlobalWordCounts (IDF) calculation:
   - Extract text and compute local word counts per-image as they are loaded/updated in the Manage Vehicles page.
@@ -27,7 +30,6 @@
 - **Traceability:** HTML and JSON reports must maintain parity and provide a frame-by-frame trace of how data is processed.
 
 ## Completed
-- [754e3e1] Deep Trace Report (Phase 1): Column layout, caching, and timing foundational structure.
 - [1511259] Stability & Report UI Fix: Implement bitmap recycling and fix quality crash
 - [82592c0] EXIF Location Extraction (Centralized in OdometerOcrUtils)
 - [82592c0] Final Visibility & Rescue Build (ORB Rescue fallbacks)
