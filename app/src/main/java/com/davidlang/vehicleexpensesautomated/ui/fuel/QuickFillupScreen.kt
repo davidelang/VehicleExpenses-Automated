@@ -82,6 +82,10 @@ fun QuickFillupScreen(navController: NavHostController) {
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
 
+    // Location state
+    var currentLatitude by remember { mutableStateOf<Double?>(null) }
+    var currentLongitude by remember { mutableStateOf<Double?>(null) }
+
     LaunchedEffect(selectedVehicleId) {
         selectedVehicleId?.let { id ->
             val vehicle = vehicleViewModel.getVehicleById(id)
@@ -123,11 +127,34 @@ fun QuickFillupScreen(navController: NavHostController) {
                 }
                 val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath, cropRectF)
                 lastOcrDebugResult = result
+                currentLatitude = result.latitude
+                currentLongitude = result.longitude
                 result.odometer?.toIntOrNull()?.let { odometer = it }
                 Log.d("OcrDebug", "Gallery: showing dialog with lastPhotoPath = $lastPhotoPath")
                 showAlignedDialog = true
             }
         }
+    }
+
+    fun saveEntry() {
+        if (selectedVehicleId == null) {
+            Toast.makeText(context, "Please select a vehicle", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val entry = FuelEntry(
+            vehicleId = selectedVehicleId!!,
+            odometer = odometer,
+            gallons = gallons,
+            cost = cost,
+            timestamp = System.currentTimeMillis(),
+            photoUrl = lastPhotoPath,
+            isPartialFill = isPartialFill,
+            latitude = currentLatitude,
+            longitude = currentLongitude
+        )
+        fuelViewModel.saveFuel(entry)
+        Toast.makeText(context, "Fill-up saved!", Toast.LENGTH_SHORT).show()
+        navController.popBackStack()
     }
 
     LaunchedEffect(Unit) {
@@ -169,7 +196,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it }, { lat, lon -> currentLatitude = lat; currentLongitude = lon })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onExperimentClick = { navController.navigate("experiment") },
@@ -179,6 +206,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                             odometer = selected.toIntOrNull() ?: odometer
                             showOdometerConfirmation = false
                         },
+                        onSaveClick = { saveEntry() },
                         lastCropDebug = lastCropDebug,
                         lastOcrResult = lastOcrResult,
                         lastOpenCVDebug = lastOpenCVDebug,
@@ -221,7 +249,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                         onCostChange = { cost = it },
                         onStepChange = { step = it },
                         onTakeDashPicture = {
-                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it })
+                            captureDashPhoto(context, imageCapture, cameraExecutor, selectedVehicleId, vehicles, step, scope, { lastCropDebug = it }, { lastOcrResult = it }, { lastOpenCVDebug = it }, { odometer = it }, { possibleOdometers = it }, { showOdometerConfirmation = it }, { gallons = it }, { cost = it }, odometerCropRect, { lastPhotoPath = it }, { lat, lon -> currentLatitude = lat; currentLongitude = lon })
                         },
                         onAdvancedPick = { pickImageLauncher.launch("image/*") },
                         onExperimentClick = { navController.navigate("experiment") },
@@ -231,6 +259,7 @@ fun QuickFillupScreen(navController: NavHostController) {
                             odometer = selected.toIntOrNull() ?: odometer
                             showOdometerConfirmation = false
                         },
+                        onSaveClick = { saveEntry() },
                         lastCropDebug = lastCropDebug,
                         lastOcrResult = lastOcrResult,
                         lastOpenCVDebug = lastOpenCVDebug,
@@ -283,7 +312,7 @@ fun QuickFillupScreen(navController: NavHostController) {
     }
 }
 @Composable
-private fun ControlsContent(
+private fun ColumnScope.ControlsContent(
     step: Int,
     isMissedFill: Boolean,
     isPartialFill: Boolean,
@@ -305,6 +334,7 @@ private fun ControlsContent(
     onShowConfirmationChange: (Boolean) -> Unit,
     onPossibleOdometersChange: (List<String>) -> Unit,
     onOdometerConfirmed: (String) -> Unit,
+    onSaveClick: () -> Unit,
     lastCropDebug: String,
     lastOcrResult: String,
     lastOpenCVDebug: String,
@@ -363,6 +393,10 @@ private fun ControlsContent(
     Button(onClick = onExperimentClick, modifier = Modifier.fillMaxWidth()) {
         Text("Run Alignment Experiment (test new function)")
     }
+    Spacer(modifier = Modifier.weight(1f))
+    Button(onClick = onSaveClick, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
+        Text("Save Fill-up")
+    }
 }
 private fun captureDashPhoto(
     context: Context,
@@ -381,7 +415,8 @@ private fun captureDashPhoto(
     updateGallons: (Double) -> Unit,
     updateCost: (Double) -> Unit,
     cropRect: Rect?,
-    updateLastPhotoPath: (String) -> Unit
+    updateLastPhotoPath: (String) -> Unit,
+    updateLocation: (Double?, Double?) -> Unit
 ) {
     val paths = mutableListOf<String>()
     
@@ -392,7 +427,7 @@ private fun captureDashPhoto(
             val bestPath = paths.firstOrNull() ?: return
             updateLastPhotoPath(bestPath)
             scope.launch {
-                processBurstPhotos(context, paths, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect)
+                processBurstPhotos(context, paths, selectedVehicleId, vehicles, step, updateCropDebug, updateOcrResult, updateOpenCVDebug, updateOdometer, updatePossibleOdometers, updateShowConfirmation, updateGallons, updateCost, cropRect, updateLocation)
             }
             return
         }
@@ -444,7 +479,8 @@ private suspend fun processBurstPhotos(
     updateShowConfirmation: (Boolean) -> Unit,
     updateGallons: (Double) -> Unit,
     updateCost: (Double) -> Unit,
-    cropRect: Rect?
+    cropRect: Rect?,
+    updateLocation: (Double?, Double?) -> Unit
 ) {
     val cropRectF = cropRect?.let { r ->
         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
@@ -466,6 +502,7 @@ private suspend fun processBurstPhotos(
     updatePossibleOdometers(allPossible)
     updateGallons(bestResult.gallons?.toDoubleOrNull() ?: 0.0)
     updateCost(bestResult.cost?.toDoubleOrNull() ?: 0.0)
+    updateLocation(bestResult.latitude, bestResult.longitude)
     updateCropDebug("Burst processed (${results.size} frames)")
     updateOpenCVDebug("Burst consensus complete")
 }
@@ -484,7 +521,8 @@ private suspend fun processPhoto(
     updateShowConfirmation: (Boolean) -> Unit,
     updateGallons: (Double) -> Unit,
     updateCost: (Double) -> Unit,
-    cropRect: Rect?
+    cropRect: Rect?,
+    updateLocation: (Double?, Double?) -> Unit
 ) {
     val cropRectF = cropRect?.let { r ->
         android.graphics.RectF(r.left, r.top, r.right, r.bottom)
@@ -495,6 +533,7 @@ private suspend fun processPhoto(
     updatePossibleOdometers(result.possibleOdometers)
     updateGallons(result.gallons?.toDoubleOrNull() ?: 0.0)
     updateCost(result.cost?.toDoubleOrNull() ?: 0.0)
+    updateLocation(result.latitude, result.longitude)
     updateCropDebug("Crop sent to OCR")
     updateOpenCVDebug("OpenCV completed")
 }

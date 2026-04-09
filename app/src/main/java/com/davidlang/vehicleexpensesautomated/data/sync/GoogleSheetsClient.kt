@@ -35,14 +35,14 @@ class GoogleSheetsClient(private val idToken: String?) {
 
     private suspend fun syncExpenses(sheetId: String, expenses: List<ExpenseEntry>): Int = withContext(Dispatchers.IO) {
         if (expenses.isEmpty()) return@withContext 0
-        createTabWithHeaders(sheetId, "Expenses", listOf("ID", "Vehicle ID", "Amount", "Description", "Date"))
-        appendRows(sheetId, "Expenses", expenses.map { listOf(it.id.toString(), it.vehicleId.toString(), it.amount.toString(), it.description, it.date.toString()) })
+        createTabWithHeaders(sheetId, "Expenses", listOf("ID", "Vehicle ID", "Amount", "Description", "Date", "Latitude", "Longitude", "Location"))
+        appendRows(sheetId, "Expenses", expenses.map { listOf(it.id.toString(), it.vehicleId.toString(), it.amount.toString(), it.description, it.date.toString(), it.latitude?.toString() ?: "", it.longitude?.toString() ?: "", it.location ?: "") })
     }
 
     private suspend fun syncFuelEntries(sheetId: String, fuelEntries: List<FuelEntry>): Int = withContext(Dispatchers.IO) {
         if (fuelEntries.isEmpty()) return@withContext 0
-        createTabWithHeaders(sheetId, "Fuel Entries", listOf("ID", "Vehicle ID", "Odometer", "Gallons", "Cost", "Timestamp"))
-        appendRows(sheetId, "Fuel Entries", fuelEntries.map { listOf(it.id.toString(), it.vehicleId.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString(), it.timestamp.toString()) })
+        createTabWithHeaders(sheetId, "Fuel Entries", listOf("ID", "Vehicle ID", "Odometer", "Gallons", "Cost", "Timestamp", "Latitude", "Longitude", "Location"))
+        appendRows(sheetId, "Fuel Entries", fuelEntries.map { listOf(it.id.toString(), it.vehicleId.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString(), it.timestamp.toString(), it.latitude?.toString() ?: "", it.longitude?.toString() ?: "", it.location ?: "") })
     }
 
     private suspend fun pullVehicles(sheetId: String): List<Vehicle> = readTab(sheetId, "Vehicles") { row ->
