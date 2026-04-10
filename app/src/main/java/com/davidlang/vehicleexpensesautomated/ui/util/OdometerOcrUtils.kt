@@ -21,14 +21,17 @@ import kotlinx.coroutines.tasks.await
 
 data class TextBlock(
     val text: String,
-    val boundingBox: android.graphics.Rect
+    val boundingBox: android.graphics.Rect,
+    val angle: Float = 0f
 )
 
 data class OcrResult(
-    val odometer: String?,
-    val possibleOdometers: List<String>,
-    val gallons: String?,
-    val cost: String?,
+    val engineName: String = "Unknown",
+    val executionTimeMs: Long = 0,
+    val odometer: String? = null,
+    val possibleOdometers: List<String> = emptyList(),
+    val gallons: String? = null,
+    val cost: String? = null,
     val debugText: String,
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
@@ -254,7 +257,7 @@ object OdometerOcrUtils {
 
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
         val loc = LocationUtils.getLatLongFromExif(photoPath)
-        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed decode", photoPath, null, null, emptyList())
+        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
         
         var bitmap = rotated
@@ -275,11 +278,11 @@ object OdometerOcrUtils {
 
     suspend fun extractFullImageOcr(photoPath: String, deduplicateWith: List<TextBlock>? = null): OcrResult = withContext(Dispatchers.IO) {
         val file = File(photoPath)
-        if (!file.exists()) return@withContext OcrResult(null, emptyList(), null, null, "Photo file not found", photoPath, null, null, emptyList())
+        if (!file.exists()) return@withContext OcrResult(debugText = "Photo file not found", originalPhotoPath = photoPath)
         
         val loc = LocationUtils.getLatLongFromExif(photoPath)
         
-        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(null, emptyList(), null, null, "Failed to decode bitmap", photoPath, null, null, emptyList())
+        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(debugText = "Failed to decode bitmap", originalPhotoPath = photoPath)
         val bitmap = rotateImageIfRequired(rawBitmap, photoPath)
         
         val mat = Mat()
@@ -305,18 +308,14 @@ object OdometerOcrUtils {
         val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
         val possible = mutableListOf<String>()
         if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
-        val textBlocks = textBlocksOut.toMutableList()
         
         OcrResult(
+            engineName = "Tesseract",
             odometer = cleanRaw.takeIf { it.length in 4..6 },
             possibleOdometers = possible,
-            gallons = null,
-            cost = null,
             debugText = debugText.toString(),
             originalPhotoPath = photoPath,
-            croppedBitmap = null,
-            openCvProcessedBitmap = null,
-            textBlocks = textBlocks,
+            textBlocks = textBlocksOut,
             imageWidth = bitmap.width,
             imageHeight = bitmap.height,
             latitude = loc?.latitude,
@@ -361,13 +360,15 @@ object OdometerOcrUtils {
             }
             val finalOcrText = filteredText.toString().trim()
             OcrResult(
-                odometer = null, possibleOdometers = emptyList(), gallons = null, cost = null,
-                debugText = finalOcrText, textBlocks = blocks,
-                imageWidth = bitmap.width, imageHeight = bitmap.height
+                engineName = "ML Kit",
+                debugText = finalOcrText, 
+                textBlocks = blocks,
+                imageWidth = bitmap.width, 
+                imageHeight = bitmap.height
             )
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit failed", e)
-            OcrResult(null, emptyList(), null, null, "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
+            OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
         }
     }
 }
