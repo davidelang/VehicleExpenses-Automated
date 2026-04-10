@@ -17,7 +17,8 @@
   - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.
 
 ## Bug Fixes / Tasks
-- [ ] **Reference Image Rendering:** Fix missing "Other Text" (blue) crop boxes in reference dash previews. Currently, only the red odometer box is shown.
+- [x] **Reference Image Rendering:** Fix missing "Other Text" (blue) crop boxes in reference dash previews. Stroke width increased to 12f for better visibility.
+- [x] **OCR Filtering:** Ensure all full image OCR steps (reference and query) ignore the odometer and other text crop areas to prevent "Golden Anchor" contamination.
 
 ## High Priority (next)
 - Improve GlobalWordCounts (IDF) calculation:

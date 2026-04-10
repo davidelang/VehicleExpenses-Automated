@@ -38,7 +38,18 @@ data class OcrResult(
     val imageHeight: Int = 0,
     val latitude: Double? = null,
     val longitude: Double? = null
-)
+) {
+    fun filterByCrops(odoCrop: android.graphics.RectF?, otherCrop: android.graphics.RectF?): OcrResult {
+        val filteredBlocks = textBlocks.filter { block ->
+            !OdometerOcrUtils.isBlockInCrop(block, odoCrop, imageWidth, imageHeight) &&
+            !OdometerOcrUtils.isBlockInCrop(block, otherCrop, imageWidth, imageHeight)
+        }
+        return this.copy(
+            textBlocks = filteredBlocks,
+            debugText = filteredBlocks.joinToString(" ") { it.text }
+        )
+    }
+}
 
 data class OcrStepResult(
     val stageName: String,
@@ -104,6 +115,14 @@ object OdometerOcrUtils {
         org.opencv.android.Utils.matToBitmap(threshed, out)
         mat.release(); gray.release(); threshed.release()
         return out
+    }
+
+    fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
+        if (crop == null) return false
+        if (w <= 0 || h <= 0) return false
+        val bx = block.boundingBox.centerX().toFloat() / w
+        val by = block.boundingBox.centerY().toFloat() / h
+        return crop.contains(bx, by)
     }
 
     fun runRawOcr(bitmap: Bitmap, whitelist: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"): Pair<String, List<TextBlock>> {
