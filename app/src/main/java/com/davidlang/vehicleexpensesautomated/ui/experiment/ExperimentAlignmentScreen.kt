@@ -346,16 +346,16 @@ private suspend fun runExperiment(
             val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap)
             val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
             
-            // Global Discovery OCR
+            // Global Discovery OCR (Multi-version Trace)
             val globalOcrResultsMap = mutableMapOf<String, Map<String, Pair<String, Long>>>()
             val globalVersions = mapOf("Original" to originalBitmap, "Grayscale" to grayBitmap, "Bilateral" to bileBitmap)
-            
+
             globalVersions.forEach { (verName, bmp) ->
-                val engineResults = OcrHarness.runAll(bmp)
+                val engineResults = OcrHarness.runAll(bmp, context)
                 globalOcrResultsMap[verName] = engineResults.mapValues { it.value.debugText to it.value.executionTimeMs }
             }
-            
-            val queryOcrMl = OcrHarness.runAll(originalBitmap)["ML Kit"] ?: OcrResult(debugText = "")
+
+            val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"] ?: OcrResult(debugText = "")
             val globalOcrResults = globalOcrResultsMap["Original"]!!
 
             val vehicleResults = mutableListOf<JSONObject>()

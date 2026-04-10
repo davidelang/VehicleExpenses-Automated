@@ -51,11 +51,30 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
     }
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
-        // TODO: Implement chained inference: Det -> Cls -> Rec
-        // 1. Run Detector (Get Bounding Boxes)
-        // 2. Crop/Rotate via Classifier
-        // 3. Run Recognizer (Decode with dictionary)
-        OcrResult(engineName = name, debugText = "Placeholder: PaddleOCR Recognition TBD")
+        val t0 = System.currentTimeMillis()
+        
+        // 1. Run Detector (640x640 input)
+        val resizedDet = Bitmap.createScaledBitmap(bitmap, 640, 640, true)
+        val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * 640 * 640 * 4).apply {
+            order(ByteOrder.nativeOrder())
+            // Normalize: (pixel - mean) / std. Assuming standard PP-OCR normalization.
+            for (y in 0 until 640) {
+                for (x in 0 until 640) {
+                    val px = resizedDet.getPixel(x, y)
+                    putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
+                    putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
+                    putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)
+                }
+            }
+        }
+        
+        // Output tensor shape for Det: [1, 1, 640, 640]
+        val outputBuffer = Array(1) { Array(1) { Array(640) { FloatArray(640) } } }
+        detInterpreter?.run(inputBuffer, outputBuffer)
+        
+        // TODO: Extract bounding boxes from outputBuffer and pass to Classifier/Recognizer
+        
+        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = "PaddleOCR: Det finished")
     }
 
     fun close() {
