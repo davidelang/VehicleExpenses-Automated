@@ -284,9 +284,15 @@ private suspend fun runExperiment(
     withContext(Dispatchers.Main) { onLog("Processing reference images...") }
     val cachedRefs = vehicles.map { v ->
         val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        val tessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
-        val mlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
+        val rawTessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
+        val rawMlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
         
+        val odoCropF = v.odometerCropLeft?.let { android.graphics.RectF(it, v.odometerCropTop ?: 0f, v.odometerCropRight ?: 1f, v.odometerCropBottom ?: 1f) }
+        val otherCropF = v.otherTextCropLeft?.let { android.graphics.RectF(it, v.otherTextCropTop ?: 0f, v.otherTextCropRight ?: 1f, v.otherTextCropBottom ?: 1f) }
+        
+        val tessOcr = rawTessOcr.filterByCrops(odoCropF, otherCropF)
+        val mlKitOcr = rawMlKitOcr.filterByCrops(odoCropF, otherCropF)
+
         val annotatedBmp = drawCropBoxesOnReference(bmp, v)
         val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
         annotatedBmp.recycle()
@@ -588,9 +594,25 @@ private fun bitmapToBase64(bitmap: Bitmap, quality: Int): String {
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
     val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = android.graphics.Canvas(annotated)
-    val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f }
-    vehicle.odometerCropLeft?.let { l -> paint.color = android.graphics.Color.RED; canvas.drawRect(l * bmp.width, (vehicle.odometerCropTop ?: 0f) * bmp.height, (vehicle.odometerCropRight ?: 1f) * bmp.width, (vehicle.odometerCropBottom ?: 1f) * bmp.height, paint) }
-    vehicle.otherTextCropLeft?.let { l -> paint.color = android.graphics.Color.BLUE; canvas.drawRect(l * bmp.width, (vehicle.otherTextCropTop ?: 0f) * bmp.height, (vehicle.otherTextCropRight ?: 1f) * bmp.width, (vehicle.otherTextCropBottom ?: 1f) * bmp.height, paint) }
+    val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 12f }
+    
+    // Odometer Box (Red)
+    vehicle.odometerCropLeft?.let { l ->
+        paint.color = android.graphics.Color.RED
+        val top = (vehicle.odometerCropTop ?: 0f) * bmp.height
+        val right = (vehicle.odometerCropRight ?: 1f) * bmp.width
+        val bottom = (vehicle.odometerCropBottom ?: 1f) * bmp.height
+        canvas.drawRect(l * bmp.width, top, right, bottom, paint)
+    }
+    
+    // Other Text Box (Blue)
+    vehicle.otherTextCropLeft?.let { l ->
+        paint.color = android.graphics.Color.BLUE
+        val top = (vehicle.otherTextCropTop ?: 0f) * bmp.height
+        val right = (vehicle.otherTextCropRight ?: 1f) * bmp.width
+        val bottom = (vehicle.otherTextCropBottom ?: 1f) * bmp.height
+        canvas.drawRect(l * bmp.width, top, right, bottom, paint)
+    }
     return annotated
 }
 
