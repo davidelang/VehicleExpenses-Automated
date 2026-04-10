@@ -91,6 +91,16 @@ class MlKitEngine : OcrEngine {
     }
 }
 
+object OcrHarness {
+    private val engines = listOf(TesseractEngine(), MlKitEngine())
+
+    suspend fun runAll(bitmap: Bitmap): Map<String, OcrResult> {
+        return engines.associate { engine ->
+            engine.name to engine.recognize(bitmap)
+        }
+    }
+}
+
 object OdometerOcrUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
