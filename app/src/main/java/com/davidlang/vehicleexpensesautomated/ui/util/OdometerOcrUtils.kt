@@ -93,11 +93,7 @@ class MlKitEngine : OcrEngine {
 }
 
 object OcrHarness {
-    private val engines = listOf(TesseractEngine(), MlKitEngine()) // Will add Paddle here once implemented
-    // private val engines = listOf(TesseractEngine(), MlKitEngine(), PaddleOcrEngine(context)) // context needs passing
-
     suspend fun runAll(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-        // Updated to pass context
         val enginesList = listOf(TesseractEngine(), MlKitEngine(), PaddleOcrEngine(context))
         return enginesList.associate { engine ->
             engine.name to engine.recognize(bitmap)
