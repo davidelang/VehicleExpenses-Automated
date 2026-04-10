@@ -323,7 +323,8 @@ private suspend fun runExperiment(
     photos.forEachIndexed { index, file ->
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
-            val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
+            val rawBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
+            val originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
             // Phase 2b: dashboard images
             val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap)
@@ -355,6 +356,7 @@ private suspend fun runExperiment(
             var winnerName = "No match"
             var bestConf = 0f
             var pickedOdometer = "FAILED"
+            val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
 
             // Process Each Vehicle
             cachedRefs.forEach { ref ->
@@ -362,6 +364,9 @@ private suspend fun runExperiment(
                     ref, originalBitmap, queryOcrMl!!, globalWordCounts, dynamicAnchors, 
                     cachedRefs.map { it.ocrResult }, context
                 )
+                
+                strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
+                strategyTraces["${ref.vehicle.name}_Hub"] = vRes.traceData["Hub"] ?: emptyList()
                 
                 if (vRes.confidence > bestConf) {
                     bestConf = vRes.confidence
@@ -385,7 +390,7 @@ private suspend fun runExperiment(
 
             // HTML Streaming
             val thumbBase64 = createScaledBase64(originalBitmap, 150, 50)
-            val rowHtml = buildHtmlRowFoundation(file.name, thumbBase64, versionedOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer)
+            val rowHtml = buildHtmlRowFoundation(file.name, thumbBase64, versionedOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
             
             if (currentSize + rowHtml.length > maxSizeBytes) {
                 currentFile.appendText(footer)
@@ -462,7 +467,8 @@ private fun buildHtmlRowFoundation(
     cachedRefs: List<ReferenceCache>,
     winnerName: String,
     bestConf: Float,
-    pickedOdo: String
+    pickedOdo: String,
+    strategyTraces: Map<String, List<OcrStepResult>>
 ): String = buildString {
     appendLine("<tr>")
     
@@ -492,14 +498,30 @@ private fun buildHtmlRowFoundation(
             appendLine("<b>Score:</b> ${"%.3f".format(vRes.optDouble("score"))}<br>")
             val veto = vRes.optString("veto_word")
             if (veto.isNotEmpty()) appendLine("<b style='color:red;'>VETO: $veto</b><br>")
-            appendLine("<small>Match Time: ${vRes.optLong("match_time_ms")}ms</small>")
+            appendLine("<small>Match Time: ${vRes.optLong("match_time_ms")}ms</small><br>")
+            
+            val orb64 = vRes.optString("orb_base64")
+            if (orb64.isNotEmpty()) appendLine("<b>ORB:</b><br><img src='data:image/jpeg;base64,$orb64'><br>")
+            
+            val hub64 = vRes.optString("hub_base64")
+            if (hub64.isNotEmpty()) appendLine("<b>HUB:</b><br><img src='data:image/jpeg;base64,$hub64'><br>")
         }
         appendLine("</td>")
         
-        // Columns 3, 4, 5: OCR Traces (Phase 1: Placeholders or basic data)
-        appendLine("<td class='trace-column'><i>(Phase 2)</i></td>")
-        appendLine("<td class='trace-column'><i>(Phase 2)</i></td>")
-        appendLine("<td class='trace-column'><i>(Phase 2)</i></td>")
+        // Columns 3, 4, 5: OCR Traces
+        listOf("Aligned", "Hub", "Anchor").forEach { strat ->
+            appendLine("<td class='trace-column'>")
+            val steps = strategyTraces["${v.name}_$strat"]
+            if (steps != null && steps.isNotEmpty()) {
+                steps.forEach { step ->
+                    appendLine("<img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 120, 60)}'><br>")
+                    appendLine("<b>${step.stageName}:</b><br>${step.text ?: "-"}<hr>")
+                }
+            } else {
+                appendLine("<i>(No crop)</i>")
+            }
+            appendLine("</td>")
+        }
     }
     
     // Column 6: Summary
