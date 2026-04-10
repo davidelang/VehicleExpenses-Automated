@@ -91,13 +91,45 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             )
             val crop = Bitmap.createBitmap(resizedDet, clampedBox.left, clampedBox.top, clampedBox.width(), clampedBox.height())
             
-            // Run Classifier (simple mock for now, will implement actual TFLite call)
+            // Run Classifier (Mocking full inference for now)
             val clsInput = Bitmap.createScaledBitmap(crop, 192, 48, true)
             // ... (clsInterpreter?.run(clsInput, ...) logic)
             
-            results.append("Text detected at ${clampedBox.centerX()},${clampedBox.centerY()} ")
+            // 3. Run Recognizer
+            val recInput = Bitmap.createScaledBitmap(crop, 320, 32, true)
+            val recBuffer = ByteBuffer.allocateDirect(1 * 32 * 320 * 1 * 4).apply {
+                order(ByteOrder.nativeOrder())
+                for (y in 0 until 32) {
+                    for (x in 0 until 320) {
+                        val px = recInput.getPixel(x, y)
+                        putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
+                    }
+                }
+            }
+            // Recognize: [1, 1, 32, 320] -> Output [1, 40, 38] (e.g. chars x dict size)
+            val recOutput = Array(1) { Array(40) { FloatArray(38) } }
+            recInterpreter?.run(recBuffer, recOutput)
+            
+            // Greedy Decode
+            val decoded = StringBuilder()
+            for (i in 0 until 40) {
+                var maxIdx = 0
+                var maxVal = -1f
+                for (j in 0 until 38) {
+                    if (recOutput[0][i][j] > maxVal) {
+                        maxVal = recOutput[0][i][j]
+                        maxIdx = j
+                    }
+                }
+                if (maxIdx > 0 && maxIdx <= dictionary.size) {
+                    decoded.append(dictionary[maxIdx - 1])
+                }
+            }
+            
+            results.append("${decoded.toString()} ")
             crop.recycle()
             clsInput.recycle()
+            recInput.recycle()
         }
         
         resizedDet.recycle()
