@@ -58,7 +58,10 @@ data class SingleVehicleResult(
     val matchTimeMs: Long,
     val orbBase64: String,
     val hubBase64: String,
-    val traceData: Map<String, List<OcrStepResult>>
+    val traceData: Map<String, List<OcrStepResult>>,
+    val methodScores: Map<String, Float>,
+    val methodTimes: Map<String, Long>,
+    val tierReached: Int
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -255,7 +258,10 @@ private suspend fun processSingleVehicleMatch(
         matchTimeMs = tMatch,
         orbBase64 = orbBase64,
         hubBase64 = hubBase64,
-        traceData = traceData
+        traceData = traceData,
+        methodScores = matchResults.mapValues { it.value.confidence },
+        methodTimes = matchResults.mapValues { it.value.timeMs },
+        tierReached = matchResults["tiered"]?.tierReached ?: 0
     )
 }
 
@@ -384,13 +390,20 @@ private suspend fun runExperiment(
                     put("veto_word", vRes.vetoReason)
                     put("orb_base64", vRes.orbBase64)
                     put("hub_base64", vRes.hubBase64)
+                    val scoresObj = JSONObject()
+                    vRes.methodScores.forEach { (k, v) -> scoresObj.put(k, v.toDouble()) }
+                    put("method_scores", scoresObj)
+                    val timesObj = JSONObject()
+                    vRes.methodTimes.forEach { (k, v) -> timesObj.put(k, v) }
+                    put("method_times", timesObj)
+                    put("tier_reached", vRes.tierReached)
                 }
                 vehicleResults.add(vJson)
             }
 
             // HTML Streaming
-            val thumbBase64 = createScaledBase64(originalBitmap, 150, 50)
-            val rowHtml = buildHtmlRowFoundation(file.name, thumbBase64, versionedOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
+            val globalVersionBase64s = globalVersions.mapValues { createScaledBase64(it.value, 150, 50) }
+            val rowHtml = buildHtmlRowFoundation(file.name, globalVersionBase64s, versionedOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
             
             if (currentSize + rowHtml.length > maxSizeBytes) {
                 currentFile.appendText(footer)
@@ -463,7 +476,7 @@ private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>
 
 private fun buildHtmlRowFoundation(
     photoName: String, 
-    thumbBase64: String, 
+    globalVersionBase64s: Map<String, String>, 
     globalOcr: Map<String, Map<String, Pair<String, Long>>>,
     vehicleResults: List<JSONObject>,
     allVehicles: List<Vehicle>,
@@ -476,9 +489,11 @@ private fun buildHtmlRowFoundation(
     appendLine("<tr>")
     
     // Column 1: Global Discovery Trace
-    appendLine("<td><small>$photoName</small><br><img src='data:image/jpeg;base64,$thumbBase64'><br>")
+    appendLine("<td><small>$photoName</small><br>")
     globalOcr.forEach { (version, engineMap) ->
         appendLine("<div class='discovery-trace'><b>Version: $version</b><br>")
+        val b64 = globalVersionBase64s[version]
+        if (b64 != null) appendLine("<img src='data:image/jpeg;base64,$b64'><br>")
         engineMap.forEach { (engine, data) ->
             appendLine("<i>$engine (${data.second}ms):</i><br>${data.first}<br>")
         }
@@ -499,9 +514,23 @@ private fun buildHtmlRowFoundation(
         }
         if (vRes != null) {
             appendLine("<b>Score:</b> ${"%.3f".format(vRes.optDouble("score"))}<br>")
+            val tier = vRes.optInt("tier_reached", -1)
+            if (tier != -1) appendLine("<b>Tier:</b> $tier<br>")
             val veto = vRes.optString("veto_word")
             if (veto.isNotEmpty()) appendLine("<b style='color:red;'>VETO: $veto</b><br>")
-            appendLine("<small>Match Time: ${vRes.optLong("match_time_ms")}ms</small><br>")
+            
+            val scoresObj = vRes.optJSONObject("method_scores")
+            val timesObj = vRes.optJSONObject("method_times")
+            if (scoresObj != null && timesObj != null) {
+                appendLine("<small>")
+                scoresObj.keys().forEach { k ->
+                    val s = "%.2f".format(scoresObj.getDouble(k))
+                    val t = timesObj.optLong(k, 0)
+                    appendLine("$k: $s (${t}ms)<br>")
+                }
+                appendLine("</small>")
+            }
+            appendLine("<small>Total Match Time: ${vRes.optLong("match_time_ms")}ms</small><br>")
             
             val orb64 = vRes.optString("orb_base64")
             if (orb64.isNotEmpty()) appendLine("<b>ORB:</b><br><img src='data:image/jpeg;base64,$orb64'><br>")
