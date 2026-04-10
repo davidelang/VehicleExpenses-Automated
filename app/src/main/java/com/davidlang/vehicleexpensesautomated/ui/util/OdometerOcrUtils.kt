@@ -60,6 +60,37 @@ data class OcrStepResult(
     val text: String?
 )
 
+interface OcrEngine {
+    val name: String
+    suspend fun recognize(bitmap: Bitmap): OcrResult
+}
+
+class TesseractEngine : OcrEngine {
+    override val name = "Tesseract"
+    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val (text, blocks) = OdometerOcrUtils.runRawOcr(bitmap, "0123456789")
+        OcrResult(
+            engineName = name,
+            executionTimeMs = System.currentTimeMillis() - t0,
+            odometer = text.takeIf { it.length in 4..6 },
+            debugText = text,
+            textBlocks = blocks,
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height
+        )
+    }
+}
+
+class MlKitEngine : OcrEngine {
+    override val name = "ML Kit"
+    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val res = OdometerOcrUtils.extractFromPhotoBitmap(bitmap)
+        res.copy(engineName = name, executionTimeMs = System.currentTimeMillis() - t0)
+    }
+}
+
 object OdometerOcrUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
