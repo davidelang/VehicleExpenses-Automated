@@ -426,6 +426,9 @@ private suspend fun runExperiment(
             grayBitmap.recycle()
             bileBitmap.recycle()
             originalBitmap.recycle()
+            
+            // Phase 2c Deep Trace recycling
+            strategyTraces.values.flatten().forEach { it.bitmap.recycle() }
 
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
     }
