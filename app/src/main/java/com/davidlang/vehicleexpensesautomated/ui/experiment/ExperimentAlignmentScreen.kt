@@ -560,7 +560,7 @@ private fun manualCropFromRectF(bmp: Bitmap, rect: android.graphics.RectF): Bitm
 }
 
 private fun pickBestOdometer(allSteps: List<OcrStepResult>): String? {
-    val candidates = allSteps.mapNotNull { it.text }.flatMap { text -> Regex("\\d{4,7}").findAll(text).map { it.value } }
+    val candidates = allSteps.mapNotNull { it.text }.flatMap { text -> Regex("\\b\\d{4,7}\\b").findAll(text).map { it.value } }
     return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
 }
 
