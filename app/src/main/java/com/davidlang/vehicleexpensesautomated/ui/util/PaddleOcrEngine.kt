@@ -91,22 +91,36 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             )
             val crop = Bitmap.createBitmap(resizedDet, clampedBox.left, clampedBox.top, clampedBox.width(), clampedBox.height())
             
-            // Run Classifier (Mocking full inference for now)
+            // Run Classifier
             val clsInput = Bitmap.createScaledBitmap(crop, 192, 48, true)
-            // ... (clsInterpreter?.run(clsInput, ...) logic)
+            val clsBuffer = ByteBuffer.allocateDirect(1 * 48 * 192 * 3 * 4).apply {
+                order(ByteOrder.nativeOrder())
+                for (y in 0 until 48) {
+                    for (x in 0 until 192) {
+                        val px = clsInput.getPixel(x, y)
+                        putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
+                        putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
+                        putFloat(((px and 0xFF) / 255.0f - 0.5f) / 0.5f)
+                    }
+                }
+            }
+            val clsOutput = Array(1) { FloatArray(4) }
+            clsInterpreter?.run(clsBuffer, clsOutput)
             
             // 3. Run Recognizer
             val recInput = Bitmap.createScaledBitmap(crop, 320, 32, true)
-            val recBuffer = ByteBuffer.allocateDirect(1 * 32 * 320 * 1 * 4).apply {
+            val recBuffer = ByteBuffer.allocateDirect(1 * 32 * 320 * 3 * 4).apply {
                 order(ByteOrder.nativeOrder())
                 for (y in 0 until 32) {
                     for (x in 0 until 320) {
                         val px = recInput.getPixel(x, y)
                         putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
+                        putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
+                        putFloat(((px and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     }
                 }
             }
-            // Recognize: [1, 1, 32, 320] -> Output [1, 40, 38] (e.g. chars x dict size)
+            // Recognize output [1, 40, 38]
             val recOutput = Array(1) { Array(40) { FloatArray(38) } }
             recInterpreter?.run(recBuffer, recOutput)
             
@@ -129,7 +143,9 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             results.append("${decoded.toString()} ")
             crop.recycle()
             clsInput.recycle()
+            clsBuffer.clear() // No direct clear for ByteBuffer
             recInput.recycle()
+            recBuffer.clear()
         }
         
         resizedDet.recycle()
