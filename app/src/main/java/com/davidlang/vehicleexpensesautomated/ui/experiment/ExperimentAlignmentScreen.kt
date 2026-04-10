@@ -51,6 +51,16 @@ data class PhotoResultSummary(
     val odometer: String?
 )
 
+data class SingleVehicleResult(
+    val vehicleName: String,
+    val confidence: Float,
+    val vetoReason: String,
+    val matchTimeMs: Long,
+    val orbBase64: String,
+    val hubBase64: String,
+    val traceData: Map<String, List<OcrStepResult>>
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExperimentAlignmentScreen(navController: NavHostController) {
@@ -186,6 +196,69 @@ data class ReferenceCache(
     val bmp: Bitmap
 )
 
+private suspend fun processSingleVehicleMatch(
+    ref: ReferenceCache,
+    originalBitmap: Bitmap,
+    queryOcrMl: OcrResult,
+    globalWordCounts: Map<String, Int>,
+    dynamicAnchors: Map<String, String>,
+    allOtherRefs: List<OcrResult>,
+    context: Context
+): SingleVehicleResult {
+    val odometerCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
+    val otherTextCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
+    
+    // Matching
+    val tMatch0 = System.currentTimeMillis()
+    val matchResults = ImageAlignmentUtils.matchWithAllMethods(
+        ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odometerCropF, otherTextCropF, 
+        skipExpensiveORB = false, globalWordCounts = globalWordCounts, 
+        allOtherRefs = allOtherRefs, dynamicAnchors = dynamicAnchors, currentVehicleName = ref.vehicle.name
+    )
+    val tMatch = System.currentTimeMillis() - tMatch0
+    val consensus = matchResults["consensus"]!!
+    
+    // Alignment Previews
+    val orbRes = matchResults["feature"]!!
+    val hubRes = matchResults["hub"]!!
+    val orbBase64 = if (orbRes.success && orbRes.alignedImage != null) createScaledBase64(orbRes.alignedImage, 400, 70) else ""
+    val hubBase64 = if (hubRes.success && hubRes.alignedImage != null) createScaledBase64(hubRes.alignedImage, 400, 70) else ""
+    
+    // OCR Strategy Trace (Phase 1: Raw only)
+    val traceData = mutableMapOf<String, List<OcrStepResult>>()
+    
+    // Aligned Odo Trace
+    if (orbRes.success && orbRes.alignedImage != null) {
+        val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle)
+        if (crop != null) {
+            traceData["Aligned"] = OdometerOcrUtils.runMultiStepOcr(crop, context)
+            crop.recycle()
+        }
+    }
+    
+    // Hub Odo Trace
+    if (hubRes.success && hubRes.alignedImage != null) {
+        val crop = manualCropOdometer(hubRes.alignedImage, ref.vehicle)
+        if (crop != null) {
+            traceData["Hub"] = OdometerOcrUtils.runMultiStepOcr(crop, context)
+            crop.recycle()
+        }
+    }
+
+    orbRes.alignedImage?.recycle()
+    hubRes.alignedImage?.recycle()
+
+    return SingleVehicleResult(
+        vehicleName = ref.vehicle.name,
+        confidence = consensus.confidence,
+        vetoReason = consensus.vetoReason ?: "",
+        matchTimeMs = tMatch,
+        orbBase64 = orbBase64,
+        hubBase64 = hubBase64,
+        traceData = traceData
+    )
+}
+
 private suspend fun runExperiment(
     experimentDir: File,
     reportDir: File,
@@ -277,72 +350,33 @@ private suspend fun runExperiment(
 
             // Process Each Vehicle
             cachedRefs.forEach { ref ->
-                val odometerCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
-                val otherTextCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
-                
-                // Matching
-                val tMatch0 = System.currentTimeMillis()
-                val matchResults = ImageAlignmentUtils.matchWithAllMethods(
-                    ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odometerCropF, otherTextCropF, 
-                    skipExpensiveORB = false, globalWordCounts = globalWordCounts, 
-                    allOtherRefs = cachedRefs.map { it.ocrResult }, dynamicAnchors = dynamicAnchors, currentVehicleName = ref.vehicle.name
+                val vRes = processSingleVehicleMatch(
+                    ref, originalBitmap, queryOcrMl, globalWordCounts, dynamicAnchors, 
+                    cachedRefs.map { it.ocrResult }, context
                 )
-                val tMatch = System.currentTimeMillis() - tMatch0
-                val consensus = matchResults["consensus"]!!
                 
-                // Alignment Previews
-                val orbRes = matchResults["feature"]!!
-                val hubRes = matchResults["hub"]!!
-                val orbBase64 = if (orbRes.success && orbRes.alignedImage != null) createScaledBase64(orbRes.alignedImage, 400, 70) else ""
-                val hubBase64 = if (hubRes.success && hubRes.alignedImage != null) createScaledBase64(hubRes.alignedImage, 400, 70) else ""
-                
-                // OCR Strategy Trace (Phase 1: Raw only)
-                // We'll simulate the Trace Columns here
-                val traceData = mutableMapOf<String, List<OcrStepResult>>() // Strategy -> OCR Steps
-                
-                // Aligned Odo Trace
-                if (orbRes.success && orbRes.alignedImage != null) {
-                    val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle)
-                    if (crop != null) {
-                        traceData["Aligned"] = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                        crop.recycle()
-                    }
-                }
-                
-                // Hub Odo Trace
-                if (hubRes.success && hubRes.alignedImage != null) {
-                    val crop = manualCropOdometer(hubRes.alignedImage, ref.vehicle)
-                    if (crop != null) {
-                        traceData["Hub"] = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                        crop.recycle()
-                    }
-                }
-
-                // Final Logic Check for Winner
-                if (consensus.confidence > bestConf) {
-                    bestConf = consensus.confidence
-                    winnerName = ref.vehicle.name
+                if (vRes.confidence > bestConf) {
+                    bestConf = vRes.confidence
+                    winnerName = vRes.vehicleName
                     // Pick odo from traces (best candidate)
-                    pickedOdometer = pickBestOdometer(traceData.values.flatten()) ?: "FAILED"
+                    val candidates = (vRes.traceData["Aligned"] ?: emptyList()) + (vRes.traceData["Hub"] ?: emptyList())
+                    pickedOdometer = pickBestOdometer(candidates) ?: "FAILED"
                 }
 
                 // Store Per-Vehicle Data for JSON
                 val vJson = JSONObject().apply {
-                    put("name", ref.vehicle.name)
-                    put("score", consensus.confidence.toDouble())
-                    put("match_time_ms", tMatch)
-                    put("veto_word", consensus.vetoReason)
-                    // (More fields for Deep Trace in Phase 2)
+                    put("name", vRes.vehicleName)
+                    put("score", vRes.confidence.toDouble())
+                    put("match_time_ms", vRes.matchTimeMs)
+                    put("veto_word", vRes.vetoReason)
+                    put("orb_base64", vRes.orbBase64)
+                    put("hub_base64", vRes.hubBase64)
                 }
                 vehicleResults.add(vJson)
-
-                // Clean up per-vehicle aligned bitmaps
-                orbRes.alignedImage?.recycle()
-                hubRes.alignedImage?.recycle()
             }
 
             // HTML Streaming
-            val thumbBase64 = bitmapToBase64(originalBitmap, 50)
+            val thumbBase64 = createScaledBase64(originalBitmap, 150, 50)
             val rowHtml = buildHtmlRowFoundation(file.name, thumbBase64, globalOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer)
             
             if (currentSize + rowHtml.length > maxSizeBytes) {
@@ -520,8 +554,14 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
                 var entry = zis.nextEntry
                 while (entry != null) {
                     val file = File(targetDir, entry.name)
-                    if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }
-                    zis.closeEntry(); entry = zis.nextEntry
+                    if (entry.isDirectory) {
+                        file.mkdirs()
+                    } else {
+                        file.parentFile?.mkdirs()
+                        file.outputStream().use { zis.copyTo(it) }
+                    }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
                 }
             }
         }
