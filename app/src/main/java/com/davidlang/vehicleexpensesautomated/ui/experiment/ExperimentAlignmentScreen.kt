@@ -317,10 +317,14 @@ private suspend fun runExperiment(
     // 2. INITIALIZE REPORTS
     val jsonArray = JSONArray()
     var partCount = 1
-    val maxSizeBytes = 1024 * 1024 // 1MB per part
+    val maxSizeBytes = 2 * 1024 * 1024 // 2MB per part
     var currentSize = 0
-    fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply {
-        writeText(buildHtmlHeader(timestamp, total, vehicles))
+    fun startNewFile(): File {
+        val header = buildHtmlHeader(timestamp, total, vehicles)
+        currentSize = header.length
+        return File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply {
+            writeText(header)
+        }
     }
     var currentFile = startNewFile()
     val footer = "</table></body></html>"
@@ -408,7 +412,6 @@ private suspend fun runExperiment(
             if (currentSize + rowHtml.length > maxSizeBytes) {
                 currentFile.appendText(footer)
                 currentFile = startNewFile()
-                currentSize = 0
             }
             currentFile.appendText(rowHtml)
             currentSize += rowHtml.length
