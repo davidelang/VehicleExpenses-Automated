@@ -374,10 +374,14 @@ private suspend fun runExperiment(
                 strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
                 strategyTraces["${ref.vehicle.name}_Hub"] = vRes.traceData["Hub"] ?: emptyList()
                 
-                if (vRes.confidence > bestConf) {
+                // Final Logic Check for Winner (Strict Gating)
+                val minConfidence = 0.25f
+                val isTierValid = vRes.tierReached in 1..3
+                
+                if (isTierValid && vRes.confidence >= minConfidence && vRes.confidence > bestConf) {
                     bestConf = vRes.confidence
                     winnerName = vRes.vehicleName
-                    // Pick odo from traces (best candidate)
+                    // Pick odo from traces (best candidate for this specific vehicle)
                     val candidates = (vRes.traceData["Aligned"] ?: emptyList()) + (vRes.traceData["Hub"] ?: emptyList())
                     pickedOdometer = pickBestOdometer(candidates) ?: "FAILED"
                 }
