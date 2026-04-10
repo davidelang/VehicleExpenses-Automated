@@ -330,18 +330,26 @@ private suspend fun runExperiment(
             val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
             
             // Global Discovery OCR
-            val t0 = System.currentTimeMillis()
-            val queryOcrTess = OdometerOcrUtils.extractFullImageOcr(file.absolutePath)
-            val tTess = System.currentTimeMillis() - t0
+            val versionedOcrResults = mutableMapOf<String, Map<String, Pair<String, Long>>>()
+            val globalVersions = mapOf("Original" to originalBitmap, "Grayscale" to grayBitmap, "Bilateral" to bileBitmap)
             
-            val t1 = System.currentTimeMillis()
-            val queryOcrMl = OdometerOcrUtils.extractFromPhoto(file.absolutePath)
-            val tMl = System.currentTimeMillis() - t1
+            var queryOcrMl: OcrResult? = null
             
-            val globalOcrResults = mapOf(
-                "Tesseract" to (queryOcrTess.debugText to tTess),
-                "ML Kit" to (queryOcrMl.debugText to tMl)
-            )
+            globalVersions.forEach { (verName, bmp) ->
+                val engineMap = mutableMapOf<String, Pair<String, Long>>()
+                val tStartTess = System.currentTimeMillis()
+                val (tessText, _) = OdometerOcrUtils.runRawOcr(bmp)
+                engineMap["Tesseract"] = tessText to (System.currentTimeMillis() - tStartTess)
+                
+                val tStartMl = System.currentTimeMillis()
+                val mlResult = OdometerOcrUtils.extractFromPhotoBitmap(bmp)
+                engineMap["ML Kit"] = mlResult.debugText to (System.currentTimeMillis() - tStartMl)
+                
+                if (verName == "Original") queryOcrMl = mlResult
+                versionedOcrResults[verName] = engineMap
+            }
+            
+            val globalOcrResults = versionedOcrResults["Original"]!!
 
             val vehicleResults = mutableListOf<JSONObject>()
             var winnerName = "No match"
@@ -351,7 +359,7 @@ private suspend fun runExperiment(
             // Process Each Vehicle
             cachedRefs.forEach { ref ->
                 val vRes = processSingleVehicleMatch(
-                    ref, originalBitmap, queryOcrMl, globalWordCounts, dynamicAnchors, 
+                    ref, originalBitmap, queryOcrMl!!, globalWordCounts, dynamicAnchors, 
                     cachedRefs.map { it.ocrResult }, context
                 )
                 
@@ -377,7 +385,7 @@ private suspend fun runExperiment(
 
             // HTML Streaming
             val thumbBase64 = createScaledBase64(originalBitmap, 150, 50)
-            val rowHtml = buildHtmlRowFoundation(file.name, thumbBase64, globalOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer)
+            val rowHtml = buildHtmlRowFoundation(file.name, thumbBase64, versionedOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer)
             
             if (currentSize + rowHtml.length > maxSizeBytes) {
                 currentFile.appendText(footer)
@@ -388,12 +396,19 @@ private suspend fun runExperiment(
             currentSize += rowHtml.length
 
             // JSON Persistence
+            val globalJson = JSONObject()
+            versionedOcrResults.forEach { (version, engineMap) ->
+                val verObj = JSONObject()
+                engineMap.forEach { (eng, data) -> verObj.put(eng, data.first) }
+                globalJson.put(version, verObj)
+            }
+
             val photoJson = JSONObject().apply {
                 put("file", file.name)
                 put("winner", winnerName)
                 put("confidence", bestConf.toDouble())
                 put("odometer", pickedOdometer)
-                put("global_discovery", JSONObject(globalOcrResults.mapValues { it.value.first }))
+                put("global_discovery", globalJson)
                 put("vehicles", JSONArray(vehicleResults))
             }
             jsonArray.put(photoJson)
@@ -441,7 +456,7 @@ private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>
 private fun buildHtmlRowFoundation(
     photoName: String, 
     thumbBase64: String, 
-    globalOcr: Map<String, Pair<String, Long>>,
+    globalOcr: Map<String, Map<String, Pair<String, Long>>>,
     vehicleResults: List<JSONObject>,
     allVehicles: List<Vehicle>,
     cachedRefs: List<ReferenceCache>,
@@ -451,10 +466,14 @@ private fun buildHtmlRowFoundation(
 ): String = buildString {
     appendLine("<tr>")
     
-    // Column 1: Global Discovery
+    // Column 1: Global Discovery Trace
     appendLine("<td><small>$photoName</small><br><img src='data:image/jpeg;base64,$thumbBase64'><br>")
-    globalOcr.forEach { (engine, data) ->
-        appendLine("<div class='discovery-trace'><b>$engine (${data.second}ms):</b><br>${data.first}</div>")
+    globalOcr.forEach { (version, engineMap) ->
+        appendLine("<div class='discovery-trace'><b>Version: $version</b><br>")
+        engineMap.forEach { (engine, data) ->
+            appendLine("<i>$engine (${data.second}ms):</i><br>${data.first}<br>")
+        }
+        appendLine("</div>")
     }
     appendLine("</td>")
     
