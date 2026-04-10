@@ -213,7 +213,7 @@ object OdometerOcrUtils {
 
     fun extractFromPhotoForDebug(bitmap: Bitmap): Pair<String, List<TextBlock>> = runRawOcr(bitmap)
 
-    private fun rotateImageIfRequired(img: Bitmap, path: String): Bitmap {
+    fun rotateImageIfRequired(img: Bitmap, path: String): Bitmap {
         val ei = android.media.ExifInterface(path)
         val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
 
@@ -225,7 +225,7 @@ object OdometerOcrUtils {
         }
     }
 
-    private fun rotateImage(img: Bitmap, degree: Float): Bitmap {
+    fun rotateImage(img: Bitmap, degree: Float): Bitmap {
         val matrix = android.graphics.Matrix()
         matrix.postRotate(degree)
         val rotatedImg = Bitmap.createBitmap(img, 0, 0, img.width, img.height, matrix, true)
