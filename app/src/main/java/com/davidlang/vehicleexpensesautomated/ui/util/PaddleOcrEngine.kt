@@ -72,9 +72,36 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         val outputBuffer = Array(1) { Array(1) { Array(640) { FloatArray(640) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
         
-        // TODO: Extract bounding boxes from outputBuffer and pass to Classifier/Recognizer
+        // Simple thresholding to find detections
+        val boxes = mutableListOf<android.graphics.Rect>()
+        for (y in 0 until 640 step 8) {
+            for (x in 0 until 640 step 8) {
+                if (outputBuffer[0][0][y][x] > 0.5f) {
+                    boxes.add(android.graphics.Rect(x - 16, y - 16, x + 16, y + 16))
+                }
+            }
+        }
         
-        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = "PaddleOCR: Det finished")
+        // 2. Run Classifier & Recognize
+        val results = StringBuilder()
+        for (box in boxes) {
+            val clampedBox = android.graphics.Rect(
+                box.left.coerceAtLeast(0), box.top.coerceAtLeast(0),
+                box.right.coerceAtMost(640), box.bottom.coerceAtMost(640)
+            )
+            val crop = Bitmap.createBitmap(resizedDet, clampedBox.left, clampedBox.top, clampedBox.width(), clampedBox.height())
+            
+            // Run Classifier (simple mock for now, will implement actual TFLite call)
+            val clsInput = Bitmap.createScaledBitmap(crop, 192, 48, true)
+            // ... (clsInterpreter?.run(clsInput, ...) logic)
+            
+            results.append("Text detected at ${clampedBox.centerX()},${clampedBox.centerY()} ")
+            crop.recycle()
+            clsInput.recycle()
+        }
+        
+        resizedDet.recycle()
+        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = results.toString())
     }
 
     fun close() {
