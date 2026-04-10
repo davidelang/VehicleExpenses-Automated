@@ -145,71 +145,40 @@ object OdometerOcrUtils {
 
     suspend fun runMultiStepOcr(crop: Bitmap, context: android.content.Context, tfliteEngine: TfLiteOcrEngine? = null): List<OcrStepResult> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<OcrStepResult>()
-        val numericWhitelist = "0123456789"
+        val engine = tfliteEngine ?: TfLiteOcrEngine(context)
         
-        // 0. Raw
-        val (text0, _) = runRawOcr(crop, numericWhitelist)
-        steps.add(OcrStepResult("Raw", crop.copy(Bitmap.Config.ARGB_8888, true), text0))
+        val variations = listOf(
+            "Raw" to crop.copy(Bitmap.Config.ARGB_8888, true),
+            "Grayscale" to applyGrayscale(crop),
+            "Bilateral" to applyBilateral(crop),
+            "CLAHE" to applyClahe(crop),
+            "OTSU" to applyOtsu(crop)
+        )
         
-        // 0.5 Advanced (ML Kit - TPU Optimized)
-        val mlKitText = runMlKitOcr(crop)
-        steps.add(OcrStepResult("ML Kit", crop.copy(Bitmap.Config.ARGB_8888, true), mlKitText))
-
-        // 0.75 TFLite Custom (Mechanical Digits)
-        try {
-            val engine = tfliteEngine ?: TfLiteOcrEngine(context)
-            val tfliteText = engine.runInference(crop)
-            steps.add(OcrStepResult("TFLite", crop.copy(Bitmap.Config.ARGB_8888, true), tfliteText))
-            if (tfliteEngine == null) engine.close()
-        } catch (e: Exception) {
-            steps.add(OcrStepResult("TFLite", crop.copy(Bitmap.Config.ARGB_8888, true), "(Error)"))
+        variations.forEach { (name, bmp) ->
+            val results = StringBuilder()
+            
+            val t0 = System.currentTimeMillis()
+            val (tessText, _) = runRawOcr(bmp, "0123456789")
+            results.append("<b>Tess (${System.currentTimeMillis() - t0}ms):</b> $tessText<br>")
+            
+            val t1 = System.currentTimeMillis()
+            val mlResult = extractFromPhotoBitmap(bmp)
+            val mlText = mlResult.textBlocks.joinToString(" ") { it.text }.filter { it.isDigit() }
+            results.append("<b>MLKit (${System.currentTimeMillis() - t1}ms):</b> $mlText<br>")
+            
+            val t2 = System.currentTimeMillis()
+            try {
+                val tfliteText = engine.runInference(bmp)
+                results.append("<b>TFLite (${System.currentTimeMillis() - t2}ms):</b> $tfliteText")
+            } catch (e: Exception) {
+                results.append("<b>TFLite:</b> Error")
+            }
+            
+            steps.add(OcrStepResult(name, bmp, results.toString()))
         }
-
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(crop, mat)
         
-        // 1. Grayscale
-        val gray = Mat()
-        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
-        val bmpGray = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(gray, bmpGray)
-        val (text1, _) = runRawOcr(bmpGray, numericWhitelist)
-        steps.add(OcrStepResult("Grayscale", bmpGray, text1))
-        
-        // 2. Bilateral Filter (Noise reduction)
-        val filtered = Mat()
-        Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
-        val bmpFiltered = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(filtered, bmpFiltered)
-        val (text2, _) = runRawOcr(bmpFiltered, numericWhitelist)
-        steps.add(OcrStepResult("Bilateral", bmpFiltered, text2))
-        
-        // 3. CLAHE (Contrast Limited Adaptive Histogram Equalization) + Adaptive Threshold
-        val clahe = Imgproc.createCLAHE(1.2, org.opencv.core.Size(8.0, 8.0)) // lowered clipLimit
-        val claheMat = Mat()
-        clahe.apply(gray, claheMat)
-        val adaptiveThresh = Mat()
-        // Block size 11, constant 2.0 (more sensitive to detail than 15/5.0)
-        Imgproc.adaptiveThreshold(claheMat, adaptiveThresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
-        val bmpAdaptive = Bitmap.createBitmap(adaptiveThresh.cols(), adaptiveThresh.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(adaptiveThresh, bmpAdaptive)
-        val (text3, _) = runRawOcr(bmpAdaptive, numericWhitelist)
-        steps.add(OcrStepResult("CLAHE+Adapt", bmpAdaptive, text3))
-        
-        // 4. OTSU Threshold (Good for high contrast, e.g. OLED screens)
-        val otsuThresh = Mat()
-        Imgproc.threshold(gray, otsuThresh, 0.0, 255.0, Imgproc.THRESH_BINARY or Imgproc.THRESH_OTSU)
-        val bmpOtsu = Bitmap.createBitmap(otsuThresh.cols(), otsuThresh.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(otsuThresh, bmpOtsu)
-        val (text4, _) = runRawOcr(bmpOtsu, numericWhitelist)
-        steps.add(OcrStepResult("Otsu", bmpOtsu, text4))
-
-        mat.release()
-        gray.release()
-        filtered.release()
-        claheMat.release()
-        adaptiveThresh.release()
-        otsuThresh.release()
+        if (tfliteEngine == null) engine.close()
         
         steps
     }
