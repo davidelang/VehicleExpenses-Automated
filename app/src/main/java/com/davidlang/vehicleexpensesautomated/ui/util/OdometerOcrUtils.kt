@@ -92,9 +92,27 @@ class MlKitEngine : OcrEngine {
     }
 }
 
+class NativeTfliteEngine(private val context: Context) : OcrEngine {
+    override val name = "Native TFLite"
+    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val engine = TfLiteOcrEngine(context)
+        val text = engine.runInference(bitmap)
+        engine.close()
+        OcrResult(
+            engineName = name,
+            executionTimeMs = System.currentTimeMillis() - t0,
+            odometer = text,
+            debugText = text,
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height
+        )
+    }
+}
+
 object OcrHarness {
     suspend fun runAll(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-        val enginesList = listOf(TesseractEngine(), MlKitEngine(), PaddleOcrEngine(context))
+        val enginesList = listOf(TesseractEngine(), MlKitEngine(), PaddleOcrEngine(context), NativeTfliteEngine(context))
         return enginesList.associate { engine ->
             engine.name to engine.recognize(bitmap)
         }
