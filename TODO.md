@@ -17,7 +17,6 @@
   - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.
 
 ## Bug Fixes / Tasks
-- [ ] **Report File Size Rotation:** The HTML report file size rotation is not working as expected. Files are supposed to be ~2MB each, but currently vary significantly (e.g., 400K, 1MB, 898K). Fix the `currentSize + rowHtml.length > maxSizeBytes` logic.
 - [ ] **Reference Image Rendering:** Fix missing "Other Text" (blue) crop boxes in reference dash previews. Currently, only the red odometer box is shown.
 
 ## High Priority (next)
@@ -32,8 +31,8 @@
 - **Traceability:** HTML and JSON reports must maintain parity and provide a frame-by-frame trace of how data is processed.
 
 ## Completed
-- [1511259] Stability & Report UI Fix: Implement bitmap recycling and fix quality crash
-- [82592c0] EXIF Location Extraction (Centralized in OdometerOcrUtils)
-- [82592c0] Final Visibility & Rescue Build (ORB Rescue fallbacks)
+- [b860046] Fix: Correct HTML report file size rotation logic to accurately count bytes
+- [2f1a582] Deep Trace Phase 2d: Finalize report to include missing global discovery images, method scores/times, and tier reached
+- [9a07669] Deep Trace Phase 2c: Implement 5-step OCR trace (Raw, Gray, Bile, CLAHE, OTSU) across 3 engines with timings
 
 Last updated: 2026-04-09
