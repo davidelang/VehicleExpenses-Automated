@@ -7,6 +7,7 @@
   - [ ] **Strict "No Match" Logic:** Ensure "No match" is reported if Tiers 1-3 fail or all are vetoed.
 - **OCR Engines:**
   - [ ] **PaddleOCR (PP-OCRv4) via TFLite:** Re-integrate Paddle models using stable TFLite runtime.
+    - [x] **Local Python Benchmarking:** Environment fixed, benchmark script running with bounding boxes.
 - **Deep Trace Report (Phased):**
   - [x] **Phase 1: Foundation:** New column layout (Global Discovery, Match/Align, 3x Odo Traces per vehicle, Summary). Includes timing, specific veto words, and cached reference data. Flex-ready for engine/strategy changes.
   - [ ] **Phase 2: Deep OCR Trace:** Expand Global and Odo columns to show pre-processing steps (Grayscale, Bilateral, CLAHE, OTSU) + OCR grid for each.
@@ -16,6 +17,7 @@
   - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.
 
 ## Bug Fixes / Tasks
+- [ ] **Report File Size Rotation:** The HTML report file size rotation is not working as expected. Files are supposed to be ~2MB each, but currently vary significantly (e.g., 400K, 1MB, 898K). Fix the `currentSize + rowHtml.length > maxSizeBytes` logic.
 - [ ] **Reference Image Rendering:** Fix missing "Other Text" (blue) crop boxes in reference dash previews. Currently, only the red odometer box is shown.
 
 ## High Priority (next)

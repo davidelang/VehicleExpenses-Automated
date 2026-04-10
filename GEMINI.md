@@ -3,7 +3,10 @@
 ## Workflow & Safety
 - **Deployment:** NEVER run `./gradlew installdebug` while an experiment report is running on the device. It will reset the app and lose the progress.
 - **Deployment:** the version is defined as 'git describe', so before you build and deploy, all program files should be comitted to the repo so that the version of the app matches the state of the repo at the same commit
-- **Workglow:** Operate in a reprot/propose mode. do not start making code changes without proposing what is going to be done and do not add new work without additional approval (this includes adding significant refactoring or other 'simple' fixes
+- **Workflow:** Operate in a **STRICT report/propose mode**.
+  - **MANDATE:** You MUST NOT start making code changes or implementing features without first proposing exactly what is going to be done.
+  - **STOP & WAIT:** After proposing a strategy or finishing an inquiry, you MUST stop and wait for an explicit Directive (approval) from the user before proceeding to the Execution phase.
+  - **LIMITS:** Do not add new work or perform significant refactoring/cleanup without additional, specific approval.
 - **Versioning:** ALWAYS commit changes before building/deploying. The app uses `git describe` for its version string; committing first ensures the report results are tied to the correct hash.
 - **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean.
 - **Git Hygiene:** For fixing compilation errors, prefer `git commit --amend --no-edit` to keep the history focused.
