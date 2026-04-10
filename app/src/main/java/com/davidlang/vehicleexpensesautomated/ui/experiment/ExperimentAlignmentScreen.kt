@@ -347,26 +347,16 @@ private suspend fun runExperiment(
             val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
             
             // Global Discovery OCR
-            val versionedOcrResults = mutableMapOf<String, Map<String, Pair<String, Long>>>()
+            val globalOcrResultsMap = mutableMapOf<String, Map<String, Pair<String, Long>>>()
             val globalVersions = mapOf("Original" to originalBitmap, "Grayscale" to grayBitmap, "Bilateral" to bileBitmap)
             
-            var queryOcrMl: OcrResult? = null
-            
             globalVersions.forEach { (verName, bmp) ->
-                val engineMap = mutableMapOf<String, Pair<String, Long>>()
-                val tStartTess = System.currentTimeMillis()
-                val (tessText, _) = OdometerOcrUtils.runRawOcr(bmp)
-                engineMap["Tesseract"] = tessText to (System.currentTimeMillis() - tStartTess)
-                
-                val tStartMl = System.currentTimeMillis()
-                val mlResult = OdometerOcrUtils.extractFromPhotoBitmap(bmp)
-                engineMap["ML Kit"] = mlResult.debugText to (System.currentTimeMillis() - tStartMl)
-                
-                if (verName == "Original") queryOcrMl = mlResult
-                versionedOcrResults[verName] = engineMap
+                val engineResults = OcrHarness.runAll(bmp)
+                globalOcrResultsMap[verName] = engineResults.mapValues { it.value.debugText to it.value.executionTimeMs }
             }
             
-            val globalOcrResults = versionedOcrResults["Original"]!!
+            val queryOcrMl = OcrHarness.runAll(originalBitmap)["ML Kit"] ?: OcrResult(debugText = "")
+            val globalOcrResults = globalOcrResultsMap["Original"]!!
 
             val vehicleResults = mutableListOf<JSONObject>()
             var winnerName = "No match"
@@ -413,7 +403,7 @@ private suspend fun runExperiment(
 
             // HTML Streaming
             val globalVersionBase64s = globalVersions.mapValues { createScaledBase64(it.value, 150, 50) }
-            val rowHtml = buildHtmlRowFoundation(file.name, globalVersionBase64s, versionedOcrResults, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
+            val rowHtml = buildHtmlRowFoundation(file.name, globalVersionBase64s, globalOcrResultsMap, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
             
             if (currentSize + rowHtml.length > maxSizeBytes) {
                 currentFile.appendText(footer)
@@ -424,7 +414,7 @@ private suspend fun runExperiment(
 
             // JSON Persistence
             val globalJson = JSONObject()
-            versionedOcrResults.forEach { (version, engineMap) ->
+            globalOcrResultsMap.forEach { (version, engineMap) ->
                 val verObj = JSONObject()
                 engineMap.forEach { (eng, data) -> verObj.put(eng, data.first) }
                 globalJson.put(version, verObj)
