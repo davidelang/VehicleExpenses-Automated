@@ -81,11 +81,12 @@ object ImageAlignmentUtils {
             // Veto Pool = Words others have that I don't
             val vetoPool = otherWordsPool - myWords
             
-            val trigger = queryWords.intersect(vetoPool).firstOrNull()
+            // DYNAMIC FIX: Identify ALL triggers, sort them, and remove duplicates
+            val triggers = queryWords.intersect(vetoPool).sorted()
             
             currentVehicle.id to VetoResult(
-                isVetoed = trigger != null,
-                reasonWord = trigger ?: "",
+                isVetoed = triggers.isNotEmpty(),
+                reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",
                 tierReached = 0
             )
         }
@@ -222,23 +223,43 @@ object ImageAlignmentUtils {
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         onLog?.invoke("Aligning: ORB Feature pass...")
+        var t0 = System.currentTimeMillis()
         val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped", method = "feature") else alignImages(reference, query, 10, odometerCrop, otherTextCrop)
-        results["feature"] = featureResult
-        onLog?.invoke("Aligning: Hub pass...")
-        results["hub"] = hubAlign(reference, query)
-        onLog?.invoke("Matching: ARG pass...")
-        results["arg"] = AlignmentResult(true, null, argMatch(refOcr.textBlocks, queryOcr.textBlocks, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight), "ARG", method = "arg")
-        onLog?.invoke("Matching: Histogram pass...")
-        results["histogram"] = AlignmentResult(true, null, histogramMatch(refOcr.textBlocks, queryOcr.textBlocks), "Hist", method = "histogram")
-        onLog?.invoke("Matching: Embedding pass...")
-        results["embedding"] = AlignmentResult(true, null, embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks), "Emb", method = "embedding")
-        onLog?.invoke("Matching: Anchor pass...")
-        results["anchor"] = AlignmentResult(true, null, anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, currentVehicleName, dynamicAnchors), "Anchor", method = "anchor")
+        results["feature"] = featureResult.copy(timeMs = System.currentTimeMillis() - t0)
         
+        onLog?.invoke("Aligning: Hub pass...")
+        t0 = System.currentTimeMillis()
+        val hubResult = hubAlign(reference, query)
+        results["hub"] = hubResult.copy(timeMs = System.currentTimeMillis() - t0)
+        
+        onLog?.invoke("Matching: ARG pass...")
+        t0 = System.currentTimeMillis()
+        val argRes = argMatch(refOcr.textBlocks, queryOcr.textBlocks, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
+        results["arg"] = AlignmentResult(true, null, argRes, "ARG", method = "arg", timeMs = System.currentTimeMillis() - t0)
+        
+        onLog?.invoke("Matching: Histogram pass...")
+        t0 = System.currentTimeMillis()
+        val histRes = histogramMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        results["histogram"] = AlignmentResult(true, null, histRes, "Hist", method = "histogram", timeMs = System.currentTimeMillis() - t0)
+        
+        onLog?.invoke("Matching: Embedding pass...")
+        t0 = System.currentTimeMillis()
+        val embRes = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
+        results["embedding"] = AlignmentResult(true, null, embRes, "Emb", method = "embedding", timeMs = System.currentTimeMillis() - t0)
+        
+        onLog?.invoke("Matching: Anchor pass...")
+        t0 = System.currentTimeMillis()
+        val ancRes = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, currentVehicleName, dynamicAnchors)
+        results["anchor"] = AlignmentResult(true, null, ancRes, "Anchor", method = "anchor", timeMs = System.currentTimeMillis() - t0)
+        
+        val tCons0 = System.currentTimeMillis()
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
         val consensusScore = (featScoreNorm * 0.05f) + (results["embedding"]!!.confidence * 0.40f) + (results["histogram"]!!.confidence * 0.40f) + (results["arg"]!!.confidence * 0.10f) + (results["anchor"]!!.confidence * 0.05f)
-        results["consensus"] = AlignmentResult(true, null, if (veto.isVetoed) -1f else consensusScore, if (veto.isVetoed) "VETO: ${veto.reasonWord}" else "OK", method = "consensus", wordVeto = veto.isVetoed, vetoReason = veto.reasonWord)
-        results["tiered"] = calculateTieredMatch(results, veto)
+        results["consensus"] = AlignmentResult(true, null, if (veto.isVetoed) -1f else consensusScore, if (veto.isVetoed) "VETO: ${veto.reasonWord}" else "OK", method = "consensus", wordVeto = veto.isVetoed, vetoReason = veto.reasonWord, timeMs = System.currentTimeMillis() - tCons0)
+        
+        val tTier0 = System.currentTimeMillis()
+        val tieredResult = calculateTieredMatch(results, veto)
+        results["tiered"] = tieredResult.copy(timeMs = System.currentTimeMillis() - tTier0)
         results
     }
 
