@@ -382,6 +382,51 @@ object OdometerOcrUtils {
         )
     }
 
+    suspend fun discoverLandmarks(
+        photoPath: String, 
+        odometerCrop: android.graphics.RectF? = null,
+        otherTextCrop: android.graphics.RectF? = null
+    ): List<TextBlock> = withContext(Dispatchers.IO) {
+        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
+        val rotated = rotateImageIfRequired(rawBitmap, photoPath)
+        
+        // 1. Scale to 1500px wide
+        val scale = 1500f / rotated.width
+        val scaled = Bitmap.createScaledBitmap(rotated, 1500, (rotated.height * scale).toInt(), true)
+        if (rotated != rawBitmap) rotated.recycle()
+        
+        // 2. OCR Full Image (ML Kit)
+        val ocrResult = extractFromPhotoBitmap(scaled)
+        val allBlocks = ocrResult.textBlocks
+        
+        // 3. Filter & Clean
+        val landmarks = allBlocks.filter { block ->
+            val bx = block.boundingBox.centerX().toFloat() / 1500f
+            val by = block.boundingBox.centerY().toFloat() / (scaled.height.toFloat())
+            
+            // Ignore anything inside the two crop boxes
+            val inOdo = odometerCrop?.contains(bx, by) ?: false
+            val inOther = otherTextCrop?.contains(bx, by) ?: false
+            
+            if (inOdo || inOther) return@filter false
+            
+            // Clean string: remove . and ,
+            val clean = block.text.replace(".", "").replace(",", "").trim()
+            
+            // Remove single character strings and must be non-empty after cleaning
+            clean.length > 1
+        }.map { block ->
+            // Update block with cleaned text
+            TextBlock(
+                text = block.text.replace(".", "").replace(",", "").trim(),
+                boundingBox = block.boundingBox
+            )
+        }.sortedBy { it.text }
+
+        scaled.recycle()
+        landmarks
+    }
+
     private suspend fun runMlKitOcr(bitmap: Bitmap): String {
         return try {
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)

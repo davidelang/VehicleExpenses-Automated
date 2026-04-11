@@ -51,7 +51,8 @@ class VehicleViewModel @Inject constructor(
         cleanedReferenceDashPhotoUrl: String?,
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
-        referenceTextBlocks: String?
+        referenceTextBlocks: String?,
+        landmarkTextBlocksJson: String? = null
     ) {
         val newVehicle = Vehicle(
             name = name,
@@ -69,7 +70,8 @@ class VehicleViewModel @Inject constructor(
             otherTextCropTop = null,
             otherTextCropRight = null,
             otherTextCropBottom = null,
-            referenceTextBlocks = referenceTextBlocks
+            referenceTextBlocks = referenceTextBlocks,
+            landmarkTextBlocksJson = landmarkTextBlocksJson
         )
 
         try {
