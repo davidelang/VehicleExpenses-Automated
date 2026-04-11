@@ -329,12 +329,26 @@ private suspend fun runExperiment(
                 })
             }
 
-            val rowHtml = buildHtmlRowFoundation(file.name, mapOf("Original" to createScaledBase64(originalBitmap, 150, 50), "Grayscale" to createScaledBase64(grayBitmap, 150, 50), "Bilateral" to createScaledBase64(bileBitmap, 150, 50)), globalOcrResultsMap, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
+            val qLandmarkTexts = queryLandmarks.map { it.text }.sorted()
+            val rowHtml = buildHtmlRowFoundation(file.name, mapOf("Original" to createScaledBase64(originalBitmap, 150, 50), "Grayscale" to createScaledBase64(grayBitmap, 150, 50), "Bilateral" to createScaledBase64(bileBitmap, 150, 50)), globalOcrResultsMap, qLandmarkTexts, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
+            
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = headerLength(currentFile) }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
             jsonArray.put(JSONObject().apply {
-                put("file", file.name); put("winner", winnerName); put("confidence", bestConf.toDouble()); put("odometer", pickedOdometer); put("vehicles", JSONArray(vehicleResults))
+                put("file", file.name)
+                put("winner", winnerName)
+                put("confidence", bestConf.toDouble())
+                put("odometer", pickedOdometer)
+                put("query_landmarks", JSONArray(qLandmarkTexts))
+                put("vehicles", JSONArray(vehicleResults))
+                put("global_discovery", JSONObject().apply {
+                    globalOcrResultsMap.forEach { (version, engineMap) ->
+                        val verObj = JSONObject()
+                        engineMap.forEach { (eng, data) -> verObj.put(eng, data.first) }
+                        put(version, verObj)
+                    }
+                })
             })
 
             withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, winnerName, bestConf, pickedOdometer), (index + 1).toFloat() / total) }
@@ -353,26 +367,23 @@ private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>
     appendLine("<html><head><title>Alignment Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 150px; height: auto; border: 1px solid #eee; } .score-box { text-align: left; font-size: 9px; background: #f9f9f9; padding: 4px; border-radius: 4px; overflow-wrap: break-word; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }</style></head><body>")
     appendLine("<h1>Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p>")
-    
-    appendLine("<h3>Reference Landmark Manifest (Golden Anchors)</h3>")
-    appendLine("<ul>")
+    appendLine("<h3>Reference Landmark Manifest (Golden Anchors)</h3><ul>")
     allVehicles.forEach { v ->
         val landmarks = ImageAlignmentUtils.getLandmarksFromJson(v.landmarkTextBlocksJson).sorted()
         appendLine("<li><b>${v.name}:</b> ${landmarks.joinToString(", ")}</li>")
     }
-    appendLine("</ul>")
-
-    appendLine("<table><tr><th style='width:80px;'># & Photo</th><th style='width:160px;'>Original / Discovery</th>")
+    appendLine("</ul><table><tr><th style='width:80px;'># & Photo</th><th style='width:160px;'>Original / Discovery</th>")
     allVehicles.forEach { v -> appendLine("<th style='width:160px;'>${v.name} Match</th><th style='width:160px;'>${v.name} Aligned OCR</th><th style='width:160px;'>${v.name} Hub OCR</th>") }
     appendLine("<th style='width:120px;'>Final Result</th></tr>")
 }
 
-private fun buildHtmlRowFoundation(photoName: String, globalBase64s: Map<String, String>, globalOcr: Map<String, Map<String, Pair<String, Long>>>, vehicleResults: List<JSONObject>, allVehicles: List<Vehicle>, cachedRefs: List<ReferenceCache>, winnerName: String, bestConf: Float, pickedOdo: String, traces: Map<String, List<OcrStepResult>>): String = buildString {
+private fun buildHtmlRowFoundation(photoName: String, globalBase64s: Map<String, String>, globalOcr: Map<String, Map<String, Pair<String, Long>>>, queryLandmarks: List<String>, vehicleResults: List<JSONObject>, allVehicles: List<Vehicle>, cachedRefs: List<ReferenceCache>, winnerName: String, bestConf: Float, pickedOdo: String, traces: Map<String, List<OcrStepResult>>): String = buildString {
     appendLine("<tr><td><small>$photoName</small></td><td>")
     globalBase64s.forEach { (ver, b64) ->
         appendLine("<b>$ver:</b><br><img src='data:image/jpeg;base64,$b64'><br>")
         globalOcr[ver]?.forEach { (eng, res) -> appendLine("<small><b>$eng:</b> ${res.first} (${res.second}ms)</small><br>") }
     }
+    appendLine("<hr><b>Tier 1 Pass Landmarks:</b><br><small>${queryLandmarks.joinToString(", ")}</small>")
     appendLine("</td>")
     allVehicles.forEachIndexed { i, v ->
         val vJson = vehicleResults[i]
