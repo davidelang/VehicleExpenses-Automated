@@ -244,16 +244,25 @@ private suspend fun runExperiment(
     
     val cachedRefs = vehicles.map { v ->
         val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        val rawTessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
-        val rawMlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
         val odoCropF = v.odometerCropLeft?.let { android.graphics.RectF(it, v.odometerCropTop ?: 0f, v.odometerCropRight ?: 1f, v.odometerCropBottom ?: 1f) }
         val otherCropF = v.otherTextCropLeft?.let { android.graphics.RectF(it, v.otherTextCropTop ?: 0f, v.otherTextCropRight ?: 1f, v.otherTextCropBottom ?: 1f) }
+        
+        // RECOVERY Pass: Discover landmarks for this reference photo using the 1500px wide logic
+        val landmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(bmp, odoCropF, otherCropF)
+        val landmarkJson = serializeLandmarks(landmarks)
+        
+        val rawTessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
+        val rawMlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
+        
         val tessOcr = rawTessOcr.filterByCrops(odoCropF, otherCropF)
         val mlKitOcr = rawMlKitOcr.filterByCrops(odoCropF, otherCropF)
         val annotatedBmp = drawCropBoxesOnReference(bmp, v)
         val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
         annotatedBmp.recycle()
-        ReferenceCache(v, refBase64, mapOf("Tesseract" to tessOcr.debugText, "ML Kit" to mlKitOcr.debugText), mlKitOcr, bmp)
+        
+        // Update the vehicle object in memory so matching uses these landmarks
+        val updatedVehicle = v.copy(landmarkTextBlocksJson = landmarkJson)
+        ReferenceCache(updatedVehicle, refBase64, mapOf("Tesseract" to tessOcr.debugText, "ML Kit" to mlKitOcr.debugText), mlKitOcr, bmp)
     }
 
     val globalWordCounts = mutableMapOf<String, Int>()
@@ -459,6 +468,20 @@ private fun pickBestOdometer(allSteps: List<OcrStepResult>): String? {
         Regex("\\d{4,7}").findAll(cleanedText).map { it.value }
     }
     return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
+}
+
+private fun serializeLandmarks(landmarks: List<TextBlock>): String {
+    val array = JSONArray()
+    landmarks.forEach { block ->
+        val obj = JSONObject()
+        obj.put("text", block.text)
+        val box = block.boundingBox
+        val boxObj = JSONObject()
+        boxObj.put("left", box.left); boxObj.put("top", box.top); boxObj.put("right", box.right); boxObj.put("bottom", box.bottom)
+        obj.put("boundingBox", boxObj)
+        array.put(obj)
+    }
+    return array.toString()
 }
 
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
