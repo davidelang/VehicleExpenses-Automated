@@ -382,18 +382,18 @@ object OdometerOcrUtils {
         )
     }
 
-    suspend fun discoverLandmarks(
-        photoPath: String, 
+    fun cleanLandmarkString(text: String): String {
+        return text.replace(".", "").replace(",", "").trim()
+    }
+
+    suspend fun discoverLandmarksFromBitmap(
+        bitmap: Bitmap,
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null
-    ): List<TextBlock> = withContext(Dispatchers.IO) {
-        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
-        val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        
+    ): List<TextBlock> {
         // 1. Scale to 1500px wide
-        val scale = 1500f / rotated.width
-        val scaled = Bitmap.createScaledBitmap(rotated, 1500, (rotated.height * scale).toInt(), true)
-        if (rotated != rawBitmap) rotated.recycle()
+        val scale = 1500f / bitmap.width
+        val scaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * scale).toInt(), true)
         
         // 2. OCR Full Image (ML Kit)
         val ocrResult = extractFromPhotoBitmap(scaled)
@@ -410,20 +410,29 @@ object OdometerOcrUtils {
             
             if (inOdo || inOther) return@filter false
             
-            // Clean string: remove . and ,
-            val clean = block.text.replace(".", "").replace(",", "").trim()
-            
-            // Remove single character strings and must be non-empty after cleaning
+            val clean = cleanLandmarkString(block.text)
             clean.length > 1
         }.map { block ->
-            // Update block with cleaned text
             TextBlock(
-                text = block.text.replace(".", "").replace(",", "").trim(),
+                text = cleanLandmarkString(block.text),
                 boundingBox = block.boundingBox
             )
         }.sortedBy { it.text }
 
         scaled.recycle()
+        return landmarks
+    }
+
+    suspend fun discoverLandmarks(
+        photoPath: String, 
+        odometerCrop: android.graphics.RectF? = null,
+        otherTextCrop: android.graphics.RectF? = null
+    ): List<TextBlock> = withContext(Dispatchers.IO) {
+        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
+        val rotated = rotateImageIfRequired(rawBitmap, photoPath)
+        val landmarks = discoverLandmarksFromBitmap(rotated, odometerCrop, otherTextCrop)
+        if (rotated != rawBitmap) rotated.recycle()
+        rawBitmap.recycle()
         landmarks
     }
 
