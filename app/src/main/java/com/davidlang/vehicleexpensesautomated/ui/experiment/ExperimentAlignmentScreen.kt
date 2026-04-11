@@ -269,6 +269,14 @@ private suspend fun runExperiment(
         }
     }
 
+    // Landmark Manifest for debugging
+    val landmarkManifest = JSONObject()
+    cachedRefs.forEach { ref ->
+        val myLandmarks = ImageAlignmentUtils.getLandmarksFromJson(ref.vehicle.landmarkTextBlocksJson)
+        landmarkManifest.put(ref.vehicle.name, JSONArray(myLandmarks.sorted()))
+    }
+    File(reportDir, "alignment_landmarks_${timestamp}.json").writeText(landmarkManifest.toString(2))
+
     val jsonArray = JSONArray()
     var partCount = 1
     val maxSizeBytes = 2 * 1024 * 1024
@@ -344,7 +352,17 @@ private fun headerLength(f: File): Int = f.readText().length
 private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>): String = buildString {
     appendLine("<html><head><title>Alignment Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 150px; height: auto; border: 1px solid #eee; } .score-box { text-align: left; font-size: 9px; background: #f9f9f9; padding: 4px; border-radius: 4px; overflow-wrap: break-word; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }</style></head><body>")
-    appendLine("<h1>Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:80px;'># & Photo</th><th style='width:160px;'>Original / Discovery</th>")
+    appendLine("<h1>Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p>")
+    
+    appendLine("<h3>Reference Landmark Manifest (Golden Anchors)</h3>")
+    appendLine("<ul>")
+    allVehicles.forEach { v ->
+        val landmarks = ImageAlignmentUtils.getLandmarksFromJson(v.landmarkTextBlocksJson).sorted()
+        appendLine("<li><b>${v.name}:</b> ${landmarks.joinToString(", ")}</li>")
+    }
+    appendLine("</ul>")
+
+    appendLine("<table><tr><th style='width:80px;'># & Photo</th><th style='width:160px;'>Original / Discovery</th>")
     allVehicles.forEach { v -> appendLine("<th style='width:160px;'>${v.name} Match</th><th style='width:160px;'>${v.name} Aligned OCR</th><th style='width:160px;'>${v.name} Hub OCR</th>") }
     appendLine("<th style='width:120px;'>Final Result</th></tr>")
 }
