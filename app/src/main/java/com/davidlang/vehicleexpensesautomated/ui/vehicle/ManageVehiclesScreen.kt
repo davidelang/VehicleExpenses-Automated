@@ -31,14 +31,17 @@ import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
-import com.davidlang.vehicleexpensesautomated.ui.components.OcrDebugDialog
+import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
+import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import kotlinx.coroutines.launch
 import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Composable
 fun ManageVehiclesScreen(
@@ -62,6 +65,7 @@ fun ManageVehiclesScreen(
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
+    var landmarkTextBlocksJson by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
     var isEditingOcrArea by remember { mutableStateOf(false) }
@@ -70,9 +74,10 @@ fun ManageVehiclesScreen(
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
     var currentDragRect by remember { mutableStateOf<Rect?>(null) }
-    var showEnlargedCrop by remember { mutableStateOf(false) }
     var showOdometerConfirmation by remember { mutableStateOf(false) }
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
+    var showLandmarkCheck by remember { mutableStateOf(false) }
+    var discoveredLandmarks by remember { mutableStateOf<List<TextBlock>>(emptyList()) }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -95,8 +100,8 @@ fun ManageVehiclesScreen(
                 pickedPhotoUrl = it.referenceDashPhotoUrl
                 referencePhotoUrl = it.referenceDashPhotoUrl
                 referenceTextBlocks = it.referenceTextBlocks
+                landmarkTextBlocksJson = it.landmarkTextBlocksJson
                 
-                // CRITICAL: Update originalImageSize when loading an existing vehicle, respecting EXIF
                 referencePhotoUrl?.let { path ->
                     try {
                         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -104,27 +109,14 @@ fun ManageVehiclesScreen(
                         if (options.outWidth > 0 && options.outHeight > 0) {
                             val ei = android.media.ExifInterface(path)
                             val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
-                            
-                            val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || 
-                                           orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
-                                           
-                            originalImageSize = if (isSwapped) {
-                                Offset(options.outHeight.toFloat(), options.outWidth.toFloat())
-                            } else {
-                                Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
-                            }
+                            val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
+                            originalImageSize = if (isSwapped) Offset(options.outHeight.toFloat(), options.outWidth.toFloat()) else Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
                         }
-                    } catch (e: Exception) {
-                        Log.e("ManageVehicles", "Failed to get dimensions for $path", e)
-                    }
+                    } catch (e: Exception) { Log.e("ManageVehicles", "Failed dimensions", e) }
                 }
 
-                odometerCropRect = it.odometerCropLeft?.let { left ->
-                    Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f)
-                }
-                otherTextCropRect = it.otherTextCropLeft?.let { left ->
-                    Rect(left, it.otherTextCropTop ?: 0f, it.otherTextCropRight ?: 1f, it.otherTextCropBottom ?: 1f)
-                }
+                odometerCropRect = it.odometerCropLeft?.let { left -> Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f) }
+                otherTextCropRect = it.otherTextCropLeft?.let { left -> Rect(left, it.otherTextCropTop ?: 0f, it.otherTextCropRight ?: 1f, it.otherTextCropBottom ?: 1f) }
             }
         }
     }
@@ -134,28 +126,12 @@ fun ManageVehiclesScreen(
             try {
                 val bmp = BitmapFactory.decodeFile(url) ?: return@let
                 referencePhotoUrl = url
-                
-                // Respect EXIF orientation for dimensions
                 val ei = android.media.ExifInterface(url)
                 val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
-                val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || 
-                                orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
-                
-                originalImageSize = if (isSwapped) {
-                    Offset(bmp.height.toFloat(), bmp.width.toFloat())
-                } else {
-                    Offset(bmp.width.toFloat(), bmp.height.toFloat())
-                }
-                
-                // OCR pass to find reference text blocks
-                scope.launch {
-                    val result = OdometerOcrUtils.extractFromPhoto(url)
-                    referenceTextBlocks = result.textBlocks.joinToString("|") { "${it.text}:${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
-                }
+                val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
+                originalImageSize = if (isSwapped) Offset(bmp.height.toFloat(), bmp.width.toFloat()) else Offset(bmp.width.toFloat(), bmp.height.toFloat())
                 bmp.recycle()
-            } catch (e: Exception) {
-                Log.e("ManageVehicles", "Image loading failed", e)
-            }
+            } catch (e: Exception) { Log.e("ManageVehicles", "Image loading failed", e) }
         }
     }
 
@@ -166,17 +142,20 @@ fun ManageVehiclesScreen(
                     var finalPath = photoPathOrUri
                     if (photoPathOrUri.startsWith("content://")) {
                         val tempFile = File.createTempFile("ocr_vehicle", ".jpg", context.cacheDir)
-                        context.contentResolver.openInputStream(Uri.parse(photoPathOrUri))?.use { input ->
-                            tempFile.outputStream().use { output -> input.copyTo(output) }
-                        }
+                        context.contentResolver.openInputStream(Uri.parse(photoPathOrUri))?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
                         finalPath = tempFile.absolutePath
                     }
-                    val cropRect = odometerCropRect?.let { r ->
-                        android.graphics.RectF(r.left, r.top, r.right, r.bottom)
-                    }
+                    val cropRect = odometerCropRect?.let { r -> android.graphics.RectF(r.left, r.top, r.right, r.bottom) }
+                    val otherCrop = otherTextCropRect?.let { r -> android.graphics.RectF(r.left, r.top, r.right, r.bottom) }
+                    
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
-                    showEnlargedCrop = true
+                    
+                    discoveredLandmarks = OdometerOcrUtils.discoverLandmarks(finalPath, cropRect, otherCrop)
+                    landmarkTextBlocksJson = serializeLandmarks(discoveredLandmarks)
+                    
+                    showLandmarkCheck = true
+                    
                     if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
@@ -187,16 +166,11 @@ fun ManageVehiclesScreen(
                     Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
-        } ?: run {
-            Toast.makeText(context, "No photo selected", Toast.LENGTH_SHORT).show()
-        }
+        } ?: run { Toast.makeText(context, "No photo selected", Toast.LENGTH_SHORT).show() }
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
+        modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
     ) {
         Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
@@ -211,170 +185,74 @@ fun ManageVehiclesScreen(
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
                 vehicles.forEach { vehicle ->
-                    DropdownMenuItem(
-                        text = { Text(vehicle.name) },
-                        onClick = {
-                            selectedVehicleId = vehicle.id
-                            isNewVehicle = false
-                            dropdownExpanded = false
-                        }
-                    )
+                    DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; dropdownExpanded = false })
                 }
                 DropdownMenuItem(
                     text = { Text("Add New Vehicle") },
                     onClick = {
-                        selectedVehicleId = null
-                        editingVehicle = null
-                        isNewVehicle = true
-                        name = ""
-                        make = ""
-                        model = ""
-                        year = ""
-                        licensePlate = ""
-                        odometerReading = ""
-                        pickedPhotoUrl = null
-                        referencePhotoUrl = null
-                        referenceTextBlocks = null
-                        odometerCropRect = null
-                        otherTextCropRect = null
-                        dropdownExpanded = false
+                        selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; referenceTextBlocks = null; landmarkTextBlocksJson = null; odometerCropRect = null; otherTextCropRect = null; dropdownExpanded = false
                     }
                 )
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
         if (isNewVehicle || editingVehicle != null) {
-            PhotoPicker(
-                photoStorageManager = settingsViewModel.photoStorageManager,
-                photoType = PhotoType.FUEL,
-                currentPhotoUrl = pickedPhotoUrl,
-                onPhotoUrlChanged = { pickedPhotoUrl = it }
-            )
+            PhotoPicker(photoStorageManager = settingsViewModel.photoStorageManager, photoType = PhotoType.FUEL, currentPhotoUrl = pickedPhotoUrl, onPhotoUrlChanged = { pickedPhotoUrl = it })
             Spacer(modifier = Modifier.height(16.dp))
             if (referencePhotoUrl != null) {
                 BoxWithConstraints(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .onSizeChanged { size ->
-                            imageSize = Offset(size.width.toFloat(), size.height.toFloat())
-                        }
+                    modifier = Modifier.fillMaxWidth().height(300.dp).onSizeChanged { size -> imageSize = Offset(size.width.toFloat(), size.height.toFloat()) }
                         .pointerInput(isEditingOcrArea, isEditingOtherText, imageSize, originalImageSize) {
-                            if (!isEditingOcrArea && !isEditingOtherText) {
-                                Log.i("CropDebug", "Drag ignored - no edit mode active")
-                                return@pointerInput
-                            }
+                            if (!isEditingOcrArea && !isEditingOtherText) return@pointerInput
                             detectDragGestures(
-                                onDragStart = { offset ->
-                                    dragStart = offset
-                                    currentDragRect = null
-                                },
+                                onDragStart = { offset -> dragStart = offset; currentDragRect = null },
                                 onDrag = { change, _ ->
                                     change.consume()
                                     val start = dragStart
                                     val end = change.position
-                                    
                                     if (start != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
                                         val fitRect = calculateFitImageRect(imageSize.x, imageSize.y, originalImageSize.x, originalImageSize.y)
-                                        
-                                        // Normalize relative to the fitRect area
                                         val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
                                         val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
                                         val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                                        
                                         currentDragRect = Rect(left, top, right, bottom)
                                     }
                                 },
                                 onDragEnd = {
-                                    val start = dragStart
                                     val finalDrag = currentDragRect
-
-                                    if (start != null && finalDrag != null && imageSize.x > 0 && imageSize.y > 0 && originalImageSize.x > 0 && originalImageSize.y > 0) {
-                                        // currentDragRect is already normalized (0-1), 
-                                        // but we keep the checks for consistency.
-                                        if (isEditingOcrArea) {
-                                            odometerCropRect = finalDrag
-                                        } else if (isEditingOtherText) {
-                                            otherTextCropRect = finalDrag
-                                        }
+                                    if (finalDrag != null) {
+                                        if (isEditingOcrArea) odometerCropRect = finalDrag else if (isEditingOtherText) otherTextCropRect = finalDrag
                                     }
-                                    currentDragRect = null
-                                    dragStart = null
+                                    currentDragRect = null; dragStart = null
                                 }
                             )
                         }
                 ) {
-                    Image(
-                        painter = rememberAsyncImagePainter(referencePhotoUrl),
-                        contentDescription = "Cleaned reference dash photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
-
+                    Image(painter = rememberAsyncImagePainter(referencePhotoUrl), contentDescription = "Cleaned reference dash photo", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                     val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
                     val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { maxHeight.toPx() }
-
-                    val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) {
-                        calculateFitImageRect(pxW, pxH, originalImageSize.x, originalImageSize.y)
-                    } else Rect(0f, 0f, pxW, pxH)
-
-                    key(currentDragRect) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            currentDragRect?.let { rect ->
-                                val left = fitRect.left + rect.left * fitRect.width
-                                val top = fitRect.top + rect.top * fitRect.height
-                                val width = rect.width * fitRect.width
-                                val height = rect.height * fitRect.height
-                                drawRect(Color.Red, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
-                                Log.i("CropDebug", "Canvas drawing RED preview - screen coords left=$left top=$top width=$width height=$height")
-                            }
-                            odometerCropRect?.let { rect ->
-                                val left = fitRect.left + rect.left * fitRect.width
-                                val top = fitRect.top + rect.top * fitRect.height
-                                val width = rect.width * fitRect.width
-                                val height = rect.height * fitRect.height
-                                drawRect(Color.Blue, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
-                            }
-                            otherTextCropRect?.let { rect ->
-                                val left = fitRect.left + rect.left * fitRect.width
-                                val top = fitRect.top + rect.top * fitRect.height
-                                val width = rect.width * fitRect.width
-                                val height = rect.height * fitRect.height
-                                drawRect(Color.Green, Offset(left, top), androidx.compose.ui.geometry.Size(width, height), style = Stroke(4f))
-                            }
+                    val fitRect = if (originalImageSize.x > 0f && originalImageSize.y > 0f) calculateFitImageRect(pxW, pxH, originalImageSize.x, originalImageSize.y) else Rect(0f, 0f, pxW, pxH)
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        currentDragRect?.let { rect ->
+                            drawRect(Color.Red, Offset(fitRect.left + rect.left * fitRect.width, fitRect.top + rect.top * fitRect.height), androidx.compose.ui.geometry.Size(rect.width * fitRect.width, rect.height * fitRect.height), style = Stroke(4f))
+                        }
+                        odometerCropRect?.let { rect ->
+                            drawRect(Color.Blue, Offset(fitRect.left + rect.left * fitRect.width, fitRect.top + rect.top * fitRect.height), androidx.compose.ui.geometry.Size(rect.width * fitRect.width, rect.height * fitRect.height), style = Stroke(4f))
+                        }
+                        otherTextCropRect?.let { rect ->
+                            drawRect(Color.Green, Offset(fitRect.left + rect.left * fitRect.width, fitRect.top + rect.top * fitRect.height), androidx.compose.ui.geometry.Size(rect.width * fitRect.width, rect.height * fitRect.height), style = Stroke(4f))
                         }
                     }
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    val wasEditing = isEditingOcrArea
-                    isEditingOcrArea = !isEditingOcrArea
-                    isEditingOtherText = false
-                    Log.i("CropDebug", "Edit Odometer Crop button clicked - wasEditing=$wasEditing -> isEditingOcrArea=$isEditingOcrArea, isEditingOtherText=$isEditingOtherText")
-                }, modifier = Modifier.weight(1f)) {
-                    Text(if (isEditingOcrArea) "Done Editing Odometer" else "Edit Odometer Crop")
-                }
-                Button(onClick = {
-                    val wasEditing = isEditingOtherText
-                    isEditingOtherText = !isEditingOtherText
-                    isEditingOcrArea = false
-                    Log.i("CropDebug", "Edit Other Text Crop button clicked - wasEditing=$wasEditing -> isEditingOcrArea=$isEditingOcrArea, isEditingOtherText=$isEditingOtherText")
-                }, modifier = Modifier.weight(1f)) {
-                    Text(if (isEditingOtherText) "Done Editing Other Text" else "Edit Other Text Crop")
-                }
-            }
-            if (odometerCropRect != null) {
-                Button(onClick = { odometerCropRect = null }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
-                    Text("Clear Odometer Crop Box")
-                }
+                Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingOtherText = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOcrArea) "Done Odometer" else "Edit Odometer") }
+                Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOtherText) "Done Other" else "Edit Other Text") }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth()) {
-                Text("Try OCR Now")
-            }
+            Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth()) { Text("Check Reference OCR & Landmarks") }
             Spacer(modifier = Modifier.height(24.dp))
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text("Make") }, modifier = Modifier.fillMaxWidth())
@@ -392,113 +270,52 @@ fun ManageVehiclesScreen(
                             try {
                                 if (isNewVehicle) {
                                     vehicleViewModel.createNewVehicleWithReference(
-                                        name = name,
-                                        make = make,
-                                        model = model,
-                                        year = year.toIntOrNull(),
-                                        licensePlate = licensePlate,
-                                        referenceDashPhotoUrl = pickedPhotoUrl,
-                                        cleanedReferenceDashPhotoUrl = null,
-                                        odometerCropRect = odometerCropRect,
-                                        initialOdometer = odometerReading.toIntOrNull() ?: 0,
-                                        referenceTextBlocks = referenceTextBlocks
+                                        name = name, make = make, model = model, year = year.toIntOrNull(), licensePlate = licensePlate, referenceDashPhotoUrl = pickedPhotoUrl, cleanedReferenceDashPhotoUrl = null,
+                                        odometerCropRect = odometerCropRect, initialOdometer = odometerReading.toIntOrNull() ?: 0, referenceTextBlocks = referenceTextBlocks, landmarkTextBlocksJson = landmarkTextBlocksJson
                                     )
-                                    Toast.makeText(context, "New vehicle created with crop box", Toast.LENGTH_LONG).show()
                                 } else {
                                     editingVehicle?.let { vehicle ->
-                                        vehicleViewModel.updateVehicle(
-                                            vehicle.copy(
-                                                name = name,
-                                                make = make,
-                                                model = model,
-                                                year = year.toIntOrNull(),
-                                                licensePlate = licensePlate,
-                                                referenceDashPhotoUrl = pickedPhotoUrl,
-                                                cleanedReferenceDashPhotoUrl = null,
-                                                odometerCropLeft = odometerCropRect?.left,
-                                                odometerCropTop = odometerCropRect?.top,
-                                                odometerCropRight = odometerCropRect?.right,
-                                                odometerCropBottom = odometerCropRect?.bottom,
-                                                otherTextCropLeft = otherTextCropRect?.left,
-                                                otherTextCropTop = otherTextCropRect?.top,
-                                                otherTextCropRight = otherTextCropRect?.right,
-                                                otherTextCropBottom = otherTextCropRect?.bottom,
-                                                referenceTextBlocks = referenceTextBlocks
-                                            )
-                                        )
-                                        Toast.makeText(context, "Vehicle updated with crop box", Toast.LENGTH_LONG).show()
+                                        vehicleViewModel.updateVehicle(vehicle.copy(
+                                            name = name, make = make, model = model, year = year.toIntOrNull(), licensePlate = licensePlate, referenceDashPhotoUrl = pickedPhotoUrl, cleanedReferenceDashPhotoUrl = null,
+                                            odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom,
+                                            otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom,
+                                            referenceTextBlocks = referenceTextBlocks, landmarkTextBlocksJson = landmarkTextBlocksJson
+                                        ))
                                     }
                                 }
-                            } catch (e: Exception) {
-                                Log.e("VehicleSave", "Save failed", e)
-                                Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
-                            } finally {
-                                isSaving = false
                                 navController.popBackStack()
-                            }
+                            } catch (e: Exception) { Log.e("VehicleSave", "Save failed", e); Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show() }
+                            finally { isSaving = false }
                         }
                     },
-                    enabled = !isSaving,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(if (isSaving) "Saving..." else if (isNewVehicle) "Create Vehicle" else "Save Changes")
-                }
-                Button(
-                    onClick = {
-                        editingVehicle?.let {
-                            vehicleViewModel.deleteVehicle(it)
-                            Toast.makeText(context, "Vehicle deleted", Toast.LENGTH_SHORT).show()
-                            navController.popBackStack()
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                ) {
-                    Text("Delete this vehicle")
-                }
+                    enabled = !isSaving, modifier = Modifier.weight(1f)
+                ) { Text(if (isSaving) "Saving..." else if (isNewVehicle) "Create Vehicle" else "Save Changes") }
+                Button(onClick = { editingVehicle?.let { vehicleViewModel.deleteVehicle(it); navController.popBackStack() } }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("Delete") }
             }
         }
     }
-    if (showEnlargedCrop && lastOcrDebugResult != null) {
-        OcrDebugDialog(
-            ocrResult = lastOcrDebugResult!!,
-            originalPhotoPath = referencePhotoUrl,
-            onDismiss = {
-                lastOcrDebugResult?.croppedBitmap?.recycle()
-                lastOcrDebugResult = null
-                showEnlargedCrop = false
-            }
-        )
-    }
-    if (showOdometerConfirmation && lastOcrDebugResult != null && lastOcrDebugResult!!.possibleOdometers.size > 1) {
-        AlertDialog(
-            onDismissRequest = { showOdometerConfirmation = false },
-            title = { Text("Confirm Odometer") },
-            text = {
-                Column {
-                    lastOcrDebugResult!!.possibleOdometers.forEach { candidate ->
-                        Button(onClick = { odometerReading = candidate; showOdometerConfirmation = false }, modifier = Modifier.fillMaxWidth()) {
-                            Text(candidate)
-                        }
-                    }
-                }
-            },
-            confirmButton = { Button(onClick = { showOdometerConfirmation = false }) { Text("Cancel") } }
-        )
+    if (showLandmarkCheck) {
+        LandmarkDebugDialog(photoPath = referencePhotoUrl, odometerCrop = odometerCropRect, otherTextCrop = otherTextCropRect, landmarks = discoveredLandmarks, odometerText = lastOcrDebugResult?.odometer ?: "FAILED", onDismiss = { showLandmarkCheck = false })
     }
 }
 
-private fun calculateFitImageRect(
-    containerWidth: Float,
-    containerHeight: Float,
-    imageWidth: Float,
-    imageHeight: Float
-): Rect {
+private fun serializeLandmarks(landmarks: List<TextBlock>): String {
+    val array = JSONArray()
+    landmarks.forEach { lm ->
+        val obj = JSONObject()
+        obj.put("text", lm.text)
+        obj.put("left", lm.boundingBox.left)
+        obj.put("top", lm.boundingBox.top)
+        obj.put("right", lm.boundingBox.right)
+        obj.put("bottom", lm.boundingBox.bottom)
+        array.put(obj)
+    }
+    return array.toString()
+}
+
+private fun calculateFitImageRect(containerWidth: Float, containerHeight: Float, imageWidth: Float, imageHeight: Float): Rect {
     if (imageWidth <= 0f || imageHeight <= 0f) return Rect(0f, 0f, containerWidth, containerHeight)
     val scale = minOf(containerWidth / imageWidth, containerHeight / imageHeight)
-    val scaledWidth = imageWidth * scale
-    val scaledHeight = imageHeight * scale
-    val left = (containerWidth - scaledWidth) / 2f
-    val top = (containerHeight - scaledHeight) / 2f
-    return Rect(left, top, left + scaledWidth, top + scaledHeight)
+    val dw = imageWidth * scale; val dh = imageHeight * scale
+    return Rect((containerWidth - dw) / 2f, (containerHeight - dh) / 2f, (containerWidth + dw) / 2f, (containerHeight + dh) / 2f)
 }
