@@ -13,6 +13,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,29 +41,11 @@ import java.util.zip.ZipInputStream
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 
-/**
- * Deep Trace Report (Phase 1): Foundation
- * Implements the new multi-column layout with streaming HTML and bitmap recycling.
- */
-
 data class PhotoResultSummary(
     val photoName: String,
     val matchedVehicle: String,
     val finalConfidence: Float,
     val odometer: String?
-)
-
-data class SingleVehicleResult(
-    val vehicleName: String,
-    val confidence: Float,
-    val vetoReason: String,
-    val matchTimeMs: Long,
-    val orbBase64: String,
-    val hubBase64: String,
-    val traceData: Map<String, List<OcrStepResult>>,
-    val methodScores: Map<String, Float>,
-    val methodTimes: Map<String, Long>,
-    val tierReached: Int
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,7 +61,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var currentPhotoName by remember { mutableStateOf("") }
-    var photoCount by remember { mutableStateOf(0) }
     val resultsList = remember { mutableStateListOf<PhotoResultSummary>() }
 
     val experimentDir = File(context.filesDir, "experiment_photos")
@@ -87,17 +70,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     if (!reportDir.exists()) reportDir.mkdirs()
     if (!debugCropDir.exists()) debugCropDir.mkdirs()
 
-    fun updatePhotoCount() {
-        photoCount = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png") }?.size ?: 0
-        if (!isRunning) {
-            status = if (photoCount > 0) "Ready: $photoCount photos found." else "Folder is empty. Please extract a ZIP."
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        updatePhotoCount()
-    }
-
     val zipLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -105,7 +77,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             scope.launch {
                 status = "Extracting ZIP..."
                 val success = extractZipToPhotos(it, experimentDir, context)
-                updatePhotoCount()
                 status = if (success) "ZIP extracted!" else "Failed to extract ZIP."
             }
         }
@@ -158,8 +129,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
                             currentPhotoName = res.photoName
                         }
                         isRunning = false
-                        updatePhotoCount()
-                        detailLog = ""
                         status = "Complete! Reports saved."
                     }
                 },
@@ -190,13 +159,25 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     }
 }
 
-/** Pre-processed and cached reference data to avoid redundant work */
 data class ReferenceCache(
     val vehicle: Vehicle,
     val referenceBase64: String,
-    val fullOcrText: Map<String, String>, // Engine -> Text
-    val ocrResult: OcrResult, // To reuse text blocks for matching
+    val fullOcrText: Map<String, String>,
+    val ocrResult: OcrResult,
     val bmp: Bitmap
+)
+
+data class SingleVehicleResult(
+    val vehicleName: String,
+    val confidence: Float,
+    val vetoReason: String,
+    val matchTimeMs: Long,
+    val orbBase64: String,
+    val hubBase64: String,
+    val traceData: Map<String, List<OcrStepResult>>,
+    val methodScores: Map<String, Float>,
+    val methodTimes: Map<String, Long>,
+    val tierReached: Int
 )
 
 private suspend fun processSingleVehicleMatch(
@@ -206,62 +187,45 @@ private suspend fun processSingleVehicleMatch(
     globalWordCounts: Map<String, Int>,
     dynamicAnchors: Map<String, String>,
     allOtherRefs: List<OcrResult>,
+    veto: VetoResult,
     context: Context
 ): SingleVehicleResult {
-    val odometerCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
-    val otherTextCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
-    
-    // Matching
-    val tMatch0 = System.currentTimeMillis()
+    val tStart = System.currentTimeMillis()
+    val odoCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
+    val otherCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
+
     val matchResults = ImageAlignmentUtils.matchWithAllMethods(
-        ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odometerCropF, otherTextCropF, 
-        skipExpensiveORB = false, globalWordCounts = globalWordCounts, 
-        allOtherRefs = allOtherRefs, dynamicAnchors = dynamicAnchors, currentVehicleName = ref.vehicle.name
+        ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odoCropF, otherCropF,
+        skipExpensiveORB = false, globalWordCounts = globalWordCounts,
+        allOtherRefs = allOtherRefs, dynamicAnchors = dynamicAnchors,
+        currentVehicleName = ref.vehicle.name, veto = veto
     )
-    val tMatch = System.currentTimeMillis() - tMatch0
-    val consensus = matchResults["consensus"]!!
-    
-    // Alignment Previews
+
+    val tiered = matchResults["tiered"]!!
     val orbRes = matchResults["feature"]!!
     val hubRes = matchResults["hub"]!!
-    val orbBase64 = if (orbRes.success && orbRes.alignedImage != null) createScaledBase64(orbRes.alignedImage, 400, 70) else ""
-    val hubBase64 = if (hubRes.success && hubRes.alignedImage != null) createScaledBase64(hubRes.alignedImage, 400, 70) else ""
-    
-    // OCR Strategy Trace (Phase 1: Raw only)
+    val tMatch = System.currentTimeMillis() - tStart
+
     val traceData = mutableMapOf<String, List<OcrStepResult>>()
-    
-    // Aligned Odo Trace
     if (orbRes.success && orbRes.alignedImage != null) {
         val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle)
-        if (crop != null) {
-            traceData["Aligned"] = OdometerOcrUtils.runMultiStepOcr(crop, context)
-            crop.recycle()
-        }
+        if (crop != null) { traceData["Aligned"] = OdometerOcrUtils.runMultiStepOcr(crop, context); crop.recycle() }
     }
-    
-    // Hub Odo Trace
     if (hubRes.success && hubRes.alignedImage != null) {
         val crop = manualCropOdometer(hubRes.alignedImage, ref.vehicle)
-        if (crop != null) {
-            traceData["Hub"] = OdometerOcrUtils.runMultiStepOcr(crop, context)
-            crop.recycle()
-        }
+        if (crop != null) { traceData["Hub"] = OdometerOcrUtils.runMultiStepOcr(crop, context); crop.recycle() }
     }
 
-    orbRes.alignedImage?.recycle()
-    hubRes.alignedImage?.recycle()
+    val orbBase64 = if (orbRes.alignedImage != null) createScaledBase64(orbRes.alignedImage, 400, 70) else ""
+    val hubBase64 = if (hubRes.alignedImage != null) createScaledBase64(hubRes.alignedImage, 400, 70) else ""
+    orbRes.alignedImage?.recycle(); hubRes.alignedImage?.recycle()
 
     return SingleVehicleResult(
-        vehicleName = ref.vehicle.name,
-        confidence = consensus.confidence,
-        vetoReason = consensus.vetoReason ?: "",
-        matchTimeMs = tMatch,
-        orbBase64 = orbBase64,
-        hubBase64 = hubBase64,
-        traceData = traceData,
+        vehicleName = ref.vehicle.name, confidence = tiered.confidence, vetoReason = tiered.vetoReason ?: "",
+        matchTimeMs = tMatch, orbBase64 = orbBase64, hubBase64 = hubBase64, traceData = traceData,
         methodScores = matchResults.mapValues { it.value.confidence },
         methodTimes = matchResults.mapValues { it.value.timeMs },
-        tierReached = matchResults["tiered"]?.tierReached ?: 0
+        tierReached = tiered.tierReached
     )
 }
 
@@ -278,35 +242,20 @@ private suspend fun runExperiment(
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     
-    val ocrEngines = listOf("Tesseract", "ML Kit")
-    
-    // 1. CACHE REFERENCE DATA
-    withContext(Dispatchers.Main) { onLog("Processing reference images...") }
     val cachedRefs = vehicles.map { v ->
         val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
         val rawTessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
         val rawMlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
-        
         val odoCropF = v.odometerCropLeft?.let { android.graphics.RectF(it, v.odometerCropTop ?: 0f, v.odometerCropRight ?: 1f, v.odometerCropBottom ?: 1f) }
         val otherCropF = v.otherTextCropLeft?.let { android.graphics.RectF(it, v.otherTextCropTop ?: 0f, v.otherTextCropRight ?: 1f, v.otherTextCropBottom ?: 1f) }
-        
         val tessOcr = rawTessOcr.filterByCrops(odoCropF, otherCropF)
         val mlKitOcr = rawMlKitOcr.filterByCrops(odoCropF, otherCropF)
-
         val annotatedBmp = drawCropBoxesOnReference(bmp, v)
         val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
         annotatedBmp.recycle()
-
-        ReferenceCache(
-            vehicle = v,
-            referenceBase64 = refBase64,
-            fullOcrText = mapOf("Tesseract" to (tessOcr.debugText), "ML Kit" to (mlKitOcr.debugText)),
-            ocrResult = mlKitOcr, // Use ML Kit for anchor matching
-            bmp = bmp
-        )
+        ReferenceCache(v, refBase64, mapOf("Tesseract" to tessOcr.debugText, "ML Kit" to mlKitOcr.debugText), mlKitOcr, bmp)
     }
 
-    // Dynamic Anchor Pass
     val globalWordCounts = mutableMapOf<String, Int>()
     val dynamicAnchors = mutableMapOf<String, String>()
     cachedRefs.forEach { ref ->
@@ -320,43 +269,33 @@ private suspend fun runExperiment(
         }
     }
 
-    // 2. INITIALIZE REPORTS
     val jsonArray = JSONArray()
     var partCount = 1
-    val maxSizeBytes = 2 * 1024 * 1024 // 2MB per part
+    val maxSizeBytes = 2 * 1024 * 1024
     var currentSize = 0
-    fun startNewFile(): File {
-        val header = buildHtmlHeader(timestamp, total, vehicles)
-        currentSize = header.length
-        return File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply {
-            writeText(header)
-        }
+    fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply {
+        writeText(buildHtmlHeader(timestamp, total, vehicles))
     }
     var currentFile = startNewFile()
     val footer = "</table></body></html>"
 
-    // 3. MAIN PROCESSING LOOP
     photos.forEachIndexed { index, file ->
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
             val rawBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
             val originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
-            
-            // Phase 2b: dashboard images
             val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap)
             val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
             
-            // Global Discovery OCR (Multi-version Trace)
             val globalOcrResultsMap = mutableMapOf<String, Map<String, Pair<String, Long>>>()
-            val globalVersions = mapOf("Original" to originalBitmap, "Grayscale" to grayBitmap, "Bilateral" to bileBitmap)
-
-            globalVersions.forEach { (verName, bmp) ->
-                val engineResults = OcrHarness.runAll(bmp, context)
-                globalOcrResultsMap[verName] = engineResults.mapValues { it.value.debugText to it.value.executionTimeMs }
+            mapOf("Original" to originalBitmap, "Grayscale" to grayBitmap, "Bilateral" to bileBitmap).forEach { (ver, bmp) ->
+                val res = OcrHarness.runAll(bmp, context)
+                globalOcrResultsMap[ver] = res.mapValues { it.value.debugText to it.value.executionTimeMs }
             }
 
-            val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"] ?: OcrResult(debugText = "")
-            val globalOcrResults = globalOcrResultsMap["Original"]!!
+            val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"]!!
+            val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
+            val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, vehicles)
 
             val vehicleResults = mutableListOf<JSONObject>()
             var winnerName = "No match"
@@ -364,249 +303,102 @@ private suspend fun runExperiment(
             var pickedOdometer = "FAILED"
             val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
 
-            // Process Each Vehicle
             cachedRefs.forEach { ref ->
-                val vRes = processSingleVehicleMatch(
-                    ref, originalBitmap, queryOcrMl!!, globalWordCounts, dynamicAnchors, 
-                    cachedRefs.map { it.ocrResult }, context
-                )
-                
+                val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
+                val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, globalWordCounts, dynamicAnchors, cachedRefs.map { it.ocrResult }, veto, context)
                 strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
                 strategyTraces["${ref.vehicle.name}_Hub"] = vRes.traceData["Hub"] ?: emptyList()
                 
-                // Final Logic Check for Winner (Strict Gating)
-                val minConfidence = 0.25f
-                val isTierValid = vRes.tierReached in 1..3
-                
-                if (isTierValid && vRes.confidence >= minConfidence && vRes.confidence > bestConf) {
-                    bestConf = vRes.confidence
-                    winnerName = vRes.vehicleName
-                    // Pick odo from traces (best candidate for this specific vehicle)
-                    val candidates = (vRes.traceData["Aligned"] ?: emptyList()) + (vRes.traceData["Hub"] ?: emptyList())
-                    pickedOdometer = pickBestOdometer(candidates) ?: "FAILED"
+                if (vRes.tierReached in 1..3 && vRes.confidence >= 0.25f && vRes.confidence > bestConf) {
+                    bestConf = vRes.confidence; winnerName = vRes.vehicleName
+                    pickedOdometer = pickBestOdometer((vRes.traceData["Aligned"] ?: emptyList()) + (vRes.traceData["Hub"] ?: emptyList())) ?: "FAILED"
                 }
-
-                // Store Per-Vehicle Data for JSON
-                val vJson = JSONObject().apply {
-                    put("name", vRes.vehicleName)
-                    put("score", vRes.confidence.toDouble())
-                    put("match_time_ms", vRes.matchTimeMs)
-                    put("veto_word", vRes.vetoReason)
-                    put("orb_base64", vRes.orbBase64)
-                    put("hub_base64", vRes.hubBase64)
-                    val scoresObj = JSONObject()
-                    vRes.methodScores.forEach { (k, v) -> scoresObj.put(k, v.toDouble()) }
-                    put("method_scores", scoresObj)
-                    val timesObj = JSONObject()
-                    vRes.methodTimes.forEach { (k, v) -> timesObj.put(k, v) }
-                    put("method_times", timesObj)
-                    put("tier_reached", vRes.tierReached)
-                }
-                vehicleResults.add(vJson)
+                vehicleResults.add(JSONObject().apply {
+                    put("name", vRes.vehicleName); put("score", vRes.confidence.toDouble()); put("match_time_ms", vRes.matchTimeMs); put("veto_word", vRes.vetoReason)
+                    put("orb_base64", vRes.orbBase64); put("hub_base64", vRes.hubBase64); put("tier_reached", vRes.tierReached)
+                    put("method_scores", JSONObject().apply { vRes.methodScores.forEach { (k, v) -> put(k, v.toDouble()) } })
+                    put("method_times", JSONObject().apply { vRes.methodTimes.forEach { (k, v) -> put(k, v) } })
+                })
             }
 
-            // HTML Streaming
-            val globalVersionBase64s = globalVersions.mapValues { createScaledBase64(it.value, 150, 50) }
-            val rowHtml = buildHtmlRowFoundation(file.name, globalVersionBase64s, globalOcrResultsMap, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
-            
-            if (currentSize + rowHtml.length > maxSizeBytes) {
-                currentFile.appendText(footer)
-                currentFile = startNewFile()
-            }
-            currentFile.appendText(rowHtml)
-            currentSize += rowHtml.length
+            val rowHtml = buildHtmlRowFoundation(file.name, mapOf("Original" to createScaledBase64(originalBitmap, 150, 50), "Grayscale" to createScaledBase64(grayBitmap, 150, 50), "Bilateral" to createScaledBase64(bileBitmap, 150, 50)), globalOcrResultsMap, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
+            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = headerLength(currentFile) }
+            currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
-            // JSON Persistence
-            val globalJson = JSONObject()
-            globalOcrResultsMap.forEach { (version, engineMap) ->
-                val verObj = JSONObject()
-                engineMap.forEach { (eng, data) -> verObj.put(eng, data.first) }
-                globalJson.put(version, verObj)
-            }
+            jsonArray.put(JSONObject().apply {
+                put("file", file.name); put("winner", winnerName); put("confidence", bestConf.toDouble()); put("odometer", pickedOdometer); put("vehicles", JSONArray(vehicleResults))
+            })
 
-            val photoJson = JSONObject().apply {
-                put("file", file.name)
-                put("winner", winnerName)
-                put("confidence", bestConf.toDouble())
-                put("odometer", pickedOdometer)
-                put("global_discovery", globalJson)
-                put("vehicles", JSONArray(vehicleResults))
-            }
-            jsonArray.put(photoJson)
-
-            withContext(Dispatchers.Main) {
-                onProgress(PhotoResultSummary(file.name, winnerName, bestConf, pickedOdometer), (index + 1).toFloat() / total)
-            }
-            
-            // Phase 2b recycling
-            grayBitmap.recycle()
-            bileBitmap.recycle()
-            originalBitmap.recycle()
-            
-            // Phase 2c Deep Trace recycling
+            withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, winnerName, bestConf, pickedOdometer), (index + 1).toFloat() / total) }
+            grayBitmap.recycle(); bileBitmap.recycle(); originalBitmap.recycle()
             strategyTraces.values.flatten().forEach { it.bitmap.recycle() }
-
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
     }
-
     currentFile.appendText(footer)
     File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2))
     cachedRefs.forEach { it.bmp.recycle() }
 }
 
+private fun headerLength(f: File): Int = f.readText().length
+
 private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>): String = buildString {
-    appendLine("<html><head><title>Deep Trace Foundation - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: monospace; font-size: 9px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: left; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 140px; height: auto; border: 1px solid #eee; } .discovery-trace { color: #444; background: #f0f0f0; padding: 2px; } .vehicle-header { background: #333; color: #fff; text-align: center; } .match-box { background: #eef; } .trace-column { background: #ffe; }</style></head><body>")
-    appendLine("<h1>Deep Trace Report (Phase 1)</h1><p><b>Run:</b> $time | <b>Images:</b> $total</p><table>")
-    
-    // Header Row 1: Groups
-    appendLine("<tr><th style='width:150px;'>1. Global Discovery</th>")
-    allVehicles.forEach { v ->
-        appendLine("<th colspan='4' class='vehicle-header'>Vehicle: ${v.name}</th>")
-    }
-    appendLine("<th style='width:100px;'>Summary</th></tr>")
-    
-    // Header Row 2: Specific Columns
-    appendLine("<tr><th>Photo & OCR Discovery</th>")
-    allVehicles.forEach { _ ->
-        appendLine("<th style='width:160px;'>Match & Align</th>")
-        appendLine("<th style='width:140px;'>Aligned Trace</th>")
-        appendLine("<th style='width:140px;'>Hub Trace</th>")
-        appendLine("<th style='width:140px;'>Anchor Trace</th>")
-    }
-    appendLine("<th>Final Result</th></tr>")
+    appendLine("<html><head><title>Alignment Experiment - $time</title>")
+    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 150px; height: auto; border: 1px solid #eee; } .score-box { text-align: left; font-size: 9px; background: #f9f9f9; padding: 4px; border-radius: 4px; overflow-wrap: break-word; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }</style></head><body>")
+    appendLine("<h1>Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:80px;'># & Photo</th><th style='width:160px;'>Original / Discovery</th>")
+    allVehicles.forEach { v -> appendLine("<th style='width:160px;'>${v.name} Match</th><th style='width:160px;'>${v.name} Aligned OCR</th><th style='width:160px;'>${v.name} Hub OCR</th>") }
+    appendLine("<th style='width:120px;'>Final Result</th></tr>")
 }
 
-private fun buildHtmlRowFoundation(
-    photoName: String, 
-    globalVersionBase64s: Map<String, String>, 
-    globalOcr: Map<String, Map<String, Pair<String, Long>>>,
-    vehicleResults: List<JSONObject>,
-    allVehicles: List<Vehicle>,
-    cachedRefs: List<ReferenceCache>,
-    winnerName: String,
-    bestConf: Float,
-    pickedOdo: String,
-    strategyTraces: Map<String, List<OcrStepResult>>
-): String = buildString {
-    appendLine("<tr>")
-    
-    // Column 1: Global Discovery Trace
-    appendLine("<td><small>$photoName</small><br>")
-    globalOcr.forEach { (version, engineMap) ->
-        appendLine("<div class='discovery-trace'><b>Version: $version</b><br>")
-        val b64 = globalVersionBase64s[version]
-        if (b64 != null) appendLine("<img src='data:image/jpeg;base64,$b64'><br>")
-        engineMap.forEach { (engine, data) ->
-            appendLine("<i>$engine (${data.second}ms):</i><br>${data.first}<br>")
-        }
-        appendLine("</div>")
+private fun buildHtmlRowFoundation(photoName: String, globalBase64s: Map<String, String>, globalOcr: Map<String, Map<String, Pair<String, Long>>>, vehicleResults: List<JSONObject>, allVehicles: List<Vehicle>, cachedRefs: List<ReferenceCache>, winnerName: String, bestConf: Float, pickedOdo: String, traces: Map<String, List<OcrStepResult>>): String = buildString {
+    appendLine("<tr><td><small>$photoName</small></td><td>")
+    globalBase64s.forEach { (ver, b64) ->
+        appendLine("<b>$ver:</b><br><img src='data:image/jpeg;base64,$b64'><br>")
+        globalOcr[ver]?.forEach { (eng, res) -> appendLine("<small><b>$eng:</b> ${res.first} (${res.second}ms)</small><br>") }
     }
     appendLine("</td>")
-    
-    // Columns per Vehicle
     allVehicles.forEachIndexed { i, v ->
-        val vRes = if (i < vehicleResults.size) vehicleResults[i] else null
-        val cache = cachedRefs.find { it.vehicle.id == v.id }
-        
-        // Column 2: Match & Alignment
-        appendLine("<td class='match-box'>")
-        if (cache != null) {
-            appendLine("<b>Ref:</b><br><img src='data:image/jpeg;base64,${cache.referenceBase64}'><br>")
-            appendLine("<small>Ref OCR: ${cache.fullOcrText["ML Kit"]?.take(50)}...</small><hr>")
-        }
-        if (vRes != null) {
-            appendLine("<b>Score:</b> ${"%.3f".format(vRes.optDouble("score"))}<br>")
-            val tier = vRes.optInt("tier_reached", -1)
-            if (tier != -1) appendLine("<b>Tier:</b> $tier<br>")
-            val veto = vRes.optString("veto_word")
-            if (veto.isNotEmpty()) appendLine("<b style='color:red;'>VETO: $veto</b><br>")
-            
-            val scoresObj = vRes.optJSONObject("method_scores")
-            val timesObj = vRes.optJSONObject("method_times")
-            if (scoresObj != null && timesObj != null) {
-                appendLine("<small>")
-                scoresObj.keys().forEach { k ->
-                    val s = "%.2f".format(scoresObj.getDouble(k))
-                    val t = timesObj.optLong(k, 0)
-                    appendLine("$k: $s (${t}ms)<br>")
-                }
-                appendLine("</small>")
-            }
-            appendLine("<small>Total Match Time: ${vRes.optLong("match_time_ms")}ms</small><br>")
-            
-            val orb64 = vRes.optString("orb_base64")
-            if (orb64.isNotEmpty()) appendLine("<b>ORB:</b><br><img src='data:image/jpeg;base64,$orb64'><br>")
-            
-            val hub64 = vRes.optString("hub_base64")
-            if (hub64.isNotEmpty()) appendLine("<b>HUB:</b><br><img src='data:image/jpeg;base64,$hub64'><br>")
-        }
+        val vJson = vehicleResults[i]
+        val isWinner = winnerName == v.name
+        val ref = cachedRefs[i]
+        appendLine("<td class='${if (isWinner) "winner" else ""}'>")
+        appendLine("<div class='score-box'><b>Score:</b> ${"%.3f".format(vJson.getDouble("score"))}<br><b>Tier:</b> ${vJson.getInt("tier_reached")}<br><b>Veto:</b> ${vJson.getString("veto_word")}<br></div>")
+        appendLine("<b>Ref:</b><br><img src='data:image/jpeg;base64,${ref.referenceBase64}'><br>")
+        ref.fullOcrText.forEach { (eng, txt) -> appendLine("<small><b>$eng:</b> $txt</small><br>") }
+        appendLine("<hr><b>ORB:</b><br><img src='data:image/jpeg;base64,${vJson.getString("orb_base64")}'><br>")
+        appendLine("<b>Hub:</b><br><img src='data:image/jpeg;base64,${vJson.getString("hub_base64")}'>")
         appendLine("</td>")
-        
-        // Columns 3, 4, 5: OCR Traces
-        listOf("Aligned", "Hub", "Anchor").forEach { strat ->
-            appendLine("<td class='trace-column'>")
-            val steps = strategyTraces["${v.name}_$strat"]
-            if (steps != null && steps.isNotEmpty()) {
-                steps.forEach { step ->
-                    appendLine("<img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 120, 60)}'><br>")
-                    appendLine("<b>${step.stageName}:</b><br>${step.text ?: "-"}<hr>")
-                }
-            } else {
-                appendLine("<i>(No crop)</i>")
-            }
-            appendLine("</td>")
-        }
+        appendLine("<td>${buildOcrStepHtml(traces["${v.name}_Aligned"] ?: emptyList())}</td>")
+        appendLine("<td>${buildOcrStepHtml(traces["${v.name}_Hub"] ?: emptyList())}</td>")
     }
-    
-    // Column 6: Summary
-    appendLine("<td><b>Winner:</b> $winnerName<br><b>Conf:</b> ${"%.2f".format(bestConf)}<br><b>Odometer:</b> $pickedOdo</td>")
-    appendLine("</tr>")
+    appendLine("<td><b>Match:</b> $winnerName<br><b>Conf:</b> ${"%.2f".format(bestConf)}<br><b>Odo:</b> $pickedOdo</td></tr>")
 }
 
-private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
-    val q = quality.coerceIn(0, 100)
-    val width = targetWidth.coerceAtMost(bitmap.width)
-    val height = (width.toFloat() / bitmap.width * bitmap.height).toInt()
-    if (width <= 0 || height <= 0) return ""
-    
-    val scaled = Bitmap.createScaledBitmap(bitmap, width, height, true)
-    val outputStream = ByteArrayOutputStream()
-    scaled.compress(Bitmap.CompressFormat.JPEG, q, outputStream)
-    val base64 = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-    scaled.recycle()
-    return base64
+private fun buildOcrStepHtml(steps: List<OcrStepResult>): String = buildString {
+    if (steps.isEmpty()) { appendLine("<i>(No crop)</i>"); return@buildString }
+    steps.forEach { step -> appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>${step.text}</div>") }
 }
 
-private fun bitmapToBase64(bitmap: Bitmap, quality: Int): String {
+private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
     val q = quality.coerceIn(0, 100)
     val outputStream = ByteArrayOutputStream()
     bitmap.compress(Bitmap.CompressFormat.JPEG, q, outputStream)
     return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 }
 
+private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
+    val scale = targetWidth.toFloat() / bitmap.width
+    val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
+    val b64 = bitmapToBase64(scaled, quality)
+    scaled.recycle()
+    return b64
+}
+
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
     val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = android.graphics.Canvas(annotated)
-    val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 12f }
-    
-    // Odometer Box (Red)
-    vehicle.odometerCropLeft?.let { l ->
-        paint.color = android.graphics.Color.RED
-        val top = (vehicle.odometerCropTop ?: 0f) * bmp.height
-        val right = (vehicle.odometerCropRight ?: 1f) * bmp.width
-        val bottom = (vehicle.odometerCropBottom ?: 1f) * bmp.height
-        canvas.drawRect(l * bmp.width, top, right, bottom, paint)
-    }
-    
-    // Other Text Box (Blue)
-    vehicle.otherTextCropLeft?.let { l ->
-        paint.color = android.graphics.Color.BLUE
-        val top = (vehicle.otherTextCropTop ?: 0f) * bmp.height
-        val right = (vehicle.otherTextCropRight ?: 1f) * bmp.width
-        val bottom = (vehicle.otherTextCropBottom ?: 1f) * bmp.height
-        canvas.drawRect(l * bmp.width, top, right, bottom, paint)
-    }
+    val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f }
+    vehicle.odometerCropLeft?.let { l -> paint.color = android.graphics.Color.RED; canvas.drawRect(l * bmp.width, (vehicle.odometerCropTop ?: 0f) * bmp.height, (vehicle.odometerCropRight ?: 1f) * bmp.width, (vehicle.odometerCropBottom ?: 1f) * bmp.height, paint) }
+    vehicle.otherTextCropLeft?.let { l -> paint.color = android.graphics.Color.BLUE; canvas.drawRect(l * bmp.width, (vehicle.otherTextCropTop ?: 0f) * bmp.height, (vehicle.otherTextCropRight ?: 1f) * bmp.width, (vehicle.otherTextCropBottom ?: 1f) * bmp.height, paint) }
     return annotated
 }
 
@@ -633,7 +425,10 @@ private fun manualCropFromRectF(bmp: Bitmap, rect: android.graphics.RectF): Bitm
 }
 
 private fun pickBestOdometer(allSteps: List<OcrStepResult>): String? {
-    val candidates = allSteps.mapNotNull { it.text }.flatMap { text -> Regex("\\b\\d{4,7}\\b").findAll(text).map { it.value } }
+    val candidates = allSteps.mapNotNull { it.text }.flatMap { text ->
+        val cleanedText = text.replace("<b>", "").replace("</b>", "").replace("<br>", " ")
+        Regex("\\d{4,7}").findAll(cleanedText).map { it.value }
+    }
     return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
 }
 
@@ -646,14 +441,8 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
                 var entry = zis.nextEntry
                 while (entry != null) {
                     val file = File(targetDir, entry.name)
-                    if (entry.isDirectory) {
-                        file.mkdirs()
-                    } else {
-                        file.parentFile?.mkdirs()
-                        file.outputStream().use { zis.copyTo(it) }
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
+                    if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }
+                    zis.closeEntry(); entry = zis.nextEntry
                 }
             }
         }
