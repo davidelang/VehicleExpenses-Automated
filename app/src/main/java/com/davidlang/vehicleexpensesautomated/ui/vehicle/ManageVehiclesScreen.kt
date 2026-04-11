@@ -64,7 +64,6 @@ fun ManageVehiclesScreen(
     var odometerReading by remember { mutableStateOf("") }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
-    var referenceTextBlocks by remember { mutableStateOf<String?>(null) }
     var landmarkTextBlocksJson by remember { mutableStateOf<String?>(null) }
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
@@ -99,7 +98,6 @@ fun ManageVehiclesScreen(
                 odometerReading = ""
                 pickedPhotoUrl = it.referenceDashPhotoUrl
                 referencePhotoUrl = it.referenceDashPhotoUrl
-                referenceTextBlocks = it.referenceTextBlocks
                 landmarkTextBlocksJson = it.landmarkTextBlocksJson
                 
                 referencePhotoUrl?.let { path ->
@@ -190,7 +188,7 @@ fun ManageVehiclesScreen(
                 DropdownMenuItem(
                     text = { Text("Add New Vehicle") },
                     onClick = {
-                        selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; referenceTextBlocks = null; landmarkTextBlocksJson = null; odometerCropRect = null; otherTextCropRect = null; dropdownExpanded = false
+                        selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; otherTextCropRect = null; dropdownExpanded = false
                     }
                 )
             }
@@ -271,7 +269,7 @@ fun ManageVehiclesScreen(
                                 if (isNewVehicle) {
                                     vehicleViewModel.createNewVehicleWithReference(
                                         name = name, make = make, model = model, year = year.toIntOrNull(), licensePlate = licensePlate, referenceDashPhotoUrl = pickedPhotoUrl, cleanedReferenceDashPhotoUrl = null,
-                                        odometerCropRect = odometerCropRect, initialOdometer = odometerReading.toIntOrNull() ?: 0, referenceTextBlocks = referenceTextBlocks, landmarkTextBlocksJson = landmarkTextBlocksJson
+                                        odometerCropRect = odometerCropRect, initialOdometer = odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson = landmarkTextBlocksJson
                                     )
                                 } else {
                                     editingVehicle?.let { vehicle ->
@@ -279,7 +277,7 @@ fun ManageVehiclesScreen(
                                             name = name, make = make, model = model, year = year.toIntOrNull(), licensePlate = licensePlate, referenceDashPhotoUrl = pickedPhotoUrl, cleanedReferenceDashPhotoUrl = null,
                                             odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom,
                                             otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom,
-                                            referenceTextBlocks = referenceTextBlocks, landmarkTextBlocksJson = landmarkTextBlocksJson
+                                            landmarkTextBlocksJson = landmarkTextBlocksJson
                                         ))
                                     }
                                 }
