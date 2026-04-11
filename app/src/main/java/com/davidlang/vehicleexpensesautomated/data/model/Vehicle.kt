@@ -24,6 +24,5 @@ data class Vehicle(
     val otherTextCropTop: Float? = null,
     val otherTextCropRight: Float? = null,
     val otherTextCropBottom: Float? = null,
-    val referenceTextBlocks: String? = null,   // existing (raw)
     val landmarkTextBlocksJson: String? = null // new (cleaned/filtered)
 )
