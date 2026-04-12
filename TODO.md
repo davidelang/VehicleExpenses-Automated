@@ -13,6 +13,8 @@
   - [ ] **Phase 2: Deep OCR Trace:** Expand Global and Odo columns to show pre-processing steps (Grayscale, Bilateral, CLAHE, OTSU) + OCR grid for each.
   - [ ] **Phase 3: Hub + Needle:** Implement needle-based rotational correction and add as a 3rd alignment strategy.
   - [ ] **Phase 3b: Text-Based Leveling:** Experiment with using average text angle instead of needle angle to auto-level query dashboard pictures.
+  - [ ] **Phase 4: Strict Veto Gating:** Optimize identification to declare winner immediately if only one vehicle survives Veto Tier.
+  - [ ] **Phase 5: Conflict Resolution UI:** Implement user-prompt for cases where multiple vehicles survive Veto and matching is ambiguous.
 - **Location Features:**
   - [ ] **Automated Gas Station Lookup:** Re-implement `LocationLookupWorker` for background geocoding.
   - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.

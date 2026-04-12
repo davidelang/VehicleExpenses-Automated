@@ -188,15 +188,21 @@ private suspend fun processSingleVehicleMatch(
     dynamicAnchors: Map<String, String>,
     allOtherRefs: List<OcrResult>,
     veto: VetoResult,
-    context: Context
+    context: Context,
+    skipHeavyMatching: Boolean = false
 ): SingleVehicleResult {
     val tStart = System.currentTimeMillis()
     val odoCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
     val otherCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
 
+    // If we already know this is the only survivor, we only need alignment for the winner.
+    // However, if we skip alignment, we won't get the odometer.
+    // So "skipHeavyMatching" here means we only skip if it was VETOED.
+    // If it's the winner, we MUST align to get the odo.
+    
     val matchResults = ImageAlignmentUtils.matchWithAllMethods(
         ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odoCropF, otherCropF,
-        skipExpensiveORB = false, globalWordCounts = globalWordCounts,
+        skipExpensiveORB = skipHeavyMatching, globalWordCounts = globalWordCounts,
         allOtherRefs = allOtherRefs, dynamicAnchors = dynamicAnchors,
         currentVehicleName = ref.vehicle.name, veto = veto
     )
@@ -244,31 +250,17 @@ private suspend fun runExperiment(
     
     val cachedRefs = vehicles.map { v ->
         val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        
-        // NO RECOVERY PASS. NO OCR against references.
-        // Reconstruct TextBlock objects strictly from DB JSON.
         val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)
-        
-        // Build a fake OcrResult for the matching harness using only curated data.
-        val refOcr = OcrResult(
-            engineName = "Curated DB",
-            textBlocks = curatedBlocks,
-            imageWidth = bmp.width,
-            imageHeight = bmp.height,
-            debugText = curatedBlocks.joinToString(" ") { it.text }
-        )
-
+        val refOcr = OcrResult(engineName = "Curated DB", textBlocks = curatedBlocks, imageWidth = bmp.width, imageHeight = bmp.height, debugText = curatedBlocks.joinToString(" ") { it.text })
         val annotatedBmp = drawCropBoxesOnReference(bmp, v)
         val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
         annotatedBmp.recycle()
-        
         ReferenceCache(v, refBase64, curatedBlocks, refOcr, bmp)
     }
 
     val globalWordCounts = mutableMapOf<String, Int>()
     val dynamicAnchors = mutableMapOf<String, String>()
     cachedRefs.forEach { ref ->
-        // USE CURATED LANDMARKS ONLY
         ref.curatedLandmarks.map { it.text }.forEach { w ->
             if (w.length >= 3) globalWordCounts[w] = (globalWordCounts[w] ?: 0) + 1
         }
@@ -279,20 +271,15 @@ private suspend fun runExperiment(
         }
     }
 
-    // Landmark Manifest for debugging
     val landmarkManifest = JSONObject()
-    cachedRefs.forEach { ref ->
-        landmarkManifest.put(ref.vehicle.name, JSONArray(ref.curatedLandmarks.map { it.text }.sorted()))
-    }
+    cachedRefs.forEach { ref -> landmarkManifest.put(ref.vehicle.name, JSONArray(ref.curatedLandmarks.map { it.text }.sorted())) }
     File(reportDir, "alignment_landmarks_${timestamp}.json").writeText(landmarkManifest.toString(2))
 
     val jsonArray = JSONArray()
     var partCount = 1
     val maxSizeBytes = 2 * 1024 * 1024
     var currentSize = 0
-    fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply {
-        writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle }))
-    }
+    fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle })) }
     var currentFile = startNewFile()
     val footer = "</table></body></html>"
 
@@ -313,27 +300,40 @@ private suspend fun runExperiment(
             val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"]!!
             val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
             
+            // PHASE 4: Tier 1 Veto Gating
             val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle })
-
+            val nonVetoedRefs = cachedRefs.filter { !vetoResults[it.vehicle.id]!!.isVetoed }
+            
             val vehicleResults = mutableListOf<JSONObject>()
             var winnerName = "No match"
             var bestConf = 0f
             var pickedOdometer = "FAILED"
             val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
 
+            // RULE: If only one survives, it's the winner. We only run matching for it to get alignment/odo.
+            val strictWinnerFound = nonVetoedRefs.size == 1
+            
             cachedRefs.forEach { ref ->
                 val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
-                val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, globalWordCounts, dynamicAnchors, cachedRefs.map { it.ocrResult }, veto, context)
+                
+                // OPTIMIZATION: Skip matching if already vetoed OR if someone else is the strict winner
+                val shouldSkip = veto.isVetoed || (strictWinnerFound && ref.vehicle.name != nonVetoedRefs[0].vehicle.name)
+                
+                val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, globalWordCounts, dynamicAnchors, cachedRefs.map { it.ocrResult }, veto, context, skipHeavyMatching = shouldSkip)
                 strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
                 strategyTraces["${ref.vehicle.name}_Hub"] = vRes.traceData["Hub"] ?: emptyList()
                 
-                if (vRes.tierReached in 1..3 && vRes.confidence >= 0.25f && vRes.confidence > bestConf) {
-                    bestConf = vRes.confidence; winnerName = vRes.vehicleName
+                // If strict winner, we force Tier 1 confidence
+                val finalConf = if (strictWinnerFound && ref.vehicle.name == nonVetoedRefs[0].vehicle.name) 1.0f else vRes.confidence
+                val finalTier = if (strictWinnerFound && ref.vehicle.name == nonVetoedRefs[0].vehicle.name) 1 else vRes.tierReached
+
+                if (finalTier in 1..3 && finalConf >= 0.25f && finalConf > bestConf) {
+                    bestConf = finalConf; winnerName = vRes.vehicleName
                     pickedOdometer = OdometerOcrUtils.pickBestOdometer((vRes.traceData["Aligned"] ?: emptyList()) + (vRes.traceData["Hub"] ?: emptyList())) ?: "FAILED"
                 }
                 vehicleResults.add(JSONObject().apply {
-                    put("name", vRes.vehicleName); put("score", vRes.confidence.toDouble()); put("match_time_ms", vRes.matchTimeMs); put("veto_word", vRes.vetoReason)
-                    put("orb_base64", vRes.orbBase64); put("hub_base64", vRes.hubBase64); put("tier_reached", vRes.tierReached)
+                    put("name", vRes.vehicleName); put("score", finalConf.toDouble()); put("match_time_ms", vRes.matchTimeMs); put("veto_word", vRes.vetoReason)
+                    put("orb_base64", vRes.orbBase64); put("hub_base64", vRes.hubBase64); put("tier_reached", finalTier)
                     put("method_scores", JSONObject().apply { vRes.methodScores.forEach { (k, v) -> put(k, v.toDouble()) } })
                     put("method_times", JSONObject().apply { vRes.methodTimes.forEach { (k, v) -> put(k, v) } })
                 })
@@ -346,19 +346,11 @@ private suspend fun runExperiment(
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
             jsonArray.put(JSONObject().apply {
-                put("file", file.name)
-                put("winner", winnerName)
-                put("confidence", bestConf.toDouble())
-                put("odometer", pickedOdometer)
+                put("file", file.name); put("winner", winnerName); put("confidence", bestConf.toDouble()); put("odometer", pickedOdometer)
                 put("query_landmarks", JSONArray(queryLandmarks.map { l -> JSONObject().apply { put("text", l.text); put("angle", l.angle.toDouble()) } }))
                 put("vehicles", JSONArray(vehicleResults))
-                put("global_discovery", JSONObject().apply {
-                    globalOcrResultsMap.forEach { (version, engineMap) ->
-                        val verObj = JSONObject()
-                        engineMap.forEach { (eng, data) -> verObj.put(eng, data.first) }
-                        put(version, verObj)
-                    }
-                })
+                put("strict_veto_winner", strictWinnerFound)
+                put("conflict_candidates", JSONArray(nonVetoedRefs.map { it.vehicle.name }))
             })
 
             withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, winnerName, bestConf, pickedOdometer), (index + 1).toFloat() / total) }
