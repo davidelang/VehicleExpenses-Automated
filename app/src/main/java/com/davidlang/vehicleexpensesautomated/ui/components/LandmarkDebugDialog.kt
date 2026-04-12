@@ -45,7 +45,7 @@ fun LandmarkDebugDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize().padding(8.dp),
+            modifier = Modifier.fillMaxSize().padding(16.dp),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surface
         ) {
@@ -53,33 +53,38 @@ fun LandmarkDebugDialog(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
                     IconButton(onClick = onDismiss) {
-                        Text("X", style = MaterialTheme.typography.titleLarge)
+                        Text("✕", style = MaterialTheme.typography.titleLarge)
                     }
                 }
                 
-                // Use a fixed height or aspect ratio Box to avoid "huge wasted space"
-                Box(modifier = Modifier.fillMaxWidth().height(350.dp).background(Color.Black)) {
-                    val bitmap = remember(photoPath) {
-                        try {
-                            val options = BitmapFactory.Options().apply { inSampleSize = 2 }
-                            if (photoPath.startsWith("content://")) {
-                                context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
-                                    BitmapFactory.decodeStream(it, null, options)
-                                }
-                            } else {
-                                BitmapFactory.decodeFile(photoPath, options)
+                val bitmap = remember(photoPath) {
+                    try {
+                        val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        if (photoPath.startsWith("content://")) {
+                            context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
+                                BitmapFactory.decodeStream(it, null, options)
                             }
-                        } catch (e: Exception) {
-                            null
+                        } else {
+                            BitmapFactory.decodeFile(photoPath, options)
                         }
+                    } catch (e: Exception) {
+                        null
                     }
+                }
 
-                    if (bitmap != null) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            val imgW = bitmap.width.toFloat()
-                            val imgH = bitmap.height.toFloat()
-                            val containerW = maxWidth.value
-                            val containerH = maxHeight.value
+                if (bitmap != null) {
+                    val imgW = bitmap.width.toFloat()
+                    val imgH = bitmap.height.toFloat()
+                    
+                    // Display image with its natural aspect ratio to avoid black bars
+                    Box(modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(imgW / imgH)
+                        .background(Color.Black)
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val containerW = size.width
+                            val containerH = size.height
                             
                             val scale = minOf(containerW / imgW, containerH / imgH)
                             val dw = imgW * scale
@@ -87,71 +92,73 @@ fun LandmarkDebugDialog(
                             val offsetX = (containerW - dw) / 2
                             val offsetY = (containerH - dh) / 2
 
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                drawImage(
-                                    image = bitmap.asImageBitmap(),
-                                    dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()),
-                                    dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
+                            drawImage(
+                                image = bitmap.asImageBitmap(),
+                                dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()),
+                                dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
+                            )
+
+                            // Odometer (Blue)
+                            odometerCrop?.let {
+                                val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
+                                val boxSize = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
+                                drawRect(color = Color.Blue, topLeft = rect, size = boxSize, style = Stroke(4f))
+                                
+                                drawText(
+                                    textMeasurer = textMeasurer,
+                                    text = "ODO: $odometerText",
+                                    topLeft = rect.copy(y = (rect.y - 18.dp.toPx()).coerceAtLeast(0f)),
+                                    style = androidx.compose.ui.text.TextStyle(color = Color.Cyan, fontSize = 11.sp, background = Color.Black.copy(alpha = 0.8f))
                                 )
+                            }
 
-                                odometerCrop?.let {
-                                    val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
-                                    val size = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
-                                    drawRect(color = Color.Blue, topLeft = rect, size = size, style = Stroke(4f))
-                                    
-                                    drawText(
-                                        textMeasurer = textMeasurer,
-                                        text = "ODO: $odometerText",
-                                        topLeft = rect.copy(y = (rect.y - 20.dp.toPx()).coerceAtLeast(0f)),
-                                        style = androidx.compose.ui.text.TextStyle(color = Color.Cyan, fontSize = 12.sp, background = Color.Black.copy(alpha = 0.7f))
-                                    )
-                                }
+                            // Landmarks (Red)
+                            landmarks.forEach { lm ->
+                                val nx = lm.boundingBox.left / 1500f
+                                val ny = lm.boundingBox.top / (imgH * (1500f / imgW))
+                                val nw = (lm.boundingBox.right - lm.boundingBox.left) / 1500f
+                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top) / (imgH * (1500f / imgW))
+                                
+                                val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
+                                drawRect(color = Color.Red, topLeft = rect, size = androidx.compose.ui.geometry.Size(nw * dw, nh * dh), style = Stroke(2f))
 
-                                otherTextCrop?.let {
-                                    drawRect(
-                                        color = Color.Green,
-                                        topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh),
-                                        size = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh),
-                                        style = Stroke(4f)
-                                    )
-                                }
-
-                                landmarks.forEach { lm ->
-                                    val nx = lm.boundingBox.left / 1500f
-                                    val ny = lm.boundingBox.top / (imgH * (1500f / imgW))
-                                    val nw = (lm.boundingBox.right - lm.boundingBox.left) / 1500f
-                                    val nh = (lm.boundingBox.bottom - lm.boundingBox.top) / (imgH * (1500f / imgW))
-                                    
-                                    val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
-                                    drawRect(color = Color.Red, topLeft = rect, size = androidx.compose.ui.geometry.Size(nw * dw, nh * dh), style = Stroke(2f))
-
-                                    drawText(
-                                        textMeasurer = textMeasurer,
-                                        text = lm.text,
-                                        topLeft = rect,
-                                        style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 9.sp, background = Color.Black.copy(alpha = 0.6f))
-                                    )
-                                }
+                                drawText(
+                                    textMeasurer = textMeasurer,
+                                    text = lm.text,
+                                    topLeft = rect,
+                                    style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 8.sp, background = Color.Black.copy(alpha = 0.7f))
+                                )
                             }
                         }
-                    } else {
-                        Text("Preview error", color = Color.White, modifier = Modifier.align(Alignment.Center))
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Text("Image loading error")
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                Text("Odometer Reading: $odometerText", style = MaterialTheme.typography.titleMedium, color = Color.Blue)
+                Text("Detected Odometer: $odometerText", style = MaterialTheme.typography.titleMedium, color = Color.Blue)
                 
-                Text("Discovered Landmarks (Red):", style = MaterialTheme.typography.titleSmall)
-                // Expand the LazyColumn to take remaining space
-                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp)) {
+                Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
+                
+                // Landmarks list takes remaining space
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
                     items(landmarks) { lm ->
-                        ListItem(
-                            headlineContent = { Text(lm.text, style = MaterialTheme.typography.bodyMedium) },
-                            supportingContent = { Text("Box: ${lm.boundingBox.toShortString()} | Angle: ${"%.1f".format(lm.angle)}°", style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.padding(0.dp)
-                        )
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(lm.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text("${"%.1f".format(lm.angle)}°", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            }
+                        }
                     }
                 }
 
