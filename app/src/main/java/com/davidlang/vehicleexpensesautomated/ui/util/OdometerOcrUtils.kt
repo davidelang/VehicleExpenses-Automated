@@ -436,31 +436,33 @@ object OdometerOcrUtils {
         val scale = 1500f / bitmap.width
         val scaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * scale).toInt(), true)
         
-        // 2. OCR Full Image (ML Kit)
-        val ocrResult = extractFromPhotoBitmap(scaled)
+        // 2. MASKING: Draw black boxes over the areas we want the OCR to ignore
+        val maskedBitmap = scaled.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = android.graphics.Canvas(maskedBitmap)
+        val paint = android.graphics.Paint().apply { color = android.graphics.Color.BLACK; style = android.graphics.Paint.Style.FILL }
+        
+        odometerCrop?.let { 
+            canvas.drawRect(it.left * scaled.width, it.top * scaled.height, it.right * scaled.width, it.bottom * scaled.height, paint)
+        }
+        otherTextCrop?.let {
+            canvas.drawRect(it.left * scaled.width, it.top * scaled.height, it.right * scaled.width, it.bottom * scaled.height, paint)
+        }
+
+        // 3. OCR the MASKED image
+        val ocrResult = extractFromPhotoBitmap(maskedBitmap)
         val allBlocks = ocrResult.textBlocks
         
-        // 3. Filter & Clean
-        val landmarks = allBlocks.filter { block ->
-            val bx = block.boundingBox.centerX().toFloat() / 1500f
-            val by = block.boundingBox.centerY().toFloat() / (scaled.height.toFloat())
-            
-            // Ignore anything inside the two crop boxes
-            val inOdo = odometerCrop?.contains(bx, by) ?: false
-            val inOther = otherTextCrop?.contains(bx, by) ?: false
-            
-            if (inOdo || inOther) return@filter false
-            
-            val clean = cleanLandmarkString(block.text)
-            clean.length > 1
-        }.map { block ->
+        // 4. Filter & Clean (Just length and punctuation now, as masking handled the areas)
+        val landmarks = allBlocks.map { block ->
             TextBlock(
                 text = cleanLandmarkString(block.text),
-                boundingBox = block.boundingBox
+                boundingBox = block.boundingBox,
+                angle = block.angle
             )
-        }.sortedBy { it.text }
+        }.filter { it.text.length > 1 }.sortedBy { it.text }
 
         scaled.recycle()
+        maskedBitmap.recycle()
         return landmarks
     }
 
