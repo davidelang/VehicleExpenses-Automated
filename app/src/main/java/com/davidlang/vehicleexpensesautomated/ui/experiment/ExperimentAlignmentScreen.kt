@@ -274,12 +274,15 @@ private suspend fun runExperiment(
     val globalWordCounts = mutableMapOf<String, Int>()
     val dynamicAnchors = mutableMapOf<String, String>()
     cachedRefs.forEach { ref ->
-        ref.ocrResult.textBlocks.map { it.text.trim() }.distinct().forEach { w ->
+        // USE CURATED LANDMARKS, not raw OCR!
+        val myLandmarks = ImageAlignmentUtils.getLandmarksFromJson(ref.vehicle.landmarkTextBlocksJson)
+        myLandmarks.forEach { w ->
             if (w.length >= 3) globalWordCounts[w] = (globalWordCounts[w] ?: 0) + 1
         }
     }
     cachedRefs.forEach { ref ->
-        ref.ocrResult.textBlocks.map { it.text.trim() }.distinct().forEach { w ->
+        val myLandmarks = ImageAlignmentUtils.getLandmarksFromJson(ref.vehicle.landmarkTextBlocksJson)
+        myLandmarks.forEach { w ->
             if (globalWordCounts[w] == 1) dynamicAnchors[w] = ref.vehicle.name
         }
     }
