@@ -56,7 +56,7 @@ object ImageAlignmentUtils {
             val array = JSONArray(json)
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
-                result.add(obj.getString("text").lowercase().trim())
+                result.add(obj.getString("text").trim())
             }
         } catch (e: Exception) { Log.e("ImageAlignment", "JSON parse failed", e) }
         return result
@@ -68,7 +68,7 @@ object ImageAlignmentUtils {
      * but NOT to this vehicle.
      */
     fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>): Map<Int, VetoResult> {
-        val queryWords = queryLandmarks.map { it.text.lowercase().trim() }.toSet()
+        val queryWords = queryLandmarks.map { it.text.trim() }.toSet()
         val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson) }
         
         return allVehicles.associate { currentVehicle ->

@@ -268,12 +268,12 @@ private suspend fun runExperiment(
     val globalWordCounts = mutableMapOf<String, Int>()
     val dynamicAnchors = mutableMapOf<String, String>()
     cachedRefs.forEach { ref ->
-        ref.ocrResult.textBlocks.map { it.text.lowercase().trim() }.distinct().forEach { w ->
+        ref.ocrResult.textBlocks.map { it.text.trim() }.distinct().forEach { w ->
             if (w.length >= 3) globalWordCounts[w] = (globalWordCounts[w] ?: 0) + 1
         }
     }
     cachedRefs.forEach { ref ->
-        ref.ocrResult.textBlocks.map { it.text.lowercase().trim() }.distinct().forEach { w ->
+        ref.ocrResult.textBlocks.map { it.text.trim() }.distinct().forEach { w ->
             if (globalWordCounts[w] == 1) dynamicAnchors[w] = ref.vehicle.name
         }
     }
@@ -291,7 +291,7 @@ private suspend fun runExperiment(
     val maxSizeBytes = 2 * 1024 * 1024
     var currentSize = 0
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply {
-        writeText(buildHtmlHeader(timestamp, total, vehicles))
+        writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle }))
     }
     var currentFile = startNewFile()
     val footer = "</table></body></html>"
@@ -312,7 +312,9 @@ private suspend fun runExperiment(
 
             val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"]!!
             val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
-            val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, vehicles)
+            
+            // CRITICAL FIX: Use recovered vehicles (cachedRefs) for veto pass
+            val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle })
 
             val vehicleResults = mutableListOf<JSONObject>()
             var winnerName = "No match"
@@ -338,8 +340,8 @@ private suspend fun runExperiment(
                 })
             }
 
-            val qLandmarkTexts = queryLandmarks.map { it.text }.sorted()
-            val rowHtml = buildHtmlRowFoundation(file.name, mapOf("Original" to createScaledBase64(originalBitmap, 150, 50), "Grayscale" to createScaledBase64(grayBitmap, 150, 50), "Bilateral" to createScaledBase64(bileBitmap, 150, 50)), globalOcrResultsMap, qLandmarkTexts, vehicleResults, vehicles, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
+            val qLandmarkDisplays = queryLandmarks.map { "${it.text} (${"%.1f".format(it.angle)}°)" }.sorted()
+            val rowHtml = buildHtmlRowFoundation(file.name, mapOf("Original" to createScaledBase64(originalBitmap, 150, 50), "Grayscale" to createScaledBase64(grayBitmap, 150, 50), "Bilateral" to createScaledBase64(bileBitmap, 150, 50)), globalOcrResultsMap, qLandmarkDisplays, vehicleResults, cachedRefs.map { it.vehicle }, cachedRefs, winnerName, bestConf, pickedOdometer, strategyTraces)
             
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = headerLength(currentFile) }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
@@ -349,7 +351,7 @@ private suspend fun runExperiment(
                 put("winner", winnerName)
                 put("confidence", bestConf.toDouble())
                 put("odometer", pickedOdometer)
-                put("query_landmarks", JSONArray(qLandmarkTexts))
+                put("query_landmarks", JSONArray(queryLandmarks.map { l -> JSONObject().apply { put("text", l.text); put("angle", l.angle.toDouble()) } }))
                 put("vehicles", JSONArray(vehicleResults))
                 put("global_discovery", JSONObject().apply {
                     globalOcrResultsMap.forEach { (version, engineMap) ->
