@@ -39,7 +39,10 @@ data class AlignmentResult(
 data class VetoResult(
     val isVetoed: Boolean,
     val reasonWord: String = "",
-    val tierReached: Int = 0
+    val tierReached: Int = 0,
+    val queryWords: List<String> = emptyList(),
+    val myManifest: List<String> = emptyList(),
+    val vetoPool: List<String> = emptyList()
 )
 
 object ImageAlignmentUtils {
@@ -68,7 +71,8 @@ object ImageAlignmentUtils {
      * but NOT to this vehicle.
      */
     fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>): Map<Int, VetoResult> {
-        val queryWords = queryLandmarks.map { it.text.trim() }.toSet()
+        val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
+        val queryWordsSet = queryWordsList.toSet()
         val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson) }
         
         return allVehicles.associate { currentVehicle ->
@@ -82,12 +86,15 @@ object ImageAlignmentUtils {
             val vetoPool = otherWordsPool - myWords
             
             // DYNAMIC FIX: Identify ALL triggers, sort them, and remove duplicates
-            val triggers = queryWords.intersect(vetoPool).sorted()
+            val triggers = queryWordsSet.intersect(vetoPool).sorted()
             
             currentVehicle.id to VetoResult(
                 isVetoed = triggers.isNotEmpty(),
                 reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",
-                tierReached = 0
+                tierReached = 0,
+                queryWords = queryWordsList,
+                myManifest = myWords.toList().sorted(),
+                vetoPool = vetoPool.toList().sorted()
             )
         }
     }

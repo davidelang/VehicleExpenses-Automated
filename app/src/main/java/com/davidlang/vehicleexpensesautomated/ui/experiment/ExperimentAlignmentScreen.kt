@@ -70,87 +70,31 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     if (!reportDir.exists()) reportDir.mkdirs()
     if (!debugCropDir.exists()) debugCropDir.mkdirs()
 
-    val zipLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            scope.launch {
-                status = "Extracting ZIP..."
-                val success = extractZipToPhotos(it, experimentDir, context)
-                status = if (success) "ZIP extracted!" else "Failed to extract ZIP."
-            }
-        }
+    val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let { scope.launch { status = "Extracting ZIP..."; val success = extractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }
-    ) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            if (detailLog.isNotEmpty()) {
-                Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-            }
-            
+            if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
             if (isRunning) {
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(currentPhotoName, style = MaterialTheme.typography.labelSmall)
-                        Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
-                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(currentPhotoName, style = MaterialTheme.typography.labelSmall); Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall) }
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            Button(onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK))
-                context.startActivity(intent)
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text("Open Amazon Photos Album")
-            }
-
-            Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) {
-                Text("Extract Downloaded ZIP")
-            }
-
-            Button(
-                onClick = {
-                    if (vehicles.isEmpty()) {
-                        status = "Error: No vehicles in DB."
-                        return@Button
-                    }
-                    scope.launch {
-                        isRunning = true
-                        resultsList.clear()
-                        runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p ->
-                            resultsList.add(res)
-                            progress = p
-                            currentPhotoName = res.photoName
-                        }
-                        isRunning = false
-                        status = "Complete! Reports saved."
-                    }
-                },
-                enabled = !isRunning && experimentDir.exists(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Run Test")
-            }
-
+            Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
+            Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
+            Button(onClick = { if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }; scope.launch { isRunning = true; resultsList.clear(); runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p -> resultsList.add(res); progress = p; currentPhotoName = res.photoName }; isRunning = false; status = "Complete! Reports saved." } }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
             Spacer(modifier = Modifier.height(16.dp))
-
             LazyColumn(modifier = Modifier.weight(1f)) {
                 itemsIndexed(resultsList) { index, res ->
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${index + 1}.", style = MaterialTheme.typography.titleSmall)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(res.photoName, style = MaterialTheme.typography.labelSmall)
-                                Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary)
-                                Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall)
-                            }
+                            Text("${index + 1}.", style = MaterialTheme.typography.titleSmall); Spacer(modifier = Modifier.width(8.dp))
+                            Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary); Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall) }
                         }
                     }
                 }
@@ -159,13 +103,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     }
 }
 
-data class ReferenceCache(
-    val vehicle: Vehicle,
-    val referenceBase64: String,
-    val curatedLandmarks: List<TextBlock>,
-    val ocrResult: OcrResult,
-    val bmp: Bitmap
-)
+data class ReferenceCache(val vehicle: Vehicle, val referenceBase64: String, val curatedLandmarks: List<TextBlock>, val ocrResult: OcrResult, val bmp: Bitmap)
 
 data class SingleVehicleResult(
     val vehicleName: String,
@@ -176,48 +114,26 @@ data class SingleVehicleResult(
     val traceData: Map<String, List<OcrStepResult>>,
     val methodScores: Map<String, Float>,
     val methodTimes: Map<String, Long>,
-    val tierReached: Int
+    val tierReached: Int,
+    val vetoQueryWords: List<String>,
+    val vetoMyManifest: List<String>,
+    val vetoPool: List<String>
 )
 
-private suspend fun processSingleVehicleMatch(
-    ref: ReferenceCache,
-    originalBitmap: Bitmap,
-    queryOcrMl: OcrResult,
-    veto: VetoResult,
-    context: Context
-): SingleVehicleResult {
+private suspend fun processSingleVehicleMatch(ref: ReferenceCache, originalBitmap: Bitmap, queryOcrMl: OcrResult, veto: VetoResult, context: Context): SingleVehicleResult {
     val tStart = System.currentTimeMillis()
     val odoCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
     val otherCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
-
-    // Optimization: Skip expensive ORB for vetoed candidates or very low text agreement
     val skipAlignment = veto.isVetoed
-    
-    val matchResults = ImageAlignmentUtils.matchWithAllMethods(
-        ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odoCropF, otherCropF,
-        skipExpensiveORB = skipAlignment, veto = veto
-    )
-
+    val matchResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odoCropF, otherCropF, skipExpensiveORB = skipAlignment, veto = veto)
     val tiered = matchResults["tiered"]!!
     val orbRes = matchResults["feature"]!!
     val tMatch = System.currentTimeMillis() - tStart
-
     val traceData = mutableMapOf<String, List<OcrStepResult>>()
-    if (orbRes.success && orbRes.alignedImage != null) {
-        val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle)
-        if (crop != null) { traceData["Aligned"] = OdometerOcrUtils.runMultiStepOcr(crop, context); crop.recycle() }
-    }
-
+    if (orbRes.success && orbRes.alignedImage != null) { val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle); if (crop != null) { traceData["Aligned"] = OdometerOcrUtils.runMultiStepOcr(crop, context); crop.recycle() } }
     val orbBase64 = if (orbRes.alignedImage != null) createScaledBase64(orbRes.alignedImage, 400, 70) else ""
     orbRes.alignedImage?.recycle()
-
-    return SingleVehicleResult(
-        vehicleName = ref.vehicle.name, confidence = tiered.confidence, vetoReason = tiered.vetoReason ?: "",
-        matchTimeMs = tMatch, orbBase64 = orbBase64, traceData = traceData,
-        methodScores = matchResults.mapValues { it.value.confidence },
-        methodTimes = matchResults.mapValues { it.value.timeMs },
-        tierReached = tiered.tierReached
-    )
+    return SingleVehicleResult(vehicleName = ref.vehicle.name, confidence = tiered.confidence, vetoReason = tiered.vetoReason ?: "", matchTimeMs = tMatch, orbBase64 = orbBase64, traceData = traceData, methodScores = matchResults.mapValues { it.value.confidence }, methodTimes = matchResults.mapValues { it.value.timeMs }, tierReached = tiered.tierReached, vetoQueryWords = veto.queryWords, vetoMyManifest = veto.myManifest, vetoPool = veto.vetoPool)
 }
 
 private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
@@ -236,251 +152,132 @@ private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
     return list
 }
 
-private suspend fun runExperiment(
-    experimentDir: File,
-    reportDir: File,
-    debugCropDir: File,
-    vehicles: List<Vehicle>,
-    context: Context,
-    onLog: (String) -> Unit,
-    onProgress: (PhotoResultSummary, Float) -> Unit
-) = withContext(Dispatchers.IO) {
+private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
     val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png") }?.sortedBy { it.name } ?: return@withContext
-    val total = photos.size
-    val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-    
+    val total = photos.size; val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val cachedRefs = vehicles.map { v ->
-        val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)
+        val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl); val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)
         val refOcr = OcrResult(engineName = "Curated DB", textBlocks = curatedBlocks, imageWidth = bmp.width, imageHeight = bmp.height, debugText = curatedBlocks.joinToString(" ") { it.text })
-        val annotatedBmp = drawCropBoxesOnReference(bmp, v)
-        val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
-        annotatedBmp.recycle()
+        val annotatedBmp = drawCropBoxesOnReference(bmp, v); val refBase64 = createScaledBase64(annotatedBmp, 400, 70); annotatedBmp.recycle()
         ReferenceCache(v, refBase64, curatedBlocks, refOcr, bmp)
     }
-
     val landmarkManifest = JSONObject()
     cachedRefs.forEach { ref -> landmarkManifest.put(ref.vehicle.name, JSONArray(ref.curatedLandmarks.map { it.text }.sorted())) }
     File(reportDir, "alignment_landmarks_${timestamp}.json").writeText(landmarkManifest.toString(2))
-
-    val jsonArray = JSONArray()
-    var partCount = 1
-    val maxSizeBytes = 2 * 1024 * 1024
-    var currentSize = 0
-    
-    // Header will be written row-by-row if needed, but for now we'll start a file
-    // Note: We don't know the columns yet, so buildHtmlHeader will be called per row or per part
-    fun startNewFile(allVehicles: List<Vehicle>) = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply {
-        writeText(buildHtmlHeader(timestamp, total, allVehicles))
-    }
-    var currentFile = startNewFile(vehicles) // Start with all, but we will refine
-    val footer = "</table></body></html>"
-
+    val jsonArray = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
+    fun startNewFile(allVehicles: List<Vehicle>) = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { writeText(buildHtmlHeader(timestamp, total, allVehicles)) }
+    var currentFile = startNewFile(vehicles); val footer = "</table></body></html>"
     photos.forEachIndexed { index, file ->
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
             val rawBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
-            
-            // DESKEW STEP: Level the query dashboard photo
             val tilt = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
-            if (Math.abs(tilt) > 0.2f) {
-                Log.i(TAG, "Auto-leveling query photo by ${-tilt} degrees")
-                val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt)
-                if (leveled != originalBitmap) {
-                    originalBitmap.recycle()
-                    originalBitmap = leveled
-                }
-            }
-
-            val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap)
-            val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
-            
+            if (Math.abs(tilt) > 0.2f) { val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt); if (leveled != originalBitmap) { originalBitmap.recycle(); originalBitmap = leveled } }
+            val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap); val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
             val globalOcrResultsMap = mutableMapOf<String, Map<String, Pair<String, Long>>>()
-            mapOf("Original" to originalBitmap, "Grayscale" to grayBitmap, "Bilateral" to bileBitmap).forEach { (ver, bmp) ->
-                val res = OcrHarness.runAll(bmp, context)
-                globalOcrResultsMap[ver] = res.mapValues { it.value.debugText to it.value.executionTimeMs }
-            }
-
-            val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"]!!
-            val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
-            
+            mapOf("Original" to originalBitmap, "Grayscale" to grayBitmap, "Bilateral" to bileBitmap).forEach { (ver, bmp) -> val res = OcrHarness.runAll(bmp, context); globalOcrResultsMap[ver] = res.mapValues { it.value.debugText to it.value.executionTimeMs } }
+            val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"]!!; val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
             val qLandmarkDisplays = queryLandmarks.map { "${it.text} (${"%.1f".format(it.angle)}°)" }.sorted()
-
-            // 1. Identity Pass (Tier 1-4)
             val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle })
-            
             val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
-            var winnerName = "No match"
-            var bestConf = 0f
-            var pickedOdometer = "FAILED"
-            val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
-
+            var winnerName = "No match"; var bestConf = 0f; var pickedOdometer = "FAILED"; val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
             cachedRefs.forEach { ref ->
-                val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
-                val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, veto, context)
-                vehicleResultsMap[ref.vehicle.id] = vRes
-                
-                strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
-                
-                if (vRes.tierReached in 1..3 && vRes.confidence >= 0.25f && vRes.confidence > bestConf) {
-                    bestConf = vRes.confidence
-                    winnerName = vRes.vehicleName
-                    pickedOdometer = OdometerOcrUtils.pickBestOdometer(vRes.traceData["Aligned"] ?: emptyList()) ?: "FAILED"
-                }
+                val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false); val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, veto, context)
+                vehicleResultsMap[ref.vehicle.id] = vRes; strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
+                if (vRes.tierReached in 1..3 && vRes.confidence >= 0.25f && vRes.confidence > bestConf) { bestConf = vRes.confidence; winnerName = vRes.vehicleName; pickedOdometer = OdometerOcrUtils.pickBestOdometer(vRes.traceData["Aligned"] ?: emptyList()) ?: "FAILED" }
             }
-
-            // 2. Filter for Possibilities (Candidates who passed Tier 1-3)
-            val candidates = cachedRefs.filter { ref ->
-                val res = vehicleResultsMap[ref.vehicle.id]!!
-                res.tierReached in 1..3 && res.confidence >= 0.25f
-            }
-
-            // 3. Build HTML Row with only those candidates
+            val candidates = cachedRefs.filter { ref -> val res = vehicleResultsMap[ref.vehicle.id]!!; res.tierReached in 1..3 && res.confidence >= 0.25f }
             val rowHtml = buildHtmlRowFoundation(file.name, mapOf("Original" to createScaledBase64(originalBitmap, 150, 50), "Grayscale" to createScaledBase64(grayBitmap, 150, 50), "Bilateral" to createScaledBase64(bileBitmap, 150, 50)), globalOcrResultsMap, qLandmarkDisplays, vehicleResultsMap, candidates, winnerName, bestConf, pickedOdometer, strategyTraces)
-            
-            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(vehicles); currentSize = headerLength(currentFile) }
+            if (currentSize + rowHtml.length > maxSizeBytes) { currentSize = 0; currentFile.appendText(footer); currentFile = startNewFile(vehicles) }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
-
             jsonArray.put(JSONObject().apply {
-                put("file", file.name); put("winner", winnerName); put("confidence", bestConf.toDouble()); put("odometer", pickedOdometer)
-                put("query_landmarks", JSONArray(queryLandmarks.map { l -> JSONObject().apply { put("text", l.text); put("angle", l.angle.toDouble()) } }))
+                put("file", file.name); put("winner", winnerName); put("confidence", bestConf.toDouble()); put("odometer", pickedOdometer); put("query_landmarks", JSONArray(queryLandmarks.map { l -> JSONObject().apply { put("text", l.text); put("angle", l.angle.toDouble()) } }))
                 val vArray = JSONArray()
                 vehicleResultsMap.values.forEach { vRes ->
                     vArray.put(JSONObject().apply {
                         put("name", vRes.vehicleName); put("score", vRes.confidence.toDouble()); put("match_time_ms", vRes.matchTimeMs); put("veto_word", vRes.vetoReason)
                         put("tier_reached", vRes.tierReached)
+                        put("veto_query_words", JSONArray(vRes.vetoQueryWords))
+                        put("veto_my_manifest", JSONArray(vRes.vetoMyManifest))
+                        put("veto_pool", JSONArray(vRes.vetoPool))
+                        put("method_scores", JSONObject().apply { vRes.methodScores.forEach { (k, v) -> put(k, v.toDouble()) } })
+                        put("method_times", JSONObject().apply { vRes.methodTimes.forEach { (k, v) -> put(k, v) } })
                     })
                 }
                 put("vehicles", vArray)
             })
-
             withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, winnerName, bestConf, pickedOdometer), (index + 1).toFloat() / total) }
-            grayBitmap.recycle(); bileBitmap.recycle(); originalBitmap.recycle()
-            strategyTraces.values.flatten().forEach { it.bitmap.recycle() }
+            grayBitmap.recycle(); bileBitmap.recycle(); originalBitmap.recycle(); strategyTraces.values.flatten().forEach { it.bitmap.recycle() }
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
     }
-    currentFile.appendText(footer)
-    File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2))
-    cachedRefs.forEach { it.bmp.recycle() }
+    currentFile.appendText(footer); File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
 }
 
 private fun headerLength(f: File): Int = f.readText().length
 
 private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>): String = buildString {
     appendLine("<html><head><title>Alignment Experiment - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 150px; height: auto; border: 1px solid #eee; } .score-box { text-align: left; font-size: 9px; background: #f9f9f9; padding: 4px; border-radius: 4px; overflow-wrap: break-word; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }</style></head><body>")
+    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 150px; height: auto; border: 1px solid #eee; } .score-box { text-align: left; font-size: 9px; background: #f9f9f9; padding: 4px; border-radius: 4px; overflow-wrap: break-word; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; } .word-list { text-align: left; font-size: 8px; color: #666; background: #fff; border: 1px solid #eee; padding: 2px; height: 60px; overflow-y: scroll; }</style></head><body>")
     appendLine("<h1>Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p>")
     appendLine("<h3>Reference Landmark Manifest (Curated DB)</h3><ul>")
-    allVehicles.forEach { v ->
-        val landmarks = ImageAlignmentUtils.getLandmarksFromJson(v.landmarkTextBlocksJson).sorted()
-        appendLine("<li><b>${v.name}:</b> ${landmarks.joinToString(", ")}</li>")
-    }
-    appendLine("</ul><table><tr><th style='width:80px;'># & Photo</th><th style='width:160px;'>Original / Discovery</th>")
-    appendLine("<th style='width:300px;'>Candidate Match Results (Tier 1-3 Only)</th>")
-    appendLine("<th style='width:120px;'>Final Result</th></tr>")
+    allVehicles.forEach { v -> val landmarks = ImageAlignmentUtils.getLandmarksFromJson(v.landmarkTextBlocksJson).sorted(); appendLine("<li><b>${v.name}:</b> ${landmarks.joinToString(", ")}</li>") }
+    appendLine("</ul><table><tr><th style='width:80px;'># & Photo</th><th style='width:160px;'>Original / Discovery</th><th style='width:300px;'>Candidate Match Results (Tier 1-3 Only)</th><th style='width:120px;'>Final Result</th></tr>")
 }
 
 private fun buildHtmlRowFoundation(photoName: String, globalBase64s: Map<String, String>, globalOcr: Map<String, Map<String, Pair<String, Long>>>, queryLandmarks: List<String>, vehicleResultsMap: Map<Int, SingleVehicleResult>, candidates: List<ReferenceCache>, winnerName: String, bestConf: Float, pickedOdo: String, traces: Map<String, List<OcrStepResult>>): String = buildString {
     appendLine("<tr><td><small>$photoName</small></td><td>")
-    globalBase64s.forEach { (ver, b64) ->
-        appendLine("<b>$ver:</b><br><img src='data:image/jpeg;base64,$b64'><br>")
-        globalOcr[ver]?.forEach { (eng, res) -> appendLine("<small><b>$eng:</b> ${res.first} (${res.second}ms)</small><br>") }
-    }
-    appendLine("<hr><b>Tier 1 Pass Landmarks:</b><br><small>${queryLandmarks.joinToString(", ")}</small>")
-    appendLine("</td>")
-    
-    // Candidates Column (Combined or Individual)
+    globalBase64s.forEach { (ver, b64) -> appendLine("<b>$ver:</b><br><img src='data:image/jpeg;base64,$b64'><br>"); globalOcr[ver]?.forEach { (eng, res) -> appendLine("<small><b>$eng:</b> ${res.first} (${res.second}ms)</small><br>") } }
+    appendLine("<hr><b>Tier 1 Pass Landmarks:</b><br><small>${queryLandmarks.joinToString(", ")}</small></td>")
     appendLine("<td>")
     if (candidates.isEmpty()) {
-        appendLine("<i>No candidates passed Tier 3 identification.</i><br>")
-        // Show veto info for all if no winner
+        appendLine("<i>No candidates passed Tier 3.</i><br>")
         vehicleResultsMap.values.forEach { res ->
-            if (res.vetoReason.isNotEmpty()) appendLine("<small><b>${res.vehicleName} Vetoed:</b> ${res.vetoReason}</small><br>")
+            appendLine("<div style='border:1px solid #fee; margin-bottom:4px; padding:2px;'>")
+            appendLine("<b>${res.vehicleName}:</b> Vetoed by: <span style='color:red;'>${res.vetoReason}</span><br>")
+            appendLine("<b>Veto Manifest:</b> <div class='word-list'>${res.vetoMyManifest.joinToString(", ")}</div>")
+            appendLine("<b>Veto Pool (Others - Me):</b> <div class='word-list'>${res.vetoPool.joinToString(", ")}</div>")
+            appendLine("</div>")
         }
     } else {
         candidates.forEach { ref ->
-            val vRes = vehicleResultsMap[ref.vehicle.id]!!
-            val isWinner = winnerName == ref.vehicle.name
+            val vRes = vehicleResultsMap[ref.vehicle.id]!!; val isWinner = winnerName == ref.vehicle.name
             appendLine("<div class='${if (isWinner) "winner" else ""}' style='border:1px solid #ddd; margin-bottom:10px; padding:4px;'>")
             appendLine("<div class='score-box'><b>${ref.vehicle.name}</b><br>Score: ${"%.3f".format(vRes.confidence)} | Tier: ${vRes.tierReached}</div>")
             appendLine("<b>Ref:</b><br><img src='data:image/jpeg;base64,${ref.referenceBase64}'><br>")
             appendLine("<b>Aligned:</b><br><img src='data:image/jpeg;base64,${vRes.orbBase64}'><br>")
+            appendLine("<b>Veto Manifest:</b> <div class='word-list'>${vRes.vetoMyManifest.joinToString(", ")}</div>")
+            appendLine("<b>Veto Pool (Others - Me):</b> <div class='word-list'>${vRes.vetoPool.joinToString(", ")}</div>")
             appendLine(buildOcrStepHtml(traces["${ref.vehicle.name}_Aligned"] ?: emptyList()))
             appendLine("</div>")
         }
     }
-    appendLine("</td>")
-    
-    appendLine("<td><b>Match:</b> $winnerName<br><b>Conf:</b> ${"%.2f".format(bestConf)}<br><b>Odo:</b> $pickedOdo</td></tr>")
+    appendLine("</td><td><b>Match:</b> $winnerName<br><b>Conf:</b> ${"%.2f".format(bestConf)}<br><b>Odo:</b> $pickedOdo</td></tr>")
 }
 
-private fun buildOcrStepHtml(steps: List<OcrStepResult>): String = buildString {
-    if (steps.isEmpty()) { appendLine("<i>(No crop)</i>"); return@buildString }
-    steps.forEach { step -> appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>${step.text}</div>") }
-}
+private fun buildOcrStepHtml(steps: List<OcrStepResult>): String = buildString { if (steps.isEmpty()) { appendLine("<i>(No crop)</i>"); return@buildString }; steps.forEach { step -> appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>${step.text}</div>") } }
 
-private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
-    val q = quality.coerceIn(0, 100)
-    val outputStream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, q, outputStream)
-    return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-}
+private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String { val q = quality.coerceIn(0, 100); val outputStream = ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.JPEG, q, outputStream); return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP) }
 
-private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
-    val scale = targetWidth.toFloat() / bitmap.width
-    val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
-    val b64 = bitmapToBase64(scaled, quality)
-    scaled.recycle()
-    return b64
-}
+private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String { val scale = targetWidth.toFloat() / bitmap.width; val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true); val b64 = bitmapToBase64(scaled, quality); scaled.recycle(); return b64 }
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
-    val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true)
-    val canvas = android.graphics.Canvas(annotated)
-    val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f }
+    val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = android.graphics.Canvas(annotated); val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f }
     vehicle.odometerCropLeft?.let { l -> paint.color = android.graphics.Color.RED; canvas.drawRect(l * bmp.width, (vehicle.odometerCropTop ?: 0f) * bmp.height, (vehicle.odometerCropRight ?: 1f) * bmp.width, (vehicle.odometerCropBottom ?: 1f) * bmp.height, paint) }
     vehicle.otherTextCropLeft?.let { l -> paint.color = android.graphics.Color.BLUE; canvas.drawRect(l * bmp.width, (vehicle.otherTextCropTop ?: 0f) * bmp.height, (vehicle.otherTextCropRight ?: 1f) * bmp.width, (vehicle.otherTextCropBottom ?: 1f) * bmp.height, paint) }
     return annotated
 }
 
 private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
-    val l = vehicle.odometerCropLeft ?: return null
-    val t = vehicle.odometerCropTop ?: 0f
-    val r = vehicle.odometerCropRight ?: 1f
-    val b = vehicle.odometerCropBottom ?: 1f
-    val left = (l * bmp.width).toInt().coerceAtLeast(0)
-    val top = (t * bmp.height).toInt().coerceAtLeast(0)
-    val width = ((r - l) * bmp.width).toInt().coerceAtMost(bmp.width - left)
-    val height = ((b - t) * bmp.height).toInt().coerceAtMost(bmp.height - top)
-    if (width <= 0 || height <= 0) return null
-    return Bitmap.createBitmap(bmp, left, top, width, height)
+    val l = vehicle.odometerCropLeft ?: return null; val t = vehicle.odometerCropTop ?: 0f; val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
+    val left = (l * bmp.width).toInt().coerceAtLeast(0); val top = (t * bmp.height).toInt().coerceAtLeast(0); val width = ((r - l) * bmp.width).toInt().coerceAtMost(bmp.width - left); val height = ((b - t) * bmp.height).toInt().coerceAtMost(bmp.height - top)
+    if (width <= 0 || height <= 0) return null; return Bitmap.createBitmap(bmp, left, top, width, height)
 }
 
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
-    try {
-        if (targetDir.exists()) targetDir.deleteRecursively()
-        targetDir.mkdirs()
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            ZipInputStream(inputStream).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val file = File(targetDir, entry.name)
-                    if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }
-                    zis.closeEntry(); entry = zis.nextEntry
-                }
-            }
-        }
-        true
-    } catch (e: Exception) { Log.e(TAG, "Zip error", e); false }
+    try { if (targetDir.exists()) targetDir.deleteRecursively(); targetDir.mkdirs(); context.contentResolver.openInputStream(uri)?.use { inputStream -> ZipInputStream(inputStream).use { zis -> var entry = zis.nextEntry; while (entry != null) { val file = File(targetDir, entry.name); if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }; zis.closeEntry(); entry = zis.nextEntry } } }; true } catch (e: Exception) { Log.e(TAG, "Zip error", e); false }
 }
 
 private fun serializeLandmarks(landmarks: List<TextBlock>): String {
-    val array = JSONArray()
-    landmarks.forEach { block ->
-        val obj = JSONObject(); obj.put("text", block.text)
-        val box = block.boundingBox; val boxObj = JSONObject(); boxObj.put("left", box.left); boxObj.put("top", box.top); boxObj.put("right", box.right); boxObj.put("bottom", box.bottom)
-        obj.put("boundingBox", boxObj); array.put(obj)
-    }
-    return array.toString()
+    val array = JSONArray(); landmarks.forEach { block -> val obj = JSONObject(); obj.put("text", block.text); val box = block.boundingBox; val boxObj = JSONObject(); boxObj.put("left", box.left); boxObj.put("top", box.top); boxObj.put("right", box.right); boxObj.put("bottom", box.bottom); obj.put("boundingBox", boxObj); array.put(obj) }; return array.toString()
 }
