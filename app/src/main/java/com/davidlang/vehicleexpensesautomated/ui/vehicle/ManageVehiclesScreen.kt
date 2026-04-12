@@ -280,9 +280,14 @@ private fun calculateFitImageRect(viewW: Float, viewH: Float, imgW: Float, imgH:
 private fun serializeLandmarks(landmarks: List<TextBlock>): String {
     val array = JSONArray()
     landmarks.forEach { block ->
-        val obj = JSONObject(); obj.put("text", block.text)
-        val box = block.boundingBox; val boxObj = JSONObject(); boxObj.put("left", box.left); boxObj.put("top", box.top); boxObj.put("right", box.right); boxObj.put("bottom", box.bottom)
-        obj.put("boundingBox", boxObj); array.put(obj)
+        val obj = JSONObject()
+        obj.put("text", block.text)
+        val box = block.boundingBox
+        obj.put("cx", box.centerX())
+        obj.put("cy", box.centerY())
+        obj.put("h", box.height())
+        obj.put("w", box.width())
+        array.put(obj)
     }
     return array.toString()
 }
