@@ -50,6 +50,7 @@ class VehicleViewModel @Inject constructor(
         referenceDashPhotoUrl: String?,
         cleanedReferenceDashPhotoUrl: String?,
         odometerCropRect: androidx.compose.ui.geometry.Rect?,
+        otherTextCropRect: androidx.compose.ui.geometry.Rect?,
         initialOdometer: Int,
         landmarkTextBlocksJson: String? = null
     ) {
@@ -65,10 +66,10 @@ class VehicleViewModel @Inject constructor(
             odometerCropTop = odometerCropRect?.top,
             odometerCropRight = odometerCropRect?.right,
             odometerCropBottom = odometerCropRect?.bottom,
-            otherTextCropLeft = null,
-            otherTextCropTop = null,
-            otherTextCropRight = null,
-            otherTextCropBottom = null,
+            otherTextCropLeft = otherTextCropRect?.left,
+            otherTextCropTop = otherTextCropRect?.top,
+            otherTextCropRight = otherTextCropRect?.right,
+            otherTextCropBottom = otherTextCropRect?.bottom,
             landmarkTextBlocksJson = landmarkTextBlocksJson
         )
 
