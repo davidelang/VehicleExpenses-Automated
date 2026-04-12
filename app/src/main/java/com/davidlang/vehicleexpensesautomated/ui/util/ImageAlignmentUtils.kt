@@ -128,42 +128,6 @@ object ImageAlignmentUtils {
         AlignmentResult(true, alignedBitmap, goodMatches.size / 100f, "ORB Affine Success", kp1Array.size, kp2Array.size, goodMatches.size)
     }
 
-    suspend fun hubAlign(reference: Bitmap, query: Bitmap): AlignmentResult = withContext(Dispatchers.IO) {
-        val refMat = Mat(); val queryMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(reference, refMat); org.opencv.android.Utils.bitmapToMat(query, queryMat)
-        val grayRef = Mat(); val grayQuery = Mat()
-        Imgproc.cvtColor(refMat, grayRef, Imgproc.COLOR_RGB2GRAY); Imgproc.cvtColor(queryMat, grayQuery, Imgproc.COLOR_RGB2GRAY)
-        Imgproc.GaussianBlur(grayRef, grayRef, Size(9.0, 9.0), 2.0); Imgproc.GaussianBlur(grayQuery, grayQuery, Size(9.0, 9.0), 2.0)
-        val circlesRef = Mat(); Imgproc.HoughCircles(grayRef, circlesRef, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
-        val circlesQuery = Mat(); Imgproc.HoughCircles(grayQuery, circlesQuery, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
-        if (circlesRef.cols() > 0 && circlesQuery.cols() > 0) {
-            val cRef = circlesRef.get(0, 0); val cQue = circlesQuery.get(0, 0)
-            val tx = cRef[0] - cQue[0]; val ty = cRef[1] - cQue[1]; val scale = cRef[2] / cQue[2]
-            val matrix = Mat.zeros(2, 3, CvType.CV_64F); matrix.put(0, 0, scale, 0.0, tx); matrix.put(1, 0, 0.0, scale, ty)
-            val alignedMat = Mat(); Imgproc.warpAffine(queryMat, alignedMat, matrix, refMat.size())
-            val alignedBitmap = Bitmap.createBitmap(alignedMat.cols(), alignedMat.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(alignedMat, alignedBitmap)
-            refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release(); alignedMat.release()
-            return@withContext AlignmentResult(true, alignedBitmap, 0.8f, "Hub aligned", method = "hub")
-        }
-        refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release()
-        AlignmentResult(false, null, 0f, "Hub Alignment Abandoned", method = "hub")
-    }
-
-    fun histogramMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
-        val refHist = getDensityProfile(refBlocks); val queryHist = getDensityProfile(queryBlocks)
-        var dot = 0f; var normRef = 0f; var normQuery = 0f
-        for (i in 0 until 100) { dot += refHist[i] * queryHist[i]; normRef += refHist[i] * refHist[i]; normQuery += queryHist[i] * queryHist[i] }
-        val denom = sqrt(normRef * normQuery)
-        return if (denom > 0) dot / denom else 0f
-    }
-
-    private fun getDensityProfile(blocks: List<TextBlock>): FloatArray {
-        val profile = FloatArray(100)
-        blocks.forEach { val idx = (it.boundingBox.centerY() / 3000f * 100).toInt().coerceIn(0, 99); profile[idx] += 1f }
-        return profile
-    }
-
     fun embeddingMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
         val refWords = refBlocks.map { it.text.lowercase() }.toSet()
         val queryWords = queryBlocks.map { it.text.lowercase() }.toSet()
@@ -177,13 +141,6 @@ object ImageAlignmentUtils {
         val querySet = queryBlocks.map { it.text.lowercase() }.toSet()
         if (refSet.isEmpty()) return 0f
         return refSet.intersect(querySet).size.toFloat() / refSet.size.toFloat()
-    }
-
-    fun anchorMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, currentVehicleName: String, dynamicAnchors: Map<String, String>): Float {
-        val myAnchors = dynamicAnchors.filter { it.value == currentVehicleName }.keys
-        if (myAnchors.isEmpty()) return 0.5f
-        val found = queryBlocks.map { it.text.lowercase().trim() }.intersect(myAnchors)
-        return found.size.toFloat() / myAnchors.size.toFloat()
     }
 
     fun projectCropViaAnchor(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>, crop: android.graphics.RectF, refW: Int, refH: Int, queryW: Int, queryH: Int): android.graphics.RectF? {
@@ -214,47 +171,29 @@ object ImageAlignmentUtils {
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null,
         skipExpensiveORB: Boolean = false,
-        globalWordCounts: Map<String, Int> = emptyMap(),
-        allOtherRefs: List<OcrResult> = emptyList(),
-        dynamicAnchors: Map<String, String> = emptyMap(),
-        currentVehicleName: String = "",
         veto: VetoResult = VetoResult(false),
         onLog: (suspend (String) -> Unit)? = null
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
+        
         onLog?.invoke("Aligning: ORB Feature pass...")
         var t0 = System.currentTimeMillis()
         val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped", method = "feature") else alignImages(reference, query, 10, odometerCrop, otherTextCrop)
         results["feature"] = featureResult.copy(timeMs = System.currentTimeMillis() - t0)
-        
-        onLog?.invoke("Aligning: Hub pass...")
-        t0 = System.currentTimeMillis()
-        val hubResult = hubAlign(reference, query)
-        results["hub"] = hubResult.copy(timeMs = System.currentTimeMillis() - t0)
         
         onLog?.invoke("Matching: ARG pass...")
         t0 = System.currentTimeMillis()
         val argRes = argMatch(refOcr.textBlocks, queryOcr.textBlocks, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
         results["arg"] = AlignmentResult(true, null, argRes, "ARG", method = "arg", timeMs = System.currentTimeMillis() - t0)
         
-        onLog?.invoke("Matching: Histogram pass...")
-        t0 = System.currentTimeMillis()
-        val histRes = histogramMatch(refOcr.textBlocks, queryOcr.textBlocks)
-        results["histogram"] = AlignmentResult(true, null, histRes, "Hist", method = "histogram", timeMs = System.currentTimeMillis() - t0)
-        
         onLog?.invoke("Matching: Embedding pass...")
         t0 = System.currentTimeMillis()
         val embRes = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
         results["embedding"] = AlignmentResult(true, null, embRes, "Emb", method = "embedding", timeMs = System.currentTimeMillis() - t0)
         
-        onLog?.invoke("Matching: Anchor pass...")
-        t0 = System.currentTimeMillis()
-        val ancRes = anchorMatch(refOcr.textBlocks, queryOcr.textBlocks, currentVehicleName, dynamicAnchors)
-        results["anchor"] = AlignmentResult(true, null, ancRes, "Anchor", method = "anchor", timeMs = System.currentTimeMillis() - t0)
-        
         val tCons0 = System.currentTimeMillis()
         val featScoreNorm = if (featureResult.success) (featureResult.goodMatchesCount / 40f).coerceIn(0f, 1f) else 0f
-        val consensusScore = (featScoreNorm * 0.05f) + (results["embedding"]!!.confidence * 0.40f) + (results["histogram"]!!.confidence * 0.40f) + (results["arg"]!!.confidence * 0.10f) + (results["anchor"]!!.confidence * 0.05f)
+        val consensusScore = (featScoreNorm * 0.10f) + (results["embedding"]!!.confidence * 0.45f) + (results["arg"]!!.confidence * 0.45f)
         results["consensus"] = AlignmentResult(true, null, if (veto.isVetoed) -1f else consensusScore, if (veto.isVetoed) "VETO: ${veto.reasonWord}" else "OK", method = "consensus", wordVeto = veto.isVetoed, vetoReason = veto.reasonWord, timeMs = System.currentTimeMillis() - tCons0)
         
         val tTier0 = System.currentTimeMillis()
@@ -265,10 +204,10 @@ object ImageAlignmentUtils {
 
     private fun calculateTieredMatch(results: Map<String, AlignmentResult>, veto: VetoResult): AlignmentResult {
         if (veto.isVetoed) return AlignmentResult(true, null, -1f, "TIER 0: VETO (Word: '${veto.reasonWord}')", method = "tiered", wordVeto = true, tierReached = 0, vetoReason = veto.reasonWord)
-        val hist = results["histogram"]?.confidence ?: 0f; val emb = results["embedding"]?.confidence ?: 0f; val arg = results["arg"]?.confidence ?: 0f; val feat = results["feature"]?.confidence ?: 0f
-        if (hist > 0.85f) return AlignmentResult(true, null, hist, "TIER 1: Histogram High-Conf", method = "tiered", tierReached = 1)
-        if ((hist > 0.5f && emb > 0.5f) || (hist > 0.5f && arg > 0.5f)) return AlignmentResult(true, null, hist.coerceAtLeast(emb), "TIER 2: Text Agreement", method = "tiered", tierReached = 2)
+        val emb = results["embedding"]?.confidence ?: 0f; val arg = results["arg"]?.confidence ?: 0f; val feat = results["feature"]?.confidence ?: 0f
+        if (emb > 0.85f || arg > 0.85f) return AlignmentResult(true, null, maxOf(emb, arg), "TIER 1: Text High-Conf", method = "tiered", tierReached = 1)
+        if (emb > 0.5f && arg > 0.5f) return AlignmentResult(true, null, (emb + arg) / 2f, "TIER 2: Text Agreement", method = "tiered", tierReached = 2)
         if (feat > 0.3f) return AlignmentResult(true, null, feat, "TIER 3: Spatial Feature Match", method = "tiered", tierReached = 3)
-        return AlignmentResult(false, null, 0f, "TIER 4: Inconclusive", method = "tiered", tierReached = 4)
+        return AlignmentResult(false, null, maxOf(emb, arg, feat) * 0.5f, "TIER 4: Inconclusive", method = "tiered", tierReached = 4)
     }
 }
