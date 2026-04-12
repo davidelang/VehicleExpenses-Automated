@@ -162,8 +162,8 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
 data class ReferenceCache(
     val vehicle: Vehicle,
     val referenceBase64: String,
-    val fullOcrText: Map<String, String>,
-    val ocrResult: OcrResult,
+    val curatedLandmarks: List<TextBlock>,
+    val ocrResult: OcrResult, // Reconstructed from DB landmarks
     val bmp: Bitmap
 )
 
@@ -244,45 +244,37 @@ private suspend fun runExperiment(
     
     val cachedRefs = vehicles.map { v ->
         val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        val odoCropF = v.odometerCropLeft?.let { android.graphics.RectF(it, v.odometerCropTop ?: 0f, v.odometerCropRight ?: 1f, v.odometerCropBottom ?: 1f) }
-        val otherCropF = v.otherTextCropLeft?.let { android.graphics.RectF(it, v.otherTextCropTop ?: 0f, v.otherTextCropRight ?: 1f, v.otherTextCropBottom ?: 1f) }
         
-        // RECOVERY Pass: ONLY if DB data is missing or empty array
-        val landmarkJson = if (v.landmarkTextBlocksJson.isNullOrBlank() || v.landmarkTextBlocksJson == "[]") {
-            Log.i(TAG, "Recovering landmarks for ${v.name} (DB was empty or '[]')")
-            val landmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(bmp, odoCropF, otherCropF)
-            serializeLandmarks(landmarks)
-        } else {
-            Log.i(TAG, "Using curated DB landmarks for ${v.name}: ${v.landmarkTextBlocksJson}")
-            v.landmarkTextBlocksJson
-        }
+        // NO RECOVERY PASS. NO OCR against references.
+        // Reconstruct TextBlock objects strictly from DB JSON.
+        val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)
         
-        val rawTessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
-        val rawMlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
-        
-        val tessOcr = rawTessOcr.filterByCrops(odoCropF, otherCropF)
-        val mlKitOcr = rawMlKitOcr.filterByCrops(odoCropF, otherCropF)
+        // Build a fake OcrResult for the matching harness using only curated data.
+        val refOcr = OcrResult(
+            engineName = "Curated DB",
+            textBlocks = curatedBlocks,
+            imageWidth = bmp.width,
+            imageHeight = bmp.height,
+            debugText = curatedBlocks.joinToString(" ") { it.text }
+        )
+
         val annotatedBmp = drawCropBoxesOnReference(bmp, v)
         val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
         annotatedBmp.recycle()
         
-        // Update the vehicle object in memory so matching uses these landmarks (either recovered or DB)
-        val updatedVehicle = v.copy(landmarkTextBlocksJson = landmarkJson)
-        ReferenceCache(updatedVehicle, refBase64, mapOf("Tesseract" to tessOcr.debugText, "ML Kit" to mlKitOcr.debugText), mlKitOcr, bmp)
+        ReferenceCache(v, refBase64, curatedBlocks, refOcr, bmp)
     }
 
     val globalWordCounts = mutableMapOf<String, Int>()
     val dynamicAnchors = mutableMapOf<String, String>()
     cachedRefs.forEach { ref ->
-        // USE CURATED LANDMARKS, not raw OCR!
-        val myLandmarks = ImageAlignmentUtils.getLandmarksFromJson(ref.vehicle.landmarkTextBlocksJson)
-        myLandmarks.forEach { w ->
+        // USE CURATED LANDMARKS ONLY
+        ref.curatedLandmarks.map { it.text }.forEach { w ->
             if (w.length >= 3) globalWordCounts[w] = (globalWordCounts[w] ?: 0) + 1
         }
     }
     cachedRefs.forEach { ref ->
-        val myLandmarks = ImageAlignmentUtils.getLandmarksFromJson(ref.vehicle.landmarkTextBlocksJson)
-        myLandmarks.forEach { w ->
+        ref.curatedLandmarks.map { it.text }.forEach { w ->
             if (globalWordCounts[w] == 1) dynamicAnchors[w] = ref.vehicle.name
         }
     }
@@ -290,8 +282,7 @@ private suspend fun runExperiment(
     // Landmark Manifest for debugging
     val landmarkManifest = JSONObject()
     cachedRefs.forEach { ref ->
-        val myLandmarks = ImageAlignmentUtils.getLandmarksFromJson(ref.vehicle.landmarkTextBlocksJson)
-        landmarkManifest.put(ref.vehicle.name, JSONArray(myLandmarks.sorted()))
+        landmarkManifest.put(ref.vehicle.name, JSONArray(ref.curatedLandmarks.map { it.text }.sorted()))
     }
     File(reportDir, "alignment_landmarks_${timestamp}.json").writeText(landmarkManifest.toString(2))
 
@@ -322,7 +313,6 @@ private suspend fun runExperiment(
             val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"]!!
             val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
             
-            // CRITICAL FIX: Use recovered vehicles (cachedRefs) for veto pass
             val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle })
 
             val vehicleResults = mutableListOf<JSONObject>()
@@ -387,7 +377,7 @@ private fun buildHtmlHeader(time: String, total: Int, allVehicles: List<Vehicle>
     appendLine("<html><head><title>Alignment Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 150px; height: auto; border: 1px solid #eee; } .score-box { text-align: left; font-size: 9px; background: #f9f9f9; padding: 4px; border-radius: 4px; overflow-wrap: break-word; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }</style></head><body>")
     appendLine("<h1>Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p>")
-    appendLine("<h3>Reference Landmark Manifest (Golden Anchors)</h3><ul>")
+    appendLine("<h3>Reference Landmark Manifest (Curated DB)</h3><ul>")
     allVehicles.forEach { v ->
         val landmarks = ImageAlignmentUtils.getLandmarksFromJson(v.landmarkTextBlocksJson).sorted()
         appendLine("<li><b>${v.name}:</b> ${landmarks.joinToString(", ")}</li>")
@@ -403,7 +393,7 @@ private fun buildHtmlRowFoundation(photoName: String, globalBase64s: Map<String,
         appendLine("<b>$ver:</b><br><img src='data:image/jpeg;base64,$b64'><br>")
         globalOcr[ver]?.forEach { (eng, res) -> appendLine("<small><b>$eng:</b> ${res.first} (${res.second}ms)</small><br>") }
     }
-    appendLine("<hr><b>Tier 1 Pass Landmarks:</b><br><small>${queryLandmarks.joinToString(", ")}</small>")
+    appendLine("<hr><b>Query Landmarks Found:</b><br><small>${queryLandmarks.joinToString(", ")}</small>")
     appendLine("</td>")
     allVehicles.forEachIndexed { i, v ->
         val vJson = vehicleResults[i]
@@ -412,7 +402,7 @@ private fun buildHtmlRowFoundation(photoName: String, globalBase64s: Map<String,
         appendLine("<td class='${if (isWinner) "winner" else ""}'>")
         appendLine("<div class='score-box'><b>Score:</b> ${"%.3f".format(vJson.getDouble("score"))}<br><b>Tier:</b> ${vJson.getInt("tier_reached")}<br><b>Veto:</b> ${vJson.getString("veto_word")}<br></div>")
         appendLine("<b>Ref:</b><br><img src='data:image/jpeg;base64,${ref.referenceBase64}'><br>")
-        ref.fullOcrText.forEach { (eng, txt) -> appendLine("<small><b>$eng:</b> $txt</small><br>") }
+        appendLine("<small><b>Curated DB:</b> ${ref.curatedLandmarks.joinToString(", ") { it.text }}</small>")
         appendLine("<hr><b>ORB:</b><br><img src='data:image/jpeg;base64,${vJson.getString("orb_base64")}'><br>")
         appendLine("<b>Hub:</b><br><img src='data:image/jpeg;base64,${vJson.getString("hub_base64")}'>")
         appendLine("</td>")
@@ -468,6 +458,27 @@ private fun serializeLandmarks(landmarks: List<TextBlock>): String {
         array.put(obj)
     }
     return array.toString()
+}
+
+private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
+    if (json.isNullOrEmpty()) return emptyList()
+    val list = mutableListOf<TextBlock>()
+    try {
+        val array = JSONArray(json)
+        for (i in 0 until array.length()) {
+            val obj = array.getJSONObject(i)
+            val boxObj = obj.optJSONObject("boundingBox")
+            val box = if (boxObj != null) {
+                android.graphics.Rect(boxObj.getInt("left"), boxObj.getInt("top"), boxObj.getInt("right"), boxObj.getInt("bottom"))
+            } else {
+                android.graphics.Rect(0, 0, 0, 0)
+            }
+            list.add(TextBlock(obj.getString("text"), box, (obj.optDouble("angle", 0.0)).toFloat()))
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to parse curated landmarks", e)
+    }
+    return list
 }
 
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
