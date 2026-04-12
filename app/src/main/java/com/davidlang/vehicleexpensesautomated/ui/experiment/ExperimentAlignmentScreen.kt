@@ -330,7 +330,7 @@ private suspend fun runExperiment(
                 
                 if (vRes.tierReached in 1..3 && vRes.confidence >= 0.25f && vRes.confidence > bestConf) {
                     bestConf = vRes.confidence; winnerName = vRes.vehicleName
-                    pickedOdometer = pickBestOdometer((vRes.traceData["Aligned"] ?: emptyList()) + (vRes.traceData["Hub"] ?: emptyList())) ?: "FAILED"
+                    pickedOdometer = OdometerOcrUtils.pickBestOdometer((vRes.traceData["Aligned"] ?: emptyList()) + (vRes.traceData["Hub"] ?: emptyList())) ?: "FAILED"
                 }
                 vehicleResults.add(JSONObject().apply {
                     put("name", vRes.vehicleName); put("score", vRes.confidence.toDouble()); put("match_time_ms", vRes.matchTimeMs); put("veto_word", vRes.vetoReason)
@@ -443,33 +443,8 @@ private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
 }
 
 private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
-    val l = vehicle.odometerCropLeft ?: return null
-    val t = vehicle.odometerCropTop ?: 0f
-    val r = vehicle.odometerCropRight ?: 1f
-    val b = vehicle.odometerCropBottom ?: 1f
-    val left = (l * bmp.width).toInt().coerceAtLeast(0)
-    val top = (t * bmp.height).toInt().coerceAtLeast(0)
-    val width = ((r - l) * bmp.width).toInt().coerceAtMost(bmp.width - left)
-    val height = ((b - t) * bmp.height).toInt().coerceAtMost(bmp.height - top)
-    if (width <= 0 || height <= 0) return null
-    return Bitmap.createBitmap(bmp, left, top, width, height)
-}
-
-private fun manualCropFromRectF(bmp: Bitmap, rect: android.graphics.RectF): Bitmap? {
-    val left = (rect.left * bmp.width).toInt().coerceAtLeast(0)
-    val top = (rect.top * bmp.height).toInt().coerceAtLeast(0)
-    val width = ((rect.right - rect.left) * bmp.width).toInt().coerceAtMost(bmp.width - left)
-    val height = ((rect.bottom - rect.top) * bmp.height).toInt().coerceAtMost(bmp.height - top)
-    if (width <= 0 || height <= 0) return null
-    return Bitmap.createBitmap(bmp, left, top, width, height)
-}
-
-private fun pickBestOdometer(allSteps: List<OcrStepResult>): String? {
-    val candidates = allSteps.mapNotNull { it.text }.flatMap { text ->
-        val cleanedText = text.replace("<b>", "").replace("</b>", "").replace("<br>", " ")
-        Regex("\\d{4,7}").findAll(cleanedText).map { it.value }
-    }
-    return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
+    val cropRect = vehicle.odometerCropLeft?.let { l -> android.graphics.RectF(l, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f) }
+    return cropRect?.let { OdometerOcrUtils.manualCropFromRectF(bmp, it) }
 }
 
 private fun serializeLandmarks(landmarks: List<TextBlock>): String {
