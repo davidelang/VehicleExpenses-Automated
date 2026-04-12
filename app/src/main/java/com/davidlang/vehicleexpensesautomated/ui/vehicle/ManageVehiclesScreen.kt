@@ -123,12 +123,7 @@ fun ManageVehiclesScreen(
     fun processImportedPhoto(url: String) {
         scope.launch(Dispatchers.IO) {
             try {
-                val rawBmp = if (url.startsWith("content://")) {
-                    context.contentResolver.openInputStream(Uri.parse(url))?.use { input -> BitmapFactory.decodeStream(input) }
-                } else {
-                    BitmapFactory.decodeFile(url)
-                } ?: return@launch
-                
+                val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url) ?: return@launch
                 val rotatedBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
                 
                 // 1. Detect tilt and level the image

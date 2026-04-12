@@ -88,7 +88,7 @@ fun PhotoPicker(
                 Text("📸 Take Photo")
             }
 
-            Button(onClick = { galleryLauncher.launch("image/*") }) {
+            Button(onClick = { galleryLauncher.launch(arrayOf("image/jpeg", "image/png", "image/x-adobe-dng")) }) {
                 Text("🖼️ Choose from Gallery")
             }
         }
