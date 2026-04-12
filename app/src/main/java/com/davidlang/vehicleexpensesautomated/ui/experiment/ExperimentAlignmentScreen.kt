@@ -159,10 +159,11 @@ private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
 }
 
 private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
-    val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png") }?.sortedBy { it.name } ?: return@withContext
+    val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.sortedBy { it.name } ?: return@withContext
     val total = photos.size; val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val cachedRefs = vehicles.map { v ->
-        val bmp = BitmapFactory.decodeFile(v.referenceDashPhotoUrl); val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)
+        val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
+        val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)
         val refOcr = OcrResult(engineName = "Curated DB", textBlocks = curatedBlocks, imageWidth = bmp.width, imageHeight = bmp.height, debugText = curatedBlocks.joinToString(" ") { it.text })
         val annotatedBmp = drawCropBoxesOnReference(bmp, v); val refBase64 = createScaledBase64(annotatedBmp, 400, 70); annotatedBmp.recycle()
         ReferenceCache(v, refBase64, curatedBlocks, refOcr, bmp)
@@ -176,8 +177,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     photos.forEachIndexed { index, file ->
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
-            val rawBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@forEachIndexed
-            var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
+            val originalBitmapRaw = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: return@forEachIndexed
+            var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(originalBitmapRaw, file.absolutePath)
             val tilt = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
             if (Math.abs(tilt) > 0.2f) { val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt); if (leveled != originalBitmap) { originalBitmap.recycle(); originalBitmap = leveled } }
             val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap); val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)

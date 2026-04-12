@@ -314,11 +314,32 @@ object OdometerOcrUtils {
         return rotatedImg
     }
 
-    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null): OcrResult = withContext(Dispatchers.IO) {
+    fun decodeBitmapSafely(context: Context, path: String): Bitmap? {
+        val file = File(path)
+        if (!file.exists()) return null
+
+        return try {
+            if (path.lowercase().endsWith(".dng") && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                val source = android.graphics.ImageDecoder.createSource(file)
+                android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                    decoder.isMutableRequired = true
+                }
+            } else {
+                BitmapFactory.decodeFile(path)
+            }
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "Safe decode failed for $path", e)
+            null
+        }
+    }
+
+    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null, context: Context? = null): OcrResult = withContext(Dispatchers.IO) {
         val loc = LocationUtils.getLatLongFromExif(photoPath)
-        val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
+        val rawBitmap = if (context != null) decodeBitmapSafely(context, photoPath) else BitmapFactory.decodeFile(photoPath)
+        if (rawBitmap == null) return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
+
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        
         var bitmap = rotated
         if (cropRect != null) {
             val cropped = cropBitmap(rotated, cropRect)
@@ -327,11 +348,9 @@ object OdometerOcrUtils {
                 bitmap = cropped
             }
         }
-
         val res = extractFromPhotoBitmap(bitmap)
         if (bitmap != rotated) bitmap.recycle()
         rotated.recycle()
-        
         res.copy(originalPhotoPath = photoPath, latitude = loc?.latitude, longitude = loc?.longitude)
     }
 
