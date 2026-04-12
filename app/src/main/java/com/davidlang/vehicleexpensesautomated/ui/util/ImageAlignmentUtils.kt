@@ -121,7 +121,14 @@ object ImageAlignmentUtils {
         if (affineMatrix.empty()) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Affine matrix empty") }
         val a = affineMatrix.get(0, 0)?.get(0) ?: 0.0; val b = affineMatrix.get(0, 1)?.get(0) ?: 0.0; val det = a * a + b * b
         if (det < 0.0001 || det > 1000.0) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Alignment abandoned: Scale determinant ($det) insane") }
-        val alignedMat = Mat(); Imgproc.warpAffine(queryMat, alignedMat, affineMatrix, refMat.size())
+        
+        // Deskew handles rotation now. Strip rotation from affine matrix, keep only translation and scale.
+        val scale = kotlin.math.sqrt(det)
+        val tx = affineMatrix.get(0, 2)?.get(0) ?: 0.0
+        val ty = affineMatrix.get(1, 2)?.get(0) ?: 0.0
+        val noRotMatrix = Mat.zeros(2, 3, CvType.CV_64F); noRotMatrix.put(0, 0, scale, 0.0, tx); noRotMatrix.put(1, 0, 0.0, scale, ty)
+        
+        val alignedMat = Mat(); Imgproc.warpAffine(queryMat, alignedMat, noRotMatrix, refMat.size())
         val alignedBitmap = Bitmap.createBitmap(alignedMat.cols(), alignedMat.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(alignedMat, alignedBitmap)
         refMat.release(); queryMat.release(); alignedMat.release()
