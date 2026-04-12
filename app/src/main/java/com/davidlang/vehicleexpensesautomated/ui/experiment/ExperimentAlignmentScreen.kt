@@ -247,9 +247,15 @@ private suspend fun runExperiment(
         val odoCropF = v.odometerCropLeft?.let { android.graphics.RectF(it, v.odometerCropTop ?: 0f, v.odometerCropRight ?: 1f, v.odometerCropBottom ?: 1f) }
         val otherCropF = v.otherTextCropLeft?.let { android.graphics.RectF(it, v.otherTextCropTop ?: 0f, v.otherTextCropRight ?: 1f, v.otherTextCropBottom ?: 1f) }
         
-        // RECOVERY Pass: Discover landmarks for this reference photo using the 1500px wide logic
-        val landmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(bmp, odoCropF, otherCropF)
-        val landmarkJson = serializeLandmarks(landmarks)
+        // RECOVERY Pass: ONLY if DB data is missing
+        val landmarkJson = if (v.landmarkTextBlocksJson.isNullOrBlank()) {
+            Log.i(TAG, "Recovering landmarks for ${v.name} (DB was empty)")
+            val landmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(bmp, odoCropF, otherCropF)
+            serializeLandmarks(landmarks)
+        } else {
+            Log.i(TAG, "Using curated DB landmarks for ${v.name}")
+            v.landmarkTextBlocksJson
+        }
         
         val rawTessOcr = OdometerOcrUtils.extractFullImageOcr(v.referenceDashPhotoUrl!!)
         val rawMlKitOcr = OdometerOcrUtils.extractFromPhoto(v.referenceDashPhotoUrl!!)
@@ -260,7 +266,7 @@ private suspend fun runExperiment(
         val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
         annotatedBmp.recycle()
         
-        // Update the vehicle object in memory so matching uses these landmarks
+        // Update the vehicle object in memory so matching uses these landmarks (either recovered or DB)
         val updatedVehicle = v.copy(landmarkTextBlocksJson = landmarkJson)
         ReferenceCache(updatedVehicle, refBase64, mapOf("Tesseract" to tessOcr.debugText, "ML Kit" to mlKitOcr.debugText), mlKitOcr, bmp)
     }
