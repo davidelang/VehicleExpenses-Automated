@@ -141,19 +141,32 @@ object ImageAlignmentUtils {
         val grayRef = Mat(); val grayQuery = Mat()
         Imgproc.cvtColor(refMat, grayRef, Imgproc.COLOR_RGB2GRAY); Imgproc.cvtColor(queryMat, grayQuery, Imgproc.COLOR_RGB2GRAY)
         Imgproc.GaussianBlur(grayRef, grayRef, Size(9.0, 9.0), 2.0); Imgproc.GaussianBlur(grayQuery, grayQuery, Size(9.0, 9.0), 2.0)
-        val circlesRef = Mat(); Imgproc.HoughCircles(grayRef, circlesRef, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
-        val circlesQuery = Mat(); Imgproc.HoughCircles(grayQuery, circlesQuery, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
+        
+        // OPTIMIZATION: Shrink search area to the middle third of the image to vastly speed up HoughCircles
+        val refW = grayRef.cols(); val refH = grayRef.rows()
+        val queW = grayQuery.cols(); val queH = grayQuery.rows()
+        val croppedRef = Mat(grayRef, org.opencv.core.Rect(refW / 3, refH / 3, refW / 3, refH / 3))
+        val croppedQuery = Mat(grayQuery, org.opencv.core.Rect(queW / 3, queH / 3, queW / 3, queH / 3))
+
+        val circlesRef = Mat(); Imgproc.HoughCircles(croppedRef, circlesRef, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
+        val circlesQuery = Mat(); Imgproc.HoughCircles(croppedQuery, circlesQuery, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
+        
         if (circlesRef.cols() > 0 && circlesQuery.cols() > 0) {
             val cRef = circlesRef.get(0, 0); val cQue = circlesQuery.get(0, 0)
-            val tx = cRef[0] - cQue[0]; val ty = cRef[1] - cQue[1]; val scale = cRef[2] / cQue[2]
+            // Adjust circle centers back to global coordinates
+            val tx = (cRef[0] + refW / 3) - (cQue[0] + queW / 3)
+            val ty = (cRef[1] + refH / 3) - (cQue[1] + queH / 3)
+            val scale = cRef[2] / cQue[2]
+            
             val matrix = Mat.zeros(2, 3, CvType.CV_64F); matrix.put(0, 0, scale, 0.0, tx); matrix.put(1, 0, 0.0, scale, ty)
             val alignedMat = Mat(); Imgproc.warpAffine(queryMat, alignedMat, matrix, refMat.size())
             val alignedBitmap = Bitmap.createBitmap(alignedMat.cols(), alignedMat.rows(), Bitmap.Config.ARGB_8888)
             org.opencv.android.Utils.matToBitmap(alignedMat, alignedBitmap)
-            refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release(); alignedMat.release()
+            
+            refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release(); croppedRef.release(); croppedQuery.release(); alignedMat.release()
             return@withContext AlignmentResult(true, alignedBitmap, 0.8f, "Hub aligned", method = "hub")
         }
-        refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release()
+        refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release(); croppedRef.release(); croppedQuery.release()
         AlignmentResult(false, null, 0f, "Hub Alignment Abandoned", method = "hub")
     }
 
