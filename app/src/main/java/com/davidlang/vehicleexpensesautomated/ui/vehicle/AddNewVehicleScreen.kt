@@ -150,7 +150,11 @@ private fun serializeLandmarks(landmarks: List<TextBlock>): String {
     val array = JSONArray()
     landmarks.forEach { lm ->
         val obj = JSONObject()
-        obj.put("text", lm.text); obj.put("left", lm.boundingBox.left); obj.put("top", lm.boundingBox.top); obj.put("right", lm.boundingBox.right); obj.put("bottom", lm.boundingBox.bottom)
+        obj.put("text", lm.text)
+        obj.put("cx", lm.boundingBox.centerX())
+        obj.put("cy", lm.boundingBox.centerY())
+        obj.put("h", lm.boundingBox.height())
+        obj.put("w", lm.boundingBox.width())
         array.put(obj)
     }
     return array.toString()

@@ -144,8 +144,14 @@ private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i)
             val text = obj.getString("text")
-            val boxObj = obj.getJSONObject("boundingBox")
-            val rect = android.graphics.Rect(boxObj.getInt("left"), boxObj.getInt("top"), boxObj.getInt("right"), boxObj.getInt("bottom"))
+            val cx = obj.getInt("cx")
+            val cy = obj.getInt("cy")
+            val h = obj.getInt("h")
+            val w = obj.getInt("w")
+            
+            val left = cx - (w / 2)
+            val top = cy - (h / 2)
+            val rect = android.graphics.Rect(left, top, left + w, top + h)
             list.add(TextBlock(text, rect))
         }
     } catch (e: Exception) { Log.e(TAG, "Landmark parse failed", e) }
