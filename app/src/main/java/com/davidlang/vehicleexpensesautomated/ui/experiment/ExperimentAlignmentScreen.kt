@@ -247,13 +247,13 @@ private suspend fun runExperiment(
         val odoCropF = v.odometerCropLeft?.let { android.graphics.RectF(it, v.odometerCropTop ?: 0f, v.odometerCropRight ?: 1f, v.odometerCropBottom ?: 1f) }
         val otherCropF = v.otherTextCropLeft?.let { android.graphics.RectF(it, v.otherTextCropTop ?: 0f, v.otherTextCropRight ?: 1f, v.otherTextCropBottom ?: 1f) }
         
-        // RECOVERY Pass: ONLY if DB data is missing
-        val landmarkJson = if (v.landmarkTextBlocksJson.isNullOrBlank()) {
-            Log.i(TAG, "Recovering landmarks for ${v.name} (DB was empty)")
+        // RECOVERY Pass: ONLY if DB data is missing or empty array
+        val landmarkJson = if (v.landmarkTextBlocksJson.isNullOrBlank() || v.landmarkTextBlocksJson == "[]") {
+            Log.i(TAG, "Recovering landmarks for ${v.name} (DB was empty or '[]')")
             val landmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(bmp, odoCropF, otherCropF)
             serializeLandmarks(landmarks)
         } else {
-            Log.i(TAG, "Using curated DB landmarks for ${v.name}")
+            Log.i(TAG, "Using curated DB landmarks for ${v.name}: ${v.landmarkTextBlocksJson}")
             v.landmarkTextBlocksJson
         }
         
