@@ -79,10 +79,13 @@ fun LandmarkDebugDialog(
                     
                     Box(modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(imgW / imgH)
+                        .wrapContentHeight()
                         .background(Color.Black)
                     ) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
+                        Canvas(modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(imgW / imgH)
+                        ) {
                             val containerW = size.width
                             val containerH = size.height
                             
@@ -98,7 +101,6 @@ fun LandmarkDebugDialog(
                                 dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                             )
 
-                            // Odometer (Blue)
                             odometerCrop?.let {
                                 val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
                                 val boxSize = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
@@ -112,14 +114,12 @@ fun LandmarkDebugDialog(
                                 )
                             }
 
-                            // Other Text (Green)
                             otherTextCrop?.let {
                                 val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
                                 val boxSize = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
                                 drawRect(color = Color.Green, topLeft = rect, size = boxSize, style = Stroke(4f))
                             }
 
-                            // Landmarks (Red)
                             landmarks.forEach { lm ->
                                 val nx = lm.boundingBox.left / 1500f
                                 val ny = lm.boundingBox.top / (imgH * (1500f / imgW))
@@ -140,7 +140,7 @@ fun LandmarkDebugDialog(
                     }
                 } else {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        Text("Image loading error")
+                        Text("Image error")
                     }
                 }
 
@@ -150,7 +150,6 @@ fun LandmarkDebugDialog(
                 
                 Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
                 
-                // MULTI-COLUMN GRID: Adapts based on screen width
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 80.dp),
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -165,7 +164,8 @@ fun LandmarkDebugDialog(
                         ) {
                             Column(modifier = Modifier.padding(4.dp)) {
                                 Text(lm.text, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                Text("${"%.1f".format(lm.angle)}°", style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, color = MaterialTheme.colorScheme.secondary))
+                                val angleText = "%.1f°".format(lm.angle)
+                                Text(angleText, style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, color = MaterialTheme.colorScheme.secondary))
                             }
                         }
                     }
