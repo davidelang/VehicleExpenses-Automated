@@ -38,7 +38,9 @@ import com.davidlang.vehicleexpensesautomated.ui.util.ImageAlignmentUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
@@ -121,15 +123,32 @@ fun ManageVehiclesScreen(
 
     LaunchedEffect(pickedPhotoUrl) {
         pickedPhotoUrl?.let { url ->
-            try {
-                val bmp = BitmapFactory.decodeFile(url) ?: return@let
-                referencePhotoUrl = url
-                val ei = android.media.ExifInterface(url)
-                val orientation = ei.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
-                val isSwapped = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 || orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270
-                originalImageSize = if (isSwapped) Offset(bmp.height.toFloat(), bmp.width.toFloat()) else Offset(bmp.width.toFloat(), bmp.height.toFloat())
-                bmp.recycle()
-            } catch (e: Exception) { Log.e("ManageVehicles", "Image loading failed", e) }
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val rawBmp = BitmapFactory.decodeFile(url) ?: return@launch
+                    val rotatedBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
+                    
+                    // 1. Detect tilt and level the image
+                    val tilt = OdometerOcrUtils.calculateAverageTextAngle(rotatedBmp)
+                    val leveledBmp = if (Math.abs(tilt) > 0.2f) {
+                        Log.i("ManageVehicles", "Auto-leveling reference photo by ${-tilt} degrees")
+                        OdometerOcrUtils.rotateBitmap(rotatedBmp, -tilt)
+                    } else rotatedBmp
+                    
+                    // 2. Save the leveled image as the new reference
+                    val leveledFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
+                    leveledFile.outputStream().use { leveledBmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+                    
+                    withContext(Dispatchers.Main) {
+                        referencePhotoUrl = leveledFile.absolutePath
+                        originalImageSize = Offset(leveledBmp.width.toFloat(), leveledBmp.height.toFloat())
+                    }
+                    
+                    if (leveledBmp != rotatedBmp) leveledBmp.recycle()
+                    if (rotatedBmp != rawBmp) rotatedBmp.recycle()
+                    rawBmp.recycle()
+                } catch (e: Exception) { Log.e("ManageVehicles", "Image leveling failed", e) }
+            }
         }
     }
 
