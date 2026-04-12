@@ -83,6 +83,12 @@ fun ManageVehiclesScreen(
     var lastOcrDebugResult by remember { mutableStateOf<OcrResult?>(null) }
     var discoveredLandmarks by remember { mutableStateOf<List<TextBlock>>(emptyList()) }
 
+    LaunchedEffect(vehicles) {
+        if (selectedVehicleId == null && vehicles.isNotEmpty() && !isNewVehicle) {
+            selectedVehicleId = vehicles[0].id
+        }
+    }
+
     LaunchedEffect(selectedVehicleId) {
         editingVehicle = vehicles.find { it.id == selectedVehicleId }
         editingVehicle?.let {
