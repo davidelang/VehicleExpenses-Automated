@@ -386,6 +386,30 @@ object OdometerOcrUtils {
         return text.replace(".", "").replace(",", "").trim()
     }
 
+    fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+        if (degrees == 0f) return bitmap
+        val matrix = android.graphics.Matrix()
+        matrix.postRotate(degrees)
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    suspend fun calculateAverageTextAngle(bitmap: Bitmap): Float {
+        // 1. Scale to 1500px wide for consistency
+        val scale = 1500f / bitmap.width
+        val scaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * scale).toInt(), true)
+        
+        // 2. OCR Full Image (ML Kit)
+        val ocrResult = extractFromPhotoBitmap(scaled)
+        scaled.recycle()
+        
+        val angles = ocrResult.textBlocks.map { it.angle }
+        if (angles.isEmpty()) return 0f
+        
+        // 3. Use Median to ignore outliers (like dial numbers which might be rotated)
+        val sortedAngles = angles.sorted()
+        return sortedAngles[sortedAngles.size / 2]
+    }
+
     suspend fun discoverLandmarksFromBitmap(
         bitmap: Bitmap,
         odometerCrop: android.graphics.RectF? = null,

@@ -12,6 +12,7 @@
   - [x] **Phase 1: Foundation:** New column layout (Global Discovery, Match/Align, 3x Odo Traces per vehicle, Summary). Includes timing, specific veto words, and cached reference data. Flex-ready for engine/strategy changes.
   - [ ] **Phase 2: Deep OCR Trace:** Expand Global and Odo columns to show pre-processing steps (Grayscale, Bilateral, CLAHE, OTSU) + OCR grid for each.
   - [ ] **Phase 3: Hub + Needle:** Implement needle-based rotational correction and add as a 3rd alignment strategy.
+  - [ ] **Phase 3b: Text-Based Leveling:** Experiment with using average text angle instead of needle angle to auto-level query dashboard pictures.
 - **Location Features:**
   - [ ] **Automated Gas Station Lookup:** Re-implement `LocationLookupWorker` for background geocoding.
   - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.
