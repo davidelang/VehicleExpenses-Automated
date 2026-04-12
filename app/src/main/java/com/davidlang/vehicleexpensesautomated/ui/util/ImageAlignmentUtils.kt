@@ -128,6 +128,28 @@ object ImageAlignmentUtils {
         AlignmentResult(true, alignedBitmap, goodMatches.size / 100f, "ORB Affine Success", kp1Array.size, kp2Array.size, goodMatches.size)
     }
 
+    suspend fun hubAlign(reference: Bitmap, query: Bitmap): AlignmentResult = withContext(Dispatchers.IO) {
+        val refMat = Mat(); val queryMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(reference, refMat); org.opencv.android.Utils.bitmapToMat(query, queryMat)
+        val grayRef = Mat(); val grayQuery = Mat()
+        Imgproc.cvtColor(refMat, grayRef, Imgproc.COLOR_RGB2GRAY); Imgproc.cvtColor(queryMat, grayQuery, Imgproc.COLOR_RGB2GRAY)
+        Imgproc.GaussianBlur(grayRef, grayRef, Size(9.0, 9.0), 2.0); Imgproc.GaussianBlur(grayQuery, grayQuery, Size(9.0, 9.0), 2.0)
+        val circlesRef = Mat(); Imgproc.HoughCircles(grayRef, circlesRef, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
+        val circlesQuery = Mat(); Imgproc.HoughCircles(grayQuery, circlesQuery, Imgproc.HOUGH_GRADIENT, 1.0, 100.0, 100.0, 30.0, 100, 1000)
+        if (circlesRef.cols() > 0 && circlesQuery.cols() > 0) {
+            val cRef = circlesRef.get(0, 0); val cQue = circlesQuery.get(0, 0)
+            val tx = cRef[0] - cQue[0]; val ty = cRef[1] - cQue[1]; val scale = cRef[2] / cQue[2]
+            val matrix = Mat.zeros(2, 3, CvType.CV_64F); matrix.put(0, 0, scale, 0.0, tx); matrix.put(1, 0, 0.0, scale, ty)
+            val alignedMat = Mat(); Imgproc.warpAffine(queryMat, alignedMat, matrix, refMat.size())
+            val alignedBitmap = Bitmap.createBitmap(alignedMat.cols(), alignedMat.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(alignedMat, alignedBitmap)
+            refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release(); alignedMat.release()
+            return@withContext AlignmentResult(true, alignedBitmap, 0.8f, "Hub aligned", method = "hub")
+        }
+        refMat.release(); queryMat.release(); grayRef.release(); grayQuery.release()
+        AlignmentResult(false, null, 0f, "Hub Alignment Abandoned", method = "hub")
+    }
+
     fun embeddingMatch(refBlocks: List<TextBlock>, queryBlocks: List<TextBlock>): Float {
         val refWords = refBlocks.map { it.text.lowercase() }.toSet()
         val queryWords = queryBlocks.map { it.text.lowercase() }.toSet()
