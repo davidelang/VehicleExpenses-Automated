@@ -462,10 +462,11 @@ object OdometerOcrUtils {
                     for (element in line.elements) {
                         val rect = element.boundingBox
                         val rawWord = element.text
+                        val angle = element.angle // Capture fine-grained angle
                         val filteredWord = rawWord.filter { it.isLetterOrDigit() || it == '/' }.trim()
                         
                         if (rect != null && filteredWord.isNotBlank()) {
-                            blocks.add(TextBlock(filteredWord, rect))
+                            blocks.add(TextBlock(filteredWord, rect, angle))
                             filteredText.append(filteredWord).append(" ")
                         }
                     }
