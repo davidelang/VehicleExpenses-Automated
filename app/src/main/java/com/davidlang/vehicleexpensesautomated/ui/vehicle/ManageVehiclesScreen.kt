@@ -182,12 +182,30 @@ fun ManageVehiclesScreen(
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
                     
+                    // IMPROVEMENT: Run multi-step OCR on the odometer crop specifically
+                    val odoBmp = if (cropRect != null) {
+                        val raw = BitmapFactory.decodeFile(finalPath)
+                        val rotated = OdometerOcrUtils.rotateImageIfRequired(raw, finalPath)
+                        val cropped = OdometerOcrUtils.manualCropFromRectF(rotated, cropRect)
+                        if (rotated != raw) rotated.recycle()
+                        raw.recycle()
+                        cropped
+                    } else null
+                    
+                    val odoSteps = odoBmp?.let { OdometerOcrUtils.runMultiStepOcr(it, context) } ?: emptyList()
+                    val betterOdo = OdometerOcrUtils.pickBestOdometer(odoSteps)
+                    odoBmp?.recycle()
+                    
                     discoveredLandmarks = OdometerOcrUtils.discoverLandmarks(finalPath, cropRect, otherCrop)
                     landmarkTextBlocksJson = serializeLandmarks(discoveredLandmarks)
                     
                     showLandmarkCheck = true
                     
-                    if (result.possibleOdometers.size > 1) {
+                    // Update the odometer reading with the better multi-step result
+                    if (betterOdo != null) {
+                        odometerReading = betterOdo
+                        lastOcrDebugResult = result.copy(odometer = betterOdo)
+                    } else if (result.possibleOdometers.size > 1) {
                         showOdometerConfirmation = true
                     } else {
                         result.odometer?.let { odometerReading = it }

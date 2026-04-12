@@ -410,6 +410,23 @@ object OdometerOcrUtils {
         return sortedAngles[sortedAngles.size / 2]
     }
 
+    fun manualCropFromRectF(bmp: Bitmap, rect: android.graphics.RectF): Bitmap? {
+        val left = (rect.left * bmp.width).toInt().coerceAtLeast(0)
+        val top = (rect.top * bmp.height).toInt().coerceAtLeast(0)
+        val width = ((rect.right - rect.left) * bmp.width).toInt().coerceAtMost(bmp.width - left)
+        val height = ((rect.bottom - rect.top) * bmp.height).toInt().coerceAtMost(bmp.height - top)
+        if (width <= 0 || height <= 0) return null
+        return Bitmap.createBitmap(bmp, left, top, width, height)
+    }
+
+    fun pickBestOdometer(allSteps: List<OcrStepResult>): String? {
+        val candidates = allSteps.mapNotNull { it.text }.flatMap { text ->
+            val cleanedText = text.replace("<b>", "").replace("</b>", "").replace("<br>", " ")
+            Regex("\\d{4,7}").findAll(cleanedText).map { it.value }
+        }
+        return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
+    }
+
     suspend fun discoverLandmarksFromBitmap(
         bitmap: Bitmap,
         odometerCrop: android.graphics.RectF? = null,
