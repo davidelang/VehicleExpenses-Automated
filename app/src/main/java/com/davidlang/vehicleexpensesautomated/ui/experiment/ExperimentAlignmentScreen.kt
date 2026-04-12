@@ -188,21 +188,16 @@ private suspend fun processSingleVehicleMatch(
     dynamicAnchors: Map<String, String>,
     allOtherRefs: List<OcrResult>,
     veto: VetoResult,
-    context: Context,
-    skipHeavyMatching: Boolean = false
+    context: Context
 ): SingleVehicleResult {
     val tStart = System.currentTimeMillis()
     val odoCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
     val otherCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
 
-    // If we already know this is the only survivor, we only need alignment for the winner.
-    // However, if we skip alignment, we won't get the odometer.
-    // So "skipHeavyMatching" here means we only skip if it was VETOED.
-    // If it's the winner, we MUST align to get the odo.
-    
+    // Exhaustive matching: Run every algorithm for EVERY candidate to gather report data.
     val matchResults = ImageAlignmentUtils.matchWithAllMethods(
         ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odoCropF, otherCropF,
-        skipExpensiveORB = skipHeavyMatching, globalWordCounts = globalWordCounts,
+        skipExpensiveORB = false, globalWordCounts = globalWordCounts,
         allOtherRefs = allOtherRefs, dynamicAnchors = dynamicAnchors,
         currentVehicleName = ref.vehicle.name, veto = veto
     )
@@ -300,7 +295,6 @@ private suspend fun runExperiment(
             val queryOcrMl = OcrHarness.runAll(originalBitmap, context)["ML Kit"]!!
             val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
             
-            // PHASE 4: Tier 1 Veto Gating
             val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle })
             val nonVetoedRefs = cachedRefs.filter { !vetoResults[it.vehicle.id]!!.isVetoed }
             
@@ -310,22 +304,19 @@ private suspend fun runExperiment(
             var pickedOdometer = "FAILED"
             val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
 
-            // RULE: If only one survives, it's the winner. We only run matching for it to get alignment/odo.
-            val strictWinnerFound = nonVetoedRefs.size == 1
-            
+            // IN EXPERIMENT: We run everything for everyone, but the winner logic still uses Tiers.
             cachedRefs.forEach { ref ->
                 val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
                 
-                // OPTIMIZATION: Skip matching if already vetoed OR if someone else is the strict winner
-                val shouldSkip = veto.isVetoed || (strictWinnerFound && ref.vehicle.name != nonVetoedRefs[0].vehicle.name)
-                
-                val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, globalWordCounts, dynamicAnchors, cachedRefs.map { it.ocrResult }, veto, context, skipHeavyMatching = shouldSkip)
+                // NO GATING: We call processSingleVehicleMatch for every single vehicle.
+                val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, globalWordCounts, dynamicAnchors, cachedRefs.map { it.ocrResult }, veto, context)
                 strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
                 strategyTraces["${ref.vehicle.name}_Hub"] = vRes.traceData["Hub"] ?: emptyList()
                 
-                // If strict winner, we force Tier 1 confidence
-                val finalConf = if (strictWinnerFound && ref.vehicle.name == nonVetoedRefs[0].vehicle.name) 1.0f else vRes.confidence
-                val finalTier = if (strictWinnerFound && ref.vehicle.name == nonVetoedRefs[0].vehicle.name) 1 else vRes.tierReached
+                // Winner logic follows project mandates: If only one survives Veto, it wins Tier 1.
+                val isStrictWinner = nonVetoedRefs.size == 1 && ref.vehicle.name == nonVetoedRefs[0].vehicle.name
+                val finalConf = if (isStrictWinner) 1.0f else vRes.confidence
+                val finalTier = if (isStrictWinner) 1 else vRes.tierReached
 
                 if (finalTier in 1..3 && finalConf >= 0.25f && finalConf > bestConf) {
                     bestConf = finalConf; winnerName = vRes.vehicleName
@@ -349,7 +340,7 @@ private suspend fun runExperiment(
                 put("file", file.name); put("winner", winnerName); put("confidence", bestConf.toDouble()); put("odometer", pickedOdometer)
                 put("query_landmarks", JSONArray(queryLandmarks.map { l -> JSONObject().apply { put("text", l.text); put("angle", l.angle.toDouble()) } }))
                 put("vehicles", JSONArray(vehicleResults))
-                put("strict_veto_winner", strictWinnerFound)
+                put("strict_veto_winner", nonVetoedRefs.size == 1)
                 put("conflict_candidates", JSONArray(nonVetoedRefs.map { it.vehicle.name }))
             })
 
