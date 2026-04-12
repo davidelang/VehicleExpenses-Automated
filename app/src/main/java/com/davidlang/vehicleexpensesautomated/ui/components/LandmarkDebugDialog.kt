@@ -6,8 +6,9 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,7 +46,7 @@ fun LandmarkDebugDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(8.dp),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surface
         ) {
@@ -76,7 +77,6 @@ fun LandmarkDebugDialog(
                     val imgW = bitmap.width.toFloat()
                     val imgH = bitmap.height.toFloat()
                     
-                    // Display image with its natural aspect ratio to avoid black bars
                     Box(modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(imgW / imgH)
@@ -112,6 +112,13 @@ fun LandmarkDebugDialog(
                                 )
                             }
 
+                            // Other Text (Green)
+                            otherTextCrop?.let {
+                                val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
+                                val boxSize = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
+                                drawRect(color = Color.Green, topLeft = rect, size = boxSize, style = Stroke(4f))
+                            }
+
                             // Landmarks (Red)
                             landmarks.forEach { lm ->
                                 val nx = lm.boundingBox.left / 1500f
@@ -143,20 +150,22 @@ fun LandmarkDebugDialog(
                 
                 Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
                 
-                // Landmarks list takes remaining space
-                LazyColumn(
+                // MULTI-COLUMN GRID: Adapts based on screen width
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 80.dp),
                     modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                    contentPadding = PaddingValues(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(landmarks) { lm ->
                         Surface(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            shape = MaterialTheme.shapes.small
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            shape = MaterialTheme.shapes.extraSmall
                         ) {
-                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(lm.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text("${"%.1f".format(lm.angle)}°", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            Column(modifier = Modifier.padding(4.dp)) {
+                                Text(lm.text, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                Text("${"%.1f".format(lm.angle)}°", style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, color = MaterialTheme.colorScheme.secondary))
                             }
                         }
                     }
