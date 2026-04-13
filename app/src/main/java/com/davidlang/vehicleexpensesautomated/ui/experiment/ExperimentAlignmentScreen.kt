@@ -264,7 +264,7 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
                 if (trace.metadata.isNotEmpty()) appendLine("<small>${trace.metadata}</small><br>")
                 appendLine("<img src='data:image/jpeg;base64,${trace.alignedImageBase64}'><br><hr>")
                 trace.ocrTraces.forEach { step ->
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${bitmapToBase64(step.bitmap, 60)}'><br>${step.text}</div>")
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 300, 60)}'><br>${step.text}</div>")
                 }
             } else appendLine("<i>Alignment failed or skipped</i>")
         } else appendLine("<i>No match found</i>")
