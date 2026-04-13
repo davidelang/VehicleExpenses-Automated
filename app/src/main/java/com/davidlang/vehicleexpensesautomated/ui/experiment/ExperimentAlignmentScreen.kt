@@ -131,6 +131,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val total = photos.size; val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     
     val groundTruth = loadGroundTruth(context)
+    
+    // One-time Cleanup: Delete all orphaned vehicle_ref files
+    val allRefPaths = vehicles.mapNotNull { it.referenceDashPhotoUrl }.toSet()
+    context.filesDir.listFiles { f -> f.name.startsWith("vehicle_ref_") }?.forEach { f ->
+        if (!allRefPaths.contains(f.absolutePath)) {
+            Log.i(TAG, "Deleting orphaned ref: ${f.name}")
+            f.delete()
+        }
+    }
+
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
         val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)

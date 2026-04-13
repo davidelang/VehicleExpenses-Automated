@@ -138,9 +138,16 @@ fun ManageVehiclesScreen(
                 leveledFile.outputStream().use { leveledBmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
                 
                 // 3. AUTOMATIC LANDMARK DISCOVERY (Mandatory on Import)
-                // This ensures landmarkTextBlocksJson is always ready for saving.
                 val landmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(leveledBmp, null, null)
                 val landmarkJson = serializeLandmarks(landmarks)
+                
+                // Cleanup: Delete the previous temporary file if it was a vehicle_ref
+                pickedPhotoUrl?.let { oldPath ->
+                    if (oldPath.contains("vehicle_ref_")) {
+                        val oldFile = File(oldPath)
+                        if (oldFile.exists()) oldFile.delete()
+                    }
+                }
                 
                 withContext(Dispatchers.Main) {
                     pickedPhotoUrl = leveledFile.absolutePath
@@ -253,7 +260,24 @@ fun ManageVehiclesScreen(
             OutlinedTextField(value = odometerReading, onValueChange = { odometerReading = it }, label = { Text("Current Odometer") }, modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { scope.launch { if (isNewVehicle) { vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) } else { editingVehicle?.let { val updated = it.copy(name = name, make = make, model = model, year = year.toIntOrNull() ?: 0, licensePlate = licensePlate, referenceDashPhotoUrl = referencePhotoUrl, cleanedReferenceDashPhotoUrl = referencePhotoUrl, odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom, otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom, landmarkTextBlocksJson = landmarkTextBlocksJson); vehicleViewModel.updateVehicle(updated) } }; navController.popBackStack() } }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank() && referencePhotoUrl != null) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
-            if (!isNewVehicle) { Spacer(modifier = Modifier.height(8.dp)); Button(onClick = { editingVehicle?.let { vehicleViewModel.deleteVehicle(it) }; navController.popBackStack() }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Delete Vehicle") } }
+            if (!isNewVehicle) { 
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = { 
+                        editingVehicle?.let { v ->
+                            // Delete actual image file
+                            v.referenceDashPhotoUrl?.let { path ->
+                                val f = File(path)
+                                if (f.exists()) f.delete()
+                            }
+                            vehicleViewModel.deleteVehicle(v) 
+                        }
+                        navController.popBackStack() 
+                    }, 
+                    modifier = Modifier.fillMaxWidth(), 
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete Vehicle") } 
+            }
         }
     }
 
