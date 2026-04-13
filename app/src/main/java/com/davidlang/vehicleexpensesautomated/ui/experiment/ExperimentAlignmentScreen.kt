@@ -216,7 +216,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         val crop = manualCropOdometer(anchorRes.alignedImage, ref.vehicle)
                         if (crop != null) {
                             val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                            alignmentTraces["Anchor-Tri"] = AlignmentTraceResult("Anchor-Tri", true, anchorRes.timeMs, createScaledBase64(anchorRes.alignedImage, 400, 70), steps, mapOf("Strategy" to anchorRes.strategy, "Anchors" to anchorRes.anchorsUsed.joinToString(", ")))
+                            alignmentTraces["Anchor-Tri"] = AlignmentTraceResult("Anchor-Tri", true, anchorRes.timeMs, createScaledBase64(anchorRes.alignedImage, 400, 70), steps, mapOf("Strategy" to anchorRes.strategy, "Anchors" to anchorRes.anchorsUsed.joinToString(", "), "Matrix" to anchorRes.message))
                             crop.recycle()
                         }
                         anchorRes.alignedImage.recycle()
@@ -230,7 +230,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 )
             }
 
-            val rowHtml = buildHtmlRowDynamic(file.name, deskewedBase64, discoveryText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments)
+            val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, discoveryText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments)
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
             
@@ -249,8 +249,8 @@ private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, a
     appendLine("<th style='width:120px;'>Final Result</th></tr>")
 }
 
-private fun buildHtmlRowDynamic(fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, bestOdo: String, alignNames: List<String>): String = buildString {
-    appendLine("<tr><td><small>$fileName</small><br><b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedBase64'><br><small>$discovery</small></td>")
+private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, bestOdo: String, alignNames: List<String>): String = buildString {
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedBase64'><br><small>$discovery</small></td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }
     val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }

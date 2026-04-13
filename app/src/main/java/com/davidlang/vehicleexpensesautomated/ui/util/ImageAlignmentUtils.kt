@@ -154,8 +154,18 @@ object ImageAlignmentUtils {
         val r1 = bestPair.first.first.boundingBox; val r2 = bestPair.second.first.boundingBox
         val q1 = bestPair.first.second.boundingBox; val q2 = bestPair.second.second.boundingBox
         
-        val refDist = sqrt(((r1.centerX() - r2.centerX()).toDouble().let { it * it }) + ((r1.centerY() - r2.centerY()).toDouble().let { it * it }))
-        val queDist = sqrt(((q1.centerX() - q2.centerX()).toDouble().let { it * it }) + ((q1.centerY() - q2.centerY()).toDouble().let { it * it }))
+        // Landmarks were extracted from a 1500px scaled image. We must map coordinates back to the original full-res bitmaps.
+        val refScale = refBmp.width / 1500f
+        val queScale = queryBmp.width / 1500f
+
+        val r1cx = r1.centerX() * refScale; val r1cy = r1.centerY() * refScale
+        val r2cx = r2.centerX() * refScale; val r2cy = r2.centerY() * refScale
+        
+        val q1cx = q1.centerX() * queScale; val q1cy = q1.centerY() * queScale
+        val q2cx = q2.centerX() * queScale; val q2cy = q2.centerY() * queScale
+        
+        val refDist = sqrt(((r1cx - r2cx).toDouble().let { it * it }) + ((r1cy - r2cy).toDouble().let { it * it }))
+        val queDist = sqrt(((q1cx - q2cx).toDouble().let { it * it }) + ((q1cy - q2cy).toDouble().let { it * it }))
         
         if (queDist == 0.0) return AnchorResult(false, message = "Query anchors overlap.", timeMs = System.currentTimeMillis() - t0)
         
@@ -163,12 +173,14 @@ object ImageAlignmentUtils {
         
         // Panning: Exact match for the first anchor
         // target_cx = scale * query_cx + tx => tx = target_cx - (scale * query_cx)
-        val tx = r1.centerX().toFloat() - (scale * q1.centerX().toFloat())
-        val ty = r1.centerY().toFloat() - (scale * q1.centerY().toFloat())
+        val tx = r1cx - (scale * q1cx)
+        val ty = r1cy - (scale * q1cy)
 
         val matrix = android.graphics.Matrix()
         matrix.postScale(scale, scale)
         matrix.postTranslate(tx, ty)
+
+        val msg = "S=%.3f, tx=%.1f, ty=%.1f".format(scale, tx, ty)
 
         return try {
             val outBmp = Bitmap.createBitmap(refBmp.width, refBmp.height, Bitmap.Config.ARGB_8888)
@@ -176,7 +188,7 @@ object ImageAlignmentUtils {
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
             
-            AnchorResult(true, outBmp, System.currentTimeMillis() - t0, strategyUsed, anchorWords, "Success")
+            AnchorResult(true, outBmp, System.currentTimeMillis() - t0, strategyUsed, anchorWords, msg)
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0)
         }
