@@ -112,16 +112,20 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
 
 object OcrHarness {
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-        // High-speed discovery (No Tesseract)
-        val enginesList = listOf(MlKitEngine(), PaddleOcrEngine(context), NativeTfliteEngine(context))
+        val paddleEngine = PaddleOcrEngine(context)
+        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context))
+        if (paddleEngine.isAvailable) enginesList.add(paddleEngine)
+        
         return enginesList.associate { engine ->
             engine.name to engine.recognize(bitmap)
         }
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-        // Deep trace (All engines including Tesseract)
-        val enginesList = listOf(TesseractEngine(), MlKitEngine(), PaddleOcrEngine(context), NativeTfliteEngine(context))
+        val paddleEngine = PaddleOcrEngine(context)
+        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context))
+        if (paddleEngine.isAvailable) enginesList.add(paddleEngine)
+        
         return enginesList.associate { engine ->
             engine.name to engine.recognize(bitmap)
         }
