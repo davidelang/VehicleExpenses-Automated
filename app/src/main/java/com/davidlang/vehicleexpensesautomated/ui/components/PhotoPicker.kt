@@ -47,7 +47,7 @@ fun PhotoPicker(
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
             scope.launch {
