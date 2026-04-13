@@ -163,16 +163,24 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: return@forEachIndexed
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
-            // 1. IDENTITY STAGE (Discovery & Deskew)
-            val tDeskewStart = System.currentTimeMillis()
-            val queryOcrDiscovery = OcrHarness.runDiscovery(originalBitmap, context)["ML Kit"]!!
-            val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
+            // 1. IDENTITY STAGE (Deskew then Discovery)
+            val tIdentityStart = System.currentTimeMillis()
+            
+            // Pass 1 & 2: Calculate skew and Deskew immediately to get a 0-degree baseline
             val tilt = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
             if (Math.abs(tilt) > 0.2f) { 
                 val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt)
-                if (leveled != originalBitmap) { originalBitmap.recycle(); originalBitmap = leveled }
+                if (leveled != originalBitmap) { 
+                    originalBitmap.recycle() 
+                    originalBitmap = leveled 
+                }
             }
-            val tIdentityTotal = System.currentTimeMillis() - tDeskewStart
+            
+            // Pass 3: Identification & Landmark Discovery on the DESKEWED image
+            val queryOcrDiscovery = OcrHarness.runDiscovery(originalBitmap, context)["ML Kit"]!!
+            val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
+            
+            val tIdentityTotal = System.currentTimeMillis() - tIdentityStart
             
             val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
             val discoveryText = queryOcrDiscovery.debugText
