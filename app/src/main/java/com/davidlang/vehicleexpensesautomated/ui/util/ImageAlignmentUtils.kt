@@ -45,11 +45,147 @@ data class VetoResult(
     val vetoPool: List<String> = emptyList()
 )
 
+data class AnchorResult(
+    val success: Boolean,
+    val alignedImage: Bitmap? = null,
+    val timeMs: Long = 0,
+    val strategy: String = "",
+    val anchorsUsed: List<String> = emptyList(),
+    val message: String = ""
+)
+
 object ImageAlignmentUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
             Log.e("ImageAlignment", "OpenCV initialization failed!")
         }
+    }
+
+    fun anchorAlign(
+        refBmp: Bitmap,
+        queryBmp: Bitmap,
+        refLandmarks: List<TextBlock>,
+        queryLandmarks: List<TextBlock>
+    ): AnchorResult {
+        val t0 = System.currentTimeMillis()
+        
+        // 1. STRATEGY A: Uniqueness
+        // Find strings that appear exactly once in both lists
+        val refCounts = refLandmarks.groupBy { it.text }.mapValues { it.value.size }
+        val queCounts = queryLandmarks.groupBy { it.text }.mapValues { it.value.size }
+        
+        val uniqueMatches = refLandmarks.filter { refCounts[it.text] == 1 }
+            .mapNotNull { refMark ->
+                val queMark = queryLandmarks.find { it.text == refMark.text && queCounts[it.text] == 1 }
+                if (queMark != null) refMark to queMark else null
+            }
+
+        var strategyUsed = ""
+        var bestPair: Pair<Pair<TextBlock, TextBlock>, Pair<TextBlock, TextBlock>>? = null
+        var anchorWords = emptyList<String>()
+
+        if (uniqueMatches.size >= 2) {
+            strategyUsed = "A (Uniqueness)"
+            // Find pair with max distance in reference
+            var maxDist = -1.0
+            for (i in uniqueMatches.indices) {
+                for (j in i + 1 until uniqueMatches.size) {
+                    val d = dist(uniqueMatches[i].first, uniqueMatches[j].first)
+                    if (d > maxDist) {
+                        maxDist = d
+                        bestPair = uniqueMatches[i] to uniqueMatches[j]
+                    }
+                }
+            }
+        } 
+        
+        // 2. STRATEGY B: Triangle Similarity (Fallback)
+        if (bestPair == null) {
+            val commonWords = refCounts.keys.intersect(queCounts.keys).toList()
+            if (commonWords.size >= 3) {
+                var maxTriDist = -1.0
+                // This is O(N^3), but usually small sets
+                for (i in commonWords.indices) {
+                    for (j in i + 1 until commonWords.size) {
+                        for (k in j + 1 until commonWords.size) {
+                            val w1 = commonWords[i]; val w2 = commonWords[j]; val w3 = commonWords[k]
+                            
+                            // Get ALL instances (might be multiples)
+                            val r1s = refLandmarks.filter { it.text == w1 }; val r2s = refLandmarks.filter { it.text == w2 }; val r3s = refLandmarks.filter { it.text == w3 }
+                            val q1s = queryLandmarks.filter { it.text == w1 }; val q2s = queryLandmarks.filter { it.text == w2 }; val q3s = queryLandmarks.filter { it.text == w3 }
+                            
+                            for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
+                                val rD12 = dist(r1, r2); val rD23 = dist(r2, r3); val rD31 = dist(r3, r1)
+                                if (rD12 == 0.0 || rD23 == 0.0 || rD31 == 0.0) continue
+                                
+                                for (q1 in q1s) for (q2 in q2s) for (q3 in q3s) {
+                                    val qD12 = dist(q1, q2); val qD23 = dist(q2, q3); val qD31 = dist(q3, q1)
+                                    if (qD12 == 0.0 || qD23 == 0.0 || qD31 == 0.0) continue
+                                    
+                                    // Check ratios (Similar Triangles) within 5% tolerance
+                                    val ratio1 = (qD12 / rD12) / (qD23 / rD23)
+                                    val ratio2 = (qD23 / rD23) / (qD31 / rD31)
+                                    
+                                    if (abs(ratio1 - 1.0) < 0.05 && abs(ratio2 - 1.0) < 0.05) {
+                                        strategyUsed = "B (Triangle)"
+                                        // Pick the longest side of this triangle as our anchors
+                                        val sides = listOf((r1 to q1) to (r2 to q2), (r2 to q2) to (r3 to q3), (r3 to q3) to (r1 to q1))
+                                        val longest = sides.maxBy { dist(it.first.first, it.second.first) }
+                                        if (dist(longest.first.first, longest.second.first) > maxTriDist) {
+                                            maxTriDist = dist(longest.first.first, longest.second.first)
+                                            bestPair = longest
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bestPair == null) {
+            return AnchorResult(false, message = "No valid anchor sets found.", timeMs = System.currentTimeMillis() - t0)
+        }
+
+        anchorWords = listOf(bestPair.first.first.text, bestPair.second.first.text)
+
+        // 3. TRANSFORMATION (Scale & Pan)
+        val r1 = bestPair.first.first.boundingBox; val r2 = bestPair.second.first.boundingBox
+        val q1 = bestPair.first.second.boundingBox; val q2 = bestPair.second.second.boundingBox
+        
+        val refDist = sqrt(((r1.centerX() - r2.centerX()).toDouble().let { it * it }) + ((r1.centerY() - r2.centerY()).toDouble().let { it * it }))
+        val queDist = sqrt(((q1.centerX() - q2.centerX()).toDouble().let { it * it }) + ((q1.centerY() - q2.centerY()).toDouble().let { it * it }))
+        
+        if (queDist == 0.0) return AnchorResult(false, message = "Query anchors overlap.", timeMs = System.currentTimeMillis() - t0)
+        
+        val scale = (refDist / queDist).toFloat()
+        
+        // Panning: Exact match for the first anchor
+        // target_cx = scale * query_cx + tx => tx = target_cx - (scale * query_cx)
+        val tx = r1.centerX().toFloat() - (scale * q1.centerX().toFloat())
+        val ty = r1.centerY().toFloat() - (scale * q1.centerY().toFloat())
+
+        val matrix = android.graphics.Matrix()
+        matrix.postScale(scale, scale)
+        matrix.postTranslate(tx, ty)
+
+        return try {
+            val outBmp = Bitmap.createBitmap(refBmp.width, refBmp.height, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(outBmp)
+            canvas.drawColor(android.graphics.Color.BLACK)
+            canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+            
+            AnchorResult(true, outBmp, System.currentTimeMillis() - t0, strategyUsed, anchorWords, "Success")
+        } catch (e: Exception) {
+            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0)
+        }
+    }
+
+    private fun dist(a: TextBlock, b: TextBlock): Double {
+        val dx = (a.boundingBox.centerX() - b.boundingBox.centerX()).toDouble()
+        val dy = (a.boundingBox.centerY() - b.boundingBox.centerY()).toDouble()
+        return sqrt(dx * dx + dy * dy)
     }
 
     fun getLandmarksFromJson(json: String?): Set<String> {

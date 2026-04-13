@@ -70,7 +70,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     if (!reportDir.exists()) reportDir.mkdirs()
     if (!debugCropDir.exists()) debugCropDir.mkdirs()
 
-    val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { scope.launch { status = "Extracting ZIP..."; val success = extractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
     }
 
@@ -86,7 +86,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
-            Button(onClick = { zipLauncher.launch("application/zip") }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
+            Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
             Button(onClick = { if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }; scope.launch { isRunning = true; resultsList.clear(); runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p -> resultsList.add(res); progress = p; currentPhotoName = res.photoName }; isRunning = false; status = "Complete! Reports saved." } }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
             Spacer(modifier = Modifier.height(16.dp))
             LazyColumn(modifier = Modifier.weight(1f)) {
@@ -111,29 +111,50 @@ data class SingleVehicleResult(
     val vetoReason: String,
     val matchTimeMs: Long,
     val orbBase64: String,
+    val anchorBase64: String,
     val traceData: Map<String, List<OcrStepResult>>,
     val methodScores: Map<String, Float>,
     val methodTimes: Map<String, Long>,
     val tierReached: Int,
     val vetoQueryWords: List<String>,
     val vetoMyManifest: List<String>,
-    val vetoPool: List<String>
+    val vetoPool: List<String>,
+    val anchorStrategy: String,
+    val anchorsUsed: List<String>,
+    val anchorTimeMs: Long
 )
 
-private suspend fun processSingleVehicleMatch(ref: ReferenceCache, originalBitmap: Bitmap, queryOcrMl: OcrResult, veto: VetoResult, context: Context): SingleVehicleResult {
+private suspend fun processSingleVehicleMatch(ref: ReferenceCache, originalBitmap: Bitmap, queryOcrMl: OcrResult, queryLandmarks: List<TextBlock>, veto: VetoResult, context: Context): SingleVehicleResult {
     val tStart = System.currentTimeMillis()
     val odoCropF = ref.vehicle.odometerCropLeft?.let { android.graphics.RectF(it, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
     val otherCropF = ref.vehicle.otherTextCropLeft?.let { android.graphics.RectF(it, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
     val skipAlignment = veto.isVetoed
+    
     val matchResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocrResult, queryOcrMl, odoCropF, otherCropF, skipExpensiveORB = skipAlignment, veto = veto)
     val tiered = matchResults["tiered"]!!
     val orbRes = matchResults["feature"]!!
     val tMatch = System.currentTimeMillis() - tStart
+
+    // Execute Anchor Alignment-triangle
+    val anchorRes = if (!skipAlignment) {
+        ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks)
+    } else AnchorResult(false)
+
     val traceData = mutableMapOf<String, List<OcrStepResult>>()
-    if (orbRes.success && orbRes.alignedImage != null) { val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle); if (crop != null) { traceData["Aligned"] = OdometerOcrUtils.runMultiStepOcr(crop, context); crop.recycle() } }
+    if (orbRes.success && orbRes.alignedImage != null) { val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle); if (crop != null) { traceData["ORB"] = OdometerOcrUtils.runMultiStepOcr(crop, context); crop.recycle() } }
+    if (anchorRes.success && anchorRes.alignedImage != null) { val crop = manualCropOdometer(anchorRes.alignedImage, ref.vehicle); if (crop != null) { traceData["Anchor-Tri"] = OdometerOcrUtils.runMultiStepOcr(crop, context); crop.recycle() } }
+
     val orbBase64 = if (orbRes.alignedImage != null) createScaledBase64(orbRes.alignedImage, 400, 70) else ""
-    orbRes.alignedImage?.recycle()
-    return SingleVehicleResult(vehicleName = ref.vehicle.name, confidence = tiered.confidence, vetoReason = tiered.vetoReason ?: "", matchTimeMs = tMatch, orbBase64 = orbBase64, traceData = traceData, methodScores = matchResults.mapValues { it.value.confidence }, methodTimes = matchResults.mapValues { it.value.timeMs }, tierReached = tiered.tierReached, vetoQueryWords = veto.queryWords, vetoMyManifest = veto.myManifest, vetoPool = veto.vetoPool)
+    val anchorBase64 = if (anchorRes.alignedImage != null) createScaledBase64(anchorRes.alignedImage, 400, 70) else ""
+    orbRes.alignedImage?.recycle(); anchorRes.alignedImage?.recycle()
+
+    return SingleVehicleResult(
+        vehicleName = ref.vehicle.name, confidence = tiered.confidence, vetoReason = tiered.vetoReason ?: "", matchTimeMs = tMatch, 
+        orbBase64 = orbBase64, anchorBase64 = anchorBase64, traceData = traceData, 
+        methodScores = matchResults.mapValues { it.value.confidence }, methodTimes = matchResults.mapValues { it.value.timeMs }, 
+        tierReached = tiered.tierReached, vetoQueryWords = veto.queryWords, vetoMyManifest = veto.myManifest, vetoPool = veto.vetoPool,
+        anchorStrategy = anchorRes.strategy, anchorsUsed = anchorRes.anchorsUsed, anchorTimeMs = anchorRes.timeMs
+    )
 }
 
 private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
@@ -142,17 +163,10 @@ private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
     try {
         val array = JSONArray(json)
         for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i)
-            val text = obj.getString("text")
-            val cx = obj.getInt("cx")
-            val cy = obj.getInt("cy")
-            val h = obj.getInt("h")
-            val w = obj.getInt("w")
-            
-            val left = cx - (w / 2)
-            val top = cy - (h / 2)
-            val rect = android.graphics.Rect(left, top, left + w, top + h)
-            list.add(TextBlock(text, rect))
+            val obj = array.getJSONObject(i); val text = obj.getString("text")
+            val cx = obj.getInt("cx"); val cy = obj.getInt("cy"); val h = obj.getInt("h"); val w = obj.getInt("w")
+            val left = cx - (w / 2); val top = cy - (h / 2)
+            list.add(TextBlock(text, android.graphics.Rect(left, top, left + w, top + h)))
         }
     } catch (e: Exception) { Log.e(TAG, "Landmark parse failed", e) }
     return list
@@ -177,8 +191,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     photos.forEachIndexed { index, file ->
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
-            val originalBitmapRaw = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: return@forEachIndexed
-            var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(originalBitmapRaw, file.absolutePath)
+            val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: return@forEachIndexed
+            var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             val tilt = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
             if (Math.abs(tilt) > 0.2f) { val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt); if (leveled != originalBitmap) { originalBitmap.recycle(); originalBitmap = leveled } }
             val grayBitmap = OdometerOcrUtils.applyGrayscale(originalBitmap); val bileBitmap = OdometerOcrUtils.applyBilateral(originalBitmap)
@@ -190,9 +204,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
             var winnerName = "No match"; var bestConf = 0f; var pickedOdometer = "FAILED"; val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
             cachedRefs.forEach { ref ->
-                val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false); val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, veto, context)
-                vehicleResultsMap[ref.vehicle.id] = vRes; strategyTraces["${ref.vehicle.name}_Aligned"] = vRes.traceData["Aligned"] ?: emptyList()
-                if (vRes.tierReached in 1..3 && vRes.confidence >= 0.25f && vRes.confidence > bestConf) { bestConf = vRes.confidence; winnerName = vRes.vehicleName; pickedOdometer = OdometerOcrUtils.pickBestOdometer(vRes.traceData["Aligned"] ?: emptyList()) ?: "FAILED" }
+                val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false); val vRes = processSingleVehicleMatch(ref, originalBitmap, queryOcrMl, queryLandmarks, veto, context)
+                vehicleResultsMap[ref.vehicle.id] = vRes; strategyTraces["${ref.vehicle.name}_ORB"] = vRes.traceData["ORB"] ?: emptyList(); strategyTraces["${ref.vehicle.name}_Anchor-Tri"] = vRes.traceData["Anchor-Tri"] ?: emptyList()
+                if (vRes.tierReached in 1..3 && vRes.confidence >= 0.25f && vRes.confidence > bestConf) { bestConf = vRes.confidence; winnerName = vRes.vehicleName; pickedOdometer = OdometerOcrUtils.pickBestOdometer((vRes.traceData["ORB"] ?: emptyList()) + (vRes.traceData["Anchor-Tri"] ?: emptyList())) ?: "FAILED" }
             }
             val candidates = cachedRefs.filter { ref -> val res = vehicleResultsMap[ref.vehicle.id]!!; res.tierReached in 1..3 && res.confidence >= 0.25f }
             val rowHtml = buildHtmlRowFoundation(file.name, mapOf("Original" to createScaledBase64(originalBitmap, 150, 50), "Grayscale" to createScaledBase64(grayBitmap, 150, 50), "Bilateral" to createScaledBase64(bileBitmap, 150, 50)), globalOcrResultsMap, qLandmarkDisplays, vehicleResultsMap, candidates, winnerName, bestConf, pickedOdometer, strategyTraces)
@@ -204,12 +218,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 vehicleResultsMap.values.forEach { vRes ->
                     vArray.put(JSONObject().apply {
                         put("name", vRes.vehicleName); put("score", vRes.confidence.toDouble()); put("match_time_ms", vRes.matchTimeMs); put("veto_word", vRes.vetoReason)
-                        put("tier_reached", vRes.tierReached)
-                        put("veto_query_words", JSONArray(vRes.vetoQueryWords))
-                        put("veto_my_manifest", JSONArray(vRes.vetoMyManifest))
-                        put("veto_pool", JSONArray(vRes.vetoPool))
-                        put("method_scores", JSONObject().apply { vRes.methodScores.forEach { (k, v) -> put(k, v.toDouble()) } })
-                        put("method_times", JSONObject().apply { vRes.methodTimes.forEach { (k, v) -> put(k, v) } })
+                        put("tier_reached", vRes.tierReached); put("veto_query_words", JSONArray(vRes.vetoQueryWords)); put("veto_my_manifest", JSONArray(vRes.vetoMyManifest)); put("veto_pool", JSONArray(vRes.vetoPool))
+                        put("method_scores", JSONObject().apply { vRes.methodScores.forEach { (k, v) -> put(k, v.toDouble()) } }); put("method_times", JSONObject().apply { vRes.methodTimes.forEach { (k, v) -> put(k, v) } })
+                        put("anchor_strategy", vRes.anchorStrategy); put("anchors_used", JSONArray(vRes.anchorsUsed)); put("anchor_time_ms", vRes.anchorTimeMs)
                     })
                 }
                 put("vehicles", vArray)
@@ -252,10 +263,11 @@ private fun buildHtmlRowFoundation(photoName: String, globalBase64s: Map<String,
             appendLine("<div class='${if (isWinner) "winner" else ""}' style='border:1px solid #ddd; margin-bottom:10px; padding:4px;'>")
             appendLine("<div class='score-box'><b>${ref.vehicle.name}</b><br>Score: ${"%.3f".format(vRes.confidence)} | Tier: ${vRes.tierReached}</div>")
             appendLine("<b>Ref:</b><br><img src='data:image/jpeg;base64,${ref.referenceBase64}'><br>")
-            appendLine("<b>Aligned:</b><br><img src='data:image/jpeg;base64,${vRes.orbBase64}'><br>")
-            appendLine("<b>Veto Manifest:</b> <div class='word-list'>${vRes.vetoMyManifest.joinToString(", ")}</div>")
+            appendLine("<b>Anchor Alignment (${vRes.anchorTimeMs}ms):</b><br><small>Strategy: ${vRes.anchorStrategy}</small><br><small>Words: ${vRes.anchorsUsed.joinToString(", ")}</small><br><img src='data:image/jpeg;base64,${vRes.anchorBase64}'><br>")
+            appendLine("<b>ORB Alignment:</b><br><img src='data:image/jpeg;base64,${vRes.orbBase64}'><br>")
             appendLine("<b>Veto Pool (Others - Me):</b> <div class='word-list'>${vRes.vetoPool.joinToString(", ")}</div>")
-            appendLine(buildOcrStepHtml(traces["${ref.vehicle.name}_Aligned"] ?: emptyList()))
+            appendLine("<hr><b>Anchor OCR:</b><br>${buildOcrStepHtml(traces["${ref.vehicle.name}_Anchor-Tri"] ?: emptyList())}")
+            appendLine("<hr><b>ORB OCR:</b><br>${buildOcrStepHtml(traces["${ref.vehicle.name}_ORB"] ?: emptyList())}")
             appendLine("</div>")
         }
     }
