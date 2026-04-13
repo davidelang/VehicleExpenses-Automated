@@ -164,6 +164,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
             // 1. IDENTITY STAGE (Deskew then Discovery)
+            val tImageStart = System.currentTimeMillis()
             val tIdentityStart = System.currentTimeMillis()
             
             // Pass 1 & 2: Calculate skew and Deskew immediately to get a 0-degree baseline
@@ -191,6 +192,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
             var finalWinnerName = "No match"
             var bestOdometer = "FAILED"
+            val tAlignOcrStart = System.currentTimeMillis()
             
             cachedRefs.forEach { ref ->
                 val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
@@ -242,6 +244,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     ref.vehicle.name, tiered.confidence, tiered.vetoReason ?: "", tMatchTotal, alignmentTraces, tiered.tierReached, veto.queryWords, veto.myManifest, veto.vetoPool
                 )
             }
+            val tAlignOcrTotal = System.currentTimeMillis() - tAlignOcrStart
+            val tImageTotal = System.currentTimeMillis() - tImageStart
 
             val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, discoveryText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments)
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
@@ -253,6 +257,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 put("file", file.name)
                 put("winner", finalWinnerName)
                 put("odometer", bestOdometer)
+                put("identity_time_ms", tIdentityTotal)
+                put("align_ocr_time_ms", tAlignOcrTotal)
+                put("total_time_ms", tImageTotal)
                 val vResults = JSONArray()
                 vehicleResultsMap.values.forEach { vr ->
                     vResults.put(JSONObject().apply {
