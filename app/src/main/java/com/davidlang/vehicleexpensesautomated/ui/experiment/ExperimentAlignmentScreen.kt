@@ -168,7 +168,8 @@ private fun loadGroundTruth(context: Context): Map<String, String> {
         val keys = json.keys()
         while (keys.hasNext()) {
             val key = keys.next()
-            map[key] = json.getString(key)
+            // Store as lowercase key for case-insensitive lookup
+            map[key.lowercase()] = json.getString(key)
         }
         map
     } catch (e: Exception) { Log.e(TAG, "Failed to load ground_truth.json", e); emptyMap() }
@@ -229,8 +230,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
             val strategyTraces = mutableMapOf<String, List<OcrStepResult>>()
             
-            // DECISION OVERRIDE: Check Ground Truth first
-            val hardcodedWinner = groundTruth[file.name]
+            // DECISION OVERRIDE: Check Ground Truth first (Case-insensitive)
+            val hardcodedWinner = groundTruth[file.name.lowercase()]
             
             cachedRefs.forEach { ref ->
                 val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
