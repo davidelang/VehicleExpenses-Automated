@@ -224,7 +224,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         val crop = manualCropOdometer(anchorRes.alignedImage, ref.vehicle)
                         if (crop != null) {
                             val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                            alignmentTraces["Anchor-Tri"] = AlignmentTraceResult("Anchor-Tri", true, anchorRes.timeMs, createScaledBase64(anchorRes.alignedImage, 400, 70), steps, mapOf("Strategy" to anchorRes.strategy, "Anchors" to anchorRes.anchorsUsed.joinToString(", "), "Matrix" to anchorRes.message))
+                            
+                            val candidateLogs = anchorRes.candidates.mapIndexed { i, c ->
+                                "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> S=%.3f, tx=%.1f, ty=%.1f".format(c.scale, c.tx, c.ty)
+                            }.joinToString("<br>")
+
+                            alignmentTraces["Anchor-Tri"] = AlignmentTraceResult("Anchor-Tri", true, anchorRes.timeMs, createScaledBase64(anchorRes.alignedImage, 400, 70), steps, mapOf("Candidates" to candidateLogs))
                             crop.recycle()
                         }
                         anchorRes.alignedImage.recycle()
@@ -242,11 +247,39 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
             
+            // DYNAMIC FIX: Populate jsonArray
+            jsonArray.put(JSONObject().apply {
+                put("index", index + 1)
+                put("file", file.name)
+                put("winner", finalWinnerName)
+                put("odometer", bestOdometer)
+                val vResults = JSONArray()
+                vehicleResultsMap.values.forEach { vr ->
+                    vResults.put(JSONObject().apply {
+                        put("vehicle", vr.vehicleName)
+                        put("confidence", vr.confidence.toDouble())
+                        put("tier", vr.tierReached)
+                        val traces = JSONObject()
+                        vr.alignmentTraces.forEach { (name, trace) ->
+                            traces.put(name, JSONObject().apply {
+                                put("success", trace.success)
+                                put("time_ms", trace.timeMs)
+                                trace.metadata.forEach { (mk, mv) -> put(mk.lowercase(), mv) }
+                            })
+                        }
+                        put("traces", traces)
+                    })
+                }
+                put("vehicles", vResults)
+            })
+
             withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
             originalBitmap.recycle()
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
     }
-    currentFile.appendText(footer); File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
+    currentFile.appendText(footer)
+    File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2))
+    cachedRefs.forEach { it.bmp.recycle() }
 }
 
 private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, alignNames: List<String>): String = buildString {
