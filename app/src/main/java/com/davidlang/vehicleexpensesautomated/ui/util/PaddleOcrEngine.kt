@@ -21,10 +21,13 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
     private var recInterpreter: Interpreter? = null
     private var clsInterpreter: Interpreter? = null
     private val dictionary = mutableListOf<String>()
+    
+    var isAvailable = false
+        private set
 
     init {
         try {
-            // Load models
+            // Load models - Wrapped in try/catch Throwable to handle UnsatisfiedLinkError on amd64
             detInterpreter = Interpreter(loadModelFile(context, "tflite/paddle/det_model.pdmodel"))
             recInterpreter = Interpreter(loadModelFile(context, "tflite/paddle/rec_model.pdmodel"))
             clsInterpreter = Interpreter(loadModelFile(context, "tflite/paddle/cls_model.pdmodel"))
@@ -35,9 +38,11 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
                 lines.forEach { dictionary.add(it) }
             }
             
+            isAvailable = true
             Log.i("PaddleOcr", "PaddleOCR models and dictionary loaded successfully")
-        } catch (e: Exception) {
-            Log.e("PaddleOcr", "Failed to initialize PaddleOCR", e)
+        } catch (e: Throwable) {
+            isAvailable = false
+            Log.e("PaddleOcr", "Failed to initialize PaddleOCR (Native libs likely missing for this architecture): ${e.message}")
         }
     }
 
