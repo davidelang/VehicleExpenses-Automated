@@ -79,9 +79,6 @@ fun QuickFillupScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text("Quick Fill-up", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,

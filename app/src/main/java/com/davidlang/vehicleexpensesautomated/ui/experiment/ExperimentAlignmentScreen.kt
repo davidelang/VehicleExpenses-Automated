@@ -74,28 +74,26 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
         uri?.let { scope.launch { status = "Extracting ZIP..."; val success = extractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Alignment Experiment") }) }) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
-            if (isRunning) {
-                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(currentPhotoName, style = MaterialTheme.typography.labelSmall); Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall) }
-                }
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+        if (isRunning) {
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(currentPhotoName, style = MaterialTheme.typography.labelSmall); Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall) }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
-            Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
-            Button(onClick = { if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }; scope.launch { isRunning = true; resultsList.clear(); runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p -> resultsList.add(res); progress = p; currentPhotoName = res.photoName }; isRunning = false; status = "Complete! Reports saved." } }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
-            Spacer(modifier = Modifier.height(16.dp))
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                itemsIndexed(resultsList) { index, res ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${index + 1}.", style = MaterialTheme.typography.titleSmall); Spacer(modifier = Modifier.width(8.dp))
-                            Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary); Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall) }
-                        }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
+        Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
+        Button(onClick = { if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }; scope.launch { isRunning = true; resultsList.clear(); runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p -> resultsList.add(res); progress = p; currentPhotoName = res.photoName }; isRunning = false; status = "Complete! Reports saved." } }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
+        Spacer(modifier = Modifier.height(16.dp))
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            itemsIndexed(resultsList) { index, res ->
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${index + 1}.", style = MaterialTheme.typography.titleSmall); Spacer(modifier = Modifier.width(8.dp))
+                        Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary); Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             }
@@ -164,7 +162,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
             // 1. IDENTITY STAGE (Deskew then Discovery)
-            val tImageStart = System.currentTimeMillis()
             val tIdentityStart = System.currentTimeMillis()
             
             // Pass 1 & 2: Calculate skew and Deskew immediately to get a 0-degree baseline
@@ -192,7 +189,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
             var finalWinnerName = "No match"
             var bestOdometer = "FAILED"
-            val tAlignOcrStart = System.currentTimeMillis()
             
             cachedRefs.forEach { ref ->
                 val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
@@ -244,8 +240,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     ref.vehicle.name, tiered.confidence, tiered.vetoReason ?: "", tMatchTotal, alignmentTraces, tiered.tierReached, veto.queryWords, veto.myManifest, veto.vetoPool
                 )
             }
-            val tAlignOcrTotal = System.currentTimeMillis() - tAlignOcrStart
-            val tImageTotal = System.currentTimeMillis() - tImageStart
 
             val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, discoveryText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments)
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
@@ -257,9 +251,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 put("file", file.name)
                 put("winner", finalWinnerName)
                 put("odometer", bestOdometer)
-                put("identity_time_ms", tIdentityTotal)
-                put("align_ocr_time_ms", tAlignOcrTotal)
-                put("total_time_ms", tImageTotal)
                 val vResults = JSONArray()
                 vehicleResultsMap.values.forEach { vr ->
                     vResults.put(JSONObject().apply {

@@ -199,8 +199,6 @@ fun ManageVehiclesScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text("Manage Vehicles", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
