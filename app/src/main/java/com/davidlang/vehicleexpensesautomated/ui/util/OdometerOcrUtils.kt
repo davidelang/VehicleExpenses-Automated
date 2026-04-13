@@ -111,7 +111,16 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
 }
 
 object OcrHarness {
-    suspend fun runAll(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+    suspend fun runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+        // High-speed discovery (No Tesseract)
+        val enginesList = listOf(MlKitEngine(), PaddleOcrEngine(context), NativeTfliteEngine(context))
+        return enginesList.associate { engine ->
+            engine.name to engine.recognize(bitmap)
+        }
+    }
+
+    suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+        // Deep trace (All engines including Tesseract)
         val enginesList = listOf(TesseractEngine(), MlKitEngine(), PaddleOcrEngine(context), NativeTfliteEngine(context))
         return enginesList.associate { engine ->
             engine.name to engine.recognize(bitmap)
@@ -224,10 +233,8 @@ object OdometerOcrUtils {
         }
     }
 
-    suspend fun runMultiStepOcr(crop: Bitmap, context: android.content.Context, tfliteEngine: TfLiteOcrEngine? = null): List<OcrStepResult> = withContext(Dispatchers.IO) {
+    suspend fun runMultiStepOcr(crop: Bitmap, context: android.content.Context): List<OcrStepResult> = withContext(Dispatchers.IO) {
         val steps = mutableListOf<OcrStepResult>()
-        val engine = tfliteEngine ?: TfLiteOcrEngine(context)
-        
         val variations = listOf(
             "Raw" to crop.copy(Bitmap.Config.ARGB_8888, true),
             "Grayscale" to applyGrayscale(crop),
@@ -238,29 +245,12 @@ object OdometerOcrUtils {
         
         variations.forEach { (name, bmp) ->
             val results = StringBuilder()
-            
-            val t0 = System.currentTimeMillis()
-            val (tessText, _) = runRawOcr(bmp, "0123456789")
-            results.append("<b>Tess (${System.currentTimeMillis() - t0}ms):</b> $tessText<br>")
-            
-            val t1 = System.currentTimeMillis()
-            val mlResult = extractFromPhotoBitmap(bmp)
-            val mlText = mlResult.textBlocks.joinToString(" ") { it.text }.filter { it.isDigit() }
-            results.append("<b>MLKit (${System.currentTimeMillis() - t1}ms):</b> $mlText<br>")
-            
-            val t2 = System.currentTimeMillis()
-            try {
-                val tfliteText = engine.runInference(bmp)
-                results.append("<b>TFLite (${System.currentTimeMillis() - t2}ms):</b> $tfliteText")
-            } catch (e: Exception) {
-                results.append("<b>TFLite:</b> Error")
+            val ocrMap = OcrHarness.runRefinement(bmp, context)
+            ocrMap.forEach { (eng, res) ->
+                results.append("<b>$eng (${res.executionTimeMs}ms):</b> ${res.debugText}<br>")
             }
-            
             steps.add(OcrStepResult(name, bmp, results.toString()))
         }
-        
-        if (tfliteEngine == null) engine.close()
-        
         steps
     }
 

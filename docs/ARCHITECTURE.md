@@ -5,13 +5,26 @@ Vehicle Expenses Automated is an Android application built with Kotlin, Jetpack 
 
 ## High-Level Data Flow
 
-### 1. Photo Capture & OCR
-- **Input**: User takes a photo of the dashboard or a fuel pump.
-- **Process**:
-  1. **Image Alignment**: `ImageAlignmentUtils` aligns the photo to a vehicle-specific reference photo.
-  2. **Cropping**: `PhotoAlignmentUtils` extracts relevant segments (odometer, pump display) based on stored crop rectangles.
-  3. **OCR**: `OdometerOcrUtils` (using ML Kit and Tesseract) extracts numerical data from these segments.
-- **Output**: Extracted odometer, gallons, and cost are populated in the UI for review.
+## Dashboard Processing Workflow
+
+The application follows a strict 4-stage pipeline for processing dashboard photos:
+
+1. **Identity Phase:**
+   - **Discovery:** Run a high-speed OCR pass (currently ML Kit) to discover landmark text strings and their fine-grained angles.
+   - **Identification:** Compare discovered landmarks against vehicle-specific reference manifests using **Tiered Identity** logic (Veto, Histogram, Text Agreement).
+   - **Deskewing:** Calculate the median text angle from the discovery pass and rotate the query photo to perfectly horizontal (0°).
+
+2. **Alignment Phase:**
+   - **Strategy Execution:** Map the deskewed query photo into the reference photo's coordinate space.
+   - **Methods:** Supports multiple concurrent strategies including **ORB (Feature) Alignment** and **Anchor Alignment** (Scale/Pan based on unique text landmarks).
+
+3. **Extraction Phase:**
+   - **Cropping:** Using the transformation matrix from the alignment phase, extract the specific odometer crop box defined in the vehicle's reference profile.
+
+4. **Crop OCR Phase (Refinement):**
+   - **Preprocessing:** Generate 5 variations of the extracted crop (Raw, Grayscale, Bilateral, CLAHE, OTSU).
+   - **Multi-Engine Execution:** Run the full suite of OCR engines (Tesseract, ML Kit, Native TFLite, etc.) against all 5 variations.
+   - **Scoring:** Select the best odometer reading based on engine consensus and pattern matching.
 
 ### 2. Data Persistence (Room)
 - **Entities**: `Vehicle`, `FuelEntry`, `ExpenseEntry`.
