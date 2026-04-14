@@ -306,38 +306,6 @@ object ImageAlignmentUtils {
         } else { AlignmentResult(false, null, 0f, "Hub failed", method = "hub") }
     }
 
-    suspend fun matchWithAllMethods(
-        reference: Bitmap,
-        query: Bitmap,
-        refOcr: OcrResult,
-        queryOcr: OcrResult,
-        odometerCrop: android.graphics.RectF? = null,
-        otherTextCrop: android.graphics.RectF? = null,
-        skipExpensiveORB: Boolean = false,
-        veto: VetoResult = VetoResult(false),
-        onLog: (suspend (String) -> Unit)? = null,
-        vehicle: Vehicle
-    ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
-        val results = mutableMapOf<String, AlignmentResult>()
-        var t0 = System.currentTimeMillis()
-        val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped", method = "feature") 
-                           else alignImages(reference, query, refOcr.textBlocks, queryOcr.textBlocks, vehicle)
-        results["feature"] = featureResult.copy(timeMs = System.currentTimeMillis() - t0)
-        t0 = System.currentTimeMillis()
-        val argRes = argMatch(refOcr.textBlocks, queryOcr.textBlocks, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
-        results["arg"] = AlignmentResult(true, null, argRes, "ARG", method = "arg", timeMs = System.currentTimeMillis() - t0)
-        t0 = System.currentTimeMillis()
-        val embRes = embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
-        results["embedding"] = AlignmentResult(true, null, embRes, "Emb", method = "embedding", timeMs = System.currentTimeMillis() - t0)
-        val tCons0 = System.currentTimeMillis()
-        val consensusScore = (results["feature"]!!.confidence * 0.10f) + (results["embedding"]!!.confidence * 0.45f) + (results["arg"]!!.confidence * 0.45f)
-        results["consensus"] = AlignmentResult(true, null, if (veto.isVetoed) -1f else consensusScore, if (veto.isVetoed) "VETO: ${veto.reasonWord}" else "OK", method = "consensus", wordVeto = veto.isVetoed, vetoReason = veto.reasonWord, timeMs = System.currentTimeMillis() - tCons0)
-        val tTier0 = System.currentTimeMillis()
-        val tieredResult = calculateTieredMatch(results, veto)
-        results["tiered"] = tieredResult.copy(timeMs = System.currentTimeMillis() - tTier0)
-        results
-    }
-
     fun calculateTieredMatch(results: Map<String, AlignmentResult>, veto: VetoResult): AlignmentResult {
         if (veto.isVetoed) return AlignmentResult(true, null, -1f, "TIER 0: VETO (Word: '${veto.reasonWord}')", method = "tiered", wordVeto = true, tierReached = 0, vetoReason = veto.reasonWord)
         val emb = results["embedding"]?.confidence ?: 0f; val arg = results["arg"]?.confidence ?: 0f; val feat = results["feature"]?.confidence ?: 0f
