@@ -148,7 +148,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     }
     
     val jsonArray = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
-    val activeAlignments = listOf("ORB", "Anchor-Tri")
+    val engines = AlignmentRegistry.getActiveEngines()
+    val activeAlignments = engines.map { it.name }
     
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle }, activeAlignments)) 
@@ -211,28 +212,21 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 // 2. ALIGNMENT & EXTRACTION STAGES (Only for winners/forced)
                 if (isWinner) {
                     finalWinnerName = ref.vehicle.name
-                    // Run ORB
-                    val orbRes = matchResults["feature"]!!
-                    if (orbRes.success && orbRes.alignedImage != null) {
-                        val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle)
-                        if (crop != null) {
-                            val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                            alignmentTraces["ORB"] = AlignmentTraceResult("ORB", true, orbRes.timeMs, createScaledBase64(orbRes.alignedImage, 400, 70), steps, orbRes.metadata)
-                            crop.recycle()
-                        }
-                        orbRes.alignedImage.recycle()
-                    }
                     
-                    // Run Anchor-Tri
-                    val anchorRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks, ref.vehicle)
-                    if (anchorRes.success && anchorRes.alignedImage != null) {
-                        val crop = manualCropOdometer(anchorRes.alignedImage, ref.vehicle)
-                        if (crop != null) {
-                            val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                            alignmentTraces["Anchor-Tri"] = AlignmentTraceResult("Anchor-Tri", true, anchorRes.timeMs, createScaledBase64(anchorRes.alignedImage, 400, 70), steps, anchorRes.metadata)
-                            crop.recycle()
+                    // Run all registered alignment engines
+                    engines.forEach { engine ->
+                        val alignRes = engine.align(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks, ref.vehicle)
+                        if (alignRes.success && alignRes.alignedImage != null) {
+                            val crop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
+                            if (crop != null) {
+                                val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
+                                alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, true, alignRes.timeMs, createScaledBase64(alignRes.alignedImage, 400, 70), steps, alignRes.metadata)
+                                crop.recycle()
+                            }
+                            alignRes.alignedImage.recycle()
+                        } else {
+                            alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, false, alignRes.timeMs, "", emptyList(), alignRes.metadata)
                         }
-                        anchorRes.alignedImage.recycle()
                     }
                     
                     bestOdometer = OdometerOcrUtils.pickBestOdometer(alignmentTraces.values.flatMap { it.ocrTraces }) ?: "FAILED"
@@ -247,7 +241,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
             
-            // DYNAMIC FIX: Populate jsonArray
+            // Populate jsonArray
             jsonArray.put(JSONObject().apply {
                 put("index", index + 1)
                 put("file", file.name)
@@ -264,7 +258,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             traces.put(name, JSONObject().apply {
                                 put("success", trace.success)
                                 put("time_ms", trace.timeMs)
-                                trace.metadata.forEach { (mk, mv) -> put(mk.lowercase(), mv) }
+                                trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) }
                             })
                         }
                         put("traces", traces)
@@ -302,7 +296,11 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
             val trace = vRes.alignmentTraces[alignName]
             if (trace != null && trace.success) {
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
-                if (trace.metadata.isNotEmpty()) appendLine("<small>${trace.metadata}</small><br>")
+                if (trace.metadata.isNotEmpty()) {
+                    appendLine("<small>")
+                    trace.metadata.forEach { (k, v) -> appendLine("<b>$k:</b> $v<br>") }
+                    appendLine("</small><br>")
+                }
                 appendLine("<img src='data:image/jpeg;base64,${trace.alignedImageBase64}'><br><hr>")
                 trace.ocrTraces.forEach { step ->
                     appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 300, 60)}'><br>${step.text}</div>")
