@@ -134,6 +134,30 @@ class HardcodedIdentityEngine : IdentityEngine {
 }
 
 /**
+ * Pure Veto evaluation algorithm.
+ */
+class VetoIdentityEngine : IdentityEngine {
+    override val name: String = "veto"
+
+    override suspend fun identify(
+        reference: Bitmap, query: Bitmap, refOcr: OcrResult, queryOcr: OcrResult,
+        odometerCrop: RectF?, otherTextCrop: RectF?, vehicle: Vehicle, veto: VetoResult, isHardcodedWinner: Boolean
+    ): AlignmentResult {
+        val conf = if (veto.isVetoed) -1f else 1.0f
+        val msg = if (veto.isVetoed) "VETO (Word: '${veto.reasonWord}')" else "No Veto"
+        return AlignmentResult(
+            success = true,
+            alignedImage = null,
+            confidence = conf,
+            message = msg,
+            method = "veto",
+            wordVeto = veto.isVetoed,
+            vetoReason = veto.reasonWord
+        )
+    }
+}
+
+/**
  * Registry for managing active identity engines.
  */
 object IdentityRegistry {
@@ -157,6 +181,7 @@ object IdentityRegistry {
         register(EmbeddingIdentityEngine())
         register(ConsensusIdentityEngine())
         register(TieredIdentityEngine())
+        register(VetoIdentityEngine())
         register(HardcodedIdentityEngine())
     }
 }
