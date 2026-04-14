@@ -57,6 +57,7 @@ data class AnchorCandidate(
 data class AnchorResult(
     val success: Boolean,
     val alignedImage: Bitmap? = null,
+    val confidence: Float = 0f,
     val timeMs: Long = 0,
     val metadata: Map<String, String> = emptyMap(),
     val message: String = ""
@@ -73,7 +74,8 @@ object ImageAlignmentUtils {
         refBmp: Bitmap,
         queryBmp: Bitmap,
         refLandmarks: List<TextBlock>,
-        queryLandmarks: List<TextBlock>
+        queryLandmarks: List<TextBlock>,
+        vehicle: Vehicle
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
@@ -143,7 +145,7 @@ object ImageAlignmentUtils {
                                     val qBcx = qB.boundingBox.centerX() * queScale; val qBcy = qB.boundingBox.centerY() * queScale
                                     
                                     val dR = sqrt((rAcx - rBcx).toDouble().pow(2.0) + (rAcy - rBcy).toDouble().pow(2.0))
-                                    val dQ = sqrt((qAcx - qBcx).toDouble().pow(2.0) + (qAcy - qBcy).toDouble().pow(2.0))
+                                    val dQ = sqrt((qAcx - qBcx).toDouble().pow(2.0) + (qAcy - rBcy).toDouble().pow(2.0))
                                     if (dQ > 0) {
                                         val s = (dR / dQ).toFloat()
                                         val tx = rAcx - (s * qAcx); val ty = rAcy - (s * qAcy)
@@ -176,7 +178,7 @@ object ImageAlignmentUtils {
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, outBmp, System.currentTimeMillis() - t0, metadata, best.message)
+            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, best.message)
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
@@ -238,10 +240,11 @@ object ImageAlignmentUtils {
     suspend fun alignImages(
         reference: Bitmap,
         query: Bitmap,
-        minInliers: Int = 10,
-        odometerCrop: android.graphics.RectF? = null,
-        otherTextCrop: android.graphics.RectF? = null
+        refLandmarks: List<TextBlock>,
+        queryLandmarks: List<TextBlock>,
+        vehicle: Vehicle
     ): AlignmentResult = withContext(Dispatchers.IO) {
+        val minInliers = 10
         val refMat = Mat()
         val queryMat = Mat()
         org.opencv.android.Utils.bitmapToMat(reference, refMat)
@@ -278,7 +281,13 @@ object ImageAlignmentUtils {
         AlignmentResult(true, alignedBitmap, (goodMatches.size / 40f).coerceIn(0f, 1f), "ORB Affine Success", metadata = mapOf("Ref Keypoints" to kp1Array.size.toString(), "Query Keypoints" to kp2Array.size.toString(), "Good Matches" to goodMatches.size.toString()))
     }
 
-    suspend fun hubAlign(reference: Bitmap, query: Bitmap): AlignmentResult = withContext(Dispatchers.IO) {
+    suspend fun hubAlign(
+        reference: Bitmap,
+        query: Bitmap,
+        refLandmarks: List<TextBlock>,
+        queryLandmarks: List<TextBlock>,
+        vehicle: Vehicle
+    ): AlignmentResult = withContext(Dispatchers.IO) {
         val refMat = Mat(); val queryMat = Mat()
         org.opencv.android.Utils.bitmapToMat(reference, refMat); org.opencv.android.Utils.bitmapToMat(query, queryMat)
         val grayRef = Mat(); val grayQuery = Mat()
@@ -306,11 +315,13 @@ object ImageAlignmentUtils {
         otherTextCrop: android.graphics.RectF? = null,
         skipExpensiveORB: Boolean = false,
         veto: VetoResult = VetoResult(false),
-        onLog: (suspend (String) -> Unit)? = null
+        onLog: (suspend (String) -> Unit)? = null,
+        vehicle: Vehicle
     ): Map<String, AlignmentResult> = withContext(Dispatchers.IO) {
         val results = mutableMapOf<String, AlignmentResult>()
         var t0 = System.currentTimeMillis()
-        val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped", method = "feature") else alignImages(reference, query, 10, odometerCrop, otherTextCrop)
+        val featureResult = if (skipExpensiveORB) AlignmentResult(false, null, 0f, "ORB Skipped", method = "feature") 
+                           else alignImages(reference, query, refOcr.textBlocks, queryOcr.textBlocks, vehicle)
         results["feature"] = featureResult.copy(timeMs = System.currentTimeMillis() - t0)
         t0 = System.currentTimeMillis()
         val argRes = argMatch(refOcr.textBlocks, queryOcr.textBlocks, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight)
