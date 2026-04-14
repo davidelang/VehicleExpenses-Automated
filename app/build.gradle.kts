@@ -91,6 +91,8 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // Native Paddle-Lite Java Wrapper
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 }
 
 // No more PaddleOCR validation — model has been removed
