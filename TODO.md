@@ -34,9 +34,4 @@
 - **Memory Safety:** Every intermediate bitmap must be recycled immediately after use.
 - **Traceability:** HTML and JSON reports must maintain parity and provide a frame-by-frame trace of how data is processed.
 
-## Completed
-- [b860046] Fix: Correct HTML report file size rotation logic to accurately count bytes
-- [2f1a582] Deep Trace Phase 2d: Finalize report to include missing global discovery images, method scores/times, and tier reached
-- [9a07669] Deep Trace Phase 2c: Implement 5-step OCR trace (Raw, Gray, Bile, CLAHE, OTSU) across 3 engines with timings
-
 Last updated: 2026-04-09
