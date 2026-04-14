@@ -210,7 +210,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         val crop = manualCropOdometer(orbRes.alignedImage, ref.vehicle)
                         if (crop != null) {
                             val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                            alignmentTraces["ORB"] = AlignmentTraceResult("ORB", true, orbRes.timeMs, createScaledBase64(orbRes.alignedImage, 400, 70), steps)
+                            alignmentTraces["ORB"] = AlignmentTraceResult("ORB", true, orbRes.timeMs, createScaledBase64(orbRes.alignedImage, 400, 70), steps, orbRes.metadata)
                             crop.recycle()
                         }
                         orbRes.alignedImage.recycle()
@@ -222,12 +222,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         val crop = manualCropOdometer(anchorRes.alignedImage, ref.vehicle)
                         if (crop != null) {
                             val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                            
-                            val candidateLogs = anchorRes.candidates.mapIndexed { i, c ->
-                                "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> S=%.3f, tx=%.1f, ty=%.1f".format(c.scale, c.tx, c.ty)
-                            }.joinToString("<br>")
-
-                            alignmentTraces["Anchor-Tri"] = AlignmentTraceResult("Anchor-Tri", true, anchorRes.timeMs, createScaledBase64(anchorRes.alignedImage, 400, 70), steps, mapOf("Candidates" to candidateLogs))
+                            alignmentTraces["Anchor-Tri"] = AlignmentTraceResult("Anchor-Tri", true, anchorRes.timeMs, createScaledBase64(anchorRes.alignedImage, 400, 70), steps, anchorRes.metadata)
                             crop.recycle()
                         }
                         anchorRes.alignedImage.recycle()

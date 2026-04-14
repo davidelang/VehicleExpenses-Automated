@@ -27,14 +27,12 @@ data class AlignmentResult(
     val alignedImage: Bitmap?,
     val confidence: Float,
     val message: String,
-    val refKeypoints: Int = 0,
-    val queryKeypoints: Int = 0,
-    val goodMatchesCount: Int = 0,
     val method: String = "feature",
     val wordVeto: Boolean = false,
     val vetoReason: String = "",
     val timeMs: Long = 0,
-    val tierReached: Int = 0
+    val tierReached: Int = 0,
+    val metadata: Map<String, String> = emptyMap()
 )
 
 data class VetoResult(
@@ -60,7 +58,7 @@ data class AnchorResult(
     val success: Boolean,
     val alignedImage: Bitmap? = null,
     val timeMs: Long = 0,
-    val candidates: List<AnchorCandidate> = emptyList(),
+    val metadata: Map<String, String> = emptyMap(),
     val message: String = ""
 )
 
@@ -167,14 +165,20 @@ object ImageAlignmentUtils {
         matrix.postScale(best.scale, best.scale)
         matrix.postTranslate(best.tx, best.ty)
 
+        val metadata = mapOf(
+            "Candidates" to top3.mapIndexed { i, c ->
+                "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> S=%.3f, tx=%.1f, ty=%.1f".format(c.scale, c.tx, c.ty)
+            }.joinToString("\n")
+        )
+
         return try {
             val outBmp = Bitmap.createBitmap(refBmp.width, refBmp.height, Bitmap.Config.ARGB_8888)
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, outBmp, System.currentTimeMillis() - t0, top3, best.message)
+            AnchorResult(true, outBmp, System.currentTimeMillis() - t0, metadata, best.message)
         } catch (e: Exception) {
-            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, candidates = top3)
+            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
     }
 
@@ -251,15 +255,15 @@ object ImageAlignmentUtils {
         val matches = mutableListOf<MatOfDMatch>(); matcher.knnMatch(desc1, desc2, matches, 2)
         val goodMatches = mutableListOf<DMatch>()
         for (match in matches) { val m = match.toArray(); if (m.size >= 2 && m[0].distance < 0.75 * m[1].distance) goodMatches.add(m[0]) }
-        if (goodMatches.size < minInliers) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Too few matches (${goodMatches.size})") }
-        val srcPoints = MatOfPoint2f(); val dstPoints = MatOfPoint2f(); val srcList = mutableListOf<org.opencv.core.Point>(); val dstList = mutableListOf<org.opencv.core.Point>()
         val kp1Array = kp1.toArray(); val kp2Array = kp2.toArray()
+        if (goodMatches.size < minInliers) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Too few matches (${goodMatches.size})", metadata = mapOf("Ref Keypoints" to kp1Array.size.toString(), "Query Keypoints" to kp2Array.size.toString(), "Good Matches" to goodMatches.size.toString())) }
+        val srcPoints = MatOfPoint2f(); val dstPoints = MatOfPoint2f(); val srcList = mutableListOf<org.opencv.core.Point>(); val dstList = mutableListOf<org.opencv.core.Point>()
         for (match in goodMatches) { srcList.add(kp1Array[match.queryIdx].pt); dstList.add(kp2Array[match.trainIdx].pt) }
         srcPoints.fromList(srcList); dstPoints.fromList(dstList)
         val inliers = Mat(); val affineMatrix = Calib3d.estimateAffinePartial2D(dstPoints, srcPoints, inliers)
-        if (affineMatrix.empty()) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Affine matrix empty") }
+        if (affineMatrix.empty()) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Affine matrix empty", metadata = mapOf("Ref Keypoints" to kp1Array.size.toString(), "Query Keypoints" to kp2Array.size.toString(), "Good Matches" to goodMatches.size.toString())) }
         val a = affineMatrix.get(0, 0)?.get(0) ?: 0.0; val b = affineMatrix.get(0, 1)?.get(0) ?: 0.0; val det = a * a + b * b
-        if (det < 0.0001 || det > 1000.0) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Alignment abandoned: Scale determinant ($det) insane") }
+        if (det < 0.0001 || det > 1000.0) { refMat.release(); queryMat.release(); return@withContext AlignmentResult(false, null, 0f, "Alignment abandoned: Scale determinant ($det) insane", metadata = mapOf("Ref Keypoints" to kp1Array.size.toString(), "Query Keypoints" to kp2Array.size.toString(), "Good Matches" to goodMatches.size.toString())) }
         
         // Deskew handles rotation now. Strip rotation from affine matrix, keep only translation and scale.
         val scale = kotlin.math.sqrt(det)
@@ -271,7 +275,7 @@ object ImageAlignmentUtils {
         val alignedBitmap = Bitmap.createBitmap(alignedMat.cols(), alignedMat.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(alignedMat, alignedBitmap)
         refMat.release(); queryMat.release(); alignedMat.release()
-        AlignmentResult(true, alignedBitmap, (goodMatches.size / 40f).coerceIn(0f, 1f), "ORB Affine Success", kp1Array.size, kp2Array.size, goodMatches.size)
+        AlignmentResult(true, alignedBitmap, (goodMatches.size / 40f).coerceIn(0f, 1f), "ORB Affine Success", metadata = mapOf("Ref Keypoints" to kp1Array.size.toString(), "Query Keypoints" to kp2Array.size.toString(), "Good Matches" to goodMatches.size.toString()))
     }
 
     suspend fun hubAlign(reference: Bitmap, query: Bitmap): AlignmentResult = withContext(Dispatchers.IO) {
