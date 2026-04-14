@@ -338,7 +338,7 @@ object ImageAlignmentUtils {
         results
     }
 
-    private fun calculateTieredMatch(results: Map<String, AlignmentResult>, veto: VetoResult): AlignmentResult {
+    fun calculateTieredMatch(results: Map<String, AlignmentResult>, veto: VetoResult): AlignmentResult {
         if (veto.isVetoed) return AlignmentResult(true, null, -1f, "TIER 0: VETO (Word: '${veto.reasonWord}')", method = "tiered", wordVeto = true, tierReached = 0, vetoReason = veto.reasonWord)
         val emb = results["embedding"]?.confidence ?: 0f; val arg = results["arg"]?.confidence ?: 0f; val feat = results["feature"]?.confidence ?: 0f
         if (emb > 0.85f || arg > 0.85f) return AlignmentResult(true, null, maxOf(emb, arg), "TIER 1: Text High-Conf", method = "tiered", tierReached = 1)
@@ -347,14 +347,14 @@ object ImageAlignmentUtils {
         return AlignmentResult(false, null, maxOf(emb, arg, feat) * 0.5f, "TIER 4: Inconclusive", method = "tiered", tierReached = 4)
     }
 
-    private fun argMatch(ref: List<TextBlock>, query: List<TextBlock>, odo: android.graphics.RectF?, other: android.graphics.RectF?, w: Int, h: Int): Float {
+    fun argMatch(ref: List<TextBlock>, query: List<TextBlock>, odo: android.graphics.RectF?, other: android.graphics.RectF?, w: Int, h: Int): Float {
         val r = ref.filter { !isBlockInCrop(it, odo, w, h) && !isBlockInCrop(it, other, w, h) }.map { it.text }.toSet()
         val q = query.map { it.text }.toSet()
         if (r.isEmpty()) return 0f
         return r.intersect(q).size.toFloat() / r.size.toFloat()
     }
 
-    private fun embeddingMatch(ref: List<TextBlock>, query: List<TextBlock>): Float {
+    fun embeddingMatch(ref: List<TextBlock>, query: List<TextBlock>): Float {
         val r = ref.map { it.text }.toSet(); val q = query.map { it.text }.toSet()
         if (r.isEmpty()) return 0f
         return r.intersect(q).size.toFloat() / r.size.toFloat()
