@@ -114,14 +114,13 @@ data class AlignmentTraceResult(
 
 data class SingleVehicleResult(
     val vehicleName: String,
-    val confidence: Float,
     val vetoReason: String,
     val matchTimeMs: Long,
     val alignmentTraces: Map<String, AlignmentTraceResult>,
-    val tierReached: Int,
     val vetoQueryWords: List<String>,
     val vetoMyManifest: List<String>,
-    val vetoPool: List<String>
+    val vetoPool: List<String>,
+    val identityResults: Map<String, AlignmentResult>
 )
 
 private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
@@ -215,17 +214,19 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     
                     // Run all registered alignment engines
                     engines.forEach { engine ->
+                        val t0 = System.currentTimeMillis()
                         val alignRes = engine.align(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks, ref.vehicle)
+                        val elapsed = System.currentTimeMillis() - t0
                         if (alignRes.success && alignRes.alignedImage != null) {
                             val crop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
                             if (crop != null) {
                                 val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                                alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, true, alignRes.timeMs, createScaledBase64(alignRes.alignedImage, 400, 70), steps, alignRes.metadata)
+                                alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, true, elapsed, createScaledBase64(alignRes.alignedImage, 400, 70), steps, alignRes.metadata)
                                 crop.recycle()
                             }
                             alignRes.alignedImage.recycle()
                         } else {
-                            alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, false, alignRes.timeMs, "", emptyList(), alignRes.metadata)
+                            alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, false, elapsed, "", emptyList(), alignRes.metadata)
                         }
                     }
                     
@@ -233,7 +234,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
                 
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(
-                    ref.vehicle.name, tiered.confidence, tiered.vetoReason ?: "", tMatchTotal, alignmentTraces, tiered.tierReached, veto.queryWords, veto.myManifest, veto.vetoPool
+                    ref.vehicle.name, tiered.vetoReason ?: "", tMatchTotal, alignmentTraces, veto.queryWords, veto.myManifest, veto.vetoPool, matchResults
                 )
             }
 
@@ -251,8 +252,17 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 vehicleResultsMap.values.forEach { vr ->
                     vResults.put(JSONObject().apply {
                         put("vehicle", vr.vehicleName)
-                        put("confidence", vr.confidence.toDouble())
-                        put("tier", vr.tierReached)
+                        
+                        val identityMethods = JSONObject()
+                        vr.identityResults.forEach { (name, res) ->
+                            identityMethods.put(name, JSONObject().apply {
+                                put("success", res.success)
+                                put("confidence", res.confidence.toDouble())
+                                put("time_ms", res.timeMs)
+                            })
+                        }
+                        put("identity_methods", identityMethods)
+                        
                         val traces = JSONObject()
                         vr.alignmentTraces.forEach { (name, trace) ->
                             traces.put(name, JSONObject().apply {
@@ -310,7 +320,16 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
         appendLine("</td>")
     }
     
-    appendLine("<td><b>Winner:</b> $winnerName<br><b>Odometer:</b> $bestOdo</td></tr>")
+    appendLine("<td><b>Winner:</b> $winnerName<br><b>Odo:</b> $bestOdo<br>")
+    if (vRes != null) {
+        appendLine("<br><b>Identity Scores:</b><br><small>")
+        vRes.identityResults.forEach { (name, res) ->
+            val color = if (res.confidence > 0.5f) "green" else "gray"
+            appendLine("<span style='color:$color'>$name: %.2f</span><br>".format(res.confidence))
+        }
+        appendLine("</small>")
+    }
+    appendLine("</td></tr>")
 }
 
 private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
