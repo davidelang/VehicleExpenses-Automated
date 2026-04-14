@@ -190,20 +190,30 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             var finalWinnerName = "No match"
             var bestOdometer = "FAILED"
             
+            val primaryIdentityEngine = "hardcoded" // Configurable decision maker
+            val identityEngines = IdentityRegistry.getActiveEngines()
+
             cachedRefs.forEach { ref ->
                 val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
-                val isWinner = (hardcodedWinner != null && hardcodedWinner == ref.vehicle.name)
+                val forceWinner = (hardcodedWinner != null && hardcodedWinner == ref.vehicle.name)
                 
                 val tMatchStart = System.currentTimeMillis()
-                val matchResults = ImageAlignmentUtils.matchWithAllMethods(
-                    ref.bmp, originalBitmap, ref.ocrResult, queryOcrDiscovery,
-                    ref.vehicle.odometerCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) },
-                    ref.vehicle.otherTextCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) },
-                    skipExpensiveORB = !isWinner,
-                    veto = veto,
-                    vehicle = ref.vehicle
-                )
-                val tiered = matchResults["tiered"]!!
+                val matchResults = mutableMapOf<String, AlignmentResult>()
+                
+                val odoCrop = ref.vehicle.odometerCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
+                val otherCrop = ref.vehicle.otherTextCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
+                
+                for (engine in identityEngines) {
+                    val t0 = System.currentTimeMillis()
+                    val result = engine.identify(
+                        ref.bmp, originalBitmap, ref.ocrResult, queryOcrDiscovery,
+                        odoCrop, otherCrop, ref.vehicle, veto, forceWinner
+                    )
+                    matchResults[engine.name] = result.copy(timeMs = System.currentTimeMillis() - t0)
+                }
+                
+                val primaryResult = matchResults[primaryIdentityEngine] ?: AlignmentResult(false, null, -1f, "Primary Engine Missing")
+                val isWinner = finalWinnerName == "No match" && primaryResult.confidence > 0.5f
                 val tMatchTotal = System.currentTimeMillis() - tMatchStart
                 
                 val alignmentTraces = mutableMapOf<String, AlignmentTraceResult>()
@@ -234,7 +244,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
                 
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(
-                    ref.vehicle.name, tiered.vetoReason ?: "", tMatchTotal, alignmentTraces, veto.queryWords, veto.myManifest, veto.vetoPool, matchResults
+                    ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTraces, veto.queryWords, veto.myManifest, veto.vetoPool, matchResults
                 )
             }
 
