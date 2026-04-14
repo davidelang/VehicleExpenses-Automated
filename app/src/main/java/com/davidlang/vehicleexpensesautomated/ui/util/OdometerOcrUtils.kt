@@ -113,9 +113,10 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
 object OcrHarness {
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
         val paddleEngine = PaddleOcrEngine(context)
-        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context))
+        val nativePaddle = NativePaddleEngine(context, isConstrained = false)
+        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context), nativePaddle)
         if (paddleEngine.isAvailable) enginesList.add(paddleEngine)
-        
+
         return enginesList.associate { engine ->
             engine.name to engine.recognize(bitmap)
         }
@@ -123,15 +124,15 @@ object OcrHarness {
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
         val paddleEngine = PaddleOcrEngine(context)
-        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context))
+        val nativePaddle = NativePaddleEngine(context, isConstrained = true)
+        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context), nativePaddle)
         if (paddleEngine.isAvailable) enginesList.add(paddleEngine)
-        
+
         return enginesList.associate { engine ->
             engine.name to engine.recognize(bitmap)
         }
     }
 }
-
 object OdometerOcrUtils {
     init {
         if (!OpenCVLoader.initLocal()) {

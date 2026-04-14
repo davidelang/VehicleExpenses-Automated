@@ -175,7 +175,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             }
             
             // Pass 3: Identification & Landmark Discovery on the DESKEWED image
-            val queryOcrDiscovery = OcrHarness.runDiscovery(originalBitmap, context)["ML Kit"]!!
+            val discoveryResults = OcrHarness.runDiscovery(originalBitmap, context)
+            val queryOcrDiscovery = discoveryResults["ML Kit"]!!
             val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
             
             val tIdentityTotal = System.currentTimeMillis() - tIdentityStart
@@ -258,6 +259,23 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 put("file", file.name)
                 put("winner", finalWinnerName)
                 put("odometer", bestOdometer)
+
+                val dResults = JSONObject()
+                discoveryResults.forEach { (name, res) ->
+                    val landmarksArray = JSONArray()
+                    res.textBlocks.forEach { block ->
+                        landmarksArray.put(JSONObject().apply {
+                            put("text", block.text)
+                            put("cx", block.boundingBox.centerX())
+                            put("cy", block.boundingBox.centerY())
+                            put("w", block.boundingBox.width())
+                            put("h", block.boundingBox.height())
+                        })
+                    }
+                    dResults.put(name, landmarksArray)
+                }
+                put("discovery_landmarks", dResults)
+
                 val vResults = JSONArray()
                 vehicleResultsMap.values.forEach { vr ->
                     vResults.put(JSONObject().apply {
