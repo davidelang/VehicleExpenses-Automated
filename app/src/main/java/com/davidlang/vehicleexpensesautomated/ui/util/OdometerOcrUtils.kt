@@ -113,8 +113,9 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
 object OcrHarness {
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
         val paddleEngine = PaddleOcrEngine(context)
-        val nativePaddle = NativePaddleEngine(context, isConstrained = false)
-        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context), nativePaddle)
+        // val nativePaddle = NativePaddleEngine(context, isConstrained = false)
+        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context))
+        // if (nativePaddle.isAvailable) enginesList.add(nativePaddle) 
         if (paddleEngine.isAvailable) enginesList.add(paddleEngine)
 
         return enginesList.associate { engine ->
@@ -124,8 +125,9 @@ object OcrHarness {
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
         val paddleEngine = PaddleOcrEngine(context)
-        val nativePaddle = NativePaddleEngine(context, isConstrained = true)
-        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context), nativePaddle)
+        // val nativePaddle = NativePaddleEngine(context, isConstrained = true)
+        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context))
+        // if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
         if (paddleEngine.isAvailable) enginesList.add(paddleEngine)
 
         return enginesList.associate { engine ->

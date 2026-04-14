@@ -28,12 +28,13 @@ class NativePaddleEngine(
 ) : OcrEngine {
     override val name = if (isConstrained) "Paddle-Lite (Odo)" else "Paddle-Lite"
 
+    var isAvailable: Boolean = false
+        private set
+
     private var detector: PaddlePredictor? = null
     private var recognizer: PaddlePredictor? = null
     private val dictionary = mutableListOf<String>()
     
-    private var isInitialized = false
-
     init {
         try {
             val arch = detectArch()
@@ -48,9 +49,10 @@ class NativePaddleEngine(
             }
             recognizer = createPredictor(recModelPath)
             
-            isInitialized = true
+            isAvailable = true
             Log.i("PaddleLite", "Initialized $name for arch $arch")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            isAvailable = false
             Log.e("PaddleLite", "Failed to initialize $name", e)
         }
     }
@@ -91,7 +93,7 @@ class NativePaddleEngine(
     }
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
-        if (!isInitialized) return@withContext OcrResult(engineName = name, debugText = "Not Initialized")
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Initialized or Libraries missing kernels")
         
         val t0 = System.currentTimeMillis()
         val textBlocks = mutableListOf<TextBlock>()
@@ -170,12 +172,10 @@ class NativePaddleEngine(
         val probMap = org.opencv.core.Mat(inputSize, inputSize, org.opencv.core.CvType.CV_32F)
         probMap.put(0, 0, outData)
         
-        // 1. Threshold
         val binaryMap = org.opencv.core.Mat()
         org.opencv.imgproc.Imgproc.threshold(probMap, binaryMap, 0.3, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
         binaryMap.convertTo(binaryMap, org.opencv.core.CvType.CV_8U)
         
-        // 2. Find Contours
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()
         val hierarchy = org.opencv.core.Mat()
         org.opencv.imgproc.Imgproc.findContours(binaryMap, contours, hierarchy, org.opencv.imgproc.Imgproc.RETR_EXTERNAL, org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE)
@@ -186,7 +186,6 @@ class NativePaddleEngine(
         for (contour in contours) {
             val rect = org.opencv.imgproc.Imgproc.boundingRect(contour)
             if (rect.width > 10 && rect.height > 10) {
-                // Map back to original image dimensions
                 val originalRect = Rect(
                     (rect.x * invScale).toInt(),
                     (rect.y * invScale).toInt(),
