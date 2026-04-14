@@ -71,8 +71,11 @@ alignment_results_*.json
 
 
 # === Explicitly allow the committed OCR model files ===
+!app/src/main/assets/tessdata/
 !app/src/main/assets/tessdata/eng.traineddata
 !app/src/main/assets/paddleocr.onnx
+!app/src/main/assets/paddle/
+!app/src/main/assets/paddle/**
 
 # === OCR model files — NEVER delete ===
 !app/src/main/assets/tessdata/eng.traineddata
