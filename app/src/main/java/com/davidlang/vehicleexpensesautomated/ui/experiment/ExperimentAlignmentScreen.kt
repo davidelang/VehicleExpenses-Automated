@@ -195,7 +195,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val isWinner = (hardcodedWinner != null && hardcodedWinner == ref.vehicle.name)
                 
                 val tMatchStart = System.currentTimeMillis()
-                val matchResults = ImageAlignmentUtils.matchWithAllMethods(ref.bmp, originalBitmap, ref.ocrResult, queryOcrDiscovery, null, null, skipExpensiveORB = !isWinner, veto = veto)
+                val matchResults = ImageAlignmentUtils.matchWithAllMethods(
+                    ref.bmp, originalBitmap, ref.ocrResult, queryOcrDiscovery,
+                    ref.vehicle.odometerCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) },
+                    ref.vehicle.otherTextCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) },
+                    skipExpensiveORB = !isWinner,
+                    veto = veto,
+                    vehicle = ref.vehicle
+                )
                 val tiered = matchResults["tiered"]!!
                 val tMatchTotal = System.currentTimeMillis() - tMatchStart
                 
@@ -217,7 +224,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     }
                     
                     // Run Anchor-Tri
-                    val anchorRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks)
+                    val anchorRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks, ref.vehicle)
                     if (anchorRes.success && anchorRes.alignedImage != null) {
                         val crop = manualCropOdometer(anchorRes.alignedImage, ref.vehicle)
                         if (crop != null) {
