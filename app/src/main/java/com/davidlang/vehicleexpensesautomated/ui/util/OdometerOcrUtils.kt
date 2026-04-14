@@ -251,7 +251,8 @@ object OdometerOcrUtils {
             val results = StringBuilder()
             val ocrMap = OcrHarness.runRefinement(bmp, context)
             ocrMap.forEach { (eng, res) ->
-                results.append("<b>$eng (${res.executionTimeMs}ms):</b> ${res.debugText}<br>")
+                val refined = refineNumericResult(res)
+                results.append("<b>$eng (${refined.executionTimeMs}ms):</b> ${refined.debugText}<br>")
             }
             steps.add(OcrStepResult(name, bmp, results.toString()))
         }
@@ -377,13 +378,13 @@ object OdometerOcrUtils {
             appendLine("=== FULL IMAGE OCR (preprocessed Tesseract) ===\n")
             appendLine("Tesseract: $rawTesseract")
         }
-        val cleanRaw = rawTesseract.replace("I", "1").replace("l", "1").replace("O", "0").replace("S", "5").replace("B", "8").trim()
+        val cleanRaw = clean7SegmentDigits(rawTesseract).trim()
         val possible = mutableListOf<String>()
-        if (cleanRaw.matches(Regex("\\d{4,6}"))) possible.add(cleanRaw)
+        if (cleanRaw.matches(Regex("\\d{4,7}"))) possible.add(cleanRaw)
         
         OcrResult(
             engineName = "Tesseract",
-            odometer = cleanRaw.takeIf { it.length in 4..6 },
+            odometer = cleanRaw.takeIf { it.length in 4..7 },
             possibleOdometers = possible,
             debugText = debugText.toString(),
             originalPhotoPath = photoPath,
@@ -404,6 +405,51 @@ object OdometerOcrUtils {
         val matrix = android.graphics.Matrix()
         matrix.postRotate(degrees)
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    private fun clean7SegmentDigits(text: String, isFlipped: Boolean = false): String {
+        val standardMap = mapOf(
+            'I' to '1', 'l' to '1', '|' to '1', '!' to '1', '/' to '1', '\\' to '1',
+            'O' to '0', 'D' to '0',
+            'S' to '5', 's' to '5',
+            'B' to '8', 'G' to '6', 'A' to '4'
+        )
+        val flipMap = mapOf(
+            '6' to '9', '9' to '6',
+            'L' to '7', 'V' to '7',
+            'h' to '4', 'H' to '4',
+            'E' to '3',
+            'G' to '9',
+            'B' to '8',
+            'S' to '5', '!' to '1', 'I' to '1', 'l' to '1', '|' to '1', '/' to '1', '\\' to '1',
+            'A' to 'V'
+        )
+        val workingText = if (isFlipped) text.reversed() else text
+        val activeMap = if (isFlipped) flipMap else standardMap
+        return workingText.map { char ->
+            activeMap[char] ?: (activeMap[char.uppercaseChar()] ?: char)
+        }.joinToString("")
+    }
+
+    fun refineNumericResult(result: OcrResult): OcrResult {
+        val refinedBlocks = result.textBlocks.map { block ->
+            val isFlipped = Math.abs(block.angle) > 165f
+            val cleaned = clean7SegmentDigits(block.text, isFlipped)
+            if (isFlipped) {
+                Log.i("OdometerOcr", "v45_FLIP_RECOVERED: '${block.text}' -> '$cleaned' (Angle: ${block.angle})")
+            }
+            block.copy(text = cleaned)
+        }
+        val refinedText = refinedBlocks.joinToString(" ") { it.text }
+        val digits = refinedText.filter { it.isDigit() }
+        // Attempt to find a 4-7 digit odometer in the refined text
+        val odoCandidate = Regex("\\d{4,7}").find(refinedText)?.value
+        
+        return result.copy(
+            textBlocks = refinedBlocks,
+            debugText = refinedText,
+            odometer = odoCandidate ?: result.odometer
+        )
     }
 
     suspend fun calculateAverageTextAngle(bitmap: Bitmap): Float {
