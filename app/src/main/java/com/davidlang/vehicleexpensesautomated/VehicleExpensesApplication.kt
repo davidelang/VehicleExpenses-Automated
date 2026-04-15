@@ -17,19 +17,27 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
     lateinit var workerFactory: HiltWorkerFactory
 
     override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
+        get() {
+            android.util.Log.i("VehicleExpensesApp", "workManagerConfiguration requested. workerFactory initialized: ${::workerFactory.isInitialized}")
+            return Configuration.Builder()
+                .setWorkerFactory(workerFactory)
+                .build()
+        }
 
     override fun onCreate() {
+        android.util.Log.i("VehicleExpensesApp", "onCreate started")
         super.onCreate()
+        android.util.Log.i("VehicleExpensesApp", "super.onCreate completed. workerFactory initialized: ${::workerFactory.isInitialized}")
+        
         copyTessdataOnce(this)
         try {
+            android.util.Log.i("VehicleExpensesApp", "Initializing SyncManager")
             val syncManager = SyncManager(this)
             syncManager.schedulePeriodicSync()
             syncManager.triggerImmediateSync()
+            android.util.Log.i("VehicleExpensesApp", "SyncManager initialized successfully")
         } catch (e: Exception) {
-            // Safe fallback
+            android.util.Log.e("VehicleExpensesApp", "Failed to initialize SyncManager", e)
         }
     }
 
