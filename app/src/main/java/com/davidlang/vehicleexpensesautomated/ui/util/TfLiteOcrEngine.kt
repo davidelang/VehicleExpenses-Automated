@@ -65,29 +65,14 @@ class TfLiteOcrEngine(context: Context) {
             return "(Inference Error)"
         }
 
-        // 3. Greedy Decoder
-        val sb = StringBuilder()
-        var lastChar = -1
-        for (t in 0 until 31) {
-            val step = outputBuffer[0][t]
-            var maxIdx = 0
-            var maxVal = step[0]
-            for (i in 1 until 11) {
-                if (step[i] > maxVal) {
-                    maxVal = step[i]; maxIdx = i
-                }
-            }
-            
-            // Assume 10 is the CTC blank label
-            if (maxIdx != 10 && maxIdx != lastChar) {
-                if (maxIdx < labels.length) {
-                    sb.append(labels[maxIdx])
-                }
-            }
-            lastChar = maxIdx
-        }
+        // 3. Robust CTC Greedy Decoder
+        val decoded = TfLiteOcrUtils.decodeCtcGreedy(
+            outputBuffer, 
+            labels.map { it.toString() }, 
+            blankIndex = 10
+        )
 
-        return if (sb.isEmpty()) "(no digits)" else sb.toString()
+        return if (decoded.isEmpty()) "(no digits)" else decoded
     }
 
     fun close() {
