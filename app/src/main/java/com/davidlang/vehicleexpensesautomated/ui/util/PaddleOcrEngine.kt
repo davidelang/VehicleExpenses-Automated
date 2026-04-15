@@ -9,7 +9,9 @@ import com.davidlang.vehicleexpensesautomated.ui.util.OcrEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.tensorflow.lite.Interpreter
+import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
@@ -27,10 +29,14 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
 
     init {
         try {
-            // Load models - Wrapped in try/catch Throwable to handle UnsatisfiedLinkError on amd64
-            detInterpreter = Interpreter(loadModelFile(context, "tflite/paddle/det_model.pdmodel"))
-            recInterpreter = Interpreter(loadModelFile(context, "tflite/paddle/rec_model.pdmodel"))
-            clsInterpreter = Interpreter(loadModelFile(context, "tflite/paddle/cls_model.pdmodel"))
+            // Load models from internal storage to avoid compression issues
+            val detPath = copyAssetToInternal(context, "tflite/paddle/det_model.pdmodel")
+            val recPath = copyAssetToInternal(context, "tflite/paddle/rec_model.pdmodel")
+            val clsPath = copyAssetToInternal(context, "tflite/paddle/cls_model.pdmodel")
+
+            detInterpreter = Interpreter(File(detPath))
+            recInterpreter = Interpreter(File(recPath))
+            clsInterpreter = Interpreter(File(clsPath))
             
             // Load dictionary
             val dictFile = context.assets.open("tflite/paddle/paddle_en_dict.txt")
@@ -39,20 +45,23 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             }
             
             isAvailable = true
-            Log.i("PaddleOcr", "PaddleOCR models and dictionary loaded successfully")
+            Log.i("PaddleOcr", "PaddleOCR models and dictionary loaded successfully from cache")
         } catch (e: Throwable) {
             isAvailable = false
-            Log.e("PaddleOcr", "Failed to initialize PaddleOCR (Native libs likely missing for this architecture): ${e.message}")
+            Log.e("PaddleOcr", "Failed to initialize PaddleOCR: ${e.message}")
         }
     }
 
-    private fun loadModelFile(context: Context, modelPath: String): ByteBuffer {
-        val fileDescriptor = context.assets.openFd(modelPath)
-        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.length
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+    private fun copyAssetToInternal(context: Context, assetPath: String): String {
+        val file = File(context.cacheDir, assetPath.replace("/", "_"))
+        if (!file.exists()) {
+            context.assets.open(assetPath).use { input ->
+                FileOutputStream(file).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        return file.absolutePath
     }
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
@@ -62,7 +71,7 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         val resizedDet = Bitmap.createScaledBitmap(bitmap, 640, 640, true)
         val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * 640 * 640 * 4).apply {
             order(ByteOrder.nativeOrder())
-            // Normalize: (pixel - mean) / std. Assuming standard PP-OCR normalization.
+            // Normalize: (pixel - mean) / std.
             for (y in 0 until 640) {
                 for (x in 0 until 640) {
                     val px = resizedDet.getPixel(x, y)
@@ -78,7 +87,6 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         detInterpreter?.run(inputBuffer, outputBuffer)
         
         // --- Robust DB-PostProcess ---
-        // Flatten the heatmap for the utility
         val flatHeatmap = FloatArray(640 * 640)
         for (y in 0 until 640) {
             for (x in 0 until 640) {
@@ -121,7 +129,6 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
                     }
                 }
             }
-            // Recognize output [1, 40, 38]
             val recOutput = Array(1) { Array(40) { FloatArray(38) } }
             recInterpreter?.run(recBuffer, recOutput)
             

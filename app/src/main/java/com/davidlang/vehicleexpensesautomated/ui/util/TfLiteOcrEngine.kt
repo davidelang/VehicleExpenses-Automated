@@ -47,11 +47,11 @@ class TfLiteOcrEngine(context: Context) {
         for (y in 0 until 32) {
             for (x in 0 until 128) {
                 val px = resized.getPixel(x, y)
-                // Grayscale normalization (0 to 1.0)
+                // Standard Grayscale conversion: 0.299R + 0.587G + 0.114B
                 val r = (px shr 16) and 0xFF
                 val g = (px shr 8) and 0xFF
                 val b = px and 0xFF
-                val gray = (r + g + b) / 3.0f / 255.0f
+                val gray = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f
                 inputBuffer.putFloat(gray)
             }
         }
