@@ -15,12 +15,13 @@ class TfLiteOcrEngine(context: Context) {
 
     init {
         try {
+            android.util.Log.i("TfLiteOcr", "Initializing TfLiteOcrEngine. NNAPI set to FALSE.")
             val model = loadModelFile(context, "tflite/numeric_ocr.tflite")
             val options = Interpreter.Options()
             options.setNumThreads(4)
             options.useNNAPI = false // Disabled for stability on emulators
             interpreter = Interpreter(model, options)
-            Log.i("TfLiteOcr", "Model loaded successfully with NNAPI")
+            Log.i("TfLiteOcr", "Model loaded successfully (CPU fallback mode)")
         } catch (e: Exception) {
             Log.e("TfLiteOcr", "Failed to load model", e)
         }
