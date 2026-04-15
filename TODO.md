@@ -23,6 +23,21 @@
 - [ ] **Location Lookup Worker:** Re-implement the background geocoding worker for automated gas station identification. (Currently missing from codebase).
 - [ ] **Sync Parity:** Update `CsvManager` and `GoogleSheetsClient` to handle the latitude, longitude, and formatted address fields.
 
+## Future Features & Integrations
+- [ ] **Expense Reports & Receipts:** Take a picture of the receipt and store it for future reference. Attempt to parse the receipt, store name (may also be discovered by EXIF lat/long but only if it maps to a repair shop, as receipts may be photographed at a later time and location), cost, and line items.
+- [ ] **ODB-II Integration:** Integration for live odometer reading.
+- [ ] **Cloud Image Backup Options:** Add additional image backup options:
+  - [ ] Google Photos
+  - [ ] Amazon Photos
+  - [ ] Dropbox
+  - [ ] SSH to personal server
+  - [ ] HTTP to personal server (including CGI file to receive, save, and retrieve files)
+  - [ ] Investigate if there is a library that exposes all the various cloud storage options.
+- [ ] **Advanced Reports and Charts:** Implement advanced reports and charts.
+- [ ] **UI Polish:** Polish for dark mode / tablet / ensure it works on all size/resolution screens.
+- [ ] **Improve reference dash photo setup UI:** Add odometer confirmation dialog.
+- [ ] **Settings Toggle:** Add settings toggle for OCR confidence threshold.
+
 ## Engineering Mandates (New)
 - [ ] **Memory Safety:** Every intermediate bitmap must be recycled immediately after use.
 
