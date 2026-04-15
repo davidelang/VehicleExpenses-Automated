@@ -251,7 +251,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
                 
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(
-                    ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTraces, veto.queryWords, veto.myManifest, veto.vetoPool, matchResults
+                    ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), matchResults
                 )
             }
 
@@ -289,6 +289,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     vResults.put(JSONObject().apply {
                         put("vehicle", vr.vehicleName)
                         put("veto_reason", vr.vetoReason)
+                        put("veto_my_manifest", JSONArray(vr.vetoMyManifest))
+                        put("veto_pool", JSONArray(vr.vetoPool))
                         
                         val identityMethods = JSONObject()
                         vr.identityResults.forEach { (name, res) ->
@@ -335,10 +337,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
 private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, alignNames: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 9px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; text-align: left; } .word-list { font-size: 7px; color: #666; height: 40px; overflow-y: scroll; }</style></head><body>")
-    appendLine("<h1>Deep Trace Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:100px;'># & Original</th>")
-    alignNames.forEach { appendLine("<th style='width:250px;'>$it Alignment</th>") }
-    appendLine("<th style='width:120px;'>Final Result</th></tr>")
+    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 36px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; text-align: left; } .word-list { font-size: 28px; color: #666; height: 160px; overflow-y: scroll; }</style></head><body>")
+    appendLine("<h1>Deep Trace Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:300px;'># & Original</th>")
+    alignNames.forEach { appendLine("<th style='width:600px;'>$it Alignment</th>") }
+    appendLine("<th style='width:400px;'>Final Result</th></tr>")
 }
 
 private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, bestOdo: String, alignNames: List<String>, tDeskew: Long, tDiscovery: Long): String = buildString {
@@ -360,7 +362,7 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
                 }
                 appendLine("<img src='data:image/jpeg;base64,${trace.alignedImageBase64}'><br><hr>")
                 trace.ocrTraces.forEach { step ->
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 300, 60)}'><br>${step.text}</div>")
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 200, 60)}'><br>${step.text}</div>")
                 }
             } else appendLine("<i>Alignment failed or skipped</i>")
         } else appendLine("<i>No match found</i>")
@@ -374,7 +376,7 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
             val color = if (res.confidence > 0.5f) "green" else "gray"
             appendLine("<span style='color:$color'>$name: %.2f</span>".format(res.confidence))
             if (res.metadata.isNotEmpty()) {
-                appendLine("<br><i style='font-size:7px;'>${res.metadata}</i>")
+                appendLine("<br><i style='font-size:24px;'>${res.metadata}</i>")
             }
             appendLine("<br>")
         }
