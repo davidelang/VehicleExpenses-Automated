@@ -1,37 +1,48 @@
-# Vehicle Expenses Automated — TODO List
+# Vehicle Expenses Automated — TODO Updated
 
-## Critical Recovery (Re-implement lost work)
+## Core Logic & Recovery
 - **Identity & Matching:**
-  - [ ] **Tiered Identity Module:** Replace weighted consensus with hierarchical logic (Veto -> Histogram -> Agreement -> Spatial -> Ask User).
-  - [ ] **Dynamic Veto Frequency Filter:** Implement global frequency check to disqualify common words (e.g., "mph") from being anchors. Fixes "Honda Bias".
-  - [ ] **Strict "No Match" Logic:** Ensure "No match" is reported if Tiers 1-3 fail or all are vetoed.
-- **OCR Engines:**
-  - [ ] **PaddleOCR (PP-OCRv4) via TFLite:** Re-integrate Paddle models using stable TFLite runtime.
-    - [x] **Local Python Benchmarking:** Environment fixed, benchmark script running with bounding boxes.
-- **Deep Trace Report (Phased):**
-  - [x] **Phase 1: Foundation:** New column layout (Global Discovery, Match/Align, 3x Odo Traces per vehicle, Summary). Includes timing, specific veto words, and cached reference data. Flex-ready for engine/strategy changes.
-  - [ ] **Phase 2: Deep OCR Trace:** Expand Global and Odo columns to show pre-processing steps (Grayscale, Bilateral, CLAHE, OTSU) + OCR grid for each.
-  - [ ] **Phase 3: Hub + Needle:** Implement needle-based rotational correction and add as a 3rd alignment strategy.
-  - [ ] **Phase 3b: Text-Based Leveling:** Experiment with using average text angle instead of needle angle to auto-level query dashboard pictures.
-  - [ ] **Phase 4: Strict Veto Gating:** Optimize identification to declare winner immediately if only one vehicle survives Veto Tier.
-  - [ ] **Phase 5: Conflict Resolution UI:** Implement user-prompt for cases where multiple vehicles survive Veto and matching is ambiguous.
-- **Location Features:**
-  - [ ] **Automated Gas Station Lookup:** Re-implement `LocationLookupWorker` for background geocoding.
-  - [ ] **Location Parity in Sync:** Restore lat/long/location handling in `CsvManager` and `GoogleSheetsClient`.
+  - [ ] **Conflict Resolution Integration:** Connect the existing `ConflictResolutionScreen` to the identification flow for ambiguous results.
 
-## Bug Fixes / Tasks
-- [x] **Reference Image Rendering:** Fix missing "Other Text" (blue) crop boxes in reference dash previews. Stroke width increased to 12f for better visibility.
-- [x] **OCR Filtering:** Ensure all full image OCR steps (reference and query) ignore the odometer and other text crop areas to prevent "Golden Anchor" contamination.
+## Application Engineering
+- **OCR Engine Implementation:**
+  - [ ] **Advanced DB-PostProcess (Refinement 2.1) for NativePaddleEngine:**
+    - [ ] Switch `boundingRect` to `minAreaRect` for tilted text support.
+    - [ ] Implement `unclipBox` expansion logic (Ratio 1.5) to prevent digit clipping.
+    - [ ] Implement `warpPerspective` for rotated text crop extraction.
+    - [ ] Update Normalization constants to ImageNet standards (0.485/0.229).
+  - [ ] **Final Validation (Phase 4):**
+    - [ ] Benchmark accuracy vs. ML Kit using the 12-image test set.
+    - [ ] Compare "Veto" accuracy between ML Kit and Paddle-Lite discovery.
+  - [ ] Strip debug information and excessive logging from the Paddle Lite `x86_64` Android build to reduce binary size (currently ~38MB) before final upstream PR submission.
 
-## High Priority (next)
-- Improve GlobalWordCounts (IDF) calculation:
-  - Extract text and compute local word counts per-image as they are loaded/updated in the Manage Vehicles page.
-  - When a vehicle is saved or created, re-process the aggregate global word counts across all vehicles.
-  - Store results in GlobalMetadata or similar for efficient access during matching.
+- **Alignment & Processing:**
+  - [ ] **Multi-Strategy Voting:** Implement a voting mechanism to select the most consistent odometer result across all successful alignment strategies.
+
+## Location & Sync
+- [ ] **Location Lookup Worker:** Re-implement the background geocoding worker for automated gas station identification. (Currently missing from codebase).
+- [ ] **Sync Parity:** Update `CsvManager` and `GoogleSheetsClient` to handle the latitude, longitude, and formatted address fields.
 
 ## Engineering Mandates (New)
-- **Report Flexibility:** All OCR, matching, and alignment reporting must be dynamic. Do not assume a fixed number of engines or strategies.
-- **Memory Safety:** Every intermediate bitmap must be recycled immediately after use.
-- **Traceability:** HTML and JSON reports must maintain parity and provide a frame-by-frame trace of how data is processed.
+- [ ] **Memory Safety:** Every intermediate bitmap must be recycled immediately after use.
 
-Last updated: 2026-04-09
+## Completed / Historical
+- [x] **Hierarchical Tiered Logic:** Move `performTier1Veto` to be the mandatory first step. If one vehicle survives, stop and declare winner.
+- [x] **Strict "No Match" Logic:** Ensure "No match" is reported if Tiers 1-3 fail or all are vetoed.
+- [x] Re-enable `NativePaddleEngine` in `OcrHarness`.
+- [x] **Alignment Registry:** Refactor `runExperiment` to use the `AlignmentEngine` interface, enabling dynamic registration of ORB, Anchor-Tri, Hub, and future strategies.
+- [x] **Report Flexibility:** All OCR, matching, and alignment reporting must be dynamic. Do not assume a fixed number of engines or strategies.
+- [x] **Traceability:** HTML and JSON reports must maintain parity and provide a frame-by-frame trace of how data is processed.
+- [x] **7-Segment Robustness:** Implemented `clean7SegmentDigits` with 180° rotation recovery and unified character remapping.
+- [x] **Local Python Benchmarking:** Verified high-res Paddle performance on host Linux system.
+- [x] **Deep Trace Phase 1:** Multi-column HTML/JSON reports with timing and veto diagnostics.
+- [x] **Deep Trace Phase 2:** OCR pre-processing grid (CLAHE, OTSU, etc.) in experiment reports.
+- [x] **Text-Based Leveling:** 0.2° threshold auto-rotation implemented.
+- [x] **Reference Image Rendering:** Blue/Red box visibility fix.
+- [x] **OCR Filtering:** Area-based block exclusion for reference photos.
+- [x] **TFLite Strategy Evaluation:** Documented why Paddle-to-TFLite outperforms specialized native TFLite models.
+- [x] **Tesseract Diagnostic:** Identified root cause of "garbage" output and proposed binarization/PSM fixes.
+
+## Explicitly Rejected Ideas
+- **Dynamic Veto Frequency Filter / Global IDF Word Filter:** A global registry complicates logic across multiple vehicles. Creating the list dynamically on-demand is cheap, and commonly duplicated high-value anchor words would be incorrectly subtracted.
+- **Needle-Based Correction:** The current anchor-triangle approach accomplishes the same goal more reliably, without failing when the needle is cropped by the frame edges.
