@@ -30,13 +30,13 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
     init {
         try {
             // Load models from internal storage to avoid compression issues
-            val detPath = copyAssetToInternal(context, "tflite/paddle/det_model.pdmodel")
-            val recPath = copyAssetToInternal(context, "tflite/paddle/rec_model.pdmodel")
-            val clsPath = copyAssetToInternal(context, "tflite/paddle/cls_model.pdmodel")
+            val detPath = copyAssetToInternal(context, "tflite/paddle/det_model.tflite")
+            val recPath = copyAssetToInternal(context, "tflite/paddle/rec_model.tflite")
+            // val clsPath = copyAssetToInternal(context, "tflite/paddle/cls_model.tflite") // Skip if not found
 
             detInterpreter = Interpreter(File(detPath))
             recInterpreter = Interpreter(File(recPath))
-            clsInterpreter = Interpreter(File(clsPath))
+            // clsInterpreter = Interpreter(File(clsPath))
             
             // Load dictionary
             val dictFile = context.assets.open("tflite/paddle/paddle_en_dict.txt")
@@ -100,7 +100,8 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         for (box in boxes) {
             val crop = Bitmap.createBitmap(resizedDet, box.left, box.top, box.width(), box.height())
             
-            // Run Classifier
+            // Run Classifier (Temporarily skipped until .tflite model provided)
+            /*
             val clsInput = Bitmap.createScaledBitmap(crop, 192, 48, true)
             val clsBuffer = ByteBuffer.allocateDirect(1 * 48 * 192 * 3 * 4).apply {
                 order(ByteOrder.nativeOrder())
@@ -115,6 +116,7 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             }
             val clsOutput = Array(1) { FloatArray(4) }
             clsInterpreter?.run(clsBuffer, clsOutput)
+            */
             
             // 3. Run Recognizer
             val recInput = Bitmap.createScaledBitmap(crop, 320, 32, true)
@@ -137,7 +139,7 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             
             results.append("$decoded ")
             crop.recycle()
-            clsInput.recycle()
+            // clsInput.recycle()
             recInput.recycle()
         }
         
