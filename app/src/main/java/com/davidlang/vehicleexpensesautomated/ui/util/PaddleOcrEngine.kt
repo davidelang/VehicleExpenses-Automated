@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
@@ -10,18 +11,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.tensorflow.lite.Interpreter
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.channels.FileChannel
 
 class PaddleOcrEngine(context: Context) : OcrEngine {
     override val name = "PaddleOCR"
     
     private var detInterpreter: Interpreter? = null
     private var recInterpreter: Interpreter? = null
-    private var clsInterpreter: Interpreter? = null
     private val dictionary = mutableListOf<String>()
     
     var isAvailable = false
@@ -32,10 +30,14 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             // Load models from internal storage to avoid compression issues
             val detPath = copyAssetToInternal(context, "tflite/paddle/det_model.tflite")
             val recPath = copyAssetToInternal(context, "tflite/paddle/rec_model.tflite")
-            // val clsPath = copyAssetToInternal(context, "tflite/paddle/cls_model.tflite") // Skip if not found
 
-            detInterpreter = Interpreter(File(detPath))
-            recInterpreter = Interpreter(File(recPath))
+            val options = Interpreter.Options().apply {
+                setNumThreads(4)
+                useNNAPI = false // AMD64 stability
+            }
+
+            detInterpreter = Interpreter(File(detPath), options)
+            recInterpreter = Interpreter(File(recPath), options)
             
             val detInputShape = detInterpreter?.getInputTensor(0)?.shape()
             val detOutputShape = detInterpreter?.getOutputTensor(0)?.shape()
@@ -52,10 +54,10 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             }
             
             isAvailable = true
-            Log.i("PaddleOcr", "PaddleOCR models and dictionary loaded successfully from cache")
+            Log.i("PaddleOcr", "PaddleOCR high-res models loaded successfully")
         } catch (e: Throwable) {
             isAvailable = false
-            Log.e("PaddleOcr", "Failed to initialize PaddleOCR: ${e.message}")
+            Log.e("PaddleOcr", "Failed to initialize high-res PaddleOCR: ${e.message}")
         }
     }
 
@@ -73,14 +75,15 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
+        val textBlocks = mutableListOf<TextBlock>()
         try {
-            // 1. Run Detector (640x640 input)
-            val resizedDet = Bitmap.createScaledBitmap(bitmap, 640, 640, true)
-            val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * 640 * 640 * 4).apply {
+            // 1. Run Detector (1280x1280 input as per instructions)
+            val inputSize = 1280
+            val resizedDet = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+            val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * inputSize * inputSize * 4).apply {
                 order(ByteOrder.nativeOrder())
-                // Normalize: (pixel - mean) / std.
-                for (y in 0 until 640) {
-                    for (x in 0 until 640) {
+                for (y in 0 until inputSize) {
+                    for (x in 0 until inputSize) {
                         val px = resizedDet.getPixel(x, y)
                         putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
                         putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
@@ -89,48 +92,42 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
                 }
             }
             
-            // Output tensor shape for Det: [1, 1, 640, 640]
-            val outputBuffer = Array(1) { Array(1) { Array(640) { FloatArray(640) } } }
+            val outputBuffer = Array(1) { Array(1) { Array(inputSize) { FloatArray(inputSize) } } }
             detInterpreter?.run(inputBuffer, outputBuffer)
             
-            // --- Robust DB-PostProcess ---
-            val flatHeatmap = FloatArray(640 * 640)
-            for (y in 0 until 640) {
-                for (x in 0 until 640) {
-                    flatHeatmap[y * 640 + x] = outputBuffer[0][0][y][x]
+            // --- Robust DB-PostProcess (1280px) ---
+            val flatHeatmap = FloatArray(inputSize * inputSize)
+            for (y in 0 until inputSize) {
+                for (x in 0 until inputSize) {
+                    flatHeatmap[y * inputSize + x] = outputBuffer[0][0][y][x]
                 }
             }
-            val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, 640, 640, thresh = 0.3f)
+            val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f)
             
-            // 2. Run Classifier & Recognize
+            // 2. Recognition Pass (640x48 input / 80 steps / 97 classes)
             val results = StringBuilder()
+            val scaleX = bitmap.width.toFloat() / inputSize
+            val scaleY = bitmap.height.toFloat() / inputSize
+
             for (box in boxes) {
-                val crop = Bitmap.createBitmap(resizedDet, box.left, box.top, box.width(), box.height())
+                // Scale box back to original image size for cropping
+                val origBox = Rect(
+                    (box.left * scaleX).toInt(),
+                    (box.top * scaleY).toInt(),
+                    (box.right * scaleX).toInt(),
+                    (box.bottom * scaleY).toInt()
+                )
                 
-                // Run Classifier (Temporarily skipped until .tflite model provided)
-                /*
-                val clsInput = Bitmap.createScaledBitmap(crop, 192, 48, true)
-                val clsBuffer = ByteBuffer.allocateDirect(1 * 48 * 192 * 3 * 4).apply {
+                val cropWidth = origBox.width().coerceAtLeast(1)
+                val cropHeight = origBox.height().coerceAtLeast(1)
+                val crop = Bitmap.createBitmap(bitmap, origBox.left.coerceIn(0, bitmap.width-1), origBox.top.coerceIn(0, bitmap.height-1), 
+                                             cropWidth.coerceAtMost(bitmap.width - origBox.left), cropHeight.coerceAtMost(bitmap.height - origBox.top))
+                
+                val recInput = Bitmap.createScaledBitmap(crop, 640, 48, true)
+                val recBuffer = ByteBuffer.allocateDirect(1 * 48 * 640 * 3 * 4).apply {
                     order(ByteOrder.nativeOrder())
                     for (y in 0 until 48) {
-                        for (x in 0 until 192) {
-                            val px = clsInput.getPixel(x, y)
-                            putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
-                            putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
-                            putFloat(((px and 0xFF) / 255.0f - 0.5f) / 0.5f)
-                        }
-                    }
-                }
-                val clsOutput = Array(1) { FloatArray(4) }
-                clsInterpreter?.run(clsBuffer, clsOutput)
-                */
-                
-                // 3. Run Recognizer
-                val recInput = Bitmap.createScaledBitmap(crop, 320, 32, true)
-                val recBuffer = ByteBuffer.allocateDirect(1 * 32 * 320 * 3 * 4).apply {
-                    order(ByteOrder.nativeOrder())
-                    for (y in 0 until 32) {
-                        for (x in 0 until 320) {
+                        for (x in 0 until 640) {
                             val px = recInput.getPixel(x, y)
                             putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                             putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
@@ -138,23 +135,31 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
                         }
                     }
                 }
-                // Recognize output [1, 40, 38]
-                val recOutput = Array(1) { Array(40) { FloatArray(38) } }
+                
+                val recOutput = Array(1) { Array(80) { FloatArray(97) } }
                 recInterpreter?.run(recBuffer, recOutput)
                 
-                // Robust CTC Decode
                 val decoded = TfLiteOcrUtils.decodeCtcGreedy(recOutput, dictionary, blankIndex = 0)
+                if (decoded.isNotBlank()) {
+                    results.append("$decoded ")
+                    textBlocks.add(TextBlock(decoded, origBox))
+                }
                 
-                results.append("$decoded ")
                 crop.recycle()
-                // clsInput.recycle()
                 recInput.recycle()
             }
             
             resizedDet.recycle()
-            OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = results.toString())
+            OcrResult(
+                engineName = name, 
+                executionTimeMs = System.currentTimeMillis() - t0, 
+                debugText = results.toString().trim(),
+                textBlocks = textBlocks,
+                imageWidth = bitmap.width,
+                imageHeight = bitmap.height
+            )
         } catch (e: Exception) {
-            Log.e("PaddleOcr", "Inference failed for $name", e)
+            Log.e("PaddleOcr", "High-res inference failed", e)
             OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = "(TFLite Error: ${e.message})")
         }
     }
@@ -162,6 +167,5 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
     fun close() {
         detInterpreter?.close()
         recInterpreter?.close()
-        clsInterpreter?.close()
     }
 }

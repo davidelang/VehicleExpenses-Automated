@@ -68,8 +68,6 @@ alignment_results_*.json
 **/kotlin-dsl/
 **/wrapper/dists/
 
-
-
 # === Explicitly allow the committed OCR model files ===
 !app/src/main/assets/tessdata/
 !app/src/main/assets/tessdata/eng.traineddata
@@ -78,15 +76,6 @@ alignment_results_*.json
 !app/src/main/assets/paddle/**
 !app/src/main/assets/libs_backup/
 !app/src/main/assets/libs_backup/**
-
-# === OCR model files — NEVER delete ===
-!app/src/main/assets/tessdata/eng.traineddata
-!app/src/main/assets/paddleocr.onnx
-
-# === OCR model files — NEVER delete ===
-!app/src/main/assets/tessdata/eng.traineddata
-!app/src/main/assets/paddleocr.onnx
-
-# === OCR model files — NEVER delete ===
-!app/src/main/assets/tessdata/eng.traineddata
-!app/src/main/assets/paddleocr.onnx
+!app/src/main/assets/tflite/
+!app/src/main/assets/tflite/paddle/
+!app/src/main/assets/tflite/paddle/**
