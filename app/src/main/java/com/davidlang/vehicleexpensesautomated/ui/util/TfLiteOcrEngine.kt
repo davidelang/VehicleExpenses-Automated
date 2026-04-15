@@ -17,9 +17,8 @@ class TfLiteOcrEngine(context: Context) {
         try {
             val model = loadModelFile(context, "tflite/numeric_ocr.tflite")
             val options = Interpreter.Options()
-            // Optimization for Pixel devices
             options.setNumThreads(4)
-            options.useNNAPI = true 
+            options.useNNAPI = false // Disabled for stability on emulators
             interpreter = Interpreter(model, options)
             Log.i("TfLiteOcr", "Model loaded successfully with NNAPI")
         } catch (e: Exception) {
