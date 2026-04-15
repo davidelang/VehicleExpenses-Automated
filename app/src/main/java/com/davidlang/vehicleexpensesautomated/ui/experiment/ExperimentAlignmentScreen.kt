@@ -166,8 +166,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             // 1. IDENTITY STAGE (Deskew then Discovery)
             val tIdentityStart = System.currentTimeMillis()
             
-            // Pass 1 & 2: Calculate skew and Deskew immediately to get a 0-degree baseline
+            // Pass 1: Calculate Deskew Angle
+            val tDeskewStart = System.currentTimeMillis()
             val tilt = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
+            val tDeskewTotal = System.currentTimeMillis() - tDeskewStart
+
             if (Math.abs(tilt) > 0.2f) { 
                 val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt)
                 if (leveled != originalBitmap) { 
@@ -176,8 +179,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
             }
             
-            // Pass 3: Identification & Landmark Discovery on the DESKEWED image
+            // Pass 2: Discovery Pass (Landmarks)
+            val tDiscoveryStart = System.currentTimeMillis()
             val discoveryResults = OcrHarness.runDiscovery(originalBitmap, context)
+            val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
+
             val queryOcrDiscovery = discoveryResults["ML Kit"]!!
             val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
             
@@ -249,7 +255,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 )
             }
 
-            val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, discoveryText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments)
+            val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, discoveryText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments, tDeskewTotal, tDiscoveryTotal)
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
             
@@ -259,6 +265,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 put("file", file.name)
                 put("winner", finalWinnerName)
                 put("odometer", bestOdometer)
+                put("deskew_time_ms", tDeskewTotal)
+                put("discovery_time_ms", tDiscoveryTotal)
                 
                 val dResults = JSONObject()
                 discoveryResults.forEach { (name, res) ->
@@ -280,6 +288,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 vehicleResultsMap.values.forEach { vr ->
                     vResults.put(JSONObject().apply {
                         put("vehicle", vr.vehicleName)
+                        put("veto_reason", vr.vetoReason)
                         
                         val identityMethods = JSONObject()
                         vr.identityResults.forEach { (name, res) ->
@@ -287,6 +296,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 put("success", res.success)
                                 put("confidence", res.confidence.toDouble())
                                 put("time_ms", res.timeMs)
+                                
+                                val metaJson = JSONObject()
+                                res.metadata.forEach { (k,v) -> metaJson.put(k,v) }
+                                put("metadata", metaJson)
                             })
                         }
                         put("identity_methods", identityMethods)
@@ -328,8 +341,8 @@ private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, a
     appendLine("<th style='width:120px;'>Final Result</th></tr>")
 }
 
-private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, bestOdo: String, alignNames: List<String>): String = buildString {
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedBase64'><br><small>$discovery</small></td>")
+private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, bestOdo: String, alignNames: List<String>, tDeskew: Long, tDiscovery: Long): String = buildString {
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$deskewedBase64'><br><small>$discovery</small></td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }
     val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
@@ -359,7 +372,11 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
         appendLine("<br><b>Identity Scores:</b><br><small>")
         vRes.identityResults.forEach { (name, res) ->
             val color = if (res.confidence > 0.5f) "green" else "gray"
-            appendLine("<span style='color:$color'>$name: %.2f</span><br>".format(res.confidence))
+            appendLine("<span style='color:$color'>$name: %.2f</span>".format(res.confidence))
+            if (res.metadata.isNotEmpty()) {
+                appendLine("<br><i style='font-size:7px;'>${res.metadata}</i>")
+            }
+            appendLine("<br>")
         }
         appendLine("</small>")
     }

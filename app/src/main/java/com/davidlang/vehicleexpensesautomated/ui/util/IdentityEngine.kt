@@ -86,6 +86,9 @@ class ConsensusIdentityEngine : IdentityEngine {
         val emb = ImageAlignmentUtils.embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks)
         val consensusScore = (feat * 0.10f) + (emb * 0.45f) + (arg * 0.45f)
         
+        val metadata = mutableMapOf<String, String>()
+        if (veto.isVetoed) metadata["Triggers"] = veto.reasonWord
+
         return AlignmentResult(
             success = true,
             alignedImage = null,
@@ -93,7 +96,8 @@ class ConsensusIdentityEngine : IdentityEngine {
             message = if (veto.isVetoed) "VETO: ${veto.reasonWord}" else "OK",
             method = "consensus",
             wordVeto = veto.isVetoed,
-            vetoReason = veto.reasonWord
+            vetoReason = veto.reasonWord,
+            metadata = metadata
         )
     }
 }
@@ -113,7 +117,10 @@ class TieredIdentityEngine : IdentityEngine {
         results["arg"] = AlignmentResult(true, null, ImageAlignmentUtils.argMatch(refOcr.textBlocks, queryOcr.textBlocks, odometerCrop, otherTextCrop, refOcr.imageWidth, refOcr.imageHeight), "ARG", method = "arg")
         results["embedding"] = AlignmentResult(true, null, ImageAlignmentUtils.embeddingMatch(refOcr.textBlocks, queryOcr.textBlocks), "Emb", method = "embedding")
         
-        return ImageAlignmentUtils.calculateTieredMatch(results, veto)
+        val res = ImageAlignmentUtils.calculateTieredMatch(results, veto)
+        val metadata = res.metadata.toMutableMap()
+        if (veto.isVetoed) metadata["Triggers"] = veto.reasonWord
+        return res.copy(metadata = metadata)
     }
 }
 
@@ -145,6 +152,9 @@ class VetoIdentityEngine : IdentityEngine {
     ): AlignmentResult {
         val conf = if (veto.isVetoed) -1f else 1.0f
         val msg = if (veto.isVetoed) "VETO (Word: '${veto.reasonWord}')" else "No Veto"
+        val metadata = mutableMapOf<String, String>()
+        if (veto.isVetoed) metadata["Triggers"] = veto.reasonWord
+
         return AlignmentResult(
             success = true,
             alignedImage = null,
@@ -152,7 +162,8 @@ class VetoIdentityEngine : IdentityEngine {
             message = msg,
             method = "veto",
             wordVeto = veto.isVetoed,
-            vetoReason = veto.reasonWord
+            vetoReason = veto.reasonWord,
+            metadata = metadata
         )
     }
 }

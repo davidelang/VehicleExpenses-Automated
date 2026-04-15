@@ -21,6 +21,5 @@ object AlignmentRegistry {
     private fun setupDefaultEngines() {
         register(OrbAffineEngine())
         register(AnchorTriangulationEngine())
-        register(HubEngine())
     }
 }
