@@ -26,10 +26,12 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         private set
 
     init {
+        Log.i("PaddleOcr", "--- PaddleOcrEngine Initialization Started ---")
         try {
             // Load models from internal storage to avoid compression issues
             val detPath = copyAssetToInternal(context, "tflite/paddle/det_model.tflite")
             val recPath = copyAssetToInternal(context, "tflite/paddle/rec_model.tflite")
+            Log.i("PaddleOcr", "Models copied to internal: $detPath, $recPath")
 
             val options = Interpreter.Options().apply {
                 setNumThreads(4)
@@ -38,6 +40,7 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
 
             detInterpreter = Interpreter(File(detPath), options)
             recInterpreter = Interpreter(File(recPath), options)
+            Log.i("PaddleOcr", "Interpreters created successfully")
             
             val detInputShape = detInterpreter?.getInputTensor(0)?.shape()
             val detOutputShape = detInterpreter?.getOutputTensor(0)?.shape()
@@ -52,22 +55,22 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             dictFile.bufferedReader().useLines { lines ->
                 lines.forEach { dictionary.add(it) }
             }
+            Log.i("PaddleOcr", "Dictionary loaded: ${dictionary.size} words")
             
             isAvailable = true
             Log.i("PaddleOcr", "PaddleOCR high-res models loaded successfully")
         } catch (e: Throwable) {
             isAvailable = false
-            Log.e("PaddleOcr", "Failed to initialize high-res PaddleOCR: ${e.message}")
+            Log.e("PaddleOcr", "CRITICAL FAILURE in PaddleOcrEngine init: ${e.message}", e)
         }
     }
 
     private fun copyAssetToInternal(context: Context, assetPath: String): String {
         val file = File(context.cacheDir, assetPath.replace("/", "_"))
-        if (!file.exists()) {
-            context.assets.open(assetPath).use { input ->
-                FileOutputStream(file).use { output ->
-                    input.copyTo(output)
-                }
+        // FORCE OVERWRITE to ensure high-res upgrade is applied
+        context.assets.open(assetPath).use { input ->
+            FileOutputStream(file).use { output ->
+                input.copyTo(output)
             }
         }
         return file.absolutePath
@@ -97,11 +100,15 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             
             // --- Robust DB-PostProcess (1280px) ---
             val flatHeatmap = FloatArray(inputSize * inputSize)
+            var maxProb = 0f
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
-                    flatHeatmap[y * inputSize + x] = outputBuffer[0][0][y][x]
+                    val p = outputBuffer[0][0][y][x]
+                    flatHeatmap[y * inputSize + x] = p
+                    if (p > maxProb) maxProb = p
                 }
             }
+            Log.i("PaddleOcr", "Detection Heatmap Max Probability: $maxProb")
             val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f)
             
             // 2. Recognition Pass (640x48 input / 80 steps / 97 classes)
