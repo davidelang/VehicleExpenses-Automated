@@ -156,9 +156,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     var currentFile = startNewFile(); val footer = "</table></body></html>"
     
     photos.forEachIndexed { index, file ->
+        var finalWinnerName = "No match"
+        var bestOdometer = "FAILED"
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
-            val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: return@forEachIndexed
+            val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
             // 1. IDENTITY STAGE (Deskew then Discovery)
@@ -188,8 +190,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val hardcodedWinner = groundTruth[file.name.lowercase()]
             
             val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
-            var finalWinnerName = "No match"
-            var bestOdometer = "FAILED"
             
             val primaryIdentityEngine = "hardcoded" // Configurable decision maker
             val identityEngines = IdentityRegistry.getActiveEngines()
@@ -259,7 +259,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 put("file", file.name)
                 put("winner", finalWinnerName)
                 put("odometer", bestOdometer)
-
+                
                 val dResults = JSONObject()
                 discoveryResults.forEach { (name, res) ->
                     val landmarksArray = JSONArray()
@@ -304,10 +304,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
                 put("vehicles", vResults)
             })
-
-            withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
             originalBitmap.recycle()
-        } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
+        } catch (e: Exception) { 
+            Log.e(TAG, "Failed ${file.name}", e) 
+            withContext(Dispatchers.Main) { onLog("Error processing ${file.name}: ${e.message}") }
+        }
+        
+        // Ensure progress is updated even on failure
+        withContext(Dispatchers.Main) { 
+            onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) 
+        }
     }
     currentFile.appendText(footer)
     File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2))
