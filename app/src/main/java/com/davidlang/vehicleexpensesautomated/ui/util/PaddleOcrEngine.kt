@@ -77,24 +77,20 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
         val outputBuffer = Array(1) { Array(1) { Array(640) { FloatArray(640) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
         
-        // Simple thresholding to find detections
-        val boxes = mutableListOf<android.graphics.Rect>()
-        for (y in 0 until 640 step 8) {
-            for (x in 0 until 640 step 8) {
-                if (outputBuffer[0][0][y][x] > 0.5f) {
-                    boxes.add(android.graphics.Rect(x - 16, y - 16, x + 16, y + 16))
-                }
+        // --- Robust DB-PostProcess ---
+        // Flatten the heatmap for the utility
+        val flatHeatmap = FloatArray(640 * 640)
+        for (y in 0 until 640) {
+            for (x in 0 until 640) {
+                flatHeatmap[y * 640 + x] = outputBuffer[0][0][y][x]
             }
         }
+        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, 640, 640, thresh = 0.3f)
         
         // 2. Run Classifier & Recognize
         val results = StringBuilder()
         for (box in boxes) {
-            val clampedBox = android.graphics.Rect(
-                box.left.coerceAtLeast(0), box.top.coerceAtLeast(0),
-                box.right.coerceAtMost(640), box.bottom.coerceAtMost(640)
-            )
-            val crop = Bitmap.createBitmap(resizedDet, clampedBox.left, clampedBox.top, clampedBox.width(), clampedBox.height())
+            val crop = Bitmap.createBitmap(resizedDet, box.left, box.top, box.width(), box.height())
             
             // Run Classifier
             val clsInput = Bitmap.createScaledBitmap(crop, 192, 48, true)
@@ -129,28 +125,13 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             val recOutput = Array(1) { Array(40) { FloatArray(38) } }
             recInterpreter?.run(recBuffer, recOutput)
             
-            // Greedy Decode
-            val decoded = StringBuilder()
-            for (i in 0 until 40) {
-                var maxIdx = 0
-                var maxVal = -1f
-                for (j in 0 until 38) {
-                    if (recOutput[0][i][j] > maxVal) {
-                        maxVal = recOutput[0][i][j]
-                        maxIdx = j
-                    }
-                }
-                if (maxIdx > 0 && maxIdx <= dictionary.size) {
-                    decoded.append(dictionary[maxIdx - 1])
-                }
-            }
+            // Robust CTC Decode
+            val decoded = TfLiteOcrUtils.decodeCtcGreedy(recOutput, dictionary, blankIndex = 0)
             
-            results.append("${decoded.toString()} ")
+            results.append("$decoded ")
             crop.recycle()
             clsInput.recycle()
-            clsBuffer.clear() // No direct clear for ByteBuffer
             recInput.recycle()
-            recBuffer.clear()
         }
         
         resizedDet.recycle()
