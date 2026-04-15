@@ -24,6 +24,7 @@ object TfLiteOcrUtils {
         val numClasses = sequence[0].size
         
         var lastIndex = -1
+        val rawIndices = mutableListOf<Int>()
 
         for (t in 0 until timeSteps) {
             var maxIndex = 0
@@ -35,10 +36,11 @@ object TfLiteOcrUtils {
                     maxIndex = c
                 }
             }
+            
+            rawIndices.add(maxIndex)
 
             // CTC Rules: Ignore blanks and collapse consecutive duplicates
             if (maxIndex != blankIndex && maxIndex != lastIndex) {
-                // Map to dictionary. If blank is at 0, dictionary[0] is index 1.
                 val dictIndex = if (blankIndex == 0) maxIndex - 1 else maxIndex
                 if (dictIndex >= 0 && dictIndex < dictionary.size) {
                     result.append(dictionary[dictIndex])
@@ -46,6 +48,11 @@ object TfLiteOcrUtils {
             }
             lastIndex = maxIndex
         }
+        
+        if (result.isEmpty()) {
+            android.util.Log.d("TfLiteOcrUtils", "Decode empty. Raw indices: ${rawIndices.take(20)}... BlankIndex: $blankIndex")
+        }
+        
         return result.toString()
     }
 
