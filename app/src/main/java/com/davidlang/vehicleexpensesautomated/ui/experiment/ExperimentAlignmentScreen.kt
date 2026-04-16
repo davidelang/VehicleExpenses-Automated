@@ -189,7 +189,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val queryLandmarks = OdometerOcrUtils.processRawLandmarks(
                 queryOcrDiscovery.textBlocks,
                 imgWidth = queryOcrDiscovery.imageWidth,
-                imgHeight = queryOcrDiscovery.imageHeight
+                imgHeight = queryOcrDiscovery.imageHeight,
+                stripPunctuation = true
             )
             
             val tIdentityTotal = System.currentTimeMillis() - tIdentityStart
@@ -438,7 +439,8 @@ private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i); val text = obj.getString("text")
             val cx = obj.getInt("cx"); val cy = obj.getInt("cy"); val h = obj.getInt("h"); val w = obj.getInt("w")
-            list.add(TextBlock(text, android.graphics.Rect(cx - w/2, cy - h/2, cx + w/2, cy + h/2)))
+            val cleanText = OdometerOcrUtils.cleanLandmarkString(text, stripPunctuation = true)
+            list.add(TextBlock(cleanText, android.graphics.Rect(cx - w/2, cy - h/2, cx + w/2, cy + h/2)))
         }
     } catch (e: Exception) { }
     return list
