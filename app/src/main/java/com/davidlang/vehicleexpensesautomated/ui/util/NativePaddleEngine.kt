@@ -42,7 +42,7 @@ class NativePaddleEngine(
         // DEBUG FLAG: Set to true to test model kernels without loading real data
         private const val DEBUG_DRY_RUN = true
         // DEBUG FLAG: Set to true to bypass the Detection model and only test Recognition
-        private const val DEBUG_BYPASS_DETECTION = true
+        private const val DEBUG_BYPASS_DETECTION = false
     }
 
     init {
