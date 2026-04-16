@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.ui.vehicle
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -76,10 +77,7 @@ fun ManageVehiclesScreen(
     var isEditingOtherText by remember { mutableStateOf(false) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
-    var dragStart by remember { mutableStateOf<Offset?>(null) }
-    var currentDragRect by remember { mutableStateOf<Rect?>(null) }
 
-    var showOdometerConfirmation by remember { mutableStateOf(false) }
     var showLandmarkCheck by remember { mutableStateOf(false) }
     var discoveryResults by remember { mutableStateOf<Map<String, OcrResult>>(emptyMap()) }
 
@@ -154,8 +152,8 @@ fun ManageVehiclesScreen(
                     primaryRes?.let { res ->
                         val processed = OdometerOcrUtils.processRawLandmarks(
                             res.textBlocks, 
-                            odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) },
-                            otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) },
+                            odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) },
+                            otherTextCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) },
                             leveledBmp.width, leveledBmp.height,
                             stripPunctuation = (anchorSourceEngine == "ML Kit")
                         )
@@ -176,7 +174,7 @@ fun ManageVehiclesScreen(
             OutlinedTextField(
                 value = if (isNewVehicle) "New Vehicle" else (editingVehicle?.name ?: "Select vehicle"),
                 onValueChange = {}, label = { Text("Vehicle") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
                 readOnly = true
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
