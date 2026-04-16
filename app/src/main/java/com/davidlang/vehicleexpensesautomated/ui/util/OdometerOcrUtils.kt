@@ -397,10 +397,6 @@ object OdometerOcrUtils {
         )
     }
 
-    fun cleanLandmarkString(text: String): String {
-        return text.replace(".", "").replace(",", "").trim()
-    }
-
     fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
         if (degrees == 0f) return bitmap
         val matrix = android.graphics.Matrix()
@@ -487,42 +483,44 @@ object OdometerOcrUtils {
         return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
     }
 
+    private fun cleanLandmarkString(text: String): String {
+        return text.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
+    }
+
+    /**
+     * Post-processes raw OCR elements into the cleaned list used for Veto anchors.
+     */
+    fun processRawLandmarks(
+        allBlocks: List<TextBlock>,
+        odometerCrop: android.graphics.RectF? = null,
+        otherTextCrop: android.graphics.RectF? = null,
+        imgWidth: Int,
+        imgHeight: Int
+    ): List<TextBlock> {
+        // Filter out blocks inside the restricted crops (odometer, etc)
+        val filtered = allBlocks.filter { block ->
+            !isBlockInCrop(block, odometerCrop, imgWidth, imgHeight) && 
+            !isBlockInCrop(block, otherTextCrop, imgWidth, imgHeight)
+        }
+
+        // Clean punctuation and filter by length
+        return filtered.map { block ->
+            block.copy(text = cleanLandmarkString(block.text))
+        }.filter { it.text.length > 1 }.sortedBy { it.text }
+    }
+
     suspend fun discoverLandmarksFromBitmap(
         bitmap: Bitmap,
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null
     ): List<TextBlock> {
-        // 1. Scale to 1500px wide
+        // DEPRECATED: Use processRawLandmarks instead to avoid redundant OCR scans.
+        // Keeping signature for backward compatibility if needed by other callers.
         val scale = 1500f / bitmap.width
         val scaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * scale).toInt(), true)
-        
-        // 2. MASKING: Draw black boxes over the areas we want the OCR to ignore
-        val maskedBitmap = scaled.copy(Bitmap.Config.ARGB_8888, true)
-        val canvas = android.graphics.Canvas(maskedBitmap)
-        val paint = android.graphics.Paint().apply { color = android.graphics.Color.BLACK; style = android.graphics.Paint.Style.FILL }
-        
-        odometerCrop?.let { 
-            canvas.drawRect(it.left * scaled.width, it.top * scaled.height, it.right * scaled.width, it.bottom * scaled.height, paint)
-        }
-        otherTextCrop?.let {
-            canvas.drawRect(it.left * scaled.width, it.top * scaled.height, it.right * scaled.width, it.bottom * scaled.height, paint)
-        }
-
-        // 3. OCR the MASKED image
-        val ocrResult = extractFromPhotoBitmap(maskedBitmap)
-        val allBlocks = ocrResult.textBlocks
-        
-        // 4. Filter & Clean (Just length and punctuation now, as masking handled the areas)
-        val landmarks = allBlocks.map { block ->
-            TextBlock(
-                text = cleanLandmarkString(block.text),
-                boundingBox = block.boundingBox,
-                angle = block.angle
-            )
-        }.filter { it.text.length > 1 }.sortedBy { it.text }
-
+        val ocrResult = extractFromPhotoBitmap(scaled)
+        val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, scaled.width, scaled.height)
         scaled.recycle()
-        maskedBitmap.recycle()
         return landmarks
     }
 
