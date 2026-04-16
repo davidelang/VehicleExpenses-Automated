@@ -14,7 +14,7 @@ import kotlin.math.min
 
 /**
  * PaddleOCR Engine implemented via TFLite models.
- * Optimized for 1500px "Golden" resolution.
+ * Reverted to 1280px for TFLite compatibility.
  */
 class PaddleOcrEngine(
     private val context: android.content.Context,
@@ -29,8 +29,8 @@ class PaddleOcrEngine(
     var isAvailable = false
         private set
 
-    // "Golden" resolution from research
-    private val inputSize = 1500
+    // Fixed 1280px resolution required by TFLite model
+    private val inputSize = 1280
     private var detectionInputBuffer: FloatArray? = null
 
     init {
@@ -50,7 +50,7 @@ class PaddleOcrEngine(
                 lines.forEach { dictionary.add(it) }
             }
             
-            // Pre-allocate buffer for 1500px pass
+            // Pre-allocate buffer for 1280px pass
             detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
             
             isAvailable = true
@@ -97,7 +97,7 @@ class PaddleOcrEngine(
         val resizedDet = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
         val inputBuffer = prepareDetectionBuffer(resizedDet, inputSize, floatData)
         
-        // Model shape [1, 1500, 1500, 1]
+        // Model shape [1, 1280, 1280, 1]
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
         resizedDet.recycle()
@@ -109,7 +109,7 @@ class PaddleOcrEngine(
             }
         }
         
-        // Use 0.2 threshold for higher sensitivity during discovery
+        // Use 0.2 threshold for higher sensitivity
         val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.2f, unclipRatio = 1.5f)
         
         val results = StringBuilder()
