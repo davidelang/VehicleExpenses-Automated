@@ -14,8 +14,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -143,8 +141,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     }
     
     val jsonArray = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
-    val engines = AlignmentRegistry.getActiveEngines()
-    val activeAlignments = engines.map { it.name }
+    val activeAlignments = AlignmentRegistry.getActiveEngines().map { it.name }
     
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle }, activeAlignments)) 
@@ -212,7 +209,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 if (isWinner) {
                     finalWinnerName = ref.vehicle.name
-                    engines.forEach { engine ->
+                    AlignmentRegistry.getActiveEngines().forEach { engine ->
                         val t0 = System.currentTimeMillis()
                         val alignRes = engine.align(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks, ref.vehicle)
                         val elapsed = System.currentTimeMillis() - t0
@@ -235,31 +232,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments, tDeskewTotal, tDiscoveryTotal)
             
-            // CRITICAL: Populate JSON BEFORE recycling originalBitmap
-            jsonArray.put(JSONObject().apply {
-                put("index", index + 1); put("file", file.name); put("winner", finalWinnerName); put("odometer", bestOdometer); put("deskew_time_ms", tDeskewTotal); put("discovery_time_ms", tDiscoveryTotal)
-                val fullImageOcrTimings = JSONObject()
-                discoveryResults.forEach { (name, res) -> fullImageOcrTimings.put(name, if (name == "ML Kit") tDeskewTotal + res.executionTimeMs else res.executionTimeMs) }
-                put("full_image_ocr_timings", fullImageOcrTimings)
-                
-                val vSweepJson = JSONObject()
-                vetoSweep.forEach { (engine, results) ->
-                    val safeVehicles = results.filter { vRes -> !vRes.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }
-                    vSweepJson.put(engine, JSONObject().apply { put("safe_count", safeVehicles.size); put("safe_vehicles", JSONArray(safeVehicles)) })
-                }
-                put("veto_accuracy_sweep", vSweepJson)
-
-                val dResults = JSONObject()
-                discoveryResults.forEach { (name, res) ->
-                    val landmarksArray = JSONArray()
-                    res.textBlocks.forEach { block -> landmarksArray.put(JSONObject().apply { put("text", block.text); put("cx", block.boundingBox.centerX()); put("cy", block.boundingBox.centerY()); put("w", block.boundingBox.width()); put("h", block.boundingBox.height()); val metaJson = JSONObject(); block.metadata.forEach { (k, v) -> metaJson.put(k, v) }; put("metadata", metaJson) }) }
-                    dResults.put(name, landmarksArray)
-                }
-                put("discovery_landmarks", dResults)
-                val vResults = JSONArray()
-                vehicleResultsMap.values.forEach { vr -> vResults.put(JSONObject().apply { put("vehicle", vr.vehicleName); put("veto_reason", vr.vetoReason); put("veto_my_manifest", JSONArray(vr.vetoMyManifest)); put("veto_pool", JSONArray(vr.vetoPool)); val identityMethods = JSONObject(); vr.identityResults.forEach { (name, res) -> identityMethods.put(name, JSONObject().apply { put("success", res.success); put("confidence", res.confidence.toDouble()); put("time_ms", res.timeMs); val metaJson = JSONObject(); res.metadata.forEach { (k,v) -> metaJson.put(k,v) }; put("metadata", metaJson) }) }; put("identity_methods", identityMethods); val traces = JSONObject(); vr.alignmentTraces.forEach { (name, trace) -> traces.put(name, JSONObject().apply { put("success", trace.success); put("time_ms", trace.timeMs); trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) } }) }; put("traces", traces) }) }
-                put("vehicles", vResults)
-            })
+            // CRITICAL: Extract JSON population to helper to stay under method size limit
+            val photoJson = serializePhotoResultToJson(
+                index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal,
+                discoveryResults, vetoSweep, vehicleResultsMap, vehicles
+            )
+            jsonArray.put(photoJson)
 
             originalBitmap.recycle()
 
@@ -270,6 +248,64 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
     }
     currentFile.appendText(footer); File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
+}
+
+private fun serializePhotoResultToJson(
+    index: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tDiscovery: Long,
+    discovery: Map<String, OcrResult>, vetoSweep: Map<String, Map<Int, VetoResult>>,
+    vResults: Map<Int, SingleVehicleResult>, vehicles: List<Vehicle>
+): JSONObject {
+    return JSONObject().apply {
+        put("index", index); put("file", fileName); put("winner", winner); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
+        
+        val fullImageOcrTimings = JSONObject()
+        discovery.forEach { (name, res) -> fullImageOcrTimings.put(name, if (name == "ML Kit") tDeskew + res.executionTimeMs else res.executionTimeMs) }
+        put("full_image_ocr_timings", fullImageOcrTimings)
+        
+        val vSweepJson = JSONObject()
+        vetoSweep.forEach { (engine, results) ->
+            val safeVehicles = results.filter { vRes -> !vRes.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }
+            vSweepJson.put(engine, JSONObject().apply { put("safe_count", safeVehicles.size); put("safe_vehicles", JSONArray(safeVehicles)) })
+        }
+        put("veto_accuracy_sweep", vSweepJson)
+
+        val dResults = JSONObject()
+        discovery.forEach { (name, res) ->
+            val landmarksArray = JSONArray()
+            res.textBlocks.forEach { block -> 
+                landmarksArray.put(JSONObject().apply { 
+                    put("text", block.text); put("cx", block.boundingBox.centerX()); put("cy", block.boundingBox.centerY()); put("w", block.boundingBox.width()); put("h", block.boundingBox.height())
+                    val metaJson = JSONObject(); block.metadata.forEach { (k, v) -> metaJson.put(k, v) }; put("metadata", metaJson) 
+                }) 
+            }
+            dResults.put(name, landmarksArray)
+        }
+        put("discovery_landmarks", dResults)
+
+        val vehicleResults = JSONArray()
+        vResults.values.forEach { vr -> 
+            vehicleResults.put(JSONObject().apply { 
+                put("vehicle", vr.vehicleName); put("veto_reason", vr.vetoReason); put("veto_my_manifest", JSONArray(vr.vetoMyManifest)); put("veto_pool", JSONArray(vr.vetoPool))
+                val identityMethods = JSONObject()
+                vr.identityResults.forEach { (name, res) -> 
+                    identityMethods.put(name, JSONObject().apply { 
+                        put("success", res.success); put("confidence", res.confidence.toDouble()); put("time_ms", res.timeMs)
+                        val metaJson = JSONObject(); res.metadata.forEach { (k,v) -> metaJson.put(k,v) }; put("metadata", metaJson) 
+                    }) 
+                }
+                put("identity_methods", identityMethods)
+                val traces = JSONObject()
+                vr.alignmentTraces.forEach { (name, trace) -> 
+                    traces.put(name, JSONObject().apply { 
+                        put("success", trace.success); put("time_ms", trace.timeMs)
+                        trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) } 
+                    }) 
+                }
+                put("traces", traces) 
+            }) 
+        }
+        put("vehicles", vehicleResults)
+    }
 }
 
 private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, alignNames: List<String>): String = buildString {
