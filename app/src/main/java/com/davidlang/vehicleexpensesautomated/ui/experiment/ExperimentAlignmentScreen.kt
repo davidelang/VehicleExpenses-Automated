@@ -185,7 +185,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
 
             val queryOcrDiscovery = discoveryResults["ML Kit"]!!
-            val queryLandmarks = OdometerOcrUtils.discoverLandmarksFromBitmap(originalBitmap)
+            // DYNAMIC FIX: Unify Scan 2 and 3. Use raw results from Scan 2 for Veto pass.
+            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(
+                queryOcrDiscovery.textBlocks,
+                imgWidth = queryOcrDiscovery.imageWidth,
+                imgHeight = queryOcrDiscovery.imageHeight
+            )
             
             val tIdentityTotal = System.currentTimeMillis() - tIdentityStart
             
