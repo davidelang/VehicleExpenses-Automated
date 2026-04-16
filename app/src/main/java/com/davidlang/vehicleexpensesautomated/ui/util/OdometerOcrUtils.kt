@@ -134,6 +134,18 @@ object OcrHarness {
             engine.name to engine.recognize(bitmap)
         }
     }
+
+    fun getDiscoveryEngineNames(context: Context): List<String> {
+        val list = mutableListOf("ML Kit", "Native TFLite", "Paddle-TFLite")
+        if (NativePaddleEngine(context).isAvailable) list.add("Paddle-Lite")
+        return list
+    }
+
+    fun getRefinementEngineNames(context: Context): List<String> {
+        val list = mutableListOf("Tesseract", "ML Kit", "Native TFLite", "Paddle-TFLite (Odo)")
+        if (NativePaddleEngine(context, isConstrained = true).isAvailable) list.add("Paddle-Lite (Odo)")
+        return list
+    }
 }
 object OdometerOcrUtils {
     init {
