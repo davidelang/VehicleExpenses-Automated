@@ -42,6 +42,7 @@ import java.util.zip.ZipInputStream
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 
+@Immutable
 data class PhotoResultSummary(
     val photoName: String,
     val matchedVehicle: String,
@@ -233,9 +234,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             }
 
             val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments, tDeskewTotal, tDiscoveryTotal)
-            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
-            currentFile.appendText(rowHtml); currentSize += rowHtml.length
             
+            // CRITICAL: Populate JSON BEFORE recycling originalBitmap
             jsonArray.put(JSONObject().apply {
                 put("index", index + 1); put("file", file.name); put("winner", finalWinnerName); put("odometer", bestOdometer); put("deskew_time_ms", tDeskewTotal); put("discovery_time_ms", tDiscoveryTotal)
                 val fullImageOcrTimings = JSONObject()
@@ -260,7 +260,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 vehicleResultsMap.values.forEach { vr -> vResults.put(JSONObject().apply { put("vehicle", vr.vehicleName); put("veto_reason", vr.vetoReason); put("veto_my_manifest", JSONArray(vr.vetoMyManifest)); put("veto_pool", JSONArray(vr.vetoPool)); val identityMethods = JSONObject(); vr.identityResults.forEach { (name, res) -> identityMethods.put(name, JSONObject().apply { put("success", res.success); put("confidence", res.confidence.toDouble()); put("time_ms", res.timeMs); val metaJson = JSONObject(); res.metadata.forEach { (k,v) -> metaJson.put(k,v) }; put("metadata", metaJson) }) }; put("identity_methods", identityMethods); val traces = JSONObject(); vr.alignmentTraces.forEach { (name, trace) -> traces.put(name, JSONObject().apply { put("success", trace.success); put("time_ms", trace.timeMs); trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) } }) }; put("traces", traces) }) }
                 put("vehicles", vResults)
             })
+
             originalBitmap.recycle()
+
+            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
+            currentFile.appendText(rowHtml); currentSize += rowHtml.length
+            
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
         withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
     }
