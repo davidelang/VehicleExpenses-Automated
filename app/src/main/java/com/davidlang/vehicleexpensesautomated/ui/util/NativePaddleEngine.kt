@@ -21,7 +21,6 @@ import kotlin.math.min
 /**
  * Native Paddle-Lite 2.14rc OCR Engine.
  * Supports both full-image discovery (Detect + Recognize) and constrained odometer reading.
- * Synchronized with TFLite refinements (Sweep, 3-Stage, Advanced Geometry).
  */
 class NativePaddleEngine(
     private val context: Context,
@@ -37,25 +36,46 @@ class NativePaddleEngine(
     private val dictionary = mutableListOf<String>()
     
     init {
-        // Temporarily disabled until "with-extra" ARM libraries are deployed
-        isAvailable = false
-        /*
         try {
             val arch = detectArch()
+            Log.i("PaddleLite", "Initializing $name for architecture: $arch")
+            
+            // 1. Load the isolated JNI library
+            loadNativeLibrary()
+            
+            // 2. Prepare model paths
             val detPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
             val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
             
+            // 3. Initialize Predictors
             detector = createPredictor(detPath)
             recognizer = createPredictor(recPath)
+            
+            // 4. Load Dictionary
             loadDictionary("paddle/en_dict.txt")
             
             isAvailable = true
-            Log.i("PaddleLite", "Initialized $name for arch $arch")
+            Log.i("PaddleLite", "Native engine $name initialized successfully")
         } catch (e: Throwable) {
             isAvailable = false
             Log.e("PaddleLite", "Failed to initialize $name", e)
         }
-        */
+    }
+
+    private fun loadNativeLibrary() {
+        val abi = Build.SUPPORTED_ABIS[0]
+        val libName = "libpaddle_lite_jni.so"
+        val assetPath = "libs_backup/${abi}_$libName"
+        
+        try {
+            val internalLibPath = copyAssetToInternal(assetPath)
+            System.load(internalLibPath)
+            Log.i("PaddleLite", "Loaded isolated JNI: $internalLibPath")
+        } catch (e: Exception) {
+            Log.e("PaddleLite", "Failed to load isolated JNI from $assetPath", e)
+            // Fallback to system load if isolation fails
+            System.loadLibrary("paddle_lite_jni")
+        }
     }
 
     private fun detectArch(): String {
@@ -70,7 +90,9 @@ class NativePaddleEngine(
     private fun copyAssetToInternal(assetPath: String): String {
         val file = File(context.cacheDir, assetPath.replace("/", "_"))
         context.assets.open(assetPath).use { input ->
-            FileOutputStream(file).use { output -> input.copyTo(output) }
+            FileOutputStream(file).use { output ->
+                input.copyTo(output)
+            }
         }
         return file.absolutePath
     }
@@ -101,6 +123,7 @@ class NativePaddleEngine(
     }
 
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
+        // Stage 1: Quick Pass (48px)
         val stage1 = runRecognitionStage(bitmap, 48)
         val digits = stage1.text.filter { it.isDigit() }
         
@@ -192,7 +215,6 @@ class NativePaddleEngine(
         val outputTensor = predictor.getOutput(0)
         val boxes = TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f)
         
-        // Map boxes back to original coordinates
         val invScale = 1.0f / scale
         val mappedBoxes = boxes.map { db ->
             val b = db.boundingBox
@@ -258,8 +280,6 @@ class NativePaddleEngine(
         scaled.recycle()
         return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, targetHeight)
     }
-
-    private fun runRecognition(bitmap: Bitmap): String = runRecognitionStage(bitmap, 640).text
 
     private fun cropBitmap(bmp: Bitmap, rect: Rect): Bitmap {
         val left = max(0, rect.left); val top = max(0, rect.top)
