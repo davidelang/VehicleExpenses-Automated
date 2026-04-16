@@ -110,14 +110,14 @@ class PaddleOcrEngine(
         
         // 1. Detection
         val inputBuffer = prepareDetectionBuffer(resizedDet, inputSize)
-        val outputBuffer = Array(1) { Array(1) { Array(inputSize) { FloatArray(inputSize) } } }
+        val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
         resizedDet.recycle()
 
         val flatHeatmap = FloatArray(inputSize * inputSize)
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
-                flatHeatmap[y * inputSize + x] = outputBuffer[0][0][y][x]
+                flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
             }
         }
         val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f)
