@@ -16,8 +16,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.ui.util.IdentityRegistry
+import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
@@ -37,6 +40,10 @@ fun SettingsScreen() {
     var photoProviderPref by remember { mutableStateOf(prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive") }
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
+    
+    // New OCR & Identity Settings
+    var anchorSource by remember { mutableStateOf(prefs.getString("anchor_source_pref", "ML Kit") ?: "ML Kit") }
+    var primaryIdentity by remember { mutableStateOf(prefs.getString("primary_identity_pref", "hardcoded") ?: "hardcoded") }
 
     var status by remember { mutableStateOf("Ready") }
 
@@ -48,7 +55,7 @@ fun SettingsScreen() {
         uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
     }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold, darkModePref) {
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold, darkModePref, anchorSource, primaryIdentity) {
         prefs.edit().apply {
             putString("sheet_id", sheetId)
             putBoolean("sync_enabled", syncEnabled)
@@ -60,6 +67,8 @@ fun SettingsScreen() {
             putString("photo_storage_provider", photoProviderPref)
             putFloat("ocr_confidence_threshold", ocrConfidenceThreshold)
             putString("dark_mode", darkModePref)
+            putString("anchor_source_pref", anchorSource)
+            putString("primary_identity_pref", primaryIdentity)
             apply()
         }
     }
@@ -70,8 +79,19 @@ fun SettingsScreen() {
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        Text("General Settings", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
+        
+        Text("Algorithm Configuration", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        DropdownSetting("Primary Anchor Source", anchorSource, OcrHarness.getDiscoveryEngineNames(context)) { anchorSource = it }
+        DropdownSetting("Experiment Identity Engine", primaryIdentity, IdentityRegistry.getEngineNames()) { primaryIdentity = it }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(16.dp))
+
         OutlinedTextField(value = sheetId, onValueChange = { sheetId = it }, label = { Text("Google Sheet ID") }, modifier = Modifier.fillMaxWidth())
         SwitchSetting("Enable Background Sync", syncEnabled) { syncEnabled = it }
         SwitchSetting("Wi-Fi Only", wifiOnly) { wifiOnly = it }
@@ -103,22 +123,54 @@ fun SettingsScreen() {
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }) { Text("Export to CSV (ZIP)") }
-        Button(onClick = { importLauncher.launch("*/*") }) { Text("Import from CSV ZIP") }
+        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }, modifier = Modifier.fillMaxWidth()) { Text("Export to CSV (ZIP)") }
+        Button(onClick = { importLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Text("Import from CSV ZIP") }
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { scope.launch { status = "Testing..."; val testUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/fake.jpg"); val url = photoStorageManager.savePhoto(testUri, "test.jpg", PhotoType.FUEL); status = if (url != null) "Upload test succeeded" else "Upload test failed" } }) { Text("Test Photo Upload") }
+        Button(onClick = { scope.launch { status = "Testing..."; val testUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/fake.jpg"); val url = photoStorageManager.savePhoto(testUri, "test.jpg", PhotoType.FUEL); status = if (url != null) "Upload test succeeded" else "Upload test failed" } }, modifier = Modifier.fillMaxWidth()) { Text("Test Photo Upload") }
         Text(status, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DropdownSetting(label: String, selectedValue: String, options: List<String>, onValueChange: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+            OutlinedTextField(
+                value = selectedValue,
+                onValueChange = {},
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth()
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { selectionOption ->
+                    DropdownMenuItem(
+                        text = { Text(selectionOption) },
+                        onClick = {
+                            onValueChange(selectionOption)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) { Text(label, modifier = Modifier.weight(1f)); Switch(checked = checked, onCheckedChange = onCheckedChange) }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) { 
+        Text(label, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange) 
+    }
 }
 
 @Composable
 private fun SliderSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
-    Column {
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text(label, style = MaterialTheme.typography.titleMedium)
         Slider(
             value = value,
@@ -126,6 +178,6 @@ private fun SliderSetting(label: String, value: Float, range: ClosedFloatingPoin
             valueRange = range,
             modifier = Modifier.fillMaxWidth()
         )
-        Text("%.2f".format(value))
+        Text("%.2f".format(value), style = MaterialTheme.typography.labelSmall)
     }
 }

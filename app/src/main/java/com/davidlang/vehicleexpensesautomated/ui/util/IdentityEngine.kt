@@ -186,6 +186,8 @@ object IdentityRegistry {
 
     fun getActiveEngines(): List<IdentityEngine> = engines
 
+    fun getEngineNames(): List<String> = engines.map { it.name }
+
     private fun setupDefaultEngines() {
         register(FeatureIdentityEngine())
         register(ArgIdentityEngine())
