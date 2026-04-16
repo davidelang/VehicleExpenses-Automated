@@ -156,6 +156,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
+            // CRITICAL FIX: Create thumbnail BEFORE any deskewing recycles originalBitmap
+            val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
+            
             // 1. IDENTITY STAGE
             val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
             val tilt = deskewRes.angle
@@ -172,8 +175,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             val queryOcrDiscovery = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]!!
             val queryLandmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight, stripPunctuation = (anchorSourceEngine == "ML Kit"))
-            
-            val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
             
             // MULTI-SOURCE VETO SWEEP
             val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
@@ -232,7 +233,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments, tDeskewTotal, tDiscoveryTotal)
             
-            // CRITICAL: Extract JSON population to helper to stay under method size limit
             val photoJson = serializePhotoResultToJson(
                 index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal,
                 discoveryResults, vetoSweep, vehicleResultsMap, vehicles
@@ -353,6 +353,7 @@ private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
 }
 
 private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
+    if (bitmap.isRecycled) return ""
     val scale = targetWidth.toFloat() / bitmap.width; val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
     val b64 = bitmapToBase64(scaled, quality); scaled.recycle(); return b64
 }
