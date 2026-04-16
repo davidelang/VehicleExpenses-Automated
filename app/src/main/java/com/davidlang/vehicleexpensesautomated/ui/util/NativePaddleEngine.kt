@@ -2,25 +2,17 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Rect
-import android.os.Build
 import android.util.Log
-import com.baidu.paddle.lite.MobileConfig
 import com.baidu.paddle.lite.PaddlePredictor
-import com.baidu.paddle.lite.PowerMode
-import com.baidu.paddle.lite.Tensor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.max
-import kotlin.math.min
+import android.os.Build
 
 /**
  * Native Paddle-Lite 2.14rc OCR Engine.
- * Forensic Build: Inference Disabled to capture Tensor Shapes.
+ * Forensic Build (Stage 2): Force Resize and Query Shape.
  */
 class NativePaddleEngine(
     private val context: Context,
@@ -44,8 +36,6 @@ class NativePaddleEngine(
         try {
             val arch = detectArch()
             if (sharedDetector == null || sharedRecognizer == null) {
-                Log.i("PaddleLite", "Initializing Forensic Predictors for: $arch")
-                
                 if (!isNativeLibLoaded) {
                     loadNativeLibrary()
                     isNativeLibLoaded = true
@@ -56,10 +46,6 @@ class NativePaddleEngine(
                 
                 sharedDetector = createPredictor(detPath)
                 sharedRecognizer = createPredictor(recPath)
-
-                // FORENSIC: Capture shapes before any inference attempt
-                logForensicShape("Detector", sharedDetector)
-                logForensicShape("Recognizer", sharedRecognizer)
             }
             
             loadDictionary("paddle/en_dict.txt")
@@ -68,18 +54,6 @@ class NativePaddleEngine(
             isAvailable = false
             initError = e.message
             Log.e("PaddleLite", "Forensic Init Failed: ${e.message}", e)
-        }
-    }
-
-    private fun logForensicShape(label: String, predictor: PaddlePredictor?) {
-        predictor?.let { p ->
-            try {
-                val inputTensor = p.getInput(0)
-                val shape = inputTensor.shape()
-                Log.i("PaddleLite", "FORENSIC ($label): Input[0] Shape: ${shape.joinToString(", ")}")
-            } catch (e: Exception) {
-                Log.e("PaddleLite", "FORENSIC: Failed to query $label input 0", e)
-            }
         }
     }
 
@@ -124,22 +98,44 @@ class NativePaddleEngine(
     }
 
     private fun createPredictor(modelPath: String): PaddlePredictor {
-        val config = MobileConfig()
+        val config = com.baidu.paddle.lite.MobileConfig()
         config.setModelFromFile(modelPath)
         config.setThreads(1)
-        config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
+        config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_NO_BIND)
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Forensic Mode: $initError")
         
-        Log.i("PaddleLite", "FORENSIC: recognize() called, skipping inference kernels...")
+        Log.i("PaddleLite", "Starting FORENSIC SHAPE COMMIT...")
+        
+        try {
+            // 1. Force Detector Resize
+            sharedDetector?.let { p ->
+                val tensor = p.getInput(0)
+                Log.i("PaddleLite", "FORENSIC: Resizing Detector to [1, 3, 1280, 1280]...")
+                tensor.resize(longArrayOf(1, 3, 1280, 1280))
+                val shape = tensor.shape()
+                Log.i("PaddleLite", "FORENSIC: Detector Shape After Resize: ${shape.joinToString(", ") { it.toString() }}")
+            }
+
+            // 2. Force Recognizer Resize
+            sharedRecognizer?.let { p ->
+                val tensor = p.getInput(0)
+                Log.i("PaddleLite", "FORENSIC: Resizing Recognizer to [1, 3, 48, 640]...")
+                tensor.resize(longArrayOf(1, 3, 48, 640))
+                val shape = tensor.shape()
+                Log.i("PaddleLite", "FORENSIC: Recognizer Shape After Resize: ${shape.joinToString(", ") { it.toString() }}")
+            }
+        } catch (e: Exception) {
+            Log.e("PaddleLite", "FORENSIC: Resize Failed: ${e.message}", e)
+        }
         
         return@withContext OcrResult(
             engineName = name,
             executionTimeMs = 0,
-            debugText = "FORENSIC MODE: INFERENCE SKIPPED",
+            debugText = "FORENSIC MODE: SHAPE COMMIT COMPLETE",
             textBlocks = emptyList(),
             imageWidth = bitmap.width,
             imageHeight = bitmap.height
