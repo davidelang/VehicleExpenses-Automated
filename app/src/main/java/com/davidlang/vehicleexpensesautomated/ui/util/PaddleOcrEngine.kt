@@ -116,7 +116,8 @@ class PaddleOcrEngine(context: Context) : OcrEngine {
             val scaleX = bitmap.width.toFloat() / inputSize
             val scaleY = bitmap.height.toFloat() / inputSize
 
-            for (box in boxes) {
+            for (detectedBox in boxes) {
+                val box = detectedBox.boundingBox
                 // Scale box back to original image size for cropping
                 val origBox = Rect(
                     (box.left * scaleX).toInt(),
