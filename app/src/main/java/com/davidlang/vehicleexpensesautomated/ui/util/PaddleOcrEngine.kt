@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Log
@@ -17,10 +16,10 @@ import java.nio.ByteOrder
 
 /**
  * PaddleOCR Engine implemented via TFLite models.
- * Supports a timed resolution sweep and optimized 3-stage odometer flow.
+ * Note: Recognition model is fixed at 48px height. Sweep/Staging disabled for TFLite.
  */
 class PaddleOcrEngine(
-    private val context: Context,
+    private val context: android.content.Context,
     private val isConstrained: Boolean = false
 ) : OcrEngine {
     override val name = if (isConstrained) "Paddle-TFLite (Odo)" else "Paddle-TFLite"
@@ -56,7 +55,7 @@ class PaddleOcrEngine(
         }
     }
 
-    private fun copyAssetToInternal(context: Context, assetPath: String): String {
+    private fun copyAssetToInternal(context: android.content.Context, assetPath: String): String {
         val file = File(context.cacheDir, assetPath.replace("/", "_"))
         context.assets.open(assetPath).use { input ->
             FileOutputStream(file).use { output -> input.copyTo(output) }
@@ -73,36 +72,22 @@ class PaddleOcrEngine(
         }
     }
 
-    /**
-     * 3-Stage Odometer Flow (48px -> 640px)
-     */
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
-        // Stage 1: Quick Pass (48px height)
-        val stage1 = runRecognitionStage(bitmap, 48)
-        val digits = stage1.text.filter { it.isDigit() }
-        
-        val finalResult = if (digits.length >= 2) {
-            stage1
-        } else {
-            // Stage 2: Deep Scan (640px height)
-            runRecognitionStage(bitmap, 640)
-        }
+        // TFLite model is fixed at 48px. Multi-stage disabled here.
+        val res = runRecognitionStage(bitmap)
 
         return OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
-            odometer = finalResult.text,
-            debugText = finalResult.text,
-            textBlocks = listOf(TextBlock(finalResult.text, Rect(0,0,bitmap.width, bitmap.height))),
+            odometer = res.text,
+            debugText = res.text,
+            textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))),
             imageWidth = bitmap.width,
             imageHeight = bitmap.height,
-            metadata = mapOf("Resolution" to "${finalResult.height}px")
+            metadata = mapOf("Resolution" to "48px (Fixed)")
         )
     }
 
-    /**
-     * Full Dash Discovery with Timed Resolution Sweep
-     */
     private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
         val textBlocks = mutableListOf<TextBlock>()
         val inputSize = 1280
@@ -122,7 +107,7 @@ class PaddleOcrEngine(
         }
         val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f)
         
-        // 2. Recognition Sweep (Timed)
+        // 2. Recognition
         val results = StringBuilder()
         val scaleX = bitmap.width.toFloat() / inputSize
         val scaleY = bitmap.height.toFloat() / inputSize
@@ -139,25 +124,13 @@ class PaddleOcrEngine(
             if (origBox.width() < 1 || origBox.height() < 1) continue
             val crop = Bitmap.createBitmap(bitmap, origBox.left, origBox.top, origBox.width(), origBox.height())
             
-            // EXECUTE SWEEP: 48px vs 128px vs Native
-            val res48 = runRecognitionStage(crop, 48)
-            val res128 = runRecognitionStage(crop, 128)
-            val resNative = runRecognitionStage(crop, crop.height)
-            
+            // TFLite requires exactly 48px height. No sweep possible.
+            val res = runRecognitionStage(crop)
             crop.recycle()
 
-            // Pick the best result (heuristically prefer highest resolution for discovery unless confidence is high)
-            val best = resNative // For now, use native as primary, but log all
-            
-            val sweepMeta = mapOf(
-                "sweep_48" to "${res48.text} (${res48.timeMs}ms)",
-                "sweep_128" to "${res128.text} (${res128.timeMs}ms)",
-                "sweep_native" to "${resNative.text} (${resNative.timeMs}ms)"
-            )
-
-            if (best.text.isNotBlank()) {
-                results.append("${best.text} ")
-                textBlocks.add(TextBlock(best.text, origBox, detectedBox.angle, sweepMeta))
+            if (res.text.isNotBlank()) {
+                results.append("${res.text} ")
+                textBlocks.add(TextBlock(res.text, origBox, detectedBox.angle, mapOf("Resolution" to "48px")))
             }
         }
 
@@ -171,11 +144,12 @@ class PaddleOcrEngine(
         )
     }
 
-    private data class RecStageResult(val text: String, val timeMs: Long, val height: Int)
+    private data class RecStageResult(val text: String, val timeMs: Long)
 
-    private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
+    private fun runRecognitionStage(bitmap: Bitmap): RecStageResult {
         val tStart = System.currentTimeMillis()
-        val targetWidth = 640 // Recognition model width is fixed/maxed at 640
+        val targetHeight = 48
+        val targetWidth = 640
         val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetHeight * targetWidth * 3 * 4).apply {
@@ -183,7 +157,6 @@ class PaddleOcrEngine(
             for (y in 0 until targetHeight) {
                 for (x in 0 until targetWidth) {
                     val px = scaled.getPixel(x, y)
-                    // Normalization [0.5, 0.5]
                     putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px and 0xFF) / 255.0f - 0.5f) / 0.5f)
@@ -192,13 +165,12 @@ class PaddleOcrEngine(
         }
         scaled.recycle()
 
-        // Adaptive shape based on height
-        val timeSteps = 80 // Fixed for current model
+        val timeSteps = 80
         val outputBuffer = Array(1) { Array(timeSteps) { FloatArray(97) } }
         recInterpreter?.run(inputBuffer, outputBuffer)
         
         val decoded = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, dictionary, blankIndex = 0)
-        return RecStageResult(decoded, System.currentTimeMillis() - tStart, targetHeight)
+        return RecStageResult(decoded, System.currentTimeMillis() - tStart)
     }
 
     private fun prepareDetectionBuffer(bitmap: Bitmap, size: Int): ByteBuffer {
@@ -207,7 +179,6 @@ class PaddleOcrEngine(
             for (y in 0 until size) {
                 for (x in 0 until size) {
                     val px = bitmap.getPixel(x, y)
-                    // ImageNet normalization
                     putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
                     putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
                     putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)
