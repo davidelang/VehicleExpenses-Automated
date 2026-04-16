@@ -3,7 +3,6 @@ package com.davidlang.vehicleexpensesautomated
 import android.Manifest
 import android.os.Bundle
 import android.util.Log
-import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,22 +56,6 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
-
-                // AUTOMATED STARTUP DIAGNOSTIC TEST
-                LaunchedEffect(Unit) {
-                    scope.launch {
-                        Log.i("MainActivity", "Starting AUTOMATED STARTUP OCR DIAGNOSTIC...")
-                        try {
-                            // Create a dummy zeroed bitmap for the discovery pass
-                            val dummyBmp = Bitmap.createBitmap(1280, 1280, Bitmap.Config.ARGB_8888)
-                            val results = OcrHarness.runDiscovery(dummyBmp, context)
-                            Log.i("MainActivity", "Startup Diagnostic Success! Engines tested: ${results.keys.joinToString(", ")}")
-                            dummyBmp.recycle()
-                        } catch (e: Throwable) {
-                            Log.e("MainActivity", "Startup Diagnostic CRASHED: ${e.message}", e)
-                        }
-                    }
-                }
 
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
