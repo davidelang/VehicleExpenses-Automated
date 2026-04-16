@@ -34,8 +34,8 @@ class NativePaddleEngine(
     private val dictionary = mutableListOf<String>()
     
     // Memory-safe reusable buffers to prevent SIGSEGV fragmentation
-    private val inputSize = 1500
     private var detectionInputBuffer: FloatArray? = null
+    private var lastUsedInputSize: Int = 0
     
     companion object {
         private var sharedDetector: PaddlePredictor? = null
@@ -72,9 +72,6 @@ class NativePaddleEngine(
                     sharedDetector = createPredictor(detPath)
                     sharedRecognizer = createPredictor(recPath)
                 }
-                
-                // Pre-allocate large buffers once to avoid heap fragmentation
-                detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
                 
                 loadDictionary("paddle/en_dict.txt")
                 isAvailable = true
@@ -131,8 +128,8 @@ class NativePaddleEngine(
     private fun createPredictor(modelPath: String): PaddlePredictor {
         val config = MobileConfig()
         config.setModelFromFile(modelPath)
-        config.setThreads(4) 
-        config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+        config.setThreads(1) // Single thread for forensics
+        config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
@@ -169,7 +166,6 @@ class NativePaddleEngine(
         val sb = StringBuilder()
 
         if (DEBUG_BYPASS_DETECTION) {
-            Log.i("PaddleLite", "DEBUG: Bypassing Detection...")
             val res = runRecognitionStage(bitmap, 48)
             sb.append("REC_ONLY: ").append(res.text)
             textBlocks.add(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height), 0f, mapOf("Resolution" to "48px")))
@@ -200,20 +196,35 @@ class NativePaddleEngine(
         return OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
-            debugText = if (DEBUG_DRY_RUN) "DRY RUN SUCCESSFUL (${sb.toString().trim()})" else sb.toString().trim(),
+            debugText = resultsSummary(sb),
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
             imageHeight = bitmap.height
         )
     }
 
+    private fun resultsSummary(sb: StringBuilder): String {
+        return if (DEBUG_DRY_RUN) "DRY RUN SUCCESSFUL (${sb.toString().trim()})" else sb.toString().trim()
+    }
+
     private fun runDetection(bitmap: Bitmap): List<DetectedBox> {
         val predictor = sharedDetector ?: return emptyList()
-        val floatData = detectionInputBuffer ?: return emptyList()
         val t0 = System.currentTimeMillis()
         
+        // REVERT TO 1280px for stability during forensic test
+        val inputSize = 1280
         val inputTensor = predictor.getInput(0)
+        
+        // ADAPTIVE: Hardcode common shape if query fails during compile
+        val isNCHW = true 
+        
         inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
+        
+        if (detectionInputBuffer == null || lastUsedInputSize != inputSize) {
+            detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
+            lastUsedInputSize = inputSize
+        }
+        val floatData = detectionInputBuffer!!
         
         if (!DEBUG_DRY_RUN) {
             val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
@@ -228,13 +239,23 @@ class NativePaddleEngine(
             val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
             val std = floatArrayOf(0.229f, 0.224f, 0.225f)
             
-            // In-place population of reusable buffer
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
                     val px = padded.getPixel(x, y)
-                    floatData[0 * inputSize * inputSize + y * inputSize + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
-                    floatData[1 * inputSize * inputSize + y * inputSize + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
-                    floatData[2 * inputSize * inputSize + y * inputSize + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                    val r = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                    val g = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
+                    val b = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                    
+                    if (isNCHW) {
+                        floatData[0 * inputSize * inputSize + y * inputSize + x] = r
+                        floatData[1 * inputSize * inputSize + y * inputSize + x] = g
+                        floatData[2 * inputSize * inputSize + y * inputSize + x] = b
+                    } else {
+                        // NHWC: [1, H, W, 3]
+                        floatData[y * inputSize * 3 + x * 3 + 0] = r
+                        floatData[y * inputSize * 3 + x * 3 + 1] = g
+                        floatData[y * inputSize * 3 + x * 3 + 2] = b
+                    }
                 }
             }
             scaled.recycle()
@@ -243,14 +264,14 @@ class NativePaddleEngine(
         
         try {
             inputTensor.setData(floatData)
-            Log.i("PaddleLite", "Starting Detection run ($inputSize optimized)...")
+            Log.i("PaddleLite", "Starting Detection run...")
             predictor.run()
             Log.i("PaddleLite", "Detection run success.")
             
             val outputTensor = predictor.getOutput(0)
             return TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
         } catch (t: Throwable) {
-            Log.e("PaddleLite", "FATAL CRASH in runDetection ($inputSize)", t)
+            Log.e("PaddleLite", "FATAL CRASH in runDetection", t)
             throw t
         }
     }
@@ -264,9 +285,7 @@ class NativePaddleEngine(
         
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
-        
-        val totalElements = 1 * 3 * targetHeight * targetWidth
-        val floatData = FloatArray(totalElements)
+        val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
         
         if (!DEBUG_DRY_RUN) {
             val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
