@@ -145,11 +145,15 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             resizedDet.recycle()
 
             val flatHeatmap = FloatArray(inputSize * inputSize)
+            var maxProb = 0f
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
-                    flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
+                    val prob = outputBuffer[0][y][x][0]
+                    flatHeatmap[y * inputSize + x] = prob
+                    if (prob > maxProb) maxProb = prob
                 }
             }
+            Log.i("NativeTflite", "Detection Heatmap Max Probability: $maxProb")
             
             // Use 0.2 threshold for higher sensitivity
             val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.2f, unclipRatio = 1.5f)

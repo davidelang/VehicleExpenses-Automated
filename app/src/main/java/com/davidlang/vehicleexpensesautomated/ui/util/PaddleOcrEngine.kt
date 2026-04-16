@@ -98,15 +98,19 @@ class PaddleOcrEngine(
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
         resizedDet.recycle()
+val flatHeatmap = FloatArray(inputSize * inputSize)
+var maxProb = 0f
+for (y in 0 until inputSize) {
+    for (x in 0 until inputSize) {
+        val prob = outputBuffer[0][y][x][0]
+        flatHeatmap[y * inputSize + x] = prob
+        if (prob > maxProb) maxProb = prob
+    }
+}
+Log.i("PaddleOcr", "Detection Heatmap Max Probability: $maxProb")
 
-        val flatHeatmap = FloatArray(inputSize * inputSize)
-        for (y in 0 until inputSize) {
-            for (x in 0 until inputSize) {
-                flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
-            }
-        }
-        
-        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
+// Use 0.2 threshold for higher sensitivity
+val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.2f, unclipRatio = 1.5f)
         
         val results = StringBuilder()
         val scaleX = bitmap.width.toFloat() / inputSize
