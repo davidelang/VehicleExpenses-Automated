@@ -14,7 +14,7 @@ import kotlin.math.min
 
 /**
  * PaddleOCR Engine implemented via TFLite models.
- * Reverted to 1280px for TFLite compatibility.
+ * Optimized for 1280px detection and 48px recognition.
  */
 class PaddleOcrEngine(
     private val context: android.content.Context,
@@ -29,7 +29,6 @@ class PaddleOcrEngine(
     var isAvailable = false
         private set
 
-    // Fixed 1280px resolution required by TFLite model
     private val inputSize = 1280
     private var detectionInputBuffer: FloatArray? = null
 
@@ -50,7 +49,6 @@ class PaddleOcrEngine(
                 lines.forEach { dictionary.add(it) }
             }
             
-            // Pre-allocate buffer for 1280px pass
             detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
             
             isAvailable = true
@@ -97,7 +95,6 @@ class PaddleOcrEngine(
         val resizedDet = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
         val inputBuffer = prepareDetectionBuffer(resizedDet, inputSize, floatData)
         
-        // Model shape [1, 1280, 1280, 1]
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
         resizedDet.recycle()
@@ -109,8 +106,7 @@ class PaddleOcrEngine(
             }
         }
         
-        // Use 0.2 threshold for higher sensitivity
-        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.2f, unclipRatio = 1.5f)
+        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
         
         val results = StringBuilder()
         val scaleX = bitmap.width.toFloat() / inputSize
@@ -128,7 +124,8 @@ class PaddleOcrEngine(
             val res = runRecognitionStage(crop)
             crop.recycle()
 
-            if (res.text.isNotBlank()) {
+            // DYNAMIC FIX: Filter noisy low-confidence results
+            if (res.text.isNotBlank() && res.confidence > 0.5f) {
                 results.append("${res.text} ")
                 textBlocks.add(TextBlock(res.text, Rect(left, top, right, bottom), detectedBox.angle))
             }
@@ -144,7 +141,7 @@ class PaddleOcrEngine(
         )
     }
 
-    private data class RecStageResult(val text: String, val timeMs: Long)
+    private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
 
     private fun runRecognitionStage(bitmap: Bitmap): RecStageResult {
         val tStart = System.currentTimeMillis()
@@ -168,8 +165,8 @@ class PaddleOcrEngine(
         val outputBuffer = Array(1) { Array(80) { FloatArray(97) } }
         recInterpreter?.run(inputBuffer, outputBuffer)
         
-        val decoded = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, dictionary, blankIndex = 0)
-        return RecStageResult(decoded, System.currentTimeMillis() - tStart)
+        val (decoded, confidence) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, dictionary, blankIndex = 0)
+        return RecStageResult(decoded, System.currentTimeMillis() - tStart, confidence)
     }
 
     private fun prepareDetectionBuffer(bitmap: Bitmap, size: Int, floatData: FloatArray): ByteBuffer {
