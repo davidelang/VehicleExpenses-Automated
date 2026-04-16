@@ -48,24 +48,31 @@ class NativePaddleEngine(
     init {
         try {
             val arch = detectArch()
-            if (sharedDetector == null || sharedRecognizer == null) {
-                Log.i("PaddleLite", "Initializing Shared Predictors for architecture: $arch (DRY_RUN=$DEBUG_DRY_RUN)")
-                
-                if (!isNativeLibLoaded) {
-                    loadNativeLibrary()
-                    isNativeLibLoaded = true
+            
+            if (arch == "x86_64") {
+                isAvailable = false
+                initError = "Disabled on amd64 due to AVX2/FMA build incompatibility."
+                Log.w("PaddleLite", "Native engine DISABLED for architecture: $arch")
+            } else {
+                if (sharedDetector == null || sharedRecognizer == null) {
+                    Log.i("PaddleLite", "Initializing Shared Predictors for architecture: $arch (DRY_RUN=$DEBUG_DRY_RUN)")
+                    
+                    if (!isNativeLibLoaded) {
+                        loadNativeLibrary()
+                        isNativeLibLoaded = true
+                    }
+                    
+                    val detPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
+                    val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
+                    
+                    sharedDetector = createPredictor(detPath)
+                    sharedRecognizer = createPredictor(recPath)
                 }
                 
-                val detPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
-                val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
-                
-                sharedDetector = createPredictor(detPath)
-                sharedRecognizer = createPredictor(recPath)
+                loadDictionary("paddle/en_dict.txt")
+                isAvailable = true
+                Log.i("PaddleLite", "Native engine $name ready on $arch")
             }
-            
-            loadDictionary("paddle/en_dict.txt")
-            isAvailable = true
-            Log.i("PaddleLite", "Native engine $name ready")
         } catch (e: Throwable) {
             isAvailable = false
             initError = e.message
@@ -117,13 +124,13 @@ class NativePaddleEngine(
     private fun createPredictor(modelPath: String): PaddlePredictor {
         val config = MobileConfig()
         config.setModelFromFile(modelPath)
-        config.setThreads(1) // Keep single-threaded for debugging
-        config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+        config.setThreads(1) 
+        config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
-        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Initialized: $initError")
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError")
         
         val t0 = System.currentTimeMillis()
         return@withContext if (isConstrained) {
@@ -156,7 +163,6 @@ class NativePaddleEngine(
 
         if (DEBUG_BYPASS_DETECTION) {
             Log.i("PaddleLite", "DEBUG: Bypassing Detection, running single Recognition sweep...")
-            // Run a single recognition pass on the provided bitmap scaled to 48px
             val res = runRecognitionStage(bitmap, 48)
             sb.append("REC_ONLY: ").append(res.text)
             textBlocks.add(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height), 0f, mapOf("Resolution" to "48px")))
@@ -166,11 +172,9 @@ class NativePaddleEngine(
                 val box = detectedBox.boundingBox
                 if (box.width() < 1 || box.height() < 1) continue
                 val crop = cropBitmap(bitmap, box)
-                
                 val res48 = runRecognitionStage(crop, 48)
                 val res128 = runRecognitionStage(crop, 128)
                 val resNative = runRecognitionStage(crop, crop.height)
-                
                 crop.recycle()
 
                 val sweepMeta = mapOf(
@@ -230,8 +234,6 @@ class NativePaddleEngine(
             }
             scaled.recycle()
             padded.recycle()
-        } else {
-            Log.i("PaddleLite", "Dry Run: Sending zeroed detection buffer ($totalElements elements)")
         }
         
         try {
@@ -241,18 +243,7 @@ class NativePaddleEngine(
             Log.i("PaddleLite", "Detection run success.")
             
             val outputTensor = predictor.getOutput(0)
-            val boxes = TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f)
-            
-            // Map results back to original resolution (if not dry run)
-            if (!DEBUG_DRY_RUN) {
-                val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
-                val invScale = 1.0f / scale
-                return boxes.map { db ->
-                    val b = db.boundingBox
-                    db.copy(boundingBox = Rect((b.left * invScale).toInt(), (b.top * invScale).toInt(), (b.right * invScale).toInt(), (b.bottom * invScale).toInt()))
-                }
-            }
-            return boxes
+            return TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f)
         } catch (t: Throwable) {
             Log.e("PaddleLite", "FATAL CRASH in runDetection", t)
             throw t
@@ -283,8 +274,6 @@ class NativePaddleEngine(
                 }
             }
             scaled.recycle()
-        } else {
-            Log.i("PaddleLite", "Dry Run: Sending zeroed recognition buffer ($totalElements elements, H=$targetHeight)")
         }
 
         try {
@@ -314,7 +303,7 @@ class NativePaddleEngine(
             }
             return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, targetHeight)
         } catch (t: Throwable) {
-            Log.e("PaddleLite", "FATAL CRASH in runRecognitionStage", t)
+            Log.e("PaddleLite", "FATAL CRASH in runRecognitionStage (H=$targetHeight)", t)
             throw t
         }
     }
