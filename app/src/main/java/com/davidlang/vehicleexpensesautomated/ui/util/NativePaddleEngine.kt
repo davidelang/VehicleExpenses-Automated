@@ -34,7 +34,7 @@ class NativePaddleEngine(
     private val dictionary = mutableListOf<String>()
     
     // Memory-safe reusable buffers to prevent SIGSEGV fragmentation
-    private val inputSize = 1280
+    private val inputSize = 1500
     private var detectionInputBuffer: FloatArray? = null
     
     companion object {
@@ -243,14 +243,14 @@ class NativePaddleEngine(
         
         try {
             inputTensor.setData(floatData)
-            Log.i("PaddleLite", "Starting Detection run (1280px optimized)...")
+            Log.i("PaddleLite", "Starting Detection run ($inputSize optimized)...")
             predictor.run()
             Log.i("PaddleLite", "Detection run success.")
             
             val outputTensor = predictor.getOutput(0)
-            return TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f)
+            return TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
         } catch (t: Throwable) {
-            Log.e("PaddleLite", "FATAL CRASH in runDetection (1280px)", t)
+            Log.e("PaddleLite", "FATAL CRASH in runDetection ($inputSize)", t)
             throw t
         }
     }

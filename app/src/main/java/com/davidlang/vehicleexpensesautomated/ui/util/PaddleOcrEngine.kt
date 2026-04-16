@@ -3,9 +3,6 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Log
-import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
-import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
-import com.davidlang.vehicleexpensesautomated.ui.util.OcrEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.tensorflow.lite.Interpreter
@@ -13,10 +10,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.min
 
 /**
  * PaddleOCR Engine implemented via TFLite models.
- * Note: Recognition model is fixed at 48px height. Sweep/Staging disabled for TFLite.
+ * Optimized for 1500px "Golden" resolution.
  */
 class PaddleOcrEngine(
     private val context: android.content.Context,
@@ -30,6 +28,10 @@ class PaddleOcrEngine(
     
     var isAvailable = false
         private set
+
+    // "Golden" resolution from research
+    private val inputSize = 1500
+    private var detectionInputBuffer: FloatArray? = null
 
     init {
         try {
@@ -47,6 +49,9 @@ class PaddleOcrEngine(
             context.assets.open("tflite/paddle/paddle_en_dict.txt").bufferedReader().useLines { lines ->
                 lines.forEach { dictionary.add(it) }
             }
+            
+            // Pre-allocate buffer for 1500px pass
+            detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
             
             isAvailable = true
         } catch (e: Throwable) {
@@ -73,9 +78,7 @@ class PaddleOcrEngine(
     }
 
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
-        // TFLite model is fixed at 48px. Multi-stage disabled here.
         val res = runRecognitionStage(bitmap)
-
         return OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
@@ -83,18 +86,18 @@ class PaddleOcrEngine(
             debugText = res.text,
             textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))),
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height,
-            metadata = mapOf("Resolution" to "48px (Fixed)")
+            imageHeight = bitmap.height
         )
     }
 
     private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
         val textBlocks = mutableListOf<TextBlock>()
-        val inputSize = 1280
-        val resizedDet = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+        val floatData = detectionInputBuffer ?: return OcrResult(debugText = "Buffer Error")
         
-        // 1. Detection
-        val inputBuffer = prepareDetectionBuffer(resizedDet, inputSize)
+        val resizedDet = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+        val inputBuffer = prepareDetectionBuffer(resizedDet, inputSize, floatData)
+        
+        // Model shape [1, 1500, 1500, 1]
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
         resizedDet.recycle()
@@ -105,32 +108,29 @@ class PaddleOcrEngine(
                 flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
             }
         }
-        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f)
         
-        // 2. Recognition
+        // Use 0.2 threshold for higher sensitivity during discovery
+        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.2f, unclipRatio = 1.5f)
+        
         val results = StringBuilder()
         val scaleX = bitmap.width.toFloat() / inputSize
         val scaleY = bitmap.height.toFloat() / inputSize
 
         for (detectedBox in boxes) {
             val box = detectedBox.boundingBox
-            val origBox = Rect(
-                (box.left * scaleX).toInt().coerceAtLeast(0),
-                (box.top * scaleY).toInt().coerceAtLeast(0),
-                (box.right * scaleX).toInt().coerceAtMost(bitmap.width),
-                (box.bottom * scaleY).toInt().coerceAtMost(bitmap.height)
-            )
+            val left = (box.left * scaleX).toInt().coerceAtLeast(0)
+            val top = (box.top * scaleY).toInt().coerceAtLeast(0)
+            val right = (box.right * scaleX).toInt().coerceAtMost(bitmap.width)
+            val bottom = (box.bottom * scaleY).toInt().coerceAtMost(bitmap.height)
             
-            if (origBox.width() < 1 || origBox.height() < 1) continue
-            val crop = Bitmap.createBitmap(bitmap, origBox.left, origBox.top, origBox.width(), origBox.height())
-            
-            // TFLite requires exactly 48px height. No sweep possible.
+            if (right <= left || bottom <= top) continue
+            val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
             val res = runRecognitionStage(crop)
             crop.recycle()
 
             if (res.text.isNotBlank()) {
                 results.append("${res.text} ")
-                textBlocks.add(TextBlock(res.text, origBox, detectedBox.angle, mapOf("Resolution" to "48px")))
+                textBlocks.add(TextBlock(res.text, Rect(left, top, right, bottom), detectedBox.angle))
             }
         }
 
@@ -165,15 +165,14 @@ class PaddleOcrEngine(
         }
         scaled.recycle()
 
-        val timeSteps = 80
-        val outputBuffer = Array(1) { Array(timeSteps) { FloatArray(97) } }
+        val outputBuffer = Array(1) { Array(80) { FloatArray(97) } }
         recInterpreter?.run(inputBuffer, outputBuffer)
         
         val decoded = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, dictionary, blankIndex = 0)
         return RecStageResult(decoded, System.currentTimeMillis() - tStart)
     }
 
-    private fun prepareDetectionBuffer(bitmap: Bitmap, size: Int): ByteBuffer {
+    private fun prepareDetectionBuffer(bitmap: Bitmap, size: Int, floatData: FloatArray): ByteBuffer {
         val buf = ByteBuffer.allocateDirect(1 * 3 * size * size * 4).apply {
             order(ByteOrder.nativeOrder())
             for (y in 0 until size) {

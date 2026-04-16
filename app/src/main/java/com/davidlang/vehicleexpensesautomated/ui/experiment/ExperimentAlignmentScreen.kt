@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.RectF
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -128,15 +129,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val total = photos.size; val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     
     val groundTruth = loadGroundTruth(context)
-    
-    // One-time Cleanup: Delete all orphaned vehicle_ref files
-    val allRefPaths = vehicles.mapNotNull { it.referenceDashPhotoUrl }.toSet()
-    context.filesDir.listFiles { f -> f.name.startsWith("vehicle_ref_") }?.forEach { f ->
-        if (!allRefPaths.contains(f.absolutePath)) {
-            Log.i(TAG, "Deleting orphaned ref: ${f.name}")
-            f.delete()
-        }
-    }
+    val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+    val primaryIdentityEngine = prefs.getString("primary_identity_pref", "hardcoded") ?: "hardcoded"
+    val anchorSourceEngine = prefs.getString("anchor_source_pref", "ML Kit") ?: "ML Kit"
 
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
@@ -163,80 +158,59 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
-            // 1. IDENTITY STAGE (Deskew then Discovery)
-            val tIdentityStart = System.currentTimeMillis()
-            
-            // Pass 1: Calculate Deskew Angle
+            // 1. IDENTITY STAGE
             val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
             val tilt = deskewRes.angle
             val tDeskewTotal = deskewRes.timeMs
 
             if (Math.abs(tilt) > 0.2f) { 
                 val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt)
-                if (leveled != originalBitmap) { 
-                    originalBitmap.recycle() 
-                    originalBitmap = leveled 
-                }
+                if (leveled != originalBitmap) { originalBitmap.recycle(); originalBitmap = leveled }
             }
             
-            // Pass 2: Discovery Pass (Landmarks)
             val tDiscoveryStart = System.currentTimeMillis()
             val discoveryResults = OcrHarness.runDiscovery(originalBitmap, context)
             val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
 
-            val queryOcrDiscovery = discoveryResults["ML Kit"]!!
-            // DYNAMIC FIX: Unify Scan 2 and 3. Use raw results from Scan 2 for Veto pass.
-            // Apply punctuation stripping for ML Kit
-            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(
-                queryOcrDiscovery.textBlocks,
-                imgWidth = queryOcrDiscovery.imageWidth,
-                imgHeight = queryOcrDiscovery.imageHeight,
-                stripPunctuation = true
-            )
-            
-            val tIdentityTotal = System.currentTimeMillis() - tIdentityStart
+            val queryOcrDiscovery = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]!!
+            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight, stripPunctuation = (anchorSourceEngine == "ML Kit"))
             
             val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
-            val discoveryText = queryOcrDiscovery.debugText
             
-            val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle })
+            // MULTI-SOURCE VETO SWEEP
+            val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
+                val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight, stripPunctuation = (name == "ML Kit"))
+                ImageAlignmentUtils.performTier1Veto(engineLandmarks, cachedRefs.map { it.vehicle })
+            }
+            
+            val primaryVetoResults = vetoSweep[anchorSourceEngine] ?: vetoSweep["ML Kit"]!!
             val hardcodedWinner = groundTruth[file.name.lowercase()]
-            
             val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
-            
-            val primaryIdentityEngine = "hardcoded" // Configurable decision maker
             val identityEngines = IdentityRegistry.getActiveEngines()
 
             cachedRefs.forEach { ref ->
-                val veto = vetoResults[ref.vehicle.id] ?: VetoResult(false)
+                val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
                 val forceWinner = (hardcodedWinner != null && hardcodedWinner == ref.vehicle.name)
                 
                 val tMatchStart = System.currentTimeMillis()
                 val matchResults = mutableMapOf<String, AlignmentResult>()
                 
-                val odoCrop = ref.vehicle.odometerCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
-                val otherCrop = ref.vehicle.otherTextCropLeft?.let { l -> android.graphics.RectF(l, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
+                val odoCrop = ref.vehicle.odometerCropLeft?.let { l -> RectF(l, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
+                val otherCrop = ref.vehicle.otherTextCropLeft?.let { l -> RectF(l, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
                 
                 for (engine in identityEngines) {
                     val t0 = System.currentTimeMillis()
-                    val result = engine.identify(
-                        ref.bmp, originalBitmap, ref.ocrResult, queryOcrDiscovery,
-                        odoCrop, otherCrop, ref.vehicle, veto, forceWinner
-                    )
+                    val result = engine.identify(ref.bmp, originalBitmap, ref.ocrResult, queryOcrDiscovery, odoCrop, otherCrop, ref.vehicle, veto, forceWinner)
                     matchResults[engine.name] = result.copy(timeMs = System.currentTimeMillis() - t0)
                 }
                 
                 val primaryResult = matchResults[primaryIdentityEngine] ?: AlignmentResult(false, null, -1f, "Primary Engine Missing")
                 val isWinner = finalWinnerName == "No match" && primaryResult.confidence > 0.5f
                 val tMatchTotal = System.currentTimeMillis() - tMatchStart
-                
                 val alignmentTraces = mutableMapOf<String, AlignmentTraceResult>()
                 
-                // 2. ALIGNMENT & EXTRACTION STAGES (Only for winners/forced)
                 if (isWinner) {
                     finalWinnerName = ref.vehicle.name
-                    
-                    // Run all registered alignment engines
                     engines.forEach { engine ->
                         val t0 = System.currentTimeMillis()
                         val alignRes = engine.align(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks, ref.vehicle)
@@ -253,105 +227,44 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, false, elapsed, "", emptyList(), alignRes.metadata)
                         }
                     }
-                    
                     bestOdometer = OdometerOcrUtils.pickBestOdometer(alignmentTraces.values.flatMap { it.ocrTraces }) ?: "FAILED"
                 }
-                
-                vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(
-                    ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), matchResults
-                )
+                vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), matchResults)
             }
 
-            val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, discoveryText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments, tDeskewTotal, tDiscoveryTotal)
+            val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments, tDeskewTotal, tDiscoveryTotal)
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
             
-            // Populate jsonArray
             jsonArray.put(JSONObject().apply {
-                put("index", index + 1)
-                put("file", file.name)
-                put("winner", finalWinnerName)
-                put("odometer", bestOdometer)
-                put("deskew_time_ms", tDeskewTotal)
-                put("discovery_time_ms", tDiscoveryTotal)
-                
-                // OCR time per algorithm for de-skew and landmark extraction combined
+                put("index", index + 1); put("file", file.name); put("winner", finalWinnerName); put("odometer", bestOdometer); put("deskew_time_ms", tDeskewTotal); put("discovery_time_ms", tDiscoveryTotal)
                 val fullImageOcrTimings = JSONObject()
-                discoveryResults.forEach { (name, res) ->
-                    val combinedTime = if (name == "ML Kit") tDeskewTotal + res.executionTimeMs else res.executionTimeMs
-                    fullImageOcrTimings.put(name, combinedTime)
-                }
+                discoveryResults.forEach { (name, res) -> fullImageOcrTimings.put(name, if (name == "ML Kit") tDeskewTotal + res.executionTimeMs else res.executionTimeMs) }
                 put("full_image_ocr_timings", fullImageOcrTimings)
                 
+                val vSweepJson = JSONObject()
+                vetoSweep.forEach { (engine, results) ->
+                    val safeVehicles = results.filter { vRes -> !vRes.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }
+                    vSweepJson.put(engine, JSONObject().apply { put("safe_count", safeVehicles.size); put("safe_vehicles", JSONArray(safeVehicles)) })
+                }
+                put("veto_accuracy_sweep", vSweepJson)
+
                 val dResults = JSONObject()
                 discoveryResults.forEach { (name, res) ->
                     val landmarksArray = JSONArray()
-                    res.textBlocks.forEach { block ->
-                        landmarksArray.put(JSONObject().apply {
-                            put("text", block.text)
-                            put("cx", block.boundingBox.centerX())
-                            put("cy", block.boundingBox.centerY())
-                            put("w", block.boundingBox.width())
-                            put("h", block.boundingBox.height())
-                            
-                            val metaJson = JSONObject()
-                            block.metadata.forEach { (k, v) -> metaJson.put(k, v) }
-                            put("metadata", metaJson)
-                        })
-                    }
+                    res.textBlocks.forEach { block -> landmarksArray.put(JSONObject().apply { put("text", block.text); put("cx", block.boundingBox.centerX()); put("cy", block.boundingBox.centerY()); put("w", block.boundingBox.width()); put("h", block.boundingBox.height()); val metaJson = JSONObject(); block.metadata.forEach { (k, v) -> metaJson.put(k, v) }; put("metadata", metaJson) }) }
                     dResults.put(name, landmarksArray)
                 }
                 put("discovery_landmarks", dResults)
-
                 val vResults = JSONArray()
-                vehicleResultsMap.values.forEach { vr ->
-                    vResults.put(JSONObject().apply {
-                        put("vehicle", vr.vehicleName)
-                        put("veto_reason", vr.vetoReason)
-                        put("veto_my_manifest", JSONArray(vr.vetoMyManifest))
-                        put("veto_pool", JSONArray(vr.vetoPool))
-                        
-                        val identityMethods = JSONObject()
-                        vr.identityResults.forEach { (name, res) ->
-                            identityMethods.put(name, JSONObject().apply {
-                                put("success", res.success)
-                                put("confidence", res.confidence.toDouble())
-                                put("time_ms", res.timeMs)
-                                
-                                val metaJson = JSONObject()
-                                res.metadata.forEach { (k,v) -> metaJson.put(k,v) }
-                                put("metadata", metaJson)
-                            })
-                        }
-                        put("identity_methods", identityMethods)
-                        
-                        val traces = JSONObject()
-                        vr.alignmentTraces.forEach { (name, trace) ->
-                            traces.put(name, JSONObject().apply {
-                                put("success", trace.success)
-                                put("time_ms", trace.timeMs)
-                                trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) }
-                            })
-                        }
-                        put("traces", traces)
-                    })
-                }
+                vehicleResultsMap.values.forEach { vr -> vResults.put(JSONObject().apply { put("vehicle", vr.vehicleName); put("veto_reason", vr.vetoReason); put("veto_my_manifest", JSONArray(vr.vetoMyManifest)); put("veto_pool", JSONArray(vr.vetoPool)); val identityMethods = JSONObject(); vr.identityResults.forEach { (name, res) -> identityMethods.put(name, JSONObject().apply { put("success", res.success); put("confidence", res.confidence.toDouble()); put("time_ms", res.timeMs); val metaJson = JSONObject(); res.metadata.forEach { (k,v) -> metaJson.put(k,v) }; put("metadata", metaJson) }) }; put("identity_methods", identityMethods); val traces = JSONObject(); vr.alignmentTraces.forEach { (name, trace) -> traces.put(name, JSONObject().apply { put("success", trace.success); put("time_ms", trace.timeMs); trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) } }) }; put("traces", traces) }) }
                 put("vehicles", vResults)
             })
             originalBitmap.recycle()
-        } catch (e: Exception) { 
-            Log.e(TAG, "Failed ${file.name}", e) 
-            withContext(Dispatchers.Main) { onLog("Error processing ${file.name}: ${e.message}") }
-        }
-        
-        // Ensure progress is updated even on failure
-        withContext(Dispatchers.Main) { 
-            onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) 
-        }
+        } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
+        withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
     }
-    currentFile.appendText(footer)
-    File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2))
-    cachedRefs.forEach { it.bmp.recycle() }
+    currentFile.appendText(footer); File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
 }
 
 private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, alignNames: List<String>): String = buildString {
@@ -364,39 +277,27 @@ private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, a
 
 private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, bestOdo: String, alignNames: List<String>, tDeskew: Long, tDiscovery: Long): String = buildString {
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$deskewedBase64'><br><small>$discovery</small></td>")
-    
-    val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }
-    val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
-    
+    val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     alignNames.forEach { alignName ->
         appendLine("<td>")
         if (vRes != null) {
             val trace = vRes.alignmentTraces[alignName]
             if (trace != null && trace.success) {
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
-                if (trace.metadata.isNotEmpty()) {
-                    appendLine("<small>")
-                    trace.metadata.forEach { (k, v) -> appendLine("<b>$k:</b> $v<br>") }
-                    appendLine("</small><br>")
-                }
+                if (trace.metadata.isNotEmpty()) { appendLine("<small>"); trace.metadata.forEach { (k, v) -> appendLine("<b>$k:</b> $v<br>") }; appendLine("</small><br>") }
                 appendLine("<img src='data:image/jpeg;base64,${trace.alignedImageBase64}'><br><hr>")
-                trace.ocrTraces.forEach { step ->
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 200, 60)}'><br>${step.text}</div>")
-                }
+                trace.ocrTraces.forEach { step -> appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 200, 60)}'><br>${step.text}</div>") }
             } else appendLine("<i>Alignment failed or skipped</i>")
         } else appendLine("<i>No match found</i>")
         appendLine("</td>")
     }
-    
     appendLine("<td><b>Winner:</b> $winnerName<br><b>Odo:</b> $bestOdo<br>")
     if (vRes != null) {
         appendLine("<br><b>Identity Scores:</b><br><small>")
         vRes.identityResults.forEach { (name, res) ->
             val color = if (res.confidence > 0.5f) "green" else "gray"
             appendLine("<span style='color:$color'>$name: %.2f</span>".format(res.confidence))
-            if (res.metadata.isNotEmpty()) {
-                appendLine("<br><i style='font-size:24px;'>${res.metadata}</i>")
-            }
+            if (res.metadata.isNotEmpty()) { appendLine("<br><i style='font-size:24px;'>${res.metadata}</i>") }
             appendLine("<br>")
         }
         appendLine("</small>")
@@ -411,16 +312,12 @@ private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
 }
 
 private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
-    val scale = targetWidth.toFloat() / bitmap.width
-    val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
-    val b64 = bitmapToBase64(scaled, quality)
-    scaled.recycle()
-    return b64
+    val scale = targetWidth.toFloat() / bitmap.width; val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
+    val b64 = bitmapToBase64(scaled, quality); scaled.recycle(); return b64
 }
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
-    val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true)
-    val canvas = android.graphics.Canvas(annotated)
+    val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = android.graphics.Canvas(annotated)
     val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f; color = android.graphics.Color.RED }
     vehicle.odometerCropLeft?.let { l -> canvas.drawRect(l * bmp.width, (vehicle.odometerCropTop ?: 0f) * bmp.height, (vehicle.odometerCropRight ?: 1f) * bmp.width, (vehicle.odometerCropBottom ?: 1f) * bmp.height, paint) }
     return annotated
@@ -437,11 +334,7 @@ private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
 private fun loadGroundTruth(context: Context): Map<String, String> {
     val file = File(context.filesDir, "ground_truth.json")
     if (!file.exists()) return emptyMap()
-    return try {
-        val json = JSONObject(file.readText()); val map = mutableMapOf<String, String>()
-        val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); map[key.lowercase()] = json.getString(key) }
-        map
-    } catch (e: Exception) { emptyMap() }
+    return try { val json = JSONObject(file.readText()); val map = mutableMapOf<String, String>(); val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); map[key.lowercase()] = json.getString(key) }; map } catch (e: Exception) { emptyMap() }
 }
 
 private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
@@ -452,7 +345,6 @@ private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i); val text = obj.getString("text")
             val cx = obj.getInt("cx"); val cy = obj.getInt("cy"); val h = obj.getInt("h"); val w = obj.getInt("w")
-            // Apply punctuation stripping to reference landmarks
             val cleanText = OdometerOcrUtils.cleanLandmarkString(text, stripPunctuation = true)
             list.add(TextBlock(cleanText, android.graphics.Rect(cx - w/2, cy - h/2, cx + w/2, cy + h/2)))
         }
