@@ -127,7 +127,8 @@ fun ManageVehiclesScreen(
                 val rotatedBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
                 
                 // 1. Detect tilt and level the image
-                val tilt = OdometerOcrUtils.calculateAverageTextAngle(rotatedBmp)
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(rotatedBmp)
+                val tilt = deskewRes.angle
                 val leveledBmp = if (Math.abs(tilt) > 0.2f) {
                     Log.i("ManageVehicles", "Auto-leveling photo by ${-tilt} degrees")
                     OdometerOcrUtils.rotateBitmap(rotatedBmp, -tilt)

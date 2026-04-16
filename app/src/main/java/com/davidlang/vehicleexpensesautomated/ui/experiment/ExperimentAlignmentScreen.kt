@@ -167,9 +167,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val tIdentityStart = System.currentTimeMillis()
             
             // Pass 1: Calculate Deskew Angle
-            val tDeskewStart = System.currentTimeMillis()
-            val tilt = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
-            val tDeskewTotal = System.currentTimeMillis() - tDeskewStart
+            val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
+            val tilt = deskewRes.angle
+            val tDeskewTotal = deskewRes.timeMs
 
             if (Math.abs(tilt) > 0.2f) { 
                 val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt)
@@ -186,6 +186,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             val queryOcrDiscovery = discoveryResults["ML Kit"]!!
             // DYNAMIC FIX: Unify Scan 2 and 3. Use raw results from Scan 2 for Veto pass.
+            // Apply punctuation stripping for ML Kit
             val queryLandmarks = OdometerOcrUtils.processRawLandmarks(
                 queryOcrDiscovery.textBlocks,
                 imgWidth = queryOcrDiscovery.imageWidth,
@@ -273,6 +274,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 put("odometer", bestOdometer)
                 put("deskew_time_ms", tDeskewTotal)
                 put("discovery_time_ms", tDiscoveryTotal)
+                
+                // OCR time per algorithm for de-skew and landmark extraction combined
+                val fullImageOcrTimings = JSONObject()
+                discoveryResults.forEach { (name, res) ->
+                    val combinedTime = if (name == "ML Kit") tDeskewTotal + res.executionTimeMs else res.executionTimeMs
+                    fullImageOcrTimings.put(name, combinedTime)
+                }
+                put("full_image_ocr_timings", fullImageOcrTimings)
                 
                 val dResults = JSONObject()
                 discoveryResults.forEach { (name, res) ->
@@ -439,6 +448,7 @@ private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i); val text = obj.getString("text")
             val cx = obj.getInt("cx"); val cy = obj.getInt("cy"); val h = obj.getInt("h"); val w = obj.getInt("w")
+            // Apply punctuation stripping to reference landmarks
             val cleanText = OdometerOcrUtils.cleanLandmarkString(text, stripPunctuation = true)
             list.add(TextBlock(cleanText, android.graphics.Rect(cx - w/2, cy - h/2, cx + w/2, cy + h/2)))
         }
