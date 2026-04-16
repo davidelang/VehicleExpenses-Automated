@@ -483,8 +483,9 @@ object OdometerOcrUtils {
         return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
     }
 
-    private fun cleanLandmarkString(text: String): String {
-        return text.trim { it in "-.," }.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
+    fun cleanLandmarkString(text: String, stripPunctuation: Boolean = false): String {
+        val base = if (stripPunctuation) text.trim { it in "-.," } else text
+        return base.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
     }
 
     /**
@@ -495,7 +496,8 @@ object OdometerOcrUtils {
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null,
         imgWidth: Int,
-        imgHeight: Int
+        imgHeight: Int,
+        stripPunctuation: Boolean = false
     ): List<TextBlock> {
         // Filter out blocks inside the restricted crops (odometer, etc)
         val filtered = allBlocks.filter { block ->
@@ -505,7 +507,7 @@ object OdometerOcrUtils {
 
         // Clean punctuation and filter by length
         return filtered.map { block ->
-            block.copy(text = cleanLandmarkString(block.text))
+            block.copy(text = cleanLandmarkString(block.text, stripPunctuation))
         }.filter { it.text.length > 1 }.sortedBy { it.text }
     }
 
