@@ -21,6 +21,7 @@ import kotlin.math.min
 /**
  * Native Paddle-Lite 2.14rc OCR Engine.
  * Supports both full-image discovery (Detect + Recognize) and constrained odometer reading.
+ * Synchronized with TFLite refinements (Sweep, 3-Stage, Advanced Geometry).
  */
 class NativePaddleEngine(
     private val context: Context,
@@ -36,18 +37,17 @@ class NativePaddleEngine(
     private val dictionary = mutableListOf<String>()
     
     init {
+        // Temporarily disabled until "with-extra" ARM libraries are deployed
+        isAvailable = false
+        /*
         try {
             val arch = detectArch()
-            val detModelPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
-            val recModelPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
+            val detPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
+            val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
             
-            val dictName = if (isConstrained) "digits_only.txt" else "en_dict.txt"
-            loadDictionary("paddle/$dictName")
-
-            if (!isConstrained) {
-                detector = createPredictor(detModelPath)
-            }
-            recognizer = createPredictor(recModelPath)
+            detector = createPredictor(detPath)
+            recognizer = createPredictor(recPath)
+            loadDictionary("paddle/en_dict.txt")
             
             isAvailable = true
             Log.i("PaddleLite", "Initialized $name for arch $arch")
@@ -55,6 +55,7 @@ class NativePaddleEngine(
             isAvailable = false
             Log.e("PaddleLite", "Failed to initialize $name", e)
         }
+        */
     }
 
     private fun detectArch(): String {
@@ -68,12 +69,8 @@ class NativePaddleEngine(
 
     private fun copyAssetToInternal(assetPath: String): String {
         val file = File(context.cacheDir, assetPath.replace("/", "_"))
-        if (!file.exists()) {
-            context.assets.open(assetPath).use { input ->
-                FileOutputStream(file).use { output ->
-                    input.copyTo(output)
-                }
-            }
+        context.assets.open(assetPath).use { input ->
+            FileOutputStream(file).use { output -> input.copyTo(output) }
         }
         return file.absolutePath
     }
@@ -93,43 +90,74 @@ class NativePaddleEngine(
     }
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
-        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Initialized or Libraries missing kernels")
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Initialized")
         
         val t0 = System.currentTimeMillis()
-        val textBlocks = mutableListOf<TextBlock>()
-        
         if (isConstrained) {
-            val resultText = runRecognition(bitmap)
-            OcrResult(
-                engineName = name,
-                executionTimeMs = System.currentTimeMillis() - t0,
-                debugText = resultText,
-                textBlocks = listOf(TextBlock(resultText, Rect(0, 0, bitmap.width, bitmap.height))),
-                imageWidth = bitmap.width,
-                imageHeight = bitmap.height
-            )
+            recognizeConstrained(bitmap, t0)
         } else {
-            val boxes = runDetection(bitmap)
-            val sb = StringBuilder()
-            for (box in boxes) {
-                val crop = cropBitmap(bitmap, box)
-                val text = runRecognition(crop)
-                textBlocks.add(TextBlock(text, box))
-                sb.append(text).append(" ")
-                crop.recycle()
-            }
-            OcrResult(
-                engineName = name,
-                executionTimeMs = System.currentTimeMillis() - t0,
-                debugText = sb.toString().trim(),
-                textBlocks = textBlocks,
-                imageWidth = bitmap.width,
-                imageHeight = bitmap.height
-            )
+            recognizeDiscovery(bitmap, t0)
         }
     }
 
-    private fun runDetection(bitmap: Bitmap): List<Rect> {
+    private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
+        val stage1 = runRecognitionStage(bitmap, 48)
+        val digits = stage1.text.filter { it.isDigit() }
+        
+        val finalResult = if (digits.length >= 2) stage1 else runRecognitionStage(bitmap, 640)
+
+        return OcrResult(
+            engineName = name,
+            executionTimeMs = System.currentTimeMillis() - t0,
+            odometer = finalResult.text,
+            debugText = finalResult.text,
+            textBlocks = listOf(TextBlock(finalResult.text, Rect(0,0,bitmap.width, bitmap.height))),
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height,
+            metadata = mapOf("Resolution" to "${finalResult.height}px")
+        )
+    }
+
+    private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
+        val textBlocks = mutableListOf<TextBlock>()
+        val boxes = runDetection(bitmap)
+        val sb = StringBuilder()
+
+        for (detectedBox in boxes) {
+            val box = detectedBox.boundingBox
+            if (box.width() < 1 || box.height() < 1) continue
+            val crop = cropBitmap(bitmap, box)
+            
+            // Experimental Sweep
+            val res48 = runRecognitionStage(crop, 48)
+            val res128 = runRecognitionStage(crop, 128)
+            val resNative = runRecognitionStage(crop, crop.height)
+            
+            crop.recycle()
+
+            val sweepMeta = mapOf(
+                "sweep_48" to "${res48.text} (${res48.timeMs}ms)",
+                "sweep_128" to "${res128.text} (${res128.timeMs}ms)",
+                "sweep_native" to "${resNative.text} (${resNative.timeMs}ms)"
+            )
+
+            if (resNative.text.isNotBlank()) {
+                sb.append(resNative.text).append(" ")
+                textBlocks.add(TextBlock(resNative.text, box, detectedBox.angle, sweepMeta))
+            }
+        }
+
+        return OcrResult(
+            engineName = name,
+            executionTimeMs = System.currentTimeMillis() - t0,
+            debugText = sb.toString().trim(),
+            textBlocks = textBlocks,
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height
+        )
+    }
+
+    private fun runDetection(bitmap: Bitmap): List<DetectedBox> {
         val predictor = detector ?: return emptyList()
         
         val inputSize = 1280
@@ -153,76 +181,54 @@ class NativePaddleEngine(
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
                 val px = padded.getPixel(x, y)
-                val r = (px shr 16 and 0xFF) / 255.0f
-                val g = (px shr 8 and 0xFF) / 255.0f
-                val b = (px and 0xFF) / 255.0f
-                
-                floatData[0 * inputSize * inputSize + y * inputSize + x] = (r - mean[0]) / std[0]
-                floatData[1 * inputSize * inputSize + y * inputSize + x] = (g - mean[1]) / std[1]
-                floatData[2 * inputSize * inputSize + y * inputSize + x] = (b - mean[2]) / std[2]
+                floatData[0 * inputSize * inputSize + y * inputSize + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                floatData[1 * inputSize * inputSize + y * inputSize + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
+                floatData[2 * inputSize * inputSize + y * inputSize + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
             }
         }
         inputTensor.setData(floatData)
         predictor.run()
         
         val outputTensor = predictor.getOutput(0)
-        val outData = outputTensor.floatData
+        val boxes = TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f)
         
-        // --- DB-PostProcess using OpenCV ---
-        val probMap = org.opencv.core.Mat(inputSize, inputSize, org.opencv.core.CvType.CV_32F)
-        probMap.put(0, 0, outData)
-        
-        val binaryMap = org.opencv.core.Mat()
-        org.opencv.imgproc.Imgproc.threshold(probMap, binaryMap, 0.3, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-        binaryMap.convertTo(binaryMap, org.opencv.core.CvType.CV_8U)
-        
-        val contours = mutableListOf<org.opencv.core.MatOfPoint>()
-        val hierarchy = org.opencv.core.Mat()
-        org.opencv.imgproc.Imgproc.findContours(binaryMap, contours, hierarchy, org.opencv.imgproc.Imgproc.RETR_EXTERNAL, org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE)
-        
-        val detectedBoxes = mutableListOf<Rect>()
+        // Map boxes back to original coordinates
         val invScale = 1.0f / scale
-        
-        for (contour in contours) {
-            val rect = org.opencv.imgproc.Imgproc.boundingRect(contour)
-            if (rect.width > 10 && rect.height > 10) {
-                val originalRect = Rect(
-                    (rect.x * invScale).toInt(),
-                    (rect.y * invScale).toInt(),
-                    ((rect.x + rect.width) * invScale).toInt(),
-                    ((rect.y + rect.height) * invScale).toInt()
-                )
-                detectedBoxes.add(originalRect)
-            }
+        val mappedBoxes = boxes.map { db ->
+            val b = db.boundingBox
+            val originalRect = Rect(
+                (b.left * invScale).toInt(),
+                (b.top * invScale).toInt(),
+                (b.right * invScale).toInt(),
+                (b.bottom * invScale).toInt()
+            )
+            db.copy(boundingBox = originalRect)
         }
         
-        probMap.release(); binaryMap.release(); hierarchy.release()
         scaled.recycle()
         padded.recycle()
-        return detectedBoxes
+        return mappedBoxes
     }
 
-    private fun runRecognition(bitmap: Bitmap): String {
-        val predictor = recognizer ?: return ""
+    private data class RecStageResult(val text: String, val timeMs: Long, val height: Int)
+
+    private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
+        val tStart = System.currentTimeMillis()
+        val predictor = recognizer ?: return RecStageResult("", 0, targetHeight)
         
-        val targetH = 640
-        val scale = targetH.toFloat() / bitmap.height
-        val targetW = (bitmap.width * scale).toInt()
-        val scaled = Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
+        val targetWidth = 640
+        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         
         val inputTensor = predictor.getInput(0)
-        inputTensor.resize(longArrayOf(1, 3, targetH.toLong(), targetW.toLong()))
-        val floatData = FloatArray(1 * 3 * targetH * targetW)
+        inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
+        val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
         
-        val mean = 0.5f
-        val std = 0.5f
-        
-        for (y in 0 until targetH) {
-            for (x in 0 until targetW) {
+        for (y in 0 until targetHeight) {
+            for (x in 0 until targetWidth) {
                 val px = scaled.getPixel(x, y)
-                floatData[0 * targetH * targetW + y * targetW + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
-                floatData[1 * targetH * targetW + y * targetW + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
-                floatData[2 * targetH * targetW + y * targetW + x] = ((px and 0xFF) / 255.0f - mean) / std
+                floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.5f) / 0.5f
             }
         }
         inputTensor.setData(floatData)
@@ -241,10 +247,7 @@ class NativePaddleEngine(
             var maxVal = -1f
             for (j in 0 until dictSize) {
                 val v = data[i * dictSize + j]
-                if (v > maxVal) {
-                    maxVal = v
-                    maxIdx = j
-                }
+                if (v > maxVal) { maxVal = v; maxIdx = j }
             }
             if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
                 result.append(dictionary[maxIdx - 1])
@@ -253,8 +256,10 @@ class NativePaddleEngine(
         }
         
         scaled.recycle()
-        return result.toString()
+        return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, targetHeight)
     }
+
+    private fun runRecognition(bitmap: Bitmap): String = runRecognitionStage(bitmap, 640).text
 
     private fun cropBitmap(bmp: Bitmap, rect: Rect): Bitmap {
         val left = max(0, rect.left); val top = max(0, rect.top)
