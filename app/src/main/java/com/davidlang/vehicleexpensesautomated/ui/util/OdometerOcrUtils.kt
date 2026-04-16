@@ -23,7 +23,8 @@ import kotlinx.coroutines.tasks.await
 data class TextBlock(
     val text: String,
     val boundingBox: android.graphics.Rect,
-    val angle: Float = 0f
+    val angle: Float = 0f,
+    val metadata: Map<String, String> = emptyMap()
 )
 
 data class OcrResult(
@@ -41,7 +42,8 @@ data class OcrResult(
     val imageWidth: Int = 0,
     val imageHeight: Int = 0,
     val latitude: Double? = null,
-    val longitude: Double? = null
+    val longitude: Double? = null,
+    val metadata: Map<String, String> = emptyMap()
 ) {
     fun filterByCrops(odoCrop: android.graphics.RectF?, otherCrop: android.graphics.RectF?): OcrResult {
         val filteredBlocks = textBlocks.filter { block ->
@@ -112,7 +114,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
 
 object OcrHarness {
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-        val paddleOcrTflite = PaddleOcrEngine(context)
+        val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = false)
         val nativePaddle = NativePaddleEngine(context, isConstrained = false)
         val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
@@ -123,7 +125,7 @@ object OcrHarness {
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-        val paddleOcrTflite = PaddleOcrEngine(context)
+        val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = true)
         val nativePaddle = NativePaddleEngine(context, isConstrained = true)
         val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)

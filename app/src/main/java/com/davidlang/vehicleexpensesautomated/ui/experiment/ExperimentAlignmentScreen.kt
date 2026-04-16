@@ -293,6 +293,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             put("cy", block.boundingBox.centerY())
                             put("w", block.boundingBox.width())
                             put("h", block.boundingBox.height())
+                            
+                            val metaJson = JSONObject()
+                            block.metadata.forEach { (k, v) -> metaJson.put(k, v) }
+                            put("metadata", metaJson)
                         })
                     }
                     dResults.put(name, landmarksArray)
