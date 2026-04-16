@@ -35,13 +35,17 @@ fun LandmarkDebugDialog(
     otherTextCrop: Rect?,
     landmarks: List<TextBlock>,
     odometerText: String,
-    sourceWidth: Int = 1500,  // The resolution the landmarks were detected at
+    sourceWidth: Int = 1500,
     sourceHeight: Int = 1125,
     onDismiss: () -> Unit
 ) {
     if (photoPath == null) return
     val context = LocalContext.current
     val textMeasurer = rememberTextMeasurer()
+
+    // Safety: Ensure source dimensions are never zero
+    val sW = if (sourceWidth <= 0) 1500f else sourceWidth.toFloat()
+    val sH = if (sourceHeight <= 0) 1125f else sourceHeight.toFloat()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -115,10 +119,6 @@ fun LandmarkDebugDialog(
                                 drawRect(color = Color.Green, topLeft = rect, size = boxSize, style = Stroke(4f))
                             }
 
-                            // Use provided source dimensions for landmark normalization
-                            val sW = sourceWidth.toFloat().coerceAtLeast(1f)
-                            val sH = sourceHeight.toFloat().coerceAtLeast(1f)
-
                             landmarks.forEach { lm ->
                                 val nx = lm.boundingBox.left / sW
                                 val ny = lm.boundingBox.top / sH
@@ -146,9 +146,7 @@ fun LandmarkDebugDialog(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                
                 Text("Detected Odometer: $odometerText", style = MaterialTheme.typography.titleMedium, color = Color.Blue)
-                
                 Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
                 
                 LazyVerticalGrid(
@@ -165,7 +163,6 @@ fun LandmarkDebugDialog(
                         ) {
                             Column(modifier = Modifier.padding(4.dp)) {
                                 Text(lm.text, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                // Safety check for angle value
                                 val angle = if (lm.angle.isNaN() || lm.angle.isInfinite()) 0f else lm.angle
                                 val angleText = "%.1f°".format(angle)
                                 Text(angleText, style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, color = MaterialTheme.colorScheme.secondary))
