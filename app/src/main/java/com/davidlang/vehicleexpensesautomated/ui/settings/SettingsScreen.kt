@@ -41,7 +41,7 @@ fun SettingsScreen() {
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
     
-    // New OCR & Identity Settings
+    // Algorithm Settings
     var anchorSource by remember { mutableStateOf(prefs.getString("anchor_source_pref", "ML Kit") ?: "ML Kit") }
     var primaryIdentity by remember { mutableStateOf(prefs.getString("primary_identity_pref", "hardcoded") ?: "hardcoded") }
 
@@ -85,8 +85,8 @@ fun SettingsScreen() {
         Text("Algorithm Configuration", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(8.dp))
         
-        DropdownSetting("Primary Anchor Source", anchorSource, OcrHarness.getDiscoveryEngineNames(context)) { anchorSource = it }
-        DropdownSetting("Experiment Identity Engine", primaryIdentity, IdentityRegistry.getEngineNames()) { primaryIdentity = it }
+        DropdownSetting("Primary Anchor Source (Veto Source)", anchorSource, OcrHarness.getDiscoveryEngineNames(context)) { anchorSource = it }
+        DropdownSetting("Primary Identity Engine (Experiment Winner)", primaryIdentity, IdentityRegistry.getEngineNames()) { primaryIdentity = it }
         
         Spacer(modifier = Modifier.height(16.dp))
         HorizontalDivider()

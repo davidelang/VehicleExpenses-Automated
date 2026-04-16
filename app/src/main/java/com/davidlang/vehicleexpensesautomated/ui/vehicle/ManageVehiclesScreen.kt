@@ -9,6 +9,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -27,7 +28,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
@@ -80,6 +80,7 @@ fun ManageVehiclesScreen(
 
     var showLandmarkCheck by remember { mutableStateOf(false) }
     var discoveryResults by remember { mutableStateOf<Map<String, OcrResult>>(emptyMap()) }
+    var selectedEngineForPopup by remember { mutableStateOf("ML Kit") }
 
     LaunchedEffect(selectedVehicleId) {
         editingVehicle = vehicles.find { it.id == selectedVehicleId }
@@ -106,7 +107,6 @@ fun ManageVehiclesScreen(
             try {
                 val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url) ?: return@launch
                 val rotatedBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
-                
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(rotatedBmp)
                 val leveledBmp = if (Math.abs(deskewRes.angle) > 0.2f) {
                     OdometerOcrUtils.rotateBitmap(rotatedBmp, -deskewRes.angle)
@@ -115,22 +115,21 @@ fun ManageVehiclesScreen(
                 val leveledFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
                 leveledFile.outputStream().use { leveledBmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
                 
-                // MULTI-ENGINE DISCOVERY
-                val results = OcrHarness.runDiscovery(leveledBmp, context)
+                val rawResults = OcrHarness.runDiscovery(leveledBmp, context)
                 
-                // Derive Safe Signatures from Configured Engine
-                val primaryRes = results[anchorSourceEngine] ?: results["ML Kit"] ?: results.values.first()
-                val processedLandmarks = OdometerOcrUtils.processRawLandmarks(
-                    primaryRes.textBlocks, null, null, leveledBmp.width, leveledBmp.height,
-                    stripPunctuation = (anchorSourceEngine == "ML Kit")
-                )
-                val landmarkJson = serializeLandmarks(processedLandmarks)
+                // EXCLUDE CROP AREAS FROM ALL ENGINES
+                val odoRectF = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                val otherRectF = otherTextCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
+
+                val primaryRes = filteredResults[anchorSourceEngine] ?: filteredResults["ML Kit"] ?: filteredResults.values.first()
+                val landmarkJson = serializeLandmarks(primaryRes.textBlocks)
                 
                 withContext(Dispatchers.Main) {
                     pickedPhotoUrl = leveledFile.absolutePath
                     referencePhotoUrl = leveledFile.absolutePath
                     landmarkTextBlocksJson = landmarkJson
-                    discoveryResults = results
+                    discoveryResults = filteredResults
                     originalImageSize = Offset(leveledBmp.width.toFloat(), leveledBmp.height.toFloat())
                 }
                 if (leveledBmp != rotatedBmp) leveledBmp.recycle()
@@ -145,22 +144,17 @@ fun ManageVehiclesScreen(
             scope.launch {
                 try {
                     val leveledBmp = OdometerOcrUtils.decodeBitmapSafely(context, photoPathOrUri) ?: return@launch
-                    val results = OcrHarness.runDiscovery(leveledBmp, context)
+                    val rawResults = OcrHarness.runDiscovery(leveledBmp, context)
                     
-                    // Update Landmarks based on configured engine
-                    val primaryRes = results[anchorSourceEngine] ?: results["ML Kit"]
-                    primaryRes?.let { res ->
-                        val processed = OdometerOcrUtils.processRawLandmarks(
-                            res.textBlocks, 
-                            odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) },
-                            otherTextCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) },
-                            leveledBmp.width, leveledBmp.height,
-                            stripPunctuation = (anchorSourceEngine == "ML Kit")
-                        )
-                        landmarkTextBlocksJson = serializeLandmarks(processed)
-                    }
+                    val odoRectF = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                    val otherRectF = otherTextCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                    val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
+
+                    val primaryRes = filteredResults[anchorSourceEngine] ?: filteredResults["ML Kit"]
+                    primaryRes?.let { landmarkTextBlocksJson = serializeLandmarks(it.textBlocks) }
                     
-                    discoveryResults = results
+                    discoveryResults = filteredResults
+                    selectedEngineForPopup = anchorSourceEngine
                     showLandmarkCheck = true
                     leveledBmp.recycle()
                 } catch (e: Exception) { Log.e("ManageVehicles", "OCR failed", e) }
@@ -205,17 +199,26 @@ fun ManageVehiclesScreen(
                 
                 if (discoveryResults.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Discovery Results (All Engines):", style = MaterialTheme.typography.titleSmall)
+                    Text("Discovery Results (Excluding Crop Areas):", style = MaterialTheme.typography.titleSmall)
+                    Text("Tap an engine to see its red boxes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                    
                     Surface(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp).padding(vertical = 8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.small
                     ) {
                         Column(modifier = Modifier.padding(8.dp).verticalScroll(rememberScrollState())) {
                             discoveryResults.forEach { (engine, result) ->
-                                Text(engine, fontWeight = FontWeight.Bold, color = if (engine == anchorSourceEngine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                                Text(result.debugText, style = MaterialTheme.typography.bodySmall)
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedEngineForPopup = engine; showLandmarkCheck = true },
+                                    colors = CardDefaults.cardColors(containerColor = if (engine == selectedEngineForPopup) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(engine, fontWeight = FontWeight.Bold)
+                                        Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
+                                        Text(result.debugText, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
                             }
                         }
                     }
@@ -235,8 +238,8 @@ fun ManageVehiclesScreen(
     }
 
     if (showLandmarkCheck && referencePhotoUrl != null) {
-        val primaryRes = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]
-        primaryRes?.let { res ->
+        val displayRes = discoveryResults[selectedEngineForPopup] ?: discoveryResults["ML Kit"]
+        displayRes?.let { res ->
             LandmarkDebugDialog(
                 photoPath = referencePhotoUrl,
                 odometerCrop = odometerCropRect,
