@@ -449,7 +449,10 @@ object OdometerOcrUtils {
         )
     }
 
-    suspend fun calculateAverageTextAngle(bitmap: Bitmap): Float {
+    data class DeskewResult(val angle: Float, val timeMs: Long)
+
+    suspend fun calculateAverageTextAngle(bitmap: Bitmap): DeskewResult {
+        val t0 = System.currentTimeMillis()
         // 1. Scale to 1500px wide for consistency
         val scale = 1500f / bitmap.width
         val scaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * scale).toInt(), true)
@@ -459,11 +462,12 @@ object OdometerOcrUtils {
         scaled.recycle()
         
         val angles = ocrResult.textBlocks.map { it.angle }
-        if (angles.isEmpty()) return 0f
+        val elapsed = System.currentTimeMillis() - t0
+        if (angles.isEmpty()) return DeskewResult(0f, elapsed)
         
-        // 3. Use Median to ignore outliers (like dial numbers which might be rotated)
+        // 3. Use Median to ignore outliers
         val sortedAngles = angles.sorted()
-        return sortedAngles[sortedAngles.size / 2]
+        return DeskewResult(sortedAngles[sortedAngles.size / 2], elapsed)
     }
 
     fun manualCropFromRectF(bmp: Bitmap, rect: android.graphics.RectF): Bitmap? {
