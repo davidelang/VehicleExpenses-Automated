@@ -39,9 +39,9 @@ class NativePaddleEngine(
         private var isNativeLibLoaded = false
         private var initError: String? = null
         
-        // DEBUG FLAG: Set to true to test model kernels without loading real data
-        private const val DEBUG_DRY_RUN = true
-        // DEBUG FLAG: Set to true to bypass the Detection model and only test Recognition
+        // DEBUG FLAG: Set to false to enable real image processing
+        private const val DEBUG_DRY_RUN = false
+        // DEBUG FLAG: Set to false to enable the Detection model
         private const val DEBUG_BYPASS_DETECTION = false
     }
 
@@ -56,6 +56,7 @@ class NativePaddleEngine(
             } else {
                 if (sharedDetector == null || sharedRecognizer == null) {
                     Log.i("PaddleLite", "Initializing Shared Predictors for architecture: $arch (DRY_RUN=$DEBUG_DRY_RUN)")
+                    Log.i("PaddleLite", "JVM Max Memory: ${Runtime.getRuntime().maxMemory() / 1024 / 1024} MB")
                     
                     if (!isNativeLibLoaded) {
                         loadNativeLibrary()
@@ -124,8 +125,8 @@ class NativePaddleEngine(
     private fun createPredictor(modelPath: String): PaddlePredictor {
         val config = MobileConfig()
         config.setModelFromFile(modelPath)
-        config.setThreads(1) 
-        config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
+        config.setThreads(4) 
+        config.setPowerMode(PowerMode.LITE_POWER_HIGH)
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
@@ -204,7 +205,8 @@ class NativePaddleEngine(
         val predictor = sharedDetector ?: return emptyList()
         val t0 = System.currentTimeMillis()
         
-        val inputSize = 1280
+        // REDUCE RESOLUTION TO 640px to test memory pressure theory
+        val inputSize = 640
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
         
@@ -238,12 +240,19 @@ class NativePaddleEngine(
         
         try {
             inputTensor.setData(floatData)
-            Log.i("PaddleLite", "Starting Detection run...")
+            Log.i("PaddleLite", "Starting Detection run (640px)...")
             predictor.run()
             Log.i("PaddleLite", "Detection run success.")
             
             val outputTensor = predictor.getOutput(0)
-            return TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f)
+            val boxes = TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f)
+            
+            val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
+            val invScale = 1.0f / scale
+            return boxes.map { db ->
+                val b = db.boundingBox
+                db.copy(boundingBox = Rect((b.left * invScale).toInt(), (b.top * invScale).toInt(), (b.right * invScale).toInt(), (b.bottom * invScale).toInt()))
+            }
         } catch (t: Throwable) {
             Log.e("PaddleLite", "FATAL CRASH in runDetection", t)
             throw t
