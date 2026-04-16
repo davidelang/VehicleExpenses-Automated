@@ -241,7 +241,14 @@ class NativePaddleEngine(
             predictor.run()
             
             val outputTensor = predictor.getOutput(0)
-            val boxes = TfLiteOcrUtils.processDbNetOutput(outputTensor.floatData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
+            val outputData = outputTensor.floatData
+            var maxProb = 0f
+            for (prob in outputData) {
+                if (prob > maxProb) maxProb = prob
+            }
+            Log.i("PaddleLite", "Detection Heatmap Max Probability: $maxProb")
+            
+            val boxes = TfLiteOcrUtils.processDbNetOutput(outputData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
             
             val invScale = 1.0f / scale
             return boxes.map { db ->
