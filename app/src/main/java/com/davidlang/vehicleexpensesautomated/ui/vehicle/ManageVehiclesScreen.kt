@@ -239,7 +239,16 @@ fun ManageVehiclesScreen(
     if (showLandmarkCheck && referencePhotoUrl != null) {
         val primaryRes = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]
         primaryRes?.let { res ->
-            LandmarkDebugDialog(photoPath = referencePhotoUrl, odometerCrop = odometerCropRect, otherTextCrop = otherTextCropRect, landmarks = res.textBlocks, odometerText = "N/A", onDismiss = { showLandmarkCheck = false })
+            LandmarkDebugDialog(
+                photoPath = referencePhotoUrl,
+                odometerCrop = odometerCropRect,
+                otherTextCrop = otherTextCropRect,
+                landmarks = res.textBlocks,
+                odometerText = "N/A",
+                sourceWidth = res.imageWidth,
+                sourceHeight = res.imageHeight,
+                onDismiss = { showLandmarkCheck = false }
+            )
         }
     }
 }

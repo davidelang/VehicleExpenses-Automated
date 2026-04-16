@@ -35,6 +35,8 @@ fun LandmarkDebugDialog(
     otherTextCrop: Rect?,
     landmarks: List<TextBlock>,
     odometerText: String,
+    sourceWidth: Int = 1500,  // The resolution the landmarks were detected at
+    sourceHeight: Int = 1125,
     onDismiss: () -> Unit
 ) {
     if (photoPath == null) return
@@ -105,13 +107,6 @@ fun LandmarkDebugDialog(
                                 val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
                                 val boxSize = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
                                 drawRect(color = Color.Blue, topLeft = rect, size = boxSize, style = Stroke(4f))
-                                
-                                drawText(
-                                    textMeasurer = textMeasurer,
-                                    text = "ODO: $odometerText",
-                                    topLeft = rect.copy(y = (rect.y - 18.dp.toPx()).coerceAtLeast(0f)),
-                                    style = androidx.compose.ui.text.TextStyle(color = Color.Cyan, fontSize = 11.sp, background = Color.Black.copy(alpha = 0.8f))
-                                )
                             }
 
                             otherTextCrop?.let {
@@ -120,21 +115,27 @@ fun LandmarkDebugDialog(
                                 drawRect(color = Color.Green, topLeft = rect, size = boxSize, style = Stroke(4f))
                             }
 
+                            // Use provided source dimensions for landmark normalization
+                            val sW = sourceWidth.toFloat().coerceAtLeast(1f)
+                            val sH = sourceHeight.toFloat().coerceAtLeast(1f)
+
                             landmarks.forEach { lm ->
-                                val nx = lm.boundingBox.left / 1500f
-                                val ny = lm.boundingBox.top / (imgH * (1500f / imgW))
-                                val nw = (lm.boundingBox.right - lm.boundingBox.left) / 1500f
-                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top) / (imgH * (1500f / imgW))
+                                val nx = lm.boundingBox.left / sW
+                                val ny = lm.boundingBox.top / sH
+                                val nw = (lm.boundingBox.right - lm.boundingBox.left) / sW
+                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top) / sH
                                 
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
                                 drawRect(color = Color.Red, topLeft = rect, size = androidx.compose.ui.geometry.Size(nw * dw, nh * dh), style = Stroke(2f))
 
-                                drawText(
-                                    textMeasurer = textMeasurer,
-                                    text = lm.text,
-                                    topLeft = rect,
-                                    style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 8.sp, background = Color.Black.copy(alpha = 0.7f))
-                                )
+                                if (lm.text.isNotBlank()) {
+                                    drawText(
+                                        textMeasurer = textMeasurer,
+                                        text = lm.text,
+                                        topLeft = rect,
+                                        style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 8.sp, background = Color.Black.copy(alpha = 0.7f))
+                                    )
+                                }
                             }
                         }
                     }
@@ -151,7 +152,7 @@ fun LandmarkDebugDialog(
                 Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
                 
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 80.dp),
+                    columns = GridCells.Adaptive(minSize = 100.dp),
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -164,7 +165,9 @@ fun LandmarkDebugDialog(
                         ) {
                             Column(modifier = Modifier.padding(4.dp)) {
                                 Text(lm.text, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                val angleText = "%.1f°".format(lm.angle)
+                                // Safety check for angle value
+                                val angle = if (lm.angle.isNaN() || lm.angle.isInfinite()) 0f else lm.angle
+                                val angleText = "%.1f°".format(angle)
                                 Text(angleText, style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, color = MaterialTheme.colorScheme.secondary))
                             }
                         }
