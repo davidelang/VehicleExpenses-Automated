@@ -106,7 +106,8 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val engine = TfLiteOcrEngine(context)
-        val inputSize = 1500
+        // Fixed 1280px resolution for TFLite compatibility
+        val inputSize = 1280
         
         // 1. Detection Stage (DBNet TFLite)
         val detInterpreter = try {
@@ -131,13 +132,14 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
                     val px = resizedDet.getPixel(x, y)
+                    // ImageNet normalization
                     inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
                     inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
                     inputBuffer.putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)
                 }
             }
             
-            // Output shape [1, 1500, 1500, 1]
+            // Output shape [1, 1280, 1280, 1]
             val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
             detInterpreter.run(inputBuffer, outputBuffer)
             resizedDet.recycle()
