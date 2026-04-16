@@ -3,6 +3,8 @@ package com.davidlang.vehicleexpensesautomated
 import android.Manifest
 import android.os.Bundle
 import android.util.Log
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,9 +32,13 @@ import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehiclesScreen
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import dagger.hilt.android.AndroidEntryPoint
 import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -56,6 +62,36 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
+
+                // AUTOMATED STARTUP SENSITIVITY TEST
+                LaunchedEffect(Unit) {
+                    scope.launch(Dispatchers.IO) {
+                        Log.i("MainActivity", "Starting AUTOMATED STARTUP SENSITIVITY TEST...")
+                        
+                        // 1. Locate reference photo
+                        val refFile = File(context.filesDir, "photos")
+                        val hondaRef = refFile.listFiles()?.find { it.name.contains("honda_ref") }
+                        
+                        if (hondaRef != null) {
+                            val bitmap = OdometerOcrUtils.decodeBitmapSafely(context, hondaRef.absolutePath)
+                            bitmap?.let { bmp ->
+                                Log.i("MainActivity", "Test 1: Baseline ImageNet Normalization")
+                                val res1 = OcrHarness.runDiscovery(bmp, context)
+                                Log.i("MainActivity", "Test 1 Landmarks: ${res1.mapValues { it.value.textBlocks.size }}")
+                                
+                                Log.i("MainActivity", "Test 2: CLAHE Pre-processing")
+                                val claheBmp = OdometerOcrUtils.applyClahe(bmp)
+                                val res2 = OcrHarness.runDiscovery(claheBmp, context)
+                                Log.i("MainActivity", "Test 2 Landmarks: ${res2.mapValues { it.value.textBlocks.size }}")
+                                
+                                claheBmp.recycle()
+                                bmp.recycle()
+                            }
+                        } else {
+                            Log.w("MainActivity", "Test Skipped: honda_ref.jpg not found in photos dir.")
+                        }
+                    }
+                }
 
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()

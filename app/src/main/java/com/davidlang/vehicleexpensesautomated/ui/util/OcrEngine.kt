@@ -46,6 +46,7 @@ data class OcrResult(
     val metadata: Map<String, String> = emptyMap()
 ) {
     fun filterByCrops(odoCrop: RectF?, otherCrop: RectF?): OcrResult {
+        // ONLY filter by physical location, do NOT filter by content or length.
         val filteredBlocks = textBlocks.filter { block ->
             !OcrUtils.isBlockInCrop(block, odoCrop, imageWidth, imageHeight) &&
             !OcrUtils.isBlockInCrop(block, otherCrop, imageWidth, imageHeight)
@@ -106,7 +107,6 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val engine = TfLiteOcrEngine(context)
-        // Fixed 1280px resolution for TFLite compatibility
         val inputSize = 1280
         
         // 1. Detection Stage (DBNet TFLite)
@@ -132,31 +132,25 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
                     val px = resizedDet.getPixel(x, y)
-                    // ImageNet normalization
                     inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
                     inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
                     inputBuffer.putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)
                 }
             }
             
-            // Output shape [1, 1280, 1280, 1]
             val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
             detInterpreter.run(inputBuffer, outputBuffer)
             resizedDet.recycle()
 
             val flatHeatmap = FloatArray(inputSize * inputSize)
-            var maxProb = 0f
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
-                    val prob = outputBuffer[0][y][x][0]
-                    flatHeatmap[y * inputSize + x] = prob
-                    if (prob > maxProb) maxProb = prob
+                    flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
                 }
             }
-            Log.i("NativeTflite", "Detection Heatmap Max Probability: $maxProb")
             
-            // Use 0.2 threshold for higher sensitivity
-            val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.2f, unclipRatio = 1.5f)
+            // ADAPTIVE THRESHOLDING enabled via TfLiteOcrUtils.processDbNetOutput internal logic
+            val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
             
             val scaleX = bitmap.width.toFloat() / inputSize
             val scaleY = bitmap.height.toFloat() / inputSize
@@ -173,7 +167,8 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 val text = engine.runInference(crop)
                 crop.recycle()
                 
-                if (text.isNotBlank() && !text.contains("(no digits)")) {
+                // RETURN RAW TEXT - No content filtering here to see everything found
+                if (text.isNotBlank()) {
                     debugText.append("$text ")
                     textBlocks.add(TextBlock(text, Rect(left, top, right, bottom), detectedBox.angle))
                 }
