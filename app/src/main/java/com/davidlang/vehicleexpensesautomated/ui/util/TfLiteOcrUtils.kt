@@ -7,15 +7,21 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
+ * Represents a detected text region with both rotated points and axis-aligned bounds.
+ */
+data class DetectedBox(
+    val points: List<Point>,
+    val boundingBox: Rect,
+    val angle: Float
+)
+
+/**
  * Shared utilities for processing TFLite OCR and Detection model outputs.
  */
 object TfLiteOcrUtils {
 
     /**
      * Decodes raw 3D float array (logits) from a TFLite OCR model using CTC Greedy Search.
-     * @param logits Shape: [1][timeSteps][numClasses]
-     * @param dictionary List of characters (excluding blank)
-     * @param blankIndex The index of the CTC blank/spacer token (usually 0 or numClasses-1)
      */
     fun decodeCtcGreedy(logits: Array<Array<FloatArray>>, dictionary: List<String>, blankIndex: Int = 0): String {
         val result = StringBuilder()
@@ -24,7 +30,6 @@ object TfLiteOcrUtils {
         val numClasses = sequence[0].size
         
         var lastIndex = -1
-        val rawIndices = mutableListOf<Int>()
 
         for (t in 0 until timeSteps) {
             var maxIndex = 0
@@ -36,10 +41,7 @@ object TfLiteOcrUtils {
                     maxIndex = c
                 }
             }
-            
-            rawIndices.add(maxIndex)
 
-            // CTC Rules: Ignore blanks and collapse consecutive duplicates
             if (maxIndex != blankIndex && maxIndex != lastIndex) {
                 val dictIndex = if (blankIndex == 0) maxIndex - 1 else maxIndex
                 if (dictIndex >= 0 && dictIndex < dictionary.size) {
@@ -48,21 +50,11 @@ object TfLiteOcrUtils {
             }
             lastIndex = maxIndex
         }
-        
-        if (result.isEmpty()) {
-            android.util.Log.d("TfLiteOcrUtils", "Decode empty. Raw indices: ${rawIndices.take(20)}... BlankIndex: $blankIndex")
-        }
-        
         return result.toString()
     }
 
     /**
-     * Processes DBNet detection heatmap into text polygons.
-     * @param heatmap Shape: [1][1][H][W] or flat array
-     * @param width Width of the heatmap
-     * @param height Height of the heatmap
-     * @param thresh Binary threshold (default 0.3)
-     * @param unclipRatio Expansion ratio (default 1.5)
+     * Processes DBNet detection heatmap into rotated text polygons.
      */
     fun processDbNetOutput(
         heatmap: FloatArray,
@@ -70,7 +62,7 @@ object TfLiteOcrUtils {
         height: Int,
         thresh: Float = 0.3f,
         unclipRatio: Float = 1.5f
-    ): List<Rect> {
+    ): List<DetectedBox> {
         val mask = Mat(height, width, CvType.CV_8UC1)
         val data = ByteArray(width * height)
         for (i in heatmap.indices) {
@@ -82,33 +74,35 @@ object TfLiteOcrUtils {
         val hierarchy = Mat()
         Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
 
-        val results = mutableListOf<Rect>()
+        val results = mutableListOf<DetectedBox>()
         for (contour in contours) {
             val area = Imgproc.contourArea(contour)
             if (area < 16) continue
 
-            // 1. Fit Rotated Rect
+            // 1. Fit Rotated Rect (Supports tilted text)
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
             val points = arrayOf(Point(), Point(), Point(), Point())
             rotatedRect.points(points)
 
-            // 2. Unclip (Expansion)
-            val expandedRect = unclipBox(points, unclipRatio)
+            // 2. Unclip (Expansion using Research Formula)
+            val expandedPoints = unclipBox(points, unclipRatio)
             
-            // 3. Convert back to axis-aligned Rect for standard Android use
+            // 3. Calculate axis-aligned bounds for the crop
             var minX = width.toDouble(); var minY = height.toDouble()
             var maxX = 0.0; var maxY = 0.0
-            for (p in expandedRect) {
+            for (p in expandedPoints) {
                 minX = min(minX, p.x); minY = min(minY, p.y)
                 maxX = max(maxX, p.x); maxY = max(maxY, p.y)
             }
             
-            results.add(Rect(
+            val bounds = Rect(
                 max(0, minX.toInt()),
                 max(0, minY.toInt()),
                 min(width, maxX.toInt()),
                 min(height, maxY.toInt())
-            ))
+            )
+            
+            results.add(DetectedBox(expandedPoints, bounds, rotatedRect.angle.toFloat()))
         }
         
         mask.release(); hierarchy.release()
@@ -116,16 +110,17 @@ object TfLiteOcrUtils {
     }
 
     /**
-     * Expands a text box to prevent digit clipping.
+     * Expands a text box to prevent digit clipping using the Area/Perimeter formula.
+     * Distance = (Area * ratio) / Perimeter
      */
     private fun unclipBox(points: Array<Point>, ratio: Float): List<Point> {
         val area = calculatePolygonArea(points)
         val perimeter = calculatePolygonPerimeter(points)
         if (perimeter <= 0) return points.toList()
         
-        val distance = (area * ratio / perimeter).toDouble()
+        val distance = (area * ratio / perimeter)
         
-        // Simple expansion logic: scale outward from center
+        // Find center for directional offset
         val center = Point(0.0, 0.0)
         for (p in points) { center.x += p.x; center.y += p.y }
         center.x /= 4.0; center.y /= 4.0
