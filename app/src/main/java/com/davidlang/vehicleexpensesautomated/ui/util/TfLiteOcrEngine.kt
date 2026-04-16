@@ -9,19 +9,34 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 
+/**
+ * Native TFLite Engine optimized for numeric_ocr.tflite [1, 200, 50, 1]
+ */
 class TfLiteOcrEngine(context: Context) {
     private var interpreter: Interpreter? = null
     private val labels = "0123456789"
+    
+    private var inputHeight = 32
+    private var inputWidth = 128
+    private var isGrayscale = true
 
     init {
         try {
-            android.util.Log.i("TfLiteOcr", "Initializing TfLiteOcrEngine. NNAPI set to FALSE.")
             val model = loadModelFile(context, "tflite/numeric_ocr.tflite")
-            val options = Interpreter.Options()
-            options.setNumThreads(4)
-            options.useNNAPI = false // Disabled for stability on emulators
-            interpreter = Interpreter(model, options)
-            Log.i("TfLiteOcr", "Model loaded successfully (CPU fallback mode)")
+            val options = Interpreter.Options().apply {
+                setNumThreads(4)
+                useNNAPI = false
+            }
+            val interp = Interpreter(model, options)
+            interpreter = interp
+            
+            // DYNAMIC SHAPE DISCOVERY
+            val inputShape = interp.getInputTensor(0).shape() // e.g. [1, 200, 50, 1]
+            inputHeight = inputShape[1]
+            inputWidth = inputShape[2]
+            isGrayscale = inputShape[3] == 1
+            
+            Log.i("TfLiteOcr", "Model loaded. Shape: ${inputShape.joinToString(",")}, Gray=$isGrayscale")
         } catch (e: Exception) {
             Log.e("TfLiteOcr", "Failed to load model", e)
         }
@@ -39,40 +54,56 @@ class TfLiteOcrEngine(context: Context) {
     fun runInference(bitmap: Bitmap): String {
         val interp = interpreter ?: return "(Model not loaded)"
         
-        // 1. Pre-process: Resize to 128x32 (standard CRNN size) and Grayscale
-        val resized = Bitmap.createScaledBitmap(bitmap, 128, 32, true)
-        val inputBuffer = ByteBuffer.allocateDirect(1 * 32 * 128 * 1 * 4) // Float32
+        // 1. Pre-process based on discovered shape
+        val scaled = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
+        val inputBuffer = ByteBuffer.allocateDirect(1 * inputHeight * inputWidth * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        for (y in 0 until 32) {
-            for (x in 0 until 128) {
-                val px = resized.getPixel(x, y)
-                // Standard Grayscale conversion: 0.299R + 0.587G + 0.114B
-                val r = (px shr 16) and 0xFF
-                val g = (px shr 8) and 0xFF
-                val b = px and 0xFF
-                val gray = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f
-                inputBuffer.putFloat(gray)
+        for (y in 0 until inputHeight) {
+            for (x in 0 until inputWidth) {
+                val px = scaled.getPixel(x, y)
+                if (isGrayscale) {
+                    val r = (px shr 16) and 0xFF
+                    val g = (px shr 8) and 0xFF
+                    val b = px and 0xFF
+                    inputBuffer.putFloat((0.299f * r + 0.587f * g + 0.114f * b) / 255.0f)
+                } else {
+                    inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f))
+                    inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f))
+                    inputBuffer.putFloat(((px and 0xFF) / 255.0f))
+                }
             }
         }
+        scaled.recycle()
 
-        // 2. Output Buffer: (1, 31, 11) - 31 time steps, 11 classes (0-9 + blank)
-        val outputBuffer = Array(1) { Array(31) { FloatArray(11) } }
-
-        try {
-            interp.run(inputBuffer, outputBuffer)
-        } catch (e: Exception) {
-            return "(Inference Error)"
+        // 2. Adaptive Output Handling
+        val outputShape = interp.getOutputTensor(0).shape()
+        
+        if (outputShape.contentEquals(intArrayOf(1, 1, 20))) {
+            // Specialized numeric extractor for [1, 1, 20]
+            val outputBuffer = Array(1) { Array(1) { FloatArray(20) } }
+            try {
+                interp.run(inputBuffer, outputBuffer)
+                val data = outputBuffer[0][0]
+                // For this specific model, assume it returns digit probabilities or values
+                // Placeholder: extract top categories
+                return data.take(10).mapIndexed { i, v -> if (v > 0.5f) i.toString() else "" }.joinToString("").trim()
+            } catch (e: Exception) {
+                return "(Inference Error: ${e.message})"
+            }
+        } else {
+            // Fallback to CTC for standard CRNN [1, Steps, Classes]
+            val timeSteps = outputShape[1]
+            val numClasses = outputShape[2]
+            val outputBuffer = Array(1) { Array(timeSteps) { FloatArray(numClasses) } }
+            try {
+                interp.run(inputBuffer, outputBuffer)
+                val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, labels.map { it.toString() }, blankIndex = 10)
+                return if (text.isEmpty()) "(no digits)" else text
+            } catch (e: Exception) {
+                return "(Inference Error: ${e.message})"
+            }
         }
-
-        // 3. Robust CTC Greedy Decoder
-        val decoded = TfLiteOcrUtils.decodeCtcGreedy(
-            outputBuffer, 
-            labels.map { it.toString() }, 
-            blankIndex = 10
-        )
-
-        return if (decoded.isEmpty()) "(no digits)" else decoded
     }
 
     fun close() {

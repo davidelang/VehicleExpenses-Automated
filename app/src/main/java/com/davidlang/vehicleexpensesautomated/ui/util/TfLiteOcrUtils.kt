@@ -22,14 +22,17 @@ object TfLiteOcrUtils {
 
     /**
      * Decodes raw 3D float array (logits) from a TFLite OCR model using CTC Greedy Search.
+     * Returns Pair(Decoded String, Average Confidence)
      */
-    fun decodeCtcGreedy(logits: Array<Array<FloatArray>>, dictionary: List<String>, blankIndex: Int = 0): String {
+    fun decodeCtcGreedy(logits: Array<Array<FloatArray>>, dictionary: List<String>, blankIndex: Int = 0): Pair<String, Float> {
         val result = StringBuilder()
         val sequence = logits[0]
         val timeSteps = sequence.size
         val numClasses = sequence[0].size
         
         var lastIndex = -1
+        var totalConf = 0f
+        var count = 0
 
         for (t in 0 until timeSteps) {
             var maxIndex = 0
@@ -46,11 +49,14 @@ object TfLiteOcrUtils {
                 val dictIndex = if (blankIndex == 0) maxIndex - 1 else maxIndex
                 if (dictIndex >= 0 && dictIndex < dictionary.size) {
                     result.append(dictionary[dictIndex])
+                    totalConf += maxVal
+                    count++
                 }
             }
             lastIndex = maxIndex
         }
-        return result.toString()
+        val avgConf = if (count > 0) totalConf / count else 0f
+        return Pair(result.toString(), avgConf)
     }
 
     /**
