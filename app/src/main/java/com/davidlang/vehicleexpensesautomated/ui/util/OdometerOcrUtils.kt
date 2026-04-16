@@ -484,7 +484,7 @@ object OdometerOcrUtils {
     }
 
     private fun cleanLandmarkString(text: String): String {
-        return text.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
+        return text.trim { it in "-.," }.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
     }
 
     /**
