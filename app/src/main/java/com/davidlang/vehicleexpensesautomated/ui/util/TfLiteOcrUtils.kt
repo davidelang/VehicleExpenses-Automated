@@ -61,18 +61,26 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet detection heatmap into rotated text polygons.
+     * Implements ADAPTIVE THRESHOLDING to increase sensitivity for faint signals.
      */
     fun processDbNetOutput(
         heatmap: FloatArray,
         width: Int,
         height: Int,
-        thresh: Float = 0.3f,
+        thresh: Float = 0.3f, // Fallback if no maxProb provided
         unclipRatio: Float = 1.5f
     ): List<DetectedBox> {
+        // Find max prob to determine adaptive threshold
+        var maxProb = 0f
+        for (v in heatmap) if (v > maxProb) maxProb = v
+        
+        // ADAPTIVE FIX: Set threshold relative to strongest signal, but no lower than 0.1
+        val effectiveThresh = max(0.1f, min(thresh, maxProb * 0.5f))
+        
         val mask = Mat(height, width, CvType.CV_8UC1)
         val data = ByteArray(width * height)
         for (i in heatmap.indices) {
-            data[i] = if (heatmap[i] > thresh) 255.toByte() else 0.toByte()
+            data[i] = if (heatmap[i] > effectiveThresh) 255.toByte() else 0.toByte()
         }
         mask.put(0, 0, data)
 
@@ -83,7 +91,7 @@ object TfLiteOcrUtils {
         val results = mutableListOf<DetectedBox>()
         for (contour in contours) {
             val area = Imgproc.contourArea(contour)
-            if (area < 16) continue
+            if (area < 16) continue // Minimum pixel area to ignore tiny noise
 
             // 1. Fit Rotated Rect (Supports tilted text)
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
