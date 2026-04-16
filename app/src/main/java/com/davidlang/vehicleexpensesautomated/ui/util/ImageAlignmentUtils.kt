@@ -162,15 +162,20 @@ object ImageAlignmentUtils {
         val top3 = allCandidates.sortedByDescending { it.distance }.take(3)
         if (top3.isEmpty()) return AnchorResult(false, message = "No valid anchor sets.", timeMs = System.currentTimeMillis() - t0)
 
-        val best = top3[0]
+        // Average the top 3 candidates
+        val avgScale = top3.map { it.scale }.average().toFloat()
+        val avgTx = top3.map { it.tx }.average().toFloat()
+        val avgTy = top3.map { it.ty }.average().toFloat()
+
         val matrix = android.graphics.Matrix()
-        matrix.postScale(best.scale, best.scale)
-        matrix.postTranslate(best.tx, best.ty)
+        matrix.postScale(avgScale, avgScale)
+        matrix.postTranslate(avgTx, avgTy)
 
         val metadata = mapOf(
             "Candidates" to top3.mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> S=%.3f, tx=%.1f, ty=%.1f".format(c.scale, c.tx, c.ty)
-            }.joinToString("\n")
+            }.joinToString("\n"),
+            "Average" to "S=%.3f, tx=%.1f, ty=%.1f".format(avgScale, avgTx, avgTy)
         )
 
         return try {
@@ -178,7 +183,7 @@ object ImageAlignmentUtils {
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, best.message)
+            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Avg: S=%.3f, tx=%.1f, ty=%.1f".format(avgScale, avgTx, avgTy))
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
