@@ -56,9 +56,13 @@ data class OcrResult(
             !OcrUtils.isBlockInCrop(block, odoCrop, imageWidth, imageHeight) &&
             !OcrUtils.isBlockInCrop(block, otherCrop, imageWidth, imageHeight)
         }
+        val diff = textBlocks.size - filteredBlocks.size
+        Log.i("OcrResult", "Filtered $diff blocks via crops for $engineName. Remaining: ${filteredBlocks.size}")
+        
         return this.copy(
             textBlocks = filteredBlocks,
-            debugText = filteredBlocks.joinToString(" ") { it.text }
+            debugText = filteredBlocks.joinToString(" ") { it.text },
+            heatmap = this.heatmap
         )
     }
 }
@@ -78,6 +82,12 @@ data class OcrStepResult(
 interface OcrEngine {
     val name: String
     suspend fun recognize(bitmap: Bitmap): OcrResult
+
+    companion object {
+        fun getDiscoveryEngineNames(): List<String> {
+            return listOf("ML Kit", "Native TFLite", "Paddle-TFLite", "Paddle-Lite")
+        }
+    }
 }
 
 class TesseractEngine : OcrEngine {
@@ -133,7 +143,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
         var flatHeatmap: FloatArray? = null
         
         if (detInterpreter != null) {
-            // Fit-Inside Resize
+            // Centered Fit-Inside Resize
             val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
             val sw = (bitmap.width * scale).toInt()
             val sh = (bitmap.height * scale).toInt()
@@ -141,7 +151,11 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(padded)
             canvas.drawColor(Color.BLACK)
-            canvas.drawBitmap(scaled, 0f, 0f, null)
+            
+            val offsetX = (inputSize - sw) / 2f
+            val offsetY = (inputSize - sh) / 2f
+            canvas.drawBitmap(scaled, offsetX, offsetY, null)
+            scaled.recycle()
             
             val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * inputSize * inputSize * 4).order(ByteOrder.nativeOrder())
             for (y in 0 until inputSize) {
@@ -155,29 +169,25 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             
             val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
             detInterpreter.run(inputBuffer, outputBuffer)
-            scaled.recycle(); padded.recycle()
+            padded.recycle()
 
             flatHeatmap = FloatArray(inputSize * inputSize)
-            var maxProb = 0f
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
-                    val prob = outputBuffer[0][y][x][0]
-                    flatHeatmap[y * inputSize + x] = prob
-                    if (prob > maxProb) maxProb = prob
+                    flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
                 }
             }
-            Log.i("NativeTflite", "Detection Heatmap Max Probability: $maxProb")
             
-            // ADAPTIVE THRESHOLDING
-            val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
+            // EXTRACTION with Corrected Coordinate Mapping
+            val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 2.5f)
             
             val invScale = 1.0f / scale
             for (detectedBox in boxes) {
                 val box = detectedBox.boundingBox
-                val left = (box.left * invScale).toInt().coerceIn(0, bitmap.width)
-                val top = (box.top * invScale).toInt().coerceIn(0, bitmap.height)
-                val right = (box.right * invScale).toInt().coerceIn(0, bitmap.width)
-                val bottom = (box.bottom * invScale).toInt().coerceIn(0, bitmap.height)
+                val left = ((box.left - offsetX) * invScale).toInt().coerceIn(0, bitmap.width)
+                val top = ((box.top - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
+                val right = ((box.right - offsetX) * invScale).toInt().coerceIn(0, bitmap.width)
+                val bottom = ((box.bottom - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
                 
                 if (right <= left || bottom <= top) continue
                 val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
