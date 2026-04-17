@@ -47,20 +47,15 @@ class NativePaddleEngine(
     init {
         try {
             val arch = detectArch()
-            if (arch == "x86_64") {
-                isAvailable = false
-                initError = "Native Paddle disabled on amd64."
-            } else {
-                if (sharedDetector == null || sharedRecognizer == null) {
-                    if (!isNativeLibLoaded) { loadNativeLibrary(); isNativeLibLoaded = true }
-                    val detPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
-                    val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
-                    sharedDetector = createPredictor(detPath)
-                    sharedRecognizer = createPredictor(recPath)
-                }
-                loadDictionary("paddle/en_dict.txt")
-                isAvailable = true
+            if (sharedDetector == null || sharedRecognizer == null) {
+                if (!isNativeLibLoaded) { loadNativeLibrary(); isNativeLibLoaded = true }
+                val detPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
+                val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
+                sharedDetector = createPredictor(detPath)
+                sharedRecognizer = createPredictor(recPath)
             }
+            loadDictionary("paddle/en_dict.txt")
+            isAvailable = true
         } catch (e: Throwable) {
             isAvailable = false
             initError = e.message

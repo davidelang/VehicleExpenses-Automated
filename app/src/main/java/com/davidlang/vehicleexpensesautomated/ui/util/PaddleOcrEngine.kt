@@ -119,13 +119,13 @@ class PaddleOcrEngine(
             }
         }
         
-        // Use Algorithm A: Morphological Reconstruction (Follow the Stroke)
+        // Use Algorithm C: Edge-Stop Expansion (Researcher)
         val boxes = TfLiteOcrUtils.processDbNetOutput(
             flatHeatmap, 
             inputSize, 
             inputSize, 
             sourceBitmap = bitmap,
-            algorithm = "A"
+            algorithm = "C"
         )
         
         val results = StringBuilder()
