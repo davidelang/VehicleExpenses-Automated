@@ -13,7 +13,13 @@
 - **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean.
 
 ## Build & Stability Policy
-- **Corruption Reset:** If the codebase is identified as "seriously compromised" (e.g., accidental mass deletion of core methods, mass unresolved references), IMMEDIATELY `git reset --hard builds`. Do not attempt manual file rewrites to rescue the state. Note that post-reset analysis may recommend going back to `deployed` or `works` tags depending on the analysis.
+- **Protected Zones:** The following directories are protected from automated cleanup:
+    - `dev-ai-interaction/` (Research and sandbox)
+    - `app/src/main/jniLibs/` (Active native libraries)
+    - `app/src/main/assets/libs_backup/` (Native library backups)
+- **Corruption Reset:** If the codebase is identified as "seriously compromised", IMMEDIATELY `git reset --hard builds`. Follow this with:
+    `git clean -fd -e "dev-ai-interaction/" -e "app/src/main/jniLibs/" -e "app/src/main/assets/libs_backup/"`
+    Note that post-reset analysis may recommend going back to `deployed` or `works` tags depending on the analysis.
 - **Strike System:** After the 2nd attempt to fix a build failure (Strike 3 total), a reset to the `builds` tag is MANDATORY.
 - **Post-Reset Analysis:** After any reset, you must perform a forensic analysis of the failure. Identify if it was an **Execution Error** (implementation mistake) or a **Strategy Error** (fundamentally flawed approach) and share the lesson learned before proposing a new attempt.
 - **Post-Reset Verification:** After any reset, perform a full build (`./gradlew clean assembleDebug`) to ensure all non-git resources (libraries, internal assets) are available and the state is valid.
