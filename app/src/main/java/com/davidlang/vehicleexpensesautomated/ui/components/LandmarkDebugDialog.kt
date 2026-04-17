@@ -36,6 +36,7 @@ fun LandmarkDebugDialog(
     otherTextCrop: Rect?,
     landmarks: List<TextBlock>,
     odometerText: String,
+    engineName: String = "Unknown",
     sourceWidth: Int = 1500,
     sourceHeight: Int = 1125,
     heatmap: FloatArray? = null,
@@ -208,7 +209,11 @@ fun LandmarkDebugDialog(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                Text("Detected Odometer: $odometerText", style = MaterialTheme.typography.titleMedium, color = Color.Blue)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
                 Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
                 
                 LazyVerticalGrid(

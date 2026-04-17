@@ -120,13 +120,15 @@ class PaddleOcrEngine(
         }
         
         // Use Algorithm C: Edge-Stop Expansion (Researcher)
+        // PASS THE PADDED 1280px BITMAP for 1:1 coordinate alignment
         val boxes = TfLiteOcrUtils.processDbNetOutput(
             flatHeatmap, 
             inputSize, 
             inputSize, 
-            sourceBitmap = bitmap,
+            sourceBitmap = padded,
             algorithm = "C"
         )
+        padded.recycle()
         
         val results = StringBuilder()
         val invScale = 1.0f / scale
