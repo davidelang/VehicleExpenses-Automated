@@ -7,6 +7,7 @@
   - **MANDATE:** You MUST NOT start making code changes or implementing features without first proposing exactly what is going to be done.
   - **STOP & WAIT:** After proposing a strategy or finishing an inquiry, you MUST stop and wait for an explicit Directive (approval) from the user before proceeding to the Execution phase.
   - **LIMITS:** Do not add new work or perform significant refactoring/cleanup without additional, specific approval.
+- **Zero-Tool Rule:** During the "Strategy" phase (proposing a plan), you MUST NOT execute any tools that modify the file system or deploy to devices (`write_file`, `replace`, `run_shell_command`). Proposals must be text-only. The proposal turn must end immediately after the plan is stated.
 - **Versioning:** ALWAYS commit changes before building/deploying. The app uses `git describe` for its version string; committing first ensures the report results are tied to the correct hash.
 - **Phase Completion:** A phase is not considered complete until it is checked in and compiled. Because `git describe` is used for the version number, you MUST check in your changes before compiling, otherwise the version number in the resulting build will be incorrect.
 - **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean.

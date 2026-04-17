@@ -178,8 +178,14 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 }
             }
             
-            // EXTRACTION with Corrected Coordinate Mapping
-            val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 2.5f)
+            // Use Algorithm A: Morphological Reconstruction (Follow the Stroke)
+            val boxes = TfLiteOcrUtils.processDbNetOutput(
+                flatHeatmap, 
+                inputSize, 
+                inputSize, 
+                sourceBitmap = bitmap,
+                algorithm = "A"
+            )
             
             val invScale = 1.0f / scale
             for (detectedBox in boxes) {
