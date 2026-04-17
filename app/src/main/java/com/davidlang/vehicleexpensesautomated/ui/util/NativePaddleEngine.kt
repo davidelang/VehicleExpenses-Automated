@@ -195,8 +195,16 @@ class NativePaddleEngine(
             predictor.run()
             val outputTensor = predictor.getOutput(0)
             val outputData = outputTensor.floatData
-            // EXTRACTION with Corrected Coordinate Mapping
-            val boxes = TfLiteOcrUtils.processDbNetOutput(outputData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 2.5f)
+            
+            // Use Algorithm B: Perimeter Pixel Check
+            val boxes = TfLiteOcrUtils.processDbNetOutput(
+                outputData, 
+                inputSize, 
+                inputSize, 
+                sourceBitmap = bitmap,
+                algorithm = "B"
+            )
+            
             val invScale = 1.0f / scale
             val scaledBoxes = boxes.map { db ->
                 val b = db.boundingBox

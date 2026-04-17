@@ -119,7 +119,14 @@ class PaddleOcrEngine(
             }
         }
         
-        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 2.5f)
+        // Use Algorithm A: Morphological Reconstruction (Follow the Stroke)
+        val boxes = TfLiteOcrUtils.processDbNetOutput(
+            flatHeatmap, 
+            inputSize, 
+            inputSize, 
+            sourceBitmap = bitmap,
+            algorithm = "A"
+        )
         
         val results = StringBuilder()
         val invScale = 1.0f / scale
