@@ -69,24 +69,30 @@ object TfLiteOcrUtils {
         width: Int,
         height: Int,
         thresh: Float = 0.3f,
-        unclipRatio: Float = 1.5f
+        unclipRatio: Float = 2.5f
     ): List<DetectedBox> {
-        // 1. FORENSIC STATS
+        // 1. MEMORY-SAFE STATS: Avoid large array copy/sort
         var maxProb = 0f
         var sumProb = 0.0
-        val sortedHeatmap = heatmap.copyOf()
-        sortedHeatmap.sort()
         
-        for (v in heatmap) {
+        // Use a simpler approach for P99 estimate to save memory
+        var p99Estimate = 0f
+        val sampleSize = min(heatmap.size, 1000)
+        val step = heatmap.size / sampleSize
+        val samples = FloatArray(sampleSize)
+        for (i in 0 until sampleSize) {
+            val v = heatmap[i * step]
+            samples[i] = v
             if (v > maxProb) maxProb = v
             sumProb += v
         }
-        val p99 = sortedHeatmap[(heatmap.size * 0.99).toInt()]
-        val meanProb = sumProb / heatmap.size
-        Log.i("TfLiteOcrUtils", "FORENSIC: Max=%.3f, Mean=%.4f, P99=%.3f".format(maxProb, meanProb, p99))
+        samples.sort()
+        p99Estimate = samples[(sampleSize * 0.99).toInt()]
+        val meanProb = sumProb / sampleSize
+        Log.i("TfLiteOcrUtils", "FORENSIC (Sample): Max=%.3f, Mean=%.4f, P99=%.3f".format(maxProb, meanProb, p99Estimate))
         
         // 2. ADAPTIVE THRESHOLD
-        val effectiveThresh = if (p99 > 0.8f) 0.1f else max(0.1f, min(thresh, p99 * 0.5f))
+        val effectiveThresh = if (p99Estimate > 0.8f) 0.05f else max(0.05f, min(thresh, p99Estimate * 0.5f))
         
         val mask = Mat(height, width, CvType.CV_8UC1)
         val data = ByteArray(width * height)
@@ -95,14 +101,19 @@ object TfLiteOcrUtils {
         }
         mask.put(0, 0, data)
 
-        // 3. AGGRESSIVE SIGNAL ENHANCEMENT
-        // Use a 5x5 kernel to bridge character gaps and thicken sparse signals
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
-        // Morphological Closing: Dilation followed by Erosion. Bridges small gaps while keeping size stable.
+        // 3. ASYMMETRIC DILATION: 9x5 kernel to bridge characters horizontally without merging lines vertically
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(9.0, 5.0))
         Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
-        // Final Dilation to ensure robust contour boundaries
         Imgproc.dilate(mask, mask, kernel)
         kernel.release()
+
+        // 4. SYNCHRONIZE HEATMAP: Copy dilated mask back to heatmap array for UI rendering
+        val dilatedData = ByteArray(width * height)
+        mask.get(0, 0, dilatedData)
+        for (i in heatmap.indices) {
+            // Set heatmap value to 1.0f if the pixel is part of a dilated contour, else 0.0f
+            heatmap[i] = if (dilatedData[i] != 0.toByte()) 1.0f else 0.0f
+        }
 
         val contours = mutableListOf<MatOfPoint>()
         val hierarchy = Mat()
@@ -111,7 +122,7 @@ object TfLiteOcrUtils {
         val results = mutableListOf<DetectedBox>()
         for (contour in contours) {
             val area = Imgproc.contourArea(contour)
-            if (area < 16) continue 
+            if (area < 10) continue 
 
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
             val points = arrayOf(Point(), Point(), Point(), Point())
