@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.ui.components
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -46,7 +47,36 @@ fun LandmarkDebugDialog(
     
     var showHeatmap by remember { mutableStateOf(heatmap != null) }
 
-    // Safety: Ensure source dimensions are never zero
+    // Optimization: Create DOWNSCALED Heatmap Bitmap (512x512) for stability
+    val heatmapBitmap = remember(heatmap) {
+        if (heatmap == null || heatmap.size != 1280 * 1280) {
+            Log.w("LandmarkDialog", "Heatmap missing or wrong size: ${heatmap?.size}")
+            null
+        } else {
+            val visualSize = 512
+            Log.i("LandmarkDialog", "Creating Optimized Downscaled Heatmap (512x512)...")
+            val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(visualSize * visualSize)
+            
+            val scaleRatio = 1280f / visualSize
+            for (y in 0 until visualSize) {
+                for (x in 0 until visualSize) {
+                    val rawX = (x * scaleRatio).toInt().coerceIn(0, 1279)
+                    val rawY = (y * scaleRatio).toInt().coerceIn(0, 1279)
+                    val prob = heatmap[rawY * 1280 + rawX]
+                    if (prob > 0.05f) {
+                        val alpha = (prob.coerceIn(0f, 0.7f) * 255).toInt()
+                        pixels[y * visualSize + x] = android.graphics.Color.argb(alpha, 255, 0, 0)
+                    } else {
+                        pixels[y * visualSize + x] = 0
+                    }
+                }
+            }
+            bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
+            bmp.asImageBitmap()
+        }
+    }
+
     val sW = if (sourceWidth <= 0) 1500f else sourceWidth.toFloat()
     val sH = if (sourceHeight <= 0) 1125f else sourceHeight.toFloat()
 
@@ -116,28 +146,27 @@ fun LandmarkDebugDialog(
                                 dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                             )
 
-                            // DRAW HEATMAP OVERLAY
-                            if (showHeatmap && heatmap != null) {
+                            // DRAW CENTERED HEATMAP OVERLAY (Optimized Bitmap)
+                            if (showHeatmap && heatmapBitmap != null) {
                                 val heatmapSize = 1280
-                                // Calculate fit-inside aspect for heatmap coordinate mapping
-                                val hScale = min(dw / heatmapSize, dh / heatmapSize)
-                                val hOffX = offsetX + (dw - heatmapSize * hScale) / 2
-                                val hOffY = offsetY + (dh - heatmapSize * hScale) / 2
+                                val engineScale = min(heatmapSize / sW, heatmapSize / sH)
+                                val eSW = sW * engineScale
+                                val eSH = sH * engineScale
                                 
-                                // Draw coarse blocks to prevent lag
-                                val step = 8 
-                                for (y in 0 until heatmapSize step step) {
-                                    for (x in 0 until heatmapSize step step) {
-                                        val prob = heatmap[y * heatmapSize + x]
-                                        if (prob > 0.05f) {
-                                            drawRect(
-                                                color = Color.Red.copy(alpha = prob.coerceIn(0f, 0.7f)),
-                                                topLeft = Offset(hOffX + x * hScale, hOffY + y * hScale),
-                                                size = androidx.compose.ui.geometry.Size(step * hScale, step * hScale)
-                                            )
-                                        }
-                                    }
-                                }
+                                val displayScaleX = dw / eSW
+                                val displayScaleY = dh / eSH
+                                
+                                val dstW = heatmapSize * displayScaleX
+                                val dstH = heatmapSize * displayScaleY
+                                
+                                val dstOffX = offsetX - ((heatmapSize - eSW) / 2f) * displayScaleX
+                                val dstOffY = offsetY - ((heatmapSize - eSH) / 2f) * displayScaleY
+
+                                drawImage(
+                                    image = heatmapBitmap,
+                                    dstOffset = androidx.compose.ui.unit.IntOffset(dstOffX.toInt(), dstOffY.toInt()),
+                                    dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt())
+                                )
                             }
 
                             odometerCrop?.let {
