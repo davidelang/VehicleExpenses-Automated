@@ -61,18 +61,18 @@ class CsvManager @Inject constructor(
 
     private suspend fun getFuelCsv(): String {
         val fuel = fuelRepository.getAllEntries().first()
-        val sb = StringBuilder("ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL,Partial Fill,Latitude,Longitude,Location\n")
+        val sb = StringBuilder("ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL,Partial Fill,Latitude,Longitude,Location,Cloud Manifest\n")
         fuel.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""},${it.isPartialFill},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""}\n")
+            sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""},${it.isPartialFill},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""},${it.cloudManifest ?: ""}\n")
         }
         return sb.toString()
     }
 
     private suspend fun getExpenseCsv(): String {
         val expenses = expenseRepository.getAllEntries().first()
-        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path,Latitude,Longitude,Location\n")
+        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path,Latitude,Longitude,Location,Cloud Manifest\n")
         expenses.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.date},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""}\n")
+            sb.append("${it.id},${it.vehicleId},${it.date},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""},${it.cloudManifest ?: ""}\n")
         }
         return sb.toString()
     }
@@ -127,7 +127,7 @@ class CsvManager @Inject constructor(
         val lines = csv.lines().drop(1).filter { it.isNotBlank() }
         lines.forEach { line ->
             val parts = line.split(",")
-            if (parts.size >= 8) {
+            if (parts.size >= 11) {
                 val fuel = FuelEntry(
                     id = parts[0].toLongOrNull() ?: 0,
                     vehicleId = parts[1].toIntOrNull() ?: 0,
@@ -137,9 +137,10 @@ class CsvManager @Inject constructor(
                     timestamp = parts[5].toLongOrNull() ?: System.currentTimeMillis(),
                     photoUrl = parts[6].ifBlank { null },
                     isPartialFill = parts[7].toBoolean(),
-                    latitude = if (parts.size > 8) parts[8].toDoubleOrNull() else null,
-                    longitude = if (parts.size > 9) parts[9].toDoubleOrNull() else null,
-                    location = if (parts.size > 10) parts[10].ifBlank { null } else null
+                    latitude = parts[8].toDoubleOrNull(),
+                    longitude = parts[9].toDoubleOrNull(),
+                    location = parts[10].ifBlank { null },
+                    cloudManifest = if (parts.size > 11) parts[11].ifBlank { null } else null
                 )
                 fuelRepository.insertFuelEntry(fuel)
             }
@@ -150,18 +151,19 @@ class CsvManager @Inject constructor(
         val lines = csv.lines().drop(1).filter { it.isNotBlank() }
         lines.forEach { line ->
             val parts = line.split(",")
-            if (parts.size >= 7) {
+            if (parts.size >= 10) {
                 val expense = ExpenseEntry(
                     id = parts[0].toLongOrNull() ?: 0,
                     vehicleId = parts[1].toIntOrNull() ?: 0,
-                    amount = parts[3].toDoubleOrNull() ?: 0.0,
-                    description = parts[5],
                     date = parts[2].toLongOrNull() ?: System.currentTimeMillis(),
+                    amount = parts[3].toDoubleOrNull() ?: 0.0,
                     category = parts[4],
+                    description = parts[5],
                     receiptImagePath = parts[6].ifBlank { null },
-                    latitude = if (parts.size > 7) parts[7].toDoubleOrNull() else null,
-                    longitude = if (parts.size > 8) parts[8].toDoubleOrNull() else null,
-                    location = if (parts.size > 9) parts[9].ifBlank { null } else null
+                    latitude = parts[7].toDoubleOrNull(),
+                    longitude = parts[8].toDoubleOrNull(),
+                    location = parts[9].ifBlank { null },
+                    cloudManifest = if (parts.size > 10) parts[10].ifBlank { null } else null
                 )
                 expenseRepository.insertExpenseEntry(expense)
             }
