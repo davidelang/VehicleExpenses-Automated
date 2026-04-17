@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Rect
+import android.util.Log
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.max
@@ -61,21 +62,33 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet detection heatmap into rotated text polygons.
-     * Implements ADAPTIVE THRESHOLDING to increase sensitivity for faint signals.
+     * Implements ADAPTIVE THRESHOLDING and FORENSIC STATS.
      */
     fun processDbNetOutput(
         heatmap: FloatArray,
         width: Int,
         height: Int,
-        thresh: Float = 0.3f, // Fallback if no maxProb provided
+        thresh: Float = 0.3f,
         unclipRatio: Float = 1.5f
     ): List<DetectedBox> {
-        // Find max prob to determine adaptive threshold
+        // 1. FORENSIC STATS: Analyze signal distribution
         var maxProb = 0f
-        for (v in heatmap) if (v > maxProb) maxProb = v
+        var sumProb = 0.0
+        val sortedHeatmap = heatmap.copyOf()
+        sortedHeatmap.sort()
         
-        // ADAPTIVE FIX: Set threshold relative to strongest signal, but no lower than 0.1
-        val effectiveThresh = max(0.1f, min(thresh, maxProb * 0.5f))
+        for (v in heatmap) {
+            if (v > maxProb) maxProb = v
+            sumProb += v
+        }
+        val meanProb = sumProb / heatmap.size
+        val p95 = sortedHeatmap[(heatmap.size * 0.95).toInt()]
+        val p99 = sortedHeatmap[(heatmap.size * 0.99).toInt()]
+        
+        Log.i("TfLiteOcrUtils", "FORENSIC: Max=%.3f, Mean=%.4f, P95=%.3f, P99=%.3f".format(maxProb, meanProb, p95, p99))
+        
+        // 2. ADAPTIVE THRESHOLD: relative to p99 to skip outliers but catch text
+        val effectiveThresh = max(0.1f, min(thresh, p99 * 0.5f))
         
         val mask = Mat(height, width, CvType.CV_8UC1)
         val data = ByteArray(width * height)
@@ -91,17 +104,14 @@ object TfLiteOcrUtils {
         val results = mutableListOf<DetectedBox>()
         for (contour in contours) {
             val area = Imgproc.contourArea(contour)
-            if (area < 16) continue // Minimum pixel area to ignore tiny noise
+            if (area < 16) continue 
 
-            // 1. Fit Rotated Rect (Supports tilted text)
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
             val points = arrayOf(Point(), Point(), Point(), Point())
             rotatedRect.points(points)
 
-            // 2. Unclip (Expansion using Research Formula)
             val expandedPoints = unclipBox(points, unclipRatio)
             
-            // 3. Calculate axis-aligned bounds for the crop
             var minX = width.toDouble(); var minY = height.toDouble()
             var maxX = 0.0; var maxY = 0.0
             for (p in expandedPoints) {
@@ -125,7 +135,6 @@ object TfLiteOcrUtils {
 
     /**
      * Expands a text box to prevent digit clipping using the Area/Perimeter formula.
-     * Distance = (Area * ratio) / Perimeter
      */
     private fun unclipBox(points: Array<Point>, ratio: Float): List<Point> {
         val area = calculatePolygonArea(points)
@@ -134,7 +143,6 @@ object TfLiteOcrUtils {
         
         val distance = (area * ratio / perimeter)
         
-        // Find center for directional offset
         val center = Point(0.0, 0.0)
         for (p in points) { center.x += p.x; center.y += p.y }
         center.x /= 4.0; center.y /= 4.0
