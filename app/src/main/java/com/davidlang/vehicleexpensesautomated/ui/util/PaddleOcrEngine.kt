@@ -1,6 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Rect
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -92,44 +94,53 @@ class PaddleOcrEngine(
         val textBlocks = mutableListOf<TextBlock>()
         val floatData = detectionInputBuffer ?: return OcrResult(debugText = "Buffer Error")
         
-        val resizedDet = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-        val inputBuffer = prepareDetectionBuffer(resizedDet, inputSize, floatData)
+        // 1. Fit-Inside Resize with Aspect Ratio Maintenance
+        val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
+        val sw = (bitmap.width * scale).toInt()
+        val sh = (bitmap.height * scale).toInt()
+        val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+        val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(padded)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(scaled, 0f, 0f, null)
         
+        val inputBuffer = prepareDetectionBuffer(padded, inputSize, floatData)
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
-        resizedDet.recycle()
-val flatHeatmap = FloatArray(inputSize * inputSize)
-var maxProb = 0f
-for (y in 0 until inputSize) {
-    for (x in 0 until inputSize) {
-        val prob = outputBuffer[0][y][x][0]
-        flatHeatmap[y * inputSize + x] = prob
-        if (prob > maxProb) maxProb = prob
-    }
-}
-Log.i("PaddleOcr", "Detection Heatmap Max Probability: $maxProb")
+        scaled.recycle()
+        padded.recycle()
 
-// Use 0.2 threshold for higher sensitivity
-val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.2f, unclipRatio = 1.5f)
+        val flatHeatmap = FloatArray(inputSize * inputSize)
+        var maxProb = 0f
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val prob = outputBuffer[0][y][x][0]
+                flatHeatmap[y * inputSize + x] = prob
+                if (prob > maxProb) maxProb = prob
+            }
+        }
+        Log.i("PaddleOcr", "Detection Heatmap Max Probability: $maxProb")
+        
+        // ADAPTIVE THRESHOLDING via TfLiteOcrUtils
+        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
         
         val results = StringBuilder()
-        val scaleX = bitmap.width.toFloat() / inputSize
-        val scaleY = bitmap.height.toFloat() / inputSize
+        val invScale = 1.0f / scale
 
         for (detectedBox in boxes) {
             val box = detectedBox.boundingBox
-            val left = (box.left * scaleX).toInt().coerceAtLeast(0)
-            val top = (box.top * scaleY).toInt().coerceAtLeast(0)
-            val right = (box.right * scaleX).toInt().coerceAtMost(bitmap.width)
-            val bottom = (box.bottom * scaleY).toInt().coerceAtMost(bitmap.height)
+            // Adjust box coordinates back to original image space
+            val left = (box.left * invScale).toInt().coerceIn(0, bitmap.width)
+            val top = (box.top * invScale).toInt().coerceIn(0, bitmap.height)
+            val right = (box.right * invScale).toInt().coerceIn(0, bitmap.width)
+            val bottom = (box.bottom * invScale).toInt().coerceIn(0, bitmap.height)
             
             if (right <= left || bottom <= top) continue
             val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
             val res = runRecognitionStage(crop)
             crop.recycle()
 
-            // DYNAMIC FIX: Filter noisy low-confidence results
-            if (res.text.isNotBlank() && res.confidence > 0.5f) {
+            if (res.text.isNotBlank()) {
                 results.append("${res.text} ")
                 textBlocks.add(TextBlock(res.text, Rect(left, top, right, bottom), detectedBox.angle))
             }
@@ -141,7 +152,8 @@ val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize,
             debugText = results.toString().trim(),
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height
+            imageHeight = bitmap.height,
+            heatmap = flatHeatmap // STORE FOR VISUALIZATION
         )
     }
 
@@ -158,6 +170,7 @@ val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize,
             for (y in 0 until targetHeight) {
                 for (x in 0 until targetWidth) {
                     val px = scaled.getPixel(x, y)
+                    // ImageNet Mean/Std for Recognition (Normalized -1.0 to 1.0)
                     putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px and 0xFF) / 255.0f - 0.5f) / 0.5f)
@@ -179,6 +192,7 @@ val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize,
             for (y in 0 until size) {
                 for (x in 0 until size) {
                     val px = bitmap.getPixel(x, y)
+                    // ImageNet Mean/Std for Detection
                     putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
                     putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
                     putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)

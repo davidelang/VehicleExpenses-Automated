@@ -2,6 +2,8 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
@@ -12,6 +14,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Represents a single hunk of text found by an OCR engine.
@@ -38,6 +42,7 @@ data class OcrResult(
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
     val openCvProcessedBitmap: Bitmap? = null,
+    val heatmap: FloatArray? = null,
     val textBlocks: List<TextBlock> = emptyList(),
     val imageWidth: Int = 0,
     val imageHeight: Int = 0,
@@ -46,7 +51,7 @@ data class OcrResult(
     val metadata: Map<String, String> = emptyMap()
 ) {
     fun filterByCrops(odoCrop: RectF?, otherCrop: RectF?): OcrResult {
-        // ONLY filter by physical location, do NOT filter by content or length.
+        // ONLY filter by physical location
         val filteredBlocks = textBlocks.filter { block ->
             !OcrUtils.isBlockInCrop(block, odoCrop, imageWidth, imageHeight) &&
             !OcrUtils.isBlockInCrop(block, otherCrop, imageWidth, imageHeight)
@@ -109,7 +114,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
         val engine = TfLiteOcrEngine(context)
         val inputSize = 1280
         
-        // 1. Detection Stage (DBNet TFLite)
+        // 1. Detection Stage
         val detInterpreter = try {
             val file = File(context.cacheDir, "tflite_paddle_det_model.tflite")
             if (!file.exists()) {
@@ -125,13 +130,23 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
         
         val textBlocks = mutableListOf<TextBlock>()
         val debugText = StringBuilder()
+        var flatHeatmap: FloatArray? = null
         
         if (detInterpreter != null) {
-            val resizedDet = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+            // Fit-Inside Resize
+            val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
+            val sw = (bitmap.width * scale).toInt()
+            val sh = (bitmap.height * scale).toInt()
+            val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+            val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(padded)
+            canvas.drawColor(Color.BLACK)
+            canvas.drawBitmap(scaled, 0f, 0f, null)
+            
             val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * inputSize * inputSize * 4).order(ByteOrder.nativeOrder())
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
-                    val px = resizedDet.getPixel(x, y)
+                    val px = padded.getPixel(x, y)
                     inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
                     inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
                     inputBuffer.putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)
@@ -140,34 +155,35 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             
             val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
             detInterpreter.run(inputBuffer, outputBuffer)
-            resizedDet.recycle()
+            scaled.recycle(); padded.recycle()
 
-            val flatHeatmap = FloatArray(inputSize * inputSize)
+            flatHeatmap = FloatArray(inputSize * inputSize)
+            var maxProb = 0f
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
-                    flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
+                    val prob = outputBuffer[0][y][x][0]
+                    flatHeatmap[y * inputSize + x] = prob
+                    if (prob > maxProb) maxProb = prob
                 }
             }
+            Log.i("NativeTflite", "Detection Heatmap Max Probability: $maxProb")
             
-            // ADAPTIVE THRESHOLDING enabled via TfLiteOcrUtils.processDbNetOutput internal logic
+            // ADAPTIVE THRESHOLDING
             val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
             
-            val scaleX = bitmap.width.toFloat() / inputSize
-            val scaleY = bitmap.height.toFloat() / inputSize
-            
+            val invScale = 1.0f / scale
             for (detectedBox in boxes) {
                 val box = detectedBox.boundingBox
-                val left = (box.left * scaleX).toInt().coerceAtLeast(0)
-                val top = (box.top * scaleY).toInt().coerceAtLeast(0)
-                val right = (box.right * scaleX).toInt().coerceAtMost(bitmap.width)
-                val bottom = (box.bottom * scaleY).toInt().coerceAtMost(bitmap.height)
+                val left = (box.left * invScale).toInt().coerceIn(0, bitmap.width)
+                val top = (box.top * invScale).toInt().coerceIn(0, bitmap.height)
+                val right = (box.right * invScale).toInt().coerceIn(0, bitmap.width)
+                val bottom = (box.bottom * invScale).toInt().coerceIn(0, bitmap.height)
                 
                 if (right <= left || bottom <= top) continue
                 val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
                 val text = engine.runInference(crop)
                 crop.recycle()
                 
-                // RETURN RAW TEXT - No content filtering here to see everything found
                 if (text.isNotBlank()) {
                     debugText.append("$text ")
                     textBlocks.add(TextBlock(text, Rect(left, top, right, bottom), detectedBox.angle))
@@ -183,15 +199,13 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             debugText = debugText.toString().trim(),
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height
+            imageHeight = bitmap.height,
+            heatmap = flatHeatmap
         )
     }
 }
 
 object OcrUtils {
-    /**
-     * Determines if a text block's center point falls within a normalized crop region.
-     */
     fun isBlockInCrop(block: TextBlock, crop: RectF?, w: Int, h: Int): Boolean {
         if (crop == null || w == 0 || h == 0) return false
         val cx = block.boundingBox.centerX().toFloat() / w
