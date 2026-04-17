@@ -43,10 +43,7 @@ class NativePaddleEngine(
         private var isNativeLibLoaded = false
         private var initError: String? = null
         
-        // DEBUG FLAG: Set to false to enable real image processing
         private const val DEBUG_DRY_RUN = false
-        // DEBUG FLAG: Set to false to enable the Detection model
-        private const val DEBUG_BYPASS_DETECTION = false
     }
 
     init {
@@ -145,9 +142,7 @@ class NativePaddleEngine(
     }
 
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
-        val stage1 = runRecognitionStage(bitmap, 48)
-        val digits = stage1.text.filter { it.isDigit() }
-        val finalResult = if (digits.length >= 2) stage1 else runRecognitionStage(bitmap, 640)
+        val finalResult = runResolutionSweep(bitmap)
 
         return OcrResult(
             engineName = name,
@@ -156,40 +151,30 @@ class NativePaddleEngine(
             debugText = finalResult.text,
             textBlocks = listOf(TextBlock(finalResult.text, Rect(0,0,bitmap.width, bitmap.height))),
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height,
-            metadata = mapOf("Resolution" to "${finalResult.height}px")
+            imageHeight = bitmap.height
         )
     }
 
     private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
         val textBlocks = mutableListOf<TextBlock>()
         val sb = StringBuilder()
-        var flatHeatmap: FloatArray? = null
 
         val boxesRes = runDetection(bitmap)
         val boxes = boxesRes.first
-        flatHeatmap = boxesRes.second
+        val flatHeatmap = boxesRes.second
 
         for (detectedBox in boxes) {
             val box = detectedBox.boundingBox
             if (box.width() < 1 || box.height() < 1) continue
             val crop = cropBitmap(bitmap, box)
             
-            val res48 = runRecognitionStage(crop, 48)
-            val res128 = runRecognitionStage(crop, 128)
-            val resNative = runRecognitionStage(crop, crop.height)
-            
+            // RUN RESOLUTION SWEEP
+            val res = runResolutionSweep(crop)
             crop.recycle()
 
-            val sweepMeta = mapOf(
-                "sweep_48" to "${res48.text} (${res48.timeMs}ms)",
-                "sweep_128" to "${res128.text} (${res128.timeMs}ms)",
-                "sweep_native" to "${resNative.text} (${resNative.timeMs}ms)"
-            )
-
-            if (resNative.text.isNotBlank()) {
-                sb.append(resNative.text).append(" ")
-                textBlocks.add(TextBlock(resNative.text, box, detectedBox.angle, sweepMeta))
+            if (res.text.isNotBlank()) {
+                sb.append(res.text).append(" ")
+                textBlocks.add(TextBlock(res.text, box, detectedBox.angle))
             }
         }
 
@@ -217,7 +202,6 @@ class NativePaddleEngine(
         }
         val floatData = detectionInputBuffer!!
         
-        // Fit-Inside Resize
         val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
         val sw = (bitmap.width * scale).toInt()
         val sh = (bitmap.height * scale).toInt()
@@ -252,10 +236,6 @@ class NativePaddleEngine(
             val outputTensor = predictor.getOutput(0)
             val outputData = outputTensor.floatData
             
-            var maxProb = 0f
-            for (prob in outputData) if (prob > maxProb) maxProb = prob
-            Log.i("PaddleLite", "Detection Heatmap Max Probability: $maxProb")
-
             val boxes = TfLiteOcrUtils.processDbNetOutput(outputData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
             
             val invScale = 1.0f / scale
@@ -276,11 +256,24 @@ class NativePaddleEngine(
         }
     }
 
-    private data class RecStageResult(val text: String, val timeMs: Long, val height: Int)
+    private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
+
+    private fun runResolutionSweep(bitmap: Bitmap): RecStageResult {
+        val heights = listOf(48, 96, 128)
+        var bestRes = RecStageResult("", 0, 0f)
+        
+        for (h in heights) {
+            val res = runRecognitionStage(bitmap, h)
+            if (res.confidence > bestRes.confidence || (res.text.length > bestRes.text.length && res.confidence > 0.4f)) {
+                bestRes = res
+            }
+        }
+        return bestRes
+    }
 
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
         val tStart = System.currentTimeMillis()
-        val predictor = sharedRecognizer ?: return RecStageResult("", 0, targetHeight)
+        val predictor = sharedRecognizer ?: return RecStageResult("", 0, 0f)
         val targetWidth = 640
         
         val inputTensor = predictor.getInput(0)
@@ -291,9 +284,13 @@ class NativePaddleEngine(
         for (y in 0 until targetHeight) {
             for (x in 0 until targetWidth) {
                 val px = scaled.getPixel(x, y)
-                floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f
-                floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f
-                floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.5f) / 0.5f
+                val r = ((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                val g = ((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                val b = ((px and 0xFF) / 255.0f - 0.5f) / 0.5f
+                
+                floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = r
+                floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = g
+                floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = b
             }
         }
         scaled.recycle()
@@ -310,6 +307,9 @@ class NativePaddleEngine(
             
             val result = StringBuilder()
             var lastIdx = -1
+            var totalConf = 0f
+            var charCount = 0
+            
             for (i in 0 until seqLen) {
                 var maxIdx = 0; var maxVal = -1f
                 for (j in 0 until dictSize) {
@@ -318,13 +318,16 @@ class NativePaddleEngine(
                 }
                 if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
                     result.append(dictionary[maxIdx - 1])
+                    totalConf += maxVal
+                    charCount++
                 }
                 lastIdx = maxIdx
             }
-            return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, targetHeight)
+            val avgConf = if (charCount > 0) totalConf / charCount else 0f
+            return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, avgConf)
         } catch (t: Throwable) {
             Log.e("PaddleLite", "FATAL CRASH in runRecognitionStage", t)
-            return RecStageResult("", 0, targetHeight)
+            return RecStageResult("", 0, 0f)
         }
     }
 
