@@ -164,8 +164,12 @@ class NativePaddleEngine(
     private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
         val textBlocks = mutableListOf<TextBlock>()
         val sb = StringBuilder()
+        var flatHeatmap: FloatArray? = null
 
-        val boxes = runDetection(bitmap)
+        val boxesRes = runDetection(bitmap)
+        val boxes = boxesRes.first
+        flatHeatmap = boxesRes.second
+
         for (detectedBox in boxes) {
             val box = detectedBox.boundingBox
             if (box.width() < 1 || box.height() < 1) continue
@@ -183,7 +187,6 @@ class NativePaddleEngine(
                 "sweep_native" to "${resNative.text} (${resNative.timeMs}ms)"
             )
 
-            // RETURN RAW TEXT - No content filtering
             if (resNative.text.isNotBlank()) {
                 sb.append(resNative.text).append(" ")
                 textBlocks.add(TextBlock(resNative.text, box, detectedBox.angle, sweepMeta))
@@ -196,13 +199,13 @@ class NativePaddleEngine(
             debugText = sb.toString().trim(),
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height
+            imageHeight = bitmap.height,
+            heatmap = flatHeatmap
         )
     }
 
-    private fun runDetection(bitmap: Bitmap): List<DetectedBox> {
-        val predictor = sharedDetector ?: return emptyList()
-        val t0 = System.currentTimeMillis()
+    private fun runDetection(bitmap: Bitmap): Pair<List<DetectedBox>, FloatArray> {
+        val predictor = sharedDetector ?: return emptyList<DetectedBox>() to floatArrayOf()
         
         val inputSize = 1280
         val inputTensor = predictor.getInput(0)
@@ -214,34 +217,33 @@ class NativePaddleEngine(
         }
         val floatData = detectionInputBuffer!!
         
-        if (!DEBUG_DRY_RUN) {
-            val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
-            val sw = (bitmap.width * scale).toInt()
-            val sh = (bitmap.height * scale).toInt()
-            val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
-            val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(padded)
-            canvas.drawColor(Color.BLACK)
-            canvas.drawBitmap(scaled, 0f, 0f, null)
-            
-            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
-            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
-            
-            for (y in 0 until inputSize) {
-                for (x in 0 until inputSize) {
-                    val px = padded.getPixel(x, y)
-                    val r = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
-                    val g = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
-                    val b = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
-                    
-                    floatData[0 * inputSize * inputSize + y * inputSize + x] = r
-                    floatData[1 * inputSize * inputSize + y * inputSize + x] = g
-                    floatData[2 * inputSize * inputSize + y * inputSize + x] = b
-                }
+        // Fit-Inside Resize
+        val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
+        val sw = (bitmap.width * scale).toInt()
+        val sh = (bitmap.height * scale).toInt()
+        val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+        val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(padded)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(scaled, 0f, 0f, null)
+        
+        val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+        val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+        
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val px = padded.getPixel(x, y)
+                val r = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                val g = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
+                val b = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                
+                floatData[0 * inputSize * inputSize + y * inputSize + x] = r
+                floatData[1 * inputSize * inputSize + y * inputSize + x] = g
+                floatData[2 * inputSize * inputSize + y * inputSize + x] = b
             }
-            scaled.recycle()
-            padded.recycle()
         }
+        scaled.recycle()
+        padded.recycle()
         
         try {
             inputTensor.setData(floatData)
@@ -250,17 +252,27 @@ class NativePaddleEngine(
             val outputTensor = predictor.getOutput(0)
             val outputData = outputTensor.floatData
             
-            // FORENSIC: Log sensitivity
             var maxProb = 0f
             for (prob in outputData) if (prob > maxProb) maxProb = prob
             Log.i("PaddleLite", "Detection Heatmap Max Probability: $maxProb")
 
-            // ADAPTIVE THRESHOLDING via TfLiteOcrUtils
-            return TfLiteOcrUtils.processDbNetOutput(outputData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
+            val boxes = TfLiteOcrUtils.processDbNetOutput(outputData, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
+            
+            val invScale = 1.0f / scale
+            val scaledBoxes = boxes.map { db ->
+                val b = db.boundingBox
+                db.copy(boundingBox = Rect(
+                    (b.left * invScale).toInt().coerceIn(0, bitmap.width), 
+                    (b.top * invScale).toInt().coerceIn(0, bitmap.height),
+                    (b.right * invScale).toInt().coerceIn(0, bitmap.width), 
+                    (b.bottom * invScale).toInt().coerceIn(0, bitmap.height)
+                ))
+            }
+            return scaledBoxes to outputData
             
         } catch (t: Throwable) {
             Log.e("PaddleLite", "FATAL CRASH in runDetection", t)
-            throw t
+            return emptyList<DetectedBox>() to floatArrayOf()
         }
     }
 
@@ -279,13 +291,9 @@ class NativePaddleEngine(
         for (y in 0 until targetHeight) {
             for (x in 0 until targetWidth) {
                 val px = scaled.getPixel(x, y)
-                val r = ((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f
-                val g = ((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f
-                val b = ((px and 0xFF) / 255.0f - 0.5f) / 0.5f
-                
-                floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = r
-                floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = g
-                floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = b
+                floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.5f) / 0.5f
             }
         }
         scaled.recycle()
@@ -316,7 +324,7 @@ class NativePaddleEngine(
             return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, targetHeight)
         } catch (t: Throwable) {
             Log.e("PaddleLite", "FATAL CRASH in runRecognitionStage", t)
-            throw t
+            return RecStageResult("", 0, targetHeight)
         }
     }
 
