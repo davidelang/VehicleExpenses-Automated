@@ -192,13 +192,15 @@ class NativePaddleEngine(
             val outputData = outputTensor.floatData
             
             // Use Algorithm B: Perimeter Pixel Check
+            // PASS THE PADDED 1280px BITMAP for 1:1 coordinate alignment
             val boxes = TfLiteOcrUtils.processDbNetOutput(
                 outputData, 
                 inputSize, 
                 inputSize, 
-                sourceBitmap = bitmap,
+                sourceBitmap = padded,
                 algorithm = "B"
             )
+            padded.recycle()
             
             val invScale = 1.0f / scale
             val scaledBoxes = boxes.map { db ->
