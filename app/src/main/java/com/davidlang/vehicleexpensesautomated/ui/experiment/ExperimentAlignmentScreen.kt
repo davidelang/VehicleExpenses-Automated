@@ -156,7 +156,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
-            // CRITICAL FIX: Create thumbnail BEFORE any deskewing recycles originalBitmap
+            // CRITICAL FIX 1: Capture main thumbnail BEFORE any deskewing logic can recycle the bitmap
             val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
             
             // 1. IDENTITY STAGE
@@ -239,10 +239,18 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             )
             jsonArray.put(photoJson)
 
-            originalBitmap.recycle()
-
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
+
+            // CRITICAL FIX 2: Cleanup intermediate bitmaps AFTER HTML generation
+            vehicleResultsMap.values.forEach { vr -> 
+                vr.alignmentTraces.values.forEach { trace -> 
+                    trace.ocrTraces.forEach { step -> step.bitmap.recycle() } 
+                } 
+            }
+            
+            // FINAL CLEANUP
+            originalBitmap.recycle()
             
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
         withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
