@@ -2,6 +2,8 @@ package com.davidlang.vehicleexpensesautomated.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
@@ -17,6 +19,13 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE expense_entries ADD COLUMN cloudManifest TEXT")
+            database.execSQL("ALTER TABLE fuel_entries ADD COLUMN cloudManifest TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -25,6 +34,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
+        .addMigrations(MIGRATION_5_6)
         .fallbackToDestructiveMigration(true)
         .build()
     }

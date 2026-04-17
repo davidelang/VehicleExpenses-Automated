@@ -15,5 +15,6 @@ data class ExpenseEntry(
     val receiptImagePath: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val location: String? = null
+    val location: String? = null,
+    val cloudManifest: String? = null
 )

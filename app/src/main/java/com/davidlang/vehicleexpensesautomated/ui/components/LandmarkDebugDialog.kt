@@ -39,35 +39,31 @@ fun LandmarkDebugDialog(
     engineName: String = "Unknown",
     sourceWidth: Int = 1500,
     sourceHeight: Int = 1125,
-    heatmap: FloatArray? = null,
+    rawHeatmap: FloatArray? = null,
+    discoveryHeatmap: FloatArray? = null,
     onDismiss: () -> Unit
 ) {
     if (photoPath == null) return
     val context = LocalContext.current
     val textMeasurer = rememberTextMeasurer()
     
-    var showHeatmap by remember { mutableStateOf(heatmap != null) }
+    var showHeatmap by remember { mutableStateOf(rawHeatmap != null || discoveryHeatmap != null) }
 
-    // Optimization: Create DOWNSCALED Heatmap Bitmap (512x512) for stability
-    val heatmapBitmap = remember(heatmap) {
-        if (heatmap == null || heatmap.size != 1280 * 1280) {
-            Log.w("LandmarkDialog", "Heatmap missing or wrong size: ${heatmap?.size}")
-            null
-        } else {
-            val visualSize = 512
-            Log.i("LandmarkDialog", "Creating Optimized Downscaled Heatmap (512x512)...")
+    // Optimization: Create DOWNSCALED Heatmap Bitmaps (512x512) for stability
+    val (rawBmp, discBmp) = remember(rawHeatmap, discoveryHeatmap) {
+        val visualSize = 512
+        val scaleRatio = 1280f / visualSize
+        
+        val rBmp = rawHeatmap?.let { data ->
             val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
             val pixels = IntArray(visualSize * visualSize)
-            
-            val scaleRatio = 1280f / visualSize
             for (y in 0 until visualSize) {
                 for (x in 0 until visualSize) {
                     val rawX = (x * scaleRatio).toInt().coerceIn(0, 1279)
                     val rawY = (y * scaleRatio).toInt().coerceIn(0, 1279)
-                    val prob = heatmap[rawY * 1280 + rawX]
+                    val prob = data[rawY * 1280 + rawX]
                     if (prob > 0.05f) {
-                        val alpha = (prob.coerceIn(0f, 0.7f) * 255).toInt()
-                        pixels[y * visualSize + x] = android.graphics.Color.argb(alpha, 255, 0, 0)
+                        pixels[y * visualSize + x] = android.graphics.Color.argb((prob.coerceIn(0f, 0.6f) * 255).toInt(), 255, 0, 0)
                     } else {
                         pixels[y * visualSize + x] = 0
                     }
@@ -76,6 +72,26 @@ fun LandmarkDebugDialog(
             bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
             bmp.asImageBitmap()
         }
+
+        val dBmp = discoveryHeatmap?.let { data ->
+            val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(visualSize * visualSize)
+            for (y in 0 until visualSize) {
+                for (x in 0 until visualSize) {
+                    val rawX = (x * scaleRatio).toInt().coerceIn(0, 1279)
+                    val rawY = (y * scaleRatio).toInt().coerceIn(0, 1279)
+                    val prob = data[rawY * 1280 + rawX]
+                    if (prob > 0.5f) {
+                        pixels[y * visualSize + x] = android.graphics.Color.argb(100, 255, 165, 0) // Orange semi-transparent
+                    } else {
+                        pixels[y * visualSize + x] = 0
+                    }
+                }
+            }
+            bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
+            bmp.asImageBitmap()
+        }
+        rBmp to dBmp
     }
 
     val sW = if (sourceWidth <= 0) 1500f else sourceWidth.toFloat()
@@ -93,7 +109,7 @@ fun LandmarkDebugDialog(
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
-                    if (heatmap != null) {
+                    if (rawHeatmap != null || discoveryHeatmap != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Heatmap", style = MaterialTheme.typography.labelSmall)
                             Switch(checked = showHeatmap, onCheckedChange = { showHeatmap = it })
@@ -147,8 +163,8 @@ fun LandmarkDebugDialog(
                                 dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                             )
 
-                            // DRAW CENTERED HEATMAP OVERLAY (Optimized Bitmap)
-                            if (showHeatmap && heatmapBitmap != null) {
+                            // DRAW CENTERED HEATMAP OVERLAYS (Optimized Bitmaps)
+                            if (showHeatmap) {
                                 val heatmapSize = 1280
                                 val engineScale = min(heatmapSize / sW, heatmapSize / sH)
                                 val eSW = sW * engineScale
@@ -163,11 +179,12 @@ fun LandmarkDebugDialog(
                                 val dstOffX = offsetX - ((heatmapSize - eSW) / 2f) * displayScaleX
                                 val dstOffY = offsetY - ((heatmapSize - eSH) / 2f) * displayScaleY
 
-                                drawImage(
-                                    image = heatmapBitmap,
-                                    dstOffset = androidx.compose.ui.unit.IntOffset(dstOffX.toInt(), dstOffY.toInt()),
-                                    dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt())
-                                )
+                                rawBmp?.let {
+                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(dstOffX.toInt(), dstOffY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt()))
+                                }
+                                discBmp?.let {
+                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(dstOffX.toInt(), dstOffY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt()))
+                                }
                             }
 
                             odometerCrop?.let {
@@ -189,7 +206,8 @@ fun LandmarkDebugDialog(
                                 val nh = (lm.boundingBox.bottom - lm.boundingBox.top) / sH
                                 
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
-                                drawRect(color = Color.Red, topLeft = rect, size = androidx.compose.ui.geometry.Size(nw * dw, nh * dh), style = Stroke(2f))
+                                // YELLOW OUTLINES for final text boxes
+                                drawRect(color = Color.Yellow, topLeft = rect, size = androidx.compose.ui.geometry.Size(nw * dw, nh * dh), style = Stroke(2f))
 
                                 if (lm.text.isNotBlank()) {
                                     drawText(
@@ -211,7 +229,7 @@ fun LandmarkDebugDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
+                    Text("Source: ${sourceWidth.toInt()}x${sourceHeight.toInt()}", style = MaterialTheme.typography.labelMedium)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)

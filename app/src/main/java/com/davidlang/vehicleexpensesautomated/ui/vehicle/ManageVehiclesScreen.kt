@@ -249,7 +249,8 @@ fun ManageVehiclesScreen(
                 engineName = res.engineName,
                 sourceWidth = res.imageWidth,
                 sourceHeight = res.imageHeight,
-                heatmap = res.heatmap,
+                rawHeatmap = res.rawHeatmap,
+                discoveryHeatmap = res.discoveryHeatmap,
                 onDismiss = { showLandmarkCheck = false }
             )
         }

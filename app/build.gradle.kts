@@ -93,7 +93,37 @@ dependencies {
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // Native Paddle-Lite Java Wrapper
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
 }
 
 // No more PaddleOCR validation — model has been removed
+
+/**
+ * Global UPX Compression Hook
+ * Automatically compresses all native libraries (.so) during the build process.
+ */
+tasks.whenTaskAdded {
+    if (name.startsWith("merge") && name.endsWith("NativeLibs")) {
+        val mergedLibsDir = project.layout.buildDirectory.dir("intermediates/merged_native_libs")
+        doLast {
+            val nativeLibsDir = mergedLibsDir.get().asFile
+            if (nativeLibsDir.exists()) {
+                println(">>> UPX: Starting compression pass in $nativeLibsDir")
+                nativeLibsDir.walkTopDown().forEach { file ->
+                    if (file.extension == "so") {
+                        println(">>> UPX: Compressing ${file.name}")
+                        try {
+                            ProcessBuilder("upx", "--best", file.absolutePath)
+                                .inheritIO()
+                                .start()
+                                .waitFor()
+                        } catch (e: Exception) {
+                            println(">>> UPX: Failed to compress ${file.name}: ${e.message}")
+                        }
+                    }
+                }
+                println(">>> UPX: Compression pass complete.")
+            }
+        }
+    }
+}

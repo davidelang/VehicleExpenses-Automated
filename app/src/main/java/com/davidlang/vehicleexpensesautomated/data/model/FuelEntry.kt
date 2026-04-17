@@ -15,5 +15,6 @@ data class FuelEntry(
     val isPartialFill: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val location: String? = null
+    val location: String? = null,
+    val cloudManifest: String? = null
 )

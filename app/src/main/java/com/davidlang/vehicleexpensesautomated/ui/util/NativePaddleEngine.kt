@@ -1,16 +1,12 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Rect
+import android.graphics.*
 import android.os.Build
 import android.util.Log
 import com.baidu.paddle.lite.MobileConfig
 import com.baidu.paddle.lite.PaddlePredictor
 import com.baidu.paddle.lite.PowerMode
-import com.baidu.paddle.lite.Tensor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -18,30 +14,20 @@ import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * Native Paddle-Lite 2.14rc OCR Engine.
- * Supports both full-image discovery (Detect + Recognize) and constrained odometer reading.
- */
-class NativePaddleEngine(
-    private val context: Context,
-    private val isConstrained: Boolean = false
-) : OcrEngine {
+class NativePaddleEngine(private val context: Context, private val isConstrained: Boolean = false) : OcrEngine {
     override val name = if (isConstrained) "Paddle-Lite (Odo)" else "Paddle-Lite"
-
-    var isAvailable: Boolean = false
+    
+    private val dictionary = mutableListOf<String>()
+    private var initError: String? = null
+    var isAvailable = false
         private set
 
-    private val dictionary = mutableListOf<String>()
-    
-    // Memory-safe reusable buffers to prevent SIGSEGV fragmentation
-    private var detectionInputBuffer: FloatArray? = null
-    private var lastUsedInputSize: Int = 0
-    
     companion object {
         private var sharedDetector: PaddlePredictor? = null
         private var sharedRecognizer: PaddlePredictor? = null
         private var isNativeLibLoaded = false
-        private var initError: String? = null
+        private var detectionInputBuffer: FloatArray? = null
+        private var lastUsedInputSize = 0
     }
 
     init {
@@ -73,26 +59,25 @@ class NativePaddleEngine(
         } catch (e: Exception) { System.loadLibrary("paddle_lite_jni") }
     }
 
-    private fun detectArch(): String {
-        val abi = Build.SUPPORTED_ABIS[0]
-        return when {
-            abi.contains("arm64") -> "armv8"
-            abi.contains("armeabi-v7a") -> "armv7"
-            else -> "x86_64"
-        }
+    private fun detectArch(): String = when (Build.SUPPORTED_ABIS[0]) {
+        "arm64-v8a" -> "armv8"
+        "armeabi-v7a" -> "armv7"
+        else -> "x86_64"
     }
 
     private fun copyAssetToInternal(assetPath: String): String {
-        val file = File(context.cacheDir, assetPath.replace("/", "_"))
-        if (!file.exists()) {
-            context.assets.open(assetPath).use { input -> FileOutputStream(file).use { output -> input.copyTo(output) } }
+        val file = File(context.filesDir, assetPath.replace("/", "_"))
+        context.assets.open(assetPath).use { input ->
+            FileOutputStream(file).use { output -> input.copyTo(output) }
         }
         return file.absolutePath
     }
 
-    private fun loadDictionary(path: String) {
-        if (dictionary.isNotEmpty()) return
-        context.assets.open(path).bufferedReader().useLines { lines -> lines.forEach { dictionary.add(it) } }
+    private fun loadDictionary(assetPath: String) {
+        dictionary.clear()
+        context.assets.open(assetPath).bufferedReader().use { reader ->
+            reader.forEachLine { dictionary.add(it) }
+        }
     }
 
     private fun createPredictor(modelPath: String): PaddlePredictor {
@@ -127,7 +112,8 @@ class NativePaddleEngine(
         val sb = StringBuilder()
         val detectionRes = runDetection(bitmap)
         val boxes = detectionRes.boxes
-        val flatHeatmap = detectionRes.heatmap
+        val rawHeatmap = detectionRes.heatmap
+        val discoveryHeatmap = detectionRes.discoveryHeatmap
         val paddedBmp = detectionRes.paddedBitmap
 
         for (detectedBox in boxes) {
@@ -151,14 +137,15 @@ class NativePaddleEngine(
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
             imageHeight = bitmap.height,
-            heatmap = flatHeatmap
+            rawHeatmap = rawHeatmap,
+            discoveryHeatmap = discoveryHeatmap
         )
     }
 
-    private data class DetectionResult(val boxes: List<DetectedBox>, val heatmap: FloatArray, val paddedBitmap: Bitmap?)
+    private data class DetectionResult(val boxes: List<DetectedBox>, val heatmap: FloatArray, val discoveryHeatmap: FloatArray, val paddedBitmap: Bitmap?)
 
     private fun runDetection(bitmap: Bitmap): DetectionResult {
-        val predictor = sharedDetector ?: return DetectionResult(emptyList(), floatArrayOf(), null)
+        val predictor = sharedDetector ?: return DetectionResult(emptyList(), floatArrayOf(), floatArrayOf(), null)
         val inputSize = 1280
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
@@ -196,9 +183,10 @@ class NativePaddleEngine(
             val outputData = outputTensor.floatData
             
             // Use Algorithm B: Perimeter Pixel Check
-            // PASS THE PADDED 1280px BITMAP for 1:1 coordinate alignment
+            val rawHeatmap = outputData.copyOf()
+            val discoveryHeatmap = outputData.copyOf()
             val boxes = TfLiteOcrUtils.processDbNetOutput(
-                outputData, 
+                discoveryHeatmap, 
                 inputSize, 
                 inputSize, 
                 sourceBitmap = padded,
@@ -215,8 +203,8 @@ class NativePaddleEngine(
                     ((b.bottom - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
                 ))
             }
-            return DetectionResult(scaledBoxes, outputData, padded)
-        } catch (t: Throwable) { return DetectionResult(emptyList(), floatArrayOf(), padded) }
+            return DetectionResult(scaledBoxes, rawHeatmap, discoveryHeatmap, padded)
+        } catch (t: Throwable) { return DetectionResult(emptyList(), floatArrayOf(), floatArrayOf(), padded) }
     }
 
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
