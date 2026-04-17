@@ -71,35 +71,9 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
 
-                // FINAL SEED TO PIXEL 6 PRO (SYNC FROM TABLET)
+                // STARTUP SENSITIVITY TEST (Seeding logic removed as per Directive)
                 LaunchedEffect(Unit) {
                     scope.launch(Dispatchers.IO) {
-                        Log.i("MainActivity", "Final Sync: Migrating Tablet Crops to Pixel 6...")
-                        val vehicles = vehicleRepository.getAllVehicles().first()
-                        
-                        // Seed Honda
-                        vehicles.find { it.name.contains("Honda", ignoreCase = true) }?.let { honda ->
-                            Log.i("MainActivity", "Updating Honda with tablet verified crops...")
-                            vehicleRepository.updateVehicle(honda.copy(
-                                odometerCropLeft = 0.2197f, odometerCropTop = 0.8857f,
-                                odometerCropRight = 0.4723f, odometerCropBottom = 0.9933f,
-                                otherTextCropLeft = 0.4862f, otherTextCropTop = 0.8794f,
-                                otherTextCropRight = 0.7922f, otherTextCropBottom = 1.0f
-                            ))
-                        }
-                        
-                        // Seed Ford Van
-                        vehicles.find { it.name.contains("Ford", ignoreCase = true) }?.let { ford ->
-                            Log.i("MainActivity", "Updating Ford Van with tablet verified crops...")
-                            vehicleRepository.updateVehicle(ford.copy(
-                                odometerCropLeft = 0.3380f, odometerCropTop = 0.3783f,
-                                odometerCropRight = 0.6555f, odometerCropBottom = 0.4783f,
-                                otherTextCropLeft = 0.3845f, otherTextCropTop = 0.7067f,
-                                otherTextCropRight = 0.6054f, otherTextCropBottom = 0.7717f
-                            ))
-                        }
-
-                        // 2. RUN SENSITIVITY BENCHMARK
                         Log.i("MainActivity", "Starting AUTOMATED STARTUP SENSITIVITY TEST...")
                         val photosDir = File(context.filesDir, "photos")
                         val hondaRef = photosDir.listFiles()?.find { it.name.contains("honda_ref") }
