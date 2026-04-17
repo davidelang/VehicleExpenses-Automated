@@ -62,7 +62,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet detection heatmap into rotated text polygons.
-     * Implements ADAPTIVE THRESHOLDING, FORENSIC STATS, and DILATION.
+     * Implements AGGRESSIVE DILATION and MORPHOLOGICAL CLOSING for sparse signals.
      */
     fun processDbNetOutput(
         heatmap: FloatArray,
@@ -71,7 +71,7 @@ object TfLiteOcrUtils {
         thresh: Float = 0.3f,
         unclipRatio: Float = 1.5f
     ): List<DetectedBox> {
-        // 1. FORENSIC STATS: Analyze signal distribution
+        // 1. FORENSIC STATS
         var maxProb = 0f
         var sumProb = 0.0
         val sortedHeatmap = heatmap.copyOf()
@@ -81,13 +81,11 @@ object TfLiteOcrUtils {
             if (v > maxProb) maxProb = v
             sumProb += v
         }
-        val meanProb = sumProb / heatmap.size
-        val p95 = sortedHeatmap[(heatmap.size * 0.95).toInt()]
         val p99 = sortedHeatmap[(heatmap.size * 0.99).toInt()]
+        val meanProb = sumProb / heatmap.size
+        Log.i("TfLiteOcrUtils", "FORENSIC: Max=%.3f, Mean=%.4f, P99=%.3f".format(maxProb, meanProb, p99))
         
-        Log.i("TfLiteOcrUtils", "FORENSIC: Max=%.3f, Mean=%.4f, P95=%.3f, P99=%.3f".format(maxProb, meanProb, p95, p99))
-        
-        // 2. ADAPTIVE THRESHOLD: relative to p99. If p99 is very strong, trust faint signals.
+        // 2. ADAPTIVE THRESHOLD
         val effectiveThresh = if (p99 > 0.8f) 0.1f else max(0.1f, min(thresh, p99 * 0.5f))
         
         val mask = Mat(height, width, CvType.CV_8UC1)
@@ -97,8 +95,12 @@ object TfLiteOcrUtils {
         }
         mask.put(0, 0, data)
 
-        // 3. DILATION FIX: Thicken sparse thin detections so contours can find them
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        // 3. AGGRESSIVE SIGNAL ENHANCEMENT
+        // Use a 5x5 kernel to bridge character gaps and thicken sparse signals
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
+        // Morphological Closing: Dilation followed by Erosion. Bridges small gaps while keeping size stable.
+        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel)
+        // Final Dilation to ensure robust contour boundaries
         Imgproc.dilate(mask, mask, kernel)
         kernel.release()
 

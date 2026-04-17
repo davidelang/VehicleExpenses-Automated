@@ -16,7 +16,7 @@ import kotlin.math.min
 
 /**
  * PaddleOCR Engine implemented via TFLite models.
- * Optimized for 1280px detection and 48px recognition.
+ * Implements RECOGNITION RESOLUTION SWEEP for parity.
  */
 class PaddleOcrEngine(
     private val context: android.content.Context,
@@ -78,7 +78,8 @@ class PaddleOcrEngine(
     }
 
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
-        val res = runRecognitionStage(bitmap)
+        // Constrained pass also uses the resolution sweep for stability
+        val res = runResolutionSweep(bitmap)
         return OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
@@ -94,7 +95,6 @@ class PaddleOcrEngine(
         val textBlocks = mutableListOf<TextBlock>()
         val floatData = detectionInputBuffer ?: return OcrResult(debugText = "Buffer Error")
         
-        // 1. Fit-Inside Resize with Aspect Ratio Maintenance
         val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
         val sw = (bitmap.width * scale).toInt()
         val sh = (bitmap.height * scale).toInt()
@@ -111,17 +111,12 @@ class PaddleOcrEngine(
         padded.recycle()
 
         val flatHeatmap = FloatArray(inputSize * inputSize)
-        var maxProb = 0f
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
-                val prob = outputBuffer[0][y][x][0]
-                flatHeatmap[y * inputSize + x] = prob
-                if (prob > maxProb) maxProb = prob
+                flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
             }
         }
-        Log.i("PaddleOcr", "Detection Heatmap Max Probability: $maxProb")
         
-        // ADAPTIVE THRESHOLDING via TfLiteOcrUtils
         val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
         
         val results = StringBuilder()
@@ -129,7 +124,6 @@ class PaddleOcrEngine(
 
         for (detectedBox in boxes) {
             val box = detectedBox.boundingBox
-            // Adjust box coordinates back to original image space
             val left = (box.left * invScale).toInt().coerceIn(0, bitmap.width)
             val top = (box.top * invScale).toInt().coerceIn(0, bitmap.height)
             val right = (box.right * invScale).toInt().coerceIn(0, bitmap.width)
@@ -137,7 +131,9 @@ class PaddleOcrEngine(
             
             if (right <= left || bottom <= top) continue
             val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
-            val res = runRecognitionStage(crop)
+            
+            // RUN RESOLUTION SWEEP
+            val res = runResolutionSweep(crop)
             crop.recycle()
 
             if (res.text.isNotBlank()) {
@@ -153,15 +149,28 @@ class PaddleOcrEngine(
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
             imageHeight = bitmap.height,
-            heatmap = flatHeatmap // STORE FOR VISUALIZATION
+            heatmap = flatHeatmap
         )
     }
 
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
 
-    private fun runRecognitionStage(bitmap: Bitmap): RecStageResult {
+    private fun runResolutionSweep(bitmap: Bitmap): RecStageResult {
+        // Sweep multiple heights and pick the result with highest confidence or longest valid string
+        val heights = listOf(48, 96, 128)
+        var bestRes = RecStageResult("", 0, 0f)
+        
+        for (h in heights) {
+            val res = runRecognitionStage(bitmap, h)
+            if (res.confidence > bestRes.confidence || (res.text.length > bestRes.text.length && res.confidence > 0.4f)) {
+                bestRes = res
+            }
+        }
+        return bestRes
+    }
+
+    private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
         val tStart = System.currentTimeMillis()
-        val targetHeight = 48
         val targetWidth = 640
         val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         
@@ -170,7 +179,6 @@ class PaddleOcrEngine(
             for (y in 0 until targetHeight) {
                 for (x in 0 until targetWidth) {
                     val px = scaled.getPixel(x, y)
-                    // ImageNet Mean/Std for Recognition (Normalized -1.0 to 1.0)
                     putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px and 0xFF) / 255.0f - 0.5f) / 0.5f)
@@ -179,6 +187,7 @@ class PaddleOcrEngine(
         }
         scaled.recycle()
 
+        // Rec model expects 80 timesteps
         val outputBuffer = Array(1) { Array(80) { FloatArray(97) } }
         recInterpreter?.run(inputBuffer, outputBuffer)
         
@@ -192,7 +201,6 @@ class PaddleOcrEngine(
             for (y in 0 until size) {
                 for (x in 0 until size) {
                     val px = bitmap.getPixel(x, y)
-                    // ImageNet Mean/Std for Detection
                     putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
                     putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
                     putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)
