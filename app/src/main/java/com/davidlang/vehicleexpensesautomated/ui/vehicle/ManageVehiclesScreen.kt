@@ -248,6 +248,7 @@ fun ManageVehiclesScreen(
                 odometerText = "N/A",
                 sourceWidth = res.imageWidth,
                 sourceHeight = res.imageHeight,
+                heatmap = res.heatmap,
                 onDismiss = { showLandmarkCheck = false }
             )
         }
