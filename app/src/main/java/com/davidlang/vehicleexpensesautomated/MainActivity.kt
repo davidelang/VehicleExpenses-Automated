@@ -71,47 +71,31 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
 
-                // SEED VEHICLE CROPS & RUN STARTUP SENSITIVITY TEST
+                // FINAL SEED TO PIXEL 6 PRO (SYNC FROM TABLET)
                 LaunchedEffect(Unit) {
                     scope.launch(Dispatchers.IO) {
-                        // 1. ROBUST SEEDING
-                        Log.i("MainActivity", "Syncing Vehicle Database...")
+                        Log.i("MainActivity", "Final Sync: Migrating Tablet Crops to Pixel 6...")
                         val vehicles = vehicleRepository.getAllVehicles().first()
-                        Log.i("MainActivity", "Current Vehicle Count: ${vehicles.size}")
                         
                         // Seed Honda
-                        val honda = vehicles.find { it.name.contains("Honda", ignoreCase = true) }
-                        if (honda == null) {
-                            Log.i("MainActivity", "Creating Honda entry...")
-                            val refPath = File(context.filesDir, "photos/honda_ref.jpg").absolutePath
-                            vehicleRepository.insertVehicle(Vehicle(
-                                name = "Honda", referenceDashPhotoUrl = refPath,
-                                odometerCropLeft = 0.2124f, odometerCropTop = 0.6565f,
-                                odometerCropRight = 0.4484f, odometerCropBottom = 0.8116f
-                            ))
-                        } else {
-                            Log.i("MainActivity", "Updating Honda Crops...")
+                        vehicles.find { it.name.contains("Honda", ignoreCase = true) }?.let { honda ->
+                            Log.i("MainActivity", "Updating Honda with tablet verified crops...")
                             vehicleRepository.updateVehicle(honda.copy(
-                                odometerCropLeft = 0.2124f, odometerCropTop = 0.6565f,
-                                odometerCropRight = 0.4484f, odometerCropBottom = 0.8116f
+                                odometerCropLeft = 0.2197f, odometerCropTop = 0.8857f,
+                                odometerCropRight = 0.4723f, odometerCropBottom = 0.9933f,
+                                otherTextCropLeft = 0.4862f, otherTextCropTop = 0.8794f,
+                                otherTextCropRight = 0.7922f, otherTextCropBottom = 1.0f
                             ))
                         }
                         
                         // Seed Ford Van
-                        val ford = vehicles.find { it.name.contains("Ford", ignoreCase = true) }
-                        if (ford == null) {
-                            Log.i("MainActivity", "Creating Ford Van entry...")
-                            val refPath = File(context.filesDir, "photos/ford_ref.jpg").absolutePath
-                            vehicleRepository.insertVehicle(Vehicle(
-                                name = "Ford Van", referenceDashPhotoUrl = refPath,
-                                odometerCropLeft = 0.3380f, odometerCropTop = 0.3783f,
-                                odometerCropRight = 0.6555f, odometerCropBottom = 0.4783f
-                            ))
-                        } else {
-                            Log.i("MainActivity", "Updating Ford Van Crops...")
+                        vehicles.find { it.name.contains("Ford", ignoreCase = true) }?.let { ford ->
+                            Log.i("MainActivity", "Updating Ford Van with tablet verified crops...")
                             vehicleRepository.updateVehicle(ford.copy(
                                 odometerCropLeft = 0.3380f, odometerCropTop = 0.3783f,
-                                odometerCropRight = 0.6555f, odometerCropBottom = 0.4783f
+                                odometerCropRight = 0.6555f, odometerCropBottom = 0.4783f,
+                                otherTextCropLeft = 0.3845f, otherTextCropTop = 0.7067f,
+                                otherTextCropRight = 0.6054f, otherTextCropBottom = 0.7717f
                             ))
                         }
 
@@ -134,8 +118,6 @@ class MainActivity : ComponentActivity() {
                                 
                                 claheBmp.recycle(); bmp.recycle()
                             }
-                        } else {
-                            Log.w("MainActivity", "Test Skipped: honda_ref.jpg not found in photos dir.")
                         }
                     }
                 }
