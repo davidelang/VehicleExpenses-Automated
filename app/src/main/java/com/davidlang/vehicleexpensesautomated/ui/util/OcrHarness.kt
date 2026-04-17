@@ -1,0 +1,45 @@
+package com.davidlang.vehicleexpensesautomated.ui.util
+
+import android.content.Context
+import android.graphics.Bitmap
+
+/**
+ * Orchestrates multi-engine discovery passes for side-by-side comparison.
+ * Uses SERIAL execution to prevent memory-induced SIGSEGV on high-res devices.
+ */
+object OcrHarness {
+
+    suspend fun runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+        val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = false)
+        val nativePaddle = NativePaddleEngine(context, isConstrained = false)
+        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
+        if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
+
+        return enginesList.associate { engine ->
+            engine.name to engine.recognize(bitmap)
+        }
+    }
+
+    suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+        val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = true)
+        val nativePaddle = NativePaddleEngine(context, isConstrained = true)
+        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
+        if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
+
+        return enginesList.associate { engine ->
+            engine.name to engine.recognize(bitmap)
+        }
+    }
+
+    fun getDiscoveryEngineNames(context: Context): List<String> {
+        val list = mutableListOf("ML Kit", "Native TFLite", "Paddle-TFLite")
+        if (NativePaddleEngine(context).isAvailable) list.add("Paddle-Lite")
+        return list
+    }
+
+    fun getRefinementEngineNames(context: Context): List<String> {
+        val list = mutableListOf("Tesseract", "ML Kit", "Native TFLite", "Paddle-TFLite (Odo)")
+        if (NativePaddleEngine(context, isConstrained = true).isAvailable) list.add("Paddle-Lite (Odo)")
+        return list
+    }
+}

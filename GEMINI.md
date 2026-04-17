@@ -8,12 +8,23 @@
   - **STOP & WAIT:** After proposing a strategy or finishing an inquiry, you MUST stop and wait for an explicit Directive (approval) from the user before proceeding to the Execution phase.
   - **LIMITS:** Do not add new work or perform significant refactoring/cleanup without additional, specific approval.
 - **Versioning:** ALWAYS commit changes before building/deploying. The app uses `git describe` for its version string; committing first ensures the report results are tied to the correct hash.
+- **Phase Completion:** A phase is not considered complete until it is checked in and compiled. Because `git describe` is used for the version number, you MUST check in your changes before compiling, otherwise the version number in the resulting build will be incorrect.
 - **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean.
-- **Git Hygiene:** For fixing compilation errors, prefer `git commit --amend --no-edit` to keep the history focused.
-- **Git Hygiene:** if it takes more than 3 attempts to fix a compile error, revert to the last clean build and try again.
-- **Git Hygiene:** if you revert more than 3 times on a single feature, rethink the problem and break it into smaller steps
-- **Planning:** as new items are identified that will need to be worked on in a future commit, add them to the TODO.md file
 
+## Build & Stability Policy
+- **Corruption Reset:** If the codebase is identified as "seriously compromised" (e.g., accidental mass deletion of core methods, mass unresolved references), IMMEDIATELY `git reset --hard builds`. Do not attempt manual file rewrites to rescue the state. Note that post-reset analysis may recommend going back to `deployed` or `works` tags depending on the analysis.
+- **Strike System:** After the 2nd attempt to fix a build failure (Strike 3 total), a reset to the `builds` tag is MANDATORY.
+- **Post-Reset Analysis:** After any reset, you must perform a forensic analysis of the failure. Identify if it was an **Execution Error** (implementation mistake) or a **Strategy Error** (fundamentally flawed approach) and share the lesson learned before proposing a new attempt.
+- **Post-Reset Verification:** After any reset, perform a full build (`./gradlew clean assembleDebug`) to ensure all non-git resources (libraries, internal assets) are available and the state is valid.
+- **Mandatory Decomposition:** After two resets for the same task, break the effort into smaller, incremental phases. Confirm a successful build for each phase before continuing.
+
+## Git Hygiene
+- For fixing compilation errors, prefer `git commit --amend --no-edit` to keep the history focused.
+- **Tracking Tags:** Use the following tags to track state (moving with `-f`):
+    - `builds`: Last commit that passed `./gradlew assembleDebug`.
+    - `deployed`: Last commit successfully installed on devices.
+    - `works`: Last commit verified by the user to have no regressions.
+- **Planning:** as new items are identified that will need to be worked on in a future commit, add them to the TODO.md file
 
 ## Engineering Standards
 - **OCR:** We use a multi-engine approach (Tesseract, ML Kit, TFLite).
