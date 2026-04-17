@@ -15,8 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.drawText
@@ -27,6 +26,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import java.io.File
+import kotlin.math.min
 
 @Composable
 fun LandmarkDebugDialog(
@@ -37,11 +37,14 @@ fun LandmarkDebugDialog(
     odometerText: String,
     sourceWidth: Int = 1500,
     sourceHeight: Int = 1125,
+    heatmap: FloatArray? = null,
     onDismiss: () -> Unit
 ) {
     if (photoPath == null) return
     val context = LocalContext.current
     val textMeasurer = rememberTextMeasurer()
+    
+    var showHeatmap by remember { mutableStateOf(heatmap != null) }
 
     // Safety: Ensure source dimensions are never zero
     val sW = if (sourceWidth <= 0) 1500f else sourceWidth.toFloat()
@@ -59,6 +62,12 @@ fun LandmarkDebugDialog(
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
+                    if (heatmap != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Heatmap", style = MaterialTheme.typography.labelSmall)
+                            Switch(checked = showHeatmap, onCheckedChange = { showHeatmap = it })
+                        }
+                    }
                     IconButton(onClick = onDismiss) {
                         Text("✕", style = MaterialTheme.typography.titleLarge)
                     }
@@ -106,6 +115,30 @@ fun LandmarkDebugDialog(
                                 dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()),
                                 dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                             )
+
+                            // DRAW HEATMAP OVERLAY
+                            if (showHeatmap && heatmap != null) {
+                                val heatmapSize = 1280
+                                // Calculate fit-inside aspect for heatmap coordinate mapping
+                                val hScale = min(dw / heatmapSize, dh / heatmapSize)
+                                val hOffX = offsetX + (dw - heatmapSize * hScale) / 2
+                                val hOffY = offsetY + (dh - heatmapSize * hScale) / 2
+                                
+                                // Draw coarse blocks to prevent lag
+                                val step = 8 
+                                for (y in 0 until heatmapSize step step) {
+                                    for (x in 0 until heatmapSize step step) {
+                                        val prob = heatmap[y * heatmapSize + x]
+                                        if (prob > 0.05f) {
+                                            drawRect(
+                                                color = Color.Red.copy(alpha = prob.coerceIn(0f, 0.7f)),
+                                                topLeft = Offset(hOffX + x * hScale, hOffY + y * hScale),
+                                                size = androidx.compose.ui.geometry.Size(step * hScale, step * hScale)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
 
                             odometerCrop?.let {
                                 val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
