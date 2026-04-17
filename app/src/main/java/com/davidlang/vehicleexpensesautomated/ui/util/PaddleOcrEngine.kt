@@ -16,7 +16,7 @@ import kotlin.math.min
 
 /**
  * PaddleOCR Engine implemented via TFLite models.
- * Implements RECOGNITION RESOLUTION SWEEP with dynamic interpreter resizing.
+ * Implements Centered Fit-Inside resizing for accurate coordinate mapping.
  */
 class PaddleOcrEngine(
     private val context: android.content.Context,
@@ -78,7 +78,7 @@ class PaddleOcrEngine(
     }
 
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
-        val res = runResolutionSweep(bitmap)
+        val res = runRecognitionStage(bitmap, 48)
         return OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
@@ -94,6 +94,7 @@ class PaddleOcrEngine(
         val textBlocks = mutableListOf<TextBlock>()
         val floatData = detectionInputBuffer ?: return OcrResult(debugText = "Buffer Error")
         
+        // 1. Centered Fit-Inside Resize
         val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
         val sw = (bitmap.width * scale).toInt()
         val sh = (bitmap.height * scale).toInt()
@@ -101,13 +102,15 @@ class PaddleOcrEngine(
         val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded)
         canvas.drawColor(Color.BLACK)
-        canvas.drawBitmap(scaled, 0f, 0f, null)
+        
+        val offsetX = (inputSize - sw) / 2f
+        val offsetY = (inputSize - sh) / 2f
+        canvas.drawBitmap(scaled, offsetX, offsetY, null)
         
         val inputBuffer = prepareDetectionBuffer(padded, inputSize, floatData)
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
-        scaled.recycle()
-        padded.recycle()
+        scaled.recycle(); padded.recycle()
 
         val flatHeatmap = FloatArray(inputSize * inputSize)
         for (y in 0 until inputSize) {
@@ -116,21 +119,22 @@ class PaddleOcrEngine(
             }
         }
         
-        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 1.5f)
+        val boxes = TfLiteOcrUtils.processDbNetOutput(flatHeatmap, inputSize, inputSize, thresh = 0.3f, unclipRatio = 2.5f)
         
         val results = StringBuilder()
         val invScale = 1.0f / scale
 
         for (detectedBox in boxes) {
             val box = detectedBox.boundingBox
-            val left = (box.left * invScale).toInt().coerceIn(0, bitmap.width)
-            val top = (box.top * invScale).toInt().coerceIn(0, bitmap.height)
-            val right = (box.right * invScale).toInt().coerceIn(0, bitmap.width)
-            val bottom = (box.bottom * invScale).toInt().coerceIn(0, bitmap.height)
+            // Adjust box coordinates: Subtract padding offset, then scale back to source image
+            val left = ((box.left - offsetX) * invScale).toInt().coerceIn(0, bitmap.width)
+            val top = ((box.top - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
+            val right = ((box.right - offsetX) * invScale).toInt().coerceIn(0, bitmap.width)
+            val bottom = ((box.bottom - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
             
             if (right <= left || bottom <= top) continue
             val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
-            val res = runResolutionSweep(crop)
+            val res = runRecognitionStage(crop, 48)
             crop.recycle()
 
             if (res.text.isNotBlank()) {
@@ -152,22 +156,11 @@ class PaddleOcrEngine(
 
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
 
-    private fun runResolutionSweep(bitmap: Bitmap): RecStageResult {
-        // FIXED SIZE: Most TFLite converted models have a fixed input shape.
-        // We will stick to the model's preferred 48px height to avoid crash.
-        return runRecognitionStage(bitmap, 48)
-    }
-
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
         val tStart = System.currentTimeMillis()
-        val interp = recInterpreter ?: return RecStageResult("", 0, 0f)
         val targetWidth = 640
-        
-        // Ensure interpreter matches requested buffer size
-        interp.resizeInput(0, intArrayOf(1, targetHeight, targetWidth, 3))
-        interp.allocateTensors()
-
         val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetHeight * targetWidth * 3 * 4).apply {
             order(ByteOrder.nativeOrder())
             for (y in 0 until targetHeight) {
@@ -182,7 +175,7 @@ class PaddleOcrEngine(
         scaled.recycle()
 
         val outputBuffer = Array(1) { Array(80) { FloatArray(97) } }
-        interp.run(inputBuffer, outputBuffer)
+        recInterpreter?.run(inputBuffer, outputBuffer)
         
         val (decoded, confidence) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, dictionary, blankIndex = 0)
         return RecStageResult(decoded, System.currentTimeMillis() - tStart, confidence)
