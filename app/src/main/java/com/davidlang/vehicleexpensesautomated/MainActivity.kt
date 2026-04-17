@@ -71,26 +71,49 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
 
-                // STARTUP SENSITIVITY TEST (Seeding logic removed as per Directive)
+                // ULTIMATE FORCE SYNC: Migrate Verified Assets & Crops to Pixel 6 Pro
                 LaunchedEffect(Unit) {
                     scope.launch(Dispatchers.IO) {
-                        Log.i("MainActivity", "Starting AUTOMATED STARTUP SENSITIVITY TEST...")
-                        val photosDir = File(context.filesDir, "photos")
-                        val hondaRef = photosDir.listFiles()?.find { it.name.contains("honda_ref") }
+                        Log.i("MainActivity", "Executing Ultimate Force Sync...")
+                        val vehicles = vehicleRepository.getAllVehicles().first()
                         
-                        if (hondaRef != null) {
-                            val bitmap = OdometerOcrUtils.decodeBitmapSafely(context, hondaRef.absolutePath)
+                        // Honda Sync
+                        vehicles.find { it.name.contains("Honda", ignoreCase = true) }?.let { honda ->
+                            Log.i("MainActivity", "Syncing Honda...")
+                            val refPath = File(context.filesDir, "photos/honda_ref.jpg").absolutePath
+                            vehicleRepository.updateVehicle(honda.copy(
+                                referenceDashPhotoUrl = refPath,
+                                cleanedReferenceDashPhotoUrl = refPath,
+                                odometerCropLeft = 0.2197f, odometerCropTop = 0.8857f,
+                                odometerCropRight = 0.4723f, odometerCropBottom = 0.9933f,
+                                otherTextCropLeft = 0.4862f, otherTextCropTop = 0.8794f,
+                                otherTextCropRight = 0.7922f, otherTextCropBottom = 1.0f
+                            ))
+                        }
+                        
+                        // Ford Van Sync
+                        vehicles.find { it.name.contains("Ford", ignoreCase = true) }?.let { ford ->
+                            Log.i("MainActivity", "Syncing Ford Van...")
+                            val refPath = File(context.filesDir, "photos/ford_ref.jpg").absolutePath
+                            vehicleRepository.updateVehicle(ford.copy(
+                                referenceDashPhotoUrl = refPath,
+                                cleanedReferenceDashPhotoUrl = refPath,
+                                odometerCropLeft = 0.3618f, odometerCropTop = 0.4582f,
+                                odometerCropRight = 0.6142f, odometerCropBottom = 0.5267f,
+                                otherTextCropLeft = 0.3845f, otherTextCropTop = 0.7067f,
+                                otherTextCropRight = 0.6054f, otherTextCropBottom = 0.7717f
+                            ))
+                        }
+
+                        // Benchmark Run
+                        Log.i("MainActivity", "Starting STARTUP BENCHMARK...")
+                        val refFile = File(context.filesDir, "photos/honda_ref.jpg")
+                        if (refFile.exists()) {
+                            val bitmap = BitmapFactory.decodeFile(refFile.absolutePath)
                             bitmap?.let { bmp ->
-                                Log.i("MainActivity", "Test 1: Baseline ImageNet Normalization")
-                                val res1 = OcrHarness.runDiscovery(bmp, context)
-                                Log.i("MainActivity", "Test 1 Landmarks: ${res1.mapValues { it.value.textBlocks.size }}")
-                                
-                                Log.i("MainActivity", "Test 2: CLAHE Pre-processing")
-                                val claheBmp = OdometerOcrUtils.applyClahe(bmp)
-                                val res2 = OcrHarness.runDiscovery(claheBmp, context)
-                                Log.i("MainActivity", "Test 2 Landmarks: ${res2.mapValues { it.value.textBlocks.size }}")
-                                
-                                claheBmp.recycle(); bmp.recycle()
+                                val res = OcrHarness.runDiscovery(bmp, context)
+                                Log.i("MainActivity", "Benchmark Landmarks: ${res.mapValues { it.value.textBlocks.size }}")
+                                bmp.recycle()
                             }
                         }
                     }
