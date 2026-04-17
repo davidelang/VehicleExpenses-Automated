@@ -45,6 +45,7 @@ android {
 }
 
 dependencies {
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
