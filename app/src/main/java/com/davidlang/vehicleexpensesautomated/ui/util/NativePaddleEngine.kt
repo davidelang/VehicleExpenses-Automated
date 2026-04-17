@@ -194,6 +194,8 @@ class NativePaddleEngine(
         
         val inputSize = 1280
         val inputTensor = predictor.getInput(0)
+        
+        // Native Paddle-Lite resize works differently; we stick to the validated NCHW layout.
         inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
         
         if (detectionInputBuffer == null || lastUsedInputSize != inputSize) {
@@ -202,6 +204,7 @@ class NativePaddleEngine(
         }
         val floatData = detectionInputBuffer!!
         
+        // Fit-Inside Resize
         val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
         val sw = (bitmap.width * scale).toInt()
         val sh = (bitmap.height * scale).toInt()
@@ -259,16 +262,8 @@ class NativePaddleEngine(
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
 
     private fun runResolutionSweep(bitmap: Bitmap): RecStageResult {
-        val heights = listOf(48, 96, 128)
-        var bestRes = RecStageResult("", 0, 0f)
-        
-        for (h in heights) {
-            val res = runRecognitionStage(bitmap, h)
-            if (res.confidence > bestRes.confidence || (res.text.length > bestRes.text.length && res.confidence > 0.4f)) {
-                bestRes = res
-            }
-        }
-        return bestRes
+        // Stick to the validated 48px height for now to ensure stability
+        return runRecognitionStage(bitmap, 48)
     }
 
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {

@@ -16,7 +16,7 @@ import kotlin.math.min
 
 /**
  * PaddleOCR Engine implemented via TFLite models.
- * Implements RECOGNITION RESOLUTION SWEEP for parity.
+ * Implements RECOGNITION RESOLUTION SWEEP with dynamic interpreter resizing.
  */
 class PaddleOcrEngine(
     private val context: android.content.Context,
@@ -78,7 +78,6 @@ class PaddleOcrEngine(
     }
 
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
-        // Constrained pass also uses the resolution sweep for stability
         val res = runResolutionSweep(bitmap)
         return OcrResult(
             engineName = name,
@@ -131,8 +130,6 @@ class PaddleOcrEngine(
             
             if (right <= left || bottom <= top) continue
             val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
-            
-            // RUN RESOLUTION SWEEP
             val res = runResolutionSweep(crop)
             crop.recycle()
 
@@ -156,24 +153,21 @@ class PaddleOcrEngine(
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
 
     private fun runResolutionSweep(bitmap: Bitmap): RecStageResult {
-        // Sweep multiple heights and pick the result with highest confidence or longest valid string
-        val heights = listOf(48, 96, 128)
-        var bestRes = RecStageResult("", 0, 0f)
-        
-        for (h in heights) {
-            val res = runRecognitionStage(bitmap, h)
-            if (res.confidence > bestRes.confidence || (res.text.length > bestRes.text.length && res.confidence > 0.4f)) {
-                bestRes = res
-            }
-        }
-        return bestRes
+        // FIXED SIZE: Most TFLite converted models have a fixed input shape.
+        // We will stick to the model's preferred 48px height to avoid crash.
+        return runRecognitionStage(bitmap, 48)
     }
 
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
         val tStart = System.currentTimeMillis()
+        val interp = recInterpreter ?: return RecStageResult("", 0, 0f)
         val targetWidth = 640
-        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         
+        // Ensure interpreter matches requested buffer size
+        interp.resizeInput(0, intArrayOf(1, targetHeight, targetWidth, 3))
+        interp.allocateTensors()
+
+        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetHeight * targetWidth * 3 * 4).apply {
             order(ByteOrder.nativeOrder())
             for (y in 0 until targetHeight) {
@@ -187,9 +181,8 @@ class PaddleOcrEngine(
         }
         scaled.recycle()
 
-        // Rec model expects 80 timesteps
         val outputBuffer = Array(1) { Array(80) { FloatArray(97) } }
-        recInterpreter?.run(inputBuffer, outputBuffer)
+        interp.run(inputBuffer, outputBuffer)
         
         val (decoded, confidence) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, dictionary, blankIndex = 0)
         return RecStageResult(decoded, System.currentTimeMillis() - tStart, confidence)
