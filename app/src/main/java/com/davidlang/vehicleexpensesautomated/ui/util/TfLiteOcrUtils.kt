@@ -62,7 +62,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet detection heatmap into rotated text polygons.
-     * Implements ADAPTIVE THRESHOLDING and FORENSIC STATS.
+     * Implements ADAPTIVE THRESHOLDING, FORENSIC STATS, and DILATION.
      */
     fun processDbNetOutput(
         heatmap: FloatArray,
@@ -87,8 +87,8 @@ object TfLiteOcrUtils {
         
         Log.i("TfLiteOcrUtils", "FORENSIC: Max=%.3f, Mean=%.4f, P95=%.3f, P99=%.3f".format(maxProb, meanProb, p95, p99))
         
-        // 2. ADAPTIVE THRESHOLD: relative to p99 to skip outliers but catch text
-        val effectiveThresh = max(0.1f, min(thresh, p99 * 0.5f))
+        // 2. ADAPTIVE THRESHOLD: relative to p99. If p99 is very strong, trust faint signals.
+        val effectiveThresh = if (p99 > 0.8f) 0.1f else max(0.1f, min(thresh, p99 * 0.5f))
         
         val mask = Mat(height, width, CvType.CV_8UC1)
         val data = ByteArray(width * height)
@@ -96,6 +96,11 @@ object TfLiteOcrUtils {
             data[i] = if (heatmap[i] > effectiveThresh) 255.toByte() else 0.toByte()
         }
         mask.put(0, 0, data)
+
+        // 3. DILATION FIX: Thicken sparse thin detections so contours can find them
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        Imgproc.dilate(mask, mask, kernel)
+        kernel.release()
 
         val contours = mutableListOf<MatOfPoint>()
         val hierarchy = Mat()
