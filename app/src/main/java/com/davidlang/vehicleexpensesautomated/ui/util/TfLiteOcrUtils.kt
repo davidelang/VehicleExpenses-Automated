@@ -159,8 +159,7 @@ object TfLiteOcrUtils {
             results.add(DetectedBox(points.toList(), bounds, rotatedRect.angle.toFloat()))
         }
         
-        // 5. FINAL UI SYNC: Fill expanded boxes into heatmap for visual audit
-        // Reset heatmap to 0 and fill with solid 1.0 for final extraction zones
+        // 5. FINAL UI SYNC: Fill expanded boxes into discovery heatmap for visual audit
         for (i in heatmap.indices) { heatmap[i] = 0.0f }
         for (res in results) {
             val b = res.boundingBox
@@ -178,7 +177,7 @@ object TfLiteOcrUtils {
     }
 
     /**
-     * Algorithm C: Expands the box until it hits a Canny edge or runaway limit.
+     * Algorithm C: Expands the box until it hits a Canny edge or directional runaway limit.
      */
     private fun expandToEdges(rect: RotatedRect, edgeMap: Mat, maxH: Int, maxW: Int): Rect {
         var minX = rect.center.x - rect.size.width/2.0
@@ -186,27 +185,29 @@ object TfLiteOcrUtils {
         var minY = rect.center.y - rect.size.height/2.0
         var maxY = rect.center.y + rect.size.height/2.0
         
-        // Researcher limit: 1.0x dimension (full height expansion)
-        val runawayLimit = max(rect.size.height, rect.size.width) * 1.0 
+        // Asymmetric Guardrails:
+        val hLimit = rect.size.height * 2.5 // Allow horizontal expansion for words
+        val vLimit = rect.size.height * 0.3 // Keep vertical expansion very tight
+        
         val startMinX = minX; val startMaxX = maxX; val startMinY = minY; val startMaxY = maxY
 
         // Up
-        while (minY > 0 && (startMinY - minY) < runawayLimit) {
+        while (minY > 0 && (startMinY - minY) < vLimit) {
             if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) break
             minY -= 1.0
         }
         // Down
-        while (maxY < maxH - 1 && (maxY - startMaxY) < runawayLimit) {
+        while (maxY < maxH - 1 && (maxY - startMaxY) < vLimit) {
             if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) break
             maxY += 1.0
         }
         // Left
-        while (minX > 0 && (startMinX - minX) < runawayLimit) {
+        while (minX > 0 && (startMinX - minX) < hLimit) {
             if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) break
             minX -= 1.0
         }
         // Right
-        while (maxX < maxW - 1 && (maxX - startMaxX) < runawayLimit) {
+        while (maxX < maxW - 1 && (maxX - startMaxX) < hLimit) {
             if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) break
             maxX += 1.0
         }
@@ -223,16 +224,22 @@ object TfLiteOcrUtils {
         var minY = rect.center.y - rect.size.height/2.0
         var maxY = rect.center.y + rect.size.height/2.0
         
-        val startH = maxY - minY
-        val limitH = startH * 4.0
+        val hLimit = rect.size.height * 2.5
+        val vLimit = rect.size.height * 0.3
+        
+        val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
         
         var changed = true
-        while (changed && (maxY - minY) < limitH) {
+        while (changed) {
             changed = false
-            if (minY > 0 && checkLine(textMask, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) { minY -= 1.0; changed = true }
-            if (maxY < maxH - 1 && checkLine(textMask, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) { maxY += 1.0; changed = true }
-            if (minX > 0 && checkLine(textMask, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) { minX -= 1.0; changed = true }
-            if (maxX < maxW - 1 && checkLine(textMask, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) { maxX += 1.0; changed = true }
+            // Check top
+            if (minY > 0 && (sY - minY) < vLimit && checkLine(textMask, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) { minY -= 1.0; changed = true }
+            // Check bottom
+            if (maxY < maxH - 1 && (maxY - sYY) < vLimit && checkLine(textMask, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) { maxY += 1.0; changed = true }
+            // Check left
+            if (minX > 0 && (sX - minX) < hLimit && checkLine(textMask, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) { minX -= 1.0; changed = true }
+            // Check right
+            if (maxX < maxW - 1 && (maxX - sXX) < hLimit && checkLine(textMask, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) { maxX += 1.0; changed = true }
         }
 
         return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))

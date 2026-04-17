@@ -42,7 +42,8 @@ data class OcrResult(
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
     val openCvProcessedBitmap: Bitmap? = null,
-    val heatmap: FloatArray? = null,
+    val rawHeatmap: FloatArray? = null,
+    val discoveryHeatmap: FloatArray? = null,
     val textBlocks: List<TextBlock> = emptyList(),
     val imageWidth: Int = 0,
     val imageHeight: Int = 0,
@@ -62,7 +63,8 @@ data class OcrResult(
         return this.copy(
             textBlocks = filteredBlocks,
             debugText = filteredBlocks.joinToString(" ") { it.text },
-            heatmap = this.heatmap
+            rawHeatmap = this.rawHeatmap,
+            discoveryHeatmap = this.discoveryHeatmap
         )
     }
 }
@@ -158,37 +160,39 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             scaled.recycle()
             
             val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * inputSize * inputSize * 4).order(ByteOrder.nativeOrder())
-            // NCHW Order (Paddle standard)
+            
+            // Scaled Integrity Fix: Explicit NCHW mapping to prevent blotching
+            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+            val pixels = IntArray(inputSize * inputSize)
+            padded.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
+
             for (c in 0 until 3) {
-                for (y in 0 until inputSize) {
-                    for (x in 0 until inputSize) {
-                        val px = padded.getPixel(x, y)
-                        val v = when (c) {
-                            0 -> (px shr 16 and 0xFF)
-                            1 -> (px shr 8 and 0xFF)
-                            else -> (px and 0xFF)
-                        }
-                        val mean = when (c) { 0 -> 0.485f; 1 -> 0.456f; else -> 0.406f }
-                        val std = when (c) { 0 -> 0.229f; 1 -> 0.224f; else -> 0.225f }
-                        inputBuffer.putFloat((v / 255.0f - mean) / std)
+                for (i in pixels.indices) {
+                    val px = pixels[i]
+                    val v = when (c) {
+                        0 -> (px shr 16 and 0xFF)
+                        1 -> (px shr 8 and 0xFF)
+                        else -> (px and 0xFF)
                     }
+                    inputBuffer.putFloat((v / 255.0f - mean[c]) / std[c])
                 }
             }
             
             val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
             detInterpreter.run(inputBuffer, outputBuffer)
 
-            flatHeatmap = FloatArray(inputSize * inputSize)
+            val rawHeatmap = FloatArray(inputSize * inputSize)
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
-                    flatHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
+                    rawHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
                 }
             }
             
             // Use Algorithm C: Edge-Stop Expansion (Researcher)
-            // PASS THE PADDED 1280px BITMAP for 1:1 coordinate alignment
+            val discoveryHeatmap = rawHeatmap.copyOf()
             val boxes = TfLiteOcrUtils.processDbNetOutput(
-                flatHeatmap, 
+                discoveryHeatmap, 
                 inputSize, 
                 inputSize, 
                 sourceBitmap = padded,
@@ -215,6 +219,18 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             }
             padded.recycle()
             detInterpreter.close()
+
+            engine.close()
+            return@withContext OcrResult(
+                engineName = name,
+                executionTimeMs = System.currentTimeMillis() - t0,
+                debugText = debugText.toString().trim(),
+                textBlocks = textBlocks,
+                imageWidth = bitmap.width,
+                imageHeight = bitmap.height,
+                rawHeatmap = rawHeatmap,
+                discoveryHeatmap = discoveryHeatmap
+            )
         }
 
         engine.close()
@@ -225,7 +241,8 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             textBlocks = textBlocks,
             imageWidth = bitmap.width,
             imageHeight = bitmap.height,
-            heatmap = flatHeatmap
+            rawHeatmap = null,
+            discoveryHeatmap = null
         )
     }
 }
