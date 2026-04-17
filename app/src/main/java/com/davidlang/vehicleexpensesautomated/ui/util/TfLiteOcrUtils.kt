@@ -147,6 +147,20 @@ object TfLiteOcrUtils {
             results.add(DetectedBox(points.toList(), bounds, rotatedRect.angle.toFloat()))
         }
         
+        // 5. FINAL UI SYNC: Fill expanded boxes into heatmap for visual audit
+        // Reset heatmap to 0 and fill with solid 1.0 for final extraction zones
+        for (i in heatmap.indices) { heatmap[i] = 0.0f }
+        for (res in results) {
+            val b = res.boundingBox
+            for (y in b.top until b.bottom) {
+                for (x in b.left until b.right) {
+                    if (y in 0 until height && x in 0 until width) {
+                        heatmap[y * width + x] = 1.0f
+                    }
+                }
+            }
+        }
+        
         mask.release(); hierarchy.release(); textMask?.release(); edgeMap?.release()
         return results
     }
@@ -160,7 +174,8 @@ object TfLiteOcrUtils {
         var minY = rect.center.y - rect.size.height/2.0
         var maxY = rect.center.y + rect.size.height/2.0
         
-        val runawayLimit = max(rect.size.height, rect.size.width) * 0.5 // Limit expansion to half max dimension
+        // Researcher limit: 1.0x dimension (full height expansion)
+        val runawayLimit = max(rect.size.height, rect.size.width) * 1.0 
         val startMinX = minX; val startMaxX = maxX; val startMinY = minY; val startMaxY = maxY
 
         // Up

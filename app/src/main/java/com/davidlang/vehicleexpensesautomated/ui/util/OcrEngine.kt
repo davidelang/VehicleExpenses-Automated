@@ -158,18 +158,25 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             scaled.recycle()
             
             val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * inputSize * inputSize * 4).order(ByteOrder.nativeOrder())
-            for (y in 0 until inputSize) {
-                for (x in 0 until inputSize) {
-                    val px = padded.getPixel(x, y)
-                    inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f)
-                    inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f)
-                    inputBuffer.putFloat(((px and 0xFF) / 255.0f - 0.406f) / 0.225f)
+            // NCHW Order (Paddle standard)
+            for (c in 0 until 3) {
+                for (y in 0 until inputSize) {
+                    for (x in 0 until inputSize) {
+                        val px = padded.getPixel(x, y)
+                        val v = when (c) {
+                            0 -> (px shr 16 and 0xFF)
+                            1 -> (px shr 8 and 0xFF)
+                            else -> (px and 0xFF)
+                        }
+                        val mean = when (c) { 0 -> 0.485f; 1 -> 0.456f; else -> 0.406f }
+                        val std = when (c) { 0 -> 0.229f; 1 -> 0.224f; else -> 0.225f }
+                        inputBuffer.putFloat((v / 255.0f - mean) / std)
+                    }
                 }
             }
             
             val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
             detInterpreter.run(inputBuffer, outputBuffer)
-            padded.recycle()
 
             flatHeatmap = FloatArray(inputSize * inputSize)
             for (y in 0 until inputSize) {
@@ -178,14 +185,16 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 }
             }
             
-            // Use Algorithm A: Morphological Reconstruction (Follow the Stroke)
+            // Use Algorithm C: Edge-Stop Expansion (Researcher)
+            // PASS THE PADDED 1280px BITMAP for 1:1 coordinate alignment
             val boxes = TfLiteOcrUtils.processDbNetOutput(
                 flatHeatmap, 
                 inputSize, 
                 inputSize, 
-                sourceBitmap = bitmap,
-                algorithm = "A"
+                sourceBitmap = padded,
+                algorithm = "C"
             )
+            padded.recycle()
             
             val invScale = 1.0f / scale
             for (detectedBox in boxes) {

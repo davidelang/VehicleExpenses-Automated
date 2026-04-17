@@ -246,6 +246,7 @@ fun ManageVehiclesScreen(
                 otherTextCrop = otherTextCropRect,
                 landmarks = res.textBlocks,
                 odometerText = "N/A",
+                engineName = res.engineName,
                 sourceWidth = res.imageWidth,
                 sourceHeight = res.imageHeight,
                 heatmap = res.heatmap,
