@@ -8,6 +8,7 @@ import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
  * Represents a detected text region with both rotated points and axis-aligned bounds.
@@ -20,7 +21,7 @@ data class DetectedBox(
 
 /**
  * Shared utilities for processing TFLite OCR and Detection model outputs.
- * Implementation of Phase 7: Distributed Adaptive Comparison.
+ * Implementation of Phase 9: Edge-Guided Boundary Discovery.
  */
 object TfLiteOcrUtils {
 
@@ -65,14 +66,14 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet detection heatmap into rotated text polygons.
-     * Uses one of two adaptive expansion algorithms for side-by-side comparison.
+     * Supports Algorithm B (Perimeter Check) and Algorithm C (Edge-Stop).
      */
     fun processDbNetOutput(
         heatmap: FloatArray,
         width: Int,
         height: Int,
         sourceBitmap: Bitmap? = null,
-        algorithm: String = "A" // "A" = Stroke Follower, "B" = Perimeter Expander
+        algorithm: String = "C" // "B" = User's Perimeter, "C" = Researcher's Edge-Stop
     ): List<DetectedBox> {
         val mask = Mat(height, width, CvType.CV_8UC1)
         val data = ByteArray(width * height)
@@ -81,8 +82,9 @@ object TfLiteOcrUtils {
         }
         mask.put(0, 0, data)
 
-        // Pre-process source image if available
+        var edgeMap: Mat? = null
         var textMask: Mat? = null
+        
         if (sourceBitmap != null) {
             val sourceMat = Mat()
             Utils.bitmapToMat(sourceBitmap, sourceMat)
@@ -91,6 +93,11 @@ object TfLiteOcrUtils {
             val resizedGray = Mat()
             Imgproc.resize(gray, resizedGray, Size(width.toDouble(), height.toDouble()))
             
+            // Generate Edge Map for Algorithm C
+            edgeMap = Mat()
+            Imgproc.Canny(resizedGray, edgeMap, 50.0, 150.0)
+            
+            // Generate Polarity Mask for Algorithm B
             val polarity = detectPolarity(resizedGray)
             textMask = Mat()
             if (polarity == Polarity.LIGHT_ON_DARK) {
@@ -99,16 +106,6 @@ object TfLiteOcrUtils {
                 Imgproc.threshold(resizedGray, textMask, 150.0, 255.0, Imgproc.THRESH_BINARY_INV)
             }
             
-            if (algorithm == "A") {
-                // Algorithm A: Morphological Reconstruction (Follow the Stroke)
-                // Seed = mask, Constraint = textMask. 
-                val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-                for (i in 0 until 6) { // 6 cycles of constrained growth
-                    Imgproc.dilate(mask, mask, kernel)
-                    Core.bitwise_and(mask, textMask, mask)
-                }
-                kernel.release()
-            }
             sourceMat.release(); gray.release(); resizedGray.release()
         }
 
@@ -132,8 +129,11 @@ object TfLiteOcrUtils {
 
             var bounds: Rect
             if (algorithm == "B" && textMask != null) {
-                // Algorithm B: Perimeter Pixel Check
+                // Algorithm B: Perimeter Pixel Check (User)
                 bounds = expandPerimeter(rotatedRect, textMask, height, width)
+            } else if (algorithm == "C" && edgeMap != null) {
+                // Algorithm C: Edge-Stop Expansion (Researcher)
+                bounds = expandToEdges(rotatedRect, edgeMap, height, width)
             } else {
                 // Standard DBNet unclip as fallback
                 val expandedPoints = unclipBox(points, 2.5f)
@@ -147,12 +147,48 @@ object TfLiteOcrUtils {
             results.add(DetectedBox(points.toList(), bounds, rotatedRect.angle.toFloat()))
         }
         
-        mask.release(); hierarchy.release(); textMask?.release()
+        mask.release(); hierarchy.release(); textMask?.release(); edgeMap?.release()
         return results
     }
 
     /**
-     * Algorithm B: Expands the bounding box pixel-by-pixel if the perimeter contains text.
+     * Algorithm C: Expands the box until it hits a Canny edge or runaway limit.
+     */
+    private fun expandToEdges(rect: RotatedRect, edgeMap: Mat, maxH: Int, maxW: Int): Rect {
+        var minX = rect.center.x - rect.size.width/2.0
+        var maxX = rect.center.x + rect.size.width/2.0
+        var minY = rect.center.y - rect.size.height/2.0
+        var maxY = rect.center.y + rect.size.height/2.0
+        
+        val runawayLimit = max(rect.size.height, rect.size.width) * 0.5 // Limit expansion to half max dimension
+        val startMinX = minX; val startMaxX = maxX; val startMinY = minY; val startMaxY = maxY
+
+        // Up
+        while (minY > 0 && (startMinY - minY) < runawayLimit) {
+            if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) break
+            minY -= 1.0
+        }
+        // Down
+        while (maxY < maxH - 1 && (maxY - startMaxY) < runawayLimit) {
+            if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) break
+            maxY += 1.0
+        }
+        // Left
+        while (minX > 0 && (startMinX - minX) < runawayLimit) {
+            if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) break
+            minX -= 1.0
+        }
+        // Right
+        while (maxX < maxW - 1 && (maxX - startMaxX) < runawayLimit) {
+            if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) break
+            maxX += 1.0
+        }
+
+        return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
+    }
+
+    /**
+     * Algorithm B: Expands the bounding box pixel-by-pixel if the perimeter contains text color.
      */
     private fun expandPerimeter(rect: RotatedRect, textMask: Mat, maxH: Int, maxW: Int): Rect {
         var minX = rect.center.x - rect.size.width/2.0
@@ -163,17 +199,12 @@ object TfLiteOcrUtils {
         val startH = maxY - minY
         val limitH = startH * 4.0
         
-        // Expand loop
         var changed = true
         while (changed && (maxY - minY) < limitH) {
             changed = false
-            // Check top edge
             if (minY > 0 && checkLine(textMask, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) { minY -= 1.0; changed = true }
-            // Check bottom edge
             if (maxY < maxH - 1 && checkLine(textMask, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) { maxY += 1.0; changed = true }
-            // Check left edge
             if (minX > 0 && checkLine(textMask, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) { minX -= 1.0; changed = true }
-            // Check right edge
             if (maxX < maxW - 1 && checkLine(textMask, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) { maxX += 1.0; changed = true }
         }
 
@@ -194,7 +225,7 @@ object TfLiteOcrUtils {
         val distance = (area * ratio / perimeter)
         val center = Point(0.0, 0.0); for (p in points) { center.x += p.x; center.y += p.y }; center.x /= 4.0; center.y /= 4.0
         return points.map { p ->
-            val dx = p.x - center.x; val dy = p.y - center.y; val mag = Math.sqrt(dx * dx + dy * dy)
+            val dx = p.x - center.x; val dy = p.y - center.y; val mag = sqrt(dx * dx + dy * dy)
             if (mag == 0.0) p else Point(p.x + (dx / mag * distance), p.y + (dy / mag * distance))
         }
     }
@@ -207,7 +238,7 @@ object TfLiteOcrUtils {
 
     private fun calculatePolygonPerimeter(points: Array<Point>): Double {
         var perimeter = 0.0
-        for (i in points.indices) { val next = (i + 1) % points.size; val dx = points[i].x - points[next].x; val dy = points[i].y - points[next].y; perimeter += Math.sqrt(dx * dx + dy * dy) }
+        for (i in points.indices) { val next = (i + 1) % points.size; val dx = points[i].x - points[next].x; val dy = points[i].y - points[next].y; perimeter += sqrt(dx * dx + dy * dy) }
         return perimeter
     }
 }

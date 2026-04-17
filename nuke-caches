@@ -2,7 +2,7 @@
 set -e
 
 git reset --hard HEAD
-git clean -fd
+git clean -fd -e "dev-ai-interaction/" -e "app/src/main/jniLibs/" -e "app/src/main/assets/libs_backup/"
 echo "sdk.dir=$HOME/Android/Sdk" > local.properties
 
 
