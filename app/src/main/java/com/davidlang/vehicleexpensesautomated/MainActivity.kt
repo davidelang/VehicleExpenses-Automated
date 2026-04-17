@@ -35,6 +35,7 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehiclesScreen
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import dagger.hilt.android.AndroidEntryPoint
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
@@ -73,21 +74,42 @@ class MainActivity : ComponentActivity() {
                 // SEED VEHICLE CROPS & RUN STARTUP SENSITIVITY TEST
                 LaunchedEffect(Unit) {
                     scope.launch(Dispatchers.IO) {
-                        // 1. SEED CROPS
-                        Log.i("MainActivity", "Syncing Vehicle Crop Definitions...")
+                        // 1. ROBUST SEEDING
+                        Log.i("MainActivity", "Syncing Vehicle Database...")
                         val vehicles = vehicleRepository.getAllVehicles().first()
+                        Log.i("MainActivity", "Current Vehicle Count: ${vehicles.size}")
                         
-                        vehicles.find { it.name.contains("Honda", ignoreCase = true) }?.let { v ->
+                        // Seed Honda
+                        val honda = vehicles.find { it.name.contains("Honda", ignoreCase = true) }
+                        if (honda == null) {
+                            Log.i("MainActivity", "Creating Honda entry...")
+                            val refPath = File(context.filesDir, "photos/honda_ref.jpg").absolutePath
+                            vehicleRepository.insertVehicle(Vehicle(
+                                name = "Honda", referenceDashPhotoUrl = refPath,
+                                odometerCropLeft = 0.2124f, odometerCropTop = 0.6565f,
+                                odometerCropRight = 0.4484f, odometerCropBottom = 0.8116f
+                            ))
+                        } else {
                             Log.i("MainActivity", "Updating Honda Crops...")
-                            vehicleRepository.updateVehicle(v.copy(
+                            vehicleRepository.updateVehicle(honda.copy(
                                 odometerCropLeft = 0.2124f, odometerCropTop = 0.6565f,
                                 odometerCropRight = 0.4484f, odometerCropBottom = 0.8116f
                             ))
                         }
                         
-                        vehicles.find { it.name.contains("Ford", ignoreCase = true) }?.let { v ->
+                        // Seed Ford Van
+                        val ford = vehicles.find { it.name.contains("Ford", ignoreCase = true) }
+                        if (ford == null) {
+                            Log.i("MainActivity", "Creating Ford Van entry...")
+                            val refPath = File(context.filesDir, "photos/ford_ref.jpg").absolutePath
+                            vehicleRepository.insertVehicle(Vehicle(
+                                name = "Ford Van", referenceDashPhotoUrl = refPath,
+                                odometerCropLeft = 0.3380f, odometerCropTop = 0.3783f,
+                                odometerCropRight = 0.6555f, odometerCropBottom = 0.4783f
+                            ))
+                        } else {
                             Log.i("MainActivity", "Updating Ford Van Crops...")
-                            vehicleRepository.updateVehicle(v.copy(
+                            vehicleRepository.updateVehicle(ford.copy(
                                 odometerCropLeft = 0.3380f, odometerCropTop = 0.3783f,
                                 odometerCropRight = 0.6555f, odometerCropBottom = 0.4783f
                             ))
@@ -95,8 +117,8 @@ class MainActivity : ComponentActivity() {
 
                         // 2. RUN SENSITIVITY BENCHMARK
                         Log.i("MainActivity", "Starting AUTOMATED STARTUP SENSITIVITY TEST...")
-                        val refFile = File(context.filesDir, "photos")
-                        val hondaRef = refFile.listFiles()?.find { it.name.contains("honda_ref") }
+                        val photosDir = File(context.filesDir, "photos")
+                        val hondaRef = photosDir.listFiles()?.find { it.name.contains("honda_ref") }
                         
                         if (hondaRef != null) {
                             val bitmap = OdometerOcrUtils.decodeBitmapSafely(context, hondaRef.absolutePath)
