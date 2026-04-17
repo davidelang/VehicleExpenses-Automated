@@ -110,7 +110,7 @@ class PaddleOcrEngine(
         val inputBuffer = prepareDetectionBuffer(padded, inputSize, floatData)
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
-        scaled.recycle(); padded.recycle()
+        scaled.recycle()
 
         val flatHeatmap = FloatArray(inputSize * inputSize)
         for (y in 0 until inputSize) {
@@ -151,6 +151,8 @@ class PaddleOcrEngine(
                 textBlocks.add(TextBlock(res.text, Rect(left, top, right, bottom), detectedBox.angle))
             }
         }
+
+        padded.recycle()
 
         return OcrResult(
             engineName = name,

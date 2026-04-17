@@ -14,7 +14,7 @@
   - [ ] **Final Validation (Phase 4):**
     - [ ] Benchmark accuracy vs. ML Kit using the 12-image test set.
     - [ ] Compare "Veto" accuracy between ML Kit and Paddle-Lite discovery.
-  - [ ] Strip debug information and excessive logging from the Paddle Lite `x86_64` Android build to reduce binary size (currently ~38MB) before final upstream PR submission.
+  - [x] Strip debug information and excessive logging from the Paddle Lite `x86_64` Android build to reduce binary size (currently ~9.6MB).
 
 - **Alignment & Processing:**
   - [ ] **Multi-Strategy Voting:** Implement a voting mechanism to select the most consistent odometer result across all successful alignment strategies.

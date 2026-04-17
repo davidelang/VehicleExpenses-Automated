@@ -194,7 +194,6 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 sourceBitmap = padded,
                 algorithm = "C"
             )
-            padded.recycle()
             
             val invScale = 1.0f / scale
             for (detectedBox in boxes) {
@@ -214,6 +213,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                     textBlocks.add(TextBlock(text, Rect(left, top, right, bottom), detectedBox.angle))
                 }
             }
+            padded.recycle()
             detInterpreter.close()
         }
 

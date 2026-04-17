@@ -125,9 +125,10 @@ class NativePaddleEngine(
     private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
         val textBlocks = mutableListOf<TextBlock>()
         val sb = StringBuilder()
-        val boxesRes = runDetection(bitmap)
-        val boxes = boxesRes.first
-        val flatHeatmap = boxesRes.second
+        val detectionRes = runDetection(bitmap)
+        val boxes = detectionRes.boxes
+        val flatHeatmap = detectionRes.heatmap
+        val paddedBmp = detectionRes.paddedBitmap
 
         for (detectedBox in boxes) {
             val box = detectedBox.boundingBox
@@ -140,6 +141,8 @@ class NativePaddleEngine(
                 textBlocks.add(TextBlock(res.text, box, detectedBox.angle))
             }
         }
+        
+        paddedBmp?.recycle()
 
         return OcrResult(
             engineName = name,
@@ -152,8 +155,10 @@ class NativePaddleEngine(
         )
     }
 
-    private fun runDetection(bitmap: Bitmap): Pair<List<DetectedBox>, FloatArray> {
-        val predictor = sharedDetector ?: return emptyList<DetectedBox>() to floatArrayOf()
+    private data class DetectionResult(val boxes: List<DetectedBox>, val heatmap: FloatArray, val paddedBitmap: Bitmap?)
+
+    private fun runDetection(bitmap: Bitmap): DetectionResult {
+        val predictor = sharedDetector ?: return DetectionResult(emptyList(), floatArrayOf(), null)
         val inputSize = 1280
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
@@ -183,7 +188,6 @@ class NativePaddleEngine(
                 floatData[2 * inputSize * inputSize + y * inputSize + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
             }
         }
-        padded.recycle()
         
         try {
             inputTensor.setData(floatData)
@@ -200,7 +204,6 @@ class NativePaddleEngine(
                 sourceBitmap = padded,
                 algorithm = "B"
             )
-            padded.recycle()
             
             val invScale = 1.0f / scale
             val scaledBoxes = boxes.map { db ->
@@ -212,8 +215,8 @@ class NativePaddleEngine(
                     ((b.bottom - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
                 ))
             }
-            return scaledBoxes to outputData
-        } catch (t: Throwable) { return emptyList<DetectedBox>() to floatArrayOf() }
+            return DetectionResult(scaledBoxes, outputData, padded)
+        } catch (t: Throwable) { return DetectionResult(emptyList(), floatArrayOf(), padded) }
     }
 
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)

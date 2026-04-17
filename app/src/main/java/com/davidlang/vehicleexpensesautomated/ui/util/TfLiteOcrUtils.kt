@@ -57,11 +57,23 @@ object TfLiteOcrUtils {
      * Heuristic to determine if image has light text on dark background or vice versa.
      */
     fun detectPolarity(mat: Mat): Polarity {
-        val corners = listOf(Point(0.0,0.0), Point(mat.cols()-1.0, 0.0), Point(0.0, mat.rows()-1.0), Point(mat.cols()-1.0, mat.rows()-1.0))
-        var sum = 0.0
-        for (p in corners) { sum += mat.get(p.y.toInt(), p.x.toInt())[0] }
-        val avgCorner = sum / 4.0
-        return if (avgCorner > 127) Polarity.DARK_ON_LIGHT else Polarity.LIGHT_ON_DARK
+        val samples = mutableListOf<Double>()
+        val w = mat.cols(); val h = mat.rows()
+        
+        // Corners
+        samples.add(mat.get(0, 0)[0])
+        samples.add(mat.get(0, w-1)[0])
+        samples.add(mat.get(h-1, 0)[0])
+        samples.add(mat.get(h-1, w-1)[0])
+        
+        // Mid-edges
+        samples.add(mat.get(h/2, 0)[0])
+        samples.add(mat.get(h/2, w-1)[0])
+        samples.add(mat.get(0, w/2)[0])
+        samples.add(mat.get(h-1, w/2)[0])
+        
+        val avg = samples.average()
+        return if (avg > 127) Polarity.DARK_ON_LIGHT else Polarity.LIGHT_ON_DARK
     }
 
     /**
