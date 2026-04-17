@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -33,15 +34,21 @@ import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedT
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.ManageVehiclesScreen
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import dagger.hilt.android.AndroidEntryPoint
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var vehicleRepository: VehicleRepository
 
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -63,12 +70,31 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
 
-                // AUTOMATED STARTUP SENSITIVITY TEST
+                // SEED VEHICLE CROPS & RUN STARTUP SENSITIVITY TEST
                 LaunchedEffect(Unit) {
                     scope.launch(Dispatchers.IO) {
-                        Log.i("MainActivity", "Starting AUTOMATED STARTUP SENSITIVITY TEST...")
+                        // 1. SEED CROPS
+                        Log.i("MainActivity", "Syncing Vehicle Crop Definitions...")
+                        val vehicles = vehicleRepository.getAllVehicles().first()
                         
-                        // 1. Locate reference photo
+                        vehicles.find { it.name.contains("Honda", ignoreCase = true) }?.let { v ->
+                            Log.i("MainActivity", "Updating Honda Crops...")
+                            vehicleRepository.updateVehicle(v.copy(
+                                odometerCropLeft = 0.2124f, odometerCropTop = 0.6565f,
+                                odometerCropRight = 0.4484f, odometerCropBottom = 0.8116f
+                            ))
+                        }
+                        
+                        vehicles.find { it.name.contains("Ford", ignoreCase = true) }?.let { v ->
+                            Log.i("MainActivity", "Updating Ford Van Crops...")
+                            vehicleRepository.updateVehicle(v.copy(
+                                odometerCropLeft = 0.3380f, odometerCropTop = 0.3783f,
+                                odometerCropRight = 0.6555f, odometerCropBottom = 0.4783f
+                            ))
+                        }
+
+                        // 2. RUN SENSITIVITY BENCHMARK
+                        Log.i("MainActivity", "Starting AUTOMATED STARTUP SENSITIVITY TEST...")
                         val refFile = File(context.filesDir, "photos")
                         val hondaRef = refFile.listFiles()?.find { it.name.contains("honda_ref") }
                         
@@ -84,8 +110,7 @@ class MainActivity : ComponentActivity() {
                                 val res2 = OcrHarness.runDiscovery(claheBmp, context)
                                 Log.i("MainActivity", "Test 2 Landmarks: ${res2.mapValues { it.value.textBlocks.size }}")
                                 
-                                claheBmp.recycle()
-                                bmp.recycle()
+                                claheBmp.recycle(); bmp.recycle()
                             }
                         } else {
                             Log.w("MainActivity", "Test Skipped: honda_ref.jpg not found in photos dir.")
@@ -115,7 +140,6 @@ class MainActivity : ComponentActivity() {
                     drawerContent = {
                         ModalDrawerSheet {
                             Text("Vehicle Expenses", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
-
                             NavigationDrawerItem(label = { Text("Quick Fill-up") }, selected = false, onClick = { navController.navigate("quickfill"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("Manage Vehicles") }, selected = false, onClick = { navController.navigate("managevehicles"); scope.launch { drawerState.close() } })
                             NavigationDrawerItem(label = { Text("New Expense Entry") }, selected = false, onClick = { navController.navigate("expense"); scope.launch { drawerState.close() } })
