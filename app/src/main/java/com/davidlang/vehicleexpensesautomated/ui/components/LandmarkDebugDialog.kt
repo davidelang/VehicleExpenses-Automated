@@ -58,8 +58,9 @@ fun LandmarkDebugDialog(
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surface
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header (With padding)
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Discovery", style = MaterialTheme.typography.labelSmall)
@@ -87,9 +88,10 @@ fun LandmarkDebugDialog(
                     val imgW = bitmap.width.toFloat()
                     val imgH = bitmap.height.toFloat()
                     
+                    // EDGE-TO-EDGE IMAGE AREA (Using weight to fill available space)
                     Box(modifier = Modifier
                         .fillMaxWidth()
-                        .height(300.dp)
+                        .weight(1f)
                         .background(Color.Black)
                     ) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -110,7 +112,6 @@ fun LandmarkDebugDialog(
 
                             if (showDiscovery) {
                                 // 1. RED TIER (Model Suspicion) - HIGH VISIBILITY 45% SOLID TINT
-                                // Rendering ALL raw boxes to explain "activity"
                                 rawDiscoveryBoxes.forEach { box ->
                                     drawRect(
                                         color = Color.Red.copy(alpha = 0.45f),
@@ -138,14 +139,10 @@ fun LandmarkDebugDialog(
                                 val ny = lm.boundingBox.top.toFloat() / sourceHeight.toFloat()
                                 val nw = (lm.boundingBox.right - lm.boundingBox.left).toFloat() / sourceWidth.toFloat()
                                 val nh = (lm.boundingBox.bottom - lm.boundingBox.top).toFloat() / sourceHeight.toFloat()
-                                
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
-                                
-                                // Only draw Yellow box if it's not degenerate
                                 if (nw > 0 && nh > 0) {
                                     drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(2f))
                                 }
-
                                 if (lm.text.isNotBlank()) {
                                     drawText(
                                         textMeasurer = textMeasurer,
@@ -167,56 +164,56 @@ fun LandmarkDebugDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
-                }
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Discovery Pipeline Metrics:", style = MaterialTheme.typography.titleSmall)
-                
-                // MULTI-COLUMN METRICS GRID
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 160.dp),
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp),
-                    contentPadding = PaddingValues(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(landmarks) { lm ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            shape = MaterialTheme.shapes.small,
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
-                            Column(modifier = Modifier.padding(6.dp)) {
-                                if (lm.text.isNotBlank()) {
-                                    Text(text = lm.text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                                } else {
-                                    // Empty text area for Ghost Landmarks
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    lm.rawDiscoveryBox?.let { box ->
-                                        MetricChip(color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                // Metadata Footer (With padding)
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Discovery Pipeline Metrics:", style = MaterialTheme.typography.titleSmall)
+                    
+                    // FIXED HEIGHT METRICS GRID
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 160.dp),
+                        modifier = Modifier.height(220.dp).fillMaxWidth().padding(top = 4.dp),
+                        contentPadding = PaddingValues(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(landmarks) { lm ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                shape = MaterialTheme.shapes.small,
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Column(modifier = Modifier.padding(6.dp)) {
+                                    if (lm.text.isNotBlank()) {
+                                        Text(text = lm.text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                    } else {
+                                        Spacer(modifier = Modifier.height(16.dp))
                                     }
-                                    lm.refinedDiscoveryBox?.let { box ->
-                                        MetricChip(color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
-                                    }
-                                    // Only show yellow chip if there's a valid crop result
-                                    if (lm.boundingBox.width() > 0) {
-                                        MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        lm.rawDiscoveryBox?.let { box ->
+                                            MetricChip(color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                        }
+                                        lm.refinedDiscoveryBox?.let { box ->
+                                            MetricChip(color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                        }
+                                        if (lm.boundingBox.width() > 0) {
+                                            MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End).padding(top = 8.dp)) {
-                    Text("Close")
+                    Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End).padding(top = 8.dp)) {
+                        Text("Close")
+                    }
                 }
             }
         }
