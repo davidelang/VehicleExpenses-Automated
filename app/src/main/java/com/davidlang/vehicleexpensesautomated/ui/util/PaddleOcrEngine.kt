@@ -95,7 +95,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         
         // ZERO-ANCHOR SCALE math
         val discoveryHeatmap = rawHeatmap.copyOf()
-        val boxes = TfLiteOcrUtils.processDbNetOutput(
+        val dbRes = TfLiteOcrUtils.processDbNetOutput(
             discoveryHeatmap, 
             inputSize, 
             inputSize, 
@@ -105,7 +105,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         )
         
         val results = StringBuilder()
-        for (detectedBox in boxes) {
+        for (detectedBox in dbRes.refinedBoxes) {
             val nb = detectedBox.boundingBox
             // nb is normalized to source pixels
             val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
@@ -134,7 +134,9 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
             imageWidth = bitmap.width,
             imageHeight = bitmap.height,
             rawHeatmap = rawHeatmap,
-            discoveryHeatmap = discoveryHeatmap
+            discoveryHeatmap = discoveryHeatmap,
+            rawDiscoveryBoxes = dbRes.rawBoxes.map { it.boundingBox },
+            scaleFactor = scale
         )
     }
 
