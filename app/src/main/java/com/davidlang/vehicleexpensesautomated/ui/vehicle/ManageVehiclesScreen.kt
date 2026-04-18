@@ -81,6 +81,13 @@ fun ManageVehiclesScreen(
     var selectedEngineForPopup by remember { mutableStateOf("ML Kit") }
     var isLoadingDiscovery by remember { mutableStateOf(false) }
 
+    // AUTO-SELECT FIRST VEHICLE
+    LaunchedEffect(vehicles) {
+        if (selectedVehicleId == null && vehicles.isNotEmpty() && !isNewVehicle) {
+            selectedVehicleId = vehicles.first().id
+        }
+    }
+
     LaunchedEffect(selectedVehicleId) {
         editingVehicle = vehicles.find { it.id == selectedVehicleId }
         editingVehicle?.let {
@@ -123,7 +130,6 @@ fun ManageVehiclesScreen(
                 val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
 
                 val primaryRes = filteredResults[anchorSourceEngine] ?: filteredResults["ML Kit"] ?: filteredResults.values.first()
-                // Update to include image dimensions for normalization
                 val landmarkJson = OdometerOcrUtils.serializeLandmarks(primaryRes.textBlocks, primaryRes.imageWidth, primaryRes.imageHeight)
                 
                 withContext(Dispatchers.Main) {
@@ -171,7 +177,6 @@ fun ManageVehiclesScreen(
                     isLoadingDiscovery = false
                 } catch (e: Exception) { 
                     Log.e("ManageVehicles", "OCR failed", e) 
-                    // Show whatever results we got before the failure
                     if (discoveryResults.isNotEmpty()) {
                         selectedEngineForPopup = discoveryResults.keys.first()
                         showLandmarkCheck = true
@@ -186,7 +191,7 @@ fun ManageVehiclesScreen(
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
-                value = if (isNewVehicle) "New Vehicle" else (editingVehicle?.name ?: "Select vehicle"),
+                value = if (isNewVehicle) "Add New Vehicle" else (editingVehicle?.name ?: "Select vehicle"),
                 onValueChange = {}, label = { Text("Vehicle") },
                 modifier = Modifier.fillMaxWidth().menuAnchor(),
                 readOnly = true
@@ -197,25 +202,20 @@ fun ManageVehiclesScreen(
             }
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
         if (isNewVehicle || editingVehicle != null) {
             PhotoPicker(photoStorageManager = hiltViewModel<SettingsViewModel>().photoStorageManager, photoType = PhotoType.FUEL, currentPhotoUrl = pickedPhotoUrl, onPhotoUrlChanged = { url -> if (url != null) processImportedPhoto(url) })
             
             if (referencePhotoUrl != null) {
-                Spacer(modifier = Modifier.height(16.dp))
                 EditCropsView(referencePhotoUrl!!, odometerCropRect, otherTextCropRect, originalImageSize, isEditingOcrArea, isEditingOtherText, 
                     onSizeChanged = { imageSize = it },
                     onCropChanged = { odo, other -> odometerCropRect = odo; otherTextCropRect = other })
                 
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                     Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingOtherText = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOcrArea) "Done Odo" else "Edit Odo") }
                     Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOtherText) "Done Other" else "Edit Other") }
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth(), enabled = !isLoadingDiscovery) { 
+                Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !isLoadingDiscovery) { 
                     if (isLoadingDiscovery) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -226,12 +226,11 @@ fun ManageVehiclesScreen(
                 }
                 
                 if (discoveryResults.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Discovery Results (Excluding Crop Areas):", style = MaterialTheme.typography.titleSmall)
-                    Text("Tap an engine to see its red boxes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                    Text("Discovery Results (Excluding Crop Areas):", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+                    Text("Tap an engine to see its debug pass", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                     
                     Surface(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp).padding(vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.small
                     ) {
@@ -253,7 +252,7 @@ fun ManageVehiclesScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Vehicle Name") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text("Make") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model") }, modifier = Modifier.fillMaxWidth())
@@ -290,7 +289,7 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
     var currentDragRect by remember { mutableStateOf<Rect?>(null) }
     var viewSize by remember { mutableStateOf(Offset.Zero) }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(300.dp).onSizeChanged { size -> viewSize = Offset(size.width.toFloat(), size.height.toFloat()); onSizeChanged(viewSize) }.pointerInput(isOdo, isOther, viewSize, originalSize) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(260.dp).onSizeChanged { size -> viewSize = Offset(size.width.toFloat(), size.height.toFloat()); onSizeChanged(viewSize) }.pointerInput(isOdo, isOther, viewSize, originalSize) {
         if (!isOdo && !isOther) return@pointerInput
         detectDragGestures(onDragStart = { offset -> dragStart = offset; currentDragRect = null }, onDrag = { change, _ ->
             change.consume(); val start = dragStart; val end = change.position
