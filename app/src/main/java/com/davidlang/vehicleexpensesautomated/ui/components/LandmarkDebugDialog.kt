@@ -6,8 +6,9 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -88,7 +89,7 @@ fun LandmarkDebugDialog(
                     
                     Box(modifier = Modifier
                         .fillMaxWidth()
-                        .height(320.dp) // Fixed height for image area to ensure grid visibility
+                        .height(300.dp)
                         .background(Color.Black)
                     ) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -108,11 +109,11 @@ fun LandmarkDebugDialog(
                             )
 
                             if (showDiscovery) {
-                                // 1. RED TIER (Model Suspicion) - SOLID TINTED
+                                // 1. RED TIER (Model Suspicion) - HIGH VISIBILITY SOLID TINT
                                 landmarks.forEach { lm ->
                                     lm.rawDiscoveryBox?.let { box ->
                                         drawRect(
-                                            color = Color.Red.copy(alpha = 0.15f),
+                                            color = Color.Red.copy(alpha = 0.35f),
                                             topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
                                             size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh)
                                         )
@@ -136,6 +137,9 @@ fun LandmarkDebugDialog(
                             odometerCrop?.let {
                                 drawRect(color = Color.Blue, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
                             }
+                            otherTextCrop?.let {
+                                drawRect(color = Color.Green, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
+                            }
 
                             // 3. YELLOW TIER (Final Landmark) - THIN STROKE
                             landmarks.forEach { lm ->
@@ -146,47 +150,55 @@ fun LandmarkDebugDialog(
                                 
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
                                 drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(2f))
+
+                                if (lm.text.isNotBlank()) {
+                                    drawText(
+                                        textMeasurer = textMeasurer,
+                                        text = lm.text,
+                                        topLeft = rect,
+                                        style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 8.sp, background = Color.Black.copy(alpha = 0.7f))
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
                 }
                 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text("Discovery Pipeline Metrics:", style = MaterialTheme.typography.titleSmall)
                 
-                // Grouped Metrics Grid
-                Surface(
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    shape = MaterialTheme.shapes.medium
+                // MULTI-COLUMN METRICS GRID
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 160.dp),
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp),
+                    contentPadding = PaddingValues(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(landmarks) { lm ->
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Text(text = lm.text.ifBlank { "[No Text]" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    // RED METRIC
+                    items(landmarks) { lm ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            shape = MaterialTheme.shapes.small,
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                Text(text = lm.text.ifBlank { "[No Text]" }, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     lm.rawDiscoveryBox?.let { box ->
-                                        MetricChip(label = "RED", color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                        MetricChip(color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
                                     }
-                                    // ORANGE METRIC
                                     lm.refinedDiscoveryBox?.let { box ->
-                                        MetricChip(label = "ORNGE", color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                        MetricChip(color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
                                     }
-                                    // YELLOW METRIC
-                                    MetricChip(label = "YELW", color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                    MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
                                 }
-                                HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
                     }
@@ -201,15 +213,16 @@ fun LandmarkDebugDialog(
 }
 
 @Composable
-private fun MetricChip(label: String, color: Color, w: Float, h: Float) {
+private fun MetricChip(color: Color, w: Float, h: Float) {
     Surface(
-        color = color.copy(alpha = 0.1f),
+        color = color.copy(alpha = 0.15f),
         shape = MaterialTheme.shapes.extraSmall,
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.5f))
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.6f))
     ) {
-        Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = androidx.compose.ui.text.TextStyle(fontSize = 7.sp, fontWeight = FontWeight.Black, color = color))
-            Text("${w.toInt()}x${h.toInt()}", style = androidx.compose.ui.text.TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Medium))
-        }
+        Text(
+            text = "${w.toInt()}x${h.toInt()}",
+            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+            style = androidx.compose.ui.text.TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f))
+        )
     }
 }
