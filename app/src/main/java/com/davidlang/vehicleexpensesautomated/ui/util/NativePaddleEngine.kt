@@ -96,11 +96,11 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         val sb = StringBuilder()
         val detectionRes = runDetection(bitmap)
         
-        // LINK THE TIERS: Populate TextBlock with discovery history
-        for (i in detectionRes.refinedBoxes.indices) {
-            val detectedBox = detectionRes.refinedBoxes[i]
-            val rawBox = detectionRes.rawBoxes.getOrNull(i)
-            val nb = detectedBox.boundingBox
+        // LINK THE TIERS: Capture every suspicion, including those without text
+        for (i in detectionRes.rawBoxes.indices) {
+            val rawBox = detectionRes.rawBoxes[i]
+            val refinedBox = detectionRes.refinedBoxes.getOrNull(i)
+            val nb = refinedBox?.boundingBox ?: rawBox.boundingBox
             
             val pixelRect = Rect(
                 (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width),
@@ -109,20 +109,26 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
                 (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
             )
 
-            if (pixelRect.width() < 1 || pixelRect.height() < 1) continue
+            if (pixelRect.width() < 1 || pixelRect.height() < 1) {
+                textBlocks.add(TextBlock(text = "", boundingBox = pixelRect, rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
+                continue
+            }
+
             val crop = cropBitmap(bitmap, pixelRect)
             val res = runRecognitionStage(crop, 48)
             crop.recycle()
+            
             if (res.text.isNotBlank()) {
                 sb.append(res.text).append(" ")
-                textBlocks.add(TextBlock(
-                    text = res.text, 
-                    boundingBox = pixelRect, 
-                    angle = detectedBox.angle,
-                    rawDiscoveryBox = rawBox?.boundingBox,
-                    refinedDiscoveryBox = detectedBox.boundingBox
-                ))
             }
+            
+            textBlocks.add(TextBlock(
+                text = res.text, 
+                boundingBox = pixelRect, 
+                angle = refinedBox?.angle ?: 0f,
+                rawDiscoveryBox = rawBox.boundingBox,
+                refinedDiscoveryBox = refinedBox?.boundingBox
+            ))
         }
 
         return OcrResult(

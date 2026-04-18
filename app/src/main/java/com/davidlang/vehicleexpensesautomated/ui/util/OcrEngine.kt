@@ -103,7 +103,7 @@ data class OcrResult(
         
         return this.copy(
             textBlocks = filteredBlocks,
-            debugText = filteredBlocks.joinToString(" ") { it.text }
+            debugText = filteredBlocks.filter { it.text.isNotBlank() }.joinToString(" ") { it.text }
         )
     }
 }
@@ -177,7 +177,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             interp.allocateTensors()
             interp
         } catch (e: Exception) { 
-            Log.e("NativeTflite", "Failed to load detector", e)
+            Log.e("NativeTflite", "Failed to load/resize detector", e)
             null 
         }
         
@@ -225,32 +225,38 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 algorithm = "C"
             )
             
-            // LINK THE TIERS: Iterate using index to link raw (RED) and refined (ORANGE) boxes
-            for (i in dbRes.refinedBoxes.indices) {
-                val detectedBox = dbRes.refinedBoxes[i]
-                val rawBox = dbRes.rawBoxes.getOrNull(i)
-                val nb = detectedBox.boundingBox
+            // LINK THE TIERS: Capture every suspicion, including those without text
+            for (i in dbRes.rawBoxes.indices) {
+                val rawBox = dbRes.rawBoxes[i]
+                val refinedBox = dbRes.refinedBoxes.getOrNull(i)
+                val nb = refinedBox?.boundingBox ?: rawBox.boundingBox
                 
                 val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
                 val top = (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
                 val right = (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width)
                 val bottom = (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
                 
-                if (right <= left || bottom <= top) continue
+                if (right <= left || bottom <= top) {
+                    // Still add a Block so the Red area is explained in the grid
+                    textBlocks.add(TextBlock(text = "", boundingBox = Rect(left, top, right, bottom), rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
+                    continue
+                }
+
                 val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
                 val text = engine.runInference(crop)
                 crop.recycle()
                 
                 if (text.isNotBlank()) {
                     debugText.append("$text ")
-                    textBlocks.add(TextBlock(
-                        text = text, 
-                        boundingBox = Rect(left, top, right, bottom), 
-                        angle = detectedBox.angle,
-                        rawDiscoveryBox = rawBox?.boundingBox,
-                        refinedDiscoveryBox = detectedBox.boundingBox
-                    ))
                 }
+                
+                textBlocks.add(TextBlock(
+                    text = text, 
+                    boundingBox = Rect(left, top, right, bottom), 
+                    angle = refinedBox?.angle ?: 0f,
+                    rawDiscoveryBox = rawBox.boundingBox,
+                    refinedDiscoveryBox = refinedBox?.boundingBox
+                ))
             }
             padded.recycle()
             detInterpreter.close()

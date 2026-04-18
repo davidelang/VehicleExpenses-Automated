@@ -110,7 +110,7 @@ fun LandmarkDebugDialog(
 
                             if (showDiscovery) {
                                 // 1. RED TIER (Model Suspicion) - HIGH VISIBILITY 45% SOLID TINT
-                                // Iterate ALL discovery boxes, not just linked ones
+                                // Rendering ALL raw boxes to explain "activity"
                                 rawDiscoveryBoxes.forEach { box ->
                                     drawRect(
                                         color = Color.Red.copy(alpha = 0.45f),
@@ -132,14 +132,6 @@ fun LandmarkDebugDialog(
                                 }
                             }
 
-                            // User Crops (Blue/Green)
-                            odometerCrop?.let {
-                                drawRect(color = Color.Blue, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
-                            }
-                            otherTextCrop?.let {
-                                drawRect(color = Color.Green, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
-                            }
-
                             // 3. YELLOW TIER (Final Landmark) - THIN STROKE
                             landmarks.forEach { lm ->
                                 val nx = lm.boundingBox.left.toFloat() / sourceWidth.toFloat()
@@ -148,7 +140,11 @@ fun LandmarkDebugDialog(
                                 val nh = (lm.boundingBox.bottom - lm.boundingBox.top).toFloat() / sourceHeight.toFloat()
                                 
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
-                                drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(2f))
+                                
+                                // Only draw Yellow box if it's not degenerate
+                                if (nw > 0 && nh > 0) {
+                                    drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(2f))
+                                }
 
                                 if (lm.text.isNotBlank()) {
                                     drawText(
@@ -158,6 +154,14 @@ fun LandmarkDebugDialog(
                                         style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 8.sp, background = Color.Black.copy(alpha = 0.7f))
                                     )
                                 }
+                            }
+
+                            // MANDATE: Blue (Odo) and Green (Veto) drawn LAST (on top)
+                            odometerCrop?.let {
+                                drawRect(color = Color.Blue, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
+                            }
+                            otherTextCrop?.let {
+                                drawRect(color = Color.Green, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
                             }
                         }
                     }
@@ -187,7 +191,12 @@ fun LandmarkDebugDialog(
                             border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Column(modifier = Modifier.padding(6.dp)) {
-                                Text(text = lm.text.ifBlank { "[No Text]" }, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                if (lm.text.isNotBlank()) {
+                                    Text(text = lm.text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                } else {
+                                    // Empty text area for Ghost Landmarks
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     lm.rawDiscoveryBox?.let { box ->
@@ -196,7 +205,10 @@ fun LandmarkDebugDialog(
                                     lm.refinedDiscoveryBox?.let { box ->
                                         MetricChip(color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
                                     }
-                                    MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                    // Only show yellow chip if there's a valid crop result
+                                    if (lm.boundingBox.width() > 0) {
+                                        MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                    }
                                 }
                             }
                         }
