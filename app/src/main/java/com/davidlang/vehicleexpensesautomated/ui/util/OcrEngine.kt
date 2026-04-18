@@ -177,7 +177,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             interp.allocateTensors()
             interp
         } catch (e: Exception) { 
-            Log.e("NativeTflite", "Failed to load/resize detector", e)
+            Log.e("NativeTflite", "Failed to load detector", e)
             null 
         }
         
@@ -222,7 +222,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 inputSize, 
                 scale = scale,
                 sourceBitmap = bitmap,
-                algorithm = "C"
+                algorithm = "A" // TFLite uses Projection-Based (Density)
             )
             
             // LINK THE TIERS: Capture every suspicion, including those without text
@@ -237,7 +237,6 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 val bottom = (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
                 
                 if (right <= left || bottom <= top) {
-                    // Still add a Block so the Red area is explained in the grid
                     textBlocks.add(TextBlock(text = "", boundingBox = Rect(left, top, right, bottom), rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
                     continue
                 }

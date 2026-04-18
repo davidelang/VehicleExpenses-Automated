@@ -101,7 +101,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
             inputSize, 
             scale = scale,
             sourceBitmap = bitmap,
-            algorithm = "C"
+            algorithm = "B" // Paddle-TFLite uses Perimeter-Based
         )
         
         val results = StringBuilder()
