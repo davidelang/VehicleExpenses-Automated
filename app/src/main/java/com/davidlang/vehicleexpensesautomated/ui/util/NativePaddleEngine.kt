@@ -172,7 +172,14 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         try {
             inputTensor.setData(floatData); predictor.run()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
-            val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap)
+            val dbRes = TfLiteOcrUtils.processDbNetOutput(
+                outputData, 
+                outW, 
+                outH, 
+                scale = scale, 
+                sourceBitmap = bitmap,
+                algorithm = "C" // Paddle-Lite uses Edge-Stop
+            )
             padded.recycle()
             return DetectionResult(dbRes.rawBoxes, dbRes.refinedBoxes, scale)
         } catch (t: Throwable) { padded.recycle(); return DetectionResult(emptyList(), emptyList(), 1f) }

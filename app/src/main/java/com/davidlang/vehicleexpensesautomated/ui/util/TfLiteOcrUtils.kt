@@ -88,21 +88,20 @@ object TfLiteOcrUtils {
 
             // 2. High Precision Box (ROI Expansion)
             val sourceRect = RotatedRect(Point(rotatedRect.center.x * invScale, rotatedRect.center.y * invScale), Size(rotatedRect.size.width * invScale, rotatedRect.size.height * invScale), rotatedRect.angle)
-            val sourcePoints = arrayOf(Point(), Point(), Point(), Point()); sourceRect.points(sourcePoints)
-
+            
             var bounds: Rect
-            if ((algorithm == "B" || algorithm == "C") && sourceMat != null) {
+            if (sourceMat != null) {
                 bounds = expandInRoi(sourceRect, sourceMat, algorithm)
             } else {
-                val exP = unclipBox(sourcePoints, 2.5f)
-                bounds = Rect(max(0, exP.minOf { it.x }.toInt()), max(0, exP.minOf { it.y }.toInt()), min(sourceW.toInt(), exP.maxOf { it.x }.toInt()), min(sourceH.toInt(), exP.maxOf { it.y }.toInt()))
+                val sourcePoints = arrayOf(Point(), Point(), Point(), Point()); sourceRect.points(sourcePoints)
+                bounds = Rect(max(0, sourcePoints.minOf { it.x }.toInt()), max(0, sourcePoints.minOf { it.y }.toInt()), min(sourceW.toInt(), sourcePoints.maxOf { it.x }.toInt()), min(sourceH.toInt(), sourcePoints.maxOf { it.y }.toInt()))
             }
             
             val normRefinedBounds = RectF(
                 (bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
                 (bounds.right.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.bottom.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
             )
-            refinedBoxes.add(DetectedBox(sourcePoints.toList(), normRefinedBounds, rotatedRect.angle.toFloat()))
+            refinedBoxes.add(DetectedBox(emptyList(), normRefinedBounds, rotatedRect.angle.toFloat()))
         }
         
         mask.release(); hierarchy.release(); sourceMat?.release()
@@ -115,43 +114,82 @@ object TfLiteOcrUtils {
         val roiT = max(0, (rect.center.y - rect.size.height/2 - margin).toInt())
         val roiR = min(sourceMat.cols(), (rect.center.x + rect.size.width/2 + margin).toInt())
         val roiB = min(sourceMat.rows(), (rect.center.y + rect.size.height/2 + margin).toInt())
-        if (roiR <= roiL || roiB <= roiT) return Rect(rect.center.x.toInt(), rect.center.y.toInt(), rect.center.x.toInt(), rect.center.y.toInt())
+        if (roiR <= roiL || roiB <= roiT) return Rect(rect.center.x.toInt(), rect.center.y.toInt(), 1, 1)
+        
         val roiMat = sourceMat.submat(roiT, roiB, roiL, roiR)
         val gray = Mat(); Imgproc.cvtColor(roiMat, gray, Imgproc.COLOR_RGBA2GRAY)
-        val expandedRect = if (algorithm == "C") {
-            val edges = Mat(); Imgproc.Canny(gray, edges, 50.0, 150.0)
-            val res = expandToEdges(translateToRoi(rect, roiL, roiT), edges, edges.rows(), edges.cols())
-            edges.release(); res
-        } else {
-            val mask = Mat(); val pol = detectPolarity(gray)
-            if (pol == Polarity.LIGHT_ON_DARK) Imgproc.threshold(gray, mask, 100.0, 255.0, Imgproc.THRESH_BINARY)
-            else Imgproc.threshold(gray, mask, 150.0, 255.0, Imgproc.THRESH_BINARY_INV)
-            val res = expandPerimeter(translateToRoi(rect, roiL, roiT), mask, mask.rows(), mask.cols())
-            mask.release(); res
+        
+        val localRect = RotatedRect(Point(rect.center.x - roiL, rect.center.y - roiT), rect.size, rect.angle)
+        
+        val expandedRect = when (algorithm) {
+            "A" -> {
+                // ALGORITHM A: High-Res Density Projections
+                val mask = Mat(); Imgproc.adaptiveThreshold(gray, mask, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 11, 2.0)
+                val res = expandByProjection(localRect, mask)
+                mask.release(); res
+            }
+            "B" -> {
+                // ALGORITHM B: Binary Perimeter Growth
+                val mask = Mat(); val pol = detectPolarity(gray)
+                if (pol == Polarity.LIGHT_ON_DARK) Imgproc.threshold(gray, mask, 100.0, 255.0, Imgproc.THRESH_BINARY)
+                else Imgproc.threshold(gray, mask, 150.0, 255.0, Imgproc.THRESH_BINARY_INV)
+                val res = expandPerimeter(localRect, mask, mask.rows(), mask.cols())
+                mask.release(); res
+            }
+            else -> {
+                // ALGORITHM C: Canny Edge-Stop
+                val edges = Mat(); Imgproc.Canny(gray, edges, 50.0, 150.0)
+                val res = expandToEdges(localRect, edges, edges.rows(), edges.cols())
+                edges.release(); res
+            }
         }
+        
         gray.release(); roiMat.release()
         return Rect(expandedRect.left + roiL, expandedRect.top + roiT, expandedRect.right + roiL, expandedRect.bottom + roiT)
     }
 
-    private fun translateToRoi(rect: RotatedRect, roiL: Int, roiT: Int): RotatedRect {
-        return RotatedRect(Point(rect.center.x - roiL, rect.center.y - roiT), rect.size, rect.angle)
+    private fun expandByProjection(rect: RotatedRect, mask: Mat): Rect {
+        val hProj = Mat(); Core.reduce(mask, hProj, 1, Core.REDUCE_SUM, CvType.CV_32F)
+        val vProj = Mat(); Core.reduce(mask, vProj, 0, Core.REDUCE_SUM, CvType.CV_32F)
+        
+        // Start with RED FLOOR
+        var minX = rect.center.x - rect.size.width/2.0; var maxX = rect.center.x + rect.size.width/2.0
+        var minY = rect.center.y - rect.size.height/2.0; var maxY = rect.center.y + rect.size.height/2.0
+        
+        // Expand Outwards based on density (noise floor = 2% of dimension in ink)
+        val hFloor = mask.cols() * 255.0 * 0.02; val vFloor = mask.rows() * 255.0 * 0.02
+        
+        while (minY > 0 && hProj.get(minY.toInt() - 1, 0)[0] > hFloor) minY -= 1.0
+        while (maxY < mask.rows() - 1 && hProj.get(maxY.toInt() + 1, 0)[0] > hFloor) maxY += 1.0
+        while (minX > 0 && vProj.get(0, minX.toInt() - 1)[0] > vFloor) minX -= 1.0
+        while (maxX < mask.cols() - 1 && vProj.get(0, maxX.toInt() + 1)[0] > vFloor) maxX += 1.0
+        
+        hProj.release(); vProj.release()
+        return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(mask.cols(), maxX.toInt()), min(mask.rows(), maxY.toInt()))
     }
 
     private fun expandToEdges(rect: RotatedRect, edgeMap: Mat, maxH: Int, maxW: Int): Rect {
+        // Start with RED FLOOR
         var minX = rect.center.x - rect.size.width/2.0; var maxX = rect.center.x + rect.size.width/2.0
         var minY = rect.center.y - rect.size.height/2.0; var maxY = rect.center.y + rect.size.height/2.0
+        
         val hL = rect.size.height * 2.5; val vL = rect.size.height * 0.3
         val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+        
+        // Expand Outwards until edge hit or limit
         while (minY > 0 && (sY - minY) < vL) { if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) break; maxY += 1.0 }
         while (minX > 0 && (sX - minX) < hL) { if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) break; minX -= 1.0 }
         while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) break; maxX += 1.0 }
+        
         return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
 
     private fun expandPerimeter(rect: RotatedRect, mask: Mat, maxH: Int, maxW: Int): Rect {
+        // Start with RED FLOOR
         var minX = rect.center.x - rect.size.width/2.0; var maxX = rect.center.x + rect.size.width/2.0
         var minY = rect.center.y - rect.size.height/2.0; var maxY = rect.center.y + rect.size.height/2.0
+        
         val hL = rect.size.height * 2.5; val vL = rect.size.height * 0.3; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
         var changed = true
         while (changed) {
@@ -169,17 +207,6 @@ object TfLiteOcrUtils {
         if (fixed < 0 || fixed >= fixedDim) return false
         for (i in start..end) { if (i < 0 || i >= maxDim) continue; val pixel = if (horizontal) mask.get(fixed, i)[0] else mask.get(i, fixed)[0]; if (pixel > 0) return true }
         return false
-    }
-
-    private fun unclipBox(points: Array<Point>, ratio: Float): List<Point> {
-        val area = calculatePolygonArea(points); val perimeter = calculatePolygonPerimeter(points)
-        if (perimeter <= 0) return points.toList()
-        val distance = (area * ratio / perimeter)
-        val center = Point(points.map { it.x }.average(), points.map { it.y }.average())
-        return points.map { p ->
-            val dx = p.x - center.x; val dy = p.y - center.y; val mag = sqrt(dx * dx + dy * dy)
-            if (mag == 0.0) p else Point(p.x + (dx / mag * distance), p.y + (dy / mag * distance))
-        }
     }
 
     private fun calculatePolygonArea(points: Array<Point>): Double {
