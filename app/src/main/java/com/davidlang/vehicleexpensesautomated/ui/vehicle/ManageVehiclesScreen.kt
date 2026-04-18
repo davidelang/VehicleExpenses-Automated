@@ -230,20 +230,24 @@ fun ManageVehiclesScreen(
                     Text("Tap an engine to see its debug pass", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                     
                     Surface(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).padding(vertical = 8.dp), // Increased height for tablet
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.small
                     ) {
                         Column(modifier = Modifier.padding(8.dp).verticalScroll(rememberScrollState())) {
-                            discoveryResults.forEach { (engine, result) ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedEngineForPopup = engine; showLandmarkCheck = true },
-                                    colors = CardDefaults.cardColors(containerColor = if (engine == selectedEngineForPopup) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text(engine, fontWeight = FontWeight.Bold)
-                                        Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
-                                        Text(result.debugText, style = MaterialTheme.typography.bodySmall)
+                            // FIXED ORDER: Ensure cards don't jump and Paddle-Lite is always rendered
+                            val sortedEngines = listOf("ML Kit", "Native TFLite", "Paddle-TFLite", "Paddle-Lite")
+                            sortedEngines.forEach { engine ->
+                                discoveryResults[engine]?.let { result ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedEngineForPopup = engine; showLandmarkCheck = true },
+                                        colors = CardDefaults.cardColors(containerColor = if (engine == selectedEngineForPopup) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(engine, fontWeight = FontWeight.Bold)
+                                            Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
+                                            Text(result.debugText, style = MaterialTheme.typography.bodySmall)
+                                        }
                                     }
                                 }
                             }
