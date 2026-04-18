@@ -105,8 +105,12 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         )
         
         val results = StringBuilder()
-        for (detectedBox in dbRes.refinedBoxes) {
+        // LINK THE TIERS: Iterate with index to preserve history
+        for (i in dbRes.refinedBoxes.indices) {
+            val detectedBox = dbRes.refinedBoxes[i]
+            val rawBox = dbRes.rawBoxes.getOrNull(i)
             val nb = detectedBox.boundingBox
+            
             // nb is normalized to source pixels
             val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
             val top = (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
@@ -120,7 +124,13 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
 
             if (res.text.isNotBlank()) {
                 results.append("${res.text} ")
-                textBlocks.add(TextBlock(res.text, Rect(left, top, right, bottom), detectedBox.angle))
+                textBlocks.add(TextBlock(
+                    text = res.text, 
+                    boundingBox = Rect(left, top, right, bottom), 
+                    angle = detectedBox.angle,
+                    rawDiscoveryBox = rawBox?.boundingBox,
+                    refinedDiscoveryBox = detectedBox.boundingBox
+                ))
             }
         }
 
