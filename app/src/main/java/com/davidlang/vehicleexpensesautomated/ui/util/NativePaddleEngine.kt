@@ -89,7 +89,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
     }
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
-        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError")
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
         if (isConstrained) recognizeConstrained(bitmap, t0) else recognizeDiscovery(bitmap, t0)
     }
@@ -151,7 +151,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
 
     private fun runDetection(bitmap: Bitmap): DetectionResult {
         val predictor = sharedDetector ?: return DetectionResult(emptyList(), floatArrayOf(), floatArrayOf())
-        val inputSize = 1024
+        val inputSize = 1280
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
         
@@ -161,14 +161,13 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         }
         val floatData = detectionInputBuffer!!
         
-        // Fit-Inside Resize for Model Input
+        // Fit-Inside Resize with Zero-Anchor (0,0)
         val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
         val sw = (bitmap.width * scale).toInt(); val sh = (bitmap.height * scale).toInt()
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
         val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded); canvas.drawColor(Color.BLACK)
-        val offsetX = (inputSize - sw) / 2f; val offsetY = (inputSize - sh) / 2f
-        canvas.drawBitmap(scaled, offsetX, offsetY, null)
+        canvas.drawBitmap(scaled, 0f, 0f, null) // Anchor at top-left
         scaled.recycle()
         
         val mean = floatArrayOf(0.485f, 0.456f, 0.406f); val std = floatArrayOf(0.229f, 0.224f, 0.225f)
@@ -188,14 +187,12 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             val outputData = outputTensor.floatData
             
             // HEATMAP ALIGNMENT:
-            // Since the model returns a full 1280x1280 map, but our content is offset,
-            // we must extract the active sub-region of the heatmap before processing.
+            // Since the model returns a full 1280x1280 map, but our content is anchored at 0,0,
+            // the active region is the top-left portion of the output.
             val activeHeatmap = FloatArray(sw * sh)
             for (y in 0 until sh) {
                 for (x in 0 until sw) {
-                    val hy = (y + offsetY).toInt()
-                    val hx = (x + offsetX).toInt()
-                    activeHeatmap[y * sw + x] = outputData[hy * inputSize + hx]
+                    activeHeatmap[y * sw + x] = outputData[y * inputSize + x]
                 }
             }
 
@@ -204,8 +201,9 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
                 discoveryHeatmap, 
                 sw, 
                 sh, 
-                sourceBitmap = bitmap, // HIGH PRECISION: Discover edges on ORIGINAL image
-                algorithm = "C" // Use Researcher's Edge-Stop algorithm
+                scale = scale,
+                sourceBitmap = bitmap,
+                algorithm = "C"
             )
             
             padded.recycle()

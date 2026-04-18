@@ -43,11 +43,14 @@ data class OcrResult(
     val gallons: String? = null,
     val cost: String? = null,
     val debugText: String,
+    val errorMessage: String? = null,
     val originalPhotoPath: String? = null,
     val croppedBitmap: Bitmap? = null,
     val openCvProcessedBitmap: Bitmap? = null,
     val rawHeatmap: FloatArray? = null,
     val discoveryHeatmap: FloatArray? = null,
+    val rawDiscoveryBoxes: List<com.davidlang.vehicleexpensesautomated.ui.util.RectF> = emptyList(),
+    val scaleFactor: Float = 1.0f,
     val textBlocks: List<TextBlock> = emptyList(),
     val imageWidth: Int = 0,
     val imageHeight: Int = 0,
@@ -59,6 +62,7 @@ data class OcrResult(
         // COORDINATE ALIGNMENT: 
         // We filter based on normalized coordinates (0.0 to 1.0) to ensure consistency.
         val filteredBlocks = textBlocks.filter { block ->
+            if (imageWidth <= 0 || imageHeight <= 0) return@filter true
             val cx = block.boundingBox.centerX().toFloat() / imageWidth
             val cy = block.boundingBox.centerY().toFloat() / imageHeight
             
@@ -132,7 +136,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val engine = TfLiteOcrEngine(context)
-        val inputSize = 1024 // Power-of-2 Stable Threshold
+        val inputSize = 1280 // FIXED STABLE SIZE
         
         val detInterpreter = try {
             val file = File(context.cacheDir, "tflite_paddle_det_model.tflite")
@@ -142,7 +146,6 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 }
             }
             val interp = Interpreter(file)
-            // CRITICAL FIX: Explicitly resize to match the buffer we create
             interp.resizeInput(0, intArrayOf(1, inputSize, inputSize, 3))
             interp.allocateTensors()
             interp
@@ -155,17 +158,13 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
         val debugText = StringBuilder()
         
         if (detInterpreter != null) {
+            // ZERO-ANCHOR (0,0) PREPROCESSING
             val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
-            val sw = (bitmap.width * scale).toInt()
-            val sh = (bitmap.height * scale).toInt()
+            val sw = (bitmap.width * scale).toInt(); val sh = (bitmap.height * scale).toInt()
             val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
             val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(padded)
-            canvas.drawColor(Color.BLACK)
-            
-            val offsetX = (inputSize - sw) / 2f
-            val offsetY = (inputSize - sh) / 2f
-            canvas.drawBitmap(scaled, offsetX, offsetY, null)
+            val canvas = Canvas(padded); canvas.drawColor(Color.BLACK)
+            canvas.drawBitmap(scaled, 0f, 0f, null) // Anchor at top-left
             scaled.recycle()
             
             val inputBuffer = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4).order(ByteOrder.nativeOrder())
@@ -184,22 +183,17 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
             detInterpreter.run(inputBuffer, outputBuffer)
 
-            val rawHeatmap = FloatArray(sw * sh)
-            for (y in 0 until sh) {
-                for (x in 0 until sw) {
-                    val hy = (y + offsetY).toInt()
-                    val hx = (x + offsetX).toInt()
-                    if (hy in 0 until inputSize && hx in 0 until inputSize) {
-                        rawHeatmap[y * sw + x] = outputBuffer[0][hy][hx][0]
-                    }
-                }
+            val rawHeatmap = FloatArray(inputSize * inputSize)
+            for (i in 0 until (inputSize * inputSize)) {
+                rawHeatmap[i] = outputBuffer[0][i / inputSize][i % inputSize][0]
             }
             
             val discoveryHeatmap = rawHeatmap.copyOf()
             val boxes = TfLiteOcrUtils.processDbNetOutput(
                 discoveryHeatmap, 
-                sw, 
-                sh, 
+                inputSize, 
+                inputSize, 
+                scale = scale,
                 sourceBitmap = bitmap,
                 algorithm = "C"
             )
@@ -232,7 +226,8 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 imageWidth = bitmap.width,
                 imageHeight = bitmap.height,
                 rawHeatmap = rawHeatmap,
-                discoveryHeatmap = discoveryHeatmap
+                discoveryHeatmap = discoveryHeatmap,
+                scaleFactor = scale
             )
         }
 

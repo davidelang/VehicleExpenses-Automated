@@ -75,14 +75,13 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         }
         val floatData = detectionInputBuffer!!
 
-        // 1. Centered Fit-Inside Resize
+        // 1. Fit-Inside Resize with Zero-Anchor (0,0)
         val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
         val sw = (bitmap.width * scale).toInt(); val sh = (bitmap.height * scale).toInt()
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
         val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded); canvas.drawColor(Color.BLACK)
-        val offsetX = (inputSize - sw) / 2f; val offsetY = (inputSize - sh) / 2f
-        canvas.drawBitmap(scaled, offsetX, offsetY, null)
+        canvas.drawBitmap(scaled, 0f, 0f, null) // Anchor top-left
         scaled.recycle()
         
         val inputBuffer = prepareDetectionBuffer(padded, inputSize, floatData)
@@ -90,33 +89,29 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         detInterpreter?.run(inputBuffer, outputBuffer)
 
         val rawHeatmap = FloatArray(inputSize * inputSize)
-        for (y in 0 until inputSize) {
-            for (x in 0 until inputSize) {
-                rawHeatmap[y * inputSize + x] = outputBuffer[0][y][x][0]
-            }
+        for (i in 0 until (inputSize * inputSize)) {
+            rawHeatmap[i] = outputBuffer[0][i / inputSize][i % inputSize][0]
         }
         
-        // Use Algorithm C: Edge-Stop Expansion (Researcher)
-        // PASS THE PADDED 1280px BITMAP for 1:1 coordinate alignment
+        // ZERO-ANCHOR SCALE math
         val discoveryHeatmap = rawHeatmap.copyOf()
         val boxes = TfLiteOcrUtils.processDbNetOutput(
             discoveryHeatmap, 
             inputSize, 
             inputSize, 
-            sourceBitmap = padded,
+            scale = scale,
+            sourceBitmap = bitmap,
             algorithm = "C"
         )
         
         val results = StringBuilder()
-        val invScale = 1.0f / scale
-
         for (detectedBox in boxes) {
-            val box = detectedBox.boundingBox
-            // Adjust box coordinates: Subtract padding offset, then scale back to source image
-            val left = ((box.left - offsetX) * invScale).toInt().coerceIn(0, bitmap.width)
-            val top = ((box.top - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
-            val right = ((box.right - offsetX) * invScale).toInt().coerceIn(0, bitmap.width)
-            val bottom = ((box.bottom - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
+            val nb = detectedBox.boundingBox
+            // nb is normalized to source pixels
+            val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
+            val top = (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
+            val right = (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width)
+            val bottom = (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
             
             if (right <= left || bottom <= top) continue
             val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
