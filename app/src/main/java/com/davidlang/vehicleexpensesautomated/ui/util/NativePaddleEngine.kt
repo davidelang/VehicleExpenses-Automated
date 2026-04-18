@@ -96,8 +96,12 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         val sb = StringBuilder()
         val detectionRes = runDetection(bitmap)
         
-        for (detectedBox in detectionRes.refinedBoxes) {
+        // LINK THE TIERS: Populate TextBlock with discovery history
+        for (i in detectionRes.refinedBoxes.indices) {
+            val detectedBox = detectionRes.refinedBoxes[i]
+            val rawBox = detectionRes.rawBoxes.getOrNull(i)
             val nb = detectedBox.boundingBox
+            
             val pixelRect = Rect(
                 (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width),
                 (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height),
@@ -111,7 +115,13 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             crop.recycle()
             if (res.text.isNotBlank()) {
                 sb.append(res.text).append(" ")
-                textBlocks.add(TextBlock(res.text, pixelRect, detectedBox.angle))
+                textBlocks.add(TextBlock(
+                    text = res.text, 
+                    boundingBox = pixelRect, 
+                    angle = detectedBox.angle,
+                    rawDiscoveryBox = rawBox?.boundingBox,
+                    refinedDiscoveryBox = detectedBox.boundingBox
+                ))
             }
         }
 
@@ -155,8 +165,8 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         
         try {
             inputTensor.setData(floatData); predictor.run()
-            val outputTensor = predictor.getOutput(0); val outputData = outputTensor.floatData
-            val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, inputSize, inputSize, scale = scale, sourceBitmap = bitmap)
+            val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
+            val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap)
             padded.recycle()
             return DetectionResult(dbRes.rawBoxes, dbRes.refinedBoxes, scale)
         } catch (t: Throwable) { padded.recycle(); return DetectionResult(emptyList(), emptyList(), 1f) }
