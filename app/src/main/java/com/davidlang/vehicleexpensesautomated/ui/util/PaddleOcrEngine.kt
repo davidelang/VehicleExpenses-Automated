@@ -105,11 +105,11 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         )
         
         val results = StringBuilder()
-        // LINK THE TIERS: Iterate with index to preserve history
-        for (i in dbRes.refinedBoxes.indices) {
-            val detectedBox = dbRes.refinedBoxes[i]
-            val rawBox = dbRes.rawBoxes.getOrNull(i)
-            val nb = detectedBox.boundingBox
+        // LINK THE TIERS: Capture every suspicion, including those without text
+        for (i in dbRes.rawBoxes.indices) {
+            val rawBox = dbRes.rawBoxes[i]
+            val refinedBox = dbRes.refinedBoxes.getOrNull(i)
+            val nb = refinedBox?.boundingBox ?: rawBox.boundingBox
             
             // nb is normalized to source pixels
             val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
@@ -117,21 +117,26 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
             val right = (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width)
             val bottom = (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
             
-            if (right <= left || bottom <= top) continue
+            if (right <= left || bottom <= top) {
+                textBlocks.add(TextBlock(text = "", boundingBox = Rect(left, top, right, bottom), rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
+                continue
+            }
+
             val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
             val res = runRecognitionStage(crop, 48)
             crop.recycle()
 
             if (res.text.isNotBlank()) {
                 results.append("${res.text} ")
-                textBlocks.add(TextBlock(
-                    text = res.text, 
-                    boundingBox = Rect(left, top, right, bottom), 
-                    angle = detectedBox.angle,
-                    rawDiscoveryBox = rawBox?.boundingBox,
-                    refinedDiscoveryBox = detectedBox.boundingBox
-                ))
             }
+            
+            textBlocks.add(TextBlock(
+                text = res.text, 
+                boundingBox = Rect(left, top, right, bottom), 
+                angle = refinedBox?.angle ?: 0f,
+                rawDiscoveryBox = rawBox.boundingBox,
+                refinedDiscoveryBox = refinedBox?.boundingBox
+            ))
         }
 
         padded.recycle()
