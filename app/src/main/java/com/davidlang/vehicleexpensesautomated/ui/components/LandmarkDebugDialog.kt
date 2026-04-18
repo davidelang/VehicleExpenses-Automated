@@ -28,6 +28,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import java.io.File
 import kotlin.math.min
+import kotlin.math.sqrt
 
 @Composable
 fun LandmarkDebugDialog(
@@ -52,44 +53,54 @@ fun LandmarkDebugDialog(
     // Optimization: Create DOWNSCALED Heatmap Bitmaps (512x512) for stability
     val (rawBmp, discBmp) = remember(rawHeatmap, discoveryHeatmap) {
         val visualSize = 512
-        val scaleRatio = 1280f / visualSize
+        // Use Actual Heatmap Dimensions instead of hardcoded 1280
+        val hSize = if (rawHeatmap != null) sqrt(rawHeatmap.size.toDouble()).toInt() else 1024
+        val scaleRatio = hSize.toFloat() / visualSize
         
         val rBmp = rawHeatmap?.let { data ->
-            val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
-            val pixels = IntArray(visualSize * visualSize)
-            for (y in 0 until visualSize) {
-                for (x in 0 until visualSize) {
-                    val rawX = (x * scaleRatio).toInt().coerceIn(0, 1279)
-                    val rawY = (y * scaleRatio).toInt().coerceIn(0, 1279)
-                    val prob = data[rawY * 1280 + rawX]
-                    if (prob > 0.05f) {
-                        pixels[y * visualSize + x] = android.graphics.Color.argb((prob.coerceIn(0f, 0.6f) * 255).toInt(), 255, 0, 0)
-                    } else {
-                        pixels[y * visualSize + x] = 0
+            try {
+                val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
+                val pixels = IntArray(visualSize * visualSize)
+                for (y in 0 until visualSize) {
+                    for (x in 0 until visualSize) {
+                        val rawX = (x * scaleRatio).toInt().coerceIn(0, hSize - 1)
+                        val rawY = (y * scaleRatio).toInt().coerceIn(0, hSize - 1)
+                        val idx = rawY * hSize + rawX
+                        if (idx < data.size) {
+                            val prob = data[idx]
+                            if (prob > 0.05f) {
+                                pixels[y * visualSize + x] = android.graphics.Color.argb((prob.coerceIn(0f, 0.6f) * 255).toInt(), 255, 0, 0)
+                            }
+                        }
                     }
                 }
-            }
-            bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
-            bmp.asImageBitmap()
+                bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
+                bmp.asImageBitmap()
+            } catch (e: Exception) { null }
         }
 
         val dBmp = discoveryHeatmap?.let { data ->
-            val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
-            val pixels = IntArray(visualSize * visualSize)
-            for (y in 0 until visualSize) {
-                for (x in 0 until visualSize) {
-                    val rawX = (x * scaleRatio).toInt().coerceIn(0, 1279)
-                    val rawY = (y * scaleRatio).toInt().coerceIn(0, 1279)
-                    val prob = data[rawY * 1280 + rawX]
-                    if (prob > 0.5f) {
-                        pixels[y * visualSize + x] = android.graphics.Color.argb(100, 255, 165, 0) // Orange semi-transparent
-                    } else {
-                        pixels[y * visualSize + x] = 0
+            try {
+                val hSizeDisc = sqrt(data.size.toDouble()).toInt()
+                val scaleRatioDisc = hSizeDisc.toFloat() / visualSize
+                val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
+                val pixels = IntArray(visualSize * visualSize)
+                for (y in 0 until visualSize) {
+                    for (x in 0 until visualSize) {
+                        val rawX = (x * scaleRatioDisc).toInt().coerceIn(0, hSizeDisc - 1)
+                        val rawY = (y * scaleRatioDisc).toInt().coerceIn(0, hSizeDisc - 1)
+                        val idx = rawY * hSizeDisc + rawX
+                        if (idx < data.size) {
+                            val prob = data[idx]
+                            if (prob > 0.5f) {
+                                pixels[y * visualSize + x] = android.graphics.Color.argb(100, 255, 165, 0) // Orange semi-transparent
+                            }
+                        }
                     }
                 }
-            }
-            bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
-            bmp.asImageBitmap()
+                bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
+                bmp.asImageBitmap()
+            } catch (e: Exception) { null }
         }
         rBmp to dBmp
     }
@@ -165,25 +176,12 @@ fun LandmarkDebugDialog(
 
                             // DRAW CENTERED HEATMAP OVERLAYS (Optimized Bitmaps)
                             if (showHeatmap) {
-                                val heatmapSize = 1280
-                                val engineScale = min(heatmapSize / sW, heatmapSize / sH)
-                                val eSW = sW * engineScale
-                                val eSH = sH * engineScale
-                                
-                                val displayScaleX = dw / eSW
-                                val displayScaleY = dh / eSH
-                                
-                                val dstW = heatmapSize * displayScaleX
-                                val dstH = heatmapSize * displayScaleY
-                                
-                                val dstOffX = offsetX - ((heatmapSize - eSW) / 2f) * displayScaleX
-                                val dstOffY = offsetY - ((heatmapSize - eSH) / 2f) * displayScaleY
-
+                                // Match the display directly to the original photo's content
                                 rawBmp?.let {
-                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(dstOffX.toInt(), dstOffY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt()))
+                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt()))
                                 }
                                 discBmp?.let {
-                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(dstOffX.toInt(), dstOffY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt()))
+                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt()))
                                 }
                             }
 
@@ -200,10 +198,11 @@ fun LandmarkDebugDialog(
                             }
 
                             landmarks.forEach { lm ->
-                                val nx = lm.boundingBox.left / sW
-                                val ny = lm.boundingBox.top / sH
-                                val nw = (lm.boundingBox.right - lm.boundingBox.left) / sW
-                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top) / sH
+                                // COORDINATE CONVERSION: Landmarks are now NORMALIZED (0.0 to 1.0)
+                                val nx = lm.boundingBox.left.toFloat() / sW
+                                val ny = lm.boundingBox.top.toFloat() / sH
+                                val nw = (lm.boundingBox.right - lm.boundingBox.left).toFloat() / sW
+                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top).toFloat() / sH
                                 
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
                                 // YELLOW OUTLINES for final text boxes
