@@ -84,20 +84,21 @@ fun LandmarkDebugDialog(
                     } catch (e: Exception) { null }
                 }
 
-                if (bitmap != null) {
+                if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
                     val imgW = bitmap.width.toFloat()
                     val imgH = bitmap.height.toFloat()
                     
-                    // EDGE-TO-EDGE IMAGE AREA (Using weight to fill available space)
+                    // SEAMLESS SCALING: Fill available space while forcing the Box to match photo aspect
                     Box(modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .background(Color.Black)
+                        .weight(1f, fill = false)
+                        .aspectRatio(imgW / imgH)
                     ) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val containerW = size.width
                             val containerH = size.height
                             
+                            // Because Box is aspect-ratio constrained, container aspect matches image aspect
                             val scale = minOf(containerW / imgW, containerH / imgH)
                             val dw = imgW * scale
                             val dh = imgH * scale
@@ -164,8 +165,8 @@ fun LandmarkDebugDialog(
                     }
                 }
 
-                // Metadata Footer (With padding)
-                Column(modifier = Modifier.padding(16.dp)) {
+                // Metadata Footer - Grid fills all remaining space below the image
+                Column(modifier = Modifier.padding(16.dp).weight(1f)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
@@ -174,10 +175,9 @@ fun LandmarkDebugDialog(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Discovery Pipeline Metrics:", style = MaterialTheme.typography.titleSmall)
                     
-                    // FIXED HEIGHT METRICS GRID
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 160.dp),
-                        modifier = Modifier.height(220.dp).fillMaxWidth().padding(top = 4.dp),
+                        modifier = Modifier.fillMaxSize().padding(top = 4.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
