@@ -268,6 +268,7 @@ private fun serializePhotoResultToJson(
         
         val fullImageOcrTimings = JSONObject()
         discovery.forEach { (name, res) -> fullImageOcrTimings.put(name, if (name == "ML Kit") tDeskew + res.executionTimeMs else res.executionTimeMs) }
+        put("has_heatmap", discovery.values.any { it.rawHeatmap != null })
         put("full_image_ocr_timings", fullImageOcrTimings)
         
         val vSweepJson = JSONObject()

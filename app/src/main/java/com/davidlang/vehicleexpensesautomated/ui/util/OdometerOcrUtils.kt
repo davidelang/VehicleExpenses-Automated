@@ -25,6 +25,8 @@ import org.tensorflow.lite.Interpreter
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import org.json.JSONArray
+import org.json.JSONObject
 
 object OdometerOcrUtils {
     init {
@@ -295,6 +297,23 @@ object OdometerOcrUtils {
         return workingText.map { char -> activeMap[char] ?: (activeMap[char.uppercaseChar()] ?: char) }.joinToString("")
     }
 
+    // MANDATED: Normalized JSON Serialization
+    fun serializeLandmarks(landmarks: List<TextBlock>, imgW: Int, imgH: Int): String {
+        val array = JSONArray()
+        landmarks.forEach { block ->
+            val obj = JSONObject()
+            obj.put("text", block.text)
+            // Save as NORMALIZED coordinates (0.0 to 1.0)
+            val box = block.boundingBox
+            obj.put("cx", box.centerX().toFloat() / imgW)
+            obj.put("cy", box.centerY().toFloat() / imgH)
+            obj.put("w", box.width().toFloat() / imgW)
+            obj.put("h", box.height().toFloat() / imgH)
+            array.put(obj)
+        }
+        return array.toString()
+    }
+
     // COMPATIBILITY WRAPPERS
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null, context: Context? = null): OcrResult = withContext(Dispatchers.IO) {
         val rawBitmap = if (context != null) decodeBitmapSafely(context, photoPath) else BitmapFactory.decodeFile(photoPath)
@@ -302,8 +321,8 @@ object OdometerOcrUtils {
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
         var bitmap = rotated
         if (cropRect != null) {
-            val left = (cropRect.left * rotated.width).toInt().coerceAtLeast(0)
-            val top = (cropRect.top * rotated.height).toInt().coerceAtLeast(0)
+            val left = (cropRect.left * rotated.width).toInt().coerceIn(0, rotated.width)
+            val top = (cropRect.top * rotated.height).toInt().coerceIn(0, rotated.height)
             val right = (cropRect.right * rotated.width).toInt().coerceAtMost(rotated.width)
             val bottom = (cropRect.bottom * rotated.height).toInt().coerceAtMost(rotated.height)
             if (right > left && bottom > top) {

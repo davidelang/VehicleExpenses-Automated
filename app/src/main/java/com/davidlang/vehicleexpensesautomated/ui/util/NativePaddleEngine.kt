@@ -35,7 +35,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             val arch = detectArch()
             if (sharedDetector == null || sharedRecognizer == null) {
                 if (!isNativeLibLoaded) { loadNativeLibrary(); isNativeLibLoaded = true }
-                val detPath = copyAssetToInternal("paddle/det_v4_1280_$arch.nb")
+                val detPath = copyAssetToInternal("paddle/det_v4_dynamic_$arch.nb")
                 val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
                 sharedDetector = createPredictor(detPath)
                 sharedRecognizer = createPredictor(recPath)
@@ -114,21 +114,26 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         val boxes = detectionRes.boxes
         val rawHeatmap = detectionRes.heatmap
         val discoveryHeatmap = detectionRes.discoveryHeatmap
-        val paddedBmp = detectionRes.paddedBitmap
 
         for (detectedBox in boxes) {
-            val box = detectedBox.boundingBox
-            if (box.width() < 1 || box.height() < 1) continue
-            val crop = cropBitmap(bitmap, box)
+            val nb = detectedBox.boundingBox
+            // Convert normalized coordinates back to pixel space for cropping
+            val pixelRect = Rect(
+                (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width),
+                (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height),
+                (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width),
+                (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
+            )
+
+            if (pixelRect.width() < 1 || pixelRect.height() < 1) continue
+            val crop = cropBitmap(bitmap, pixelRect)
             val res = runRecognitionStage(crop, 48)
             crop.recycle()
             if (res.text.isNotBlank()) {
                 sb.append(res.text).append(" ")
-                textBlocks.add(TextBlock(res.text, box, detectedBox.angle))
+                textBlocks.add(TextBlock(res.text, pixelRect, detectedBox.angle))
             }
         }
-        
-        paddedBmp?.recycle()
 
         return OcrResult(
             engineName = name,
@@ -142,11 +147,11 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         )
     }
 
-    private data class DetectionResult(val boxes: List<DetectedBox>, val heatmap: FloatArray, val discoveryHeatmap: FloatArray, val paddedBitmap: Bitmap?)
+    private data class DetectionResult(val boxes: List<DetectedBox>, val heatmap: FloatArray, val discoveryHeatmap: FloatArray)
 
     private fun runDetection(bitmap: Bitmap): DetectionResult {
-        val predictor = sharedDetector ?: return DetectionResult(emptyList(), floatArrayOf(), floatArrayOf(), null)
-        val inputSize = 1280
+        val predictor = sharedDetector ?: return DetectionResult(emptyList(), floatArrayOf(), floatArrayOf())
+        val inputSize = 1024
         val inputTensor = predictor.getInput(0)
         inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
         
@@ -156,7 +161,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         }
         val floatData = detectionInputBuffer!!
         
-        // 1. Centered Fit-Inside Resize
+        // Fit-Inside Resize for Model Input
         val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
         val sw = (bitmap.width * scale).toInt(); val sh = (bitmap.height * scale).toInt()
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
@@ -182,29 +187,33 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             val outputTensor = predictor.getOutput(0)
             val outputData = outputTensor.floatData
             
-            // Use Algorithm B: Perimeter Pixel Check
-            val rawHeatmap = outputData.copyOf()
-            val discoveryHeatmap = outputData.copyOf()
-            val boxes = TfLiteOcrUtils.processDbNetOutput(
+            // HEATMAP ALIGNMENT:
+            // Since the model returns a full 1280x1280 map, but our content is offset,
+            // we must extract the active sub-region of the heatmap before processing.
+            val activeHeatmap = FloatArray(sw * sh)
+            for (y in 0 until sh) {
+                for (x in 0 until sw) {
+                    val hy = (y + offsetY).toInt()
+                    val hx = (x + offsetX).toInt()
+                    activeHeatmap[y * sw + x] = outputData[hy * inputSize + hx]
+                }
+            }
+
+            val discoveryHeatmap = activeHeatmap.copyOf()
+            val normalizedBoxes = TfLiteOcrUtils.processDbNetOutput(
                 discoveryHeatmap, 
-                inputSize, 
-                inputSize, 
-                sourceBitmap = padded,
-                algorithm = "B"
+                sw, 
+                sh, 
+                sourceBitmap = bitmap, // HIGH PRECISION: Discover edges on ORIGINAL image
+                algorithm = "C" // Use Researcher's Edge-Stop algorithm
             )
             
-            val invScale = 1.0f / scale
-            val scaledBoxes = boxes.map { db ->
-                val b = db.boundingBox
-                db.copy(boundingBox = Rect(
-                    ((b.left - offsetX) * invScale).toInt().coerceIn(0, bitmap.width), 
-                    ((b.top - offsetY) * invScale).toInt().coerceIn(0, bitmap.height),
-                    ((b.right - offsetX) * invScale).toInt().coerceIn(0, bitmap.width), 
-                    ((b.bottom - offsetY) * invScale).toInt().coerceIn(0, bitmap.height)
-                ))
-            }
-            return DetectionResult(scaledBoxes, rawHeatmap, discoveryHeatmap, padded)
-        } catch (t: Throwable) { return DetectionResult(emptyList(), floatArrayOf(), floatArrayOf(), padded) }
+            padded.recycle()
+            return DetectionResult(normalizedBoxes, activeHeatmap, discoveryHeatmap)
+        } catch (t: Throwable) { 
+            padded.recycle()
+            return DetectionResult(emptyList(), floatArrayOf(), floatArrayOf()) 
+        }
     }
 
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
