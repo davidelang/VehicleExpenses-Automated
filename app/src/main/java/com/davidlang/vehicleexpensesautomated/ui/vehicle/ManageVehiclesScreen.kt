@@ -118,8 +118,8 @@ fun ManageVehiclesScreen(
                 val rawResults = OcrHarness.runDiscovery(leveledBmp, context)
                 
                 // EXCLUDE CROP AREAS FROM ALL ENGINES
-                val odoRectF = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
-                val otherRectF = otherTextCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
+                val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                 val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
 
                 val primaryRes = filteredResults[anchorSourceEngine] ?: filteredResults["ML Kit"] ?: filteredResults.values.first()
@@ -157,8 +157,8 @@ fun ManageVehiclesScreen(
                         OcrHarness.runDiscovery(leveledBmp, context)
                     }
                     
-                    val odoRectF = odometerCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
-                    val otherRectF = otherTextCropRect?.let { RectF(it.left, it.top, it.right, it.bottom) }
+                    val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
+                    val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                     val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
 
                     val primaryRes = filteredResults[anchorSourceEngine] ?: filteredResults["ML Kit"]
@@ -273,12 +273,11 @@ fun ManageVehiclesScreen(
                 odometerCrop = odometerCropRect,
                 otherTextCrop = otherTextCropRect,
                 landmarks = res.textBlocks,
+                rawDiscoveryBoxes = res.rawDiscoveryBoxes,
                 odometerText = "N/A",
                 engineName = res.engineName,
                 sourceWidth = res.imageWidth,
                 sourceHeight = res.imageHeight,
-                rawHeatmap = res.rawHeatmap,
-                discoveryHeatmap = res.discoveryHeatmap,
                 onDismiss = { showLandmarkCheck = false }
             )
         }

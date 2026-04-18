@@ -142,7 +142,18 @@ fun AddNewVehicleScreen(
         OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
     }
     if (showLandmarkCheck) {
-        LandmarkDebugDialog(photoPath = referencePhotoUrl, odometerCrop = odometerCropRect, otherTextCrop = otherTextCropRect, landmarks = discoveredLandmarks, odometerText = lastOcrDebugResult?.odometer ?: "FAILED", onDismiss = { showLandmarkCheck = false })
+        LandmarkDebugDialog(
+            photoPath = referencePhotoUrl,
+            odometerCrop = odometerCropRect,
+            otherTextCrop = otherTextCropRect,
+            landmarks = discoveredLandmarks,
+            rawDiscoveryBoxes = lastOcrDebugResult?.rawDiscoveryBoxes ?: emptyList(),
+            odometerText = lastOcrDebugResult?.odometer ?: "FAILED",
+            engineName = lastOcrDebugResult?.engineName ?: "Unknown",
+            sourceWidth = lastOcrDebugResult?.imageWidth ?: 1,
+            sourceHeight = lastOcrDebugResult?.imageHeight ?: 1,
+            onDismiss = { showLandmarkCheck = false }
+        )
     }
 }
 
