@@ -11,21 +11,6 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Represents a detected text region with both rotated points and axis-aligned bounds.
- * Mandated: All coordinates (points and boundingBox) are NORMALIZED (0.0 to 1.0).
- */
-data class DetectedBox(
-    val points: List<Point>,
-    val boundingBox: RectF,
-    val angle: Float
-)
-
-/**
- * Simple Rect implementation for Float normalized coordinates.
- */
-data class RectF(val left: Float, val top: Float, val right: Float, val bottom: Float)
-
-/**
  * Shared utilities for processing TFLite OCR and Detection model outputs.
  */
 object TfLiteOcrUtils {
@@ -64,8 +49,8 @@ object TfLiteOcrUtils {
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
         scale: Float = 1.0f,
         sourceBitmap: Bitmap? = null, algorithm: String = "C" 
-    ): List<DetectedBox> {
-        if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return emptyList()
+    ): DbNetResult {
+        if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return DbNetResult(emptyList(), emptyList())
         val mask = Mat(heatmapH, heatmapW, CvType.CV_8UC1)
         val data = ByteArray(heatmapW * heatmapH)
         for (i in heatmap.indices) { data[i] = if (heatmap[i] > 0.2f) 255.toByte() else 0.toByte() }
@@ -78,7 +63,8 @@ object TfLiteOcrUtils {
         val contours = mutableListOf<MatOfPoint>(); val hierarchy = Mat()
         Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
 
-        val results = mutableListOf<DetectedBox>()
+        val rawBoxes = mutableListOf<DetectedBox>()
+        val refinedBoxes = mutableListOf<DetectedBox>()
         val sourceW = sourceBitmap?.width?.toDouble() ?: heatmapW.toDouble()
         val sourceH = sourceBitmap?.height?.toDouble() ?: heatmapH.toDouble()
         
@@ -89,7 +75,18 @@ object TfLiteOcrUtils {
             if (Imgproc.contourArea(contour) < 10) continue 
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
             
-            // Map to source space
+            // 1. Raw Discovery Box (Model Suspicion) - Normalize to Source
+            val rawPoints = arrayOf(Point(), Point(), Point(), Point()); rotatedRect.points(rawPoints)
+            val normRawPoints = rawPoints.map { Point(it.x * invScale / sourceW, it.y * invScale / sourceH) }
+            val rawBounds = RectF(
+                (normRawPoints.minOf { it.x }.toFloat()).coerceIn(0f, 1f),
+                (normRawPoints.minOf { it.y }.toFloat()).coerceIn(0f, 1f),
+                (normRawPoints.maxOf { it.x }.toFloat()).coerceIn(0f, 1f),
+                (normRawPoints.maxOf { it.y }.toFloat()).coerceIn(0f, 1f)
+            )
+            rawBoxes.add(DetectedBox(rawPoints.toList(), rawBounds, rotatedRect.angle.toFloat()))
+
+            // 2. High Precision Box (ROI Expansion)
             val sourceRect = RotatedRect(Point(rotatedRect.center.x * invScale, rotatedRect.center.y * invScale), Size(rotatedRect.size.width * invScale, rotatedRect.size.height * invScale), rotatedRect.angle)
             val sourcePoints = arrayOf(Point(), Point(), Point(), Point()); sourceRect.points(sourcePoints)
 
@@ -101,16 +98,15 @@ object TfLiteOcrUtils {
                 bounds = Rect(max(0, exP.minOf { it.x }.toInt()), max(0, exP.minOf { it.y }.toInt()), min(sourceW.toInt(), exP.maxOf { it.x }.toInt()), min(sourceH.toInt(), exP.maxOf { it.y }.toInt()))
             }
             
-            val normPoints = sourcePoints.map { Point(it.x / sourceW, it.y / sourceH) }
-            val normBounds = RectF(
+            val normRefinedBounds = RectF(
                 (bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
                 (bounds.right.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.bottom.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
             )
-            results.add(DetectedBox(normPoints, normBounds, rotatedRect.angle.toFloat()))
+            refinedBoxes.add(DetectedBox(sourcePoints.toList(), normRefinedBounds, rotatedRect.angle.toFloat()))
         }
         
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return results
+        return DbNetResult(rawBoxes, refinedBoxes)
     }
 
     private fun expandInRoi(rect: RotatedRect, sourceMat: Mat, algorithm: String): Rect {

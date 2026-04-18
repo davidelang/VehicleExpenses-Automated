@@ -15,6 +15,30 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
+import org.opencv.core.Point
+
+/**
+ * Simple Rect implementation for Float normalized coordinates.
+ */
+data class RectF(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/**
+ * Represents a detected text region with both rotated points and axis-aligned bounds.
+ * Mandated: All coordinates (points and boundingBox) are NORMALIZED (0.0 to 1.0).
+ */
+data class DetectedBox(
+    val points: List<Point>,
+    val boundingBox: RectF,
+    val angle: Float
+)
+
+/**
+ * Result of a DBNet discovery pass, containing raw suspicion and refined regions.
+ */
+data class DbNetResult(
+    val rawBoxes: List<DetectedBox>,
+    val refinedBoxes: List<DetectedBox>
+)
 
 /**
  * Mandated: Normalized Rectangle (0.0 to 1.0)
@@ -49,7 +73,7 @@ data class OcrResult(
     val openCvProcessedBitmap: Bitmap? = null,
     val rawHeatmap: FloatArray? = null,
     val discoveryHeatmap: FloatArray? = null,
-    val rawDiscoveryBoxes: List<com.davidlang.vehicleexpensesautomated.ui.util.RectF> = emptyList(),
+    val rawDiscoveryBoxes: List<RectF> = emptyList(),
     val scaleFactor: Float = 1.0f,
     val textBlocks: List<TextBlock> = emptyList(),
     val imageWidth: Int = 0,
@@ -189,7 +213,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             }
             
             val discoveryHeatmap = rawHeatmap.copyOf()
-            val boxes = TfLiteOcrUtils.processDbNetOutput(
+            val dbRes = TfLiteOcrUtils.processDbNetOutput(
                 discoveryHeatmap, 
                 inputSize, 
                 inputSize, 
@@ -198,7 +222,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 algorithm = "C"
             )
             
-            for (detectedBox in boxes) {
+            for (detectedBox in dbRes.refinedBoxes) {
                 val nb = detectedBox.boundingBox
                 val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
                 val top = (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
@@ -227,6 +251,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 imageHeight = bitmap.height,
                 rawHeatmap = rawHeatmap,
                 discoveryHeatmap = discoveryHeatmap,
+                rawDiscoveryBoxes = dbRes.rawBoxes.map { it.boundingBox },
                 scaleFactor = scale
             )
         }
