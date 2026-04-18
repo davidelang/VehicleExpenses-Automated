@@ -109,15 +109,14 @@ fun LandmarkDebugDialog(
                             )
 
                             if (showDiscovery) {
-                                // 1. RED TIER (Model Suspicion) - HIGH VISIBILITY SOLID TINT
-                                landmarks.forEach { lm ->
-                                    lm.rawDiscoveryBox?.let { box ->
-                                        drawRect(
-                                            color = Color.Red.copy(alpha = 0.35f),
-                                            topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
-                                            size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh)
-                                        )
-                                    }
+                                // 1. RED TIER (Model Suspicion) - HIGH VISIBILITY 45% SOLID TINT
+                                // Iterate ALL discovery boxes, not just linked ones
+                                rawDiscoveryBoxes.forEach { box ->
+                                    drawRect(
+                                        color = Color.Red.copy(alpha = 0.45f),
+                                        topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
+                                        size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh)
+                                    )
                                 }
 
                                 // 2. ORANGE TIER (ROI Expansion) - THICK STROKE
@@ -127,7 +126,7 @@ fun LandmarkDebugDialog(
                                             color = Color(0xFFFF8C00), // Orange
                                             topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
                                             size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh),
-                                            style = Stroke(6f) // 3x thickness
+                                            style = Stroke(6f)
                                         )
                                     }
                                 }
