@@ -3,7 +3,6 @@ package com.davidlang.vehicleexpensesautomated.ui.components
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
@@ -25,10 +25,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.davidlang.vehicleexpensesautomated.ui.util.RectF
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
-import java.io.File
 import kotlin.math.min
-import kotlin.math.sqrt
 
 @Composable
 fun LandmarkDebugDialog(
@@ -36,77 +35,18 @@ fun LandmarkDebugDialog(
     odometerCrop: Rect?,
     otherTextCrop: Rect?,
     landmarks: List<TextBlock>,
+    rawDiscoveryBoxes: List<RectF> = emptyList(),
     odometerText: String,
     engineName: String = "Unknown",
-    sourceWidth: Int = 1500,
-    sourceHeight: Int = 1125,
-    rawHeatmap: FloatArray? = null,
-    discoveryHeatmap: FloatArray? = null,
+    sourceWidth: Int = 1,
+    sourceHeight: Int = 1,
     onDismiss: () -> Unit
 ) {
     if (photoPath == null) return
     val context = LocalContext.current
     val textMeasurer = rememberTextMeasurer()
     
-    var showHeatmap by remember { mutableStateOf(rawHeatmap != null || discoveryHeatmap != null) }
-
-    // Optimization: Create DOWNSCALED Heatmap Bitmaps (512x512) for stability
-    val (rawBmp, discBmp) = remember(rawHeatmap, discoveryHeatmap) {
-        val visualSize = 512
-        // Use Actual Heatmap Dimensions instead of hardcoded 1280
-        val hSize = if (rawHeatmap != null) sqrt(rawHeatmap.size.toDouble()).toInt() else 1024
-        val scaleRatio = hSize.toFloat() / visualSize
-        
-        val rBmp = rawHeatmap?.let { data ->
-            try {
-                val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
-                val pixels = IntArray(visualSize * visualSize)
-                for (y in 0 until visualSize) {
-                    for (x in 0 until visualSize) {
-                        val rawX = (x * scaleRatio).toInt().coerceIn(0, hSize - 1)
-                        val rawY = (y * scaleRatio).toInt().coerceIn(0, hSize - 1)
-                        val idx = rawY * hSize + rawX
-                        if (idx < data.size) {
-                            val prob = data[idx]
-                            if (prob > 0.05f) {
-                                pixels[y * visualSize + x] = android.graphics.Color.argb((prob.coerceIn(0f, 0.6f) * 255).toInt(), 255, 0, 0)
-                            }
-                        }
-                    }
-                }
-                bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
-                bmp.asImageBitmap()
-            } catch (e: Exception) { null }
-        }
-
-        val dBmp = discoveryHeatmap?.let { data ->
-            try {
-                val hSizeDisc = sqrt(data.size.toDouble()).toInt()
-                val scaleRatioDisc = hSizeDisc.toFloat() / visualSize
-                val bmp = Bitmap.createBitmap(visualSize, visualSize, Bitmap.Config.ARGB_8888)
-                val pixels = IntArray(visualSize * visualSize)
-                for (y in 0 until visualSize) {
-                    for (x in 0 until visualSize) {
-                        val rawX = (x * scaleRatioDisc).toInt().coerceIn(0, hSizeDisc - 1)
-                        val rawY = (y * scaleRatioDisc).toInt().coerceIn(0, hSizeDisc - 1)
-                        val idx = rawY * hSizeDisc + rawX
-                        if (idx < data.size) {
-                            val prob = data[idx]
-                            if (prob > 0.5f) {
-                                pixels[y * visualSize + x] = android.graphics.Color.argb(100, 255, 165, 0) // Orange semi-transparent
-                            }
-                        }
-                    }
-                }
-                bmp.setPixels(pixels, 0, visualSize, 0, 0, visualSize, visualSize)
-                bmp.asImageBitmap()
-            } catch (e: Exception) { null }
-        }
-        rBmp to dBmp
-    }
-
-    val sW = if (sourceWidth <= 0) 1500f else sourceWidth.toFloat()
-    val sH = if (sourceHeight <= 0) 1125f else sourceHeight.toFloat()
+    var showDiscovery by remember { mutableStateOf(rawDiscoveryBoxes.isNotEmpty()) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -120,10 +60,10 @@ fun LandmarkDebugDialog(
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
-                    if (rawHeatmap != null || discoveryHeatmap != null) {
+                    if (rawDiscoveryBoxes.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Heatmap", style = MaterialTheme.typography.labelSmall)
-                            Switch(checked = showHeatmap, onCheckedChange = { showHeatmap = it })
+                            Text("Discovery", style = MaterialTheme.typography.labelSmall)
+                            Switch(checked = showDiscovery, onCheckedChange = { showDiscovery = it })
                         }
                     }
                     IconButton(onClick = onDismiss) {
@@ -133,7 +73,7 @@ fun LandmarkDebugDialog(
                 
                 val bitmap = remember(photoPath) {
                     try {
-                        val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        val options = BitmapFactory.Options().apply { inSampleSize = 1 } // Use full res for debug
                         if (photoPath.startsWith("content://")) {
                             context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
                                 BitmapFactory.decodeStream(it, null, options)
@@ -174,39 +114,40 @@ fun LandmarkDebugDialog(
                                 dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                             )
 
-                            // DRAW CENTERED HEATMAP OVERLAYS (Optimized Bitmaps)
-                            if (showHeatmap) {
-                                // Match the display directly to the original photo's content
-                                rawBmp?.let {
-                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt()))
-                                }
-                                discBmp?.let {
-                                    drawImage(image = it, dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()), dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt()))
+                            // 1. Draw Raw Discovery Boxes (RED) - Already Normalized 0.0-1.0
+                            if (showDiscovery) {
+                                rawDiscoveryBoxes.forEach { box ->
+                                    drawRect(
+                                        color = Color.Red,
+                                        topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
+                                        size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh),
+                                        style = Stroke(2f)
+                                    )
                                 }
                             }
 
+                            // User Crops (Blue/Green)
                             odometerCrop?.let {
                                 val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
-                                val boxSize = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
+                                val boxSize = Size(it.width * dw, it.height * dh)
                                 drawRect(color = Color.Blue, topLeft = rect, size = boxSize, style = Stroke(4f))
                             }
 
                             otherTextCrop?.let {
                                 val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
-                                val boxSize = androidx.compose.ui.geometry.Size(it.width * dw, it.height * dh)
+                                val boxSize = Size(it.width * dw, it.height * dh)
                                 drawRect(color = Color.Green, topLeft = rect, size = boxSize, style = Stroke(4f))
                             }
 
+                            // 2. Draw Final Landmarks (YELLOW) - Convert pixels to normalized then to display
                             landmarks.forEach { lm ->
-                                // COORDINATE CONVERSION: Landmarks are now NORMALIZED (0.0 to 1.0)
-                                val nx = lm.boundingBox.left.toFloat() / sW
-                                val ny = lm.boundingBox.top.toFloat() / sH
-                                val nw = (lm.boundingBox.right - lm.boundingBox.left).toFloat() / sW
-                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top).toFloat() / sH
+                                val nx = lm.boundingBox.left.toFloat() / sourceWidth.toFloat()
+                                val ny = lm.boundingBox.top.toFloat() / sourceHeight.toFloat()
+                                val nw = (lm.boundingBox.right - lm.boundingBox.left).toFloat() / sourceWidth.toFloat()
+                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top).toFloat() / sourceHeight.toFloat()
                                 
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
-                                // YELLOW OUTLINES for final text boxes
-                                drawRect(color = Color.Yellow, topLeft = rect, size = androidx.compose.ui.geometry.Size(nw * dw, nh * dh), style = Stroke(2f))
+                                drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(2f))
 
                                 if (lm.text.isNotBlank()) {
                                     drawText(
@@ -228,7 +169,7 @@ fun LandmarkDebugDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    Text("Source: ${sourceWidth.toInt()}x${sourceHeight.toInt()}", style = MaterialTheme.typography.labelMedium)
+                    Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
