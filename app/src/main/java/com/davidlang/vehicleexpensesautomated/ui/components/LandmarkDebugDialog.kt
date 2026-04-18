@@ -6,9 +6,8 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +18,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -46,7 +46,7 @@ fun LandmarkDebugDialog(
     val context = LocalContext.current
     val textMeasurer = rememberTextMeasurer()
     
-    var showDiscovery by remember { mutableStateOf(rawDiscoveryBoxes.isNotEmpty()) }
+    var showDiscovery by remember { mutableStateOf(true) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -60,11 +60,9 @@ fun LandmarkDebugDialog(
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
-                    if (rawDiscoveryBoxes.isNotEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Discovery", style = MaterialTheme.typography.labelSmall)
-                            Switch(checked = showDiscovery, onCheckedChange = { showDiscovery = it })
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Discovery", style = MaterialTheme.typography.labelSmall)
+                        Switch(checked = showDiscovery, onCheckedChange = { showDiscovery = it })
                     }
                     IconButton(onClick = onDismiss) {
                         Text("✕", style = MaterialTheme.typography.titleLarge)
@@ -73,7 +71,7 @@ fun LandmarkDebugDialog(
                 
                 val bitmap = remember(photoPath) {
                     try {
-                        val options = BitmapFactory.Options().apply { inSampleSize = 1 } // Use full res for debug
+                        val options = BitmapFactory.Options().apply { inSampleSize = 1 }
                         if (photoPath.startsWith("content://")) {
                             context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
                                 BitmapFactory.decodeStream(it, null, options)
@@ -81,9 +79,7 @@ fun LandmarkDebugDialog(
                         } else {
                             BitmapFactory.decodeFile(photoPath, options)
                         }
-                    } catch (e: Exception) {
-                        null
-                    }
+                    } catch (e: Exception) { null }
                 }
 
                 if (bitmap != null) {
@@ -92,13 +88,10 @@ fun LandmarkDebugDialog(
                     
                     Box(modifier = Modifier
                         .fillMaxWidth()
-                        .wrapContentHeight()
+                        .height(320.dp) // Fixed height for image area to ensure grid visibility
                         .background(Color.Black)
                     ) {
-                        Canvas(modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(imgW / imgH)
-                        ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
                             val containerW = size.width
                             val containerH = size.height
                             
@@ -114,32 +107,37 @@ fun LandmarkDebugDialog(
                                 dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                             )
 
-                            // 1. Draw Raw Discovery Boxes (RED) - Already Normalized 0.0-1.0
                             if (showDiscovery) {
-                                rawDiscoveryBoxes.forEach { box ->
-                                    drawRect(
-                                        color = Color.Red,
-                                        topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
-                                        size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh),
-                                        style = Stroke(2f)
-                                    )
+                                // 1. RED TIER (Model Suspicion) - SOLID TINTED
+                                landmarks.forEach { lm ->
+                                    lm.rawDiscoveryBox?.let { box ->
+                                        drawRect(
+                                            color = Color.Red.copy(alpha = 0.15f),
+                                            topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
+                                            size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh)
+                                        )
+                                    }
+                                }
+
+                                // 2. ORANGE TIER (ROI Expansion) - THICK STROKE
+                                landmarks.forEach { lm ->
+                                    lm.refinedDiscoveryBox?.let { box ->
+                                        drawRect(
+                                            color = Color(0xFFFF8C00), // Orange
+                                            topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
+                                            size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh),
+                                            style = Stroke(6f) // 3x thickness
+                                        )
+                                    }
                                 }
                             }
 
                             // User Crops (Blue/Green)
                             odometerCrop?.let {
-                                val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
-                                val boxSize = Size(it.width * dw, it.height * dh)
-                                drawRect(color = Color.Blue, topLeft = rect, size = boxSize, style = Stroke(4f))
+                                drawRect(color = Color.Blue, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
                             }
 
-                            otherTextCrop?.let {
-                                val rect = Offset(offsetX + it.left * dw, offsetY + it.top * dh)
-                                val boxSize = Size(it.width * dw, it.height * dh)
-                                drawRect(color = Color.Green, topLeft = rect, size = boxSize, style = Stroke(4f))
-                            }
-
-                            // 2. Draw Final Landmarks (YELLOW) - Convert pixels to normalized then to display
+                            // 3. YELLOW TIER (Final Landmark) - THIN STROKE
                             landmarks.forEach { lm ->
                                 val nx = lm.boundingBox.left.toFloat() / sourceWidth.toFloat()
                                 val ny = lm.boundingBox.top.toFloat() / sourceHeight.toFloat()
@@ -148,21 +146,8 @@ fun LandmarkDebugDialog(
                                 
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
                                 drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(2f))
-
-                                if (lm.text.isNotBlank()) {
-                                    drawText(
-                                        textMeasurer = textMeasurer,
-                                        text = lm.text,
-                                        topLeft = rect,
-                                        style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 8.sp, background = Color.Black.copy(alpha = 0.7f))
-                                    )
-                                }
                             }
                         }
-                    }
-                } else {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        Text("Image error")
                     }
                 }
 
@@ -171,36 +156,60 @@ fun LandmarkDebugDialog(
                     Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Discovered Landmarks (${landmarks.size}):", style = MaterialTheme.typography.titleSmall)
                 
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 100.dp),
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Discovery Pipeline Metrics:", style = MaterialTheme.typography.titleSmall)
+                
+                // Grouped Metrics Grid
+                Surface(
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    shape = MaterialTheme.shapes.medium
                 ) {
-                    items(landmarks) { lm ->
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            shape = MaterialTheme.shapes.extraSmall
-                        ) {
-                            Column(modifier = Modifier.padding(4.dp)) {
-                                Text(lm.text, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                val angle = if (lm.angle.isNaN() || lm.angle.isInfinite()) 0f else lm.angle
-                                val angleText = "%.1f°".format(angle)
-                                Text(angleText, style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, color = MaterialTheme.colorScheme.secondary))
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(landmarks) { lm ->
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(text = lm.text.ifBlank { "[No Text]" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    // RED METRIC
+                                    lm.rawDiscoveryBox?.let { box ->
+                                        MetricChip(label = "RED", color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                    }
+                                    // ORANGE METRIC
+                                    lm.refinedDiscoveryBox?.let { box ->
+                                        MetricChip(label = "ORNGE", color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                    }
+                                    // YELLOW METRIC
+                                    MetricChip(label = "YELW", color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End).padding(top = 8.dp)) {
                     Text("Close")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MetricChip(label: String, color: Color, w: Float, h: Float) {
+    Surface(
+        color = color.copy(alpha = 0.1f),
+        shape = MaterialTheme.shapes.extraSmall,
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, style = androidx.compose.ui.text.TextStyle(fontSize = 7.sp, fontWeight = FontWeight.Black, color = color))
+            Text("${w.toInt()}x${h.toInt()}", style = androidx.compose.ui.text.TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Medium))
         }
     }
 }

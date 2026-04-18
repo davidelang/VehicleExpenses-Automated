@@ -47,11 +47,14 @@ data class NormalizedRect(val left: Float, val top: Float, val right: Float, val
 
 /**
  * Represents a single hunk of text found by an OCR engine.
+ * Linked to its discovery history for visualization.
  */
 data class TextBlock(
     val text: String,
-    val boundingBox: Rect, // Pixel coordinates for UI/Cropping
+    val boundingBox: Rect, // Final Crop Pixel coordinates
     val angle: Float = 0f,
+    val rawDiscoveryBox: RectF? = null,    // RED tier
+    val refinedDiscoveryBox: RectF? = null, // ORANGE tier
     val metadata: Map<String, String> = emptyMap()
 )
 
@@ -174,7 +177,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             interp.allocateTensors()
             interp
         } catch (e: Exception) { 
-            Log.e("NativeTflite", "Failed to load/resize detector", e)
+            Log.e("NativeTflite", "Failed to load detector", e)
             null 
         }
         
@@ -222,8 +225,12 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 algorithm = "C"
             )
             
-            for (detectedBox in dbRes.refinedBoxes) {
+            // LINK THE TIERS: Iterate using index to link raw (RED) and refined (ORANGE) boxes
+            for (i in dbRes.refinedBoxes.indices) {
+                val detectedBox = dbRes.refinedBoxes[i]
+                val rawBox = dbRes.rawBoxes.getOrNull(i)
                 val nb = detectedBox.boundingBox
+                
                 val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
                 val top = (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
                 val right = (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width)
@@ -236,7 +243,13 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 
                 if (text.isNotBlank()) {
                     debugText.append("$text ")
-                    textBlocks.add(TextBlock(text, Rect(left, top, right, bottom), detectedBox.angle))
+                    textBlocks.add(TextBlock(
+                        text = text, 
+                        boundingBox = Rect(left, top, right, bottom), 
+                        angle = detectedBox.angle,
+                        rawDiscoveryBox = rawBox?.boundingBox,
+                        refinedDiscoveryBox = detectedBox.boundingBox
+                    ))
                 }
             }
             padded.recycle()
