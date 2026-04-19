@@ -157,20 +157,31 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
         val tStart = System.currentTimeMillis()
         val targetWidth = 640
-        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        
+        // ASPECT-CORRECT PADDING: Avoid horizontal stretching
+        val scale = targetHeight.toFloat() / bitmap.height.toFloat()
+        val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
+        val sh = targetHeight
+        
+        val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+        val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(padded)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(scaled, 0f, 0f, null)
+        scaled.recycle()
         
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetHeight * targetWidth * 3 * 4).apply {
             order(ByteOrder.nativeOrder())
             for (y in 0 until targetHeight) {
                 for (x in 0 until targetWidth) {
-                    val px = scaled.getPixel(x, y)
+                    val px = padded.getPixel(x, y)
                     putFloat(((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f)
                     putFloat(((px and 0xFF) / 255.0f - 0.5f) / 0.5f)
                 }
             }
         }
-        scaled.recycle()
+        padded.recycle()
 
         val outputBuffer = Array(1) { Array(80) { FloatArray(97) } }
         recInterpreter?.run(inputBuffer, outputBuffer)

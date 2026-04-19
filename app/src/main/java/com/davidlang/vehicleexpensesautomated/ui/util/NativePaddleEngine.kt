@@ -171,10 +171,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         try {
             inputTensor.setData(floatData); predictor.run()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
-            val dbRes = TfLiteOcrUtils.processDbNetOutput(
-                outputData, outW, outH, scale = scale, sourceBitmap = bitmap,
-                algorithm = "C" // Paddle-Lite uses Edge-Stop
-            )
+            val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap, algorithm = "C")
             padded.recycle()
             return DetectionResult(dbRes.rawBoxes, dbRes.refinedBoxes, scale)
         } catch (t: Throwable) { padded.recycle(); return DetectionResult(emptyList(), emptyList(), 1f) }
@@ -182,17 +179,30 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
 
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
         val tStart = System.currentTimeMillis(); val predictor = sharedRecognizer ?: return RecStageResult("", 0, 0f)
-        val targetWidth = 640; val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
-        val floatData = FloatArray(1 * 3 * targetHeight * targetWidth); val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        val targetWidth = 640
+        val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
+        val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
+        
+        // ASPECT-CORRECT PADDING: Avoid horizontal stretching
+        val scale = targetHeight.toFloat() / bitmap.height.toFloat()
+        val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
+        val sh = targetHeight
+        
+        val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+        val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(padded); canvas.drawColor(Color.BLACK); canvas.drawBitmap(scaled, 0f, 0f, null)
+        scaled.recycle()
+        
         for (y in 0 until targetHeight) {
             for (x in 0 until targetWidth) {
-                val px = scaled.getPixel(x, y)
+                val px = padded.getPixel(x, y)
                 floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f
                 floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f
                 floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.5f) / 0.5f
             }
         }
-        scaled.recycle()
+        padded.recycle()
+        
         try {
             inputTensor.setData(floatData); predictor.run()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val data = outputTensor.floatData
