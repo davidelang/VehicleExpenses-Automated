@@ -17,7 +17,9 @@ object OcrHarness {
 
         val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = false)
         val nativePaddle = NativePaddleEngine(context, isConstrained = false)
-        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
+        
+        // Phase 44: Baseline Isolation - ONLY run NativePaddle
+        val enginesList = mutableListOf<OcrEngine>()
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
 
         val results = enginesList.associate { engine ->

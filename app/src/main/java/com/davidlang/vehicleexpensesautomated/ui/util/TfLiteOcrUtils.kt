@@ -42,13 +42,13 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 36: Split Retraction (Shrinking Red Boxes to Ink).
+     * Phase 44: RAW BASELINE (No Split, No Glue, No Recursion).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
         scale: Float = 1.0f,
         sourceBitmap: Bitmap? = null, algorithm: String = "C",
-        recursive: Boolean = false // Phase 43: Sub-Window flag
+        recursive: Boolean = false // Phase 43/44 sub-window flag
     ): DbNetResult {
         val tDiscoveryStart = System.currentTimeMillis()
         if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return DbNetResult(emptyList(), emptyList())
@@ -63,11 +63,12 @@ object TfLiteOcrUtils {
         } else null
 
         val contours = mutableListOf<MatOfPoint>(); val hierarchy = Mat()
+        // RETR_EXTERNAL ignores holes, which we want for the baseline
         Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
 
         val rawBoxes = mutableListOf<DetectedBox>()
         val intermediateRefined = mutableListOf<DetectedBox>()
-        val suspectCrops = mutableListOf<RectF>() // Phase 43: Collect wide blobs for high-res re-scan
+        val suspectCrops = mutableListOf<RectF>()
         
         val sourceW = sourceBitmap?.width?.toDouble() ?: heatmapW.toDouble()
         val sourceH = sourceBitmap?.height?.toDouble() ?: heatmapH.toDouble()
@@ -76,155 +77,17 @@ object TfLiteOcrUtils {
         for (contour in contours) {
             if (Imgproc.contourArea(contour) < 10) continue 
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
-            val rectBounds = rotatedRect.boundingRect()
-            val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 43: Mark super-wide blobs for Sub-Windowing instead of manual pixel walking
-            if (!recursive && aspect > 2.2 && sourceMat != null) {
-                val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
-                val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
-                
-                if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
-                    // Store normalized coordinates for the engine to crop
-                    suspectCrops.add(RectF(
-                        (roiL.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
-                        (roiT.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
-                        ((roiL + roiW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
-                        ((roiT + roiH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
-                    ))
-                    continue
-                }
-            }
+            // PHASE 44: NO SPLITTING. Every suspicion goes straight to expansion.
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        val (finalRaw, finalRefined) = mergeOverlappingBoxesSync(rawBoxes, intermediateRefined)
-        val (gluedRaw, gluedRefined) = mergeNearbyBoxesSync(finalRaw, finalRefined, sourceW, sourceH)
+        // PHASE 44: NO MERGING/GLUING. Show every raw fragment.
+        val finalRaw = rawBoxes
+        val finalRefined = intermediateRefined
         
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(gluedRaw, gluedRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
-    }
-
-    private fun mergeOverlappingBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>): Pair<List<DetectedBox>, List<DetectedBox>> {
-        if (refinedBoxes.isEmpty() || rawBoxes.size != refinedBoxes.size) return Pair(rawBoxes, refinedBoxes)
-        
-        val mutableRaw = rawBoxes.toMutableList()
-        val mutableRefined = refinedBoxes.toMutableList()
-        
-        var changed = true
-        while (changed) {
-            changed = false
-            var i = 0
-            while (i < mutableRefined.size) {
-                var j = i + 1
-                while (j < mutableRefined.size) {
-                    val boxA = mutableRefined[i].boundingBox
-                    val boxB = mutableRefined[j].boundingBox
-                    
-                    val interL = max(boxA.left, boxB.left); val interT = max(boxA.top, boxB.top)
-                    val interR = min(boxA.right, boxB.right); val interB = min(boxA.bottom, boxB.bottom)
-                    
-                    if (interR > interL && interB > interT) {
-                        val interArea = (interR - interL) * (interB - interT)
-                        val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top)
-                        val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
-                        
-                        val minArea = min(areaA, areaB)
-                        
-                        if (minArea > 0 && (interArea / minArea) > 0.40f) {
-                            val unionRefined = RectF(
-                                min(boxA.left, boxB.left), min(boxA.top, boxB.top),
-                                max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
-                            )
-                            val rawA = mutableRaw[i].boundingBox
-                            val rawB = mutableRaw[j].boundingBox
-                            val unionRaw = RectF(
-                                min(rawA.left, rawB.left), min(rawA.top, rawB.top),
-                                max(rawA.right, rawB.right), max(rawA.bottom, rawB.bottom)
-                            )
-                            
-                            val angle = if (areaA > areaB) mutableRefined[i].angle else mutableRefined[j].angle
-                            mutableRefined[i] = DetectedBox(emptyList(), unionRefined, angle)
-                            mutableRaw[i] = DetectedBox(emptyList(), unionRaw, angle)
-                            
-                            mutableRefined.removeAt(j)
-                            mutableRaw.removeAt(j)
-                            changed = true
-                            break
-                        }
-                    }
-                    j++
-                }
-                if (changed) break
-                i++
-            }
-        }
-        return Pair(mutableRaw, mutableRefined)
-    }
-
-    private fun mergeNearbyBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>, sourceW: Double, sourceH: Double): Pair<List<DetectedBox>, List<DetectedBox>> {
-        if (refinedBoxes.isEmpty() || rawBoxes.size != refinedBoxes.size) return Pair(rawBoxes, refinedBoxes)
-        
-        val mutableRaw = rawBoxes.toMutableList()
-        val mutableRefined = refinedBoxes.toMutableList()
-        
-        var changed = true
-        while (changed) {
-            changed = false
-            var i = 0
-            while (i < mutableRefined.size) {
-                var j = i + 1
-                while (j < mutableRefined.size) {
-                    val boxA = mutableRefined[i].boundingBox
-                    val boxB = mutableRefined[j].boundingBox
-                    
-                    val pixelBoxA = RectF(boxA.left * sourceW.toFloat(), boxA.top * sourceH.toFloat(), boxA.right * sourceW.toFloat(), boxA.bottom * sourceH.toFloat())
-                    val pixelBoxB = RectF(boxB.left * sourceW.toFloat(), boxB.top * sourceH.toFloat(), boxB.right * sourceW.toFloat(), boxB.bottom * sourceH.toFloat())
-
-                    // 1. Strict Vertical Overlap (75% of min height) to ensure they are on the exact same line
-                    val vOverlap = min(pixelBoxA.bottom, pixelBoxB.bottom) - max(pixelBoxA.top, pixelBoxB.top)
-                    val hA = pixelBoxA.bottom - pixelBoxA.top
-                    val hB = pixelBoxB.bottom - pixelBoxB.top
-                    val minH = min(hA, hB)
-                    
-                    if (vOverlap > minH * 0.75f) {
-                        // 2. Horizontal Proximity (20% of min height)
-                        val hGap = if (pixelBoxA.right < pixelBoxB.left) pixelBoxB.left - pixelBoxA.right
-                                   else if (pixelBoxB.right < pixelBoxA.left) pixelBoxA.left - pixelBoxB.right
-                                   else 0f // Touching or overlapping
-
-                        if (hGap <= minH * 0.20f) {
-                            val unionRefined = RectF(
-                                min(boxA.left, boxB.left), min(boxA.top, boxB.top),
-                                max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
-                            )
-                            val rawA = mutableRaw[i].boundingBox
-                            val rawB = mutableRaw[j].boundingBox
-                            val unionRaw = RectF(
-                                min(rawA.left, rawB.left), min(rawA.top, rawB.top),
-                                max(rawA.right, rawB.right), max(rawA.bottom, rawB.bottom)
-                            )
-                            
-                            val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top)
-                            val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
-                            val angle = if (areaA > areaB) mutableRefined[i].angle else mutableRefined[j].angle
-                            
-                            mutableRefined[i] = DetectedBox(emptyList(), unionRefined, angle)
-                            mutableRaw[i] = DetectedBox(emptyList(), unionRaw, angle)
-                            
-                            mutableRefined.removeAt(j)
-                            mutableRaw.removeAt(j)
-                            changed = true
-                            break
-                        }
-                    }
-                    j++
-                }
-                if (changed) break
-                i++
-            }
-        }
-        return Pair(mutableRaw, mutableRefined)
+        return DbNetResult(finalRaw, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
@@ -245,11 +108,7 @@ object TfLiteOcrUtils {
         val sourceRect = RotatedRect(Point(rotatedRect.center.x * invScale, rotatedRect.center.y * invScale), Size(rotatedRect.size.width * invScale, rotatedRect.size.height * invScale), rotatedRect.angle)
         
         val bounds = if (sourceMat != null) expandInRoi(sourceRect, sourceMat, algorithm, redFloorPixels) else redFloorPixels
-        bounds.union(redFloorPixels)
-        
-        val finalL = bounds.left; val finalT = bounds.top; val finalR = bounds.right; val finalB = bounds.bottom
-        val finalW = finalR - finalL; val finalH = finalB - finalT
-        // Removed OCR_TRACE here; moved to Engine layer for full context
+        // Removed bounds.union(redFloorPixels) to allow retracted crops
         
         val normRefinedBounds = RectF(
             (bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
@@ -288,6 +147,10 @@ object TfLiteOcrUtils {
     private fun expandByValleyStop(redFloor: android.graphics.Rect, gray: Mat): android.graphics.Rect {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
+        
+        // Safety check for empty crops
+        if (redFloor.width() < 1 || redFloor.height() < 1) return redFloor
+
         val hillSub = gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)
         val hillBrightness = Core.mean(hillSub).`val`[0]
         hillSub.release()
@@ -297,40 +160,15 @@ object TfLiteOcrUtils {
         
         val requiredBridgeHeight = (maxY - minY) * 0.15
 
-        // Phase 41: Goldilocks Vertical Expansion
-        // We use getLineInkCount to require at least 3 horizontal pixels of ink to continue expanding vertically.
-        // This easily rides the curved bottom of a '0' (which is ~10-15px wide at the tip) 
-        // but immediately drops thin vertical artifacts like tic marks (which are only 1-2px wide).
-        while (minY > 0 && (sY - minY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true, valleyThreshold) < 3) break; minY -= 1.0 }
-        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true, valleyThreshold) < 3) break; maxY += 1.0 }
+        // Phase 41: Goldilocks Vertical Expansion (8px wide minimum)
+        while (minY > 0 && (sY - minY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true, valleyThreshold) < 8) break; minY -= 1.0 }
+        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true, valleyThreshold) < 8) break; maxY += 1.0 }
         
         while (minX > 0 && (sX - minX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; minX -= 1.0 }
         while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; maxX += 1.0 }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
 
-    private fun getLineMax(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
-        var maxVal = 0.0; val maxD = if (horizontal) mat.cols() else mat.rows()
-        if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0.0
-        for (i in start until end) { 
-            if (i < 0 || i >= maxD) continue
-            val v = if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]
-            if (v > maxVal) maxVal = v
-        }
-        return maxVal
-    }
-
-    private fun isDarkGap(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Boolean {
-        return getLineAverage(mat, start, end, fixed, horizontal) < 10.0
-    }
-
-    private fun getLineAverage(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
-        var sum = 0.0; var count = 0; val maxD = if (horizontal) mat.cols() else mat.rows()
-        if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0.0
-        for (i in start until end) { if (i < 0 || i >= maxD) continue; sum += if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]; count++ }
-        return if (count > 0) sum / count else 0.0
-    }
-    
     private fun getLineInkCount(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean, threshold: Double): Int {
         var inkPixels = 0; val maxD = if (horizontal) mat.cols() else mat.rows()
         if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0
@@ -346,9 +184,7 @@ object TfLiteOcrUtils {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-        
         val requiredBridgeHeight = (maxY - minY) * 0.15
-        
         var changed = true
         while (changed) {
             changed = false
