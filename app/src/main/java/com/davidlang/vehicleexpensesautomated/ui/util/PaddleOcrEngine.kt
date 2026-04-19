@@ -98,7 +98,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         val discoveryHeatmap = rawHeatmap.copyOf()
         val dbRes = TfLiteOcrUtils.processDbNetOutput(
             discoveryHeatmap, inputSize, inputSize, scale = scale,
-            sourceBitmap = bitmap, algorithm = "B"
+            sourceBitmap = bitmap, algorithm = "B" // STANDARDIZED B
         )
         
         val results = StringBuilder()
@@ -108,7 +108,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
             val refinedBox = dbRes.refinedBoxes.getOrNull(i)
             val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
             
-            // nb is normalized to source pixels
+            // YELLOW: Final crop with +8px padding in source space
             val left = (orange.left * bitmap.width).toInt() - 8
             val top = (orange.top * bitmap.height).toInt() - 8
             val right = (orange.right * bitmap.width).toInt() + 8
@@ -141,6 +141,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         return OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
+            discoveryTimeMs = dbRes.discoveryTimeMs,
             debugText = results.toString().trim(),
             textBlocks = textBlocks,
             imageWidth = bitmap.width,

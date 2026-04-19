@@ -50,6 +50,7 @@ object TfLiteOcrUtils {
         scale: Float = 1.0f,
         sourceBitmap: Bitmap? = null, algorithm: String = "C" 
     ): DbNetResult {
+        val tDiscoveryStart = System.currentTimeMillis()
         if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return DbNetResult(emptyList(), emptyList())
         val mask = Mat(heatmapH, heatmapW, CvType.CV_8UC1)
         val data = ByteArray(heatmapW * heatmapH)
@@ -112,7 +113,7 @@ object TfLiteOcrUtils {
         }
         
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(rawBoxes, refinedBoxes)
+        return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
     private fun expandInRoi(rect: RotatedRect, sourceMat: Mat, algorithm: String, redFloor: Rect): Rect {
@@ -131,7 +132,6 @@ object TfLiteOcrUtils {
         
         val expandedRect = when (algorithm) {
             "A" -> {
-                // ALGORITHM A: High-Res Density Projections (Aggressive)
                 val mask = Mat(); Imgproc.adaptiveThreshold(gray, mask, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 15, 2.0)
                 val res = expandByProjection(localRedFloor, mask)
                 mask.release(); res
@@ -145,10 +145,9 @@ object TfLiteOcrUtils {
                 mask.release(); res
             }
             else -> {
-                // ALGORITHM C: Valley-Stop (Expanded Search)
-                val edges = Mat(); Imgproc.Canny(gray, edges, 10.0, 40.0)
-                val res = expandToEdges(localRedFloor, edges, edges.rows(), edges.cols())
-                edges.release(); res
+                // ALGORITHM C: Valley-Stop (Pure Brightness Gradient)
+                val res = expandByValleyStop(localRedFloor, gray)
+                res
             }
         }
         
@@ -156,46 +155,54 @@ object TfLiteOcrUtils {
         return Rect(expandedRect.left + roiL, expandedRect.top + roiT, expandedRect.right + roiL, expandedRect.bottom + roiT)
     }
 
-    private fun expandByProjection(redFloor: Rect, mask: Mat): Rect {
-        val hProj = Mat(); Core.reduce(mask, hProj, 1, Core.REDUCE_SUM, CvType.CV_32F)
-        val vProj = Mat(); Core.reduce(mask, vProj, 0, Core.REDUCE_SUM, CvType.CV_32F)
-        
+    private fun expandByValleyStop(redFloor: Rect, gray: Mat): Rect {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         
-        // AGGRESSIVE: noise floor = 5% of max possible ink
-        val hThreshold = mask.cols() * 255.0 * 0.05; val vThreshold = mask.rows() * 255.0 * 0.05
+        // Calculate average brightness of the floor to find "Hill" height
+        val hillBrightness = Core.mean(gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)).`val`[0]
+        val valleyThreshold = hillBrightness * 0.40 // Stop if brightness drops by 60%
         
-        // Expand horizontally first (Text flow)
+        val maxH = gray.rows(); val maxW = gray.cols()
+        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0
+        val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+
+        // Expand Outwards
+        while (minY > 0 && (sY - minY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
+        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
+        while (minX > 0 && (sX - minX) < hL) { if (getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
+        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+        
+        return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
+    }
+
+    private fun getLineAverage(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
+        var sum = 0.0; var count = 0
+        for (i in start..end) {
+            if (i < 0 || i >= (if (horizontal) mat.cols() else mat.rows())) continue
+            sum += if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]
+            count++
+        }
+        return if (count > 0) sum / count else 0.0
+    }
+
+    private fun expandByProjection(redFloor: Rect, mask: Mat): Rect {
+        val hProj = Mat(); Core.reduce(mask, hProj, 1, Core.REDUCE_SUM, CvType.CV_32F)
+        val vProj = Mat(); Core.reduce(mask, vProj, 0, Core.REDUCE_SUM, CvType.CV_32F)
+        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
+        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
+        val hThreshold = mask.cols() * 255.0 * 0.05; val vThreshold = mask.rows() * 255.0 * 0.05
         while (minX > 0 && vProj.get(0, minX.toInt() - 1)[0] > vThreshold) minX -= 1.0
         while (maxX < mask.cols() - 1 && vProj.get(0, maxX.toInt() + 1)[0] > vThreshold) maxX += 1.0
         while (minY > 0 && hProj.get(minY.toInt() - 1, 0)[0] > hThreshold) minY -= 1.0
         while (maxY < mask.rows() - 1 && hProj.get(maxY.toInt() + 1, 0)[0] > hThreshold) maxY += 1.0
-        
         hProj.release(); vProj.release()
         return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(mask.cols(), maxX.toInt()), min(mask.rows(), maxY.toInt()))
-    }
-
-    private fun expandToEdges(redFloor: Rect, edgeMap: Mat, maxH: Int, maxW: Int): Rect {
-        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
-        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-        
-        // AGGRESSIVE: 400% horizontal expansion limit
-        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0
-        val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-        
-        while (minY > 0 && (sY - minY) < vL) { if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) break; minY -= 1.0 }
-        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) break; maxY += 1.0 }
-        while (minX > 0 && (sX - minX) < hL) { if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (checkLine(edgeMap, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) break; maxX += 1.0 }
-        
-        return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
 
     private fun expandPerimeter(redFloor: Rect, mask: Mat, maxH: Int, maxW: Int): Rect {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-        
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
         var changed = true
         while (changed) {
@@ -211,7 +218,7 @@ object TfLiteOcrUtils {
     private fun checkLine(mask: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Boolean {
         val maxDim = if (horizontal) mask.cols() else mask.rows(); val fixedDim = if (horizontal) mask.rows() else mask.cols()
         if (fixed < 0 || fixed >= fixedDim) return false
-        for (i in start..end) { if (i < 0 || i >= maxDim) continue; val pixel = if (horizontal) mask.get(fixed, i)[0] else mask.get(i, fixed)[0]; if (pixel > 0) return true }
+        for (i in start..end) { if (i < 0 || i >= maxDim) continue; if (if (horizontal) mask.get(fixed, i)[0] > 0 else mask.get(i, fixed)[0] > 0) return true }
         return false
     }
 
