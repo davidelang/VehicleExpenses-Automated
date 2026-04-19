@@ -10,14 +10,22 @@ import android.graphics.Bitmap
 object OcrHarness {
 
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+        // MANDATE: Apply Grayscale and Bilateral filter GLOBALLY before discovery pass
+        val gray = OdometerOcrUtils.applyGrayscale(bitmap)
+        val filtered = OdometerOcrUtils.applyBilateral(gray)
+        gray.recycle()
+
         val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = false)
         val nativePaddle = NativePaddleEngine(context, isConstrained = false)
         val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
 
-        return enginesList.associate { engine ->
-            engine.name to engine.recognize(bitmap)
+        val results = enginesList.associate { engine ->
+            engine.name to engine.recognize(filtered)
         }
+        
+        filtered.recycle()
+        return results
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {

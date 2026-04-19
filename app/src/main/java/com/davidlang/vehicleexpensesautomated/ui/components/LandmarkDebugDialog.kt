@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Image
 import com.davidlang.vehicleexpensesautomated.ui.util.RectF
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlin.math.min
 import kotlin.math.max
 
@@ -74,16 +75,18 @@ fun LandmarkDebugDialog(
                     }
                 }
                 
+                // MANDATE: Always apply Grayscale + Bilateral for visual synchronization
                 val bitmap = remember(photoPath) {
                     try {
                         val options = BitmapFactory.Options().apply { inSampleSize = 1 }
-                        if (photoPath.startsWith("content://")) {
+                        val raw = if (photoPath.startsWith("content://")) {
                             context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
                                 BitmapFactory.decodeStream(it, null, options)
                             }
                         } else {
                             BitmapFactory.decodeFile(photoPath, options)
                         }
+                        raw?.let { OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(it)) }
                     } catch (e: Exception) { null }
                 }
 
@@ -112,7 +115,7 @@ fun LandmarkDebugDialog(
                             )
 
                             if (showDiscovery) {
-                                // 1. RED TIER (Model Suspicion) - 45% SOLID TINT
+                                // 1. RED TIER (Model Suspicion) - SOLID TINT
                                 rawDiscoveryBoxes.forEach { box ->
                                     drawRect(
                                         color = Color.Red.copy(alpha = 0.45f),
@@ -154,7 +157,7 @@ fun LandmarkDebugDialog(
                                 }
                             }
 
-                            // MANDATE: Blue (Odo) and Green (Veto) drawn LAST (on top)
+                            // MANDATE: Blue (Odo) and Green (Veto) drawn LAST
                             odometerCrop?.let {
                                 drawRect(color = Color.Blue, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
                             }
@@ -176,7 +179,7 @@ fun LandmarkDebugDialog(
                     Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall)
                     
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 200.dp), // Dense grid
+                        columns = GridCells.Adaptive(minSize = 220.dp),
                         modifier = Modifier.fillMaxSize().padding(top = 4.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -184,11 +187,12 @@ fun LandmarkDebugDialog(
                     ) {
                         items(landmarks) { lm ->
                             Surface(
+                                modifier = Modifier.height(42.dp), // FIXED HEIGHT
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                 shape = MaterialTheme.shapes.extraSmall,
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
-                                Row(modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(modifier = Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                     // 1. CROP PREVIEW (Left Side, Full Height, Shrunken)
                                     val cropBmp = remember(lm.boundingBox, bitmap) {
                                         if (bitmap == null) null else {
@@ -205,7 +209,7 @@ fun LandmarkDebugDialog(
                                         Image(
                                             bitmap = cropBmp.asImageBitmap(),
                                             contentDescription = null,
-                                            modifier = Modifier.height(42.dp).wrapContentWidth(), // SHRUNKEN TO 42PX
+                                            modifier = Modifier.fillMaxHeight().wrapContentWidth(), // NATURAL WIDTH
                                             contentScale = ContentScale.Fit
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))

@@ -124,7 +124,7 @@ object TfLiteOcrUtils {
         if (roiR <= roiL || roiB <= roiT) return redFloor
         
         val roiMat = sourceMat.submat(roiT, roiB, roiL, roiR)
-        val gray = Mat(); Imgproc.cvtColor(roiMat, gray, Imgproc.COLOR_RGBA2GRAY)
+        val gray = Mat(); if (roiMat.channels() > 1) Imgproc.cvtColor(roiMat, gray, Imgproc.COLOR_RGBA2GRAY) else roiMat.copyTo(gray)
         
         // Translate Red Floor to local ROI coordinates
         val localRedFloor = Rect(redFloor.left - roiL, redFloor.top - roiT, redFloor.right - roiL, redFloor.bottom - roiT)
