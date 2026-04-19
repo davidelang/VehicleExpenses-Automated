@@ -29,14 +29,22 @@ object OcrHarness {
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+        // Refinement also benefits from the same clean input
+        val gray = OdometerOcrUtils.applyGrayscale(bitmap)
+        val filtered = OdometerOcrUtils.applyBilateral(gray)
+        gray.recycle()
+
         val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = true)
         val nativePaddle = NativePaddleEngine(context, isConstrained = true)
         val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
 
-        return enginesList.associate { engine ->
-            engine.name to engine.recognize(bitmap)
+        val results = enginesList.associate { engine ->
+            engine.name to engine.recognize(filtered)
         }
+        
+        filtered.recycle()
+        return results
     }
 
     fun getDiscoveryEngineNames(context: Context): List<String> {
