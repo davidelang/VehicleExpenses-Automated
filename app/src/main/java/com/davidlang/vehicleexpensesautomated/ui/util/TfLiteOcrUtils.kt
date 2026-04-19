@@ -116,8 +116,11 @@ object TfLiteOcrUtils {
         // Phase 35: ONLY OVERLAP UNION (No Proximity Glue)
         val (finalRaw, finalRefined) = mergeOverlappingBoxesSync(rawBoxes, intermediateRefined)
         
+        // Phase 39: 20% PRECISION PROPORTIONAL GLUE
+        val (gluedRaw, gluedRefined) = mergeNearbyBoxesSync(finalRaw, finalRefined, sourceW, sourceH)
+        
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(finalRaw, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
+        return DbNetResult(gluedRaw, gluedRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
     private data class SplitRetraction(val center: Int, val leftEdge: Int, val rightEdge: Int)
@@ -227,6 +230,71 @@ object TfLiteOcrUtils {
                             )
                             
                             val angle = if (areaA > areaB) mutableRefined[i].angle else mutableRefined[j].angle
+                            mutableRefined[i] = DetectedBox(emptyList(), unionRefined, angle)
+                            mutableRaw[i] = DetectedBox(emptyList(), unionRaw, angle)
+                            
+                            mutableRefined.removeAt(j)
+                            mutableRaw.removeAt(j)
+                            changed = true
+                            break
+                        }
+                    }
+                    j++
+                }
+                if (changed) break
+                i++
+            }
+        }
+        return Pair(mutableRaw, mutableRefined)
+    }
+
+    private fun mergeNearbyBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>, sourceW: Double, sourceH: Double): Pair<List<DetectedBox>, List<DetectedBox>> {
+        if (refinedBoxes.isEmpty() || rawBoxes.size != refinedBoxes.size) return Pair(rawBoxes, refinedBoxes)
+        
+        val mutableRaw = rawBoxes.toMutableList()
+        val mutableRefined = refinedBoxes.toMutableList()
+        
+        var changed = true
+        while (changed) {
+            changed = false
+            var i = 0
+            while (i < mutableRefined.size) {
+                var j = i + 1
+                while (j < mutableRefined.size) {
+                    val boxA = mutableRefined[i].boundingBox
+                    val boxB = mutableRefined[j].boundingBox
+                    
+                    val pixelBoxA = RectF(boxA.left * sourceW.toFloat(), boxA.top * sourceH.toFloat(), boxA.right * sourceW.toFloat(), boxA.bottom * sourceH.toFloat())
+                    val pixelBoxB = RectF(boxB.left * sourceW.toFloat(), boxB.top * sourceH.toFloat(), boxB.right * sourceW.toFloat(), boxB.bottom * sourceH.toFloat())
+
+                    // 1. Strict Vertical Overlap (75% of min height) to ensure they are on the exact same line
+                    val vOverlap = min(pixelBoxA.bottom, pixelBoxB.bottom) - max(pixelBoxA.top, pixelBoxB.top)
+                    val hA = pixelBoxA.bottom - pixelBoxA.top
+                    val hB = pixelBoxB.bottom - pixelBoxB.top
+                    val minH = min(hA, hB)
+                    
+                    if (vOverlap > minH * 0.75f) {
+                        // 2. Horizontal Proximity (20% of min height)
+                        val hGap = if (pixelBoxA.right < pixelBoxB.left) pixelBoxB.left - pixelBoxA.right
+                                   else if (pixelBoxB.right < pixelBoxA.left) pixelBoxA.left - pixelBoxB.right
+                                   else 0f // Touching or overlapping
+
+                        if (hGap <= minH * 0.20f) {
+                            val unionRefined = RectF(
+                                min(boxA.left, boxB.left), min(boxA.top, boxB.top),
+                                max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
+                            )
+                            val rawA = mutableRaw[i].boundingBox
+                            val rawB = mutableRaw[j].boundingBox
+                            val unionRaw = RectF(
+                                min(rawA.left, rawB.left), min(rawA.top, rawB.top),
+                                max(rawA.right, rawB.right), max(rawA.bottom, rawB.bottom)
+                            )
+                            
+                            val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top)
+                            val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
+                            val angle = if (areaA > areaB) mutableRefined[i].angle else mutableRefined[j].angle
+                            
                             mutableRefined[i] = DetectedBox(emptyList(), unionRefined, angle)
                             mutableRaw[i] = DetectedBox(emptyList(), unionRaw, angle)
                             
