@@ -190,10 +190,10 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 val refinedBox = dbRes.refinedBoxes.getOrNull(i)
                 val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
                 
-                val left = (orange.left * bitmap.width).toInt() - 8
-                val top = (orange.top * bitmap.height).toInt() - 8
-                val right = (orange.right * bitmap.width).toInt() + 8
-                val bottom = (orange.bottom * bitmap.height).toInt() + 8
+                val left = (orange.left * bitmap.width).toInt()
+                val top = (orange.top * bitmap.height).toInt()
+                val right = (orange.right * bitmap.width).toInt()
+                val bottom = (orange.bottom * bitmap.height).toInt()
                 val cropRect = Rect(max(0, left), max(0, top), min(bitmap.width, right), min(bitmap.height, bottom))
                 
                 if (cropRect.width() <= 0 || cropRect.height() <= 0) {

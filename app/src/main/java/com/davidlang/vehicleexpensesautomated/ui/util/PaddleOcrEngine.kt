@@ -113,11 +113,10 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
             val refinedBox = dbRes.refinedBoxes.getOrNull(i)
             val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
             
-            // nb is normalized to source pixels
-            val left = (orange.left * bitmap.width).toInt() - 8
-            val top = (orange.top * bitmap.height).toInt() - 8
-            val right = (orange.right * bitmap.width).toInt() + 8
-            val bottom = (orange.bottom * bitmap.height).toInt() + 8
+            val left = (orange.left * bitmap.width).toInt()
+            val top = (orange.top * bitmap.height).toInt()
+            val right = (orange.right * bitmap.width).toInt()
+            val bottom = (orange.bottom * bitmap.height).toInt()
             
             val cropRect = Rect(max(0, left), max(0, top), min(bitmap.width, right), min(bitmap.height, bottom))
             
