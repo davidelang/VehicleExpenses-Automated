@@ -117,7 +117,6 @@ fun LandmarkDebugDialog(
                             )
 
                             if (showDiscovery) {
-                                // 1. RED TIER (Model Suspicion) - 55% SOLID TINT (INC FROM 45%)
                                 rawDiscoveryBoxes.forEach { box ->
                                     drawRect(
                                         color = Color.Red.copy(alpha = 0.55f),
@@ -125,8 +124,6 @@ fun LandmarkDebugDialog(
                                         size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh)
                                     )
                                 }
-
-                                // 2. ORANGE TIER (ROI Expansion) - THICK STROKE
                                 landmarks.forEach { lm ->
                                     lm.refinedDiscoveryBox?.let { box ->
                                         drawRect(
@@ -139,7 +136,6 @@ fun LandmarkDebugDialog(
                                 }
                             }
 
-                            // 3. YELLOW TIER (Final Landmark) - THIN STROKE
                             landmarks.forEach { lm ->
                                 val nx = lm.boundingBox.left.toFloat() / sourceWidth.toFloat()
                                 val ny = lm.boundingBox.top.toFloat() / sourceHeight.toFloat()
@@ -191,12 +187,12 @@ fun LandmarkDebugDialog(
                     ) {
                         items(landmarks) { lm ->
                             Surface(
-                                modifier = Modifier.height(42.dp),
+                                modifier = Modifier.height(36.dp), // SHRUNKEN TO 36PX
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                 shape = MaterialTheme.shapes.extraSmall,
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
-                                Row(modifier = Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(modifier = Modifier.fillMaxSize().padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
                                     val cropBmp = remember(lm.boundingBox, bitmap) {
                                         if (bitmap == null) null else {
                                             try {
@@ -220,7 +216,7 @@ fun LandmarkDebugDialog(
 
                                     Column(modifier = Modifier.weight(1f)) {
                                         if (lm.text.isNotBlank()) {
-                                            Text(text = lm.text, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                            Text(text = lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                                         }
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             lm.rawDiscoveryBox?.let { box ->
@@ -257,8 +253,8 @@ private fun MetricChip(color: Color, w: Float, h: Float) {
     ) {
         Text(
             text = "${w.toInt()}x${h.toInt()}",
-            modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp),
-            style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f))
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp),
+            style = androidx.compose.ui.text.TextStyle(fontSize = 7.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f))
         )
     }
 }
