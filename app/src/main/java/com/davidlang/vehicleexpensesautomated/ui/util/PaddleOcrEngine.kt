@@ -67,7 +67,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
     }
 
     private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
-        val inputSize = 1280
+        val inputSize = 2560 // INCREASED FROM 1280
         val textBlocks = mutableListOf<TextBlock>()
         
         if (detectionInputBuffer == null || lastUsedInputSize != inputSize) {
@@ -86,6 +86,11 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         scaled.recycle()
         
         val inputBuffer = prepareDetectionBuffer(padded, inputSize, floatData)
+        
+        // Dynamically resize interpreter for 2560px
+        detInterpreter?.resizeInput(0, intArrayOf(1, inputSize, inputSize, 3))
+        detInterpreter?.allocateTensors()
+        
         val outputBuffer = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(1) } } }
         detInterpreter?.run(inputBuffer, outputBuffer)
 
