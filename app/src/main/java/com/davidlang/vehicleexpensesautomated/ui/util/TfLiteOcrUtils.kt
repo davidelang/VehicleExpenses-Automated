@@ -184,11 +184,12 @@ object TfLiteOcrUtils {
                             mutableBoxes[i] = DetectedBox(emptyList(), unionBox, angle)
                             mutableBoxes.removeAt(j)
                             changed = true
-                            continue
+                            break // MANDATE: Break inner loop, restart scan from i
                         }
                     }
                     j++
                 }
+                if (changed) break // MANDATE: Break outer loop, restart from while(changed)
                 i++
             }
         }
