@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 26: Proximity-Based Union & Fragment Protection.
+     * Phase 27: Height-Proportional Glue & Coordinate Tracing.
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -76,18 +76,17 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 26 Step 1: Fragment-Protected Splitting
+            // Phase 27: SENSITIVE SPLIT (Allow shattering for proportional glue to re-fix)
             if (aspect > 1.8 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
                     val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitIndex = findStableHighResValley(highResRoi)
+                    val splitIndex = findSimpleGap(highResRoi)
                     highResRoi.release()
                     
-                    // FRAGMENT PROTECTION: splitIndex must leave at least 25px on both sides (Honda "0" fix)
-                    if (splitIndex != -1 && splitIndex > 25 && (roiW - splitIndex) > 25) {
+                    if (splitIndex != -1 && splitIndex > 8 && (roiW - splitIndex) > 8) { // LOWERED TO 8PX
                         val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
                         val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
                         val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
@@ -100,25 +99,23 @@ object TfLiteOcrUtils {
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 26 Step 2: Proximity Glue (Merge boxes within 25px)
+        // Phase 27: Height-Proportional Glue
         val finalRefined = mergeNearbyBoxes(intermediateRefined, sourceW, sourceH)
         
         mask.release(); hierarchy.release(); sourceMat?.release()
         return DbNetResult(rawBoxes, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findStableHighResValley(roi: Mat): Int {
+    private fun findSimpleGap(roi: Mat): Int {
         val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
         val hProjAvg = FloatArray(gray.cols())
         for (x in 0 until gray.cols()) {
             var sum = 0.0; for (y in 0 until gray.rows()) { sum += gray.get(y, x)[0] }
             hProjAvg[x] = (sum / gray.rows()).toFloat()
         }
-        
         val maxPeak = hProjAvg.maxOrNull() ?: 1.0f
         val threshold = maxPeak * 0.40
         val margin = (gray.cols() * 0.10).toInt()
-        
         var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
         for (i in margin until (gray.cols() - margin)) {
             if (hProjAvg[i] < threshold) {
@@ -136,7 +133,6 @@ object TfLiteOcrUtils {
     private fun mergeNearbyBoxes(boxes: List<DetectedBox>, sourceW: Double, sourceH: Double): List<DetectedBox> {
         if (boxes.isEmpty()) return emptyList()
         val mutableBoxes = boxes.toMutableList()
-        val proxX = 25.0 / sourceW // 25px horizontal threshold normalized
         
         var changed = true
         while (changed) {
@@ -148,17 +144,21 @@ object TfLiteOcrUtils {
                     val boxA = mutableBoxes[i].boundingBox
                     val boxB = mutableBoxes[j].boundingBox
                     
-                    // 1. Check Vertical Overlap (Same horizontal line)
+                    // 1. Check Vertical Overlap (Same line)
                     val vOverlap = min(boxA.bottom, boxB.bottom) - max(boxA.top, boxB.top)
-                    val minHeight = min(boxA.bottom - boxA.top, boxB.bottom - boxB.top)
+                    val minH = min(boxA.bottom - boxA.top, boxB.bottom - boxB.top)
                     
-                    if (vOverlap > minHeight * 0.5) {
-                        // 2. Check Horizontal Proximity (Direct intersection OR within 25px gap)
+                    if (vOverlap > minH * 0.5) {
+                        // 2. HEIGHT-PROPORTIONAL GLUE DISTANCE
+                        // Mandate: Large digits can tolerate larger gaps.
+                        // Threshold = 20% of the box height.
+                        val threshold = minH * 0.20
+                        
                         val hGap = if (boxA.right < boxB.left) boxB.left - boxA.right
                                    else if (boxB.right < boxA.left) boxA.left - boxB.right
-                                   else 0f // Touching or overlapping
+                                   else 0f // Touching
                         
-                        if (hGap < proxX) {
+                        if (hGap < threshold) {
                             val unionBox = RectF(
                                 min(boxA.left, boxB.left), min(boxA.top, boxB.top),
                                 max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
@@ -196,6 +196,10 @@ object TfLiteOcrUtils {
         val bounds = if (sourceMat != null) expandInRoi(sourceRect, sourceMat, algorithm, redFloorPixels) else redFloorPixels
         bounds.union(redFloorPixels)
         
+        // MANDATE: LOG COORDINATES FOR TRACING
+        val finalL = bounds.left; val finalT = bounds.top; val finalR = bounds.right; val finalB = bounds.bottom
+        Log.i("OCR_COORD_TRACE", "Box: L=$finalL, T=$finalT, R=$finalR, B=$finalB, H=${finalB-finalT}")
+
         val normRefinedBounds = RectF(
             (bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
             (bounds.right.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.bottom.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
