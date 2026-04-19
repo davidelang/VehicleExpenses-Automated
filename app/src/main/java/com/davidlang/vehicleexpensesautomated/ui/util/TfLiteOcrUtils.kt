@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 32: Height-Proportional Precision Splitting (No Glue).
+     * Phase 33: Pure Overlap Union (No Proximity Glue).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -65,7 +65,7 @@ object TfLiteOcrUtils {
         Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
 
         val rawBoxes = mutableListOf<DetectedBox>()
-        val refinedBoxes = mutableListOf<DetectedBox>()
+        val intermediateRefined = mutableListOf<DetectedBox>()
         val sourceW = sourceBitmap?.width?.toDouble() ?: heatmapW.toDouble()
         val sourceH = sourceBitmap?.height?.toDouble() ?: heatmapH.toDouble()
         val invScale = 1.0 / scale.toDouble()
@@ -76,7 +76,7 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 32: PRECISION SPLIT (Only super-wide blobs, No Glue)
+            // Phase 32: PRECISION SPLIT (Only super-wide blobs)
             if (aspect > 2.2 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
@@ -87,24 +87,25 @@ object TfLiteOcrUtils {
                     highResRoi.release()
                     
                     // FRAGMENT PROTECTION: Ensure neither half is too narrow
-                    val minFragmentWidth = roiH * 0.40 // e.g., a '1' is about 40% as wide as it is tall
+                    val minFragmentWidth = roiH * 0.40 
                     if (splitIndex != -1 && splitIndex > minFragmentWidth && (roiW - splitIndex) > minFragmentWidth) {
                         val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
                         val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
                         val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
-                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
+                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
                         continue
                     }
                 }
             }
-            processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+            processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 32: REMOVED ALL GLUE LOGIC
+        // Phase 33: PURE OVERLAP UNION (Boxes inside boxes / heavy intersection)
+        val finalRefined = mergeOverlappingBoxes(intermediateRefined)
         
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
+        return DbNetResult(rawBoxes, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
     private fun findProportionalGap(roi: Mat): Int {
@@ -113,14 +114,10 @@ object TfLiteOcrUtils {
         val h = gray.rows()
         val w = gray.cols()
         val hillBrightness = Core.mean(gray).`val`[0]
-        val inkThreshold = hillBrightness * 0.40 // Pixel is "ink" if > 40% of average brightness
+        val inkThreshold = hillBrightness * 0.40 
         
-        // A column is "clear" (part of a gap) if its total ink height is < 15% of the ROI height
-        // This makes it immune to thin tic-marks, but catches thick characters.
         val maxInkHeightAllowedInGap = h * 0.15 
-        
-        // A valid word gap must be contiguous and proportional to the text height
-        val requiredGapWidth = (h * 0.20).toInt() // Gap must be at least 20% of text height
+        val requiredGapWidth = (h * 0.20).toInt() 
         
         val margin = (w * 0.10).toInt()
         var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
@@ -143,13 +140,59 @@ object TfLiteOcrUtils {
             }
         }
         
-        // Check final gap at edge of margin
         if (currGap >= requiredGapWidth && currGap > maxGap) {
             bestValleyX = currStart + (currGap / 2)
         }
         
         gray.release()
         return if (bestValleyX != -1) bestValleyX else -1
+    }
+
+    private fun mergeOverlappingBoxes(boxes: List<DetectedBox>): List<DetectedBox> {
+        if (boxes.isEmpty()) return emptyList()
+        val mutableBoxes = boxes.toMutableList()
+        
+        var changed = true
+        while (changed) {
+            changed = false
+            var i = 0
+            while (i < mutableBoxes.size) {
+                var j = i + 1
+                while (j < mutableBoxes.size) {
+                    val boxA = mutableBoxes[i].boundingBox
+                    val boxB = mutableBoxes[j].boundingBox
+                    
+                    // Intersection Area
+                    val interL = max(boxA.left, boxB.left); val interT = max(boxA.top, boxB.top)
+                    val interR = min(boxA.right, boxB.right); val interB = min(boxA.bottom, boxB.bottom)
+                    
+                    if (interR > interL && interB > interT) {
+                        val interArea = (interR - interL) * (interB - interT)
+                        val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top)
+                        val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
+                        
+                        val minArea = min(areaA, areaB)
+                        
+                        // IoM (Intersection over Minimum): Merge if one box is > 40% inside another
+                        if (minArea > 0 && (interArea / minArea) > 0.40f) {
+                            val unionBox = RectF(
+                                min(boxA.left, boxB.left), min(boxA.top, boxB.top),
+                                max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
+                            )
+                            // Keep the angle of the larger box (approximate)
+                            val angle = if (areaA > areaB) mutableBoxes[i].angle else mutableBoxes[j].angle
+                            mutableBoxes[i] = DetectedBox(emptyList(), unionBox, angle)
+                            mutableBoxes.removeAt(j)
+                            changed = true
+                            continue
+                        }
+                    }
+                    j++
+                }
+                i++
+            }
+        }
+        return mutableBoxes
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
