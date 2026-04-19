@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 24: Dual-Tiered High-Res Splitting (Prevent shattering).
+     * Phase 25: Over-Split & Glue (Aggressive discovery + Post-Expansion Union).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -65,7 +65,7 @@ object TfLiteOcrUtils {
         Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
 
         val rawBoxes = mutableListOf<DetectedBox>()
-        val refinedBoxes = mutableListOf<DetectedBox>()
+        val intermediateRefined = mutableListOf<DetectedBox>()
         val sourceW = sourceBitmap?.width?.toDouble() ?: heatmapW.toDouble()
         val sourceH = sourceBitmap?.height?.toDouble() ?: heatmapH.toDouble()
         val invScale = 1.0 / scale.toDouble()
@@ -76,85 +76,101 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 24: Dual-Tier Trigger
-            // Tier 1: Extreme Width (>3.0)
-            // Tier 2: Suspect Width (>2.2) with Vacuum Gap check
-            if (aspect > 2.2 && sourceMat != null) {
+            // Phase 25 Step 1: Aggressive Splitting (Trigger Shattering)
+            if (aspect > 1.8 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
                     val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitIndex = findVacuumGap(highResRoi, aspect)
+                    val splitIndex = findSimpleGap(highResRoi)
                     highResRoi.release()
                     
                     if (splitIndex != -1) {
                         val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
                         val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
                         val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
-                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                        Log.i("OcrSplit", "RESULT: VACUUM SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex")
+                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
+                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
                         continue
                     }
                 }
             }
-            
-            processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+            processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
+        // Phase 25 Step 2: Glue (Union of Overlapping ROIs)
+        val finalRefined = mergeOverlappingBoxes(intermediateRefined, sourceW, sourceH)
+        
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
+        return DbNetResult(rawBoxes, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findVacuumGap(roi: Mat, aspect: Double): Int {
+    private fun findSimpleGap(roi: Mat): Int {
         val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
-        val hProjMax = FloatArray(gray.cols())
         val hProjAvg = FloatArray(gray.cols())
-        
         for (x in 0 until gray.cols()) {
-            var sum = 0.0; var maxVal = 0.0
-            for (y in 0 until gray.rows()) {
-                val v = gray.get(y, x)[0]
-                sum += v
-                if (v > maxVal) maxVal = v
-            }
+            var sum = 0.0; for (y in 0 until gray.rows()) { sum += gray.get(y, x)[0] }
             hProjAvg[x] = (sum / gray.rows()).toFloat()
-            hProjMax[x] = maxVal.toFloat()
         }
         
         val maxPeak = hProjAvg.maxOrNull() ?: 1.0f
-        val valleyThreshold = maxPeak * 0.35 // Avg must drop by 65%
-        val vacuumThreshold = 45.0f // Max brightness in column must be DARK (Vacuum)
+        val threshold = maxPeak * 0.40
+        val margin = (gray.cols() * 0.15).toInt()
         
-        val margin = (gray.cols() * 0.10).toInt()
-        var bestValleyX = -1; var maxGapWidth = 0; var currentGapWidth = 0; var currentGapStart = -1
-
+        var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
         for (i in margin until (gray.cols() - margin)) {
-            // DUAL CONDITION: Average is low AND no bright vertical pixels (Vacuum)
-            if (hProjAvg[i] < valleyThreshold && hProjMax[i] < vacuumThreshold) {
-                if (currentGapStart == -1) currentGapStart = i
-                currentGapWidth++
+            if (hProjAvg[i] < threshold) {
+                if (currStart == -1) currStart = i
+                currGap++
             } else {
-                if (currentGapWidth >= 12 && currentGapWidth > maxGapWidth) {
-                    maxGapWidth = currentGapWidth
-                    bestValleyX = currentGapStart + (currentGapWidth / 2)
-                }
-                currentGapStart = -1; currentGapWidth = 0
+                if (currGap >= 5 && currGap > maxGap) { maxGap = currGap; bestValleyX = currStart + (currGap / 2) }
+                currStart = -1; currGap = 0
             }
         }
-        if (currentGapWidth >= 12 && currentGapWidth > maxGapWidth) {
-            bestValleyX = currentGapStart + (currentGapWidth / 2)
-        }
-        
         gray.release()
-        
-        // Final Trigger Logic:
-        // 1. If aspect > 3.0, accept 12px gap
-        // 2. If aspect > 2.2, accept only if gap is wider or very dark (vacuum)
-        return if (bestValleyX != -1) {
-            if (aspect > 3.0 || maxGapWidth > 20) bestValleyX else -1
-        } else -1
+        return if (bestValleyX != -1) bestValleyX else -1
+    }
+
+    private fun mergeOverlappingBoxes(boxes: List<DetectedBox>, sw: Double, sh: Double): List<DetectedBox> {
+        if (boxes.isEmpty()) return emptyList()
+        val mutableBoxes = boxes.toMutableList()
+        var changed = true
+        while (changed) {
+            changed = false
+            var i = 0
+            while (i < mutableBoxes.size) {
+                var j = i + 1
+                while (j < mutableBoxes.size) {
+                    val boxA = mutableBoxes[i].boundingBox
+                    val boxB = mutableBoxes[j].boundingBox
+                    
+                    // Intersection Over Area check
+                    val interL = max(boxA.left, boxB.left); val interT = max(boxA.top, boxB.top)
+                    val interR = min(boxA.right, boxB.right); val interB = min(boxA.bottom, boxB.bottom)
+                    
+                    if (interR > interL && interB > interT) {
+                        val interArea = (interR - interL) * (interB - interT)
+                        val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top)
+                        val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
+                        
+                        // Merge if overlap is > 30% of either box (High-Res "Glue")
+                        if (interArea > areaA * 0.3 || interArea > areaB * 0.3) {
+                            val unionBox = RectF(
+                                min(boxA.left, boxB.left), min(boxA.top, boxB.top),
+                                max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
+                            )
+                            mutableBoxes[i] = DetectedBox(emptyList(), unionBox, 0f)
+                            mutableBoxes.removeAt(j)
+                            changed = true; continue
+                        }
+                    }
+                    j++
+                }
+                i++
+            }
+        }
+        return mutableBoxes
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
@@ -222,7 +238,7 @@ object TfLiteOcrUtils {
         while (minY > 0 && (sY - minY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
         while (minX > 0 && (sX - minX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
         
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
