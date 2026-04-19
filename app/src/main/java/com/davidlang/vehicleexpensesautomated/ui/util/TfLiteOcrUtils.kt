@@ -74,11 +74,11 @@ object TfLiteOcrUtils {
             if (Imgproc.contourArea(contour) < 10) continue 
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
             
-            // SECOND PASS: Valley Detection for Wide Blobs (Honda "120 140" fix)
+            // AGGRESSIVE SECOND PASS: Valley Detection for Wide Blobs
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            if (aspect > 2.5) {
+            if (aspect > 1.8) { // LOWERED FROM 2.5
                 val splitIndex = findHeatmapValley(heatmap, heatmapW, rectBounds)
                 if (splitIndex != -1) {
                     val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitIndex - rectBounds.x, rectBounds.height)
@@ -107,7 +107,7 @@ object TfLiteOcrUtils {
             hProj[x - xStart] = sum / bounds.height
         }
         
-        val margin = (bounds.width * 0.2).toInt()
+        val margin = (bounds.width * 0.05).toInt() // LOWERED FROM 20%
         var bestValleyX = -1; var minIntensity = 100.0f
         
         for (i in margin until (bounds.width - margin)) {
@@ -118,7 +118,12 @@ object TfLiteOcrUtils {
         }
         
         val maxIntensity = hProj.maxOrNull() ?: 1.0f
-        return if (minIntensity < maxIntensity * 0.45) bestValleyX else -1
+        val splitRatio = minIntensity / maxIntensity
+        
+        Log.i("OcrSplit", "Wide Blob [${bounds.width}x${bounds.height}]: Peak=$maxIntensity, Min=$minIntensity, Ratio=$splitRatio")
+        
+        // AGGRESSIVE: Split if there is ANY significant dip (85% ratio)
+        return if (splitRatio < 0.85) bestValleyX else -1
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
@@ -190,7 +195,7 @@ object TfLiteOcrUtils {
         while (minY > 0 && (sY - minY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
         while (minX > 0 && (sX - minX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
         
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
