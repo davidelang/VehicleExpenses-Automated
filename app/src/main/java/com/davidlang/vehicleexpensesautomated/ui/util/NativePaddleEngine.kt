@@ -96,18 +96,15 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         val sb = StringBuilder()
         val detectionRes = runDetection(bitmap)
         
-        // LINK THE TIERS: Capture every suspicion, including those without text
         for (i in detectionRes.rawBoxes.indices) {
             val rawBox = detectionRes.rawBoxes[i]
             val refinedBox = detectionRes.refinedBoxes.getOrNull(i)
             val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
             
-            // YELLOW: Final crop with +8px padding in source space
             val left = (orange.left * bitmap.width).toInt() - 8
             val top = (orange.top * bitmap.height).toInt() - 8
             val right = (orange.right * bitmap.width).toInt() + 8
             val bottom = (orange.bottom * bitmap.height).toInt() + 8
-            
             val cropRect = Rect(max(0, left), max(0, top), min(bitmap.width, right), min(bitmap.height, bottom))
 
             if (cropRect.width() < 1 || cropRect.height() < 1) {
@@ -133,6 +130,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         return OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
+            discoveryTimeMs = detectionRes.discoveryTimeMs,
             debugText = sb.toString().trim(),
             rawDiscoveryBoxes = detectionRes.rawBoxes.map { it.boundingBox },
             textBlocks = textBlocks,
@@ -142,10 +140,10 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         )
     }
 
-    private data class DetectionResult(val rawBoxes: List<DetectedBox>, val refinedBoxes: List<DetectedBox>, val scale: Float)
+    private data class DetectionResult(val rawBoxes: List<DetectedBox>, val refinedBoxes: List<DetectedBox>, val scale: Float, val discoveryTimeMs: Long)
 
     private fun runDetection(bitmap: Bitmap): DetectionResult {
-        val predictor = sharedDetector ?: return DetectionResult(emptyList(), emptyList(), 1f)
+        val predictor = sharedDetector ?: return DetectionResult(emptyList(), emptyList(), 1f, 0)
         val inputSize = 1280 
         val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
         if (detectionInputBuffer == null || lastUsedInputSize != inputSize) { detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize); lastUsedInputSize = inputSize }
@@ -173,8 +171,8 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
             val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap, algorithm = "C")
             padded.recycle()
-            return DetectionResult(dbRes.rawBoxes, dbRes.refinedBoxes, scale)
-        } catch (t: Throwable) { padded.recycle(); return DetectionResult(emptyList(), emptyList(), 1f) }
+            return DetectionResult(dbRes.rawBoxes, dbRes.refinedBoxes, scale, dbRes.discoveryTimeMs)
+        } catch (t: Throwable) { padded.recycle(); return DetectionResult(emptyList(), emptyList(), 1f, 0) }
     }
 
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
@@ -182,17 +180,13 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         val targetWidth = 640
         val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
         val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
-        
-        // ASPECT-CORRECT PADDING: Avoid horizontal stretching
         val scale = targetHeight.toFloat() / bitmap.height.toFloat()
         val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
         val sh = targetHeight
-        
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
         val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded); canvas.drawColor(Color.BLACK); canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
-        
         for (y in 0 until targetHeight) {
             for (x in 0 until targetWidth) {
                 val px = padded.getPixel(x, y)
@@ -202,7 +196,6 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             }
         }
         padded.recycle()
-        
         try {
             inputTensor.setData(floatData); predictor.run()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val data = outputTensor.floatData
@@ -217,7 +210,6 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
     }
 
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
-
     private fun cropBitmap(bmp: Bitmap, rect: Rect): Bitmap {
         val left = max(0, rect.left); val top = max(0, rect.top); val width = min(rect.width(), bmp.width - left); val height = min(rect.height(), bmp.height - top)
         return Bitmap.createBitmap(bmp, left, top, width, height)
