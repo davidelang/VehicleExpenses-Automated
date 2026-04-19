@@ -152,6 +152,8 @@ fun AddNewVehicleScreen(
             engineName = lastOcrDebugResult?.engineName ?: "Unknown",
             sourceWidth = lastOcrDebugResult?.imageWidth ?: 1,
             sourceHeight = lastOcrDebugResult?.imageHeight ?: 1,
+            discoveryTimeMs = lastOcrDebugResult?.discoveryTimeMs ?: 0,
+            totalTimeMs = lastOcrDebugResult?.executionTimeMs ?: 0,
             onDismiss = { showLandmarkCheck = false }
         )
     }

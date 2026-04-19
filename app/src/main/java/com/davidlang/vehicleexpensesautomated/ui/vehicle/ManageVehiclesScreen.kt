@@ -281,6 +281,8 @@ fun ManageVehiclesScreen(
                 engineName = res.engineName,
                 sourceWidth = res.imageWidth,
                 sourceHeight = res.imageHeight,
+                discoveryTimeMs = res.discoveryTimeMs,
+                totalTimeMs = res.executionTimeMs,
                 onDismiss = { showLandmarkCheck = false }
             )
         }
