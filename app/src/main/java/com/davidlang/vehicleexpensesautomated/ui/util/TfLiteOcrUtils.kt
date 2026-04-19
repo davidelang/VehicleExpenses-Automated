@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 33: Pure Overlap Union (No Proximity Glue).
+     * Phase 36: Split Retraction (Shrinking Red Boxes to Ink).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -62,7 +62,7 @@ object TfLiteOcrUtils {
         } else null
 
         val contours = mutableListOf<MatOfPoint>(); val hierarchy = Mat()
-        Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE) // MANDATE: RETR_EXTERNAL ignores holes
+        Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
 
         val rawBoxes = mutableListOf<DetectedBox>()
         val intermediateRefined = mutableListOf<DetectedBox>()
@@ -76,39 +76,53 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 32: PRECISION SPLIT (Only super-wide blobs)
             if (aspect > 2.2 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
                     val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitIndex = findProportionalGap(highResRoi)
+                    val splitResult = findProportionalGapAndRetract(highResRoi)
                     highResRoi.release()
                     
-                    // FRAGMENT PROTECTION: Ensure neither half is too narrow
-                    val minFragmentWidth = roiH * 0.40 
-                    if (splitIndex != -1 && splitIndex > minFragmentWidth && (roiW - splitIndex) > minFragmentWidth) {
-                        val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
-                        val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
-                        val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
-                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
-                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
-                        continue
+                    if (splitResult != null) {
+                        val (gapCenter, leftRetract, rightRetract) = splitResult
+                        
+                        // Map the High-Res retractions back to the Heatmap coordinate space
+                        val splitHeatmapX = (gapCenter.toDouble() * scale).toInt()
+                        val leftRetractHeatmapX = (leftRetract.toDouble() * scale).toInt()
+                        val rightRetractHeatmapX = (rightRetract.toDouble() * scale).toInt()
+                        
+                        // Ensure minimum fragment width (40% of height) to prevent shattering '0's
+                        val minFragmentWidth = rectBounds.height * 0.40 
+                        if (leftRetractHeatmapX > minFragmentWidth && (rectBounds.width - rightRetractHeatmapX) > minFragmentWidth) {
+                            
+                            // Left Box: Starts at 0, ends at leftRetract (shrunken from gapCenter)
+                            val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, leftRetractHeatmapX, rectBounds.height)
+                            // Right Box: Starts at rightRetract, ends at width
+                            val rightRect = org.opencv.core.Rect(rectBounds.x + rightRetractHeatmapX, rectBounds.y, rectBounds.width - rightRetractHeatmapX, rectBounds.height)
+                            
+                            processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
+                            processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
+                            Log.i("OcrSplit", "RETRACT SPLIT: Center=$splitHeatmapX, LeftEdge=$leftRetractHeatmapX, RightEdge=$rightRetractHeatmapX")
+                            continue
+                        }
                     }
                 }
             }
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 35: SYNCHRONIZED OVERLAP UNION
+        // Phase 35: ONLY OVERLAP UNION (No Proximity Glue)
         val (finalRaw, finalRefined) = mergeOverlappingBoxesSync(rawBoxes, intermediateRefined)
         
         mask.release(); hierarchy.release(); sourceMat?.release()
         return DbNetResult(finalRaw, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findProportionalGap(roi: Mat): Int {
+    private data class SplitRetraction(val center: Int, val leftEdge: Int, val rightEdge: Int)
+
+    private fun findProportionalGapAndRetract(roi: Mat): SplitRetraction? {
         val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
         
         val h = gray.rows()
@@ -122,13 +136,17 @@ object TfLiteOcrUtils {
         val margin = (w * 0.10).toInt()
         var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
         
-        for (x in margin until (w - margin)) {
+        val inkCounts = IntArray(w)
+        for (x in 0 until w) {
             var inkCount = 0
             for (y in 0 until h) {
                 if (gray.get(y, x)[0] > inkThreshold) inkCount++
             }
-            
-            if (inkCount < maxInkHeightAllowedInGap) {
+            inkCounts[x] = inkCount
+        }
+
+        for (x in margin until (w - margin)) {
+            if (inkCounts[x] < maxInkHeightAllowedInGap) {
                 if (currStart == -1) currStart = x
                 currGap++
             } else {
@@ -144,8 +162,30 @@ object TfLiteOcrUtils {
             bestValleyX = currStart + (currGap / 2)
         }
         
+        if (bestValleyX == -1) {
+            gray.release()
+            return null
+        }
+
+        // RETRACTION PHASE:
+        // We found a gap center. Now walk LEFT until we hit solid ink (the left word).
+        var leftEdge = bestValleyX
+        while (leftEdge > 0 && inkCounts[leftEdge] < (h * 0.25)) { // 25% ink defines the start of a character
+            leftEdge--
+        }
+        // Add a 3px padding so the Red Box doesn't clip the ink perfectly
+        leftEdge = min(bestValleyX, leftEdge + 3)
+
+        // Walk RIGHT until we hit solid ink (the right word).
+        var rightEdge = bestValleyX
+        while (rightEdge < w - 1 && inkCounts[rightEdge] < (h * 0.25)) {
+            rightEdge++
+        }
+        // Add a 3px padding
+        rightEdge = max(bestValleyX, rightEdge - 3)
+
         gray.release()
-        return if (bestValleyX != -1) bestValleyX else -1
+        return SplitRetraction(bestValleyX, leftEdge, rightEdge)
     }
 
     private fun mergeOverlappingBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>): Pair<List<DetectedBox>, List<DetectedBox>> {
@@ -164,7 +204,6 @@ object TfLiteOcrUtils {
                     val boxA = mutableRefined[i].boundingBox
                     val boxB = mutableRefined[j].boundingBox
                     
-                    // Intersection Area
                     val interL = max(boxA.left, boxB.left); val interT = max(boxA.top, boxB.top)
                     val interR = min(boxA.right, boxB.right); val interB = min(boxA.bottom, boxB.bottom)
                     
@@ -175,7 +214,6 @@ object TfLiteOcrUtils {
                         
                         val minArea = min(areaA, areaB)
                         
-                        // IoM (Intersection over Minimum): Merge if one box is > 40% inside another
                         if (minArea > 0 && (interArea / minArea) > 0.40f) {
                             val unionRefined = RectF(
                                 min(boxA.left, boxB.left), min(boxA.top, boxB.top),
