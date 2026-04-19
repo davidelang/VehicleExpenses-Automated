@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 27: Height-Proportional Glue & Coordinate Tracing.
+     * Phase 28: Height-Adaptive Gap Veto (Separating multi-scale text).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -76,7 +76,7 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 27: SENSITIVE SPLIT (Allow shattering for proportional glue to re-fix)
+            // AGGRESSIVE SPLIT Trigger
             if (aspect > 1.8 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
@@ -86,7 +86,7 @@ object TfLiteOcrUtils {
                     val splitIndex = findSimpleGap(highResRoi)
                     highResRoi.release()
                     
-                    if (splitIndex != -1 && splitIndex > 8 && (roiW - splitIndex) > 8) { // LOWERED TO 8PX
+                    if (splitIndex != -1 && splitIndex > 8 && (roiW - splitIndex) > 8) {
                         val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
                         val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
                         val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
@@ -99,8 +99,8 @@ object TfLiteOcrUtils {
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 27: Height-Proportional Glue
-        val finalRefined = mergeNearbyBoxes(intermediateRefined, sourceW, sourceH)
+        // HEIGHT-ADAPTIVE GLUE
+        val finalRefined = mergeWithHeightAdaptiveVeto(intermediateRefined, sourceMat)
         
         mask.release(); hierarchy.release(); sourceMat?.release()
         return DbNetResult(rawBoxes, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
@@ -130,9 +130,11 @@ object TfLiteOcrUtils {
         return if (bestValleyX != -1) bestValleyX else -1
     }
 
-    private fun mergeNearbyBoxes(boxes: List<DetectedBox>, sourceW: Double, sourceH: Double): List<DetectedBox> {
+    private fun mergeWithHeightAdaptiveVeto(boxes: List<DetectedBox>, sourceMat: Mat?): List<DetectedBox> {
         if (boxes.isEmpty()) return emptyList()
         val mutableBoxes = boxes.toMutableList()
+        val sourceW = sourceMat?.cols()?.toDouble() ?: 1.0
+        val sourceH = sourceMat?.rows()?.toDouble() ?: 1.0
         
         var changed = true
         while (changed) {
@@ -144,28 +146,37 @@ object TfLiteOcrUtils {
                     val boxA = mutableBoxes[i].boundingBox
                     val boxB = mutableBoxes[j].boundingBox
                     
-                    // 1. Check Vertical Overlap (Same line)
+                    // Same line check
                     val vOverlap = min(boxA.bottom, boxB.bottom) - max(boxA.top, boxB.top)
-                    val minH = min(boxA.bottom - boxA.top, boxB.bottom - boxB.top)
+                    val hA = boxA.bottom - boxA.top; val hB = boxB.bottom - boxB.top
+                    val minH = min(hA, hB)
                     
                     if (vOverlap > minH * 0.5) {
-                        // 2. HEIGHT-PROPORTIONAL GLUE DISTANCE
-                        // Mandate: Large digits can tolerate larger gaps.
-                        // Threshold = 20% of the box height.
-                        val threshold = minH * 0.20
+                        // 1. DISTANCE RATIO: Merge if gap < 35% of height (bridging digits)
+                        val hGapNorm = if (boxA.right < boxB.left) boxB.left - boxA.right
+                                       else if (boxB.right < boxA.left) boxA.left - boxB.right
+                                       else 0f
                         
-                        val hGap = if (boxA.right < boxB.left) boxB.left - boxA.right
-                                   else if (boxB.right < boxA.left) boxA.left - boxB.right
-                                   else 0f // Touching
+                        val hGapPixels = hGapNorm * sourceW
+                        val minHeightPixels = minH * sourceH
                         
-                        if (hGap < threshold) {
-                            val unionBox = RectF(
-                                min(boxA.left, boxB.left), min(boxA.top, boxB.top),
-                                max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
-                            )
-                            mutableBoxes[i] = DetectedBox(emptyList(), unionBox, 0f)
-                            mutableBoxes.removeAt(j)
-                            changed = true; continue
+                        if (hGapPixels < (minHeightPixels * 0.35)) {
+                            // 2. VACUUM VETO: Check if gap contains a Word Boundary
+                            // A word boundary is a column of dark pixels > 15% of box height
+                            var vetoMerge = false
+                            if (hGapPixels > (minHeightPixels * 0.12) && sourceMat != null) {
+                                vetoMerge = checkForSacredGap(boxA, boxB, sourceMat, minHeightPixels)
+                            }
+
+                            if (!vetoMerge) {
+                                val unionBox = RectF(
+                                    min(boxA.left, boxB.left), min(boxA.top, boxB.top),
+                                    max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
+                                )
+                                mutableBoxes[i] = DetectedBox(emptyList(), unionBox, 0f)
+                                mutableBoxes.removeAt(j)
+                                changed = true; continue
+                            }
                         }
                     }
                     j++
@@ -174,6 +185,34 @@ object TfLiteOcrUtils {
             }
         }
         return mutableBoxes
+    }
+
+    private fun checkForSacredGap(boxA: RectF, boxB: RectF, sourceMat: Mat, height: Double): Boolean {
+        val sourceW = sourceMat.cols().toDouble(); val sourceH = sourceMat.rows().toDouble()
+        val l = (min(boxA.right, boxB.right) * sourceW).toInt()
+        val r = (max(boxA.left, boxB.left) * sourceW).toInt()
+        val t = (max(boxA.top, boxB.top) * sourceH).toInt()
+        val b = (min(boxA.bottom, boxB.bottom) * sourceH).toInt()
+        
+        if (r <= l || b <= t) return false
+        
+        val gapMat = sourceMat.submat(t, b, l, r)
+        val gray = Mat(); if (gapMat.channels() > 1) Imgproc.cvtColor(gapMat, gray, Imgproc.COLOR_RGBA2GRAY) else gapMat.copyTo(gray)
+        
+        var maxDarkContig = 0; var currDarkContig = 0
+        for (x in 0 until gray.cols()) {
+            var isColDark = true
+            for (y in 0 until gray.rows()) {
+                if (gray.get(y, x)[0] > 60) { isColDark = false; break }
+            }
+            if (isColDark) { currDarkContig++ } 
+            else { maxDarkContig = max(maxDarkContig, currDarkContig); currDarkContig = 0 }
+        }
+        maxDarkContig = max(maxDarkContig, currDarkContig)
+        
+        gray.release(); gapMat.release()
+        // SACRED: A gap is a word boundary if it is dark and > 12% of text height
+        return maxDarkContig > (height * 0.12)
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
@@ -196,7 +235,6 @@ object TfLiteOcrUtils {
         val bounds = if (sourceMat != null) expandInRoi(sourceRect, sourceMat, algorithm, redFloorPixels) else redFloorPixels
         bounds.union(redFloorPixels)
         
-        // MANDATE: LOG COORDINATES FOR TRACING
         val finalL = bounds.left; val finalT = bounds.top; val finalR = bounds.right; val finalB = bounds.bottom
         Log.i("OCR_COORD_TRACE", "Box: L=$finalL, T=$finalT, R=$finalR, B=$finalB, H=${finalB-finalT}")
 
@@ -246,7 +284,7 @@ object TfLiteOcrUtils {
         while (minY > 0 && (sY - minY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
         while (minX > 0 && (sX - minX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
 
