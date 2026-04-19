@@ -181,71 +181,11 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
             val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap, algorithm = "C", recursive = false)
 
-            val rawBoxes = dbRes.rawBoxes.toMutableList()
-            val refinedBoxes = dbRes.refinedBoxes.toMutableList()
-
-            // Phase 43: Multi-Scale Sub-Windowing
-            for (cropRectF in dbRes.suspectCrops) {
-                val cropLeft = (cropRectF.left * bitmap.width).toInt()
-                val cropTop = (cropRectF.top * bitmap.height).toInt()
-                val cropWidth = ((cropRectF.right - cropRectF.left) * bitmap.width).toInt()
-                val cropHeight = ((cropRectF.bottom - cropRectF.top) * bitmap.height).toInt()
-
-                if (cropWidth > 0 && cropHeight > 0) {
-                    val subBitmap = cropBitmap(bitmap, android.graphics.Rect(cropLeft, cropTop, cropLeft + cropWidth, cropTop + cropHeight))
-
-                    val subScale = min(inputSize.toFloat() / subBitmap.width, inputSize.toFloat() / subBitmap.height)
-                    val subSw = (subBitmap.width * subScale).toInt(); val subSh = (subBitmap.height * subScale).toInt()
-                    val subScaled = Bitmap.createScaledBitmap(subBitmap, subSw, subSh, true)
-                    val subPadded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-                    val subCanvas = Canvas(subPadded); subCanvas.drawColor(Color.BLACK); subCanvas.drawBitmap(subScaled, 0f, 0f, null)
-                    subScaled.recycle()
-
-                    for (y in 0 until inputSize) {
-                        for (x in 0 until inputSize) {
-                            val px = subPadded.getPixel(x, y)
-                            floatData[0 * inputSize * inputSize + y * inputSize + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
-                            floatData[1 * inputSize * inputSize + y * inputSize + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
-                            floatData[2 * inputSize * inputSize + y * inputSize + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
-                        }
-                    }
-                    inputTensor.setData(floatData); predictor.run()
-                    val subOutputTensor = predictor.getOutput(0); val subOutputData = subOutputTensor.floatData
-
-                    val subDbRes = TfLiteOcrUtils.processDbNetOutput(subOutputData, outW, outH, scale = subScale, sourceBitmap = subBitmap, algorithm = "C", recursive = true)
-                    subBitmap.recycle(); subPadded.recycle()
-
-                    // Map sub-boxes back to global coordinates
-                    val cw = cropRectF.right - cropRectF.left
-                    val ch = cropRectF.bottom - cropRectF.top
-                    for (i in subDbRes.rawBoxes.indices) {
-                        val subRaw = subDbRes.rawBoxes[i].boundingBox
-                        val globalRaw = RectF(
-                            cropRectF.left + (subRaw.left * cw),
-                            cropRectF.top + (subRaw.top * ch),
-                            cropRectF.left + (subRaw.right * cw),
-                            cropRectF.top + (subRaw.bottom * ch)
-                        )
-                        rawBoxes.add(DetectedBox(emptyList(), globalRaw, subDbRes.rawBoxes[i].angle))
-
-                        val subRefined = subDbRes.refinedBoxes.getOrNull(i)?.boundingBox
-                        if (subRefined != null) {
-                            val globalRefined = RectF(
-                                cropRectF.left + (subRefined.left * cw),
-                                cropRectF.top + (subRefined.top * ch),
-                                cropRectF.left + (subRefined.right * cw),
-                                cropRectF.top + (subRefined.bottom * ch)
-                            )
-                            refinedBoxes.add(DetectedBox(emptyList(), globalRefined, subDbRes.refinedBoxes[i].angle))
-                        }
-                    }
-                }
-            }
-
             padded.recycle()
-            return DetectionResult(rawBoxes, refinedBoxes, scale, dbRes.discoveryTimeMs)
+            return DetectionResult(dbRes.rawBoxes, dbRes.refinedBoxes, scale, dbRes.discoveryTimeMs)
         } catch (t: Throwable) { padded.recycle(); return DetectionResult(emptyList(), emptyList(), 1f, 0) }
     }
+
     private fun runRecognitionStage(bitmap: Bitmap, targetHeight: Int): RecStageResult {
         val tStart = System.currentTimeMillis(); val predictor = sharedRecognizer ?: return RecStageResult("", 0, 0f)
         val targetWidth = 640
