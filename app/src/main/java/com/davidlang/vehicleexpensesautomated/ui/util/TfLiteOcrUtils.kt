@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 22: Stable Resolution with High-Res ROI Gap Detection.
+     * Phase 23: Intelligent Split Filtering (Prevent shattering).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -76,26 +76,27 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 22: Split using High-Res Source if Wide
+            // Phase 23: Balanced Split Trigger (Word gaps vs Character gaps)
             if (aspect > 2.2 && sourceMat != null) {
-                // Map low-res heatmap bounds to high-res source space
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
                     val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitIndex = findHighResValley(highResRoi)
+                    val splitIndex = findStableHighResValley(highResRoi)
                     highResRoi.release()
                     
                     if (splitIndex != -1) {
-                        // Split coordinates are relative to the heatmap's rectBounds
-                        val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
-                        val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
-                        val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
-                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                        Log.i("OcrSplit", "RESULT: HIGH-RES SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex (source pixels)")
-                        continue
+                        // SANITY CHECK: Ensure resulting sub-blobs are not too narrow (character fragments)
+                        if (splitIndex > 10 && (roiW - splitIndex) > 10) {
+                            val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
+                            val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
+                            val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
+                            processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                            processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                            Log.i("OcrSplit", "RESULT: BALANCED SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex")
+                            continue
+                        }
                     }
                 }
             }
@@ -107,10 +108,9 @@ object TfLiteOcrUtils {
         return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findHighResValley(roi: Mat): Int {
+    private fun findStableHighResValley(roi: Mat): Int {
         val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
         val hProj = FloatArray(gray.cols())
-        
         for (x in 0 until gray.cols()) {
             var sum = 0.0
             for (y in 0 until gray.rows()) { sum += gray.get(y, x)[0] }
@@ -118,10 +118,10 @@ object TfLiteOcrUtils {
         }
         
         val maxBrightness = hProj.maxOrNull() ?: 1.0f
-        val valleyThreshold = maxBrightness * 0.45 // Stop at 55% drop
+        val valleyThreshold = maxBrightness * 0.45 
         val margin = (gray.cols() * 0.15).toInt()
         
-        var bestValleyX = -1; var minIntensity = 256.0f
+        var bestValleyX = -1
         var maxGapWidth = 0; var currentGapWidth = 0; var currentGapStart = -1
 
         for (i in margin until (gray.cols() - margin)) {
@@ -129,12 +129,15 @@ object TfLiteOcrUtils {
                 if (currentGapStart == -1) currentGapStart = i
                 currentGapWidth++
             } else {
-                if (currentGapWidth >= 5 && currentGapWidth > maxGapWidth) { // 5px gap in High Res
+                if (currentGapWidth >= 15 && currentGapWidth > maxGapWidth) { // INCREASED FROM 5PX TO 15PX
                     maxGapWidth = currentGapWidth
                     bestValleyX = currentGapStart + (currentGapWidth / 2)
                 }
                 currentGapStart = -1; currentGapWidth = 0
             }
+        }
+        if (currentGapWidth >= 15 && currentGapWidth > maxGapWidth) {
+            bestValleyX = currentGapStart + (currentGapWidth / 2)
         }
         
         gray.release()
