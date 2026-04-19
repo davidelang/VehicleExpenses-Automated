@@ -198,10 +198,13 @@ object TfLiteOcrUtils {
         val valleyThreshold = hillBrightness * 0.40 
         val maxH = gray.rows(); val maxW = gray.cols()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+        
+        val requiredBridgeHeight = (maxY - minY) * 0.15
+
         while (minY > 0 && (sY - minY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
-        while (minX > 0 && (sX - minX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+        while (minX > 0 && (sX - minX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; minX -= 1.0 }
+        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; maxX += 1.0 }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
 
@@ -215,18 +218,32 @@ object TfLiteOcrUtils {
         for (i in start until end) { if (i < 0 || i >= maxD) continue; sum += if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]; count++ }
         return if (count > 0) sum / count else 0.0
     }
+    
+    private fun getLineInkCount(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean, threshold: Double): Int {
+        var inkPixels = 0; val maxD = if (horizontal) mat.cols() else mat.rows()
+        if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0
+        for (i in start until end) { 
+            if (i < 0 || i >= maxD) continue
+            val v = if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]
+            if (v > threshold) inkPixels++ 
+        }
+        return inkPixels
+    }
 
     private fun expandPerimeter(redFloor: android.graphics.Rect, mask: Mat, maxH: Int, maxW: Int): android.graphics.Rect {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+        
+        val requiredBridgeHeight = (maxY - minY) * 0.15
+        
         var changed = true
         while (changed) {
             changed = false
             if (minY > 0 && (sY - minY) < vL && checkLine(mask, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) { minY -= 1.0; changed = true }
             if (maxY < maxH - 1 && (maxY - sYY) < vL && checkLine(mask, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) { maxY += 1.0; changed = true }
-            if (minX > 0 && (sX - minX) < hL && checkLine(mask, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false)) { minX -= 1.0; changed = true }
-            if (maxX < maxW - 1 && (maxX - sXX) < hL && checkLine(mask, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false)) { maxX += 1.0; changed = true }
+            if (minX > 0 && (sX - minX) < hL && getLineInkCount(mask, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, 0.0) >= requiredBridgeHeight) { minX -= 1.0; changed = true }
+            if (maxX < maxW - 1 && (maxX - sXX) < hL && getLineInkCount(mask, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, 0.0) >= requiredBridgeHeight) { maxX += 1.0; changed = true }
         }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
