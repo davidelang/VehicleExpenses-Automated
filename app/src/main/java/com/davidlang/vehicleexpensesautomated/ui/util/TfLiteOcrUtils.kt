@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 25: Over-Split & Glue (Aggressive discovery + Post-Expansion Union).
+     * Phase 26: Proximity-Based Union & Fragment Protection.
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -76,17 +76,18 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 25 Step 1: Aggressive Splitting (Trigger Shattering)
+            // Phase 26 Step 1: Fragment-Protected Splitting
             if (aspect > 1.8 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
                     val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitIndex = findSimpleGap(highResRoi)
+                    val splitIndex = findStableHighResValley(highResRoi)
                     highResRoi.release()
                     
-                    if (splitIndex != -1) {
+                    // FRAGMENT PROTECTION: splitIndex must leave at least 25px on both sides (Honda "0" fix)
+                    if (splitIndex != -1 && splitIndex > 25 && (roiW - splitIndex) > 25) {
                         val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
                         val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
                         val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
@@ -99,14 +100,14 @@ object TfLiteOcrUtils {
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 25 Step 2: Glue (Union of Overlapping ROIs)
-        val finalRefined = mergeOverlappingBoxes(intermediateRefined, sourceW, sourceH)
+        // Phase 26 Step 2: Proximity Glue (Merge boxes within 25px)
+        val finalRefined = mergeNearbyBoxes(intermediateRefined, sourceW, sourceH)
         
         mask.release(); hierarchy.release(); sourceMat?.release()
         return DbNetResult(rawBoxes, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findSimpleGap(roi: Mat): Int {
+    private fun findStableHighResValley(roi: Mat): Int {
         val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
         val hProjAvg = FloatArray(gray.cols())
         for (x in 0 until gray.cols()) {
@@ -116,7 +117,7 @@ object TfLiteOcrUtils {
         
         val maxPeak = hProjAvg.maxOrNull() ?: 1.0f
         val threshold = maxPeak * 0.40
-        val margin = (gray.cols() * 0.15).toInt()
+        val margin = (gray.cols() * 0.10).toInt()
         
         var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
         for (i in margin until (gray.cols() - margin)) {
@@ -132,9 +133,11 @@ object TfLiteOcrUtils {
         return if (bestValleyX != -1) bestValleyX else -1
     }
 
-    private fun mergeOverlappingBoxes(boxes: List<DetectedBox>, sw: Double, sh: Double): List<DetectedBox> {
+    private fun mergeNearbyBoxes(boxes: List<DetectedBox>, sourceW: Double, sourceH: Double): List<DetectedBox> {
         if (boxes.isEmpty()) return emptyList()
         val mutableBoxes = boxes.toMutableList()
+        val proxX = 25.0 / sourceW // 25px horizontal threshold normalized
+        
         var changed = true
         while (changed) {
             changed = false
@@ -145,17 +148,17 @@ object TfLiteOcrUtils {
                     val boxA = mutableBoxes[i].boundingBox
                     val boxB = mutableBoxes[j].boundingBox
                     
-                    // Intersection Over Area check
-                    val interL = max(boxA.left, boxB.left); val interT = max(boxA.top, boxB.top)
-                    val interR = min(boxA.right, boxB.right); val interB = min(boxA.bottom, boxB.bottom)
+                    // 1. Check Vertical Overlap (Same horizontal line)
+                    val vOverlap = min(boxA.bottom, boxB.bottom) - max(boxA.top, boxB.top)
+                    val minHeight = min(boxA.bottom - boxA.top, boxB.bottom - boxB.top)
                     
-                    if (interR > interL && interB > interT) {
-                        val interArea = (interR - interL) * (interB - interT)
-                        val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top)
-                        val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
+                    if (vOverlap > minHeight * 0.5) {
+                        // 2. Check Horizontal Proximity (Direct intersection OR within 25px gap)
+                        val hGap = if (boxA.right < boxB.left) boxB.left - boxA.right
+                                   else if (boxB.right < boxA.left) boxA.left - boxB.right
+                                   else 0f // Touching or overlapping
                         
-                        // Merge if overlap is > 30% of either box (High-Res "Glue")
-                        if (interArea > areaA * 0.3 || interArea > areaB * 0.3) {
+                        if (hGap < proxX) {
                             val unionBox = RectF(
                                 min(boxA.left, boxB.left), min(boxA.top, boxB.top),
                                 max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
@@ -230,16 +233,16 @@ object TfLiteOcrUtils {
     private fun expandByValleyStop(redFloor: android.graphics.Rect, gray: Mat): android.graphics.Rect {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-        val hillBrightness = Core.mean(gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)).`val`[0]
+        val hillSub = gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)
+        val hillBrightness = Core.mean(hillSub).`val`[0]
+        hillSub.release()
         val valleyThreshold = hillBrightness * 0.40 
         val maxH = gray.rows(); val maxW = gray.cols()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-
         while (minY > 0 && (sY - minY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
         while (minX > 0 && (sX - minX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
-        
+        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
 
