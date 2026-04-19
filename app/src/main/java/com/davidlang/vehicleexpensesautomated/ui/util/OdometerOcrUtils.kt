@@ -91,7 +91,7 @@ object OdometerOcrUtils {
         val gray = Mat()
         if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
         val filtered = Mat()
-        Imgproc.bilateralFilter(gray, filtered, 9, 75.0, 75.0)
+        Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
         val out = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(filtered, out)
         mat.release(); gray.release(); filtered.release()
@@ -211,8 +211,11 @@ object OdometerOcrUtils {
     }
 
     suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
+        // EXPERIMENT: Apply Grayscale and Bilateral to the entire image before recognition
+        val processed = applyBilateral(applyGrayscale(bitmap))
+        
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val image = InputImage.fromBitmap(bitmap, 0)
+        val image = InputImage.fromBitmap(processed, 0)
         return try {
             val visionText = recognizer.process(image).await()
             val blocks = mutableListOf<TextBlock>()
@@ -240,6 +243,8 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit failed", e)
             OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        } finally {
+            processed.recycle()
         }
     }
 

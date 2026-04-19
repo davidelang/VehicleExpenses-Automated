@@ -176,7 +176,7 @@ fun LandmarkDebugDialog(
                     Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall)
                     
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 160.dp),
+                        columns = GridCells.Adaptive(minSize = 220.dp), // WIDER cards for side-by-side
                         modifier = Modifier.fillMaxSize().padding(top = 4.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -188,8 +188,8 @@ fun LandmarkDebugDialog(
                                 shape = MaterialTheme.shapes.small,
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
-                                Column(modifier = Modifier.padding(6.dp)) {
-                                    // 1. CROP PREVIEW
+                                Row(modifier = Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    // 1. CROP PREVIEW (Left Side, Aspect Fit)
                                     val cropBmp = remember(lm.boundingBox, bitmap) {
                                         if (bitmap == null) null else {
                                             try {
@@ -205,27 +205,26 @@ fun LandmarkDebugDialog(
                                         Image(
                                             bitmap = cropBmp.asImageBitmap(),
                                             contentDescription = null,
-                                            modifier = Modifier.fillMaxWidth().height(40.dp).background(Color.Black),
+                                            modifier = Modifier.height(56.dp).wrapContentWidth(), // Natural width based on aspect
                                             contentScale = ContentScale.Fit
                                         )
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
                                     }
 
-                                    if (lm.text.isNotBlank()) {
-                                        Text(text = lm.text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                                    } else {
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                    }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        lm.rawDiscoveryBox?.let { box ->
-                                            MetricChip(color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
-                                        }
-                                        lm.refinedDiscoveryBox?.let { box ->
-                                            MetricChip(color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
-                                        }
-                                        if (lm.boundingBox.width() > 0) {
-                                            MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                    // 2. METRICS (Right Side)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = lm.text.ifBlank { "" }, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                            lm.rawDiscoveryBox?.let { box ->
+                                                MetricChip(color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                            }
+                                            lm.refinedDiscoveryBox?.let { box ->
+                                                MetricChip(color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
+                                            }
+                                            if (lm.boundingBox.width() > 0) {
+                                                MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
+                                            }
                                         }
                                     }
                                 }
