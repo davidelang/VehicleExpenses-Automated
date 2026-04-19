@@ -130,26 +130,28 @@ object TfLiteOcrUtils {
         
         val h = gray.rows()
         val w = gray.cols()
-        val hillBrightness = Core.mean(gray).`val`[0]
-        val inkThreshold = hillBrightness * 0.40 
         
-        val maxInkHeightAllowedInGap = h * 0.15 
+        // Phase 41: Revert to Phase 35 Horizontal Projection Average
+        // This is much more reliable at finding the true valley than binary ink thresholds, 
+        // especially on slightly blurred or noisy images like the inner Honda dial.
+        val hProjAvg = FloatArray(w)
+        for (x in 0 until w) {
+            var sum = 0.0
+            for (y in 0 until h) { sum += gray.get(y, x)[0] }
+            hProjAvg[x] = (sum / h).toFloat()
+        }
+        
+        val maxPeak = hProjAvg.maxOrNull() ?: 1.0f
+        val valleyThreshold = maxPeak * 0.40
+        
+        // A valid word gap must be proportional to the text height
         val requiredGapWidth = (h * 0.20).toInt() 
-        
         val margin = (w * 0.10).toInt()
+        
         var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
         
-        val inkCounts = IntArray(w)
-        for (x in 0 until w) {
-            var inkCount = 0
-            for (y in 0 until h) {
-                if (gray.get(y, x)[0] > inkThreshold) inkCount++
-            }
-            inkCounts[x] = inkCount
-        }
-
         for (x in margin until (w - margin)) {
-            if (inkCounts[x] < maxInkHeightAllowedInGap) {
+            if (hProjAvg[x] < valleyThreshold) {
                 if (currStart == -1) currStart = x
                 currGap++
             } else {
@@ -172,20 +174,26 @@ object TfLiteOcrUtils {
 
         // RETRACTION PHASE:
         // We found a gap center. Now walk LEFT until we hit solid ink (the left word).
+        // We use the binary ink count here (Phase 36 logic) because we need the exact pixel edge, not an average.
+        val inkThreshold = Core.mean(gray).`val`[0] * 0.40
+        
         var leftEdge = bestValleyX
-        while (leftEdge > 0 && inkCounts[leftEdge] < (h * 0.25)) { // 25% ink defines the start of a character
+        while (leftEdge > 0) {
+            var inkCount = 0
+            for (y in 0 until h) { if (gray.get(y, leftEdge)[0] > inkThreshold) inkCount++ }
+            if (inkCount >= (h * 0.25)) break // Hit 25% ink, stop retracting
             leftEdge--
         }
-        // Add a 3px padding so the Red Box doesn't clip the ink perfectly
-        leftEdge = min(bestValleyX, leftEdge + 3)
+        leftEdge = min(bestValleyX, leftEdge + 3) // 3px padding
 
-        // Walk RIGHT until we hit solid ink (the right word).
         var rightEdge = bestValleyX
-        while (rightEdge < w - 1 && inkCounts[rightEdge] < (h * 0.25)) {
+        while (rightEdge < w - 1) {
+            var inkCount = 0
+            for (y in 0 until h) { if (gray.get(y, rightEdge)[0] > inkThreshold) inkCount++ }
+            if (inkCount >= (h * 0.25)) break
             rightEdge++
         }
-        // Add a 3px padding
-        rightEdge = max(bestValleyX, rightEdge - 3)
+        rightEdge = max(bestValleyX, rightEdge - 3) // 3px padding
 
         gray.release()
         return SplitRetraction(bestValleyX, leftEdge, rightEdge)
@@ -383,11 +391,13 @@ object TfLiteOcrUtils {
         
         val requiredBridgeHeight = (maxY - minY) * 0.15
 
-        // Phase 40: Max-Pixel Vertical Expansion
-        // We use getLineMax (the brightest pixel on the line) so we don't clip curved letters 
-        // (like '0' or '8') where the ink is only present in a small portion of the width.
-        while (minY > 0 && (sY - minY) < vL) { if (getLineMax(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
-        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineMax(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
+        // Phase 41: Goldilocks Vertical Expansion
+        // We use getLineInkCount to require at least 3 horizontal pixels of ink to continue expanding vertically.
+        // This easily rides the curved bottom of a '0' (which is ~10-15px wide at the tip) 
+        // but immediately drops thin vertical artifacts like tic marks (which are only 1-2px wide).
+        while (minY > 0 && (sY - minY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true, valleyThreshold) < 3) break; minY -= 1.0 }
+        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true, valleyThreshold) < 3) break; maxY += 1.0 }
+        
         while (minX > 0 && (sX - minX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; minX -= 1.0 }
         while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; maxX += 1.0 }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
