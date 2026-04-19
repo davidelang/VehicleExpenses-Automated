@@ -131,22 +131,22 @@ object TfLiteOcrUtils {
         
         val expandedRect = when (algorithm) {
             "A" -> {
-                // ALGORITHM A: High-Res Density Projections (Adaptive)
-                val mask = Mat(); Imgproc.adaptiveThreshold(gray, mask, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 11, 2.0)
+                // ALGORITHM A: High-Res Density Projections (Aggressive)
+                val mask = Mat(); Imgproc.adaptiveThreshold(gray, mask, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 15, 2.0)
                 val res = expandByProjection(localRedFloor, mask)
                 mask.release(); res
             }
             "B" -> {
-                // ALGORITHM B: Binary Perimeter Growth
+                // ALGORITHM B: Binary Perimeter Growth (Aggressive)
                 val mask = Mat(); val pol = detectPolarity(gray)
-                if (pol == Polarity.LIGHT_ON_DARK) Imgproc.threshold(gray, mask, 100.0, 255.0, Imgproc.THRESH_BINARY)
-                else Imgproc.threshold(gray, mask, 150.0, 255.0, Imgproc.THRESH_BINARY_INV)
+                if (pol == Polarity.LIGHT_ON_DARK) Imgproc.threshold(gray, mask, 80.0, 255.0, Imgproc.THRESH_BINARY)
+                else Imgproc.threshold(gray, mask, 170.0, 255.0, Imgproc.THRESH_BINARY_INV)
                 val res = expandPerimeter(localRedFloor, mask, mask.rows(), mask.cols())
                 mask.release(); res
             }
             else -> {
-                // ALGORITHM C: Canny Edge-Stop (Increased sensitivity)
-                val edges = Mat(); Imgproc.Canny(gray, edges, 20.0, 60.0)
+                // ALGORITHM C: Valley-Stop (Expanded Search)
+                val edges = Mat(); Imgproc.Canny(gray, edges, 10.0, 40.0)
                 val res = expandToEdges(localRedFloor, edges, edges.rows(), edges.cols())
                 edges.release(); res
             }
@@ -160,17 +160,17 @@ object TfLiteOcrUtils {
         val hProj = Mat(); Core.reduce(mask, hProj, 1, Core.REDUCE_SUM, CvType.CV_32F)
         val vProj = Mat(); Core.reduce(mask, vProj, 0, Core.REDUCE_SUM, CvType.CV_32F)
         
-        // START WITH RED FLOOR
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         
-        // NOISE FLOOR: 30% density threshold to prevent massive explosions
-        val hThreshold = mask.cols() * 255.0 * 0.30; val vThreshold = mask.rows() * 255.0 * 0.30
+        // AGGRESSIVE: noise floor = 5% of max possible ink
+        val hThreshold = mask.cols() * 255.0 * 0.05; val vThreshold = mask.rows() * 255.0 * 0.05
         
-        while (minY > 0 && hProj.get(minY.toInt() - 1, 0)[0] > hThreshold) minY -= 1.0
-        while (maxY < mask.rows() - 1 && hProj.get(maxY.toInt() + 1, 0)[0] > hThreshold) maxY += 1.0
+        // Expand horizontally first (Text flow)
         while (minX > 0 && vProj.get(0, minX.toInt() - 1)[0] > vThreshold) minX -= 1.0
         while (maxX < mask.cols() - 1 && vProj.get(0, maxX.toInt() + 1)[0] > vThreshold) maxX += 1.0
+        while (minY > 0 && hProj.get(minY.toInt() - 1, 0)[0] > hThreshold) minY -= 1.0
+        while (maxY < mask.rows() - 1 && hProj.get(maxY.toInt() + 1, 0)[0] > hThreshold) maxY += 1.0
         
         hProj.release(); vProj.release()
         return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(mask.cols(), maxX.toInt()), min(mask.rows(), maxY.toInt()))
@@ -180,7 +180,8 @@ object TfLiteOcrUtils {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         
-        val hL = (maxY - minY) * 2.5; val vL = (maxY - minY) * 0.3
+        // AGGRESSIVE: 400% horizontal expansion limit
+        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0
         val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
         
         while (minY > 0 && (sY - minY) < vL) { if (checkLine(edgeMap, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) break; minY -= 1.0 }
@@ -195,7 +196,7 @@ object TfLiteOcrUtils {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         
-        val hL = (maxY - minY) * 2.5; val vL = (maxY - minY) * 0.3; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
         var changed = true
         while (changed) {
             changed = false
