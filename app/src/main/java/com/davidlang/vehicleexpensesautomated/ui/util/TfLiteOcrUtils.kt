@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 29: Zero-Glue Raw Discovery & Deep Diagnostics.
+     * Phase 32: Height-Proportional Precision Splitting (No Glue).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -76,17 +76,19 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // AGGRESSIVE SPLIT Trigger (1.8 aspect, 8px gap)
-            if (aspect > 1.8 && sourceMat != null) {
+            // Phase 32: PRECISION SPLIT (Only super-wide blobs, No Glue)
+            if (aspect > 2.2 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
                     val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitIndex = findSimpleGap(highResRoi)
+                    val splitIndex = findProportionalGap(highResRoi)
                     highResRoi.release()
                     
-                    if (splitIndex != -1 && splitIndex > 8 && (roiW - splitIndex) > 8) {
+                    // FRAGMENT PROTECTION: Ensure neither half is too narrow
+                    val minFragmentWidth = roiH * 0.40 // e.g., a '1' is about 40% as wide as it is tall
+                    if (splitIndex != -1 && splitIndex > minFragmentWidth && (roiW - splitIndex) > minFragmentWidth) {
                         val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
                         val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
                         val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
@@ -99,33 +101,53 @@ object TfLiteOcrUtils {
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
         }
         
-        // MANDATE: DISABLE JOINING ENTIRELY for this run
-        // val finalRefined = mergeWithHeightAdaptiveVeto(refinedBoxes, sourceMat)
+        // Phase 32: REMOVED ALL GLUE LOGIC
         
         mask.release(); hierarchy.release(); sourceMat?.release()
         return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findSimpleGap(roi: Mat): Int {
+    private fun findProportionalGap(roi: Mat): Int {
         val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
-        val hProjAvg = FloatArray(gray.cols())
-        for (x in 0 until gray.cols()) {
-            var sum = 0.0; for (y in 0 until gray.rows()) { sum += gray.get(y, x)[0] }
-            hProjAvg[x] = (sum / gray.rows()).toFloat()
-        }
-        val maxPeak = hProjAvg.maxOrNull() ?: 1.0f
-        val threshold = maxPeak * 0.40
-        val margin = (gray.cols() * 0.10).toInt()
+        
+        val h = gray.rows()
+        val w = gray.cols()
+        val hillBrightness = Core.mean(gray).`val`[0]
+        val inkThreshold = hillBrightness * 0.40 // Pixel is "ink" if > 40% of average brightness
+        
+        // A column is "clear" (part of a gap) if its total ink height is < 15% of the ROI height
+        // This makes it immune to thin tic-marks, but catches thick characters.
+        val maxInkHeightAllowedInGap = h * 0.15 
+        
+        // A valid word gap must be contiguous and proportional to the text height
+        val requiredGapWidth = (h * 0.20).toInt() // Gap must be at least 20% of text height
+        
+        val margin = (w * 0.10).toInt()
         var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
-        for (i in margin until (gray.cols() - margin)) {
-            if (hProjAvg[i] < threshold) {
-                if (currStart == -1) currStart = i
+        
+        for (x in margin until (w - margin)) {
+            var inkCount = 0
+            for (y in 0 until h) {
+                if (gray.get(y, x)[0] > inkThreshold) inkCount++
+            }
+            
+            if (inkCount < maxInkHeightAllowedInGap) {
+                if (currStart == -1) currStart = x
                 currGap++
             } else {
-                if (currGap >= 5 && currGap > maxGap) { maxGap = currGap; bestValleyX = currStart + (currGap / 2) }
+                if (currGap >= requiredGapWidth && currGap > maxGap) {
+                    maxGap = currGap
+                    bestValleyX = currStart + (currGap / 2)
+                }
                 currStart = -1; currGap = 0
             }
         }
+        
+        // Check final gap at edge of margin
+        if (currGap >= requiredGapWidth && currGap > maxGap) {
+            bestValleyX = currStart + (currGap / 2)
+        }
+        
         gray.release()
         return if (bestValleyX != -1) bestValleyX else -1
     }
@@ -150,7 +172,6 @@ object TfLiteOcrUtils {
         val bounds = if (sourceMat != null) expandInRoi(sourceRect, sourceMat, algorithm, redFloorPixels) else redFloorPixels
         bounds.union(redFloorPixels)
         
-        // MANDATE: DEEP DIAGNOSTIC LOGGING
         val finalL = bounds.left; val finalT = bounds.top; val finalR = bounds.right; val finalB = bounds.bottom
         val finalW = finalR - finalL; val finalH = finalB - finalT
         Log.i("OCR_TRACE", "RED: [${rawBounds.left}, ${rawBounds.top}, ${rawBounds.right}, ${rawBounds.bottom}] YELLOW: [L=$finalL, T=$finalT, R=$finalR, B=$finalB, W=$finalW, H=$finalH]")
