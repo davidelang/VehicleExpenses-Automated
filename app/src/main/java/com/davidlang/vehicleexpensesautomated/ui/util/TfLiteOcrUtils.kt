@@ -62,7 +62,7 @@ object TfLiteOcrUtils {
         } else null
 
         val contours = mutableListOf<MatOfPoint>(); val hierarchy = Mat()
-        Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+        Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE) // MANDATE: RETR_EXTERNAL ignores holes
 
         val rawBoxes = mutableListOf<DetectedBox>()
         val intermediateRefined = mutableListOf<DetectedBox>()
@@ -101,11 +101,11 @@ object TfLiteOcrUtils {
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 33: PURE OVERLAP UNION (Boxes inside boxes / heavy intersection)
-        val finalRefined = mergeOverlappingBoxes(intermediateRefined)
+        // Phase 35: SYNCHRONIZED OVERLAP UNION
+        val (finalRaw, finalRefined) = mergeOverlappingBoxesSync(rawBoxes, intermediateRefined)
         
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(rawBoxes, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
+        return DbNetResult(finalRaw, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
     private fun findProportionalGap(roi: Mat): Int {
@@ -148,19 +148,21 @@ object TfLiteOcrUtils {
         return if (bestValleyX != -1) bestValleyX else -1
     }
 
-    private fun mergeOverlappingBoxes(boxes: List<DetectedBox>): List<DetectedBox> {
-        if (boxes.isEmpty()) return emptyList()
-        val mutableBoxes = boxes.toMutableList()
+    private fun mergeOverlappingBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>): Pair<List<DetectedBox>, List<DetectedBox>> {
+        if (refinedBoxes.isEmpty() || rawBoxes.size != refinedBoxes.size) return Pair(rawBoxes, refinedBoxes)
+        
+        val mutableRaw = rawBoxes.toMutableList()
+        val mutableRefined = refinedBoxes.toMutableList()
         
         var changed = true
         while (changed) {
             changed = false
             var i = 0
-            while (i < mutableBoxes.size) {
+            while (i < mutableRefined.size) {
                 var j = i + 1
-                while (j < mutableBoxes.size) {
-                    val boxA = mutableBoxes[i].boundingBox
-                    val boxB = mutableBoxes[j].boundingBox
+                while (j < mutableRefined.size) {
+                    val boxA = mutableRefined[i].boundingBox
+                    val boxB = mutableRefined[j].boundingBox
                     
                     // Intersection Area
                     val interL = max(boxA.left, boxB.left); val interT = max(boxA.top, boxB.top)
@@ -175,25 +177,34 @@ object TfLiteOcrUtils {
                         
                         // IoM (Intersection over Minimum): Merge if one box is > 40% inside another
                         if (minArea > 0 && (interArea / minArea) > 0.40f) {
-                            val unionBox = RectF(
+                            val unionRefined = RectF(
                                 min(boxA.left, boxB.left), min(boxA.top, boxB.top),
                                 max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom)
                             )
-                            // Keep the angle of the larger box (approximate)
-                            val angle = if (areaA > areaB) mutableBoxes[i].angle else mutableBoxes[j].angle
-                            mutableBoxes[i] = DetectedBox(emptyList(), unionBox, angle)
-                            mutableBoxes.removeAt(j)
+                            val rawA = mutableRaw[i].boundingBox
+                            val rawB = mutableRaw[j].boundingBox
+                            val unionRaw = RectF(
+                                min(rawA.left, rawB.left), min(rawA.top, rawB.top),
+                                max(rawA.right, rawB.right), max(rawA.bottom, rawB.bottom)
+                            )
+                            
+                            val angle = if (areaA > areaB) mutableRefined[i].angle else mutableRefined[j].angle
+                            mutableRefined[i] = DetectedBox(emptyList(), unionRefined, angle)
+                            mutableRaw[i] = DetectedBox(emptyList(), unionRaw, angle)
+                            
+                            mutableRefined.removeAt(j)
+                            mutableRaw.removeAt(j)
                             changed = true
-                            break // MANDATE: Break inner loop, restart scan from i
+                            break
                         }
                     }
                     j++
                 }
-                if (changed) break // MANDATE: Break outer loop, restart from while(changed)
+                if (changed) break
                 i++
             }
         }
-        return mutableBoxes
+        return Pair(mutableRaw, mutableRefined)
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
