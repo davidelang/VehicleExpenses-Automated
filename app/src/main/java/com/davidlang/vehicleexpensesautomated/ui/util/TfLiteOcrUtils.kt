@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 23: Intelligent Split Filtering (Prevent shattering).
+     * Phase 24: Dual-Tiered High-Res Splitting (Prevent shattering).
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -76,27 +76,26 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // Phase 23: Balanced Split Trigger (Word gaps vs Character gaps)
+            // Phase 24: Dual-Tier Trigger
+            // Tier 1: Extreme Width (>3.0)
+            // Tier 2: Suspect Width (>2.2) with Vacuum Gap check
             if (aspect > 2.2 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
                     val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitIndex = findStableHighResValley(highResRoi)
+                    val splitIndex = findVacuumGap(highResRoi, aspect)
                     highResRoi.release()
                     
                     if (splitIndex != -1) {
-                        // SANITY CHECK: Ensure resulting sub-blobs are not too narrow (character fragments)
-                        if (splitIndex > 10 && (roiW - splitIndex) > 10) {
-                            val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
-                            val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
-                            val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
-                            processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                            processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                            Log.i("OcrSplit", "RESULT: BALANCED SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex")
-                            continue
-                        }
+                        val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
+                        val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
+                        val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
+                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                        Log.i("OcrSplit", "RESULT: VACUUM SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex")
+                        continue
                     }
                 }
             }
@@ -108,40 +107,54 @@ object TfLiteOcrUtils {
         return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findStableHighResValley(roi: Mat): Int {
+    private fun findVacuumGap(roi: Mat, aspect: Double): Int {
         val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
-        val hProj = FloatArray(gray.cols())
+        val hProjMax = FloatArray(gray.cols())
+        val hProjAvg = FloatArray(gray.cols())
+        
         for (x in 0 until gray.cols()) {
-            var sum = 0.0
-            for (y in 0 until gray.rows()) { sum += gray.get(y, x)[0] }
-            hProj[x] = (sum / gray.rows()).toFloat()
+            var sum = 0.0; var maxVal = 0.0
+            for (y in 0 until gray.rows()) {
+                val v = gray.get(y, x)[0]
+                sum += v
+                if (v > maxVal) maxVal = v
+            }
+            hProjAvg[x] = (sum / gray.rows()).toFloat()
+            hProjMax[x] = maxVal.toFloat()
         }
         
-        val maxBrightness = hProj.maxOrNull() ?: 1.0f
-        val valleyThreshold = maxBrightness * 0.45 
-        val margin = (gray.cols() * 0.15).toInt()
+        val maxPeak = hProjAvg.maxOrNull() ?: 1.0f
+        val valleyThreshold = maxPeak * 0.35 // Avg must drop by 65%
+        val vacuumThreshold = 45.0f // Max brightness in column must be DARK (Vacuum)
         
-        var bestValleyX = -1
-        var maxGapWidth = 0; var currentGapWidth = 0; var currentGapStart = -1
+        val margin = (gray.cols() * 0.10).toInt()
+        var bestValleyX = -1; var maxGapWidth = 0; var currentGapWidth = 0; var currentGapStart = -1
 
         for (i in margin until (gray.cols() - margin)) {
-            if (hProj[i] < valleyThreshold) {
+            // DUAL CONDITION: Average is low AND no bright vertical pixels (Vacuum)
+            if (hProjAvg[i] < valleyThreshold && hProjMax[i] < vacuumThreshold) {
                 if (currentGapStart == -1) currentGapStart = i
                 currentGapWidth++
             } else {
-                if (currentGapWidth >= 15 && currentGapWidth > maxGapWidth) { // INCREASED FROM 5PX TO 15PX
+                if (currentGapWidth >= 12 && currentGapWidth > maxGapWidth) {
                     maxGapWidth = currentGapWidth
                     bestValleyX = currentGapStart + (currentGapWidth / 2)
                 }
                 currentGapStart = -1; currentGapWidth = 0
             }
         }
-        if (currentGapWidth >= 15 && currentGapWidth > maxGapWidth) {
+        if (currentGapWidth >= 12 && currentGapWidth > maxGapWidth) {
             bestValleyX = currentGapStart + (currentGapWidth / 2)
         }
         
         gray.release()
-        return if (bestValleyX != -1) bestValleyX else -1
+        
+        // Final Trigger Logic:
+        // 1. If aspect > 3.0, accept 12px gap
+        // 2. If aspect > 2.2, accept only if gap is wider or very dark (vacuum)
+        return if (bestValleyX != -1) {
+            if (aspect > 3.0 || maxGapWidth > 20) bestValleyX else -1
+        } else -1
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
