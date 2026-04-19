@@ -47,7 +47,8 @@ object TfLiteOcrUtils {
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
         scale: Float = 1.0f,
-        sourceBitmap: Bitmap? = null, algorithm: String = "C" 
+        sourceBitmap: Bitmap? = null, algorithm: String = "C",
+        recursive: Boolean = false // Phase 43: Sub-Window flag
     ): DbNetResult {
         val tDiscoveryStart = System.currentTimeMillis()
         if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return DbNetResult(emptyList(), emptyList())
@@ -66,6 +67,8 @@ object TfLiteOcrUtils {
 
         val rawBoxes = mutableListOf<DetectedBox>()
         val intermediateRefined = mutableListOf<DetectedBox>()
+        val suspectCrops = mutableListOf<RectF>() // Phase 43: Collect wide blobs for high-res re-scan
+        
         val sourceW = sourceBitmap?.width?.toDouble() ?: heatmapW.toDouble()
         val sourceH = sourceBitmap?.height?.toDouble() ?: heatmapH.toDouble()
         val invScale = 1.0 / scale.toDouble()
@@ -76,127 +79,30 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            if (aspect > 2.2 && sourceMat != null) {
+            // Phase 43: Mark super-wide blobs for Sub-Windowing instead of manual pixel walking
+            if (!recursive && aspect > 2.2 && sourceMat != null) {
                 val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
                 val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
                 
                 if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
-                    val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
-                    val splitResult = findProportionalGapAndRetract(highResRoi)
-                    highResRoi.release()
-                    
-                    if (splitResult != null) {
-                        val (gapCenter, leftRetract, rightRetract) = splitResult
-                        
-                        // Map the High-Res retractions back to the Heatmap coordinate space
-                        val splitHeatmapX = (gapCenter.toDouble() * scale).toInt()
-                        val leftRetractHeatmapX = (leftRetract.toDouble() * scale).toInt()
-                        val rightRetractHeatmapX = (rightRetract.toDouble() * scale).toInt()
-                        
-                        // Ensure minimum fragment width (40% of height) to prevent shattering '0's
-                        val minFragmentWidth = rectBounds.height * 0.40 
-                        if (leftRetractHeatmapX > minFragmentWidth && (rectBounds.width - rightRetractHeatmapX) > minFragmentWidth) {
-                            
-                            // Left Box: Starts at 0, ends at leftRetract (shrunken from gapCenter)
-                            val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, leftRetractHeatmapX, rectBounds.height)
-                            // Right Box: Starts at rightRetract, ends at width
-                            val rightRect = org.opencv.core.Rect(rectBounds.x + rightRetractHeatmapX, rectBounds.y, rectBounds.width - rightRetractHeatmapX, rectBounds.height)
-                            
-                            processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
-                            processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
-                            Log.i("OcrSplit", "RETRACT SPLIT: Center=$splitHeatmapX, LeftEdge=$leftRetractHeatmapX, RightEdge=$rightRetractHeatmapX")
-                            continue
-                        }
-                    }
+                    // Store normalized coordinates for the engine to crop
+                    suspectCrops.add(RectF(
+                        (roiL.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
+                        (roiT.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
+                        ((roiL + roiW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
+                        ((roiT + roiH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
+                    ))
+                    continue
                 }
             }
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 35: ONLY OVERLAP UNION (No Proximity Glue)
         val (finalRaw, finalRefined) = mergeOverlappingBoxesSync(rawBoxes, intermediateRefined)
-        
-        // Phase 39: 20% PRECISION PROPORTIONAL GLUE
         val (gluedRaw, gluedRefined) = mergeNearbyBoxesSync(finalRaw, finalRefined, sourceW, sourceH)
         
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(gluedRaw, gluedRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
-    }
-
-    private data class SplitRetraction(val center: Int, val leftEdge: Int, val rightEdge: Int)
-
-    private fun findProportionalGapAndRetract(roi: Mat): SplitRetraction? {
-        val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
-        
-        val h = gray.rows()
-        val w = gray.cols()
-        
-        // Phase 41: Revert to Phase 35 Horizontal Projection Average
-        // This is much more reliable at finding the true valley than binary ink thresholds, 
-        // especially on slightly blurred or noisy images like the inner Honda dial.
-        val hProjAvg = FloatArray(w)
-        for (x in 0 until w) {
-            var sum = 0.0
-            for (y in 0 until h) { sum += gray.get(y, x)[0] }
-            hProjAvg[x] = (sum / h).toFloat()
-        }
-        
-        val maxPeak = hProjAvg.maxOrNull() ?: 1.0f
-        val valleyThreshold = maxPeak * 0.40
-        
-        // A valid word gap must be proportional to the text height
-        val requiredGapWidth = (h * 0.20).toInt() 
-        val margin = (w * 0.10).toInt()
-        
-        var bestValleyX = -1; var maxGap = 0; var currGap = 0; var currStart = -1
-        
-        for (x in margin until (w - margin)) {
-            if (hProjAvg[x] < valleyThreshold) {
-                if (currStart == -1) currStart = x
-                currGap++
-            } else {
-                if (currGap >= requiredGapWidth && currGap > maxGap) {
-                    maxGap = currGap
-                    bestValleyX = currStart + (currGap / 2)
-                }
-                currStart = -1; currGap = 0
-            }
-        }
-        
-        if (currGap >= requiredGapWidth && currGap > maxGap) {
-            bestValleyX = currStart + (currGap / 2)
-        }
-        
-        if (bestValleyX == -1) {
-            gray.release()
-            return null
-        }
-
-        // RETRACTION PHASE:
-        // We found a gap center. Now walk LEFT until we hit solid ink (the left word).
-        // We use the binary ink count here (Phase 36 logic) because we need the exact pixel edge, not an average.
-        val inkThreshold = Core.mean(gray).`val`[0] * 0.40
-        
-        var leftEdge = bestValleyX
-        while (leftEdge > 0) {
-            var inkCount = 0
-            for (y in 0 until h) { if (gray.get(y, leftEdge)[0] > inkThreshold) inkCount++ }
-            if (inkCount >= (h * 0.25)) break // Hit 25% ink, stop retracting
-            leftEdge--
-        }
-        leftEdge = min(bestValleyX, leftEdge + 3) // 3px padding
-
-        var rightEdge = bestValleyX
-        while (rightEdge < w - 1) {
-            var inkCount = 0
-            for (y in 0 until h) { if (gray.get(y, rightEdge)[0] > inkThreshold) inkCount++ }
-            if (inkCount >= (h * 0.25)) break
-            rightEdge++
-        }
-        rightEdge = max(bestValleyX, rightEdge - 3) // 3px padding
-
-        gray.release()
-        return SplitRetraction(bestValleyX, leftEdge, rightEdge)
+        return DbNetResult(gluedRaw, gluedRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
     }
 
     private fun mergeOverlappingBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>): Pair<List<DetectedBox>, List<DetectedBox>> {
