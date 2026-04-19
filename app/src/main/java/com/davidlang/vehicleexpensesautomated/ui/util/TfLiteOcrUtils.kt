@@ -101,6 +101,9 @@ object TfLiteOcrUtils {
                 bounds = redFloorPixels
             }
             
+            // FINAL ENFORCEMENT: Result MUST encompass Red Floor
+            bounds.union(redFloorPixels)
+            
             val normRefinedBounds = RectF(
                 (bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
                 (bounds.right.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.bottom.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
@@ -128,11 +131,13 @@ object TfLiteOcrUtils {
         
         val expandedRect = when (algorithm) {
             "A" -> {
+                // ALGORITHM A: High-Res Density Projections (Adaptive)
                 val mask = Mat(); Imgproc.adaptiveThreshold(gray, mask, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 11, 2.0)
                 val res = expandByProjection(localRedFloor, mask)
                 mask.release(); res
             }
             "B" -> {
+                // ALGORITHM B: Binary Perimeter Growth
                 val mask = Mat(); val pol = detectPolarity(gray)
                 if (pol == Polarity.LIGHT_ON_DARK) Imgproc.threshold(gray, mask, 100.0, 255.0, Imgproc.THRESH_BINARY)
                 else Imgproc.threshold(gray, mask, 150.0, 255.0, Imgproc.THRESH_BINARY_INV)
@@ -140,7 +145,8 @@ object TfLiteOcrUtils {
                 mask.release(); res
             }
             else -> {
-                val edges = Mat(); Imgproc.Canny(gray, edges, 50.0, 150.0)
+                // ALGORITHM C: Canny Edge-Stop (Increased sensitivity)
+                val edges = Mat(); Imgproc.Canny(gray, edges, 20.0, 60.0)
                 val res = expandToEdges(localRedFloor, edges, edges.rows(), edges.cols())
                 edges.release(); res
             }
@@ -158,8 +164,8 @@ object TfLiteOcrUtils {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         
-        // NOISE FLOOR: 12% to ignore dashboard background
-        val hThreshold = mask.cols() * 255.0 * 0.12; val vThreshold = mask.rows() * 255.0 * 0.12
+        // NOISE FLOOR: 30% density threshold to prevent massive explosions
+        val hThreshold = mask.cols() * 255.0 * 0.30; val vThreshold = mask.rows() * 255.0 * 0.30
         
         while (minY > 0 && hProj.get(minY.toInt() - 1, 0)[0] > hThreshold) minY -= 1.0
         while (maxY < mask.rows() - 1 && hProj.get(maxY.toInt() + 1, 0)[0] > hThreshold) maxY += 1.0
@@ -206,5 +212,15 @@ object TfLiteOcrUtils {
         if (fixed < 0 || fixed >= fixedDim) return false
         for (i in start..end) { if (i < 0 || i >= maxDim) continue; val pixel = if (horizontal) mask.get(fixed, i)[0] else mask.get(i, fixed)[0]; if (pixel > 0) return true }
         return false
+    }
+
+    private fun calculatePolygonArea(points: Array<Point>): Double {
+        var area = 0.0; for (i in points.indices) { val next = (i + 1) % points.size; area += points[i].x * points[next].y - points[next].x * points[i].y }
+        return Math.abs(area) / 2.0
+    }
+
+    private fun calculatePolygonPerimeter(points: Array<Point>): Double {
+        var perimeter = 0.0; for (i in points.indices) { val next = (i + 1) % points.size; val dx = points[i].x - points[next].x; val dy = points[i].y - points[next].y; perimeter += sqrt(dx * dx + dy * dy) }
+        return perimeter
     }
 }
