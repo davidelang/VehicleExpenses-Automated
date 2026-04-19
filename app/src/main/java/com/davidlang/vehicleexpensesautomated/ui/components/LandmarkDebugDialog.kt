@@ -176,7 +176,7 @@ fun LandmarkDebugDialog(
                     Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall)
                     
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 220.dp), // WIDER cards for side-by-side
+                        columns = GridCells.Adaptive(minSize = 200.dp), // Dense grid
                         modifier = Modifier.fillMaxSize().padding(top = 4.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -185,11 +185,11 @@ fun LandmarkDebugDialog(
                         items(landmarks) { lm ->
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                shape = MaterialTheme.shapes.small,
+                                shape = MaterialTheme.shapes.extraSmall,
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
-                                Row(modifier = Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    // 1. CROP PREVIEW (Left Side, Aspect Fit)
+                                Row(modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    // 1. CROP PREVIEW (Left Side, Full Height, Shrunken)
                                     val cropBmp = remember(lm.boundingBox, bitmap) {
                                         if (bitmap == null) null else {
                                             try {
@@ -205,7 +205,7 @@ fun LandmarkDebugDialog(
                                         Image(
                                             bitmap = cropBmp.asImageBitmap(),
                                             contentDescription = null,
-                                            modifier = Modifier.height(56.dp).wrapContentWidth(), // Natural width based on aspect
+                                            modifier = Modifier.height(42.dp).wrapContentWidth(), // SHRUNKEN TO 42PX
                                             contentScale = ContentScale.Fit
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
@@ -213,9 +213,10 @@ fun LandmarkDebugDialog(
 
                                     // 2. METRICS (Right Side)
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = lm.text.ifBlank { "" }, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                        if (lm.text.isNotBlank()) {
+                                            Text(text = lm.text, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             lm.rawDiscoveryBox?.let { box ->
                                                 MetricChip(color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
                                             }
@@ -250,8 +251,8 @@ private fun MetricChip(color: Color, w: Float, h: Float) {
     ) {
         Text(
             text = "${w.toInt()}x${h.toInt()}",
-            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
-            style = androidx.compose.ui.text.TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f))
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp),
+            style = androidx.compose.ui.text.TextStyle(fontSize = 8.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f))
         )
     }
 }
