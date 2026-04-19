@@ -182,7 +182,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             
             val dbRes = TfLiteOcrUtils.processDbNetOutput(
                 rawHeatmap, inputSize, inputSize, scale = scale,
-                sourceBitmap = bitmap, algorithm = "B" 
+                sourceBitmap = bitmap, algorithm = "C" 
             )
             
             for (i in dbRes.rawBoxes.indices) {
