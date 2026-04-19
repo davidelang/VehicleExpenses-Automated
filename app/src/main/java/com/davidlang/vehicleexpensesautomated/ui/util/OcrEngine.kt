@@ -51,7 +51,7 @@ data class NormalizedRect(val left: Float, val top: Float, val right: Float, val
  */
 data class TextBlock(
     val text: String,
-    val boundingBox: Rect, // Final Crop Pixel coordinates
+    val boundingBox: Rect, // Final Crop Pixel coordinates (YELLOW)
     val angle: Float = 0f,
     val rawDiscoveryBox: RectF? = null,    // RED tier
     val refinedDiscoveryBox: RectF? = null, // ORANGE tier
@@ -86,21 +86,14 @@ data class OcrResult(
     val metadata: Map<String, String> = emptyMap()
 ) {
     fun filterByCrops(odoCrop: android.graphics.RectF?, otherCrop: android.graphics.RectF?): OcrResult {
-        // COORDINATE ALIGNMENT: 
-        // We filter based on normalized coordinates (0.0 to 1.0) to ensure consistency.
         val filteredBlocks = textBlocks.filter { block ->
             if (imageWidth <= 0 || imageHeight <= 0) return@filter true
             val cx = block.boundingBox.centerX().toFloat() / imageWidth
             val cy = block.boundingBox.centerY().toFloat() / imageHeight
-            
             val inOdo = odoCrop?.let { cx >= it.left && cx <= it.right && cy >= it.top && cy <= it.bottom } ?: false
             val inOther = otherCrop?.let { cx >= it.left && cx <= it.right && cy >= it.top && cy <= it.bottom } ?: false
-            
             !inOdo && !inOther
         }
-        val diff = textBlocks.size - filteredBlocks.size
-        Log.i("OcrResult", "Filtered $diff blocks via normalized crops for $engineName. Remaining: ${filteredBlocks.size}")
-        
         return this.copy(
             textBlocks = filteredBlocks,
             debugText = filteredBlocks.filter { it.text.isNotBlank() }.joinToString(" ") { it.text }
@@ -163,7 +156,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val engine = TfLiteOcrEngine(context)
-        val inputSize = 1280 // FIXED STABLE SIZE
+        val inputSize = 1280
         
         val detInterpreter = try {
             val file = File(context.cacheDir, "tflite_paddle_det_model.tflite")
@@ -177,7 +170,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             interp.allocateTensors()
             interp
         } catch (e: Exception) { 
-            Log.e("NativeTflite", "Failed to load detector", e)
+            Log.e("NativeTflite", "Failed to load/resize detector", e)
             null 
         }
         
@@ -185,13 +178,12 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
         val debugText = StringBuilder()
         
         if (detInterpreter != null) {
-            // ZERO-ANCHOR (0,0) PREPROCESSING
             val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
             val sw = (bitmap.width * scale).toInt(); val sh = (bitmap.height * scale).toInt()
             val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
             val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(padded); canvas.drawColor(Color.BLACK)
-            canvas.drawBitmap(scaled, 0f, 0f, null) // Anchor at top-left
+            canvas.drawBitmap(scaled, 0f, 0f, null)
             scaled.recycle()
             
             val inputBuffer = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4).order(ByteOrder.nativeOrder())
@@ -215,51 +207,42 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 rawHeatmap[i] = outputBuffer[0][i / inputSize][i % inputSize][0]
             }
             
-            val discoveryHeatmap = rawHeatmap.copyOf()
             val dbRes = TfLiteOcrUtils.processDbNetOutput(
-                discoveryHeatmap, 
-                inputSize, 
-                inputSize, 
-                scale = scale,
-                sourceBitmap = bitmap,
-                algorithm = "A" // TFLite uses Projection-Based (Density)
+                rawHeatmap, inputSize, inputSize, scale = scale,
+                sourceBitmap = bitmap, algorithm = "A"
             )
             
-            // LINK THE TIERS: Capture every suspicion, including those without text
             for (i in dbRes.rawBoxes.indices) {
                 val rawBox = dbRes.rawBoxes[i]
                 val refinedBox = dbRes.refinedBoxes.getOrNull(i)
-                val nb = refinedBox?.boundingBox ?: rawBox.boundingBox
+                val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
                 
-                val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
-                val top = (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
-                val right = (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width)
-                val bottom = (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
+                // YELLOW: Final crop with +8px padding in source space
+                val left = (orange.left * bitmap.width).toInt() - 8
+                val top = (orange.top * bitmap.height).toInt() - 8
+                val right = (orange.right * bitmap.width).toInt() + 8
+                val bottom = (orange.bottom * bitmap.height).toInt() + 8
                 
-                if (right <= left || bottom <= top) {
-                    textBlocks.add(TextBlock(text = "", boundingBox = Rect(left, top, right, bottom), rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
+                val cropRect = Rect(max(0, left), max(0, top), min(bitmap.width, right), min(bitmap.height, bottom))
+                if (cropRect.width() <= 0 || cropRect.height() <= 0) {
+                    textBlocks.add(TextBlock(text = "", boundingBox = cropRect, rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
                     continue
                 }
 
-                val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+                val crop = Bitmap.createBitmap(bitmap, cropRect.left, cropRect.top, cropRect.width(), cropRect.height())
                 val text = engine.runInference(crop)
                 crop.recycle()
                 
-                if (text.isNotBlank()) {
-                    debugText.append("$text ")
-                }
-                
+                if (text.isNotBlank()) debugText.append("$text ")
                 textBlocks.add(TextBlock(
                     text = text, 
-                    boundingBox = Rect(left, top, right, bottom), 
+                    boundingBox = cropRect, 
                     angle = refinedBox?.angle ?: 0f,
                     rawDiscoveryBox = rawBox.boundingBox,
                     refinedDiscoveryBox = refinedBox?.boundingBox
                 ))
             }
-            padded.recycle()
-            detInterpreter.close()
-            engine.close()
+            padded.recycle(); detInterpreter.close(); engine.close()
             return@withContext OcrResult(
                 engineName = name,
                 executionTimeMs = System.currentTimeMillis() - t0,
@@ -268,7 +251,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 imageWidth = bitmap.width,
                 imageHeight = bitmap.height,
                 rawHeatmap = rawHeatmap,
-                discoveryHeatmap = discoveryHeatmap,
+                discoveryHeatmap = rawHeatmap.copyOf(),
                 rawDiscoveryBoxes = dbRes.rawBoxes.map { it.boundingBox },
                 scaleFactor = scale
             )

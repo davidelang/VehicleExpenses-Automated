@@ -11,6 +11,7 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.min
+import kotlin.math.max
 
 class PaddleOcrEngine(private val context: Context, private val isConstrained: Boolean = false) : OcrEngine {
     override val name = if (isConstrained) "Paddle-TFLite (Odo)" else "Paddle-TFLite"
@@ -96,12 +97,8 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         // ZERO-ANCHOR SCALE math
         val discoveryHeatmap = rawHeatmap.copyOf()
         val dbRes = TfLiteOcrUtils.processDbNetOutput(
-            discoveryHeatmap, 
-            inputSize, 
-            inputSize, 
-            scale = scale,
-            sourceBitmap = bitmap,
-            algorithm = "B" // Paddle-TFLite uses Perimeter-Based
+            discoveryHeatmap, inputSize, inputSize, scale = scale,
+            sourceBitmap = bitmap, algorithm = "B"
         )
         
         val results = StringBuilder()
@@ -109,30 +106,30 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         for (i in dbRes.rawBoxes.indices) {
             val rawBox = dbRes.rawBoxes[i]
             val refinedBox = dbRes.refinedBoxes.getOrNull(i)
-            val nb = refinedBox?.boundingBox ?: rawBox.boundingBox
+            val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
             
-            // nb is normalized to source pixels
-            val left = (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width)
-            val top = (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height)
-            val right = (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width)
-            val bottom = (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
+            // YELLOW: Final crop with +8px padding in source space
+            val left = (orange.left * bitmap.width).toInt() - 8
+            val top = (orange.top * bitmap.height).toInt() - 8
+            val right = (orange.right * bitmap.width).toInt() + 8
+            val bottom = (orange.bottom * bitmap.height).toInt() + 8
             
-            if (right <= left || bottom <= top) {
-                textBlocks.add(TextBlock(text = "", boundingBox = Rect(left, top, right, bottom), rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
+            val cropRect = Rect(max(0, left), max(0, top), min(bitmap.width, right), min(bitmap.height, bottom))
+            
+            if (cropRect.width() <= 0 || cropRect.height() <= 0) {
+                textBlocks.add(TextBlock(text = "", boundingBox = cropRect, rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
                 continue
             }
 
-            val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+            val crop = Bitmap.createBitmap(bitmap, cropRect.left, cropRect.top, cropRect.width(), cropRect.height())
             val res = runRecognitionStage(crop, 48)
             crop.recycle()
 
-            if (res.text.isNotBlank()) {
-                results.append("${res.text} ")
-            }
+            if (res.text.isNotBlank()) results.append("${res.text} ")
             
             textBlocks.add(TextBlock(
                 text = res.text, 
-                boundingBox = Rect(left, top, right, bottom), 
+                boundingBox = cropRect, 
                 angle = refinedBox?.angle ?: 0f,
                 rawDiscoveryBox = rawBox.boundingBox,
                 refinedDiscoveryBox = refinedBox?.boundingBox
