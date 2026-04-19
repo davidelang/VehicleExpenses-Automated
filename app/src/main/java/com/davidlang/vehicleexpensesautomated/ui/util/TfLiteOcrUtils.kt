@@ -383,11 +383,25 @@ object TfLiteOcrUtils {
         
         val requiredBridgeHeight = (maxY - minY) * 0.15
 
-        while (minY > 0 && (sY - minY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
-        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
+        // Phase 40: Max-Pixel Vertical Expansion
+        // We use getLineMax (the brightest pixel on the line) so we don't clip curved letters 
+        // (like '0' or '8') where the ink is only present in a small portion of the width.
+        while (minY > 0 && (sY - minY) < vL) { if (getLineMax(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
+        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineMax(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
         while (minX > 0 && (sX - minX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; minX -= 1.0 }
         while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; maxX += 1.0 }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
+    }
+
+    private fun getLineMax(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
+        var maxVal = 0.0; val maxD = if (horizontal) mat.cols() else mat.rows()
+        if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0.0
+        for (i in start until end) { 
+            if (i < 0 || i >= maxD) continue
+            val v = if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]
+            if (v > maxVal) maxVal = v
+        }
+        return maxVal
     }
 
     private fun isDarkGap(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Boolean {
