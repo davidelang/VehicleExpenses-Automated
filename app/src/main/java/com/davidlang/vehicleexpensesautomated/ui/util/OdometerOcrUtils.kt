@@ -211,7 +211,7 @@ object OdometerOcrUtils {
     }
 
     suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
-        // EXPERIMENT: Apply Grayscale and Bilateral to the entire image before recognition
+        // MANDATE: Always apply Grayscale + Bilateral before any discovery/OCR
         val processed = applyBilateral(applyGrayscale(bitmap))
         
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -324,18 +324,23 @@ object OdometerOcrUtils {
         val rawBitmap = if (context != null) decodeBitmapSafely(context, photoPath) else BitmapFactory.decodeFile(photoPath)
         if (rawBitmap == null) return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        var bitmap = rotated
+        
+        // EXPERIMENT: Process FULL image after rotation
+        val processed = applyBilateral(applyGrayscale(rotated))
+        
+        var bitmap = processed
         if (cropRect != null) {
-            val left = (cropRect.left * rotated.width).toInt().coerceIn(0, rotated.width)
-            val top = (cropRect.top * rotated.height).toInt().coerceIn(0, rotated.height)
-            val right = (cropRect.right * rotated.width).toInt().coerceAtMost(rotated.width)
-            val bottom = (cropRect.bottom * rotated.height).toInt().coerceAtMost(rotated.height)
+            val left = (cropRect.left * processed.width).toInt().coerceIn(0, processed.width)
+            val top = (cropRect.top * processed.height).toInt().coerceIn(0, processed.height)
+            val right = (cropRect.right * processed.width).toInt().coerceAtMost(processed.width)
+            val bottom = (cropRect.bottom * processed.height).toInt().coerceAtMost(processed.height)
             if (right > left && bottom > top) {
-                bitmap = Bitmap.createBitmap(rotated, left, top, right - left, bottom - top)
+                bitmap = Bitmap.createBitmap(processed, left, top, right - left, bottom - top)
             }
         }
         val res = extractFromPhotoBitmap(bitmap)
-        if (bitmap != rotated) bitmap.recycle()
+        if (bitmap != processed) bitmap.recycle()
+        processed.recycle()
         rotated.recycle()
         res.copy(originalPhotoPath = photoPath)
     }
@@ -343,8 +348,14 @@ object OdometerOcrUtils {
     suspend fun discoverLandmarks(photoPath: String, odometerCrop: RectF? = null, otherTextCrop: RectF? = null): List<TextBlock> = withContext(Dispatchers.IO) {
         val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        val ocrResult = extractFromPhotoBitmap(rotated)
-        val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, rotated.width, rotated.height)
+        
+        // EXPERIMENT: Process FULL image before landmark discovery
+        val processed = applyBilateral(applyGrayscale(rotated))
+        
+        val ocrResult = extractFromPhotoBitmap(processed)
+        val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
+        
+        processed.recycle()
         if (rotated != rawBitmap) rotated.recycle()
         rawBitmap.recycle()
         landmarks
