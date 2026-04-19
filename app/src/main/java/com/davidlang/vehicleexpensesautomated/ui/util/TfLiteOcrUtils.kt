@@ -42,13 +42,13 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 44: RAW BASELINE (No Split, No Glue, No Recursion).
+     * Phase 45: Adaptive Gap Sub-Windowing.
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
         scale: Float = 1.0f,
         sourceBitmap: Bitmap? = null, algorithm: String = "C",
-        recursive: Boolean = false // Phase 43/44 sub-window flag
+        recursive: Boolean = false
     ): DbNetResult {
         val tDiscoveryStart = System.currentTimeMillis()
         if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return DbNetResult(emptyList(), emptyList())
@@ -63,7 +63,6 @@ object TfLiteOcrUtils {
         } else null
 
         val contours = mutableListOf<MatOfPoint>(); val hierarchy = Mat()
-        // RETR_EXTERNAL ignores holes, which we want for the baseline
         Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
 
         val rawBoxes = mutableListOf<DetectedBox>()
@@ -74,15 +73,41 @@ object TfLiteOcrUtils {
         val sourceH = sourceBitmap?.height?.toDouble() ?: heatmapH.toDouble()
         val invScale = 1.0 / scale.toDouble()
 
+        // 1. Calculate Aspect Ratio Threshold using Adaptive Gap Rule
+        val threshold = if (!recursive) calculateAdaptiveThreshold(contours) else 1000f
+
         for (contour in contours) {
             if (Imgproc.contourArea(contour) < 10) continue 
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
+            val rectBounds = rotatedRect.boundingRect()
+            val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // PHASE 44: NO SPLITTING. Every suspicion goes straight to expansion.
+            // 2. Identify Suspects using threshold
+            if (!recursive && aspect > threshold && sourceMat != null) {
+                // Get refined ORANGE box to center the crop perfectly
+                val orangeBox = expandInRoi(
+                    RotatedRect(Point(rotatedRect.center.x * invScale, rotatedRect.center.y * invScale), Size(rotatedRect.size.width * invScale, rotatedRect.size.height * invScale), rotatedRect.angle),
+                    sourceMat, algorithm,
+                    android.graphics.Rect((rectBounds.x * invScale).toInt(), (rectBounds.y * invScale).toInt(), ((rectBounds.x + rectBounds.width) * invScale).toInt(), ((rectBounds.y + rectBounds.height) * invScale).toInt())
+                )
+                
+                // Add 30% Padding
+                val padW = (orangeBox.width() * 0.30).toInt()
+                val padH = (orangeBox.height() * 0.30).toInt()
+                val cropRect = RectF(
+                    ((orangeBox.left - padW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
+                    ((orangeBox.top - padH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
+                    ((orangeBox.right + padW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
+                    ((orangeBox.bottom + padH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
+                )
+                suspectCrops.add(cropRect)
+                continue // Discard the bloated original
+            }
+            
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // PHASE 44: NO MERGING/GLUING. Show every raw fragment.
+        // Phase 45: ALL MERGING DISABLED FOR DIAGNOSTICS
         val finalRaw = rawBoxes
         val finalRefined = intermediateRefined
         
@@ -90,80 +115,73 @@ object TfLiteOcrUtils {
         return DbNetResult(finalRaw, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
     }
 
+    private fun calculateAdaptiveThreshold(contours: List<MatOfPoint>): Float {
+        val aspects = contours.filter { Imgproc.contourArea(it) >= 10 }.map { 
+            val r = Imgproc.minAreaRect(MatOfPoint2f(*it.toArray())).boundingRect()
+            r.width.toDouble() / r.height.toDouble()
+        }.sorted()
+        
+        if (aspects.isEmpty()) return 3.0f
+        
+        // Bin into 0.5 buckets
+        val bins = mutableMapOf<Int, Int>()
+        for (a in aspects) { val bucket = (a / 0.5).toInt(); bins[bucket] = (bins[bucket] ?: 0) + 1 }
+        
+        // Find the "Gap" (two consecutive buckets with count 0)
+        val maxBucket = (aspects.last() / 0.5).toInt()
+        var gapBucketStart = maxBucket + 1
+        for (b in 0..maxBucket) {
+            if ((bins[b] ?: 0) == 0 && (bins[b+1] ?: 0) == 0) {
+                // Potential gap found. Ensure at least 50% of items are below it.
+                val itemsBelow = aspects.count { it < b * 0.5 }
+                if (itemsBelow >= (aspects.size * 0.5)) { gapBucketStart = b; break }
+            }
+        }
+        
+        val bulkAspects = aspects.filter { it < gapBucketStart * 0.5 }
+        if (bulkAspects.isEmpty()) return 3.0f
+        val avg = bulkAspects.average().toFloat()
+        val threshold = avg * 2.0f
+        Log.i("OcrAdaptive", "GapBucket=$gapBucketStart, BulkAvg=$avg, Threshold=$threshold")
+        return threshold
+    }
+
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
         val rotatedRect = if (rect is RotatedRect) rect else {
             val r = rect as org.opencv.core.Rect
             RotatedRect(Point(r.x + r.width/2.0, r.y + r.height/2.0), Size(r.width.toDouble(), r.height.toDouble()), 0.0)
         }
-        
         val rawPoints = arrayOf(Point(), Point(), Point(), Point()); rotatedRect.points(rawPoints)
         val normRawPoints = rawPoints.map { Point(it.x * invScale / sourceW, it.y * invScale / sourceH) }
-        val rawBounds = RectF(
-            (normRawPoints.minOf { it.x }.toFloat()).coerceIn(0f, 1f), (normRawPoints.minOf { it.y }.toFloat()).coerceIn(0f, 1f),
-            (normRawPoints.maxOf { it.x }.toFloat()).coerceIn(0f, 1f), (normRawPoints.maxOf { it.y }.toFloat()).coerceIn(0f, 1f)
-        )
+        val rawBounds = RectF((normRawPoints.minOf { it.x }.toFloat()).coerceIn(0f, 1f), (normRawPoints.minOf { it.y }.toFloat()).coerceIn(0f, 1f), (normRawPoints.maxOf { it.x }.toFloat()).coerceIn(0f, 1f), (normRawPoints.maxOf { it.y }.toFloat()).coerceIn(0f, 1f))
         rawBoxes.add(DetectedBox(rawPoints.toList(), rawBounds, rotatedRect.angle.toFloat()))
-
         val redFloorPixels = android.graphics.Rect((rawBounds.left * sourceW).toInt(), (rawBounds.top * sourceH).toInt(), (rawBounds.right * sourceW).toInt(), (rawBounds.bottom * sourceH).toInt())
         val sourceRect = RotatedRect(Point(rotatedRect.center.x * invScale, rotatedRect.center.y * invScale), Size(rotatedRect.size.width * invScale, rotatedRect.size.height * invScale), rotatedRect.angle)
-        
         val bounds = if (sourceMat != null) expandInRoi(sourceRect, sourceMat, algorithm, redFloorPixels) else redFloorPixels
-        // Removed bounds.union(redFloorPixels) to allow retracted crops
-        
-        val normRefinedBounds = RectF(
-            (bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
-            (bounds.right.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.bottom.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
-        )
+        val normRefinedBounds = RectF((bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f), (bounds.right.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.bottom.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f))
         refinedBoxes.add(DetectedBox(emptyList(), normRefinedBounds, rotatedRect.angle.toFloat()))
     }
 
     private fun expandInRoi(rect: RotatedRect, sourceMat: Mat, algorithm: String, redFloor: android.graphics.Rect): android.graphics.Rect {
         val margin = (rect.size.height * 3.0).toInt()
-        val roiL = max(0, (rect.center.x - rect.size.width/2 - margin).toInt())
-        val roiT = max(0, (rect.center.y - rect.size.height/2 - margin).toInt())
-        val roiR = min(sourceMat.cols(), (rect.center.x + rect.size.width/2 + margin).toInt())
-        val roiB = min(sourceMat.rows(), (rect.center.y + rect.size.height/2 + margin).toInt())
+        val roiL = max(0, (rect.center.x - rect.size.width/2 - margin).toInt()); val roiT = max(0, (rect.center.y - rect.size.height/2 - margin).toInt())
+        val roiR = min(sourceMat.cols(), (rect.center.x + rect.size.width/2 + margin).toInt()); val roiB = min(sourceMat.rows(), (rect.center.y + rect.size.height/2 + margin).toInt())
         if (roiR <= roiL || roiB <= roiT) return redFloor
-        
-        val roiMat = sourceMat.submat(roiT, roiB, roiL, roiR)
-        val gray = Mat(); if (roiMat.channels() > 1) Imgproc.cvtColor(roiMat, gray, Imgproc.COLOR_RGBA2GRAY) else roiMat.copyTo(gray)
+        val roiMat = sourceMat.submat(roiT, roiB, roiL, roiR); val gray = Mat(); if (roiMat.channels() > 1) Imgproc.cvtColor(roiMat, gray, Imgproc.COLOR_RGBA2GRAY) else roiMat.copyTo(gray)
         val localRedFloor = android.graphics.Rect(redFloor.left - roiL, redFloor.top - roiT, redFloor.right - roiL, redFloor.bottom - roiT)
-        
-        val expandedRect = when (algorithm) {
-            "B" -> {
-                val mask = Mat(); val pol = detectPolarity(gray)
-                if (pol == Polarity.LIGHT_ON_DARK) Imgproc.threshold(gray, mask, 80.0, 255.0, Imgproc.THRESH_BINARY)
-                else Imgproc.threshold(gray, mask, 170.0, 255.0, Imgproc.THRESH_BINARY_INV)
-                val res = expandPerimeter(localRedFloor, mask, mask.rows(), mask.cols())
-                mask.release(); res
-            }
-            else -> expandByValleyStop(localRedFloor, gray)
-        }
-        
-        gray.release(); roiMat.release()
+        val expandedRect = expandByValleyStop(localRedFloor, gray); gray.release(); roiMat.release()
         return android.graphics.Rect(expandedRect.left + roiL, expandedRect.top + roiT, expandedRect.right + roiL, expandedRect.bottom + roiT)
     }
 
     private fun expandByValleyStop(redFloor: android.graphics.Rect, gray: Mat): android.graphics.Rect {
-        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
-        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-        
-        // Safety check for empty crops
+        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble(); var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         if (redFloor.width() < 1 || redFloor.height() < 1) return redFloor
-
-        val hillSub = gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)
-        val hillBrightness = Core.mean(hillSub).`val`[0]
-        hillSub.release()
-        val valleyThreshold = hillBrightness * 0.40 
-        val maxH = gray.rows(); val maxW = gray.cols()
+        val hillSub = gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right); val hillBrightness = Core.mean(hillSub).`val`[0]; hillSub.release()
+        val valleyThreshold = hillBrightness * 0.40; val maxH = gray.rows(); val maxW = gray.cols()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-        
         val requiredBridgeHeight = (maxY - minY) * 0.15
-
-        // Phase 41: Goldilocks Vertical Expansion (8px wide minimum)
         while (minY > 0 && (sY - minY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true, valleyThreshold) < 8) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true, valleyThreshold) < 8) break; maxY += 1.0 }
-        
         while (minX > 0 && (sX - minX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; minX -= 1.0 }
         while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; maxX += 1.0 }
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
@@ -172,34 +190,7 @@ object TfLiteOcrUtils {
     private fun getLineInkCount(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean, threshold: Double): Int {
         var inkPixels = 0; val maxD = if (horizontal) mat.cols() else mat.rows()
         if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0
-        for (i in start until end) { 
-            if (i < 0 || i >= maxD) continue
-            val v = if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]
-            if (v > threshold) inkPixels++ 
-        }
+        for (i in start until end) { if (i < 0 || i >= maxD) continue; if ((if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]) > threshold) inkPixels++ }
         return inkPixels
-    }
-
-    private fun expandPerimeter(redFloor: android.graphics.Rect, mask: Mat, maxH: Int, maxW: Int): android.graphics.Rect {
-        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
-        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-        val requiredBridgeHeight = (maxY - minY) * 0.15
-        var changed = true
-        while (changed) {
-            changed = false
-            if (minY > 0 && (sY - minY) < vL && checkLine(mask, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true)) { minY -= 1.0; changed = true }
-            if (maxY < maxH - 1 && (maxY - sYY) < vL && checkLine(mask, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true)) { maxY += 1.0; changed = true }
-            if (minX > 0 && (sX - minX) < hL && getLineInkCount(mask, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, 0.0) >= requiredBridgeHeight) { minX -= 1.0; changed = true }
-            if (maxX < maxW - 1 && (maxX - sXX) < hL && getLineInkCount(mask, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, 0.0) >= requiredBridgeHeight) { maxX += 1.0; changed = true }
-        }
-        return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
-    }
-
-    private fun checkLine(mask: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Boolean {
-        val maxDim = if (horizontal) mask.cols() else mask.rows(); val fixedDim = if (horizontal) mask.rows() else mask.cols()
-        if (fixed < 0 || fixed >= fixedDim) return false
-        for (i in start until end) { if (i < 0 || i >= maxDim) continue; if (if (horizontal) mask.get(fixed, i)[0] > 0 else mask.get(i, fixed)[0] > 0) return true }
-        return false
     }
 }
