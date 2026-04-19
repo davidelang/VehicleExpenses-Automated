@@ -2,22 +2,26 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.util.Log
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import kotlin.math.min
 
 /**
- * Native TFLite Engine optimized for numeric_ocr.tflite [1, 200, 50, 1]
+ * Native TFLite Engine optimized for numeric_ocr.tflite [1, 50, 200, 1]
+ * Note: Input shape is [batch, height, width, channels]
  */
 class TfLiteOcrEngine(context: Context) {
     private var interpreter: Interpreter? = null
     private val labels = "0123456789"
     
-    private var inputHeight = 32
-    private var inputWidth = 128
+    private var inputHeight = 50
+    private var inputWidth = 200
     private var isGrayscale = true
 
     init {
@@ -31,7 +35,7 @@ class TfLiteOcrEngine(context: Context) {
             interpreter = interp
             
             // DYNAMIC SHAPE DISCOVERY
-            val inputShape = interp.getInputTensor(0).shape() // e.g. [1, 200, 50, 1]
+            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 50, 200, 1]
             inputHeight = inputShape[1]
             inputWidth = inputShape[2]
             isGrayscale = inputShape[3] == 1
@@ -54,14 +58,24 @@ class TfLiteOcrEngine(context: Context) {
     fun runInference(bitmap: Bitmap): String {
         val interp = interpreter ?: return "(Model not loaded)"
         
-        // 1. Pre-process based on discovered shape
-        val scaled = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
+        // 1. ASPECT-CORRECT PADDING: Avoid horizontal stretching
+        val scale = inputHeight.toFloat() / bitmap.height.toFloat()
+        val sw = (bitmap.width * scale).toInt().coerceAtMost(inputWidth)
+        val sh = inputHeight
+        
+        val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+        val padded = Bitmap.createBitmap(inputWidth, inputHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(padded)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(scaled, 0f, 0f, null)
+        scaled.recycle()
+
         val inputBuffer = ByteBuffer.allocateDirect(1 * inputHeight * inputWidth * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
         for (y in 0 until inputHeight) {
             for (x in 0 until inputWidth) {
-                val px = scaled.getPixel(x, y)
+                val px = padded.getPixel(x, y)
                 if (isGrayscale) {
                     val r = (px shr 16) and 0xFF
                     val g = (px shr 8) and 0xFF
@@ -74,34 +88,30 @@ class TfLiteOcrEngine(context: Context) {
                 }
             }
         }
-        scaled.recycle()
+        padded.recycle()
 
         // 2. Adaptive Output Handling
         val outputShape = interp.getOutputTensor(0).shape()
         
         if (outputShape.contentEquals(intArrayOf(1, 1, 20))) {
-            // Specialized numeric extractor for [1, 1, 20]
             val outputBuffer = Array(1) { Array(1) { FloatArray(20) } }
             try {
                 interp.run(inputBuffer, outputBuffer)
                 val data = outputBuffer[0][0]
-                // For this specific model, assume it returns digit probabilities or values
-                // Placeholder: extract top categories
                 return data.take(10).mapIndexed { i, v -> if (v > 0.5f) i.toString() else "" }.joinToString("").trim()
             } catch (e: Exception) {
-                return "(Inference Error: ${e.message})"
+                return "(Error)"
             }
         } else {
-            // Fallback to CTC for standard CRNN [1, Steps, Classes]
             val timeSteps = outputShape[1]
             val numClasses = outputShape[2]
             val outputBuffer = Array(1) { Array(timeSteps) { FloatArray(numClasses) } }
             try {
                 interp.run(inputBuffer, outputBuffer)
                 val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, labels.map { it.toString() }, blankIndex = 10)
-                return if (text.isEmpty()) "(no digits)" else text
+                return text
             } catch (e: Exception) {
-                return "(Inference Error: ${e.message})"
+                return "(Error)"
             }
         }
     }
