@@ -144,7 +144,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
 
     private fun runDetection(bitmap: Bitmap): DetectionResult {
         val predictor = sharedDetector ?: return DetectionResult(emptyList(), emptyList(), 1f, 0)
-        val inputSize = 2560 // INCREASED FROM 1280
+        val inputSize = 1280 // REVERTED FROM 2560 FOR STABILITY
         val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
         if (detectionInputBuffer == null || lastUsedInputSize != inputSize) { detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize); lastUsedInputSize = inputSize }
         val floatData = detectionInputBuffer!!
