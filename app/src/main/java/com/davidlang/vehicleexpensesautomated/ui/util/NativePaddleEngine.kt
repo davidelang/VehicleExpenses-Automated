@@ -100,31 +100,30 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         for (i in detectionRes.rawBoxes.indices) {
             val rawBox = detectionRes.rawBoxes[i]
             val refinedBox = detectionRes.refinedBoxes.getOrNull(i)
-            val nb = refinedBox?.boundingBox ?: rawBox.boundingBox
+            val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
             
-            val pixelRect = Rect(
-                (nb.left * bitmap.width).toInt().coerceIn(0, bitmap.width),
-                (nb.top * bitmap.height).toInt().coerceIn(0, bitmap.height),
-                (nb.right * bitmap.width).toInt().coerceIn(0, bitmap.width),
-                (nb.bottom * bitmap.height).toInt().coerceIn(0, bitmap.height)
-            )
+            // YELLOW: Final crop with +8px padding in source space
+            val left = (orange.left * bitmap.width).toInt() - 8
+            val top = (orange.top * bitmap.height).toInt() - 8
+            val right = (orange.right * bitmap.width).toInt() + 8
+            val bottom = (orange.bottom * bitmap.height).toInt() + 8
+            
+            val cropRect = Rect(max(0, left), max(0, top), min(bitmap.width, right), min(bitmap.height, bottom))
 
-            if (pixelRect.width() < 1 || pixelRect.height() < 1) {
-                textBlocks.add(TextBlock(text = "", boundingBox = pixelRect, rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
+            if (cropRect.width() < 1 || cropRect.height() < 1) {
+                textBlocks.add(TextBlock(text = "", boundingBox = cropRect, rawDiscoveryBox = rawBox.boundingBox, refinedDiscoveryBox = refinedBox?.boundingBox))
                 continue
             }
 
-            val crop = cropBitmap(bitmap, pixelRect)
+            val crop = cropBitmap(bitmap, cropRect)
             val res = runRecognitionStage(crop, 48)
             crop.recycle()
             
-            if (res.text.isNotBlank()) {
-                sb.append(res.text).append(" ")
-            }
+            if (res.text.isNotBlank()) sb.append(res.text).append(" ")
             
             textBlocks.add(TextBlock(
                 text = res.text, 
-                boundingBox = pixelRect, 
+                boundingBox = cropRect, 
                 angle = refinedBox?.angle ?: 0f,
                 rawDiscoveryBox = rawBox.boundingBox,
                 refinedDiscoveryBox = refinedBox?.boundingBox
@@ -173,11 +172,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             inputTensor.setData(floatData); predictor.run()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
             val dbRes = TfLiteOcrUtils.processDbNetOutput(
-                outputData, 
-                outW, 
-                outH, 
-                scale = scale, 
-                sourceBitmap = bitmap,
+                outputData, outW, outH, scale = scale, sourceBitmap = bitmap,
                 algorithm = "C" // Paddle-Lite uses Edge-Stop
             )
             padded.recycle()
