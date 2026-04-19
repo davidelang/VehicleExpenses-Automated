@@ -67,7 +67,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
     }
 
     private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
-        val inputSize = 2560 // INCREASED FROM 1280
+        val inputSize = 1280 // REVERTED FROM 2560 FOR STABILITY
         val textBlocks = mutableListOf<TextBlock>()
         
         if (detectionInputBuffer == null || lastUsedInputSize != inputSize) {
@@ -87,7 +87,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         
         val inputBuffer = prepareDetectionBuffer(padded, inputSize, floatData)
         
-        // Dynamically resize interpreter for 2560px
+        // Dynamically resize interpreter back to 1280px
         detInterpreter?.resizeInput(0, intArrayOf(1, inputSize, inputSize, 3))
         detInterpreter?.allocateTensors()
         
@@ -103,7 +103,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         val discoveryHeatmap = rawHeatmap.copyOf()
         val dbRes = TfLiteOcrUtils.processDbNetOutput(
             discoveryHeatmap, inputSize, inputSize, scale = scale,
-            sourceBitmap = bitmap, algorithm = "B" // STANDARDIZED B
+            sourceBitmap = bitmap, algorithm = "B" 
         )
         
         val results = StringBuilder()
@@ -113,7 +113,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
             val refinedBox = dbRes.refinedBoxes.getOrNull(i)
             val orange = refinedBox?.boundingBox ?: rawBox.boundingBox
             
-            // YELLOW: Final crop with +8px padding in source space
+            // nb is normalized to source pixels
             val left = (orange.left * bitmap.width).toInt() - 8
             val top = (orange.top * bitmap.height).toInt() - 8
             val right = (orange.right * bitmap.width).toInt() + 8

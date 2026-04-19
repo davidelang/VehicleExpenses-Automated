@@ -137,7 +137,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val engine = TfLiteOcrEngine(context)
-        val inputSize = 2560 // INCREASED FROM 1280
+        val inputSize = 1280 // REVERTED FROM 2560 FOR STABILITY
         
         val detInterpreter = try {
             val file = File(context.cacheDir, "tflite_paddle_det_model.tflite")
@@ -182,7 +182,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
             
             val dbRes = TfLiteOcrUtils.processDbNetOutput(
                 rawHeatmap, inputSize, inputSize, scale = scale,
-                sourceBitmap = bitmap, algorithm = "B" // STANDARDIZED B
+                sourceBitmap = bitmap, algorithm = "B" 
             )
             
             for (i in dbRes.rawBoxes.indices) {

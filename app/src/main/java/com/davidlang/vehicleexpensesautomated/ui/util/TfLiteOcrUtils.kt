@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 20: Stable Word Splitting via Contiguous Gap Detection.
+     * Phase 22: Stable Resolution with High-Res ROI Gap Detection.
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -76,16 +76,27 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // STABLE TRIGGER: Restore 2.8 threshold to avoid shattering single words
-            if (aspect > 2.8) {
-                val splitIndex = findStableHeatmapValley(heatmap, heatmapW, rectBounds)
-                if (splitIndex != -1) {
-                    val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitIndex - rectBounds.x, rectBounds.height)
-                    val rightRect = org.opencv.core.Rect(splitIndex, rectBounds.y, (rectBounds.x + rectBounds.width) - splitIndex, rectBounds.height)
-                    processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                    processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
-                    Log.i("OcrSplit", "RESULT: SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex")
-                    continue
+            // Phase 22: Split using High-Res Source if Wide
+            if (aspect > 2.2 && sourceMat != null) {
+                // Map low-res heatmap bounds to high-res source space
+                val roiL = (rectBounds.x * invScale).toInt(); val roiT = (rectBounds.y * invScale).toInt()
+                val roiW = (rectBounds.width * invScale).toInt(); val roiH = (rectBounds.height * invScale).toInt()
+                
+                if (roiL >= 0 && (roiL + roiW) <= sourceMat.cols() && roiT >= 0 && (roiT + roiH) <= sourceMat.rows()) {
+                    val highResRoi = sourceMat.submat(roiT, roiT + roiH, roiL, roiL + roiW)
+                    val splitIndex = findHighResValley(highResRoi)
+                    highResRoi.release()
+                    
+                    if (splitIndex != -1) {
+                        // Split coordinates are relative to the heatmap's rectBounds
+                        val splitHeatmapX = (splitIndex.toDouble() * scale).toInt()
+                        val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitHeatmapX, rectBounds.height)
+                        val rightRect = org.opencv.core.Rect(rectBounds.x + splitHeatmapX, rectBounds.y, rectBounds.width - splitHeatmapX, rectBounds.height)
+                        processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                        processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                        Log.i("OcrSplit", "RESULT: HIGH-RES SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex (source pixels)")
+                        continue
+                    }
                 }
             }
             
@@ -96,49 +107,38 @@ object TfLiteOcrUtils {
         return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findStableHeatmapValley(heatmap: FloatArray, heatmapW: Int, bounds: org.opencv.core.Rect): Int {
-        val xStart = bounds.x; val xEnd = bounds.x + bounds.width
-        val yStart = bounds.y; val yEnd = bounds.y + bounds.height
-        val hProj = FloatArray(bounds.width)
+    private fun findHighResValley(roi: Mat): Int {
+        val gray = Mat(); if (roi.channels() > 1) Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY) else roi.copyTo(gray)
+        val hProj = FloatArray(gray.cols())
         
-        for (x in xStart until xEnd) {
-            var sum = 0f
-            for (y in yStart until yEnd) { sum += heatmap[y * heatmapW + x] }
-            hProj[x - xStart] = sum / bounds.height
+        for (x in 0 until gray.cols()) {
+            var sum = 0.0
+            for (y in 0 until gray.rows()) { sum += gray.get(y, x)[0] }
+            hProj[x] = (sum / gray.rows()).toFloat()
         }
         
-        val maxIntensity = hProj.maxOrNull() ?: 1.0f
-        val valleyThreshold = maxIntensity * 0.75 // Tighter threshold
-        val margin = (bounds.width * 0.15).toInt() // 15% margin
+        val maxBrightness = hProj.maxOrNull() ?: 1.0f
+        val valleyThreshold = maxBrightness * 0.45 // Stop at 55% drop
+        val margin = (gray.cols() * 0.15).toInt()
         
-        var bestValleyCenter = -1
-        var maxGapWidth = 0
-        var currentGapWidth = 0
-        var currentGapStart = -1
+        var bestValleyX = -1; var minIntensity = 256.0f
+        var maxGapWidth = 0; var currentGapWidth = 0; var currentGapStart = -1
 
-        // Look for CONTIGUOUS low-intensity gap (Phase 20 logic)
-        for (i in margin until (bounds.width - margin)) {
+        for (i in margin until (gray.cols() - margin)) {
             if (hProj[i] < valleyThreshold) {
                 if (currentGapStart == -1) currentGapStart = i
                 currentGapWidth++
             } else {
-                if (currentGapWidth >= 3 && currentGapWidth > maxGapWidth) {
+                if (currentGapWidth >= 5 && currentGapWidth > maxGapWidth) { // 5px gap in High Res
                     maxGapWidth = currentGapWidth
-                    bestValleyCenter = currentGapStart + (currentGapWidth / 2)
+                    bestValleyX = currentGapStart + (currentGapWidth / 2)
                 }
-                currentGapStart = -1
-                currentGapWidth = 0
+                currentGapStart = -1; currentGapWidth = 0
             }
         }
-        // Check final gap
-        if (currentGapWidth >= 3 && currentGapWidth > maxGapWidth) {
-            bestValleyCenter = currentGapStart + (currentGapWidth / 2)
-        }
-
-        val minVal = hProj.minOrNull() ?: 1.0f
-        Log.i("OcrSplit", "WIDE BLOB [${bounds.width}x${bounds.height}]: Peak=$maxIntensity, Min=$minVal, Ratio=${minVal/maxIntensity}, GapSize=$maxGapWidth")
         
-        return if (bestValleyCenter != -1) (xStart + bestValleyCenter) else -1
+        gray.release()
+        return if (bestValleyX != -1) bestValleyX else -1
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
@@ -198,11 +198,7 @@ object TfLiteOcrUtils {
     private fun expandByValleyStop(redFloor: android.graphics.Rect, gray: Mat): android.graphics.Rect {
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-        
-        val hillSub = gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)
-        val hillBrightness = Core.mean(hillSub).`val`[0]
-        hillSub.release()
-        
+        val hillBrightness = Core.mean(gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)).`val`[0]
         val valleyThreshold = hillBrightness * 0.40 
         val maxH = gray.rows(); val maxW = gray.cols()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
@@ -210,7 +206,7 @@ object TfLiteOcrUtils {
         while (minY > 0 && (sY - minY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isDarkGap(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) || getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
         while (minX > 0 && (sX - minX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isDarkGap(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) || getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
         
         return android.graphics.Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
     }
