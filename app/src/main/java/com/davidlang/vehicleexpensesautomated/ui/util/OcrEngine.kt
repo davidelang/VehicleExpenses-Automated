@@ -222,7 +222,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 inputSize, 
                 scale = scale,
                 sourceBitmap = bitmap,
-                algorithm = "A" // TFLite uses Projection-Based
+                algorithm = "A" // TFLite uses Projection-Based (Density)
             )
             
             // LINK THE TIERS: Capture every suspicion, including those without text

@@ -26,9 +26,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Image
 import com.davidlang.vehicleexpensesautomated.ui.util.RectF
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import kotlin.math.min
+import kotlin.math.max
 
 @Composable
 fun LandmarkDebugDialog(
@@ -59,7 +62,7 @@ fun LandmarkDebugDialog(
             color = MaterialTheme.colorScheme.surface
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header (With padding)
+                // Header
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -88,7 +91,6 @@ fun LandmarkDebugDialog(
                     val imgW = bitmap.width.toFloat()
                     val imgH = bitmap.height.toFloat()
                     
-                    // SEAMLESS SCALING: Fill available space while forcing the Box to match photo aspect
                     Box(modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = false)
@@ -97,8 +99,6 @@ fun LandmarkDebugDialog(
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val containerW = size.width
                             val containerH = size.height
-                            
-                            // Because Box is aspect-ratio constrained, container aspect matches image aspect
                             val scale = minOf(containerW / imgW, containerH / imgH)
                             val dw = imgW * scale
                             val dh = imgH * scale
@@ -112,7 +112,7 @@ fun LandmarkDebugDialog(
                             )
 
                             if (showDiscovery) {
-                                // 1. RED TIER (Model Suspicion) - HIGH VISIBILITY 45% SOLID TINT
+                                // 1. RED TIER (Model Suspicion) - 45% SOLID TINT
                                 rawDiscoveryBoxes.forEach { box ->
                                     drawRect(
                                         color = Color.Red.copy(alpha = 0.45f),
@@ -125,7 +125,7 @@ fun LandmarkDebugDialog(
                                 landmarks.forEach { lm ->
                                     lm.refinedDiscoveryBox?.let { box ->
                                         drawRect(
-                                            color = Color(0xFFFF8C00), // Orange
+                                            color = Color(0xFFFF8C00),
                                             topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
                                             size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh),
                                             style = Stroke(6f)
@@ -165,7 +165,7 @@ fun LandmarkDebugDialog(
                     }
                 }
 
-                // Metadata Footer - Grid fills all remaining space below the image
+                // Metadata Footer
                 Column(modifier = Modifier.padding(16.dp).weight(1f)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -173,7 +173,7 @@ fun LandmarkDebugDialog(
                     }
                     
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Discovery Pipeline Metrics:", style = MaterialTheme.typography.titleSmall)
+                    Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall)
                     
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 160.dp),
@@ -189,6 +189,28 @@ fun LandmarkDebugDialog(
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
                                 Column(modifier = Modifier.padding(6.dp)) {
+                                    // 1. CROP PREVIEW
+                                    val cropBmp = remember(lm.boundingBox, bitmap) {
+                                        if (bitmap == null) null else {
+                                            try {
+                                                val r = lm.boundingBox
+                                                val left = max(0, r.left); val top = max(0, r.top)
+                                                val w = min(bitmap.width - left, r.width()); val h = min(bitmap.height - top, r.height())
+                                                if (w > 0 && h > 0) Bitmap.createBitmap(bitmap, left, top, w, h) else null
+                                            } catch (e: Exception) { null }
+                                        }
+                                    }
+                                    
+                                    if (cropBmp != null) {
+                                        Image(
+                                            bitmap = cropBmp.asImageBitmap(),
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxWidth().height(40.dp).background(Color.Black),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                    }
+
                                     if (lm.text.isNotBlank()) {
                                         Text(text = lm.text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                                     } else {
