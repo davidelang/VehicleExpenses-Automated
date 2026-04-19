@@ -187,7 +187,7 @@ fun LandmarkDebugDialog(
                     ) {
                         items(landmarks) { lm ->
                             Surface(
-                                modifier = Modifier.height(42.dp), // FIXED HEIGHT
+                                modifier = Modifier.height(42.dp), // FIXED HEIGHT 42PX
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                 shape = MaterialTheme.shapes.extraSmall,
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
