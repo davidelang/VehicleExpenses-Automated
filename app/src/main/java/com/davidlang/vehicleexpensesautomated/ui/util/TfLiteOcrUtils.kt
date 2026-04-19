@@ -267,8 +267,8 @@ object TfLiteOcrUtils {
         
         val finalL = bounds.left; val finalT = bounds.top; val finalR = bounds.right; val finalB = bounds.bottom
         val finalW = finalR - finalL; val finalH = finalB - finalT
-        Log.i("OCR_TRACE", "RED: [${rawBounds.left}, ${rawBounds.top}, ${rawBounds.right}, ${rawBounds.bottom}] YELLOW: [L=$finalL, T=$finalT, R=$finalR, B=$finalB, W=$finalW, H=$finalH]")
-
+        // Removed OCR_TRACE here; moved to Engine layer for full context
+        
         val normRefinedBounds = RectF(
             (bounds.left.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.top.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
             (bounds.right.toFloat() / sourceW.toFloat()).coerceIn(0f, 1f), (bounds.bottom.toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)

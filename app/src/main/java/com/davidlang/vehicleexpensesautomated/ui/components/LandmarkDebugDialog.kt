@@ -126,12 +126,13 @@ fun LandmarkDebugDialog(
                                 }
                                 landmarks.forEach { lm ->
                                     lm.refinedDiscoveryBox?.let { box ->
-                                        drawRect(
+                                        // ORANGE TIER DISABLED
+                                        /*drawRect(
                                             color = Color(0xFFFF8C00),
                                             topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
                                             size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh),
                                             style = Stroke(6f)
-                                        )
+                                        )*/
                                     }
                                 }
                             }
@@ -143,7 +144,7 @@ fun LandmarkDebugDialog(
                                 val nh = (lm.boundingBox.bottom - lm.boundingBox.top).toFloat() / sourceHeight.toFloat()
                                 val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
                                 if (nw > 0 && nh > 0) {
-                                    drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(2f))
+                                    drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(1f))
                                 }
                                 if (lm.text.isNotBlank()) {
                                     drawText(
