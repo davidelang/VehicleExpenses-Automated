@@ -103,7 +103,7 @@ class PaddleOcrEngine(private val context: Context, private val isConstrained: B
         val discoveryHeatmap = rawHeatmap.copyOf()
         val dbRes = TfLiteOcrUtils.processDbNetOutput(
             discoveryHeatmap, inputSize, inputSize, scale = scale,
-            sourceBitmap = bitmap, algorithm = "B" 
+            sourceBitmap = bitmap, algorithm = "C" 
         )
         
         val results = StringBuilder()
