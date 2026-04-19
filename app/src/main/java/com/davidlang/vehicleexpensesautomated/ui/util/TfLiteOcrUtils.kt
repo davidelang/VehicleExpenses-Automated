@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Splitting Pass: Detects low-confidence valleys in wide blobs to separate "sticky" text.
+     * Phase 20: Stable Word Splitting via Contiguous Gap Detection.
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -73,18 +73,18 @@ object TfLiteOcrUtils {
         for (contour in contours) {
             if (Imgproc.contourArea(contour) < 10) continue 
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
-            
-            // AGGRESSIVE SECOND PASS: Valley Detection for Wide Blobs
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            if (aspect > 1.8) { // LOWERED FROM 2.5
-                val splitIndex = findHeatmapValley(heatmap, heatmapW, rectBounds)
+            // STABLE TRIGGER: Restore 2.8 threshold to avoid shattering single words
+            if (aspect > 2.8) {
+                val splitIndex = findStableHeatmapValley(heatmap, heatmapW, rectBounds)
                 if (splitIndex != -1) {
                     val leftRect = org.opencv.core.Rect(rectBounds.x, rectBounds.y, splitIndex - rectBounds.x, rectBounds.height)
                     val rightRect = org.opencv.core.Rect(splitIndex, rectBounds.y, (rectBounds.x + rectBounds.width) - splitIndex, rectBounds.height)
                     processSubBlob(leftRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
                     processSubBlob(rightRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, refinedBoxes)
+                    Log.i("OcrSplit", "RESULT: SPLIT Wide Blob [${rectBounds.width}x${rectBounds.height}] at $splitIndex")
                     continue
                 }
             }
@@ -96,7 +96,7 @@ object TfLiteOcrUtils {
         return DbNetResult(rawBoxes, refinedBoxes, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart)
     }
 
-    private fun findHeatmapValley(heatmap: FloatArray, heatmapW: Int, bounds: org.opencv.core.Rect): Int {
+    private fun findStableHeatmapValley(heatmap: FloatArray, heatmapW: Int, bounds: org.opencv.core.Rect): Int {
         val xStart = bounds.x; val xEnd = bounds.x + bounds.width
         val yStart = bounds.y; val yEnd = bounds.y + bounds.height
         val hProj = FloatArray(bounds.width)
@@ -107,23 +107,38 @@ object TfLiteOcrUtils {
             hProj[x - xStart] = sum / bounds.height
         }
         
-        val margin = (bounds.width * 0.05).toInt() // LOWERED FROM 20%
-        var bestValleyX = -1; var minIntensity = 100.0f
+        val maxIntensity = hProj.maxOrNull() ?: 1.0f
+        val valleyThreshold = maxIntensity * 0.75 // Tighter threshold
+        val margin = (bounds.width * 0.15).toInt() // 15% margin
         
+        var bestValleyCenter = -1
+        var maxGapWidth = 0
+        var currentGapWidth = 0
+        var currentGapStart = -1
+
+        // Look for CONTIGUOUS low-intensity gap (Phase 20 logic)
         for (i in margin until (bounds.width - margin)) {
-            if (hProj[i] < minIntensity) {
-                minIntensity = hProj[i]
-                bestValleyX = xStart + i
+            if (hProj[i] < valleyThreshold) {
+                if (currentGapStart == -1) currentGapStart = i
+                currentGapWidth++
+            } else {
+                if (currentGapWidth >= 3 && currentGapWidth > maxGapWidth) {
+                    maxGapWidth = currentGapWidth
+                    bestValleyCenter = currentGapStart + (currentGapWidth / 2)
+                }
+                currentGapStart = -1
+                currentGapWidth = 0
             }
         }
+        // Check final gap
+        if (currentGapWidth >= 3 && currentGapWidth > maxGapWidth) {
+            bestValleyCenter = currentGapStart + (currentGapWidth / 2)
+        }
+
+        val minVal = hProj.minOrNull() ?: 1.0f
+        Log.i("OcrSplit", "WIDE BLOB [${bounds.width}x${bounds.height}]: Peak=$maxIntensity, Min=$minVal, Ratio=${minVal/maxIntensity}, GapSize=$maxGapWidth")
         
-        val maxIntensity = hProj.maxOrNull() ?: 1.0f
-        val splitRatio = minIntensity / maxIntensity
-        
-        Log.i("OcrSplit", "Wide Blob [${bounds.width}x${bounds.height}]: Peak=$maxIntensity, Min=$minIntensity, Ratio=$splitRatio")
-        
-        // AGGRESSIVE: Split if there is ANY significant dip (85% ratio)
-        return if (splitRatio < 0.85) bestValleyX else -1
+        return if (bestValleyCenter != -1) (xStart + bestValleyCenter) else -1
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
