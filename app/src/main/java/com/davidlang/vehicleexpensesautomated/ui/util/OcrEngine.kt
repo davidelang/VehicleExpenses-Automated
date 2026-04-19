@@ -203,6 +203,18 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
 
                 val crop = Bitmap.createBitmap(bitmap, cropRect.left, cropRect.top, cropRect.width(), cropRect.height())
                 val text = engine.runInference(crop); crop.recycle()
+                
+                // SELF-CONTAINED DIAGNOSTIC LOG
+                val rawW = ((rawBox.boundingBox.right - rawBox.boundingBox.left) * bitmap.width).toInt()
+                val rawH = ((rawBox.boundingBox.bottom - rawBox.boundingBox.top) * bitmap.height).toInt()
+                val rawL = (rawBox.boundingBox.left * bitmap.width).toInt()
+                val rawT = (rawBox.boundingBox.top * bitmap.height).toInt()
+                val refW = ((orange.right - orange.left) * bitmap.width).toInt()
+                val refH = ((orange.bottom - orange.top) * bitmap.height).toInt()
+                val refL = (orange.left * bitmap.width).toInt()
+                val refT = (orange.top * bitmap.height).toInt()
+                android.util.Log.i("OCR_TRACE", "Engine: $name | Source: ${bitmap.width}x${bitmap.height} | Text: '$text' | RED: [W=$rawW, H=$rawH, L=$rawL, T=$rawT] | ORANGE: [W=$refW, H=$refH, L=$refL, T=$refT] | YELLOW: [W=${cropRect.width()}, H=${cropRect.height()}, L=${cropRect.left}, T=${cropRect.top}]")
+
                 if (text.isNotBlank()) debugText.append("$text ")
                 textBlocks.add(TextBlock(text, cropRect, refinedBox?.angle ?: 0f, rawBox.boundingBox, refinedBox?.boundingBox))
             }

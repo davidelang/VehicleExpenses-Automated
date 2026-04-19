@@ -115,9 +115,19 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             val crop = cropBitmap(bitmap, cropRect)
             val res = runRecognitionStage(crop, 48)
             crop.recycle()
-            
-            if (res.text.isNotBlank()) sb.append(res.text).append(" ")
-            
+
+            // SELF-CONTAINED DIAGNOSTIC LOG
+            val rawW = ((rawBox.boundingBox.right - rawBox.boundingBox.left) * bitmap.width).toInt()
+            val rawH = ((rawBox.boundingBox.bottom - rawBox.boundingBox.top) * bitmap.height).toInt()
+            val rawL = (rawBox.boundingBox.left * bitmap.width).toInt()
+            val rawT = (rawBox.boundingBox.top * bitmap.height).toInt()
+            val refW = ((orange.right - orange.left) * bitmap.width).toInt()
+            val refH = ((orange.bottom - orange.top) * bitmap.height).toInt()
+            val refL = (orange.left * bitmap.width).toInt()
+            val refT = (orange.top * bitmap.height).toInt()
+            android.util.Log.i("OCR_TRACE", "Engine: $name | Source: ${bitmap.width}x${bitmap.height} | Text: '${res.text}' | RED: [W=$rawW, H=$rawH, L=$rawL, T=$rawT] | ORANGE: [W=$refW, H=$refH, L=$refL, T=$refT] | YELLOW: [W=${cropRect.width()}, H=${cropRect.height()}, L=${cropRect.left}, T=${cropRect.top}]")
+
+            if (res.text.isNotBlank()) sb.append(res.text).append(" ")            
             textBlocks.add(TextBlock(
                 text = res.text, 
                 boundingBox = cropRect, 
