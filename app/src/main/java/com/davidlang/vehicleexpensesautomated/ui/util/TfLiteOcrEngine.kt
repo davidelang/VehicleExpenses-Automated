@@ -36,8 +36,9 @@ class TfLiteOcrEngine(context: Context) {
             
             // DYNAMIC SHAPE DISCOVERY
             val inputShape = interp.getInputTensor(0).shape() // Expected [1, 50, 200, 1]
-            inputHeight = inputShape[1]
-            inputWidth = inputShape[2]
+            // Enforce Width > Height to handle model export transpositions
+            inputHeight = kotlin.math.min(inputShape[1], inputShape[2])
+            inputWidth = kotlin.math.max(inputShape[1], inputShape[2])
             isGrayscale = inputShape[3] == 1
             
             Log.i("TfLiteOcr", "Model loaded. Shape: ${inputShape.joinToString(",")}, Gray=$isGrayscale")
@@ -99,7 +100,12 @@ class TfLiteOcrEngine(context: Context) {
             try {
                 interp.run(inputBuffer, outputBuffer)
                 val data = outputBuffer[0][0]
-                return data.take(10).mapIndexed { i, v -> if (v > 0.5f) i.toString() else "" }.joinToString("").trim()
+                // Cast float values to int indices, skip out-of-bounds, map to label string.
+                return data.map { it.toInt() }
+                           .filter { it in 0..9 }
+                           .map { labels[it] }
+                           .joinToString("")
+                           .trim()
             } catch (e: Exception) {
                 return "(Error)"
             }
