@@ -18,11 +18,15 @@ import kotlin.math.min
  */
 class TfLiteOcrEngine(private val context: Context) {
     private var interpreter: Interpreter? = null
-    private val labels = "0123456789mphk/MPH "
+    private val labels = "0123456789.km/hMPH "
     
     private var inputHeight = 50
     private var inputWidth = 200
     private var isGrayscale = true
+
+    companion object {
+        var debugCounter = 0
+    }
 
     init {
         try {
@@ -36,9 +40,8 @@ class TfLiteOcrEngine(private val context: Context) {
             
             // DYNAMIC SHAPE DISCOVERY
             val inputShape = interp.getInputTensor(0).shape() // Expected [1, 200, 50, 1]
-            // Enforce Width > Height to handle model export transpositions
-            inputHeight = kotlin.math.min(inputShape[1], inputShape[2])
-            inputWidth = kotlin.math.max(inputShape[1], inputShape[2])
+            inputHeight = inputShape[1]
+            inputWidth = inputShape[2]
             isGrayscale = inputShape[3] == 1
             
             Log.i("TfLiteOcr", "Model loaded. Shape: ${inputShape.joinToString(",")}, Gray=$isGrayscale")
@@ -60,12 +63,16 @@ class TfLiteOcrEngine(private val context: Context) {
         val interp = interpreter ?: return "(Model not loaded)"
         
         // 1. ASPECT-CORRECT PADDING: Avoid horizontal stretching
-        val scale = inputHeight.toFloat() / bitmap.height.toFloat()
-        val sw = (bitmap.width * scale).toInt().coerceAtMost(inputWidth)
-        val sh = inputHeight
+        // Target shape based on model reported dimensions
+        val targetH = inputHeight
+        val targetW = inputWidth
+        
+        val scale = targetH.toFloat() / bitmap.height.toFloat()
+        val sw = (bitmap.width * scale).toInt().coerceAtMost(targetW)
+        val sh = targetH
         
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
-        val padded = Bitmap.createBitmap(inputWidth, inputHeight, Bitmap.Config.ARGB_8888)
+        val padded = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded)
         canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(scaled, 0f, 0f, null)
@@ -74,8 +81,8 @@ class TfLiteOcrEngine(private val context: Context) {
         // Pass 1: Find min/max for contrast normalization
         var minPx = 255f
         var maxPx = 0f
-        for (y in 0 until inputHeight) {
-            for (x in 0 until inputWidth) {
+        for (y in 0 until targetH) {
+            for (x in 0 until targetW) {
                 val px = padded.getPixel(x, y)
                 val r = (px shr 16) and 0xFF
                 val g = (px shr 8) and 0xFF
@@ -86,13 +93,13 @@ class TfLiteOcrEngine(private val context: Context) {
             }
         }
 
-        val inputBuffer = ByteBuffer.allocateDirect(1 * inputHeight * inputWidth * (if (isGrayscale) 1 else 3) * 4)
+        val inputBuffer = ByteBuffer.allocateDirect(1 * targetH * targetW * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        // Pass 2: Transpose writing with Min-Max normalization to [-1, 1]
+        // Pass 2: Row-Major Tensor Loop (Standard Reading Order)
         val range = if (maxPx - minPx > 1f) (maxPx - minPx) else 255f
-        for (x in 0 until inputWidth) {
-            for (y in 0 until inputHeight) {
+        for (y in 0 until targetH) {
+            for (x in 0 until targetW) {
                 val px = padded.getPixel(x, y)
                 if (isGrayscale) {
                     val r = (px shr 16) and 0xFF
@@ -115,16 +122,28 @@ class TfLiteOcrEngine(private val context: Context) {
         // 2. Adaptive Output Handling
         try {
             val numClasses = interp.getOutputTensor(0).shape().last()
-            val maxTimeSteps = inputWidth
-            val outputBuffer = ByteBuffer.allocateDirect(1 * maxTimeSteps * numClasses * 4)
+            // We know the sequence length is the largest dimension / 4
+            val timeSteps = kotlin.math.max(targetW, targetH) / 4
+            val outputBuffer = ByteBuffer.allocateDirect(1 * timeSteps * numClasses * 4)
             outputBuffer.order(ByteOrder.nativeOrder())
             
+            // DUMP BUFFER TO DISK BEFORE INFERENCE
+            try {
+                inputBuffer.rewind()
+                val f = java.io.File(context.cacheDir, "tflite_in_${debugCounter++}.raw")
+                val arr = ByteArray(inputBuffer.capacity())
+                inputBuffer.get(arr)
+                f.writeBytes(arr)
+                inputBuffer.rewind()
+            } catch (e: Exception) {
+                Log.e("TfLiteOcr", "Failed to dump buffer", e)
+            }
+
             interp.run(inputBuffer, outputBuffer)
             
             val finalShape = interp.getOutputTensor(0).shape()
             Log.i("TfLiteOcr", "Inference Final Shape: ${finalShape.joinToString(",")}")
             
-            val timeSteps = inputWidth / 4
             val actualClasses = finalShape.last()
             
             outputBuffer.rewind()
