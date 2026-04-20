@@ -81,11 +81,15 @@ class TfLiteOcrEngine(context: Context) {
                     val r = (px shr 16) and 0xFF
                     val g = (px shr 8) and 0xFF
                     val b = px and 0xFF
-                    inputBuffer.putFloat((0.299f * r + 0.587f * g + 0.114f * b) / 255.0f)
+                    val gray = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f
+                    inputBuffer.putFloat((gray - 0.5f) / 0.5f)
                 } else {
-                    inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f))
-                    inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f))
-                    inputBuffer.putFloat(((px and 0xFF) / 255.0f))
+                    val r = (px shr 16 and 0xFF) / 255.0f
+                    val g = (px shr 8 and 0xFF) / 255.0f
+                    val b = (px and 0xFF) / 255.0f
+                    inputBuffer.putFloat((r - 0.5f) / 0.5f)
+                    inputBuffer.putFloat((g - 0.5f) / 0.5f)
+                    inputBuffer.putFloat((b - 0.5f) / 0.5f)
                 }
             }
         }
@@ -100,12 +104,20 @@ class TfLiteOcrEngine(context: Context) {
             try {
                 interp.run(inputBuffer, outputBuffer)
                 val data = outputBuffer[0][0]
-                // Cast float values to int indices, skip out-of-bounds, map to label string.
-                return data.map { it.toInt() }
-                           .filter { it in 0..9 }
-                           .map { labels[it] }
-                           .joinToString("")
-                           .trim()
+                // The model output is baked argmax indices. Apply CTC decoding.
+                // Assuming index 0 is blank, indices 1..10 map to labels 0..9.
+                val result = java.lang.StringBuilder()
+                var lastIndex = -1
+                for (v in data) {
+                    val idx = v.toInt()
+                    if (idx != 0 && idx != lastIndex) {
+                        if (idx - 1 in labels.indices) {
+                            result.append(labels[idx - 1])
+                        }
+                    }
+                    lastIndex = idx
+                }
+                return result.toString()
             } catch (e: Exception) {
                 return "(Error)"
             }
