@@ -53,9 +53,32 @@ object TfLiteOcrUtils {
         val tDiscoveryStart = System.currentTimeMillis()
         if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return DbNetResult(emptyList(), emptyList())
         
+        // Phase 50: Energy Profiling
+        if (recursive) {
+            val colEnergies = FloatArray(heatmapW)
+            for (x in 0 until heatmapW) {
+                var sum = 0f; for (y in 0 until heatmapH) { sum += heatmap[y * heatmapW + x] }
+                colEnergies[x] = sum / heatmapH
+            }
+            Log.i("HEAT_PROFILE", "Sub-Window Column Energy: ${colEnergies.joinToString(",") { String.format("%.3f", it) }}")
+            
+            // Export raw CSV to sandbox
+            try {
+                val csvFile = java.io.File("/sdcard/Documents/sub_heatmap.csv")
+                csvFile.bufferedWriter().use { out ->
+                    for (y in 0 until heatmapH) {
+                        val row = FloatArray(heatmapW) { x -> heatmap[y * heatmapW + x] }
+                        out.write(row.joinToString(",") { String.format("%.4f", it) })
+                        out.newLine()
+                    }
+                }
+            } catch (e: Exception) { Log.e("OcrDebug", "Failed to export CSV", e) }
+        }
+
+        val maskThreshold = 0.20f
         val mask = Mat(heatmapH, heatmapW, CvType.CV_8UC1)
         val data = ByteArray(heatmapW * heatmapH)
-        for (i in heatmap.indices) { data[i] = if (heatmap[i] > 0.2f) 255.toByte() else 0.toByte() }
+        for (i in heatmap.indices) { data[i] = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte() }
         mask.put(0, 0, data)
 
         val sourceMat = if (sourceBitmap != null) {
