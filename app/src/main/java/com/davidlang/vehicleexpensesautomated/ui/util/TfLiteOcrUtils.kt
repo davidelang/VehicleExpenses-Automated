@@ -91,9 +91,9 @@ object TfLiteOcrUtils {
                     android.graphics.Rect((rectBounds.x * invScale).toInt(), (rectBounds.y * invScale).toInt(), ((rectBounds.x + rectBounds.width) * invScale).toInt(), ((rectBounds.y + rectBounds.height) * invScale).toInt())
                 )
                 
-                // Add 30% Padding
-                val padW = (orangeBox.width() * 0.30).toInt()
-                val padH = (orangeBox.height() * 0.30).toInt()
+                // Add 5% Padding (High Zoom)
+                val padW = (orangeBox.width() * 0.05).toInt()
+                val padH = (orangeBox.height() * 0.05).toInt()
                 val cropRect = RectF(
                     ((orangeBox.left - padW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
                     ((orangeBox.top - padH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
