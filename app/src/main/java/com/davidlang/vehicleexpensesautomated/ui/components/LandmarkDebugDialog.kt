@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -37,7 +38,6 @@ import kotlin.math.max
 import kotlin.math.min
 import java.io.File
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LandmarkDebugDialog(
     sourceImage: Bitmap? = null,
@@ -56,6 +56,7 @@ fun LandmarkDebugDialog(
     totalTimeMs: Long = 0
 ) {
     val context = LocalContext.current
+    val textMeasurer = rememberTextMeasurer()
     var showDiscovery by remember { mutableStateOf(true) }
 
     // Resolve source image
@@ -115,15 +116,16 @@ fun LandmarkDebugDialog(
                             )
 
                             if (showDiscovery) {
-                                // Red Tiers
+                                // RED: SOLID FILL (30%)
                                 rawDiscoveryBoxes.forEach { box ->
-                                    drawRect(color = Color.Red.copy(alpha = 0.4f), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(1f))
+                                    drawRect(color = Color.Red.copy(alpha = 0.3f), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Fill)
                                 }
-                                // Phase 58: Draw Orange and Yellow at 1px
                                 landmarks.forEach { lm ->
+                                    // ORANGE: 3PX STROKE
                                     lm.refinedDiscoveryBox?.let { box ->
-                                        drawRect(color = Color(0xFFFF8C00), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(1f))
+                                        drawRect(color = Color(0xFFFF8C00), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(3f))
                                     }
+                                    // YELLOW: 1PX STROKE
                                     if (lm.boundingBox.width() > 0) {
                                         val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
                                         val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
@@ -145,18 +147,22 @@ fun LandmarkDebugDialog(
                         Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
 
-                    // GRID
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    // RESTORE GRID (Multi-column)
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 250.dp),
+                        modifier = Modifier.heightIn(max = 1200.dp).padding(horizontal = 8.dp),
+                        contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        landmarks.forEach { lm ->
-                            Card(
-                                modifier = Modifier.widthIn(min = 120.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        items(landmarks) { lm ->
+                            Surface(
+                                modifier = Modifier.height(48.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
-                                Row(modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(modifier = Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                     // PREVIEW CROP
                                     val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else lm.refinedDiscoveryBox?.let { 
                                         android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
