@@ -92,6 +92,7 @@ class TfLiteOcrEngine(context: Context) {
 
         // 2. Adaptive Output Handling
         val outputShape = interp.getOutputTensor(0).shape()
+        Log.i("TfLiteOcr", "Inference Output Shape: ${outputShape.joinToString(",")}")
         
         if (outputShape.contentEquals(intArrayOf(1, 1, 20))) {
             val outputBuffer = Array(1) { Array(1) { FloatArray(20) } }
@@ -108,7 +109,8 @@ class TfLiteOcrEngine(context: Context) {
             val outputBuffer = Array(1) { Array(timeSteps) { FloatArray(numClasses) } }
             try {
                 interp.run(inputBuffer, outputBuffer)
-                val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, labels.map { it.toString() }, blankIndex = 10)
+                // We pass blankIndex = numClasses - 1 for standard numeric TFLite models
+                val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, labels.map { it.toString() }, blankIndex = numClasses - 1)
                 return text
             } catch (e: Exception) {
                 return "(Error)"
