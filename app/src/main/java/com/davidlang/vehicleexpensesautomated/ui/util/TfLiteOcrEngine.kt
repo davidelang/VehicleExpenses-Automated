@@ -98,43 +98,36 @@ class TfLiteOcrEngine(context: Context) {
         padded.recycle()
 
         // 2. Adaptive Output Handling
-        val outputShape = interp.getOutputTensor(0).shape()
-        Log.i("TfLiteOcr", "Inference Output Shape: ${outputShape.joinToString(",")}")
-        
-        if (outputShape.contentEquals(intArrayOf(1, 1, 20))) {
-            val outputBuffer = Array(1) { Array(1) { FloatArray(20) } }
-            try {
-                interp.run(inputBuffer, outputBuffer)
-                val data = outputBuffer[0][0]
-                // The model output is baked argmax indices. Apply CTC decoding.
-                // Assuming index 0 is blank, indices 1..10 map to labels 0..9.
-                val result = java.lang.StringBuilder()
-                var lastIndex = -1
-                for (v in data) {
-                    val idx = v.toInt()
-                    if (idx != 0 && idx != lastIndex) {
-                        if (idx - 1 in labels.indices) {
-                            result.append(labels[idx - 1])
-                        }
-                    }
-                    lastIndex = idx
+        try {
+            // Allocate a flat byte buffer to capture dynamic sequence lengths (e.g. [1, 50, 20])
+            val numClasses = interp.getOutputTensor(0).shape().last()
+            val maxTimeSteps = inputWidth // Model cannot output more timesteps than input width
+            val outputBuffer = ByteBuffer.allocateDirect(1 * maxTimeSteps * numClasses * 4)
+            outputBuffer.order(ByteOrder.nativeOrder())
+            
+            interp.run(inputBuffer, outputBuffer)
+            
+            val finalShape = interp.getOutputTensor(0).shape()
+            Log.i("TfLiteOcr", "Inference Final Shape: ${finalShape.joinToString(",")}")
+            
+            val timeSteps = finalShape[1]
+            val actualClasses = finalShape[2]
+            
+            outputBuffer.rewind()
+            val sequence = Array(1) { Array(timeSteps) { FloatArray(actualClasses) } }
+            for (t in 0 until timeSteps) {
+                for (c in 0 until actualClasses) {
+                    sequence[0][t][c] = outputBuffer.float
                 }
-                return result.toString()
-            } catch (e: Exception) {
-                return "(Error)"
             }
-        } else {
-            val timeSteps = outputShape[1]
-            val numClasses = outputShape[2]
-            val outputBuffer = Array(1) { Array(timeSteps) { FloatArray(numClasses) } }
-            try {
-                interp.run(inputBuffer, outputBuffer)
-                // We pass blankIndex = numClasses - 1 for standard numeric TFLite models
-                val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(outputBuffer, labels.map { it.toString() }, blankIndex = numClasses - 1)
-                return text
-            } catch (e: Exception) {
-                return "(Error)"
-            }
+            
+            // Model outputs probabilities. Index 19 is the blank token (verified via Python).
+            // Indices 0..9 map directly to labels "0".."9".
+            val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(sequence, labels.map { it.toString() }, blankIndex = actualClasses - 1)
+            return text
+        } catch (e: Exception) {
+            Log.e("TfLiteOcr", "Inference error", e)
+            return "(Error)"
         }
     }
 
