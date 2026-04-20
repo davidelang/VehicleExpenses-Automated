@@ -110,8 +110,10 @@ class TfLiteOcrEngine(context: Context) {
             val finalShape = interp.getOutputTensor(0).shape()
             Log.i("TfLiteOcr", "Inference Final Shape: ${finalShape.joinToString(",")}")
             
-            val timeSteps = finalShape[1]
-            val actualClasses = finalShape[2]
+            // The Java TFLite API stubbornly reports [1, 1, 20] even after inference.
+            // We mathematically know the sequence length is width / 4 (e.g., 200 / 4 = 50).
+            val timeSteps = inputWidth / 4
+            val actualClasses = finalShape.last()
             
             outputBuffer.rewind()
             val sequence = Array(1) { Array(timeSteps) { FloatArray(actualClasses) } }
