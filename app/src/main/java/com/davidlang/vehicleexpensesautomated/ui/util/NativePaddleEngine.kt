@@ -210,20 +210,32 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
                     }
                     inputTensor.setData(floatData); predictor.run()
                     val subOutputTensor = predictor.getOutput(0); val subOutputData = subOutputTensor.floatData
+                    // CRITICAL: Pass subBitmap here, not the original bitmap, so normalization is local to the crop
                     val subDbRes = TfLiteOcrUtils.processDbNetOutput(subOutputData, outW, outH, scale = subScale, sourceBitmap = subBitmap, algorithm = "C", recursive = true)
-                    
-                    android.util.Log.i("OCR_RECURSE", "Sub-Pass for Crop $cropRectF found ${subDbRes.rawBoxes.size} items")
                     
                     val cw = cropRectF.right - cropRectF.left
                     val ch = cropRectF.bottom - cropRectF.top
+                    android.util.Log.i("OCR_RECURSE", "Sub-Pass for Crop $cropRectF (px=${subBitmap.width}x${subBitmap.height}) found ${subDbRes.rawBoxes.size} items")
+                    
                     for (j in subDbRes.rawBoxes.indices) {
                         val sr = subDbRes.rawBoxes[j].boundingBox
-                        val globalRaw = RectF(cropRectF.left + sr.left * cw, cropRectF.top + sr.top * ch, cropRectF.left + sr.right * cw, cropRectF.top + sr.bottom * ch)
+                        // Linear Global Projection: global = cropStart + (localNormalized * cropSize)
+                        val globalRaw = RectF(
+                            cropRectF.left + (sr.left * cw),
+                            cropRectF.top + (sr.top * ch),
+                            cropRectF.left + (sr.right * cw),
+                            cropRectF.top + (sr.bottom * ch)
+                        )
                         finalRaw.add(DetectedBox(emptyList(), globalRaw, subDbRes.rawBoxes[j].angle))
                         
                         val srf = subDbRes.refinedBoxes.getOrNull(j)?.boundingBox
                         if (srf != null) {
-                            val globalRefined = RectF(cropRectF.left + srf.left * cw, cropRectF.top + srf.top * ch, cropRectF.left + srf.right * cw, cropRectF.top + srf.bottom * ch)
+                            val globalRefined = RectF(
+                                cropRectF.left + (srf.left * cw),
+                                cropRectF.top + (srf.top * ch),
+                                cropRectF.left + (srf.right * cw),
+                                cropRectF.top + (srf.bottom * ch)
+                            )
                             finalRefined.add(DetectedBox(emptyList(), globalRefined, subDbRes.refinedBoxes[j].angle))
                         }
                     }
