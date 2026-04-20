@@ -178,7 +178,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             
             // MULTI-SOURCE VETO SWEEP
             val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
-                val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight, stripPunctuation = (name == "ML Kit"))
+                // Apply punctuation stripping to ALL engines for now (e.g., -20 -> 20)
+                val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight, stripPunctuation = true)
                 ImageAlignmentUtils.performTier1Veto(engineLandmarks, cachedRefs.map { it.vehicle })
             }
             
