@@ -18,15 +18,11 @@ import kotlin.math.min
  */
 class TfLiteOcrEngine(private val context: Context) {
     private var interpreter: Interpreter? = null
-    private val labels = "0123456789"
+    private val labels = "0123456789mphk/MPH "
     
     private var inputHeight = 50
     private var inputWidth = 200
     private var isGrayscale = true
-
-    companion object {
-        var debugCounter = 0
-    }
 
     init {
         try {
@@ -39,7 +35,7 @@ class TfLiteOcrEngine(private val context: Context) {
             interpreter = interp
             
             // DYNAMIC SHAPE DISCOVERY
-            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 50, 200, 1]
+            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 200, 50, 1]
             // Enforce Width > Height to handle model export transpositions
             inputHeight = kotlin.math.min(inputShape[1], inputShape[2])
             inputWidth = kotlin.math.max(inputShape[1], inputShape[2])
@@ -75,11 +71,26 @@ class TfLiteOcrEngine(private val context: Context) {
         canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
 
+        // Pass 1: Find min/max for contrast normalization
+        var minPx = 255f
+        var maxPx = 0f
+        for (y in 0 until inputHeight) {
+            for (x in 0 until inputWidth) {
+                val px = padded.getPixel(x, y)
+                val r = (px shr 16) and 0xFF
+                val g = (px shr 8) and 0xFF
+                val b = px and 0xFF
+                val gray = (0.299f * r + 0.587f * g + 0.114f * b)
+                if (gray < minPx) minPx = gray
+                if (gray > maxPx) maxPx = gray
+            }
+        }
+
         val inputBuffer = ByteBuffer.allocateDirect(1 * inputHeight * inputWidth * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        // Transpose writing to match the model's unexpected [1, 200, 50, 1] tensor shape 
-        // (Outer loop = Width/200, Inner loop = Height/50)
+        // Pass 2: Transpose writing with Min-Max normalization to [-1, 1]
+        val range = if (maxPx - minPx > 1f) (maxPx - minPx) else 255f
         for (x in 0 until inputWidth) {
             for (y in 0 until inputHeight) {
                 val px = padded.getPixel(x, y)
@@ -87,8 +98,8 @@ class TfLiteOcrEngine(private val context: Context) {
                     val r = (px shr 16) and 0xFF
                     val g = (px shr 8) and 0xFF
                     val b = px and 0xFF
-                    val gray = (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f
-                    inputBuffer.putFloat((gray - 0.5f) / 0.5f)
+                    val gray = (0.299f * r + 0.587f * g + 0.114f * b)
+                    inputBuffer.putFloat(((gray - minPx) / range) * 2.0f - 1.0f)
                 } else {
                     val r = (px shr 16 and 0xFF) / 255.0f
                     val g = (px shr 8 and 0xFF) / 255.0f
@@ -103,31 +114,16 @@ class TfLiteOcrEngine(private val context: Context) {
 
         // 2. Adaptive Output Handling
         try {
-            // Allocate a flat byte buffer to capture dynamic sequence lengths (e.g. [1, 50, 20])
             val numClasses = interp.getOutputTensor(0).shape().last()
-            val maxTimeSteps = inputWidth // Model cannot output more timesteps than input width
+            val maxTimeSteps = inputWidth
             val outputBuffer = ByteBuffer.allocateDirect(1 * maxTimeSteps * numClasses * 4)
             outputBuffer.order(ByteOrder.nativeOrder())
             
-            // DUMP BUFFER TO DISK
-            try {
-                inputBuffer.rewind()
-                val f = java.io.File(context.cacheDir, "tflite_in_${debugCounter++}.raw")
-                val arr = ByteArray(inputBuffer.capacity())
-                inputBuffer.get(arr)
-                f.writeBytes(arr)
-                inputBuffer.rewind()
-            } catch (e: Exception) {
-                Log.e("TfLiteOcr", "Failed to dump buffer", e)
-            }
-
             interp.run(inputBuffer, outputBuffer)
             
             val finalShape = interp.getOutputTensor(0).shape()
             Log.i("TfLiteOcr", "Inference Final Shape: ${finalShape.joinToString(",")}")
             
-            // The Java TFLite API stubbornly reports [1, 1, 20] even after inference.
-            // We mathematically know the sequence length is width / 4 (e.g., 200 / 4 = 50).
             val timeSteps = inputWidth / 4
             val actualClasses = finalShape.last()
             
@@ -149,8 +145,6 @@ class TfLiteOcrEngine(private val context: Context) {
             }
             Log.i("TfLiteOcr", "Raw CTC Indices: ${rawIndices.joinToString(",")}")
             
-            // Model outputs probabilities. Index 19 is the blank token (verified via Python).
-            // Indices 0..9 map directly to labels "0".."9".
             val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(sequence, labels.map { it.toString() }, blankIndex = actualClasses - 1)
             return text
         } catch (e: Exception) {
