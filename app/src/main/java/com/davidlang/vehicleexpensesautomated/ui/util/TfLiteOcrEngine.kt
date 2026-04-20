@@ -16,13 +16,17 @@ import kotlin.math.min
  * Native TFLite Engine optimized for numeric_ocr.tflite [1, 50, 200, 1]
  * Note: Input shape is [batch, height, width, channels]
  */
-class TfLiteOcrEngine(context: Context) {
+class TfLiteOcrEngine(private val context: Context) {
     private var interpreter: Interpreter? = null
     private val labels = "0123456789"
     
     private var inputHeight = 50
     private var inputWidth = 200
     private var isGrayscale = true
+
+    companion object {
+        var debugCounter = 0
+    }
 
     init {
         try {
@@ -105,6 +109,18 @@ class TfLiteOcrEngine(context: Context) {
             val outputBuffer = ByteBuffer.allocateDirect(1 * maxTimeSteps * numClasses * 4)
             outputBuffer.order(ByteOrder.nativeOrder())
             
+            // DUMP BUFFER TO DISK
+            try {
+                inputBuffer.rewind()
+                val f = java.io.File(context.cacheDir, "tflite_in_${debugCounter++}.raw")
+                val arr = ByteArray(inputBuffer.capacity())
+                inputBuffer.get(arr)
+                f.writeBytes(arr)
+                inputBuffer.rewind()
+            } catch (e: Exception) {
+                Log.e("TfLiteOcr", "Failed to dump buffer", e)
+            }
+
             interp.run(inputBuffer, outputBuffer)
             
             val finalShape = interp.getOutputTensor(0).shape()
@@ -117,11 +133,21 @@ class TfLiteOcrEngine(context: Context) {
             
             outputBuffer.rewind()
             val sequence = Array(1) { Array(timeSteps) { FloatArray(actualClasses) } }
+            val rawIndices = mutableListOf<Int>()
             for (t in 0 until timeSteps) {
+                var maxVal = -Float.MAX_VALUE
+                var maxIdx = -1
                 for (c in 0 until actualClasses) {
-                    sequence[0][t][c] = outputBuffer.float
+                    val v = outputBuffer.float
+                    sequence[0][t][c] = v
+                    if (v > maxVal) {
+                        maxVal = v
+                        maxIdx = c
+                    }
                 }
+                rawIndices.add(maxIdx)
             }
+            Log.i("TfLiteOcr", "Raw CTC Indices: ${rawIndices.joinToString(",")}")
             
             // Model outputs probabilities. Index 19 is the blank token (verified via Python).
             // Indices 0..9 map directly to labels "0".."9".
