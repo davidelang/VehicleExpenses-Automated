@@ -138,12 +138,9 @@ object TfLiteOcrUtils {
             }
         }
         
-        val bulkAspects = aspects.filter { it < gapBucketStart * 0.5 }
-        if (bulkAspects.isEmpty()) return 3.0f
-        val avg = bulkAspects.average().toFloat()
-        val threshold = avg * 2.0f
-        Log.i("OcrAdaptive", "GapBucket=$gapBucketStart, BulkAvg=$avg, Threshold=$threshold")
-        return threshold
+        val gapValue = gapBucketStart * 0.5f
+        Log.i("OcrAdaptive", "GapBucket=$gapBucketStart, Threshold=$gapValue")
+        return gapValue
     }
 
     private fun processSubBlob(rect: Any, invScale: Double, sourceW: Double, sourceH: Double, sourceMat: Mat?, algorithm: String, rawBoxes: MutableList<DetectedBox>, refinedBoxes: MutableList<DetectedBox>) {
