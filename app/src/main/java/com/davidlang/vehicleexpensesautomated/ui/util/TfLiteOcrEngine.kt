@@ -74,8 +74,10 @@ class TfLiteOcrEngine(context: Context) {
         val inputBuffer = ByteBuffer.allocateDirect(1 * inputHeight * inputWidth * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        for (y in 0 until inputHeight) {
-            for (x in 0 until inputWidth) {
+        // Transpose writing to match the model's unexpected [1, 200, 50, 1] tensor shape 
+        // (Outer loop = Width/200, Inner loop = Height/50)
+        for (x in 0 until inputWidth) {
+            for (y in 0 until inputHeight) {
                 val px = padded.getPixel(x, y)
                 if (isGrayscale) {
                     val r = (px shr 16) and 0xFF
