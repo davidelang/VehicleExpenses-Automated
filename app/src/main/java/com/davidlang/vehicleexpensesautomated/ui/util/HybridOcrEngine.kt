@@ -14,9 +14,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Phase 60: Transparent Hybrid Engine.
- * Implements parent-child traceability between Paddle (Discovery) and ML Kit (Refinement).
- * Corrects coordinate projection bug and disables internal Paddle recursion for cleanliness.
+ * Phase 61: Transparent Hybrid Engine (128px Normalized).
+ * Scales discovery crops to 128px height for improved word unity in ML Kit.
  */
 class HybridOcrEngine(private val context: Context) : OcrEngine {
     override val name = "Paddle-ML-Hybrid"
@@ -26,9 +25,7 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         
-        // 1. DISCOVERY: Run primary Paddle pass.
-        // We pass isRecursive=true to ensure Paddle only performs the fast 320x320 pass.
-        // ML Kit will handle all word-level splitting.
+        // 1. DISCOVERY: Run primary Paddle pass (recursive disabled)
         val discoveryResult = paddleDiscovery.recognize(bitmap, isRecursive = true)
         val finalBlocks = mutableListOf<TextBlock>()
         val sb = StringBuilder()
@@ -37,7 +34,7 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
             val zone = originalBlock.boundingBox
             if (zone.width() < 1 || zone.height() < 1) continue
 
-            // 2. CONTEXT ZONE: Grow by 10px on each side for ML Kit
+            // 2. CONTEXT ZONE: Grow by 10px on each side
             val padL = max(0, zone.left - 10)
             val padT = max(0, zone.top - 10)
             val padR = min(bitmap.width, zone.right + 10)
@@ -51,47 +48,69 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
                 contextRect.bottom.toFloat() / bitmap.height
             )
             
-            val paddedCrop = Bitmap.createBitmap(bitmap, padL, padT, contextRect.width(), contextRect.height())
-            val image = InputImage.fromBitmap(paddedCrop, 0)
+            val originalCrop = Bitmap.createBitmap(bitmap, padL, padT, contextRect.width(), contextRect.height())
+            
+            // 3. NORMALIZATION: Scale to 128px height
+            val targetH = 128
+            val scaleTo128 = targetH.toFloat() / originalCrop.height.toFloat()
+            val invScale = originalCrop.height.toDouble() / targetH.toDouble()
+            
+            val normalizedCrop = Bitmap.createScaledBitmap(
+                originalCrop, 
+                max(1, (originalCrop.width * scaleTo128).toInt()), 
+                targetH, 
+                true
+            )
+            originalCrop.recycle()
+
+            val image = InputImage.fromBitmap(normalizedCrop, 0)
             
             try {
                 val mlResult = mlKitRecognizer.process(image).await()
                 val elements = mlResult.textBlocks.flatMap { it.lines }.flatMap { it.elements }.filter { it.text.isNotBlank() }
                 
                 if (elements.isEmpty()) {
-                    // CASE: ML Kit found nothing. Keep original Paddle suspicion with the padded context zone.
                     finalBlocks.add(originalBlock.copy(refinedDiscoveryBox = normContextRect))
                 } else if (elements.size == 1) {
-                    // CASE: Single Word. Unified card with all three chips.
                     val element = elements[0]
                     val eBox = element.boundingBox ?: Rect(0,0,0,0)
-                    val globalPrecisionRect = Rect(padL + eBox.left, padT + eBox.top, padL + eBox.right, padT + eBox.bottom)
+                    
+                    // Map from 128px space back to Original space, then to Global space
+                    val globalPrecisionRect = Rect(
+                        padL + (eBox.left * invScale).toInt(),
+                        padT + (eBox.top * invScale).toInt(),
+                        padL + (eBox.right * invScale).toInt(),
+                        padT + (eBox.bottom * invScale).toInt()
+                    )
                     
                     finalBlocks.add(TextBlock(
                         text = element.text.trim(),
-                        boundingBox = globalPrecisionRect, // YELLOW CHIP
-                        rawDiscoveryBox = originalBlock.rawDiscoveryBox, // RED CHIP
-                        refinedDiscoveryBox = normContextRect // ORANGE CHIP (10px padded context)
+                        boundingBox = globalPrecisionRect,
+                        rawDiscoveryBox = originalBlock.rawDiscoveryBox,
+                        refinedDiscoveryBox = normContextRect
                     ))
                     sb.append(element.text).append(" ")
                 } else {
-                    // CASE: Multiple Words. Parent (Context) + Children (Word-Level).
-                    // Add Parent Container card (RED and ORANGE chips only)
+                    // Multi-Word Parent
                     finalBlocks.add(TextBlock(
                         text = "",
-                        boundingBox = Rect(0,0,0,0), // No Yellow
-                        rawDiscoveryBox = originalBlock.rawDiscoveryBox, // RED
-                        refinedDiscoveryBox = normContextRect // ORANGE
+                        boundingBox = Rect(0,0,0,0),
+                        rawDiscoveryBox = originalBlock.rawDiscoveryBox,
+                        refinedDiscoveryBox = normContextRect
                     ))
                     
                     for (element in elements) {
                         val eBox = element.boundingBox ?: continue
-                        val globalPrecisionRect = Rect(padL + eBox.left, padT + eBox.top, padL + eBox.right, padT + eBox.bottom)
+                        val globalPrecisionRect = Rect(
+                            padL + (eBox.left * invScale).toInt(),
+                            padT + (eBox.top * invScale).toInt(),
+                            padL + (eBox.right * invScale).toInt(),
+                            padT + (eBox.bottom * invScale).toInt()
+                        )
                         
-                        // Add Child Card (YELLOW chip only)
                         finalBlocks.add(TextBlock(
                             text = element.text.trim(),
-                            boundingBox = globalPrecisionRect, // YELLOW
+                            boundingBox = globalPrecisionRect,
                             rawDiscoveryBox = null,
                             refinedDiscoveryBox = null
                         ))
@@ -102,7 +121,7 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
             } catch (e: Exception) {
                 finalBlocks.add(originalBlock.copy(refinedDiscoveryBox = normContextRect))
             } finally {
-                paddedCrop.recycle()
+                normalizedCrop.recycle()
             }
         }
 
