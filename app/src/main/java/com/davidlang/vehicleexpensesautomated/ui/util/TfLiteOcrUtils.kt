@@ -92,11 +92,14 @@ object TfLiteOcrUtils {
         val threshold = if (!recursive) calculateAdaptiveThreshold(contours) else 1000f
 
         for (contour in contours) {
-            if (Imgproc.contourArea(contour) < 10) continue 
+            val area = Imgproc.contourArea(contour)
+            if (area < 10) continue 
             val rotatedRect = Imgproc.minAreaRect(MatOfPoint2f(*contour.toArray()))
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
+            Log.i("OcrTrigger", "Recursive=$recursive | Area=$area | Aspect=$aspect | Threshold=$threshold | Action=${if (!recursive && aspect > threshold) "RECURSE" else "PROCESS"}")
+
             if (!recursive && aspect > threshold && sourceMat != null) {
                 val orangeBox = expandInRoi(
                     RotatedRect(Point(rotatedRect.center.x * invScale, rotatedRect.center.y * invScale), Size(rotatedRect.size.width * invScale, rotatedRect.size.height * invScale), rotatedRect.angle),
