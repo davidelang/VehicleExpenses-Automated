@@ -14,9 +14,9 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Phase 59: Transparent Hybrid Engine.
+ * Phase 60: Transparent Hybrid Engine.
  * Implements parent-child traceability between Paddle (Discovery) and ML Kit (Refinement).
- * Corrects coordinate projection bug and chip logic.
+ * Corrects coordinate projection bug and disables internal Paddle recursion for cleanliness.
  */
 class HybridOcrEngine(private val context: Context) : OcrEngine {
     override val name = "Paddle-ML-Hybrid"
@@ -27,8 +27,9 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
         val t0 = System.currentTimeMillis()
         
         // 1. DISCOVERY: Run primary Paddle pass.
-        // We use recursive=true to disable DBNet recursion inside Hybrid for speed/cleanliness.
-        val discoveryResult = paddleDiscovery.recognize(bitmap)
+        // We pass isRecursive=true to ensure Paddle only performs the fast 320x320 pass.
+        // ML Kit will handle all word-level splitting.
+        val discoveryResult = paddleDiscovery.recognize(bitmap, isRecursive = true)
         val finalBlocks = mutableListOf<TextBlock>()
         val sb = StringBuilder()
 
@@ -58,7 +59,7 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
                 val elements = mlResult.textBlocks.flatMap { it.lines }.flatMap { it.elements }.filter { it.text.isNotBlank() }
                 
                 if (elements.isEmpty()) {
-                    // CASE: ML Kit found nothing. Keep original Paddle suspicion with the padded orange zone.
+                    // CASE: ML Kit found nothing. Keep original Paddle suspicion with the padded context zone.
                     finalBlocks.add(originalBlock.copy(refinedDiscoveryBox = normContextRect))
                 } else if (elements.size == 1) {
                     // CASE: Single Word. Unified card with all three chips.
@@ -70,11 +71,11 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
                         text = element.text.trim(),
                         boundingBox = globalPrecisionRect, // YELLOW CHIP
                         rawDiscoveryBox = originalBlock.rawDiscoveryBox, // RED CHIP
-                        refinedDiscoveryBox = normContextRect // ORANGE CHIP (10px padded)
+                        refinedDiscoveryBox = normContextRect // ORANGE CHIP (10px padded context)
                     ))
                     sb.append(element.text).append(" ")
                 } else {
-                    // CASE: Multiple Words. Parent (Context Only) + Children (Splits).
+                    // CASE: Multiple Words. Parent (Context) + Children (Word-Level).
                     // Add Parent Container card (RED and ORANGE chips only)
                     finalBlocks.add(TextBlock(
                         text = "",
@@ -91,8 +92,8 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
                         finalBlocks.add(TextBlock(
                             text = element.text.trim(),
                             boundingBox = globalPrecisionRect, // YELLOW
-                            rawDiscoveryBox = null, // NO RED
-                            refinedDiscoveryBox = null // NO ORANGE
+                            rawDiscoveryBox = null,
+                            refinedDiscoveryBox = null
                         ))
                         sb.append(element.text).append(" ")
                     }

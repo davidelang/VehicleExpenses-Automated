@@ -38,6 +38,7 @@ import kotlin.math.max
 import kotlin.math.min
 import java.io.File
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LandmarkDebugDialog(
     sourceImage: Bitmap? = null,
@@ -104,7 +105,8 @@ fun LandmarkDebugDialog(
                     }
                 }
 
-                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                // REMOVED OUTER SCROLL to let LazyVerticalGrid work properly
+                Column(modifier = Modifier.weight(1f)) {
                     // IMAGE VIEW
                     Box(modifier = Modifier.fillMaxWidth().aspectRatio(imgW / imgH)) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -140,17 +142,17 @@ fun LandmarkDebugDialog(
                     }
 
                     // Metadata
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Text("Discovery: ${discoveryTimeMs}ms / Total: ${totalTimeMs.coerceAtLeast(executionTimeMs)}ms", style = MaterialTheme.typography.labelSmall)
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
 
-                    // RESTORE GRID (Multi-column)
+                    // RESTORE ADAPTIVE GRID (200dp min)
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 250.dp),
-                        modifier = Modifier.heightIn(max = 1200.dp).padding(horizontal = 8.dp),
+                        columns = GridCells.Adaptive(minSize = 200.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -171,11 +173,16 @@ fun LandmarkDebugDialog(
                                     }
                                     
                                     Box(modifier = Modifier.size(40.dp).background(Color.Black), contentAlignment = Alignment.Center) {
-                                        zone?.let { z ->
-                                            if (z.width() > 0 && z.height() > 0) {
-                                                val crop = Bitmap.createBitmap(bitmap, max(0, z.left), max(0, z.top), min(bitmap.width - z.left, z.width()), min(bitmap.height - z.top, z.height()))
-                                                Image(bitmap = crop.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit)
-                                            }
+                                        val crop = remember(zone, bitmap) {
+                                            if (zone != null && zone.width() > 0 && zone.height() > 0) {
+                                                try {
+                                                    Bitmap.createBitmap(bitmap, max(0, zone.left), max(0, zone.top), min(bitmap.width - zone.left, zone.width()), min(bitmap.height - zone.top, zone.height()))
+                                                } catch (e: Exception) { null }
+                                            } else null
+                                        }
+                                        
+                                        crop?.let { c ->
+                                            Image(bitmap = c.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit)
                                         }
                                     }
                                     
@@ -194,7 +201,6 @@ fun LandmarkDebugDialog(
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
         }
