@@ -57,9 +57,9 @@ object TfLiteOcrUtils {
         var maxHeat = 0f
         for (v in heatmap) { if (v > maxHeat) maxHeat = v }
 
-        // Phase 53: High-Confidence Choking
-        // Standard pass uses 0.20f. Sub-pass uses 85% of the peak energy found in that crop.
-        val maskThreshold = if (recursive) (maxHeat * 0.85f).coerceAtLeast(0.01f) else 0.20f
+        // Phase 51/54: Relative Sub-Thresholding
+        // Standard pass uses 0.20f. Sub-pass uses 50% of the peak energy found in that crop.
+        val maskThreshold = if (recursive) (maxHeat * 0.50f).coerceAtLeast(0.01f) else 0.20f
 
         if (recursive) {
             val colEnergies = FloatArray(heatmapW)
