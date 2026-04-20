@@ -53,7 +53,10 @@ object OcrHarness {
 
     fun getDiscoveryEngineNames(context: Context): List<String> {
         val list = mutableListOf("ML Kit", "Native TFLite", "Paddle-TFLite")
-        if (NativePaddleEngine(context).isAvailable) list.add("Paddle-Lite")
+        if (NativePaddleEngine(context).isAvailable) {
+            list.add("Paddle-Lite")
+            list.add("Paddle-ML-Hybrid")
+        }
         return list
     }
 
