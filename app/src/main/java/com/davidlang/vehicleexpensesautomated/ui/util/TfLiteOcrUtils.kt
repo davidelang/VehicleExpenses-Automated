@@ -114,7 +114,7 @@ object TfLiteOcrUtils {
                     ((orangeBox.right + padW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
                     ((orangeBox.bottom + padH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
                 ))
-                continue
+                // Removed 'continue' so primary pass still outputs the bloated blob
             }
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
