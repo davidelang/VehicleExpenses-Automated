@@ -181,6 +181,8 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
             val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap, algorithm = "C", recursive = false)
             
+            android.util.Log.i("OcrFlow", "Primary Pass: ${dbRes.rawBoxes.size} boxes, ${dbRes.suspectCrops.size} suspects")
+            
             val finalRaw = dbRes.rawBoxes.toMutableList()
             val finalRefined = dbRes.refinedBoxes.toMutableList()
 
