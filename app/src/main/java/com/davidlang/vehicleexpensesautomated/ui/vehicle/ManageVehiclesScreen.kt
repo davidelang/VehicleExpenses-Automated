@@ -236,15 +236,15 @@ fun ManageVehiclesScreen(
                     ) {
                         Column(modifier = Modifier.padding(8.dp).verticalScroll(rememberScrollState())) {
                             // FIXED ORDER: Ensure cards don't jump and Paddle-Lite is always rendered
-                            val sortedEngines = listOf("ML Kit", "Native TFLite", "Paddle-TFLite", "Paddle-Lite")
-                            sortedEngines.forEach { engine ->
-                                discoveryResults[engine]?.let { result ->
+                            val sortedEngines = listOf("ML Kit", "Native TFLite", "Paddle-TFLite", "Paddle-Lite", "Paddle-ML-Hybrid")
+                            sortedEngines.forEach { engineName ->
+                                discoveryResults[engineName]?.let { result ->
                                     Card(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedEngineForPopup = engine; showLandmarkCheck = true },
-                                        colors = CardDefaults.cardColors(containerColor = if (engine == selectedEngineForPopup) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedEngineForPopup = engineName; showLandmarkCheck = true },
+                                        colors = CardDefaults.cardColors(containerColor = if (engineName == selectedEngineForPopup) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
                                     ) {
                                         Column(modifier = Modifier.padding(12.dp)) {
-                                            Text(engine, fontWeight = FontWeight.Bold)
+                                            Text(engineName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                             Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
                                             Text(result.debugText, style = MaterialTheme.typography.bodySmall)
                                         }
