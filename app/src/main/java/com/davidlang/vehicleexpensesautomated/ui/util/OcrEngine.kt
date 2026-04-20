@@ -107,11 +107,6 @@ data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: St
 interface OcrEngine {
     val name: String
     suspend fun recognize(bitmap: Bitmap): OcrResult
-    companion object {
-        fun getDiscoveryEngineNames(): List<String> {
-            return listOf("ML Kit", "Native TFLite", "Paddle-TFLite", "Paddle-Lite")
-        }
-    }
 }
 
 class TesseractEngine : OcrEngine {
