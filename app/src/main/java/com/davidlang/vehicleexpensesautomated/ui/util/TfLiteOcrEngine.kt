@@ -39,7 +39,7 @@ class TfLiteOcrEngine(private val context: Context) {
             interpreter = interp
             
             // DYNAMIC SHAPE DISCOVERY
-            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 200, 50, 1]
+            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 200, 50, 1] but usually transposed in Paddle
             inputHeight = inputShape[1]
             inputWidth = inputShape[2]
             isGrayscale = inputShape[3] == 1
@@ -62,8 +62,7 @@ class TfLiteOcrEngine(private val context: Context) {
     fun runInference(bitmap: Bitmap): String {
         val interp = interpreter ?: return "(Model not loaded)"
         
-        // 1. ASPECT-CORRECT PADDING: Avoid horizontal stretching
-        // Target shape based on model reported dimensions
+        // 1. ASPECT-CORRECT PADDING
         val targetH = inputHeight
         val targetW = inputWidth
         
@@ -78,26 +77,10 @@ class TfLiteOcrEngine(private val context: Context) {
         canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
 
-        // Pass 1: Find min/max for contrast normalization
-        var minPx = 255f
-        var maxPx = 0f
-        for (y in 0 until targetH) {
-            for (x in 0 until targetW) {
-                val px = padded.getPixel(x, y)
-                val r = (px shr 16) and 0xFF
-                val g = (px shr 8) and 0xFF
-                val b = px and 0xFF
-                val gray = (0.299f * r + 0.587f * g + 0.114f * b)
-                if (gray < minPx) minPx = gray
-                if (gray > maxPx) maxPx = gray
-            }
-        }
-
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetH * targetW * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        // Pass 2: Row-Major Tensor Loop (Standard Reading Order)
-        val range = if (maxPx - minPx > 1f) (maxPx - minPx) else 255f
+        // Pass 2: Row-Major Tensor Loop with [0, 1] normalization
         for (y in 0 until targetH) {
             for (x in 0 until targetW) {
                 val px = padded.getPixel(x, y)
@@ -106,14 +89,11 @@ class TfLiteOcrEngine(private val context: Context) {
                     val g = (px shr 8) and 0xFF
                     val b = px and 0xFF
                     val gray = (0.299f * r + 0.587f * g + 0.114f * b)
-                    inputBuffer.putFloat(((gray - minPx) / range) * 2.0f - 1.0f)
+                    inputBuffer.putFloat(gray / 255.0f)
                 } else {
-                    val r = (px shr 16 and 0xFF) / 255.0f
-                    val g = (px shr 8 and 0xFF) / 255.0f
-                    val b = (px and 0xFF) / 255.0f
-                    inputBuffer.putFloat((r - 0.5f) / 0.5f)
-                    inputBuffer.putFloat((g - 0.5f) / 0.5f)
-                    inputBuffer.putFloat((b - 0.5f) / 0.5f)
+                    inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f))
+                    inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f))
+                    inputBuffer.putFloat(((px and 0xFF) / 255.0f))
                 }
             }
         }
@@ -122,12 +102,11 @@ class TfLiteOcrEngine(private val context: Context) {
         // 2. Adaptive Output Handling
         try {
             val numClasses = interp.getOutputTensor(0).shape().last()
-            // We know the sequence length is the largest dimension / 4
             val timeSteps = kotlin.math.max(targetW, targetH) / 4
             val outputBuffer = ByteBuffer.allocateDirect(1 * timeSteps * numClasses * 4)
             outputBuffer.order(ByteOrder.nativeOrder())
             
-            // DUMP BUFFER TO DISK BEFORE INFERENCE
+            // DUMP BUFFER TO DISK
             try {
                 inputBuffer.rewind()
                 val f = java.io.File(context.cacheDir, "tflite_in_${debugCounter++}.raw")
