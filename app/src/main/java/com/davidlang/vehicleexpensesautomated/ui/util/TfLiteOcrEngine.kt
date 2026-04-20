@@ -18,7 +18,7 @@ import kotlin.math.min
  */
 class TfLiteOcrEngine(private val context: Context) {
     private var interpreter: Interpreter? = null
-    private val labels = "0123456789.km/hMPH "
+    private val labels = " 0123456789.km/hMPH"
     
     private var inputHeight = 50
     private var inputWidth = 200
