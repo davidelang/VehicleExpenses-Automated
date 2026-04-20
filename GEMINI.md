@@ -20,9 +20,14 @@
 - **Corruption Reset:** If the codebase is identified as "seriously compromised", IMMEDIATELY `git reset --hard builds`. Follow this with:
     `git clean -fd -e "dev-ai-interaction/" -e "app/src/main/jniLibs/" -e "app/src/main/assets/libs_backup/"`
     Note that post-reset analysis may recommend going back to `deployed` or `works` tags depending on the analysis.
-- **Strike System:** After the 2nd attempt to fix a build failure (Strike 3 total), a reset to the `builds` tag is MANDATORY.
-- **Post-Reset Analysis:** After any reset, you must perform a forensic analysis of the failure. Identify if it was an **Execution Error** (implementation mistake) or a **Strategy Error** (fundamentally flawed approach) and share the lesson learned before proposing a new attempt.
-- **Post-Reset Verification:** After any reset, perform a full build (`./gradlew clean assembleDebug`) to ensure all non-git resources (libraries, internal assets) are available and the state is valid.
+- **Strike System (3-3-3 Rule):**
+    - **Strike 1-3:** If a build fails, you have up to 3 attempts to fix it. After the 3rd failed compile, a reset to the `builds` tag is MANDATORY. This reset does not require a pause.
+    - **Strike 4-6:** After resetting, you have another 3 attempts to fix the task using lessons learned. After the 6th total failed compile, another reset to `builds` is MANDATORY. This reset does not require a pause.
+    - **Strike 7-9:** After the second reset, you have a final 3 attempts. After the 9th total failed compile, you must reset to `builds` and perform a **Mandatory Forensic Analysis**.
+- **Mandatory Forensic Analysis:** After 9 total build failures, you must stop, analyze why the task is failing, and propose a new plan with significant decomposition (smaller pieces) for user review and approval.
+- **Safe Harbor Protection:** NEVER reset back past the `builds` tag without explicit user review and approval. If the `builds` tag itself is suspected of being corrupt, you MUST stop and consult the user before taking action.
+- **Post-Reset Verification:** After ANY reset (manual or automated), you must perform a full build (`./gradlew clean compileDebugKotlin`) to ensure the baseline is stable.
+- **Post-Reset Analysis:** After any reset that requires a pause (after 9 failures or when reset past `builds`), identify if it was an **Execution Error** (implementation mistake) or a **Strategy Error** (fundamentally flawed approach) and share the lesson learned before proposing a new attempt.
 - **Mandatory Decomposition:** After two resets for the same task, break the effort into smaller, incremental phases. Confirm a successful build for each phase before continuing.
 
 ## Git Hygiene
