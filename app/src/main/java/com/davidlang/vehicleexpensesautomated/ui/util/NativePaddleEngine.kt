@@ -72,10 +72,12 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
-    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+    override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
+
+    suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
-        if (isConstrained) recognizeConstrained(bitmap, t0) else recognizeDiscovery(bitmap, t0)
+        if (isConstrained) recognizeConstrained(bitmap, t0) else recognizeDiscovery(bitmap, t0, isRecursive)
     }
 
     private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
@@ -91,10 +93,10 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         )
     }
 
-    private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long): OcrResult {
+    private suspend fun recognizeDiscovery(bitmap: Bitmap, t0: Long, isRecursive: Boolean): OcrResult {
         val textBlocks = mutableListOf<TextBlock>()
         val sb = StringBuilder()
-        val detectionRes = runDetection(bitmap)
+        val detectionRes = runDetection(bitmap, isRecursive)
         
         for (i in detectionRes.rawBoxes.indices) {
             val rawBox = detectionRes.rawBoxes[i]
@@ -152,7 +154,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
 
     private data class DetectionResult(val rawBoxes: List<DetectedBox>, val refinedBoxes: List<DetectedBox>, val scale: Float, val discoveryTimeMs: Long)
 
-    private fun runDetection(bitmap: Bitmap): DetectionResult {
+    private fun runDetection(bitmap: Bitmap, isRecursive: Boolean): DetectionResult {
         val predictor = sharedDetector ?: return DetectionResult(emptyList(), emptyList(), 1f, 0)
         val inputSize = 1280 // REVERTED FROM 2560 FOR STABILITY
         val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
@@ -179,7 +181,7 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         try {
             inputTensor.setData(floatData); predictor.run()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val outH = dims[2].toInt(); val outW = dims[3].toInt(); val outputData = outputTensor.floatData
-            val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap, algorithm = "C", recursive = false)
+            val dbRes = TfLiteOcrUtils.processDbNetOutput(outputData, outW, outH, scale = scale, sourceBitmap = bitmap, algorithm = "C", recursive = isRecursive)
             
             android.util.Log.i("OcrFlow", "Primary Pass: ${dbRes.rawBoxes.size} boxes, ${dbRes.suspectCrops.size} suspects")
             
@@ -212,32 +214,20 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
                     }
                     inputTensor.setData(floatData); predictor.run()
                     val subOutputTensor = predictor.getOutput(0); val subOutputData = subOutputTensor.floatData
-                    // CRITICAL: Pass subBitmap here, not the original bitmap, so normalization is local to the crop
                     val subDbRes = TfLiteOcrUtils.processDbNetOutput(subOutputData, outW, outH, scale = subScale, sourceBitmap = subBitmap, algorithm = "C", recursive = true)
+                    
+                    android.util.Log.i("OCR_RECURSE", "Sub-Pass for Crop $cropRectF (px=${subBitmap.width}x${subBitmap.height}) found ${subDbRes.rawBoxes.size} items")
                     
                     val cw = cropRectF.right - cropRectF.left
                     val ch = cropRectF.bottom - cropRectF.top
-                    android.util.Log.i("OCR_RECURSE", "Sub-Pass for Crop $cropRectF (px=${subBitmap.width}x${subBitmap.height}) found ${subDbRes.rawBoxes.size} items")
-                    
                     for (j in subDbRes.rawBoxes.indices) {
                         val sr = subDbRes.rawBoxes[j].boundingBox
-                        // Linear Global Projection: global = cropStart + (localNormalized * cropSize)
-                        val globalRaw = RectF(
-                            cropRectF.left + (sr.left * cw),
-                            cropRectF.top + (sr.top * ch),
-                            cropRectF.left + (sr.right * cw),
-                            cropRectF.top + (sr.bottom * ch)
-                        )
+                        val globalRaw = RectF(cropRectF.left + sr.left * cw, cropRectF.top + sr.top * ch, cropRectF.left + sr.right * cw, cropRectF.top + sr.bottom * ch)
                         finalRaw.add(DetectedBox(emptyList(), globalRaw, subDbRes.rawBoxes[j].angle))
                         
                         val srf = subDbRes.refinedBoxes.getOrNull(j)?.boundingBox
                         if (srf != null) {
-                            val globalRefined = RectF(
-                                cropRectF.left + (srf.left * cw),
-                                cropRectF.top + (srf.top * ch),
-                                cropRectF.left + (srf.right * cw),
-                                cropRectF.top + (srf.bottom * ch)
-                            )
+                            val globalRefined = RectF(cropRectF.left + srf.left * cw, cropRectF.top + srf.top * ch, cropRectF.left + srf.right * cw, cropRectF.top + srf.bottom * ch)
                             finalRefined.add(DetectedBox(emptyList(), globalRefined, subDbRes.refinedBoxes[j].angle))
                         }
                     }
