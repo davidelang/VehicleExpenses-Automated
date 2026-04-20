@@ -4,57 +4,79 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.foundation.Image
 import com.davidlang.vehicleexpensesautomated.ui.util.RectF
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
-import com.davidlang.vehicleexpensesautomated.ui.util.OcrResult
-import kotlin.math.min
 import kotlin.math.max
+import kotlin.math.min
+import java.io.File
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LandmarkDebugDialog(
-    photoPath: String?,
-    odometerCrop: Rect?,
-    otherTextCrop: Rect?,
+    sourceImage: Bitmap? = null,
+    photoPath: String? = null,
+    odometerCrop: androidx.compose.ui.geometry.Rect? = null,
+    otherTextCrop: androidx.compose.ui.geometry.Rect? = null,
     landmarks: List<TextBlock>,
     rawDiscoveryBoxes: List<RectF> = emptyList(),
-    odometerText: String,
+    onDismiss: () -> Unit,
     engineName: String = "Unknown",
+    odometerText: String = "",
     sourceWidth: Int = 1,
     sourceHeight: Int = 1,
+    executionTimeMs: Long = 0,
     discoveryTimeMs: Long = 0,
-    totalTimeMs: Long = 0,
-    onDismiss: () -> Unit
+    totalTimeMs: Long = 0
 ) {
-    if (photoPath == null) return
     val context = LocalContext.current
-    val textMeasurer = rememberTextMeasurer()
-    
     var showDiscovery by remember { mutableStateOf(true) }
+
+    // Resolve source image
+    val bitmap = remember(sourceImage, photoPath) {
+        sourceImage ?: try {
+            photoPath?.let { path ->
+                val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+                val raw = if (path.startsWith("content://")) {
+                    context.contentResolver.openInputStream(Uri.parse(path))?.use {
+                        BitmapFactory.decodeStream(it, null, options)
+                    }
+                } else if (File(path).exists()) {
+                    BitmapFactory.decodeFile(path, options)
+                } else null
+                raw?.let { OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(it)) }
+            }
+        } catch (e: Exception) { null }
+    } ?: return
+
+    val imgW = bitmap.width.toFloat()
+    val imgH = bitmap.height.toFloat()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -63,182 +85,110 @@ fun LandmarkDebugDialog(
         Surface(
             modifier = Modifier.fillMaxSize().padding(8.dp),
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surface
+            color = MaterialTheme.colorScheme.background
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Discovery", style = MaterialTheme.typography.labelSmall)
                         Switch(checked = showDiscovery, onCheckedChange = { showDiscovery = it })
+                        Spacer(modifier = Modifier.width(16.dp))
+                        IconButton(onClick = onDismiss) { Text("✕", style = MaterialTheme.typography.titleLarge) }
                     }
-                    IconButton(onClick = onDismiss) {
-                        Text("✕", style = MaterialTheme.typography.titleLarge)
-                    }
-                }
-                
-                val bitmap = remember(photoPath) {
-                    try {
-                        val options = BitmapFactory.Options().apply { inSampleSize = 1 }
-                        val raw = if (photoPath.startsWith("content://")) {
-                            context.contentResolver.openInputStream(Uri.parse(photoPath))?.use {
-                                BitmapFactory.decodeStream(it, null, options)
-                            }
-                        } else {
-                            BitmapFactory.decodeFile(photoPath, options)
-                        }
-                        raw?.let { OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(it)) }
-                    } catch (e: Exception) { null }
                 }
 
-                if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
-                    val imgW = bitmap.width.toFloat()
-                    val imgH = bitmap.height.toFloat()
-                    
-                    Box(modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .aspectRatio(imgW / imgH)
-                    ) {
+                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    // IMAGE VIEW
+                    Box(modifier = Modifier.fillMaxWidth().aspectRatio(imgW / imgH)) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
-                            val containerW = size.width
-                            val containerH = size.height
-                            val scale = minOf(containerW / imgW, containerH / imgH)
-                            val dw = imgW * scale
-                            val dh = imgH * scale
-                            val offsetX = (containerW - dw) / 2
-                            val offsetY = (containerH - dh) / 2
+                            val dw = size.width; val dh = size.height
 
                             drawImage(
                                 image = bitmap.asImageBitmap(),
-                                dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()),
                                 dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                             )
 
                             if (showDiscovery) {
+                                // Red Tiers
                                 rawDiscoveryBoxes.forEach { box ->
-                                    drawRect(
-                                        color = Color.Red.copy(alpha = 0.55f),
-                                        topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
-                                        size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh)
-                                    )
+                                    drawRect(color = Color.Red.copy(alpha = 0.4f), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(1f))
                                 }
+                                // Phase 58: Draw Orange and Yellow at 1px
                                 landmarks.forEach { lm ->
                                     lm.refinedDiscoveryBox?.let { box ->
-                                        // ORANGE TIER DISABLED
-                                        /*drawRect(
-                                            color = Color(0xFFFF8C00),
-                                            topLeft = Offset(offsetX + box.left * dw, offsetY + box.top * dh),
-                                            size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh),
-                                            style = Stroke(6f)
-                                        )*/
+                                        drawRect(color = Color(0xFFFF8C00), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(1f))
+                                    }
+                                    if (lm.boundingBox.width() > 0) {
+                                        val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
+                                        val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
+                                        drawRect(color = Color.Yellow, topLeft = Offset(nx * dw, ny * dh), size = Size(nw * dw, nh * dh), style = Stroke(1f))
                                     }
                                 }
-                            }
-
-                            landmarks.forEach { lm ->
-                                val nx = lm.boundingBox.left.toFloat() / sourceWidth.toFloat()
-                                val ny = lm.boundingBox.top.toFloat() / sourceHeight.toFloat()
-                                val nw = (lm.boundingBox.right - lm.boundingBox.left).toFloat() / sourceWidth.toFloat()
-                                val nh = (lm.boundingBox.bottom - lm.boundingBox.top).toFloat() / sourceHeight.toFloat()
-                                val rect = Offset(offsetX + nx * dw, offsetY + ny * dh)
-                                if (nw > 0 && nh > 0) {
-                                    drawRect(color = Color.Yellow, topLeft = rect, size = Size(nw * dw, nh * dh), style = Stroke(1f))
-                                }
-                                if (lm.text.isNotBlank()) {
-                                    drawText(
-                                        textMeasurer = textMeasurer,
-                                        text = lm.text,
-                                        topLeft = rect,
-                                        style = androidx.compose.ui.text.TextStyle(color = Color.Yellow, fontSize = 8.sp, background = Color.Black.copy(alpha = 0.7f))
-                                    )
-                                }
-                            }
-
-                            odometerCrop?.let {
-                                drawRect(color = Color.Blue, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
-                            }
-                            otherTextCrop?.let {
-                                drawRect(color = Color.Green, topLeft = Offset(offsetX + it.left * dw, offsetY + it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(4f))
+                                // Crops (Normalized Coords)
+                                odometerCrop?.let { drawRect(color = Color.Blue, topLeft = Offset(it.left * dw, it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(2f)) }
+                                otherTextCrop?.let { drawRect(color = Color.Green, topLeft = Offset(it.left * dw, it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(2f)) }
                             }
                         }
                     }
-                }
 
-                // Metadata Footer
-                Column(modifier = Modifier.padding(16.dp).weight(1f)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column {
-                            Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                            Text("Discovery: ${discoveryTimeMs}ms / Total: ${totalTimeMs}ms", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Text("Source: ${sourceWidth}x${sourceHeight}", style = MaterialTheme.typography.labelMedium)
+                    // Metadata
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text("Discovery: ${discoveryTimeMs}ms / Total: ${totalTimeMs.coerceAtLeast(executionTimeMs)}ms", style = MaterialTheme.typography.labelSmall)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall)
-                    
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 220.dp),
-                        modifier = Modifier.fillMaxSize().padding(top = 4.dp),
-                        contentPadding = PaddingValues(4.dp),
+
+                    // GRID
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(landmarks) { lm ->
-                            Surface(
-                                modifier = Modifier.height(36.dp), // SHRUNKEN TO 36PX
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                shape = MaterialTheme.shapes.extraSmall,
-                                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                        landmarks.forEach { lm ->
+                            Card(
+                                modifier = Modifier.widthIn(min = 120.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                             ) {
-                                Row(modifier = Modifier.fillMaxSize().padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    val cropBmp = remember(lm.boundingBox, bitmap) {
-                                        if (bitmap == null) null else {
-                                            try {
-                                                val r = lm.boundingBox
-                                                val left = max(0, r.left); val top = max(0, r.top)
-                                                val w = min(bitmap.width - left, r.width()); val h = min(bitmap.height - top, r.height())
-                                                if (w > 0 && h > 0) Bitmap.createBitmap(bitmap, left, top, w, h) else null
-                                            } catch (e: Exception) { null }
+                                Row(modifier = Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    // PREVIEW CROP
+                                    val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else lm.refinedDiscoveryBox?.let { 
+                                        android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
+                                    } ?: lm.rawDiscoveryBox?.let { 
+                                        android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
+                                    }
+                                    
+                                    Box(modifier = Modifier.size(40.dp).background(Color.Black), contentAlignment = Alignment.Center) {
+                                        zone?.let { z ->
+                                            if (z.width() > 0 && z.height() > 0) {
+                                                val crop = Bitmap.createBitmap(bitmap, max(0, z.left), max(0, z.top), min(bitmap.width - z.left, z.width()), min(bitmap.height - z.top, z.height()))
+                                                Image(bitmap = crop.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit)
+                                            }
                                         }
                                     }
                                     
-                                    if (cropBmp != null) {
-                                        Image(
-                                            bitmap = cropBmp.asImageBitmap(),
-                                            contentDescription = null,
-                                            modifier = Modifier.fillMaxHeight().wrapContentWidth(),
-                                            contentScale = ContentScale.Fit
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                    }
-
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        if (lm.text.isNotBlank()) {
-                                            Text(text = lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                                        }
+                                        if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                        else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 8.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
+                                        
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            lm.rawDiscoveryBox?.let { box ->
-                                                MetricChip(color = Color.Red, w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
-                                            }
-                                            lm.refinedDiscoveryBox?.let { box ->
-                                                MetricChip(color = Color(0xFFFF8C00), w = (box.right - box.left) * sourceWidth, h = (box.bottom - box.top) * sourceHeight)
-                                            }
-                                            if (lm.boundingBox.width() > 0) {
-                                                MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
-                                            }
+                                            lm.rawDiscoveryBox?.let { MetricChip(color = Color.Red, w = (it.right - it.left) * imgW, h = (it.bottom - it.top) * imgH) }
+                                            lm.refinedDiscoveryBox?.let { MetricChip(color = Color(0xFFFF8C00), w = (it.right - it.left) * imgW, h = (it.bottom - it.top) * imgH) }
+                                            if (lm.boundingBox.width() > 0) MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
                                         }
                                     }
                                 }
                             }
                         }
                     }
-
-                    Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End).padding(top = 8.dp)) {
-                        Text("Close")
-                    }
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
         }
@@ -247,15 +197,7 @@ fun LandmarkDebugDialog(
 
 @Composable
 private fun MetricChip(color: Color, w: Float, h: Float) {
-    Surface(
-        color = color.copy(alpha = 0.15f),
-        shape = MaterialTheme.shapes.extraSmall,
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.6f))
-    ) {
-        Text(
-            text = "${w.toInt()}x${h.toInt()}",
-            modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp),
-            style = androidx.compose.ui.text.TextStyle(fontSize = 7.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f))
-        )
+    Surface(color = color.copy(alpha = 0.15f), shape = MaterialTheme.shapes.extraSmall, border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.6f))) {
+        Text(text = "${w.toInt()}x${h.toInt()}", modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp), style = TextStyle(fontSize = 7.sp, fontWeight = FontWeight.Black, color = color.copy(alpha = 0.9f)))
     }
 }
