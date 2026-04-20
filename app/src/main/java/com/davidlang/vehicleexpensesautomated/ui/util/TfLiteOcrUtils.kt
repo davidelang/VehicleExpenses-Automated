@@ -42,7 +42,7 @@ object TfLiteOcrUtils {
 
     /**
      * Processes DBNet heatmap into vector discovery boxes with Zero-Anchor math.
-     * Phase 45: Adaptive Gap Sub-Windowing.
+     * Phase 51: Relative Sub-Thresholding.
      */
     fun processDbNetOutput(
         heatmap: FloatArray, heatmapW: Int, heatmapH: Int,
@@ -53,29 +53,23 @@ object TfLiteOcrUtils {
         val tDiscoveryStart = System.currentTimeMillis()
         if (heatmapW <= 0 || heatmapH <= 0 || heatmap.size < heatmapW * heatmapH) return DbNetResult(emptyList(), emptyList())
         
-        // Phase 50: Energy Profiling
+        // Find Peak Energy for Relative Thresholding
+        var maxHeat = 0f
+        for (v in heatmap) { if (v > maxHeat) maxHeat = v }
+
+        // Phase 51: Relative Sub-Thresholding
+        // Standard pass uses 0.20f. Sub-pass uses 50% of the peak energy found in that crop.
+        val maskThreshold = if (recursive) (maxHeat * 0.50f).coerceAtLeast(0.01f) else 0.20f
+
         if (recursive) {
             val colEnergies = FloatArray(heatmapW)
             for (x in 0 until heatmapW) {
                 var sum = 0f; for (y in 0 until heatmapH) { sum += heatmap[y * heatmapW + x] }
                 colEnergies[x] = sum / heatmapH
             }
-            Log.i("HEAT_PROFILE", "Sub-Window Column Energy: ${colEnergies.joinToString(",") { String.format("%.3f", it) }}")
-            
-            // Export raw CSV to sandbox
-            try {
-                val csvFile = java.io.File("/sdcard/Documents/sub_heatmap.csv")
-                csvFile.bufferedWriter().use { out ->
-                    for (y in 0 until heatmapH) {
-                        val row = FloatArray(heatmapW) { x -> heatmap[y * heatmapW + x] }
-                        out.write(row.joinToString(",") { String.format("%.4f", it) })
-                        out.newLine()
-                    }
-                }
-            } catch (e: Exception) { Log.e("OcrDebug", "Failed to export CSV", e) }
+            Log.i("HEAT_PROFILE", "Sub-Pass Peak=$maxHeat, Threshold=$maskThreshold | Profile=${colEnergies.take(20).joinToString(",") { String.format("%.3f", it) }}...")
         }
 
-        val maskThreshold = 0.20f
         val mask = Mat(heatmapH, heatmapW, CvType.CV_8UC1)
         val data = ByteArray(heatmapW * heatmapH)
         for (i in heatmap.indices) { data[i] = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte() }
@@ -91,12 +85,10 @@ object TfLiteOcrUtils {
         val rawBoxes = mutableListOf<DetectedBox>()
         val intermediateRefined = mutableListOf<DetectedBox>()
         val suspectCrops = mutableListOf<RectF>()
-        
         val sourceW = sourceBitmap?.width?.toDouble() ?: heatmapW.toDouble()
         val sourceH = sourceBitmap?.height?.toDouble() ?: heatmapH.toDouble()
         val invScale = 1.0 / scale.toDouble()
 
-        // 1. Calculate Aspect Ratio Threshold using Adaptive Gap Rule
         val threshold = if (!recursive) calculateAdaptiveThreshold(contours) else 1000f
 
         for (contour in contours) {
@@ -105,37 +97,27 @@ object TfLiteOcrUtils {
             val rectBounds = rotatedRect.boundingRect()
             val aspect = rectBounds.width.toDouble() / rectBounds.height.toDouble()
             
-            // 2. Identify Suspects using threshold
             if (!recursive && aspect > threshold && sourceMat != null) {
-                // Get refined ORANGE box to center the crop perfectly
                 val orangeBox = expandInRoi(
                     RotatedRect(Point(rotatedRect.center.x * invScale, rotatedRect.center.y * invScale), Size(rotatedRect.size.width * invScale, rotatedRect.size.height * invScale), rotatedRect.angle),
                     sourceMat, algorithm,
                     android.graphics.Rect((rectBounds.x * invScale).toInt(), (rectBounds.y * invScale).toInt(), ((rectBounds.x + rectBounds.width) * invScale).toInt(), ((rectBounds.y + rectBounds.height) * invScale).toInt())
                 )
-                
-                // Add 5% Padding (High Zoom)
                 val padW = (orangeBox.width() * 0.05).toInt()
                 val padH = (orangeBox.height() * 0.05).toInt()
-                val cropRect = RectF(
+                suspectCrops.add(RectF(
                     ((orangeBox.left - padW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
                     ((orangeBox.top - padH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f),
                     ((orangeBox.right + padW).toFloat() / sourceW.toFloat()).coerceIn(0f, 1f),
                     ((orangeBox.bottom + padH).toFloat() / sourceH.toFloat()).coerceIn(0f, 1f)
-                )
-                suspectCrops.add(cropRect)
-                continue // Discard the bloated original
+                ))
+                continue
             }
-            
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
-        // Phase 45: ALL MERGING DISABLED FOR DIAGNOSTICS
-        val finalRaw = rawBoxes
-        val finalRefined = intermediateRefined
-        
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(finalRaw, finalRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
+        return DbNetResult(rawBoxes, intermediateRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
     }
 
     private fun calculateAdaptiveThreshold(contours: List<MatOfPoint>): Float {
@@ -143,24 +125,15 @@ object TfLiteOcrUtils {
             val r = Imgproc.minAreaRect(MatOfPoint2f(*it.toArray())).boundingRect()
             r.width.toDouble() / r.height.toDouble()
         }.sorted()
-        
         if (aspects.isEmpty()) return 3.0f
-        
-        // Bin into 0.5 buckets
         val bins = mutableMapOf<Int, Int>()
         for (a in aspects) { val bucket = (a / 0.5).toInt(); bins[bucket] = (bins[bucket] ?: 0) + 1 }
-        
-        // Find the "Gap" (two consecutive buckets with count 0)
-        val maxBucket = (aspects.last() / 0.5).toInt()
-        var gapBucketStart = maxBucket + 1
+        val maxBucket = (aspects.last() / 0.5).toInt(); var gapBucketStart = maxBucket + 1
         for (b in 0..maxBucket) {
             if ((bins[b] ?: 0) == 0 && (bins[b+1] ?: 0) == 0) {
-                // Potential gap found. Ensure at least 50% of items are below it.
-                val itemsBelow = aspects.count { it < b * 0.5 }
-                if (itemsBelow >= (aspects.size * 0.5)) { gapBucketStart = b; break }
+                if (aspects.count { it < b * 0.5 } >= (aspects.size * 0.5)) { gapBucketStart = b; break }
             }
         }
-        
         val gapValue = gapBucketStart * 0.5f
         Log.i("OcrAdaptive", "GapBucket=$gapBucketStart, Threshold=$gapValue")
         return gapValue
