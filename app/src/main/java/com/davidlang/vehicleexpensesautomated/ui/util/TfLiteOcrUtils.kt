@@ -57,9 +57,9 @@ object TfLiteOcrUtils {
         var maxHeat = 0f
         for (v in heatmap) { if (v > maxHeat) maxHeat = v }
 
-        // Phase 51: Relative Sub-Thresholding
-        // Standard pass uses 0.20f. Sub-pass uses 50% of the peak energy found in that crop.
-        val maskThreshold = if (recursive) (maxHeat * 0.50f).coerceAtLeast(0.01f) else 0.20f
+        // Phase 53: High-Confidence Choking
+        // Standard pass uses 0.20f. Sub-pass uses 85% of the peak energy found in that crop.
+        val maskThreshold = if (recursive) (maxHeat * 0.85f).coerceAtLeast(0.01f) else 0.20f
 
         if (recursive) {
             val colEnergies = FloatArray(heatmapW)
@@ -67,7 +67,7 @@ object TfLiteOcrUtils {
                 var sum = 0f; for (y in 0 until heatmapH) { sum += heatmap[y * heatmapW + x] }
                 colEnergies[x] = sum / heatmapH
             }
-            Log.i("HEAT_PROFILE", "Sub-Pass Peak=$maxHeat, Threshold=$maskThreshold | Profile=${colEnergies.take(20).joinToString(",") { String.format("%.3f", it) }}...")
+            Log.i("HEAT_PROFILE", "Sub-Pass Peak=$maxHeat, Threshold=$maskThreshold")
         }
 
         val mask = Mat(heatmapH, heatmapW, CvType.CV_8UC1)
@@ -119,8 +119,12 @@ object TfLiteOcrUtils {
             processSubBlob(rotatedRect, invScale, sourceW, sourceH, sourceMat, algorithm, rawBoxes, intermediateRefined)
         }
         
+        // Phase 53: RE-ENABLE CLEANUP
+        val (finalRaw, finalRefined) = mergeOverlappingBoxesSync(rawBoxes, intermediateRefined)
+        val (gluedRaw, gluedRefined) = mergeNearbyBoxesSync(finalRaw, finalRefined, sourceW, sourceH)
+        
         mask.release(); hierarchy.release(); sourceMat?.release()
-        return DbNetResult(rawBoxes, intermediateRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
+        return DbNetResult(gluedRaw, gluedRefined, discoveryTimeMs = System.currentTimeMillis() - tDiscoveryStart, suspectCrops = suspectCrops)
     }
 
     private fun calculateAdaptiveThreshold(contours: List<MatOfPoint>): Float {
@@ -188,5 +192,70 @@ object TfLiteOcrUtils {
         if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0
         for (i in start until end) { if (i < 0 || i >= maxD) continue; if ((if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]) > threshold) inkPixels++ }
         return inkPixels
+    }
+
+    private fun mergeOverlappingBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>): Pair<List<DetectedBox>, List<DetectedBox>> {
+        if (refinedBoxes.isEmpty() || rawBoxes.size != refinedBoxes.size) return Pair(rawBoxes, refinedBoxes)
+        val mutableRaw = rawBoxes.toMutableList(); val mutableRefined = refinedBoxes.toMutableList()
+        var changed = true
+        while (changed) {
+            changed = false; var i = 0
+            while (i < mutableRefined.size) {
+                var j = i + 1
+                while (j < mutableRefined.size) {
+                    val boxA = mutableRefined[i].boundingBox; val boxB = mutableRefined[j].boundingBox
+                    val interL = max(boxA.left, boxB.left); val interT = max(boxA.top, boxB.top); val interR = min(boxA.right, boxB.right); val interB = min(boxA.bottom, boxB.bottom)
+                    if (interR > interL && interB > interT) {
+                        val interArea = (interR - interL) * (interB - interT); val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top); val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
+                        val minArea = min(areaA, areaB)
+                        if (minArea > 0 && (interArea / minArea) > 0.40f) {
+                            val unionRefined = RectF(min(boxA.left, boxB.left), min(boxA.top, boxB.top), max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom))
+                            val rawA = mutableRaw[i].boundingBox; val rawB = mutableRaw[j].boundingBox
+                            val unionRaw = RectF(min(rawA.left, rawB.left), min(rawA.top, rawB.top), max(rawA.right, rawB.right), max(rawA.bottom, rawB.bottom))
+                            val angle = if (areaA > areaB) mutableRefined[i].angle else mutableRefined[j].angle
+                            mutableRefined[i] = DetectedBox(emptyList(), unionRefined, angle); mutableRaw[i] = DetectedBox(emptyList(), unionRaw, angle)
+                            mutableRefined.removeAt(j); mutableRaw.removeAt(j); changed = true; break
+                        }
+                    }
+                    j++
+                }
+                if (changed) break; i++
+            }
+        }
+        return Pair(mutableRaw, mutableRefined)
+    }
+
+    private fun mergeNearbyBoxesSync(rawBoxes: List<DetectedBox>, refinedBoxes: List<DetectedBox>, sourceW: Double, sourceH: Double): Pair<List<DetectedBox>, List<DetectedBox>> {
+        if (refinedBoxes.isEmpty() || rawBoxes.size != refinedBoxes.size) return Pair(rawBoxes, refinedBoxes)
+        val mutableRaw = rawBoxes.toMutableList(); val mutableRefined = refinedBoxes.toMutableList()
+        var changed = true
+        while (changed) {
+            changed = false; var i = 0
+            while (i < mutableRefined.size) {
+                var j = i + 1
+                while (j < mutableRefined.size) {
+                    val boxA = mutableRefined[i].boundingBox; val boxB = mutableRefined[j].boundingBox
+                    val pixelBoxA = RectF(boxA.left * sourceW.toFloat(), boxA.top * sourceH.toFloat(), boxA.right * sourceW.toFloat(), boxA.bottom * sourceH.toFloat())
+                    val pixelBoxB = RectF(boxB.left * sourceW.toFloat(), boxB.top * sourceH.toFloat(), boxB.right * sourceW.toFloat(), boxB.bottom * sourceH.toFloat())
+                    val vOverlap = min(pixelBoxA.bottom, pixelBoxB.bottom) - max(pixelBoxA.top, pixelBoxB.top)
+                    val minH = min(pixelBoxA.bottom - pixelBoxA.top, pixelBoxB.bottom - pixelBoxB.top)
+                    if (vOverlap > minH * 0.75f) {
+                        val hGap = if (pixelBoxA.right < pixelBoxB.left) pixelBoxB.left - pixelBoxA.right else if (pixelBoxB.right < pixelBoxA.left) pixelBoxA.left - pixelBoxB.right else 0f
+                        if (hGap <= minH * 0.25f) {
+                            val unionRefined = RectF(min(boxA.left, boxB.left), min(boxA.top, boxB.top), max(boxA.right, boxB.right), max(boxA.bottom, boxB.bottom))
+                            val rawA = mutableRaw[i].boundingBox; val rawB = mutableRaw[j].boundingBox
+                            val unionRaw = RectF(min(rawA.left, rawB.left), min(rawA.top, rawB.top), max(rawA.right, rawB.right), max(rawA.bottom, rawB.bottom))
+                            val areaA = (boxA.right - boxA.left) * (boxA.bottom - boxA.top); val areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top)
+                            val angle = if (areaA > areaB) mutableRefined[i].angle else mutableRefined[j].angle
+                            mutableRefined[i] = DetectedBox(emptyList(), unionRefined, angle); mutableRaw[i] = DetectedBox(emptyList(), unionRaw, angle)
+                            mutableRefined.removeAt(j); mutableRaw.removeAt(j); changed = true; break
+                        }
+                    }
+                    j++
+                }
+                if (changed) break; i++
+            }
+        }
+        return Pair(mutableRaw, mutableRefined)
     }
 }
