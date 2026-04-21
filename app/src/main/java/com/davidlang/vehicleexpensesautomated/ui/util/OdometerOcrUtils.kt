@@ -52,8 +52,9 @@ object OdometerOcrUtils {
         return DeskewResult(sortedAngles[sortedAngles.size / 2], elapsed)
     }
 
-    fun cleanLandmarkString(text: String, stripPunctuation: Boolean = false): String {
-        val base = if (stripPunctuation) text.trim { it in "-.," } else text
+    fun cleanLandmarkString(text: String, stripPunctuation: Boolean = true): String {
+        // Phase 30: Aggressive leading/trailing punctuation stripping
+        val base = if (stripPunctuation) text.trim { !it.isLetterOrDigit() } else text
         return base.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
     }
 
@@ -63,7 +64,7 @@ object OdometerOcrUtils {
         otherTextCrop: android.graphics.RectF? = null,
         imgWidth: Int,
         imgHeight: Int,
-        stripPunctuation: Boolean = false
+        stripPunctuation: Boolean = true
     ): List<TextBlock> {
         val filtered = allBlocks.filter { block ->
             !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight) && 
@@ -306,16 +307,19 @@ object OdometerOcrUtils {
     fun serializeLandmarks(landmarks: List<TextBlock>, imgW: Int, imgH: Int): String {
         val array = JSONArray()
         // Filter: > 1 character as requested
-        landmarks.filter { it.text.trim().length > 1 }.forEach { block ->
-            val obj = JSONObject()
-            obj.put("text", block.text)
-            // Save as NORMALIZED coordinates (0.0 to 1.0) explicitly as Double to prevent truncation
-            val box = block.boundingBox
-            obj.put("cx", box.centerX().toDouble() / imgW.toDouble())
-            obj.put("cy", box.centerY().toDouble() / imgH.toDouble())
-            obj.put("w", box.width().toDouble() / imgW.toDouble())
-            obj.put("h", box.height().toDouble() / imgH.toDouble())
-            array.put(obj)
+        landmarks.forEach { block ->
+            val cleaned = cleanLandmarkString(block.text, true)
+            if (cleaned.length > 1) {
+                val obj = JSONObject()
+                obj.put("text", cleaned)
+                // Save as NORMALIZED coordinates (0.0 to 1.0) explicitly as Double to prevent truncation
+                val box = block.boundingBox
+                obj.put("cx", box.centerX().toDouble() / imgW.toDouble())
+                obj.put("cy", box.centerY().toDouble() / imgH.toDouble())
+                obj.put("w", box.width().toDouble() / imgW.toDouble())
+                obj.put("h", box.height().toDouble() / imgH.toDouble())
+                array.put(obj)
+            }
         }
         return array.toString()
     }
@@ -328,14 +332,17 @@ object OdometerOcrUtils {
         val root = JSONObject()
         results.forEach { (engineName, res) ->
             val array = JSONArray()
-            res.textBlocks.filter { it.text.trim().length > 1 }.forEach { block ->
-                val obj = JSONObject()
-                obj.put("text", block.text)
-                obj.put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
-                obj.put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
-                obj.put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
-                obj.put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
-                array.put(obj)
+            res.textBlocks.forEach { block ->
+                val cleaned = cleanLandmarkString(block.text, true)
+                if (cleaned.length > 1) {
+                    val obj = JSONObject()
+                    obj.put("text", cleaned)
+                    obj.put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
+                    obj.put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
+                    obj.put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
+                    obj.put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
+                    array.put(obj)
+                }
             }
             root.put(engineName, array)
         }
