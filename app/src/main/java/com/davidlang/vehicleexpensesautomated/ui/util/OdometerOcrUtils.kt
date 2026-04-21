@@ -333,6 +333,7 @@ object OdometerOcrUtils {
      * Keyed by engine name.
      */
     fun serializeMultiEngineLandmarks(results: Map<String, OcrResult>): String {
+        val t0 = System.currentTimeMillis()
         val root = JSONObject()
         results.forEach { (engineName, res) ->
             val array = JSONArray()
@@ -350,6 +351,7 @@ object OdometerOcrUtils {
             }
             root.put(engineName, array)
         }
+        Log.i("OCR_PERF", "serializeMultiEngineLandmarks took ${System.currentTimeMillis() - t0}ms for ${results.size} engines")
         return root.toString()
     }
 

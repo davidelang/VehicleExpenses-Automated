@@ -200,13 +200,20 @@ fun LandmarkDebugDialog(
                                             }
                                             
                                             Box(modifier = Modifier.size(48.dp).background(Color.Black), contentAlignment = Alignment.Center) {
-                                                val crop = remember(zone, bitmap) {
+                                                var crop by remember(zone) { mutableStateOf<Bitmap?>(null) }
+
+                                                DisposableEffect(zone, bitmap) {
                                                     if (zone != null && zone.width() > 0 && zone.height() > 0) {
                                                         try {
-                                                            Bitmap.createBitmap(bitmap, max(0, zone.left), max(0, zone.top), min(bitmap.width - zone.left, zone.width()), min(bitmap.height - zone.top, zone.height()))
-                                                        } catch (e: Exception) { null }
-                                                    } else null
+                                                            crop = Bitmap.createBitmap(bitmap, max(0, zone.left), max(0, zone.top), min(bitmap.width - zone.left, zone.width()), min(bitmap.height - zone.top, zone.height()))
+                                                        } catch (e: Exception) { Log.e("LandmarkDialog", "Crop failed", e) }
+                                                    }
+                                                    onDispose {
+                                                        crop?.recycle()
+                                                        crop = null
+                                                    }
                                                 }
+
                                                 crop?.let { c -> Image(bitmap = c.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit) }
                                             }
                                             
