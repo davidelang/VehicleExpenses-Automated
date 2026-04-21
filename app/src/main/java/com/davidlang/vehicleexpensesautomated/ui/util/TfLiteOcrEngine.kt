@@ -20,7 +20,7 @@ import java.nio.channels.FileChannel
 class TfLiteOcrEngine(private val context: Context, mode: ModelMode = ModelMode.ALPHANUMERIC) {
     private var interpreter: Interpreter? = null
     
-    // Alphanumeric alphabet (37 classes: blank + 36 chars)
+    // RESEARCHED DICTIONARY: Index 0 is blank, 1-10 is 0-9, 11-36 is a-z
     private val alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
     
     private var inputHeight = 32
@@ -105,15 +105,28 @@ class TfLiteOcrEngine(private val context: Context, mode: ModelMode = ModelMode.
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetH * targetW * channels * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        // Pass 2: Tensor Filling
+        // Pass 2: Tensor Filling (Researched standard Row-Major for this model set)
         if (isNCHW) {
             // [Batch, Channels, Height, Width]
             for (c in 0 until channels) {
                 for (y in 0 until targetH) {
                     for (x in 0 until targetW) {
                         val px = padded.getPixel(x, y)
-                        val gray = (0.299f * Color.red(px) + 0.587f * Color.green(px) + 0.114f * Color.blue(px))
-                        inputBuffer.putFloat((gray / 255.0f - 0.5f) / 0.5f)
+                        if (isGrayscale) {
+                            val r = Color.red(px)
+                            val g = Color.green(px)
+                            val b = Color.blue(px)
+                            val gray = (0.299f * r + 0.587f * g + 0.114f * b)
+                            inputBuffer.putFloat((gray / 255.0f - 0.5f) / 0.5f)
+                        } else {
+                            // Split by channel if NCHW but 3 channels (less common for OCR)
+                            val color = when(c) {
+                                0 -> Color.red(px)
+                                1 -> Color.green(px)
+                                else -> Color.blue(px)
+                            }
+                            inputBuffer.putFloat((color / 255.0f - 0.5f) / 0.5f)
+                        }
                     }
                 }
             }
@@ -123,7 +136,10 @@ class TfLiteOcrEngine(private val context: Context, mode: ModelMode = ModelMode.
                 for (x in 0 until targetW) {
                     val px = padded.getPixel(x, y)
                     if (isGrayscale) {
-                        val gray = (0.299f * Color.red(px) + 0.587f * Color.green(px) + 0.114f * Color.blue(px))
+                        val r = Color.red(px)
+                        val g = Color.green(px)
+                        val b = Color.blue(px)
+                        val gray = (0.299f * r + 0.587f * g + 0.114f * b)
                         inputBuffer.putFloat((gray / 255.0f - 0.5f) / 0.5f)
                     } else {
                         inputBuffer.putFloat((Color.red(px) / 255.0f - 0.5f) / 0.5f)
