@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
+import android.graphics.Rect
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -36,6 +37,8 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
+import kotlin.math.max
+import kotlin.math.min
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
@@ -134,7 +137,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson)
+        // Deserialization Phase 28: Extract engine-specific curated landmarks
+        val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson, anchorSourceEngine, bmp.width, bmp.height)
         val refOcr = OcrResult(engineName = "Curated DB", textBlocks = curatedBlocks, imageWidth = bmp.width, imageHeight = bmp.height, debugText = curatedBlocks.joinToString(" ") { it.text })
         val annotatedBmp = drawCropBoxesOnReference(bmp, v); val refBase64 = createScaledBase64(annotatedBmp, 400, 70); annotatedBmp.recycle()
         ReferenceCache(v, refBase64, curatedBlocks, refOcr, bmp)
@@ -284,7 +288,12 @@ private fun serializePhotoResultToJson(
             val landmarksArray = JSONArray()
             res.textBlocks.forEach { block -> 
                 landmarksArray.put(JSONObject().apply { 
-                    put("text", block.text); put("cx", block.boundingBox.centerX()); put("cy", block.boundingBox.centerY()); put("w", block.boundingBox.width()); put("h", block.boundingBox.height())
+                    put("text", block.text)
+                    // Reporting Phase 27: Consistent normalized floats for reports
+                    put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
+                    put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
+                    put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
+                    put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
                     val metaJson = JSONObject(); block.metadata.forEach { (k, v) -> metaJson.put(k, v) }; put("metadata", metaJson) 
                 }) 
             }
@@ -389,18 +398,46 @@ private fun loadGroundTruth(context: Context): Map<String, String> {
     return try { val json = JSONObject(file.readText()); val map = mutableMapOf<String, String>(); val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); map[key.lowercase()] = json.getString(key) }; map } catch (e: Exception) { emptyMap() }
 }
 
-private fun getFullLandmarksFromJson(json: String?): List<TextBlock> {
+private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
     if (json.isNullOrEmpty()) return emptyList()
     val list = mutableListOf<TextBlock>()
     try {
-        val array = JSONArray(json)
+        val root = JSONObject(json)
+        
+        // Phase 28: Support Multi-Engine Manifest or Legacy Array
+        val array = if (root.has(engineName)) {
+            root.getJSONArray(engineName)
+        } else if (json.startsWith("[")) {
+            JSONArray(json) // Legacy support
+        } else {
+            // Fallback to first available engine if anchorSourceEngine not found in manifest
+            val keys = root.keys()
+            if (keys.hasNext()) root.getJSONArray(keys.next()) else null
+        } ?: return emptyList()
+
         for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i); val text = obj.getString("text")
-            val cx = obj.getInt("cx"); val cy = obj.getInt("cy"); val h = obj.getInt("h"); val w = obj.getInt("w")
+            val obj = array.getJSONObject(i)
+            val text = obj.getString("text")
+            
+            // Phase 27: Consistent Float coordinate reading
+            val cx = obj.optDouble("cx", 0.0)
+            val cy = obj.optDouble("cy", 0.0)
+            val w = obj.optDouble("w", 0.0)
+            val h = obj.optDouble("h", 0.0)
+            
             val cleanText = OdometerOcrUtils.cleanLandmarkString(text, stripPunctuation = true)
-            list.add(TextBlock(cleanText, android.graphics.Rect(cx - w/2, cy - h/2, cx + w/2, cy + h/2)))
+            
+            // Map normalized back to absolute pixels for internal TextBlock use
+            val left = ((cx - w/2.0) * imgW).toInt()
+            val top = ((cy - h/2.0) * imgH).toInt()
+            val right = ((cx + w/2.0) * imgW).toInt()
+            val bottom = ((cy + h/2.0) * imgH).toInt()
+            
+            list.add(TextBlock(cleanText, android.graphics.Rect(left, top, right, bottom)))
         }
-    } catch (e: Exception) { }
+    } catch (e: Exception) { 
+        Log.e("ExperimentAlignment", "Failed to parse landmarks", e)
+    }
     return list
 }
 
