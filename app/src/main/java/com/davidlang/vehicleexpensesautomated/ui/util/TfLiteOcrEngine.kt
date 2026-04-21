@@ -18,7 +18,8 @@ import kotlin.math.min
  */
 class TfLiteOcrEngine(private val context: Context) {
     private var interpreter: Interpreter? = null
-    private val labels = "#0123456789.km/hMPH "
+    // Index 0: # (dummy), Index 1: space, Index 2..11: 1234567890, 12..18: units
+    private val labels = "# 1234567890.km/hMPH"
     
     private var inputHeight = 50
     private var inputWidth = 200
@@ -39,7 +40,7 @@ class TfLiteOcrEngine(private val context: Context) {
             interpreter = interp
             
             // DYNAMIC SHAPE DISCOVERY
-            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 200, 50, 1] but usually transposed in Paddle
+            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 50, 200, 1]
             inputHeight = inputShape[1]
             inputWidth = inputShape[2]
             isGrayscale = inputShape[3] == 1
@@ -80,9 +81,9 @@ class TfLiteOcrEngine(private val context: Context) {
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetH * targetW * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        // Pass 2: Column-Major Tensor Loop (X then Y) with Inverted Y and [-1, 1] normalization
-        for (x in 0 until targetW) {
-            for (y in targetH - 1 downTo 0) {
+        // Pass 2: Row-Major Tensor Loop (Standard Reading Order) with [-1, 1] normalization
+        for (y in 0 until targetH) {
+            for (x in 0 until targetW) {
                 val px = padded.getPixel(x, y)
                 if (isGrayscale) {
                     val r = (px shr 16) and 0xFF
@@ -109,7 +110,7 @@ class TfLiteOcrEngine(private val context: Context) {
             val outputBuffer = ByteBuffer.allocateDirect(1 * timeSteps * numClasses * 4)
             outputBuffer.order(ByteOrder.nativeOrder())
             
-            // DUMP BUFFER TO DISK
+            // DUMP BUFFER TO DISK BEFORE INFERENCE
             try {
                 inputBuffer.rewind()
                 val f = java.io.File(context.cacheDir, "tflite_in_${debugCounter++}.raw")
