@@ -104,7 +104,14 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     }
 }
 
-data class ReferenceCache(val vehicle: Vehicle, val referenceBase64: String, val curatedLandmarks: List<TextBlock>, val ocrResult: OcrResult, val bmp: Bitmap)
+data class ReferenceCache(
+    val vehicle: Vehicle, 
+    val referenceBase64: String, 
+    // Phase 42: Cache landmarks for EVERY discovery engine
+    val curatedLandmarksMap: Map<String, List<TextBlock>>, 
+    val ocrResult: OcrResult, 
+    val bmp: Bitmap
+)
 
 data class AlignmentTraceResult(
     val strategyName: String,
@@ -134,18 +141,29 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
     val primaryIdentityEngine = prefs.getString("primary_identity_pref", "hardcoded") ?: "hardcoded"
     val anchorSourceEngine = prefs.getString("anchor_source_pref", "ML Kit") ?: "ML Kit"
+    val discoveryEngines = OcrHarness.getDiscoveryEngineNames(context)
 
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        // Deserialization Phase 28: Extract engine-specific curated landmarks
-        val curatedBlocks = getFullLandmarksFromJson(v.landmarkTextBlocksJson, anchorSourceEngine, bmp.width, bmp.height)
-        val refOcr = OcrResult(engineName = "Curated DB", textBlocks = curatedBlocks, imageWidth = bmp.width, imageHeight = bmp.height, debugText = curatedBlocks.joinToString(" ") { it.text })
+        
+        // Phase 42: Hydrate landmarks for all discovery engines
+        val curatedMap = discoveryEngines.associateWith { engineName ->
+            getFullLandmarksFromJson(v.landmarkTextBlocksJson, engineName, bmp.width, bmp.height)
+        }
+        
+        val primaryCurated = curatedMap[anchorSourceEngine] ?: curatedMap["ML Kit"] ?: emptyList()
+        val refOcr = OcrResult(engineName = "Curated DB", textBlocks = primaryCurated, imageWidth = bmp.width, imageHeight = bmp.height, debugText = primaryCurated.joinToString(" ") { it.text })
         val annotatedBmp = drawCropBoxesOnReference(bmp, v); val refBase64 = createScaledBase64(annotatedBmp, 400, 70); annotatedBmp.recycle()
-        ReferenceCache(v, refBase64, curatedBlocks, refOcr, bmp)
+        ReferenceCache(v, refBase64, curatedMap, refOcr, bmp)
     }
     
     val jsonResults = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
-    val activeAlignments = AlignmentRegistry.getActiveEngines().map { it.name }
+    
+    // Phase 42: Expand dynamic alignments for HTML columns
+    val activeAlignments = mutableListOf<String>()
+    activeAlignments.add("ORB")
+    discoveryEngines.forEach { activeAlignments.add("$it (Tri)") }
+    
     val footer = "</table></body></html>"
     
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -179,7 +197,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
 
             val queryOcrDiscovery = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]!!
-            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
+            val queryLandmarksPrimary = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
             
             // MULTI-SOURCE VETO SWEEP
             val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
@@ -215,20 +233,32 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 if (isWinner) {
                     finalWinnerName = ref.vehicle.name
-                    AlignmentRegistry.getActiveEngines().forEach { engine ->
+                    activeAlignments.forEach { alignName ->
                         val t0 = System.currentTimeMillis()
-                        val alignRes = engine.align(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarks, ref.vehicle)
+                        val alignRes = if (alignName.endsWith(" (Tri)")) {
+                            val engineBase = alignName.substringBefore(" (Tri)")
+                            val qLandmarks = discoveryResults[engineBase]?.let { ocr ->
+                                OdometerOcrUtils.processRawLandmarks(ocr.textBlocks, null, null, ocr.imageWidth, ocr.imageHeight)
+                            } ?: emptyList()
+                            val rLandmarks = ref.curatedLandmarksMap[engineBase] ?: emptyList()
+                            AnchorTriangulationEngine().align(ref.bmp, originalBitmap, rLandmarks, qLandmarks, ref.vehicle)
+                        } else {
+                            val engine = AlignmentRegistry.getActiveEngines().find { it.name == alignName }
+                            engine?.align(ref.bmp, originalBitmap, ref.curatedLandmarksMap[anchorSourceEngine] ?: emptyList(), queryLandmarksPrimary, ref.vehicle)
+                                ?: AlignmentResult(false, null, -1f, "Aligner Missing")
+                        }
+                        
                         val elapsed = System.currentTimeMillis() - t0
                         if (alignRes.success && alignRes.alignedImage != null) {
                             val crop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
                             if (crop != null) {
                                 val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                                alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, true, elapsed, createScaledBase64(alignRes.alignedImage, 400, 70), steps, alignRes.metadata)
+                                alignmentTraces[alignName] = AlignmentTraceResult(alignName, true, elapsed, createScaledBase64(alignRes.alignedImage, 400, 70), steps, alignRes.metadata)
                                 crop.recycle()
                             }
                             alignRes.alignedImage.recycle()
                         } else {
-                            alignmentTraces[engine.name] = AlignmentTraceResult(engine.name, false, elapsed, "", emptyList(), alignRes.metadata)
+                            alignmentTraces[alignName] = AlignmentTraceResult(alignName, false, elapsed, "", emptyList(), alignRes.metadata)
                         }
                     }
                     bestOdometer = OdometerOcrUtils.pickBestOdometer(alignmentTraces.values.flatMap { it.ocrTraces }) ?: "FAILED"
@@ -260,7 +290,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     }
     currentFile.appendText(footer)
     
-    // PHASE 31: Construct global report object with reference manifest
+    // Construct global report object with reference manifest
     val finalReport = JSONObject().apply {
         put("timestamp", timestamp)
         put("total_photos", total)
@@ -303,7 +333,6 @@ private fun serializePhotoResultToJson(
         discovery.forEach { (name, res) ->
             val landmarksArray = JSONArray()
             res.textBlocks.forEach { block -> 
-                // PHASE 31: Apply universal cleaning before reporting
                 val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
                 if (cleanedText.length > 1) {
                     landmarksArray.put(JSONObject().apply { 
@@ -350,7 +379,7 @@ private fun buildHtmlHeader(time: String, total: Int, vehicles: List<Vehicle>, a
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 36px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .winner { background-color: #e6ffed; border: 2px solid #28a745; } .ocr-step { margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; text-align: left; } .word-list { font-size: 28px; color: #666; height: 160px; overflow-y: scroll; }</style></head><body>")
     appendLine("<h1>Deep Trace Alignment Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:300px;'># & Original</th>")
-    alignNames.forEach { appendLine("<th style='width:600px;'>$it Alignment</th>") }
+    alignNames.forEach { appendLine("<th style='width:600px;'>$it</th>") }
     appendLine("<th style='width:400px;'>Final Result</th></tr>")
 }
 
