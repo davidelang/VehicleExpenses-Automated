@@ -24,8 +24,8 @@ object TfLiteOcrUtils {
             var maxIndex = 0; var maxVal = sequence[t][0]
             for (c in 1 until numClasses) { if (sequence[t][c] > maxVal) { maxVal = sequence[t][c]; maxIndex = c } }
             if (maxIndex != blankIndex && maxIndex != lastIndex) {
-                val dictIndex = if (blankIndex == 0) maxIndex - 1 else maxIndex
-                if (dictIndex >= 0 && dictIndex < dictionary.size) { result.append(dictionary[dictIndex]); totalConf += maxVal; count++ }
+                // FIXED RESEARCH: Use index directly for these CRNN models
+                if (maxIndex >= 0 && maxIndex < dictionary.size) { result.append(dictionary[maxIndex]); totalConf += maxVal; count++ }
             }
             lastIndex = maxIndex
         }
