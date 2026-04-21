@@ -167,8 +167,8 @@ fun ManageVehiclesScreen(
                     val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                     val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
 
-                    val primaryRes = filteredResults[anchorSourceEngine] ?: filteredResults["ML Kit"]
-                    primaryRes?.let { landmarkTextBlocksJson = OdometerOcrUtils.serializeLandmarks(it.textBlocks, it.imageWidth, it.imageHeight) }
+                    // PHASE 28: Store multi-engine manifest
+                    landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(filteredResults)
                     
                     discoveryResults = filteredResults
                     selectedEngineForPopup = anchorSourceEngine

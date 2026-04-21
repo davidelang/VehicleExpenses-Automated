@@ -305,18 +305,41 @@ object OdometerOcrUtils {
     // MANDATED: Normalized JSON Serialization
     fun serializeLandmarks(landmarks: List<TextBlock>, imgW: Int, imgH: Int): String {
         val array = JSONArray()
-        landmarks.forEach { block ->
+        // Filter: > 1 character as requested
+        landmarks.filter { it.text.trim().length > 1 }.forEach { block ->
             val obj = JSONObject()
             obj.put("text", block.text)
-            // Save as NORMALIZED coordinates (0.0 to 1.0)
+            // Save as NORMALIZED coordinates (0.0 to 1.0) explicitly as Double to prevent truncation
             val box = block.boundingBox
-            obj.put("cx", box.centerX().toFloat() / imgW)
-            obj.put("cy", box.centerY().toFloat() / imgH)
-            obj.put("w", box.width().toFloat() / imgW)
-            obj.put("h", box.height().toFloat() / imgH)
+            obj.put("cx", box.centerX().toDouble() / imgW.toDouble())
+            obj.put("cy", box.centerY().toDouble() / imgH.toDouble())
+            obj.put("w", box.width().toDouble() / imgW.toDouble())
+            obj.put("h", box.height().toDouble() / imgH.toDouble())
             array.put(obj)
         }
         return array.toString()
+    }
+
+    /**
+     * Consolidates landmarks from all 5 engines into a single JSON manifest.
+     * Keyed by engine name.
+     */
+    fun serializeMultiEngineLandmarks(results: Map<String, OcrResult>): String {
+        val root = JSONObject()
+        results.forEach { (engineName, res) ->
+            val array = JSONArray()
+            res.textBlocks.filter { it.text.trim().length > 1 }.forEach { block ->
+                val obj = JSONObject()
+                obj.put("text", block.text)
+                obj.put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
+                obj.put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
+                obj.put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
+                obj.put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
+                array.put(obj)
+            }
+            root.put(engineName, array)
+        }
+        return root.toString()
     }
 
     // COMPATIBILITY WRAPPERS
