@@ -53,8 +53,9 @@ object OdometerOcrUtils {
     }
 
     fun cleanLandmarkString(text: String, stripPunctuation: Boolean = true): String {
-        // Phase 30: Aggressive leading/trailing punctuation stripping
-        val base = if (stripPunctuation) text.trim { !it.isLetterOrDigit() } else text
+        // Phase 31: Replace o/O with 0 and perform aggressive leading/trailing stripping
+        val mapped = text.replace('o', '0').replace('O', '0')
+        val base = if (stripPunctuation) mapped.trim { !it.isLetterOrDigit() } else mapped
         return base.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
     }
 
