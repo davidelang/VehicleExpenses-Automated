@@ -52,11 +52,11 @@ object OdometerOcrUtils {
         return DeskewResult(sortedAngles[sortedAngles.size / 2], elapsed)
     }
 
-    fun cleanLandmarkString(text: String, stripPunctuation: Boolean = true): String {
-        // Phase 31: Replace o/O with 0 and perform aggressive leading/trailing stripping
+    fun cleanLandmarkString(text: String): String {
+        // Phase 32: Replace o/O with 0 and perform leading/trailing multi-char trim
         val mapped = text.replace('o', '0').replace('O', '0')
-        val base = if (stripPunctuation) mapped.trim { !it.isLetterOrDigit() } else mapped
-        return base.filter { it.isLetterOrDigit() || it == '/' || it == '.' }.trim()
+        val charsToTrim = charArrayOf(' ', '-', '.', '_', ',')
+        return mapped.trim { it in charsToTrim }
     }
 
     fun processRawLandmarks(
@@ -64,15 +64,14 @@ object OdometerOcrUtils {
         odometerCrop: android.graphics.RectF? = null,
         otherTextCrop: android.graphics.RectF? = null,
         imgWidth: Int,
-        imgHeight: Int,
-        stripPunctuation: Boolean = true
+        imgHeight: Int
     ): List<TextBlock> {
         val filtered = allBlocks.filter { block ->
             !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight) && 
             !OcrUtils.isBlockInCrop(block, otherTextCrop, imgWidth, imgHeight)
         }
         return filtered.map { block ->
-            block.copy(text = cleanLandmarkString(block.text, stripPunctuation))
+            block.copy(text = cleanLandmarkString(block.text))
         }.filter { it.text.length > 1 }.sortedBy { it.text }
     }
 
@@ -309,7 +308,7 @@ object OdometerOcrUtils {
         val array = JSONArray()
         // Filter: > 1 character as requested
         landmarks.forEach { block ->
-            val cleaned = cleanLandmarkString(block.text, true)
+            val cleaned = cleanLandmarkString(block.text)
             if (cleaned.length > 1) {
                 val obj = JSONObject()
                 obj.put("text", cleaned)
@@ -334,7 +333,7 @@ object OdometerOcrUtils {
         results.forEach { (engineName, res) ->
             val array = JSONArray()
             res.textBlocks.forEach { block ->
-                val cleaned = cleanLandmarkString(block.text, true)
+                val cleaned = cleanLandmarkString(block.text)
                 if (cleaned.length > 1) {
                     val obj = JSONObject()
                     obj.put("text", cleaned)

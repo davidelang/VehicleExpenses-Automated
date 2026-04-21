@@ -24,12 +24,24 @@ object OcrHarness {
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
         enginesList.add(hybridEngine)
 
-        val results = enginesList.associate { engine ->
+        val rawResults = enginesList.associate { engine ->
             engine.name to engine.recognize(filtered)
         }
         
+        // Phase 32: MANDATORY Discovery-Stage Sanitization
+        val sanitizedResults = rawResults.mapValues { (_, res) ->
+            val cleanedBlocks = res.textBlocks.map { block ->
+                block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
+            }.filter { it.text.length > 1 }
+            
+            res.copy(
+                textBlocks = cleanedBlocks,
+                debugText = cleanedBlocks.joinToString(" ") { it.text }
+            )
+        }
+        
         filtered.recycle()
-        return results
+        return sanitizedResults
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
