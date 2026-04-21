@@ -240,7 +240,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             
             val photoJson = serializePhotoResultToJson(
                 index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal,
-                discoveryResults, vetoSweep, vehicleResultsMap, vehicles
+                discoveryResults, vetoSweep, vehicleResultsMap, vehicles, hardcodedWinner
             )
             jsonResults.put(photoJson)
 
@@ -281,10 +281,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 private fun serializePhotoResultToJson(
     index: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tDiscovery: Long,
     discovery: Map<String, OcrResult>, vetoSweep: Map<String, Map<Int, VetoResult>>,
-    vResults: Map<Int, SingleVehicleResult>, vehicles: List<Vehicle>
+    vResults: Map<Int, SingleVehicleResult>, vehicles: List<Vehicle>,
+    groundTruth: String?
 ): JSONObject {
     return JSONObject().apply {
-        put("index", index); put("file", fileName); put("winner", winner); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
+        put("index", index); put("file", fileName); put("winner", winner); put("ground_truth", groundTruth ?: "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
         
         val fullImageOcrTimings = JSONObject()
         discovery.forEach { (name, res) -> fullImageOcrTimings.put(name, if (name == "ML Kit") tDeskew + res.executionTimeMs else res.executionTimeMs) }
