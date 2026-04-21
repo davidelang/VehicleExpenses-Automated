@@ -288,18 +288,15 @@ fun ManageVehiclesScreen(
                 onDismiss = { showLandmarkCheck = false },
                 // Phase 35: Implement Manual Overrides callback
                 onLandmarksChanged = { updatedList ->
-                    scope.launch(Dispatchers.Default) {
-                        val newMap = discoveryResults.toMutableMap()
-                        newMap[selectedEngineForPopup] = res.copy(
-                            textBlocks = updatedList,
-                            debugText = updatedList.joinToString(" ") { it.text }
-                        )
-                        withContext(Dispatchers.Main) {
-                            discoveryResults = newMap
-                            // Re-serialize manifest
-                            landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(newMap)
-                        }
-                    }
+                    // Phase 38: Move back to Main thread to expose bottleneck
+                    val newMap = discoveryResults.toMutableMap()
+                    newMap[selectedEngineForPopup] = res.copy(
+                        textBlocks = updatedList,
+                        debugText = updatedList.joinToString(" ") { it.text }
+                    )
+                    discoveryResults = newMap
+                    // Re-serialize manifest
+                    landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(newMap)
                 }
             )
         }
