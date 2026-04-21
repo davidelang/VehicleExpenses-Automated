@@ -178,11 +178,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
 
             val queryOcrDiscovery = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]!!
-            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight, stripPunctuation = (anchorSourceEngine == "ML Kit"))
+            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight, stripPunctuation = true)
             
             // MULTI-SOURCE VETO SWEEP
             val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
-                // Apply punctuation stripping to ALL engines for now (e.g., -20 -> 20)
+                // Apply punctuation stripping to ALL engines (e.g., -20 -> 20)
                 val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight, stripPunctuation = true)
                 ImageAlignmentUtils.performTier1Veto(engineLandmarks, cachedRefs.map { it.vehicle }, name)
             }
