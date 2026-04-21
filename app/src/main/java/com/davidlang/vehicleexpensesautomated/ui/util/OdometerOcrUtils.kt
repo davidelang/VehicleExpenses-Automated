@@ -53,18 +53,15 @@ object OdometerOcrUtils {
     }
 
     fun cleanLandmarkString(text: String): String {
-        // Phase 33: Robust Sanitization
-        // 1. Map o/O to 0
+        // Phase 34: Replace o/O with 0, filter global non-ASCII, and surgically trim ends
         val mapped = text.replace('o', '0').replace('O', '0')
         
-        // 2. Define the trim set: non-printable ASCII + user requested symbols
-        // Printable ASCII is 33 ('!') to 126 ('~')
-        val charsToTrim = charArrayOf(' ', '-', '.', '_', ',')
+        // 1. GLOBAL FILTER: Keep only printable ASCII (32-126)
+        val filtered = mapped.filter { it.code in 32..126 }
         
-        return mapped.trim { char -> 
-            val code = char.toInt()
-            code <= 32 || code > 126 || char in charsToTrim
-        }
+        // 2. SURGICAL TRIM: Leading/trailing punctuation only
+        val charsToTrim = charArrayOf(' ', '-', '.', '_', ',')
+        return filtered.trim { it in charsToTrim }
     }
 
     fun processRawLandmarks(
