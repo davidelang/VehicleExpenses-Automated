@@ -83,15 +83,20 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
                         padT + (eBox.bottom * invScale).toInt()
                     )
                     
+                    val text = element.text.trim()
+                    
+                    // Phase 33: Restore diagnostic tracing for Hybrid engine
+                    Log.i("OCR_TRACE", "Engine: $name | Source: ${bitmap.width}x${bitmap.height} | Text: '$text' | ORANGE: [W=${contextRect.width()}, H=${contextRect.height()}, L=$padL, T=$padT] | YELLOW: [W=${globalPrecisionRect.width()}, H=${globalPrecisionRect.height()}, L=${globalPrecisionRect.left}, T=${globalPrecisionRect.top}]")
+
                     finalBlocks.add(TextBlock(
-                        text = element.text.trim(),
+                        text = text,
                         boundingBox = globalPrecisionRect,
                         rawDiscoveryBox = originalBlock.rawDiscoveryBox,
                         refinedDiscoveryBox = normContextRect
                     ))
-                    sb.append(element.text).append(" ")
+                    sb.append(text).append(" ")
                 } else {
-                    // Multi-Word Parent
+                    // Multi-Word Parent (Partial cleanup/logic same as above for logging)
                     finalBlocks.add(TextBlock(
                         text = "",
                         boundingBox = Rect(0,0,0,0),
@@ -108,13 +113,16 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
                             padT + (eBox.bottom * invScale).toInt()
                         )
                         
+                        val text = element.text.trim()
+                        Log.i("OCR_TRACE", "Engine: $name (MW) | Text: '$text' | YELLOW: [W=${globalPrecisionRect.width()}, H=${globalPrecisionRect.height()}, L=${globalPrecisionRect.left}, T=${globalPrecisionRect.top}]")
+
                         finalBlocks.add(TextBlock(
-                            text = element.text.trim(),
+                            text = text,
                             boundingBox = globalPrecisionRect,
                             rawDiscoveryBox = null,
                             refinedDiscoveryBox = null
                         ))
-                        sb.append(element.text).append(" ")
+                        sb.append(text).append(" ")
                     }
                 }
 
