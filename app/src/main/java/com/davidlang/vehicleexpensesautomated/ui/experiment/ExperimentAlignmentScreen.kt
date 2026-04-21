@@ -144,13 +144,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         ReferenceCache(v, refBase64, curatedBlocks, refOcr, bmp)
     }
     
-    val jsonArray = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
+    val jsonResults = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
     val activeAlignments = AlignmentRegistry.getActiveEngines().map { it.name }
     
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle }, activeAlignments)) 
     }
-    var currentFile = startNewFile(); val footer = "</table></body></html>"
+    var currentFile = startNewFile(); val footer = \"</table></body></html>\"
     
     photos.forEachIndexed { index, file ->
         var finalWinnerName = "No match"
@@ -160,7 +160,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             
-            // CRITICAL FIX 1: Capture main thumbnail BEFORE any deskewing logic can recycle the bitmap
+            // Capture main thumbnail
             val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
             
             // 1. IDENTITY STAGE
@@ -182,7 +182,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             
             // MULTI-SOURCE VETO SWEEP
             val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
-                // Apply punctuation stripping to ALL engines (e.g., -20 -> 20)
                 val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight, stripPunctuation = true)
                 ImageAlignmentUtils.performTier1Veto(engineLandmarks, cachedRefs.map { it.vehicle }, name)
             }
@@ -242,25 +241,40 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal,
                 discoveryResults, vetoSweep, vehicleResultsMap, vehicles
             )
-            jsonArray.put(photoJson)
+            jsonResults.put(photoJson)
 
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
-            // CRITICAL FIX 2: Cleanup intermediate bitmaps AFTER HTML generation
+            // Cleanup
             vehicleResultsMap.values.forEach { vr -> 
                 vr.alignmentTraces.values.forEach { trace -> 
                     trace.ocrTraces.forEach { step -> step.bitmap.recycle() } 
                 } 
             }
-            
-            // FINAL CLEANUP
             originalBitmap.recycle()
             
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
         withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
     }
-    currentFile.appendText(footer); File(reportDir, "alignment_results_${timestamp}.json").writeText(jsonArray.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
+    currentFile.appendText(footer)
+    
+    // PHASE 31: Construct global report object with reference manifest
+    val finalReport = JSONObject().apply {
+        put("timestamp", timestamp)
+        put("total_photos", total)
+        
+        val refManifest = JSONObject()
+        vehicles.forEach { v ->
+            val vJson = if (v.landmarkTextBlocksJson.isNullOrEmpty()) JSONObject() else JSONObject(v.landmarkTextBlocksJson)
+            refManifest.put(v.name, vJson)
+        }
+        put("reference_vehicles", refManifest)
+        put("results", jsonResults)
+    }
+    
+    File(reportDir, "alignment_results_${timestamp}.json").writeText(finalReport.toString(2))
+    cachedRefs.forEach { it.bmp.recycle() }
 }
 
 private fun serializePhotoResultToJson(
@@ -287,15 +301,18 @@ private fun serializePhotoResultToJson(
         discovery.forEach { (name, res) ->
             val landmarksArray = JSONArray()
             res.textBlocks.forEach { block -> 
-                landmarksArray.put(JSONObject().apply { 
-                    put("text", block.text)
-                    // Reporting Phase 27: Consistent normalized floats for reports
-                    put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
-                    put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
-                    put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
-                    put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
-                    val metaJson = JSONObject(); block.metadata.forEach { (k, v) -> metaJson.put(k, v) }; put("metadata", metaJson) 
-                }) 
+                // PHASE 31: Apply universal cleaning before reporting
+                val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text, true)
+                if (cleanedText.length > 1) {
+                    landmarksArray.put(JSONObject().apply { 
+                        put("text", cleanedText)
+                        put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
+                        put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
+                        put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
+                        put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
+                        val metaJson = JSONObject(); block.metadata.forEach { (k, v) -> metaJson.put(k, v) }; put("metadata", metaJson) 
+                    })
+                }
             }
             dResults.put(name, landmarksArray)
         }
@@ -404,13 +421,11 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
     try {
         val root = JSONObject(json)
         
-        // Phase 28: Support Multi-Engine Manifest or Legacy Array
         val array = if (root.has(engineName)) {
             root.getJSONArray(engineName)
         } else if (json.startsWith("[")) {
-            JSONArray(json) // Legacy support
+            JSONArray(json)
         } else {
-            // Fallback to first available engine if anchorSourceEngine not found in manifest
             val keys = root.keys()
             if (keys.hasNext()) root.getJSONArray(keys.next()) else null
         } ?: return emptyList()
@@ -418,8 +433,6 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i)
             val text = obj.getString("text")
-            
-            // Phase 27: Consistent Float coordinate reading
             val cx = obj.optDouble("cx", 0.0)
             val cy = obj.optDouble("cy", 0.0)
             val w = obj.optDouble("w", 0.0)
@@ -427,7 +440,6 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
             
             val cleanText = OdometerOcrUtils.cleanLandmarkString(text, stripPunctuation = true)
             
-            // Map normalized back to absolute pixels for internal TextBlock use
             val left = ((cx - w/2.0) * imgW).toInt()
             val top = ((cy - h/2.0) * imgH).toInt()
             val right = ((cx + w/2.0) * imgW).toInt()
