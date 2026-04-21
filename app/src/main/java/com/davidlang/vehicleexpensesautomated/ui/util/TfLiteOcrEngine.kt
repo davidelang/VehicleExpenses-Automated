@@ -133,6 +133,17 @@ class TfLiteOcrEngine(private val context: Context, mode: ModelMode = ModelMode.
                 }
             }
         }
+        
+        // MANDATED RESEARCH DUMP
+        try {
+            val f = java.io.File(context.cacheDir, "tflite_in_${debugCounter++}.raw")
+            inputBuffer.rewind()
+            val bytes = ByteArray(inputBuffer.capacity())
+            inputBuffer.get(bytes)
+            f.writeBytes(bytes)
+            inputBuffer.rewind()
+        } catch (e: Exception) { Log.e("TfLiteOcr", "Dump failed", e) }
+
         padded.recycle()
 
         // 2. Adaptive Output Handling
