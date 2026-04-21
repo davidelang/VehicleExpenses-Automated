@@ -165,7 +165,7 @@ fun LandmarkDebugDialog(
                         items(editableLandmarks.size) { index ->
                             val lm = editableLandmarks[index]
                             Surface(
-                                modifier = Modifier.height(64.dp),
+                                modifier = Modifier.height(if (isEditing) 80.dp else 64.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                 shape = MaterialTheme.shapes.extraSmall,
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -191,15 +191,22 @@ fun LandmarkDebugDialog(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         if (isEditing) {
-                                            BasicTextField(
+                                            TextField(
                                                 value = lm.text,
                                                 onValueChange = { newText: String ->
                                                     val newList = editableLandmarks.toMutableList()
                                                     newList[index] = lm.copy(text = newText)
                                                     editableLandmarks = newList
                                                 },
-                                                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold),
-                                                modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.5f), MaterialTheme.shapes.extraSmall).padding(2.dp)
+                                                textStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                colors = TextFieldDefaults.colors(
+                                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                    unfocusedIndicatorColor = Color.Transparent,
+                                                    focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                                                ),
+                                                singleLine = true
                                             )
                                         } else {
                                             if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
