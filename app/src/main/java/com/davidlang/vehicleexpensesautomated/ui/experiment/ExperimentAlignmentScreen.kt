@@ -146,11 +146,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     val jsonResults = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
     val activeAlignments = AlignmentRegistry.getActiveEngines().map { it.name }
+    val footer = "</table></body></html>"
     
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle }, activeAlignments)) 
     }
-    var currentFile = startNewFile(); val footer = \"</table></body></html>\"
+    var currentFile = startNewFile()
     
     photos.forEachIndexed { index, file ->
         var finalWinnerName = "No match"
