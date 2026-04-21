@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,6 +49,7 @@ fun LandmarkDebugDialog(
     landmarks: List<TextBlock>,
     rawDiscoveryBoxes: List<RectF> = emptyList(),
     onDismiss: () -> Unit,
+    onLandmarksChanged: (List<TextBlock>) -> Unit = {},
     engineName: String = "Unknown",
     odometerText: String = "",
     sourceWidth: Int = 1,
@@ -57,8 +59,11 @@ fun LandmarkDebugDialog(
     totalTimeMs: Long = 0
 ) {
     val context = LocalContext.current
-    val textMeasurer = rememberTextMeasurer()
     var showDiscovery by remember { mutableStateOf(true) }
+    var isEditing by remember { mutableStateOf(false) }
+    
+    // Local state for editing
+    var editableLandmarks by remember { mutableStateOf(landmarks) }
 
     // Resolve source image
     val bitmap = remember(sourceImage, photoPath) {
@@ -94,10 +99,16 @@ fun LandmarkDebugDialog(
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                    verticalAlignment = Alignment.CenterVertically) {
                     Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!isEditing) {
+                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 8.dp)) { Text("Edit OCR") }
+                        } else {
+                            Button(onClick = { onLandmarksChanged(editableLandmarks); onDismiss() }, modifier = Modifier.padding(end = 8.dp)) { Text("Save Overrides") }
+                            Button(onClick = { isEditing = false; editableLandmarks = landmarks }, modifier = Modifier.padding(end = 8.dp)) { Text("Cancel") }
+                        }
+                        
                         Text("Discovery", style = MaterialTheme.typography.labelSmall)
                         Switch(checked = showDiscovery, onCheckedChange = { showDiscovery = it })
                         Spacer(modifier = Modifier.width(16.dp))
@@ -105,7 +116,6 @@ fun LandmarkDebugDialog(
                     }
                 }
 
-                // REMOVED OUTER SCROLL to let LazyVerticalGrid work properly
                 Column(modifier = Modifier.weight(1f)) {
                     // IMAGE VIEW
                     Box(modifier = Modifier.fillMaxWidth().aspectRatio(imgW / imgH)) {
@@ -118,23 +128,19 @@ fun LandmarkDebugDialog(
                             )
 
                             if (showDiscovery) {
-                                // RED: SOLID FILL (30%)
                                 rawDiscoveryBoxes.forEach { box ->
                                     drawRect(color = Color.Red.copy(alpha = 0.3f), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Fill)
                                 }
-                                landmarks.forEach { lm ->
-                                    // ORANGE: 3PX STROKE
+                                editableLandmarks.forEach { lm ->
                                     lm.refinedDiscoveryBox?.let { box ->
                                         drawRect(color = Color(0xFFFF8C00), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(3f))
                                     }
-                                    // YELLOW: 1PX STROKE
                                     if (lm.boundingBox.width() > 0) {
                                         val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
                                         val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
                                         drawRect(color = Color.Yellow, topLeft = Offset(nx * dw, ny * dh), size = Size(nw * dw, nh * dh), style = Stroke(1f))
                                     }
                                 }
-                                // Crops (Normalized Coords)
                                 odometerCrop?.let { drawRect(color = Color.Blue, topLeft = Offset(it.left * dw, it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(2f)) }
                                 otherTextCrop?.let { drawRect(color = Color.Green, topLeft = Offset(it.left * dw, it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(2f)) }
                             }
@@ -149,30 +155,29 @@ fun LandmarkDebugDialog(
                         Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
 
-                    // RESTORE ADAPTIVE GRID (200dp min)
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 200.dp),
+                        columns = GridCells.Adaptive(minSize = 250.dp),
                         modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                         contentPadding = PaddingValues(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(landmarks) { lm ->
+                        items(editableLandmarks.size) { index ->
+                            val lm = editableLandmarks[index]
                             Surface(
-                                modifier = Modifier.height(48.dp),
+                                modifier = Modifier.height(64.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                 shape = MaterialTheme.shapes.extraSmall,
                                 border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
                                 Row(modifier = Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    // PREVIEW CROP
                                     val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else lm.refinedDiscoveryBox?.let { 
                                         android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
                                     } ?: lm.rawDiscoveryBox?.let { 
                                         android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
                                     }
                                     
-                                    Box(modifier = Modifier.size(40.dp).background(Color.Black), contentAlignment = Alignment.Center) {
+                                    Box(modifier = Modifier.size(48.dp).background(Color.Black), contentAlignment = Alignment.Center) {
                                         val crop = remember(zone, bitmap) {
                                             if (zone != null && zone.width() > 0 && zone.height() > 0) {
                                                 try {
@@ -180,16 +185,26 @@ fun LandmarkDebugDialog(
                                                 } catch (e: Exception) { null }
                                             } else null
                                         }
-                                        
-                                        crop?.let { c ->
-                                            Image(bitmap = c.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit)
-                                        }
+                                        crop?.let { c -> Image(bitmap = c.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit) }
                                     }
                                     
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                                        else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 8.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
+                                        if (isEditing) {
+                                            BasicTextField(
+                                                value = lm.text,
+                                                onValueChange = { newText: String ->
+                                                    val newList = editableLandmarks.toMutableList()
+                                                    newList[index] = lm.copy(text = newText)
+                                                    editableLandmarks = newList
+                                                },
+                                                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold),
+                                                modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.5f), MaterialTheme.shapes.extraSmall).padding(2.dp)
+                                            )
+                                        } else {
+                                            if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                            else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
+                                        }
                                         
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             lm.rawDiscoveryBox?.let { MetricChip(color = Color.Red, w = (it.right - it.left) * imgW, h = (it.bottom - it.top) * imgH) }

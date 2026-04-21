@@ -15,12 +15,11 @@ object OcrHarness {
         val filtered = OdometerOcrUtils.applyBilateral(gray)
         gray.recycle()
 
-        val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = false)
         val nativePaddle = NativePaddleEngine(context, isConstrained = false)
         val hybridEngine = HybridOcrEngine(context)
         
-        // Phase 54: All Engines + Hybrid
-        val enginesList = mutableListOf<OcrEngine>(MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
+        // Phase 35: Standardized stable engine list (TFLite models unregistered for now)
+        val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
         enginesList.add(hybridEngine)
 
@@ -50,9 +49,8 @@ object OcrHarness {
         val filtered = OdometerOcrUtils.applyBilateral(gray)
         gray.recycle()
 
-        val paddleOcrTflite = PaddleOcrEngine(context, isConstrained = true)
         val nativePaddle = NativePaddleEngine(context, isConstrained = true)
-        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine(), NativeTfliteEngine(context), paddleOcrTflite)
+        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine())
         if (nativePaddle.isAvailable) enginesList.add(nativePaddle)
 
         val results = enginesList.associate { engine ->
@@ -64,7 +62,7 @@ object OcrHarness {
     }
 
     fun getDiscoveryEngineNames(context: Context): List<String> {
-        val list = mutableListOf("ML Kit", "Native TFLite", "Paddle-TFLite")
+        val list = mutableListOf("ML Kit")
         if (NativePaddleEngine(context).isAvailable) {
             list.add("Paddle-Lite")
             list.add("Paddle-ML-Hybrid")
@@ -73,7 +71,7 @@ object OcrHarness {
     }
 
     fun getRefinementEngineNames(context: Context): List<String> {
-        val list = mutableListOf("Tesseract", "ML Kit", "Native TFLite", "Paddle-TFLite (Odo)")
+        val list = mutableListOf("Tesseract", "ML Kit")
         if (NativePaddleEngine(context, isConstrained = true).isAvailable) list.add("Paddle-Lite (Odo)")
         return list
     }
