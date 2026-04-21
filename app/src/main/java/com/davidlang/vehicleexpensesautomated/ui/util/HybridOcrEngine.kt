@@ -14,8 +14,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Phase 61: Transparent Hybrid Engine (128px Normalized).
- * Scales discovery crops to 128px height for improved word unity in ML Kit.
+ * Phase 26: Transparent Hybrid Engine (64px Normalized).
+ * Scales discovery crops to 64px height for testing recognition quality.
  */
 class HybridOcrEngine(private val context: Context) : OcrEngine {
     override val name = "Paddle-ML-Hybrid"
@@ -50,14 +50,14 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
             
             val originalCrop = Bitmap.createBitmap(bitmap, padL, padT, contextRect.width(), contextRect.height())
             
-            // 3. NORMALIZATION: Scale to 128px height
-            val targetH = 128
-            val scaleTo128 = targetH.toFloat() / originalCrop.height.toFloat()
+            // 3. NORMALIZATION: Scale to 64px height
+            val targetH = 64
+            val scaleTo64 = targetH.toFloat() / originalCrop.height.toFloat()
             val invScale = originalCrop.height.toDouble() / targetH.toDouble()
             
             val normalizedCrop = Bitmap.createScaledBitmap(
                 originalCrop, 
-                max(1, (originalCrop.width * scaleTo128).toInt()), 
+                max(1, (originalCrop.width * scaleTo64).toInt()), 
                 targetH, 
                 true
             )
@@ -75,7 +75,7 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
                     val element = elements[0]
                     val eBox = element.boundingBox ?: Rect(0,0,0,0)
                     
-                    // Map from 128px space back to Original space, then to Global space
+                    // Map from 64px space back to Original space, then to Global space
                     val globalPrecisionRect = Rect(
                         padL + (eBox.left * invScale).toInt(),
                         padT + (eBox.top * invScale).toInt(),
