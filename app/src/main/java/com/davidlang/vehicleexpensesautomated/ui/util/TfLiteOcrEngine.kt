@@ -21,7 +21,7 @@ class TfLiteOcrEngine(private val context: Context, mode: ModelMode = ModelMode.
     private var interpreter: Interpreter? = null
     
     // RESEARCHED DICTIONARY: Index 0 is blank, 1-10 is 0-9, 11-36 is a-z
-    private val alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+    private val alphabet = "#0123456789abcdefghijklmnopqrstuvwxyz"
     
     private var inputHeight = 32
     private var inputWidth = 100
