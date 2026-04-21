@@ -195,11 +195,21 @@ object ImageAlignmentUtils {
         return sqrt(dx * dx + dy * dy)
     }
 
-    fun getLandmarksFromJson(json: String?): Set<String> {
+    fun getLandmarksFromJson(json: String?, engineName: String): Set<String> {
         if (json.isNullOrBlank()) return emptySet()
         val result = mutableSetOf<String>()
         try {
-            val array = JSONArray(json)
+            val root = JSONObject(json)
+            val array = if (root.has(engineName)) {
+                root.getJSONArray(engineName)
+            } else if (json.startsWith("[")) {
+                JSONArray(json) // Legacy support
+            } else {
+                // Fallback to first available if specific engine not found
+                val keys = root.keys()
+                if (keys.hasNext()) root.getJSONArray(keys.next()) else null
+            } ?: return emptySet()
+
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 result.add(obj.getString("text").trim())
@@ -213,10 +223,10 @@ object ImageAlignmentUtils {
      * For each vehicle, check if any word in the query belongs to OTHER vehicles
      * but NOT to this vehicle.
      */
-    fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>): Map<Int, VetoResult> {
+    fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>, engineName: String): Map<Int, VetoResult> {
         val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
         val queryWordsSet = queryWordsList.toSet()
-        val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson) }
+        val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
         
         return allVehicles.associate { currentVehicle ->
             val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
