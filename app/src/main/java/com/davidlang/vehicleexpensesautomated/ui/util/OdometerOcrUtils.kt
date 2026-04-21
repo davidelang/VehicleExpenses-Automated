@@ -53,10 +53,18 @@ object OdometerOcrUtils {
     }
 
     fun cleanLandmarkString(text: String): String {
-        // Phase 32: Replace o/O with 0 and perform leading/trailing multi-char trim
+        // Phase 33: Robust Sanitization
+        // 1. Map o/O to 0
         val mapped = text.replace('o', '0').replace('O', '0')
+        
+        // 2. Define the trim set: non-printable ASCII + user requested symbols
+        // Printable ASCII is 33 ('!') to 126 ('~')
         val charsToTrim = charArrayOf(' ', '-', '.', '_', ',')
-        return mapped.trim { it in charsToTrim }
+        
+        return mapped.trim { char -> 
+            val code = char.toInt()
+            code <= 32 || code > 126 || char in charsToTrim
+        }
     }
 
     fun processRawLandmarks(
