@@ -10,20 +10,28 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
-import kotlin.math.min
 
 /**
- * Native TFLite Engine optimized for numeric_ocr.tflite [1, 50, 200, 1]
- * Note: Input shape is [batch, height, width, channels]
+ * Native TFLite Engine for alphanumeric and numeric-only OCR.
+ * Supports:
+ * - Alphanumeric: alphanumeric_ocr.tflite [1, 1, 32, 100] (NCHW)
+ * - Numeric Only: numeric_only_ocr.tflite [1, 31, 200, 1] (NHWC)
  */
-class TfLiteOcrEngine(private val context: Context) {
+class TfLiteOcrEngine(private val context: Context, mode: ModelMode = ModelMode.ALPHANUMERIC) {
     private var interpreter: Interpreter? = null
-    // Index 0: # (dummy), Index 1: space, Index 2..11: 1234567890, 12..18: units
-    private val labels = "# 1234567890.km/hMPH"
     
-    private var inputHeight = 50
-    private var inputWidth = 200
+    // Alphanumeric alphabet (37 classes: blank + 36 chars)
+    private val alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+    
+    private var inputHeight = 32
+    private var inputWidth = 100
     private var isGrayscale = true
+    private var isNCHW = false
+
+    enum class ModelMode {
+        ALPHANUMERIC,
+        NUMERIC_ONLY
+    }
 
     companion object {
         var debugCounter = 0
@@ -31,7 +39,12 @@ class TfLiteOcrEngine(private val context: Context) {
 
     init {
         try {
-            val model = loadModelFile(context, "tflite/numeric_ocr.tflite")
+            val modelPath = when (mode) {
+                ModelMode.ALPHANUMERIC -> "tflite/alphanumeric_ocr.tflite"
+                ModelMode.NUMERIC_ONLY -> "tflite/numeric_only_ocr.tflite"
+            }
+            
+            val model = loadModelFile(context, modelPath)
             val options = Interpreter.Options().apply {
                 setNumThreads(4)
                 useNNAPI = false
@@ -40,12 +53,21 @@ class TfLiteOcrEngine(private val context: Context) {
             interpreter = interp
             
             // DYNAMIC SHAPE DISCOVERY
-            val inputShape = interp.getInputTensor(0).shape() // Expected [1, 50, 200, 1]
-            inputHeight = inputShape[1]
-            inputWidth = inputShape[2]
-            isGrayscale = inputShape[3] == 1
+            val inputShape = interp.getInputTensor(0).shape()
+            // Identify format: [1, 1, H, W] (NCHW) or [1, H, W, 1] (NHWC)
+            if (inputShape[1] == 1 || inputShape[1] == 3) {
+                isNCHW = true
+                inputHeight = inputShape[2]
+                inputWidth = inputShape[3]
+                isGrayscale = inputShape[1] == 1
+            } else {
+                isNCHW = false
+                inputHeight = inputShape[1]
+                inputWidth = inputShape[2]
+                isGrayscale = inputShape[3] == 1
+            }
             
-            Log.i("TfLiteOcr", "Model loaded. Shape: ${inputShape.joinToString(",")}, Gray=$isGrayscale")
+            Log.i("TfLiteOcr", "Model $mode loaded. Shape: ${inputShape.joinToString(",")}, NCHW=$isNCHW")
         } catch (e: Exception) {
             Log.e("TfLiteOcr", "Failed to load model", e)
         }
@@ -67,37 +89,47 @@ class TfLiteOcrEngine(private val context: Context) {
         val targetH = inputHeight
         val targetW = inputWidth
         
+        val padded = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(padded)
+        canvas.drawColor(Color.BLACK)
+        
         val scale = targetH.toFloat() / bitmap.height.toFloat()
         val sw = (bitmap.width * scale).toInt().coerceAtMost(targetW)
         val sh = targetH
         
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
-        val padded = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(padded)
-        canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
 
-        val inputBuffer = ByteBuffer.allocateDirect(1 * targetH * targetW * (if (isGrayscale) 1 else 3) * 4)
+        val channels = if (isGrayscale) 1 else 3
+        val inputBuffer = ByteBuffer.allocateDirect(1 * targetH * targetW * channels * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        // Pass 2: Row-Major Tensor Loop (Standard Reading Order) with [-1, 1] normalization
-        for (y in 0 until targetH) {
-            for (x in 0 until targetW) {
-                val px = padded.getPixel(x, y)
-                if (isGrayscale) {
-                    val r = (px shr 16) and 0xFF
-                    val g = (px shr 8) and 0xFF
-                    val b = px and 0xFF
-                    val gray = (0.299f * r + 0.587f * g + 0.114f * b)
-                    inputBuffer.putFloat((gray / 255.0f - 0.5f) / 0.5f)
-                } else {
-                    val r = (px shr 16 and 0xFF) / 255.0f
-                    val g = (px shr 8 and 0xFF) / 255.0f
-                    val b = (px and 0xFF) / 255.0f
-                    inputBuffer.putFloat((r - 0.5f) / 0.5f)
-                    inputBuffer.putFloat((g - 0.5f) / 0.5f)
-                    inputBuffer.putFloat((b - 0.5f) / 0.5f)
+        // Pass 2: Tensor Filling
+        if (isNCHW) {
+            // [Batch, Channels, Height, Width]
+            for (c in 0 until channels) {
+                for (y in 0 until targetH) {
+                    for (x in 0 until targetW) {
+                        val px = padded.getPixel(x, y)
+                        val gray = (0.299f * Color.red(px) + 0.587f * Color.green(px) + 0.114f * Color.blue(px))
+                        inputBuffer.putFloat((gray / 255.0f - 0.5f) / 0.5f)
+                    }
+                }
+            }
+        } else {
+            // [Batch, Height, Width, Channels]
+            for (y in 0 until targetH) {
+                for (x in 0 until targetW) {
+                    val px = padded.getPixel(x, y)
+                    if (isGrayscale) {
+                        val gray = (0.299f * Color.red(px) + 0.587f * Color.green(px) + 0.114f * Color.blue(px))
+                        inputBuffer.putFloat((gray / 255.0f - 0.5f) / 0.5f)
+                    } else {
+                        inputBuffer.putFloat((Color.red(px) / 255.0f - 0.5f) / 0.5f)
+                        inputBuffer.putFloat((Color.green(px) / 255.0f - 0.5f) / 0.5f)
+                        inputBuffer.putFloat((Color.blue(px) / 255.0f - 0.5f) / 0.5f)
+                    }
                 }
             }
         }
@@ -105,49 +137,29 @@ class TfLiteOcrEngine(private val context: Context) {
 
         // 2. Adaptive Output Handling
         try {
-            val numClasses = interp.getOutputTensor(0).shape().last()
-            val timeSteps = kotlin.math.max(targetW, targetH) / 4
+            val outputTensor = interp.getOutputTensor(0)
+            val outputShape = outputTensor.shape()
+            val timeSteps = outputShape[1]
+            val numClasses = outputShape[2]
+            
             val outputBuffer = ByteBuffer.allocateDirect(1 * timeSteps * numClasses * 4)
             outputBuffer.order(ByteOrder.nativeOrder())
             
-            // DUMP BUFFER TO DISK BEFORE INFERENCE
-            try {
-                inputBuffer.rewind()
-                val f = java.io.File(context.cacheDir, "tflite_in_${debugCounter++}.raw")
-                val arr = ByteArray(inputBuffer.capacity())
-                inputBuffer.get(arr)
-                f.writeBytes(arr)
-                inputBuffer.rewind()
-            } catch (e: Exception) {
-                Log.e("TfLiteOcr", "Failed to dump buffer", e)
-            }
-
             interp.run(inputBuffer, outputBuffer)
             
-            val finalShape = interp.getOutputTensor(0).shape()
-            Log.i("TfLiteOcr", "Inference Final Shape: ${finalShape.joinToString(",")}")
-            
-            val actualClasses = finalShape.last()
-            
             outputBuffer.rewind()
-            val sequence = Array(1) { Array(timeSteps) { FloatArray(actualClasses) } }
-            val rawIndices = mutableListOf<Int>()
+            val sequence = Array(1) { Array(timeSteps) { FloatArray(numClasses) } }
             for (t in 0 until timeSteps) {
-                var maxVal = -Float.MAX_VALUE
-                var maxIdx = -1
-                for (c in 0 until actualClasses) {
-                    val v = outputBuffer.float
-                    sequence[0][t][c] = v
-                    if (v > maxVal) {
-                        maxVal = v
-                        maxIdx = c
-                    }
+                for (c in 0 until numClasses) {
+                    sequence[0][t][c] = outputBuffer.float
                 }
-                rawIndices.add(maxIdx)
             }
-            Log.i("TfLiteOcr", "Raw CTC Indices: ${rawIndices.joinToString(",")}")
             
-            val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(sequence, labels.map { it.toString() }, blankIndex = actualClasses - 1)
+            // MAP TO DICTIONARY (Index 0 is blank)
+            val dictionary = mutableListOf("blank")
+            for (char in alphabet) dictionary.add(char.toString())
+            
+            val (text, _) = TfLiteOcrUtils.decodeCtcGreedy(sequence, dictionary, blankIndex = 0)
             return text
         } catch (e: Exception) {
             Log.e("TfLiteOcr", "Inference error", e)
