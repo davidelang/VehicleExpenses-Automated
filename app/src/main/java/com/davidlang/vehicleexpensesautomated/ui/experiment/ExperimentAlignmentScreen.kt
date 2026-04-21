@@ -179,11 +179,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
 
             val queryOcrDiscovery = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]!!
-            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight, stripPunctuation = true)
+            val queryLandmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
             
             // MULTI-SOURCE VETO SWEEP
             val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
-                val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight, stripPunctuation = true)
+                val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight)
                 ImageAlignmentUtils.performTier1Veto(engineLandmarks, cachedRefs.map { it.vehicle }, name)
             }
             
@@ -304,7 +304,7 @@ private fun serializePhotoResultToJson(
             val landmarksArray = JSONArray()
             res.textBlocks.forEach { block -> 
                 // PHASE 31: Apply universal cleaning before reporting
-                val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text, true)
+                val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
                 if (cleanedText.length > 1) {
                     landmarksArray.put(JSONObject().apply { 
                         put("text", cleanedText)
@@ -440,7 +440,7 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
             val w = obj.optDouble("w", 0.0)
             val h = obj.optDouble("h", 0.0)
             
-            val cleanText = OdometerOcrUtils.cleanLandmarkString(text, stripPunctuation = true)
+            val cleanText = OdometerOcrUtils.cleanLandmarkString(text)
             
             val left = ((cx - w/2.0) * imgW).toInt()
             val top = ((cy - h/2.0) * imgH).toInt()
