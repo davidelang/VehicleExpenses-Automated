@@ -59,7 +59,7 @@ object OdometerOcrUtils {
         val filtered = text.filter { it.code in 32..126 }
         
         // 2. SURGICAL TRIM: Leading/trailing punctuation only
-        val charsToTrim = charArrayOf(' ', '-', '.', '_', ',')
+        val charsToTrim = charArrayOf(' ', '-', '.', '_', ',', '*')
         return filtered.trim { it in charsToTrim }
     }
 
