@@ -18,7 +18,7 @@ import kotlin.math.min
  */
 class TfLiteOcrEngine(private val context: Context) {
     private var interpreter: Interpreter? = null
-    private val labels = " 0123456789.km/hMPH"
+    private val labels = "#0123456789.km/hMPH "
     
     private var inputHeight = 50
     private var inputWidth = 200
@@ -80,20 +80,23 @@ class TfLiteOcrEngine(private val context: Context) {
         val inputBuffer = ByteBuffer.allocateDirect(1 * targetH * targetW * (if (isGrayscale) 1 else 3) * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
         
-        // Pass 2: Row-Major Tensor Loop with [0, 1] normalization
-        for (y in 0 until targetH) {
-            for (x in 0 until targetW) {
+        // Pass 2: Column-Major Tensor Loop (X then Y) with Inverted Y and [-1, 1] normalization
+        for (x in 0 until targetW) {
+            for (y in targetH - 1 downTo 0) {
                 val px = padded.getPixel(x, y)
                 if (isGrayscale) {
                     val r = (px shr 16) and 0xFF
                     val g = (px shr 8) and 0xFF
                     val b = px and 0xFF
                     val gray = (0.299f * r + 0.587f * g + 0.114f * b)
-                    inputBuffer.putFloat(gray / 255.0f)
+                    inputBuffer.putFloat((gray / 255.0f - 0.5f) / 0.5f)
                 } else {
-                    inputBuffer.putFloat(((px shr 16 and 0xFF) / 255.0f))
-                    inputBuffer.putFloat(((px shr 8 and 0xFF) / 255.0f))
-                    inputBuffer.putFloat(((px and 0xFF) / 255.0f))
+                    val r = (px shr 16 and 0xFF) / 255.0f
+                    val g = (px shr 8 and 0xFF) / 255.0f
+                    val b = (px and 0xFF) / 255.0f
+                    inputBuffer.putFloat((r - 0.5f) / 0.5f)
+                    inputBuffer.putFloat((g - 0.5f) / 0.5f)
+                    inputBuffer.putFloat((b - 0.5f) / 0.5f)
                 }
             }
         }
