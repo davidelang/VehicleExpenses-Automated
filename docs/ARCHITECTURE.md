@@ -1,7 +1,7 @@
 # Vehicle Expenses Automated — Architecture
 
 ## Overview
-Vehicle Expenses Automated is an Android application built with Kotlin, Jetpack Compose, and Room. It follows a "camera-first" design philosophy, focusing on automated data entry through OCR and image alignment.
+Vehicle Expenses Automated is an Android application built with Kotlin, Jetpack Compose, and Room. It follows a "camera-first" design philosophy, focusing on automated data entry through multi-engine OCR and image alignment.
 
 ## High-Level Data Flow
 
@@ -9,55 +9,46 @@ Vehicle Expenses Automated is an Android application built with Kotlin, Jetpack 
 
 The application follows a strict 4-stage pipeline for processing dashboard photos:
 
-1. **Identity Phase:**
-   - **Discovery:** Run a high-speed OCR pass (currently ML Kit) to discover landmark text strings and their fine-grained angles.
-   - **Identification:** Compare discovered landmarks against vehicle-specific reference manifests using **Tiered Identity** logic (Veto, Histogram, Text Agreement).
-   - **Deskewing:** Calculate the median text angle from the discovery pass and rotate the query photo to perfectly horizontal (0°).
+1. **Identity Phase (Vehicle Matching):**
+   - **Multi-Engine Discovery:** Runs a high-speed OCR pass using multiple engines (ML Kit, Paddle-Lite, Paddle-ML-Hybrid) on the full-resolution image to discover landmark text strings and their angles.
+   - **Tier 1 Veto Selection:** Compares discovered landmarks against global, engine-specific `ReferenceCache` manifests. 
+     - Disqualifies vehicles if they hit "Veto Triggers" (landmarks owned by other vehicles but not them).
+     - Incorporates a **1-vs-3+ Least-Vetoed Rescue Algorithm** to recover from Mutual Veto scenarios.
+   - **Tiered Identity:** Further verifies using Histogram, Embedding, and Spatial Feature (ORB) consensus matching.
+   - **Deskewing:** Calculates the median text angle from the discovery pass and rotates the query photo to perfectly horizontal (0°).
 
 2. **Alignment Phase:**
-   - **Strategy Execution:** Map the deskewed query photo into the reference photo's coordinate space.
-   - **Methods:** Supports multiple concurrent strategies including **ORB (Feature) Alignment** and **Anchor Alignment** (Scale/Pan based on unique text landmarks).
+   - **Strategy Execution:** Maps the deskewed query photo into the reference photo's coordinate space.
+   - **Methods:** Supports dynamic, multi-engine concurrent strategies:
+     - **ORB (Feature) Alignment** (4-DOF affine transform).
+     - **Anchor-Triangulation Engine**: Calculates exact scale (Zoom), rotation, and Pan (tx, ty) based on unique unique text anchor vectors (Strategy A) or triangle similarity (Strategy B). It operates independently per OCR engine.
 
 3. **Extraction Phase:**
-   - **Cropping:** Using the transformation matrix from the alignment phase, extract the specific odometer crop box defined in the vehicle's reference profile.
+   - **Cropping:** Using the transformation matrix from the alignment phase, it extracts specific odometer and "other text" crop boxes defined by the user in normalized coordinates (0.0 to 1.0).
 
 4. **Crop OCR Phase (Refinement):**
-   - **Preprocessing:** Generate 5 variations of the extracted crop (Raw, Grayscale, Bilateral, CLAHE, OTSU).
-   - **Multi-Engine Execution:** Run the full suite of OCR engines (Tesseract, ML Kit, Native TFLite, etc.) against all 5 variations.
-   - **Scoring:** Select the best odometer reading based on engine consensus and pattern matching.
+   - **Preprocessing:** Generates 5 variations of the extracted crop (Raw, Grayscale, Bilateral, CLAHE, OTSU) to counteract variable lighting.
+   - **Execution:** Runs the refinement OCR suite against all variations.
+   - **Scoring:** Selects the best numeric reading via consensus filtering and 7-segment display logic.
 
-### 2. Data Persistence (Room)
+### Data Persistence (Room)
 - **Entities**: `Vehicle`, `FuelEntry`, `ExpenseEntry`.
-- **DAOs**: Interface with the SQLite database via Room.
-- **Repositories**: Provide a clean API to ViewModels, abstracting data source details.
+- **Repositories**: Abstract local SQLite APIs.
 
-### 3. Background Synchronization
-- **Trigger**: `SyncManager` schedules periodic or manual syncs via `WorkManager`.
-- **Execution**: `SyncWorker` performs:
-  1. **CSV Export**: Converts local Room data to CSV format.
-  2. **Sheets Sync**: Appends or updates rows in Google Sheets via `GoogleSheetsClient`.
-  3. **Drive Sync**: Backs up photos to Google Drive via `GoogleDriveProvider`.
+### Background Synchronization
+- **SyncWorker**: Periodically syncs data to Google Sheets via `GoogleSheetsClient` and backs up photos via `GoogleDriveProvider`.
 
-## Component Interaction Diagram (Conceptual)
-```
+## Component Interaction Diagram
+```text
 [ UI (Compose Screens) ] 
        |
 [ ViewModels (Hilt) ]
        |
 [ Repositories ]
        |------------------------|
-[ Room DB (Local) ]       [ SyncManager (WorkManager) ]
+[ Room DB (Local) ]       [ SyncManager ]
                                 |
                         [ SyncWorker ]
                                 |------------------------|
                         [ Google Sheets ]       [ Google Drive ]
 ```
-
-## Key Technologies
-- **UI**: Jetpack Compose, Material3.
-- **Dependency Injection**: Hilt.
-- **Database**: Room.
-- **Background Tasks**: WorkManager.
-- **OCR**: ML Kit (Google), Tesseract (OpenCV preprocessing).
-- **Networking**: Google Drive & Sheets APIs.
-- **Alignment**: ORB Features & Homography (OpenCV/Android SDK).

@@ -4,76 +4,39 @@
 
 ### `Vehicle.kt`
 - `Vehicle(id, name, make, model, year, licensePlate, vin, notes, referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl, odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom, otherTextCropLeft, otherTextCropTop, otherTextCropRight, otherTextCropBottom, landmarkTextBlocksJson)`
-  - Core entity for vehicle management. Includes fields for OCR alignment and cropping.
+  - Core entity for vehicle management. Crop boxes are stored as normalized bounds (0.0 to 1.0). `landmarkTextBlocksJson` holds the multi-engine JSON manifest.
 
 ### `FuelEntry.kt`
 - `FuelEntry(id, vehicleId, odometer, gallons, cost, timestamp, photoUrl, isPartialFill)`
-  - Represents a single fuel fill-up. `isPartialFill` is used to skip fuel economy calculations between partial fills.
 
 ### `ExpenseEntry.kt`
 - `ExpenseEntry(id, vehicleId, amount, description, date, photoUrl, category, receiptImagePath)`
-  - Generic expense tracking. `category` defaults to "Other".
-
-## Repositories & DAOs
-
-### `VehicleRepository.kt` / `VehicleDao.kt`
-- `getAllVehicles()`: Flow of all vehicles.
-- `getVehicleById(id)`: Single vehicle lookup.
-- `insertVehicle(vehicle)`, `updateVehicle(vehicle)`, `deleteVehicle(vehicle)`.
-
-### `FuelEntryRepository.kt` / `FuelEntryDao.kt`
-- `getAllFuelEntries()`: All history.
-- `getEntriesForVehicle(vehicleId)`: Filtered history.
-- `insertFuelEntry(entry)`, `updateFuelEntry(entry)`, `deleteFuelEntry(entry)`.
-
-### `ExpenseEntryRepository.kt` / `ExpenseEntryDao.kt`
-- `getAllExpenseEntries()`: All history.
-- `getEntriesForVehicle(vehicleId)`: Filtered history.
-- `insertExpenseEntry(entry)`, `updateExpenseEntry(entry)`, `deleteExpenseEntry(entry)`.
 
 ## OCR & Image Processing
 
+### `OcrHarness.kt`
+- `runDiscovery(bitmap: Bitmap, context: Context): Map<String, OcrResult>`: Orchestrates multi-engine discovery pass (ML Kit, Paddle-Lite, Paddle-ML-Hybrid) using global Bilateral and Grayscale filters.
+- `runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult>`: Evaluates odometer crops for digits.
+- `getDiscoveryEngineNames(context: Context)`: Returns active engines for discovery.
+
 ### `OdometerOcrUtils.kt`
-- `extractFromPhoto(photoPath: String, cropRect: RectF? = null)`
-  - Orchestrates OCR using ML Kit and Tesseract with OpenCV preprocessing.
+- `cleanLandmarkString(text: String)`: Phase 34/40 robust sanitization. Globally filters non-ASCII (32-126) and surgically trims leading/trailing punctuation (` `, `-`, `.`, `_`, `,`, `*`).
+- `serializeMultiEngineLandmarks(results: Map<String, OcrResult>)`: Consolidates normalized (cx, cy, w, h) landmarks from all engines into a JSON string.
+- `deserializeMultiEngineLandmarks(json: String?, imgW: Int, imgH: Int)`: Parses the manifest to reconstruct `OcrResult` objects mapped to full-resolution pixels.
+- `calculateAverageTextAngle(bitmap: Bitmap)`: Median angle calculation for auto-deskewing.
+- `runMultiStepOcr(bitmap: Bitmap, context: Context)`: Generates 5 variations of a crop (Raw, Grayscale, Bilateral, CLAHE, Otsu).
 
 ### `ImageAlignmentUtils.kt`
-- `alignImages(reference: Bitmap, query: Bitmap, minInliers: Int = 15)`
-  - Uses ORB features and Homography to align a dashboard photo to the stored reference.
+- `performTier1Veto(queryLandmarks, allVehicles, engineName)`: Disqualifies vehicles using an engine-specific Veto Pool and applies the 1-vs-3+ Least-Vetoed Rescue Algorithm.
+- `anchorAlign(refBmp, queryBmp, refLandmarks, queryLandmarks, vehicle)`: Triangulates geometric transformation (Zoom, Rotation, Pan) based on landmark matching.
+- `alignImages(reference, query, refLandmarks, queryLandmarks, vehicle)`: Feature-based ORB alignment.
 
-### `PhotoAlignmentUtils.kt`
-- `alignToReference(fillupBitmap: Bitmap, referenceCrop: Rect?)`
-  - High-level stage-1 alignment logic for odometer extraction.
-
-### `ImageHashUtils.kt`
-- `computeAverageHash(bitmap: Bitmap)`: 64-bit dhash for duplicate detection.
-- `similarity(hash1: Long, hash2: Long)`: Normalized Hamming distance (0.0–1.0).
+### `AlignmentEngine.kt` & `IdentityEngine.kt`
+- Interfaces for `OrbAffineEngine`, `AnchorTriangulationEngine`, `HubEngine`, `FeatureIdentityEngine`, `ArgIdentityEngine`, `EmbeddingIdentityEngine`, `ConsensusIdentityEngine`, `TieredIdentityEngine`, `VetoIdentityEngine`, and `HardcodedIdentityEngine`.
 
 ## Synchronization & Storage
-
-### `SyncManager.kt`
-- `triggerSync()`: Initiates WorkManager-based background sync.
-- `isSyncInProgress()`: State tracking for UI feedback.
-
-### `SyncWorker.kt`
-- `doWork()`: WorkManager entry point. Coordinates CSV export/import with Google Sheets/Drive.
-
-### `GoogleSheetsClient.kt`
-- `syncData(fuelEntries, expenseEntries)`: Appends or updates rows in specified Google Sheets.
-
-### `GoogleDriveProvider.kt`
-- `uploadPhoto(file)`, `downloadPhoto(fileId)`: Manages photo backups in a dedicated app folder on Google Drive.
-
-### `PhotoStorageManager.kt`
-- Manages local photo storage, cleanup, and rotation.
+- `SyncManager.kt` / `SyncWorker.kt` / `GoogleSheetsClient.kt` / `GoogleDriveProvider.kt` / `PhotoStorageManager.kt`: Handles WorkManager periodic syncs to Google APIs.
 
 ## UI Components
-
-### `MainActivity.kt`
-- Root Activity containing the `NavHost` and `ModalNavigationDrawer`.
-
-### `QuickFillupScreen.kt`
-- Main UI for fuel entry. Connects `FillupViewModel` to the camera and OCR pipeline.
-
-### `ExperimentAlignmentScreen.kt`
-- `runExperiment(...)`: Runs automated alignment tests on a set of local photos and generates an HTML report.
+- `ExperimentAlignmentScreen.kt`: Advanced test harness evaluating a local folder of pictures against `Vehicle` manifests. Outputs `alignment_results.json` and split HTML tables containing multi-engine alignment trace details. Includes dynamic `ReferenceCache`.
+- `ManageVehiclesScreen.kt`: Handles user editing of OCR crop regions. Includes split "Run Discovery" vs "Show Landmarks" UI for manifest hydration and manual overrides.
