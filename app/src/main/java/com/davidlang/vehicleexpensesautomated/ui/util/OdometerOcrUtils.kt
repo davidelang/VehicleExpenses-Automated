@@ -27,6 +27,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.max
+import kotlin.math.min
 
 object OdometerOcrUtils {
     init {
@@ -53,12 +55,7 @@ object OdometerOcrUtils {
     }
 
     fun cleanLandmarkString(text: String): String {
-        // Phase 35: Robust Sanitization (Manual overrides now available, removing automated o->0 mapping)
-        
-        // 1. GLOBAL FILTER: Keep only printable ASCII (32-126)
         val filtered = text.filter { it.code in 32..126 }
-        
-        // 2. SURGICAL TRIM: Leading/trailing punctuation only
         val charsToTrim = charArrayOf(' ', '-', '.', '_', ',', '*')
         return filtered.trim { it in charsToTrim }
     }
@@ -143,12 +140,9 @@ object OdometerOcrUtils {
                 tess.clear()
                 return "(Tesseract init failed)" to emptyList()
             }
-
             tess.setVariable("tessedit_char_whitelist", whitelist)
-
             tess.setImage(bitmap)
             val text = tess.utF8Text ?: ""
-            
             val resultIterator = tess.resultIterator
             if (resultIterator != null) {
                 resultIterator.begin()
@@ -160,7 +154,6 @@ object OdometerOcrUtils {
                     }
                 } while (resultIterator.next(TessBaseAPI.PageIteratorLevel.RIL_WORD))
             }
-
             tess.clear()
             return text to blocks
         } catch (e: Exception) {
@@ -216,16 +209,13 @@ object OdometerOcrUtils {
     }
 
     suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
-        // MANDATE: Always apply Grayscale + Bilateral before any discovery/OCR
         val processed = applyBilateral(applyGrayscale(bitmap))
-        
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val image = InputImage.fromBitmap(processed, 0)
         return try {
             val visionText = recognizer.process(image).await()
             val blocks = mutableListOf<TextBlock>()
             val text = StringBuilder()
-            
             for (block in visionText.textBlocks) {
                 for (line in block.lines) {
                     for (element in line.elements) {
@@ -238,13 +228,7 @@ object OdometerOcrUtils {
                     }
                 }
             }
-            OcrResult(
-                engineName = "ML Kit",
-                debugText = text.toString().trim(),
-                textBlocks = blocks,
-                imageWidth = bitmap.width,
-                imageHeight = bitmap.height
-            )
+            OcrResult(engineName = "ML Kit", debugText = text.toString().trim(), textBlocks = blocks, imageWidth = bitmap.width, imageHeight = bitmap.height)
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit failed", e)
             OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
@@ -253,29 +237,76 @@ object OdometerOcrUtils {
         }
     }
 
-    fun runMultiStepOcr(bitmap: Bitmap, context: Context): List<OcrStepResult> {
+    /**
+     * Phase 58: Multi-Column OCR Refinement.
+     */
+    suspend fun runMultiStepOcr(
+        bitmap: Bitmap, 
+        context: Context, 
+        engineName: String = "ML Kit", 
+        targetHeight: Int? = null,
+        paddleEngine: NativePaddleEngine? = null
+    ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
         
-        // 1. Raw
-        steps.add(OcrStepResult("Raw", bitmap, runOcr(bitmap)))
+        suspend fun exec(bmp: Bitmap): String? {
+            return when (engineName) {
+                "ML Kit" -> {
+                    val resized = if (targetHeight != null) {
+                        val scale = targetHeight.toFloat() / bmp.height.toFloat()
+                        Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
+                    } else bmp
+                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                    val image = InputImage.fromBitmap(resized, 0)
+                    try {
+                        val visionText = recognizer.process(image).await()
+                        val res = visionText.text.filter { it.isDigit() }
+                        if (resized != bmp) resized.recycle()
+                        res
+                    } catch (e: Exception) { null }
+                }
+                "Paddle-Lite" -> {
+                    paddleEngine?.let {
+                        NativePaddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary())
+                    }
+                }
+                else -> runOcr(bmp)
+            }
+        }
+
+        // 1. Raw (Fresh Copy)
+        val raw = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        steps.add(OcrStepResult("Raw", raw, exec(raw)))
 
         // 2. Grayscale
         val gray = applyGrayscale(bitmap)
-        steps.add(OcrStepResult("Grayscale", gray, runOcr(gray)))
+        steps.add(OcrStepResult("Grayscale", gray, exec(gray)))
 
         // 3. Bilateral
         val bile = applyBilateral(bitmap)
-        steps.add(OcrStepResult("Bilateral", bile, runOcr(bile)))
+        steps.add(OcrStepResult("Bilateral", bile, exec(bile)))
 
         // 4. CLAHE
         val clahe = applyClahe(bitmap)
-        steps.add(OcrStepResult("CLAHE", clahe, runOcr(clahe)))
+        steps.add(OcrStepResult("CLAHE", clahe, exec(clahe)))
 
-        // 5. Otsu
-        val otsu = applyOtsu(bitmap)
-        steps.add(OcrStepResult("Otsu", otsu, runOcr(otsu)))
+        // 5. Otsu (After CLAHE)
+        val otsu = applyOtsu(clahe)
+        steps.add(OcrStepResult("Otsu", otsu, exec(otsu)))
+
+        // 6. Otsu-No-CLAHE (Phase 58)
+        val otsuNoClahe = applyOtsu(bile)
+        steps.add(OcrStepResult("Otsu-No-CLAHE", otsuNoClahe, exec(otsuNoClahe)))
 
         return steps
+    }
+
+    fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {
+        val out = Bitmap.createBitmap(bitmap.width + 2 * padding, bitmap.height + 2 * padding, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(color)
+        canvas.drawBitmap(bitmap, padding.toFloat(), padding.toFloat(), null)
+        return out
     }
 
     fun pickBestOdometer(results: List<OcrStepResult>): String? {
@@ -288,15 +319,9 @@ object OdometerOcrUtils {
         val refinedBlocks = result.textBlocks.map { block ->
             val isFlipped = Math.abs(block.angle) > 165f
             val cleaned = clean7SegmentDigits(block.text, isFlipped)
-            if (isFlipped) {
-                Log.i("OdometerOcr", "v45_FLIP_RECOVERED: '${block.text}' -> '$cleaned' (Angle: ${block.angle})")
-            }
             block.copy(text = cleaned)
         }
-        return result.copy(
-            textBlocks = refinedBlocks,
-            debugText = refinedBlocks.joinToString(" ") { it.text }
-        )
+        return result.copy(textBlocks = refinedBlocks, debugText = refinedBlocks.joinToString(" ") { it.text })
     }
 
     private fun clean7SegmentDigits(text: String, isFlipped: Boolean): String {
@@ -307,16 +332,13 @@ object OdometerOcrUtils {
         return workingText.map { char -> activeMap[char] ?: (activeMap[char.uppercaseChar()] ?: char) }.joinToString("")
     }
 
-    // MANDATED: Normalized JSON Serialization
     fun serializeLandmarks(landmarks: List<TextBlock>, imgW: Int, imgH: Int): String {
         val array = JSONArray()
-        // Filter: > 1 character as requested
         landmarks.forEach { block ->
             val cleaned = cleanLandmarkString(block.text)
             if (cleaned.length > 1) {
                 val obj = JSONObject()
                 obj.put("text", cleaned)
-                // Save as NORMALIZED coordinates (0.0 to 1.0) explicitly as Double to prevent truncation
                 val box = block.boundingBox
                 obj.put("cx", box.centerX().toDouble() / imgW.toDouble())
                 obj.put("cy", box.centerY().toDouble() / imgH.toDouble())
@@ -328,9 +350,6 @@ object OdometerOcrUtils {
         return array.toString()
     }
 
-    /**
-     * Consolidates landmarks from all engines into a single JSON manifest.
-     */
     fun serializeMultiEngineLandmarks(results: Map<String, OcrResult>): String {
         val t0 = System.currentTimeMillis()
         val root = JSONObject()
@@ -354,9 +373,6 @@ object OdometerOcrUtils {
         return root.toString()
     }
 
-    /**
-     * Phase 46: Reconstructs discoveryResults from the stored manifest.
-     */
     fun deserializeMultiEngineLandmarks(json: String?, imgW: Int, imgH: Int): Map<String, OcrResult> {
         if (json.isNullOrEmpty()) return emptyMap()
         val results = mutableMapOf<String, OcrResult>()
@@ -380,45 +396,30 @@ object OdometerOcrUtils {
         return results
     }
 
-    // COMPATIBILITY WRAPPERS
     suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null, context: Context? = null): OcrResult = withContext(Dispatchers.IO) {
         val rawBitmap = if (context != null) decodeBitmapSafely(context, photoPath) else BitmapFactory.decodeFile(photoPath)
         if (rawBitmap == null) return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        
-        // EXPERIMENT: Process FULL image after rotation
         val processed = applyBilateral(applyGrayscale(rotated))
-        
         var bitmap = processed
         if (cropRect != null) {
             val left = (cropRect.left * processed.width).toInt().coerceIn(0, processed.width)
             val top = (cropRect.top * processed.height).toInt().coerceIn(0, processed.height)
             val right = (cropRect.right * processed.width).toInt().coerceAtMost(processed.width)
             val bottom = (cropRect.bottom * processed.height).toInt().coerceAtMost(processed.height)
-            if (right > left && bottom > top) {
-                bitmap = Bitmap.createBitmap(processed, left, top, right - left, bottom - top)
-            }
+            if (right > left && bottom > top) bitmap = Bitmap.createBitmap(processed, left, top, right - left, bottom - top)
         }
         val res = extractFromPhotoBitmap(bitmap)
         if (bitmap != processed) bitmap.recycle()
-        processed.recycle()
-        rotated.recycle()
-        res.copy(originalPhotoPath = photoPath)
+        processed.recycle(); rotated.recycle(); res.copy(originalPhotoPath = photoPath)
     }
 
     suspend fun discoverLandmarks(photoPath: String, odometerCrop: RectF? = null, otherTextCrop: RectF? = null): List<TextBlock> = withContext(Dispatchers.IO) {
         val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        
-        // EXPERIMENT: Process FULL image before landmark discovery
         val processed = applyBilateral(applyGrayscale(rotated))
-        
         val ocrResult = extractFromPhotoBitmap(processed)
         val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
-        
-        processed.recycle()
-        if (rotated != rawBitmap) rotated.recycle()
-        rawBitmap.recycle()
-        landmarks
+        processed.recycle(); if (rotated != rawBitmap) rotated.recycle(); rawBitmap.recycle(); landmarks
     }
 }
