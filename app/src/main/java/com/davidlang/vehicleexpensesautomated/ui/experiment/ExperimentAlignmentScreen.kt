@@ -138,7 +138,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     val groundTruth = loadGroundTruth(context)
     val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-    val primaryIdentityEngine = prefs.getString("primary_identity_pref", "hardcoded") ?: "hardcoded"
+    val primaryIdentityEngine = prefs.getString("primary_identity_pref", "veto") ?: "veto"
     val anchorSourceEngine = prefs.getString("anchor_source_pref", "ML Kit") ?: "ML Kit"
     val discoveryEngines = OcrHarness.getDiscoveryEngineNames(context)
 
