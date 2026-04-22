@@ -53,7 +53,7 @@ fun ManageVehiclesScreen(
     val scope = rememberCoroutineScope()
     
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
-    val anchorSourceEngine = prefs.getString("anchor_source_pref", "ML Kit") ?: "ML Kit"
+    // Phase 55: Anchor source engine is now implicitly ML Kit
 
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
     var editingVehicle by remember { mutableStateOf<Vehicle?>(null) }
@@ -77,8 +77,7 @@ fun ManageVehiclesScreen(
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
 
     var showLandmarkCheck by remember { mutableStateOf(false) }
-    var discoveryResults by remember { mutableStateOf<Map<String, OcrResult>>(emptyMap()) }
-    var selectedEngineForPopup by remember { mutableStateOf("ML Kit") }
+    var discoveryResults by remember { mutableStateOf<OcrResult?>(null) }
     var isLoadingDiscovery by remember { mutableStateOf(false) }
 
     // AUTO-SELECT FIRST VEHICLE
@@ -106,11 +105,8 @@ fun ManageVehiclesScreen(
             odometerCropRect = it.odometerCropLeft?.let { left -> Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f) }
             otherTextCropRect = it.otherTextCropLeft?.let { left -> Rect(left, it.otherTextCropTop ?: 0f, it.otherTextCropRight ?: 1f, it.otherTextCropBottom ?: 1f) }
             
-            // Phase 35: Hydrate discoveryResults from stored JSON if available
-            if (discoveryResults.isEmpty() && !landmarkTextBlocksJson.isNullOrEmpty()) {
-                // This is a partial hydration (only TextBlocks, no execution times etc)
-                // sufficient for the override UI to work on existing vehicles.
-            }
+            // Hydration handled by the "Show Landmarks" button
+            discoveryResults = null 
         }
     }
 
@@ -128,21 +124,22 @@ fun ManageVehiclesScreen(
                 val leveledFile = File(context.filesDir, "vehicle_ref_${System.currentTimeMillis()}.jpg")
                 leveledFile.outputStream().use { leveledBmp.compress(Bitmap.CompressFormat.JPEG, 95, it) }
                 
-                val rawResults = OcrHarness.runDiscovery(leveledBmp, context)
+                // Phase 55: Single ML Kit Discovery pass
+                val rawResult = OcrHarness.runDiscovery(leveledBmp, context)
                 
-                // EXCLUDE CROP AREAS FROM ALL ENGINES
+                // EXCLUDE CROP AREAS
                 val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                 val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-                val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
+                val filteredResult = rawResult.filterByCrops(odoRectF, otherRectF)
 
-                // PHASE 35: Store multi-engine manifest immediately
-                val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(filteredResults)
+                // Store manifest immediately
+                val landmarkJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to filteredResult))
                 
                 withContext(Dispatchers.Main) {
                     pickedPhotoUrl = leveledFile.absolutePath
                     referencePhotoUrl = leveledFile.absolutePath
                     landmarkTextBlocksJson = landmarkJson
-                    discoveryResults = filteredResults
+                    discoveryResults = filteredResult
                     originalImageSize = Offset(leveledBmp.width.toFloat(), leveledBmp.height.toFloat())
                     isLoadingDiscovery = false
                 }
@@ -165,19 +162,17 @@ fun ManageVehiclesScreen(
                         OdometerOcrUtils.decodeBitmapSafely(context, photoPathOrUri) 
                     } ?: return@launch
                     
-                    val rawResults = withContext(Dispatchers.Default) {
+                    val rawResult = withContext(Dispatchers.Default) {
                         OcrHarness.runDiscovery(leveledBmp, context)
                     }
                     
                     val odoRectF = odometerCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
                     val otherRectF = otherTextCropRect?.let { android.graphics.RectF(it.left, it.top, it.right, it.bottom) }
-                    val filteredResults = rawResults.mapValues { (_, res) -> res.filterByCrops(odoRectF, otherRectF) }
+                    val filteredResult = rawResult.filterByCrops(odoRectF, otherRectF)
 
-                    // PHASE 28: Store multi-engine manifest
-                    landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(filteredResults)
+                    landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to filteredResult))
                     
-                    discoveryResults = filteredResults
-                    selectedEngineForPopup = anchorSourceEngine
+                    discoveryResults = filteredResult
                     showLandmarkCheck = true
                     leveledBmp.recycle()
                     isLoadingDiscovery = false
@@ -217,7 +212,6 @@ fun ManageVehiclesScreen(
                     Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOtherText) "Done Ignore" else "Mark to Ignore") }
                 }
                 
-                // Phase 46: Split Run/Show Discovery
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                     Button(
                         onClick = tryOcr, 
@@ -234,12 +228,13 @@ fun ManageVehiclesScreen(
                     Button(
                         onClick = {
                             if (!landmarkTextBlocksJson.isNullOrEmpty()) {
-                                discoveryResults = OdometerOcrUtils.deserializeMultiEngineLandmarks(
+                                val map = OdometerOcrUtils.deserializeMultiEngineLandmarks(
                                     landmarkTextBlocksJson!!, 
                                     originalImageSize.x.toInt(), 
                                     originalImageSize.y.toInt()
                                 )
-                                selectedEngineForPopup = anchorSourceEngine
+                                // Fallback to whatever engine was cached, or default
+                                discoveryResults = map["ML Kit"] ?: map.values.firstOrNull()
                                 showLandmarkCheck = true
                             }
                         },
@@ -250,30 +245,25 @@ fun ManageVehiclesScreen(
                     }
                 }
                 
-                if (discoveryResults.isNotEmpty()) {
+                if (discoveryResults != null) {
                     Text("Discovery Results (Excluding Crop Areas):", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-                    Text("Tap an engine to see its debug pass", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                    Text("Tap card to see full debug pass", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                     
                     Surface(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).padding(vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.small
                     ) {
-                        Column(modifier = Modifier.padding(8.dp).verticalScroll(rememberScrollState())) {
-                            // Phase 35: Updated sorted engine list (TFLite models removed)
-                            val sortedEngines = OcrHarness.getDiscoveryEngineNames(context)
-                            sortedEngines.forEach { engineName ->
-                                discoveryResults[engineName]?.let { result ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedEngineForPopup = engineName; showLandmarkCheck = true },
-                                        colors = CardDefaults.cardColors(containerColor = if (engineName == selectedEngineForPopup) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp)) {
-                                            Text(engineName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                            Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
-                                            Text(result.debugText, style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            val result = discoveryResults!!
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { showLandmarkCheck = true },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(result.engineName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text("Landmarks found: ${result.textBlocks.size}", style = MaterialTheme.typography.labelMedium)
+                                    Text(result.debugText, style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
@@ -293,36 +283,34 @@ fun ManageVehiclesScreen(
         }
     }
 
-    if (showLandmarkCheck && referencePhotoUrl != null) {
-        val displayRes = discoveryResults[selectedEngineForPopup] ?: discoveryResults.values.firstOrNull()
-        displayRes?.let { res ->
-            LandmarkDebugDialog(
-                photoPath = referencePhotoUrl,
-                odometerCrop = odometerCropRect,
-                otherTextCrop = otherTextCropRect,
-                landmarks = res.textBlocks,
-                rawDiscoveryBoxes = res.rawDiscoveryBoxes,
-                odometerText = "N/A",
-                engineName = res.engineName,
-                sourceWidth = res.imageWidth,
-                sourceHeight = res.imageHeight,
-                discoveryTimeMs = res.discoveryTimeMs,
-                totalTimeMs = res.executionTimeMs,
-                onDismiss = { showLandmarkCheck = false },
-                // Phase 35: Implement Manual Overrides callback
-                onLandmarksChanged = { updatedList ->
-                    // Phase 38: Move back to Main thread to expose bottleneck
-                    val newMap = discoveryResults.toMutableMap()
-                    newMap[selectedEngineForPopup] = res.copy(
+    if (showLandmarkCheck && referencePhotoUrl != null && discoveryResults != null) {
+        val res = discoveryResults!!
+        LandmarkDebugDialog(
+            photoPath = referencePhotoUrl,
+            odometerCrop = odometerCropRect,
+            otherTextCrop = otherTextCropRect,
+            landmarks = res.textBlocks,
+            rawDiscoveryBoxes = res.rawDiscoveryBoxes,
+            odometerText = "N/A",
+            engineName = res.engineName,
+            sourceWidth = res.imageWidth,
+            sourceHeight = res.imageHeight,
+            discoveryTimeMs = res.discoveryTimeMs,
+            totalTimeMs = res.executionTimeMs,
+            onDismiss = { showLandmarkCheck = false },
+            onLandmarksChanged = { updatedList ->
+                scope.launch(Dispatchers.Default) {
+                    val updatedRes = res.copy(
                         textBlocks = updatedList,
                         debugText = updatedList.joinToString(" ") { it.text }
                     )
-                    discoveryResults = newMap
-                    // Re-serialize manifest
-                    landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(newMap)
+                    withContext(Dispatchers.Main) {
+                        discoveryResults = updatedRes
+                        landmarkTextBlocksJson = OdometerOcrUtils.serializeMultiEngineLandmarks(mapOf("ML Kit" to updatedRes))
+                    }
                 }
-            )
-        }
+            }
+        )
     }
 }
 

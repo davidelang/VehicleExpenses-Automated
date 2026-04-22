@@ -83,12 +83,12 @@ class MainActivity : ComponentActivity() {
                             bitmap?.let { bmp ->
                                 Log.i("MainActivity", "Test 1: Baseline ImageNet Normalization")
                                 val res1 = OcrHarness.runDiscovery(bmp, context)
-                                Log.i("MainActivity", "Test 1 Landmarks: ${res1.mapValues { it.value.textBlocks.size }}")
+                                Log.i("MainActivity", "Test 1 Landmarks: ${res1.textBlocks.size}")
                                 
                                 Log.i("MainActivity", "Test 2: CLAHE Pre-processing")
                                 val claheBmp = OdometerOcrUtils.applyClahe(bmp)
                                 val res2 = OcrHarness.runDiscovery(claheBmp, context)
-                                Log.i("MainActivity", "Test 2 Landmarks: ${res2.mapValues { it.value.textBlocks.size }}")
+                                Log.i("MainActivity", "Test 2 Landmarks: ${res2.textBlocks.size}")
                                 
                                 claheBmp.recycle(); bmp.recycle()
                             }
