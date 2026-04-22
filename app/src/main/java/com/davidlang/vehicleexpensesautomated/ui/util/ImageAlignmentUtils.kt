@@ -259,7 +259,7 @@ object ImageAlignmentUtils {
         val queryWordsSet = queryWordsList.toSet()
         val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
         
-        return allVehicles.associate { currentVehicle ->
+        val initialResults = allVehicles.associate { currentVehicle ->
             val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
             
             // Pool = all words from everyone else
@@ -281,6 +281,36 @@ object ImageAlignmentUtils {
                 vetoPool = vetoPool.toList().sorted()
             )
         }
+
+        // Phase 47: Least-Vetoed Rescue Algorithm
+        // Check if ALL vehicles were vetoed (Mutual Veto)
+        if (initialResults.values.all { it.isVetoed }) {
+            // Count triggers for each vehicle
+            val triggerCounts = initialResults.mapValues { (_, res) -> 
+                if (res.reasonWord.isEmpty()) 0 else res.reasonWord.split(", ").size 
+            }
+            
+            // Identify vehicles with exactly 1 trigger
+            val vehiclesWithOneTrigger = triggerCounts.filter { it.value == 1 }.keys.toList()
+            
+            // Identify if all OTHER vehicles have 3 or more triggers
+            val otherVehiclesHaveManyTriggers = triggerCounts.filter { it.key !in vehiclesWithOneTrigger }
+                .all { it.value >= 3 }
+                
+            // Rescue Condition: Exactly ONE vehicle has 1 trigger, AND all others have >= 3
+            if (vehiclesWithOneTrigger.size == 1 && otherVehiclesHaveManyTriggers && allVehicles.size > 1) {
+                val rescuedId = vehiclesWithOneTrigger[0]
+                val rescuedResult = initialResults[rescuedId]!!
+                val newResults = initialResults.toMutableMap()
+                newResults[rescuedId] = rescuedResult.copy(
+                    isVetoed = false,
+                    reasonWord = "[RESCUED 1 vs 3+] Was: ${rescuedResult.reasonWord}"
+                )
+                return newResults
+            }
+        }
+        
+        return initialResults
     }
 
     suspend fun alignImages(
