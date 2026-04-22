@@ -217,13 +217,36 @@ fun ManageVehiclesScreen(
                     Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOtherText) "Done Other" else "Edit Other") }
                 }
                 
-                Button(onClick = tryOcr, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !isLoadingDiscovery) { 
-                    if (isLoadingDiscovery) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Processing...")
-                    } else {
-                        Text("Run Multi-Engine Discovery") 
+                // Phase 46: Split Run/Show Discovery
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    Button(
+                        onClick = tryOcr, 
+                        modifier = Modifier.weight(1f), 
+                        enabled = !isLoadingDiscovery
+                    ) { 
+                        if (isLoadingDiscovery) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                        } else {
+                            Text("Run Discovery") 
+                        }
+                    }
+                    
+                    Button(
+                        onClick = {
+                            if (!landmarkTextBlocksJson.isNullOrEmpty()) {
+                                discoveryResults = OdometerOcrUtils.deserializeMultiEngineLandmarks(
+                                    landmarkTextBlocksJson!!, 
+                                    originalImageSize.x.toInt(), 
+                                    originalImageSize.y.toInt()
+                                )
+                                selectedEngineForPopup = anchorSourceEngine
+                                showLandmarkCheck = true
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !landmarkTextBlocksJson.isNullOrEmpty() && !isLoadingDiscovery
+                    ) {
+                        Text("Show Landmarks")
                     }
                 }
                 
