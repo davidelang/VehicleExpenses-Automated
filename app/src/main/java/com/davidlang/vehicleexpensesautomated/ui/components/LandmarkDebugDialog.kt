@@ -117,6 +117,11 @@ fun LandmarkDebugDialog(
                         if (!isEditing) {
                             Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 8.dp)) { Text("Edit OCR") }
                         } else {
+                            Button(onClick = { 
+                                val newList = editableLandmarks.toMutableList()
+                                newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
+                                editableLandmarks = newList
+                            }, modifier = Modifier.padding(end = 8.dp)) { Text("Add") }
                             Button(onClick = { onLandmarksChanged(editableLandmarks); onDismiss() }, modifier = Modifier.padding(end = 8.dp)) { Text("Save Overrides") }
                             Button(onClick = { isEditing = false; editableLandmarks = landmarks }, modifier = Modifier.padding(end = 8.dp)) { Text("Cancel") }
                         }

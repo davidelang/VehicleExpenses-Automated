@@ -88,13 +88,12 @@ object ImageAlignmentUtils {
         // 1. STRATEGY A: Uniqueness
         val refCounts = refLandmarks.groupBy { it.text }.mapValues { it.value.size }
         val queCounts = queryLandmarks.groupBy { it.text }.mapValues { it.value.size }
-        
-        val uniqueMatches = refLandmarks.filter { refCounts[it.text] == 1 }
+
+        val uniqueMatches = refLandmarks.filter { refCounts[it.text] == 1 && it.boundingBox.width() > 0 }
             .mapNotNull { refMark ->
-                val queMark = queryLandmarks.find { it.text == refMark.text && queCounts[it.text] == 1 }
+                val queMark = queryLandmarks.find { it.text == refMark.text && queCounts[it.text] == 1 && it.boundingBox.width() > 0 }
                 if (queMark != null) refMark to queMark else null
             }
-
         if (uniqueMatches.size >= 2) {
             for (i in uniqueMatches.indices) {
                 for (j in i + 1 until uniqueMatches.size) {
@@ -139,8 +138,8 @@ object ImageAlignmentUtils {
                 for (j in i + 1 until commonWords.size) {
                     for (k in j + 1 until commonWords.size) {
                         val w1 = commonWords[i]; val w2 = commonWords[j]; val w3 = commonWords[k]
-                        val r1s = refLandmarks.filter { it.text == w1 }; val r2s = refLandmarks.filter { it.text == w2 }; val r3s = refLandmarks.filter { it.text == w3 }
-                        val q1s = queryLandmarks.filter { it.text == w1 }; val q2s = queryLandmarks.filter { it.text == w2 }; val q3s = queryLandmarks.filter { it.text == w3 }
+                        val r1s = refLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }; val r2s = refLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }; val r3s = refLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
+                        val q1s = queryLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }; val q2s = queryLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }; val q3s = queryLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
                         
                         for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
                             val rD12 = dist(r1, r2); val rD23 = dist(r2, r3); val rD31 = dist(r3, r1)
