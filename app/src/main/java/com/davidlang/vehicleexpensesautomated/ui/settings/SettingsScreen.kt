@@ -16,7 +16,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
-import com.davidlang.vehicleexpensesautomated.ui.util.IdentityRegistry
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import kotlinx.coroutines.launch
 
@@ -41,10 +40,6 @@ fun SettingsScreen() {
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
     
-    // Algorithm Settings
-    var anchorSource by remember { mutableStateOf(prefs.getString("anchor_source_pref", "ML Kit") ?: "ML Kit") }
-    var primaryIdentity by remember { mutableStateOf(prefs.getString("primary_identity_pref", "hardcoded") ?: "hardcoded") }
-
     var status by remember { mutableStateOf("Ready") }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -55,7 +50,7 @@ fun SettingsScreen() {
         uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
     }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold, darkModePref, anchorSource, primaryIdentity) {
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold, darkModePref) {
         prefs.edit().apply {
             putString("sheet_id", sheetId)
             putBoolean("sync_enabled", syncEnabled)
@@ -67,8 +62,6 @@ fun SettingsScreen() {
             putString("photo_storage_provider", photoProviderPref)
             putFloat("ocr_confidence_threshold", ocrConfidenceThreshold)
             putString("dark_mode", darkModePref)
-            putString("anchor_source_pref", anchorSource)
-            putString("primary_identity_pref", primaryIdentity)
             apply()
         }
     }
@@ -80,16 +73,6 @@ fun SettingsScreen() {
             .verticalScroll(rememberScrollState())
     ) {
         Text("General Settings", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Text("Algorithm Configuration", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        DropdownSetting("Primary Anchor Source (Veto Source)", anchorSource, OcrHarness.getDiscoveryEngineNames(context)) { anchorSource = it }
-        DropdownSetting("Primary Identity Engine (Experiment Winner)", primaryIdentity, IdentityRegistry.getEngineNames()) { primaryIdentity = it }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(value = sheetId, onValueChange = { sheetId = it }, label = { Text("Google Sheet ID") }, modifier = Modifier.fillMaxWidth())
