@@ -81,8 +81,9 @@ object ImageAlignmentUtils {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
         
-        val refScale = refBmp.width / 1500f
-        val queScale = queryBmp.width / 1500f
+        // Phase 48: Landmarks are now extracted from full-res images, no scaling needed.
+        val refScale = 1.0f
+        val queScale = 1.0f
 
         // 1. STRATEGY A: Uniqueness
         val refCounts = refLandmarks.groupBy { it.text }.mapValues { it.value.size }
