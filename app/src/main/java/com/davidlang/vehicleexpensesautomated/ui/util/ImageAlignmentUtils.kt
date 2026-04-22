@@ -116,16 +116,12 @@ object ImageAlignmentUtils {
                         val qAngle = Math.atan2((q2cy - q1cy).toDouble(), (q2cx - q1cx).toDouble())
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
-                        // Calculate Translate based on scaled and rotated point
-                        val m = android.graphics.Matrix()
-                        m.postScale(s, s)
-                        m.postRotate(rot)
-                        val pts = floatArrayOf(q1cx, q1cy)
-                        m.mapPoints(pts)
-                        val tx = r1cx - pts[0]
-                        val ty = r1cy - pts[1]
+                        // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
+                        if (kotlin.math.abs(rot) > 4.0f) continue
+                        val tx = r1cx - (s * q1cx)
+                        val ty = r1cy - (s * q1cy)
 
-                        allCandidates.add(AnchorCandidate("A (Unique)", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f, tx=%.1f, ty=%.1f".format(s, rot, tx, ty)))
+                        allCandidates.add(AnchorCandidate("A (Unique)", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty)))
                     }
                 }
             }
@@ -169,16 +165,12 @@ object ImageAlignmentUtils {
                                         val qAngle = Math.atan2((qBcy - qAcy).toDouble(), (qBcx - qAcx).toDouble())
                                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
 
-                                        // Calculate Translate based on scaled and rotated point
-                                        val m = android.graphics.Matrix()
-                                        m.postScale(s, s)
-                                        m.postRotate(rot)
-                                        val pts = floatArrayOf(qAcx, qAcy)
-                                        m.mapPoints(pts)
-                                        val tx = rAcx - pts[0]
-                                        val ty = rAcy - pts[1]
+                                        // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
+                                        if (kotlin.math.abs(rot) > 4.0f) continue
+                                        val tx = rAcx - (s * qAcx)
+                                        val ty = rAcy - (s * qAcy)
 
-                                        allCandidates.add(AnchorCandidate("B (Tri)", listOf(w1, w2, w3), s, rot, tx, ty, dR, "S=%.3f, R=%.1f, tx=%.1f, ty=%.1f".format(s, rot, tx, ty)))
+                                        allCandidates.add(AnchorCandidate("B (Tri)", listOf(w1, w2, w3), s, rot, tx, ty, dR, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty)))
                                     }
                                 }
                             }
@@ -199,14 +191,14 @@ object ImageAlignmentUtils {
 
         val matrix = android.graphics.Matrix()
         matrix.postScale(avgScale, avgScale)
-        matrix.postRotate(avgRotation)
+        // Phase 53: Zero-Rotation Warp. Global deskew already handled rotation.
         matrix.postTranslate(avgTx, avgTy)
 
         val metadata = mapOf(
             "Candidates" to top3.mapIndexed { i, c ->
-                "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> S=%.3f, R=%.1f deg, tx=%.1f, ty=%.1f".format(c.scale, c.rotation, c.tx, c.ty)
+                "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Average" to "S=%.3f, R=%.1f deg, tx=%.1f, ty=%.1f".format(avgScale, avgRotation, avgTx, avgTy)
+            "Average" to "S=%.3f, R=%.1f (Ignored), tx=%.1f, ty=%.1f".format(avgScale, avgRotation, avgTx, avgTy)
         )
 
         return try {
@@ -214,7 +206,7 @@ object ImageAlignmentUtils {
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Avg: S=%.3f, R=%.1f deg, tx=%.1f, ty=%.1f".format(avgScale, avgRotation, avgTx, avgTy))
+            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Avg: S=%.3f, R=%.1f (Ignored), tx=%.1f, ty=%.1f".format(avgScale, avgRotation, avgTx, avgTy))
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
