@@ -107,7 +107,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
 data class ReferenceCache(
     val vehicle: Vehicle, 
     val referenceBase64: String, 
-    // Phase 42: Cache landmarks for EVERY discovery engine
     val curatedLandmarksMap: Map<String, List<TextBlock>>, 
     val ocrResult: OcrResult, 
     val bmp: Bitmap
@@ -145,12 +144,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
-        
-        // Phase 42: Hydrate landmarks for all discovery engines
         val curatedMap = discoveryEngines.associateWith { engineName ->
             getFullLandmarksFromJson(v.landmarkTextBlocksJson, engineName, bmp.width, bmp.height)
         }
-        
         val primaryCurated = curatedMap[anchorSourceEngine] ?: curatedMap["ML Kit"] ?: emptyList()
         val refOcr = OcrResult(engineName = "Curated DB", textBlocks = primaryCurated, imageWidth = bmp.width, imageHeight = bmp.height, debugText = primaryCurated.joinToString(" ") { it.text })
         val annotatedBmp = drawCropBoxesOnReference(bmp, v); val refBase64 = createScaledBase64(annotatedBmp, 400, 70); annotatedBmp.recycle()
@@ -158,14 +154,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     }
     
     val jsonResults = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
-    
-    // Phase 42: Expand dynamic alignments for HTML columns
     val activeAlignments = mutableListOf<String>()
     activeAlignments.add("ORB")
     discoveryEngines.forEach { activeAlignments.add("$it (Tri)") }
     
     val footer = "</table></body></html>"
-    
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, cachedRefs.map { it.vehicle }, activeAlignments)) 
     }
@@ -178,11 +171,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
-            
-            // Capture main thumbnail
             val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
             
-            // 1. IDENTITY STAGE
             val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
             val tilt = deskewRes.angle
             val tDeskewTotal = deskewRes.timeMs
@@ -199,7 +189,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val queryOcrDiscovery = discoveryResults[anchorSourceEngine] ?: discoveryResults["ML Kit"]!!
             val queryLandmarksPrimary = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
             
-            // MULTI-SOURCE VETO SWEEP
             val vetoSweep = discoveryResults.mapValues { (name, ocrRes) ->
                 val engineLandmarks = OdometerOcrUtils.processRawLandmarks(ocrRes.textBlocks, null, null, ocrRes.imageWidth, ocrRes.imageHeight)
                 ImageAlignmentUtils.performTier1Veto(engineLandmarks, cachedRefs.map { it.vehicle }, name)
@@ -213,21 +202,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             cachedRefs.forEach { ref ->
                 val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
                 val forceWinner = (hardcodedWinner != null && hardcodedWinner == ref.vehicle.name)
-                
                 val tMatchStart = System.currentTimeMillis()
                 val matchResults = mutableMapOf<String, AlignmentResult>()
-                
                 val odoCrop = ref.vehicle.odometerCropLeft?.let { l -> RectF(l, ref.vehicle.odometerCropTop ?: 0f, ref.vehicle.odometerCropRight ?: 1f, ref.vehicle.odometerCropBottom ?: 1f) }
                 val otherCrop = ref.vehicle.otherTextCropLeft?.let { l -> RectF(l, ref.vehicle.otherTextCropTop ?: 0f, ref.vehicle.otherTextCropRight ?: 1f, ref.vehicle.otherTextCropBottom ?: 1f) }
-                
                 for (engine in identityEngines) {
                     val t0 = System.currentTimeMillis()
                     val result = engine.identify(ref.bmp, originalBitmap, ref.ocrResult, queryOcrDiscovery, odoCrop, otherCrop, ref.vehicle, veto, forceWinner)
                     matchResults[engine.name] = result.copy(timeMs = System.currentTimeMillis() - t0)
                 }
-                
-                val primaryResult = matchResults[primaryIdentityEngine] ?: AlignmentResult(false, null, -1f, "Primary Engine Missing")
-                val isWinner = finalWinnerName == "No match" && primaryResult.confidence > 0.5f
+                val isWinner = finalWinnerName == "No match" && (matchResults[primaryIdentityEngine]?.confidence ?: -1f) > 0.5f
                 val tMatchTotal = System.currentTimeMillis() - tMatchStart
                 val alignmentTraces = mutableMapOf<String, AlignmentTraceResult>()
                 
@@ -247,19 +231,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             engine?.align(ref.bmp, originalBitmap, ref.curatedLandmarksMap[anchorSourceEngine] ?: emptyList(), queryLandmarksPrimary, ref.vehicle)
                                 ?: AlignmentResult(false, null, -1f, "Aligner Missing")
                         }
-                        
                         val elapsed = System.currentTimeMillis() - t0
                         if (alignRes.success && alignRes.alignedImage != null) {
-                            val crop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
-                            if (crop != null) {
+                            val crop = manualCropOdometer(alignRes.alignedImage, ref.vehicle); if (crop != null) {
                                 val steps = OdometerOcrUtils.runMultiStepOcr(crop, context)
-                                alignmentTraces[alignName] = AlignmentTraceResult(alignName, true, elapsed, createScaledBase64(alignRes.alignedImage, 400, 70), steps, alignRes.metadata)
-                                crop.recycle()
+                                alignmentTraces[alignName] = AlignmentTraceResult(alignName, true, elapsed, createScaledBase64(alignRes.alignedImage, 400, 70), steps, alignRes.metadata); crop.recycle()
                             }
                             alignRes.alignedImage.recycle()
-                        } else {
-                            alignmentTraces[alignName] = AlignmentTraceResult(alignName, false, elapsed, "", emptyList(), alignRes.metadata)
-                        }
+                        } else { alignmentTraces[alignName] = AlignmentTraceResult(alignName, false, elapsed, "", emptyList(), alignRes.metadata) }
                     }
                     bestOdometer = OdometerOcrUtils.pickBestOdometer(alignmentTraces.values.flatMap { it.ocrTraces }) ?: "FAILED"
                 }
@@ -268,6 +247,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, bestOdometer, activeAlignments, tDeskewTotal, tDiscoveryTotal)
             
+            // Phase 43: Mirror HTML line number (index + 1) in JSON
             val photoJson = serializePhotoResultToJson(
                 index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal,
                 discoveryResults, vetoSweep, vehicleResultsMap, vehicles, hardcodedWinner
@@ -276,102 +256,55 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
-
-            // Cleanup
-            vehicleResultsMap.values.forEach { vr -> 
-                vr.alignmentTraces.values.forEach { trace -> 
-                    trace.ocrTraces.forEach { step -> step.bitmap.recycle() } 
-                } 
-            }
+            vehicleResultsMap.values.forEach { vr -> vr.alignmentTraces.values.forEach { trace -> trace.ocrTraces.forEach { step -> step.bitmap.recycle() } } }
             originalBitmap.recycle()
-            
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
         withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
     }
     currentFile.appendText(footer)
-    
-    // Construct global report object with reference manifest
     val finalReport = JSONObject().apply {
-        put("timestamp", timestamp)
-        put("total_photos", total)
-        
-        val refManifest = JSONObject()
-        vehicles.forEach { v ->
-            val vJson = if (v.landmarkTextBlocksJson.isNullOrEmpty()) JSONObject() else JSONObject(v.landmarkTextBlocksJson)
-            refManifest.put(v.name, vJson)
-        }
-        put("reference_vehicles", refManifest)
-        put("results", jsonResults)
+        put("timestamp", timestamp); put("total_photos", total)
+        val refManifest = JSONObject(); vehicles.forEach { v -> refManifest.put(v.name, if (v.landmarkTextBlocksJson.isNullOrEmpty()) JSONObject() else JSONObject(v.landmarkTextBlocksJson)) }
+        put("reference_vehicles", refManifest); put("results", jsonResults)
     }
-    
-    File(reportDir, "alignment_results_${timestamp}.json").writeText(finalReport.toString(2))
-    cachedRefs.forEach { it.bmp.recycle() }
+    File(reportDir, "alignment_results_${timestamp}.json").writeText(finalReport.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
 }
 
 private fun serializePhotoResultToJson(
-    index: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tDiscovery: Long,
+    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tDiscovery: Long,
     discovery: Map<String, OcrResult>, vetoSweep: Map<String, Map<Int, VetoResult>>,
-    vResults: Map<Int, SingleVehicleResult>, vehicles: List<Vehicle>,
-    groundTruth: String?
+    vResults: Map<Int, SingleVehicleResult>, vehicles: List<Vehicle>, groundTruth: String?
 ): JSONObject {
     return JSONObject().apply {
-        put("index", index); put("file", fileName); put("winner", winner); put("ground_truth", groundTruth ?: "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
-        
-        val fullImageOcrTimings = JSONObject()
-        discovery.forEach { (name, res) -> fullImageOcrTimings.put(name, if (name == "ML Kit") tDeskew + res.executionTimeMs else res.executionTimeMs) }
-        put("has_heatmap", discovery.values.any { it.rawHeatmap != null })
-        put("full_image_ocr_timings", fullImageOcrTimings)
-        
-        val vSweepJson = JSONObject()
-        vetoSweep.forEach { (engine, results) ->
+        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", groundTruth ?: "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
+        val fullImageOcrTimings = JSONObject(); discovery.forEach { (name, res) -> fullImageOcrTimings.put(name, if (name == "ML Kit") tDeskew + res.executionTimeMs else res.executionTimeMs) }
+        put("has_heatmap", discovery.values.any { it.rawHeatmap != null }); put("full_image_ocr_timings", fullImageOcrTimings)
+        val vSweepJson = JSONObject(); vetoSweep.forEach { (engine, results) ->
             val safeVehicles = results.filter { vRes -> !vRes.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }
             vSweepJson.put(engine, JSONObject().apply { put("safe_count", safeVehicles.size); put("safe_vehicles", JSONArray(safeVehicles)) })
-        }
-        put("veto_accuracy_sweep", vSweepJson)
-
-        val dResults = JSONObject()
-        discovery.forEach { (name, res) ->
-            val landmarksArray = JSONArray()
-            res.textBlocks.forEach { block -> 
-                val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
-                if (cleanedText.length > 1) {
+        }; put("veto_accuracy_sweep", vSweepJson)
+        val dResults = JSONObject(); discovery.forEach { (name, res) ->
+            val landmarksArray = JSONArray(); res.textBlocks.forEach { block -> 
+                val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text); if (cleanedText.length > 1) {
                     landmarksArray.put(JSONObject().apply { 
-                        put("text", cleanedText)
-                        put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
-                        put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
-                        put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
-                        put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
+                        put("text", cleanedText); put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble()); put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
+                        put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble()); put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
                         val metaJson = JSONObject(); block.metadata.forEach { (k, v) -> metaJson.put(k, v) }; put("metadata", metaJson) 
                     })
                 }
-            }
-            dResults.put(name, landmarksArray)
-        }
-        put("discovery_landmarks", dResults)
-
-        val vehicleResults = JSONArray()
-        vResults.values.forEach { vr -> 
+            }; dResults.put(name, landmarksArray)
+        }; put("discovery_landmarks", dResults)
+        val vehicleResults = JSONArray(); vResults.values.forEach { vr -> 
             vehicleResults.put(JSONObject().apply { 
                 put("vehicle", vr.vehicleName); put("veto_reason", vr.vetoReason); put("veto_my_manifest", JSONArray(vr.vetoMyManifest)); put("veto_pool", JSONArray(vr.vetoPool))
-                val identityMethods = JSONObject()
-                vr.identityResults.forEach { (name, res) -> 
-                    identityMethods.put(name, JSONObject().apply { 
-                        put("success", res.success); put("confidence", res.confidence.toDouble()); put("time_ms", res.timeMs)
-                        val metaJson = JSONObject(); res.metadata.forEach { (k,v) -> metaJson.put(k,v) }; put("metadata", metaJson) 
-                    }) 
-                }
-                put("identity_methods", identityMethods)
-                val traces = JSONObject()
-                vr.alignmentTraces.forEach { (name, trace) -> 
-                    traces.put(name, JSONObject().apply { 
-                        put("success", trace.success); put("time_ms", trace.timeMs)
-                        trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) } 
-                    }) 
-                }
-                put("traces", traces) 
+                val identityMethods = JSONObject(); vr.identityResults.forEach { (name, res) -> 
+                    identityMethods.put(name, JSONObject().apply { put("success", res.success); put("confidence", res.confidence.toDouble()); put("time_ms", res.timeMs); val metaJson = JSONObject(); res.metadata.forEach { (k,v) -> metaJson.put(k,v) }; put("metadata", metaJson) }) 
+                }; put("identity_methods", identityMethods)
+                val traces = JSONObject(); vr.alignmentTraces.forEach { (name, trace) -> 
+                    traces.put(name, JSONObject().apply { put("success", trace.success); put("time_ms", trace.timeMs); trace.metadata.forEach { (mk, mv) -> put(mk.lowercase().replace(" ", "_"), mv) } }) 
+                }; put("traces", traces) 
             }) 
-        }
-        put("vehicles", vehicleResults)
+        }; put("vehicles", vehicleResults)
     }
 }
 
@@ -414,20 +347,16 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
 }
 
 private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
-    val outputStream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-    return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+    val outputStream = ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream); return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 }
 
 private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
-    if (bitmap.isRecycled) return ""
-    val scale = targetWidth.toFloat() / bitmap.width; val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
+    if (bitmap.isRecycled) return ""; val scale = targetWidth.toFloat() / bitmap.width; val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
     val b64 = bitmapToBase64(scaled, quality); scaled.recycle(); return b64
 }
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
-    val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = android.graphics.Canvas(annotated)
-    val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f; color = android.graphics.Color.RED }
+    val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = android.graphics.Canvas(annotated); val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f; color = android.graphics.Color.RED }
     vehicle.odometerCropLeft?.let { l -> canvas.drawRect(l * bmp.width, (vehicle.odometerCropTop ?: 0f) * bmp.height, (vehicle.odometerCropRight ?: 1f) * bmp.width, (vehicle.odometerCropBottom ?: 1f) * bmp.height, paint) }
     return annotated
 }
@@ -441,46 +370,20 @@ private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
 }
 
 private fun loadGroundTruth(context: Context): Map<String, String> {
-    val file = File(context.filesDir, "ground_truth.json")
-    if (!file.exists()) return emptyMap()
+    val file = File(context.filesDir, "ground_truth.json"); if (!file.exists()) return emptyMap()
     return try { val json = JSONObject(file.readText()); val map = mutableMapOf<String, String>(); val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); map[key.lowercase()] = json.getString(key) }; map } catch (e: Exception) { emptyMap() }
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
-    if (json.isNullOrEmpty()) return emptyList()
-    val list = mutableListOf<TextBlock>()
+    if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
     try {
-        val root = JSONObject(json)
-        
-        val array = if (root.has(engineName)) {
-            root.getJSONArray(engineName)
-        } else if (json.startsWith("[")) {
-            JSONArray(json)
-        } else {
-            val keys = root.keys()
-            if (keys.hasNext()) root.getJSONArray(keys.next()) else null
-        } ?: return emptyList()
-
+        val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else { val keys = root.keys(); if (keys.hasNext()) root.getJSONArray(keys.next()) else null } ?: return emptyList()
         for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i)
-            val text = obj.getString("text")
-            val cx = obj.optDouble("cx", 0.0)
-            val cy = obj.optDouble("cy", 0.0)
-            val w = obj.optDouble("w", 0.0)
-            val h = obj.optDouble("h", 0.0)
-            
-            val cleanText = OdometerOcrUtils.cleanLandmarkString(text)
-            
-            val left = ((cx - w/2.0) * imgW).toInt()
-            val top = ((cy - h/2.0) * imgH).toInt()
-            val right = ((cx + w/2.0) * imgW).toInt()
-            val bottom = ((cy + h/2.0) * imgH).toInt()
-            
+            val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
+            val cleanText = OdometerOcrUtils.cleanLandmarkString(text); val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt(); val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
             list.add(TextBlock(cleanText, android.graphics.Rect(left, top, right, bottom)))
         }
-    } catch (e: Exception) { 
-        Log.e("ExperimentAlignment", "Failed to parse landmarks", e)
-    }
+    } catch (e: Exception) { Log.e("ExperimentAlignment", "Failed to parse landmarks", e) }
     return list
 }
 
@@ -489,14 +392,11 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
         if (targetDir.exists()) targetDir.deleteRecursively(); targetDir.mkdirs()
         context.contentResolver.openInputStream(uri)?.use { input ->
             ZipInputStream(input).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val file = File(targetDir, entry.name)
-                    if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }
+                var entry = zis.nextEntry; while (entry != null) {
+                    val file = File(targetDir, entry.name); if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }
                     zis.closeEntry(); entry = zis.nextEntry
                 }
             }
-        }
-        true
+        }; true
     } catch (e: Exception) { false }
 }
