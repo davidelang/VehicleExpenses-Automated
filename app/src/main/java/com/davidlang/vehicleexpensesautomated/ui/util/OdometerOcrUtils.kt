@@ -248,6 +248,7 @@ object OdometerOcrUtils {
         paddleEngine: NativePaddleEngine? = null
     ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
+        val mlKitClient = if (engineName == "ML Kit") TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
         
         suspend fun exec(bmp: Bitmap): String? {
             return when (engineName) {
@@ -256,10 +257,9 @@ object OdometerOcrUtils {
                         val scale = targetHeight.toFloat() / bmp.height.toFloat()
                         Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
                     } else bmp
-                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                     val image = InputImage.fromBitmap(resized, 0)
                     try {
-                        val visionText = recognizer.process(image).await()
+                        val visionText = mlKitClient!!.process(image).await()
                         val res = visionText.text.filter { it.isDigit() }
                         if (resized != bmp) resized.recycle()
                         res
