@@ -29,6 +29,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalFocusManager
 import com.davidlang.vehicleexpensesautomated.ui.util.RectF
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -63,6 +71,7 @@ fun LandmarkDebugDialog(
     
     // Local state for editing
     var editableLandmarks by remember { mutableStateOf(landmarks) }
+    val focusManager = LocalFocusManager.current
 
     // Optimization Phase 37: Async image loading to prevent Main-thread stall
     var processedBitmap by remember { mutableStateOf<Bitmap?>(sourceImage) }
@@ -233,13 +242,41 @@ fun LandmarkDebugDialog(
                                                             editableLandmarks = newList
                                                         },
                                                         textStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(48.dp)
+                                                            .focusProperties {
+                                                                up = FocusRequester.Cancel
+                                                                down = FocusRequester.Cancel
+                                                                left = FocusRequester.Cancel
+                                                                right = FocusRequester.Cancel
+                                                            }
+                                                            .onPreviewKeyEvent { event ->
+                                                                if (event.type == KeyEventType.KeyDown) {
+                                                                    when (event.key) {
+                                                                        Key.Tab -> {
+                                                                            val direction = if (event.isShiftPressed) FocusDirection.Previous else FocusDirection.Next
+                                                                            focusManager.moveFocus(direction)
+                                                                            true
+                                                                        }
+                                                                        Key.Enter, Key.NumPadEnter -> {
+                                                                            focusManager.moveFocus(FocusDirection.Next)
+                                                                            true
+                                                                        }
+                                                                        else -> false
+                                                                    }
+                                                                } else {
+                                                                    false
+                                                                }
+                                                            },
                                                         colors = TextFieldDefaults.colors(
                                                             unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                                                             focusedContainerColor = MaterialTheme.colorScheme.surface,
                                                             unfocusedIndicatorColor = Color.Transparent,
                                                             focusedIndicatorColor = MaterialTheme.colorScheme.primary
                                                         ),
+                                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                                         singleLine = true
                                                     )
                                                 } else {
