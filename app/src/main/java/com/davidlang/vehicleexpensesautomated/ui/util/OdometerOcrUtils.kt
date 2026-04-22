@@ -329,8 +329,7 @@ object OdometerOcrUtils {
     }
 
     /**
-     * Consolidates landmarks from all 5 engines into a single JSON manifest.
-     * Keyed by engine name.
+     * Consolidates landmarks from all engines into a single JSON manifest.
      */
     fun serializeMultiEngineLandmarks(results: Map<String, OcrResult>): String {
         val t0 = System.currentTimeMillis()
@@ -351,8 +350,34 @@ object OdometerOcrUtils {
             }
             root.put(engineName, array)
         }
-        Log.i("OCR_PERF", "serializeMultiEngineLandmarks took ${System.currentTimeMillis() - t0}ms for ${results.size} engines")
+        Log.i("OCR_PERF", "serializeMultiEngineLandmarks took ${System.currentTimeMillis() - t0}ms")
         return root.toString()
+    }
+
+    /**
+     * Phase 46: Reconstructs discoveryResults from the stored manifest.
+     */
+    fun deserializeMultiEngineLandmarks(json: String?, imgW: Int, imgH: Int): Map<String, OcrResult> {
+        if (json.isNullOrEmpty()) return emptyMap()
+        val results = mutableMapOf<String, OcrResult>()
+        try {
+            val root = JSONObject(json)
+            val engines = root.keys()
+            while (engines.hasNext()) {
+                val name = engines.next()
+                val array = root.getJSONArray(name)
+                val blocks = mutableListOf<TextBlock>()
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val cx = obj.getDouble("cx"); val cy = obj.getDouble("cy"); val w = obj.getDouble("w"); val h = obj.getDouble("h")
+                    val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt()
+                    val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
+                    blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom)))
+                }
+                results[name] = OcrResult(engineName = name, textBlocks = blocks, imageWidth = imgW, imageHeight = imgH, debugText = blocks.joinToString(" ") { it.text })
+            }
+        } catch (e: Exception) { Log.e("OdometerOcr", "Deserialization failed", e) }
+        return results
     }
 
     // COMPATIBILITY WRAPPERS
