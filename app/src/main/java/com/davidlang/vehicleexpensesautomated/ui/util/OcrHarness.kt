@@ -37,8 +37,11 @@ object OcrHarness {
         val filtered = OdometerOcrUtils.applyBilateral(gray)
         gray.recycle()
 
-        // Phase 55: Tesseract and ML Kit retained for numeric digit refinement
         val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine())
+        
+        // Add Paddle-Lite for refinement if available
+        val paddle = NativePaddleEngine(context, isConstrained = true)
+        if (paddle.isAvailable) enginesList.add(paddle)
 
         val results = enginesList.associate { engine ->
             engine.name to engine.recognize(filtered)
