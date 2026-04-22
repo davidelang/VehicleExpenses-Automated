@@ -28,6 +28,50 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         private var isNativeLibLoaded = false
         private var detectionInputBuffer: FloatArray? = null
         private var lastUsedInputSize = 0
+        
+        /**
+         * Phase 58: Static-like helper for experimental refinement without re-initializing.
+         */
+        suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>): String = withContext(Dispatchers.IO) {
+            if (sharedRecognizer == null) return@withContext ""
+            runRecognitionStageStatic(bitmap, targetHeight, dictionary).text
+        }
+
+        private fun runRecognitionStageStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>): RecStageResult {
+            val tStart = System.currentTimeMillis(); val predictor = sharedRecognizer ?: return RecStageResult("", 0, 0f)
+            val targetWidth = 640
+            val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
+            val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
+            val scale = targetHeight.toFloat() / bitmap.height.toFloat()
+            val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
+            val sh = targetHeight
+            val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+            val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(padded); canvas.drawColor(Color.BLACK); canvas.drawBitmap(scaled, 0f, 0f, null)
+            scaled.recycle()
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = padded.getPixel(x, y)
+                    floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                    floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.5f) / 0.5f
+                    floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.5f) / 0.5f
+                }
+            }
+            padded.recycle()
+            try {
+                inputTensor.setData(floatData); predictor.run()
+                val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val data = outputTensor.floatData
+                val result = StringBuilder(); var lastIdx = -1; var totalConf = 0f; var charCount = 0
+                for (i in 0 until seqLen) {
+                    var maxIdx = 0; var maxVal = -1f; for (j in 0 until dictSize) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
+                    if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) { result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++ }
+                    lastIdx = maxIdx
+                }
+                return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, if (charCount > 0) totalConf / charCount else 0f)
+            } catch (t: Throwable) { return RecStageResult("", 0, 0f) }
+        }
+
+        private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
     }
 
     init {
@@ -66,6 +110,8 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         dictionary.clear()
         context.assets.open(assetPath).bufferedReader().use { reader -> reader.forEachLine { dictionary.add(it) } }
     }
+    
+    fun getDictionary(): List<String> = dictionary
 
     private fun createPredictor(modelPath: String): PaddlePredictor {
         val config = MobileConfig(); config.setModelFromFile(modelPath); config.setThreads(4); config.setPowerMode(PowerMode.LITE_POWER_HIGH)
@@ -274,7 +320,6 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         } catch (t: Throwable) { return RecStageResult("", 0, 0f) }
     }
 
-    private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
     private fun cropBitmap(bmp: Bitmap, rect: Rect): Bitmap {
         val left = max(0, rect.left); val top = max(0, rect.top); val width = min(rect.width(), bmp.width - left); val height = min(rect.height(), bmp.height - top)
         return Bitmap.createBitmap(bmp, left, top, width, height)
