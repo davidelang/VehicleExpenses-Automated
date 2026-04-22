@@ -213,8 +213,8 @@ fun ManageVehiclesScreen(
                     onCropChanged = { odo, other -> odometerCropRect = odo; otherTextCropRect = other })
                 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingOtherText = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOcrArea) "Done Odo" else "Edit Odo") }
-                    Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOtherText) "Done Other" else "Edit Other") }
+                    Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingOtherText = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOcrArea) "Done Odo" else "Mark Odo") }
+                    Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOtherText) "Done Ignore" else "Mark to Ignore") }
                 }
                 
                 // Phase 46: Split Run/Show Discovery
