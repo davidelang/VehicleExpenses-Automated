@@ -56,13 +56,6 @@ app/src/main/res/raw/*
 alignment_report_*.html
 alignment_results_*.json
 
-# Stray research files
-ref_*.png
-success_160.png
-tflite_*.raw
-tflite_*.png
-try_*.png
-
 # Extra explicit ignores for caches and generated code
 **/build/
 **/generated/
