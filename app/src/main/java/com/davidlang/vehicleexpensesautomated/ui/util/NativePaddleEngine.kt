@@ -32,13 +32,14 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         /**
          * Phase 58: Static-like helper for experimental refinement without re-initializing.
          */
-        suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>): String = withContext(Dispatchers.IO) {
-            if (sharedRecognizer == null) return@withContext ""
+        suspend fun runConstrainedStatic(bitmap: Bitmap?, targetHeight: Int, dictionary: List<String>): String = withContext(Dispatchers.IO) {
+            if (sharedRecognizer == null || bitmap == null || bitmap.isRecycled) return@withContext ""
             runRecognitionStageStatic(bitmap, targetHeight, dictionary).text
         }
 
         private fun runRecognitionStageStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>): RecStageResult {
             val tStart = System.currentTimeMillis(); val predictor = sharedRecognizer ?: return RecStageResult("", 0, 0f)
+            if (bitmap.isRecycled) return RecStageResult("", 0, 0f)
             val targetWidth = 640
             val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
             val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)

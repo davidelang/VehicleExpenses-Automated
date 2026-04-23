@@ -203,16 +203,17 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val refinementTraces = mutableMapOf<String, RefinementTrace>()
                 
                 if (isWinner) {
-                    finalWinnerName = ref.vehicle.name
                     val t0 = System.currentTimeMillis()
                     val alignRes = ImageAlignmentUtils.anchorAlign(ref.width, ref.height, originalBitmap, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                     val elapsedAlign = System.currentTimeMillis() - t0
+
                     if (alignRes.success && alignRes.alignedImage != null) {
+                        finalWinnerName = ref.vehicle.name // Only confirm winner if alignment succeeded
                         alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
 
                         // Phase 58: Refinement Matrix (4 Crops x 4 Processing x 2 Engines)
                         val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
-                        if (exactCrop != null) {
+                        if (exactCrop != null && !exactCrop.isRecycled) {
                             val cropVariants = listOf("Exact", "Padded", "48px", "48px-Padded")
                             val processingVariants = listOf("Original", "CLAHE", "Otsu", "CLAHE+Otsu")
 
@@ -230,51 +231,60 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val padded = OdometerOcrUtils.addPadding(scaled, 10, Color.BLACK)
                                         scaled.recycle(); padded
                                     }
-                                    else -> exactCrop.copy(Bitmap.Config.ARGB_8888, true)
+                                    else -> null
                                 }
 
-                                processingVariants.forEach { pVar ->
-                                    val tRef0 = System.currentTimeMillis()
-                                    val procCrop = when (pVar) {
-                                        "Original" -> baseCrop.copy(Bitmap.Config.ARGB_8888, true)
-                                        "CLAHE" -> OdometerOcrUtils.applyClahe(baseCrop)
-                                        "Otsu" -> OdometerOcrUtils.applyOtsu(baseCrop)
-                                        "CLAHE+Otsu" -> OdometerOcrUtils.applyClaheOtsu(baseCrop)
-                                        else -> baseCrop.copy(Bitmap.Config.ARGB_8888, true)
-                                    }
-
-                                    val stratName = "$cVar ($pVar)"
-                                    val results = mutableListOf<OcrStepResult>()
-
-                                    // Run both engines for each processed crop
-                                    listOf("ML Kit", "Paddle-Lite").forEach { engineName ->
-                                        val text = if (engineName == "ML Kit") {
-                                            val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
-                                            val visionText = recognizer.process(com.google.mlkit.vision.common.InputImage.fromBitmap(procCrop, 0)).await()
-                                            visionText.text.filter { c -> c.isDigit() }
-                                        } else {
-                                            NativePaddleEngine.runConstrainedStatic(procCrop, procCrop.height, paddleEngine.getDictionary())
+                                if (baseCrop != null && !baseCrop.isRecycled) {
+                                    processingVariants.forEach { pVar ->
+                                        val tRef0 = System.currentTimeMillis()
+                                        val procCrop = when (pVar) {
+                                            "Original" -> baseCrop.copy(Bitmap.Config.ARGB_8888, true)
+                                            "CLAHE" -> OdometerOcrUtils.applyClahe(baseCrop)
+                                            "Otsu" -> OdometerOcrUtils.applyOtsu(baseCrop)
+                                            "CLAHE+Otsu" -> OdometerOcrUtils.applyClaheOtsu(baseCrop)
+                                            else -> null
                                         }
-                                        results.add(OcrStepResult(engineName, procCrop.copy(Bitmap.Config.ARGB_8888, true), text))
-                                    }
 
-                                    refinementTraces[stratName] = RefinementTrace(stratName, System.currentTimeMillis() - tRef0, results)
-                                    procCrop.recycle()
+                                        if (procCrop != null && !procCrop.isRecycled) {
+                                            val stratName = "$cVar ($pVar)"
+                                            val results = mutableListOf<OcrStepResult>()
+
+                                            // Run both engines for each processed crop
+                                            listOf("ML Kit", "Paddle-Lite").forEach { engineName ->
+                                                try {
+                                                    val text = if (engineName == "ML Kit") {
+                                                        val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                                                        val image = com.google.mlkit.vision.common.InputImage.fromBitmap(procCrop, 0)
+                                                        val visionText = recognizer.process(image).await()
+                                                        visionText.text.filter { c -> c.isDigit() }
+                                                    } else {
+                                                        NativePaddleEngine.runConstrainedStatic(procCrop, procCrop.height, paddleEngine.getDictionary())
+                                                    }
+                                                    results.add(OcrStepResult(engineName, procCrop.copy(Bitmap.Config.ARGB_8888, true), text))
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "OCR Engine $engineName failed for $stratName", e)
+                                                }
+                                            }
+                                            refinementTraces[stratName] = RefinementTrace(stratName, System.currentTimeMillis() - tRef0, results)
+                                            procCrop.recycle()
+                                        }
+                                    }
+                                    baseCrop.recycle()
                                 }
-                                baseCrop.recycle()
                             }
                             exactCrop.recycle()
                         }
-                        alignRes.alignedImage.recycle()
 
-                        // Move consensus inside winner block
+                        // Final Consensus: Only if alignment was a success
                         val allReadings = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
                         if (allReadings.isNotEmpty()) {
                             bestOdometer = allReadings.groupBy { it }.maxBy { it.value.size }.key
                         }
-                    } else { 
+                        alignRes.alignedImage.recycle()
+                    } else {
                         alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata)
-                        finalWinnerName = "No match" // Reset if alignment failed
+                        finalWinnerName = "No match" // Explicitly reset if alignment failed
+                        alignRes.alignedImage?.recycle()
                     }
                 }
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
