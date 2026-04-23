@@ -266,12 +266,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             exactCrop.recycle()
                         }
                         alignRes.alignedImage.recycle()
+                        
+                        // Move consensus inside winner block
+                        val allReadings = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
+                        if (allReadings.isNotEmpty()) {
+                            bestOdometer = allReadings.groupBy { it }.maxBy { it.value.size }.key
+                        }
                     } else { alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) }
-                    
-                    val allReadings = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                    if (allReadings.isNotEmpty()) {
-                        bestOdometer = allReadings.groupBy { it }.maxBy { it.value.size }.key
-                    }
                 }
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
             }
