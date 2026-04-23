@@ -127,6 +127,13 @@ object OdometerOcrUtils {
         return out
     }
 
+    fun applyClaheOtsu(bitmap: Bitmap): Bitmap {
+        val clahe = applyClahe(bitmap)
+        val out = applyOtsu(clahe)
+        clahe.recycle()
+        return out
+    }
+
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
         return OcrUtils.isBlockInCrop(block, crop, w, h)
     }

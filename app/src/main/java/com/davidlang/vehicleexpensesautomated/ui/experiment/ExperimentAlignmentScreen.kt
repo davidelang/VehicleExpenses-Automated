@@ -109,7 +109,8 @@ data class ReferenceCache(
     val vehicle: Vehicle, 
     val referenceBase64: String, 
     val curatedLandmarks: List<TextBlock>, 
-    val bmp: Bitmap
+    val width: Int,
+    val height: Int
 )
 
 data class RefinementTrace(
@@ -146,20 +147,21 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
         val curated = getFullLandmarksFromJson(v.landmarkTextBlocksJson, "ML Kit", bmp.width, bmp.height)
-        val annotatedBmp = drawCropBoxesOnReference(bmp, v); val refBase64 = createScaledBase64(annotatedBmp, 400, 70); annotatedBmp.recycle()
-        ReferenceCache(v, refBase64, curated, bmp)
+        val annotatedBmp = drawCropBoxesOnReference(bmp, v)
+        val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
+        val w = bmp.width; val h = bmp.height
+        annotatedBmp.recycle(); bmp.recycle()
+        ReferenceCache(v, refBase64, curated, w, h)
     }
     
     val jsonResults = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
     val footer = "</table></body></html>"
     
-    // Phase 58 Strategies
-    val strategies = listOf(
-        "ML Kit (Exact)", "ML Kit (Padded 10px)",
-        "ML Kit 48px (Exact)", "ML Kit 48px (Padded 10px)",
-        "Paddle FR (Exact)", "Paddle FR (Padded 10px)",
-        "Paddle 48px (Exact)", "Paddle 48px (Padded 10px)"
-    )
+    // Phase 58 Strategies: 4 Crops x 4 Processing x 2 Engines = 32 Variants
+    val cropTypes = listOf("Exact", "Padded", "48px", "48px-Padded")
+    val procTypes = listOf("Original", "CLAHE", "Otsu", "CLAHE+Otsu")
+    val strategies = mutableListOf<String>()
+    cropTypes.forEach { c -> procTypes.forEach { p -> strategies.add("$c ($p)") } }
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, strategies)) 
@@ -173,6 +175,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
+            if (originalBitmap != rawBitmap) rawBitmap.recycle()
+            
             val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
             val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
             val tilt = deskewRes.angle; val tDeskewTotal = deskewRes.timeMs
@@ -199,33 +203,72 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 if (isWinner) {
                     finalWinnerName = ref.vehicle.name
                     val t0 = System.currentTimeMillis()
-                    val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
+                    val alignRes = ImageAlignmentUtils.anchorAlign(ref.width, ref.height, originalBitmap, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                     val elapsedAlign = System.currentTimeMillis() - t0
                     if (alignRes.success && alignRes.alignedImage != null) {
                         alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
                         
-                        // Phase 58: Refinement Loop
+                        // Phase 58: Refinement Matrix (4 Crops x 4 Processing x 2 Engines)
                         val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
                         if (exactCrop != null) {
-                            val paddedCrop = OdometerOcrUtils.addPadding(exactCrop, 10, Color.BLACK)
+                            val cropVariants = listOf("Exact", "Padded", "48px", "48px-Padded")
+                            val processingVariants = listOf("Original", "CLAHE", "Otsu", "CLAHE+Otsu")
                             
-                            for (strat in strategies) {
-                                val tRef0 = System.currentTimeMillis()
-                                val engine = if (strat.contains("ML Kit")) "ML Kit" else "Paddle-Lite"
-                                val h = if (strat.contains("48px") || strat.contains("49px")) 48 else null
-                                val bmpInput = if (strat.contains("Padded")) paddedCrop else exactCrop
+                            cropVariants.forEach { cVar ->
+                                val baseCrop = when (cVar) {
+                                    "Exact" -> exactCrop.copy(exactCrop.config, true)
+                                    "Padded" -> OdometerOcrUtils.addPadding(exactCrop, 10, Color.BLACK)
+                                    "48px" -> {
+                                        val scale = 48f / exactCrop.height.toFloat()
+                                        Bitmap.createScaledBitmap(exactCrop, (exactCrop.width * scale).toInt(), 48, true)
+                                    }
+                                    "48px-Padded" -> {
+                                        val scale = 48f / exactCrop.height.toFloat()
+                                        val scaled = Bitmap.createScaledBitmap(exactCrop, (exactCrop.width * scale).toInt(), 48, true)
+                                        val padded = OdometerOcrUtils.addPadding(scaled, 10, Color.BLACK)
+                                        scaled.recycle(); padded
+                                    }
+                                    else -> exactCrop.copy(exactCrop.config, true)
+                                }
                                 
-                                val steps = OdometerOcrUtils.runMultiStepOcr(bmpInput, context, engine, h, paddleEngine)
-                                refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
+                                processingVariants.forEach { pVar ->
+                                    val tRef0 = System.currentTimeMillis()
+                                    val procCrop = when (pVar) {
+                                        "Original" -> baseCrop.copy(baseCrop.config, true)
+                                        "CLAHE" -> OdometerOcrUtils.applyClahe(baseCrop)
+                                        "Otsu" -> OdometerOcrUtils.applyOtsu(baseCrop)
+                                        "CLAHE+Otsu" -> OdometerOcrUtils.applyClaheOtsu(baseCrop)
+                                        else -> baseCrop.copy(baseCrop.config, true)
+                                    }
+                                    
+                                    val stratName = "$cVar ($pVar)"
+                                    val results = mutableListOf<OcrStepResult>()
+                                    
+                                    // Run both engines for each processed crop
+                                    listOf("ML Kit", "Paddle-Lite").forEach { engineName ->
+                                        val text = if (engineName == "ML Kit") {
+                                            val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                                            val visionText = recognizer.process(com.google.mlkit.vision.common.InputImage.fromBitmap(procCrop, 0)).await()
+                                            visionText.text.filter { it.isDigit() }
+                                        } else {
+                                            NativePaddleEngine.runConstrainedStatic(procCrop, procCrop.height, paddleEngine.getDictionary())
+                                        }
+                                        results.add(OcrStepResult(engineName, procCrop.copy(procCrop.config, true), text))
+                                    }
+                                    
+                                    refinementTraces[stratName] = RefinementTrace(stratName, System.currentTimeMillis() - tRef0, results)
+                                    procCrop.recycle()
+                                }
+                                baseCrop.recycle()
                             }
-                            exactCrop.recycle(); paddedCrop.recycle()
+                            exactCrop.recycle()
                         }
                         alignRes.alignedImage.recycle()
                     } else { alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) }
                     
-                    val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                    if (allResults.isNotEmpty()) {
-                        bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxBy { it.value }.key
+                    val allReadings = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
+                    if (allReadings.isNotEmpty()) {
+                        bestOdometer = allReadings.groupBy { it }.maxBy { it.value.size }.key
                     }
                 }
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
@@ -237,7 +280,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
-            vehicleResultsMap.values.forEach { vr -> vr.refinementTraces.values.forEach { tr -> tr.steps.forEach { step -> step.bitmap.recycle() } } }
+            
+            // Clean up refinement Bitmaps immediately after HTML generation
+            vehicleResultsMap.values.forEach { vr -> 
+                vr.refinementTraces.values.forEach { tr -> 
+                    tr.steps.forEach { step -> step.bitmap.recycle() } 
+                } 
+            }
             originalBitmap.recycle()
         } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
         withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
@@ -248,7 +297,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         val refManifest = JSONObject(); vehicles.forEach { v -> refManifest.put(v.name, if (v.landmarkTextBlocksJson.isNullOrEmpty()) JSONObject() else JSONObject(v.landmarkTextBlocksJson)) }
         put("reference_vehicles", refManifest); put("results", jsonResults)
     }
-    File(reportDir, "alignment_results_${timestamp}.json").writeText(finalReport.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
+    File(reportDir, "alignment_results_${timestamp}.json").writeText(finalReport.toString(2))
 }
 
 private fun serializePhotoResultToJson(
@@ -277,10 +326,12 @@ private fun serializePhotoResultToJson(
                 val refDetails = JSONObject()
                 vr.refinementTraces.forEach { (strat, trace) -> 
                     val stratObj = JSONObject(); stratObj.put("time_ms", trace.timeMs)
-                    val stepsArr = JSONArray(); trace.steps.forEach { step -> val stepObj = JSONObject(); stepObj.put("stage", step.stageName); stepObj.put("text", step.text); stepsArr.put(stepObj) }
-                    stratObj.put("steps", stepsArr); refDetails.put(strat, stratObj)
+                    val stepsArr = JSONArray(); trace.steps.forEach { step -> 
+                        val stepObj = JSONObject(); stepObj.put("engine", step.stageName); stepObj.put("text", step.text); stepsArr.put(stepObj) 
+                    }
+                    stratObj.put("variants", stepsArr); refDetails.put(strat, stratObj)
                 }
-                put("refinement_details", refDetails)
+                put("refinement_matrix", refDetails)
             }) 
         }; put("vehicles", vehicleResults)
     }
@@ -288,14 +339,14 @@ private fun serializePhotoResultToJson(
 
 private fun buildHtmlHeader(time: String, total: Int, strategies: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
-    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:200px;'># & Original</th>")
-    strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
-    appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
+    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 16px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; } .consensus { background: #f0f8ff; font-weight: bold; }</style></head><body>")
+    appendLine("<h1>OCR Refinement Experiment (Phase 58)</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:120px;'># & Original</th>")
+    strategies.forEach { appendLine("<th style='width:180px;'>$it</th>") }
+    appendLine("<th style='width:200px;'>Refinement Consensus</th></tr>")
 }
 
-private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, strategies: List<String>, tDeskew: Long, tDiscovery: Long): String = buildString {
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$deskewedBase64'></td>")
+private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, strategies: List<String>, tDeskew: Long, tDiscoveryTotal: Long): String = buildString {
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscoveryTotal}ms<br><img src='data:image/jpeg;base64,$deskewedBase64'></td>")
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     
     val allReadings = mutableListOf<String>()
@@ -307,17 +358,24 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${createScaledBase64(step.bitmap, 150, 60)}'><br>${step.text ?: "---"}</div>") 
+                    // Scale all images to same height (60px) for column comparison
+                    val b64 = if (!step.bitmap.isRecycled) createScaledBase64ByHeight(step.bitmap, 60, 70) else ""
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,$b64'><br><b>${step.text ?: "---"}</b></div>") 
                 }
             } else appendLine("<i>No refinement data</i>")
         } else appendLine("<i>No match</i>")
         appendLine("</td>")
     }
     
-    appendLine("<td><b>Winner:</b> $winnerName<br><br><b>Consensus:</b><br>")
+    appendLine("<td class='consensus'><b>Winner:</b> $winnerName<br><br><b>Consensus:</b><br>")
     val freq = allReadings.groupBy { it }.mapValues { it.value.size }.toList().sortedByDescending { it.second }
-    freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/48)<br>") }
+    freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/32)<br>") }
     appendLine("</td></tr>")
+}
+
+private fun createScaledBase64ByHeight(bitmap: Bitmap, targetHeight: Int, quality: Int): String {
+    if (bitmap.isRecycled) return ""; val scale = targetHeight.toFloat() / bitmap.height; val scaled = Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), targetHeight, true)
+    val b64 = bitmapToBase64(scaled, quality); scaled.recycle(); return b64
 }
 
 private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {

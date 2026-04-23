@@ -1,5 +1,10 @@
 # Vehicle Expenses Automated — TODO Updated
 
+## Cleanup & Maintenance
+- [ ] Cleanup legacy debug files (ref_*.png, tflite_*.raw) from root directory
+- [ ] Implement Phase 58 Alignment Experiment Refinement Matrix (4x4x2)
+- [ ] Optimize memory in Alignment Experiment (recycle Bitmaps strictly)
+
 ## Core Logic & Recovery
 - **Identity & Matching:**
   - [ ] **Conflict Resolution Integration:** Connect the existing `ConflictResolutionScreen` to the identification flow for ambiguous results.

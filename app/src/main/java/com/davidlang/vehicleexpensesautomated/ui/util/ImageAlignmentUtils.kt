@@ -72,7 +72,8 @@ object ImageAlignmentUtils {
     }
 
     fun anchorAlign(
-        refBmp: Bitmap,
+        refWidth: Int,
+        refHeight: Int,
         queryBmp: Bitmap,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
@@ -202,7 +203,7 @@ object ImageAlignmentUtils {
         )
 
         return try {
-            val outBmp = Bitmap.createBitmap(refBmp.width, refBmp.height, Bitmap.Config.ARGB_8888)
+            val outBmp = Bitmap.createBitmap(refWidth, refHeight, Bitmap.Config.ARGB_8888)
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
