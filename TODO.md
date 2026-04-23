@@ -1,6 +1,7 @@
 # Vehicle Expenses Automated — TODO Updated
 
 ## Cleanup & Maintenance
+- [ ] **CRITICAL:** Revert/Cleanup git history to remove large binary files (ref_*.png, tflite_*.raw) accidentally committed by agent.
 - [ ] Cleanup legacy debug files (ref_*.png, tflite_*.raw) from root directory
 - [ ] Implement Phase 58 Alignment Experiment Refinement Matrix (4x4x2)
 - [ ] Optimize memory in Alignment Experiment (recycle Bitmaps strictly)

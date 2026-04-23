@@ -141,6 +141,7 @@ data class AlignmentTraceResult(
 
 private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
     val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.sortedBy { it.name } ?: return@withContext
+    Log.i(TAG, "Starting experiment with ${photos.size} photos")
     val total = photos.size; val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val groundTruth = loadGroundTruth(context)
     val paddleEngine = NativePaddleEngine(context, isConstrained = true)
@@ -289,7 +290,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 } 
             }
             originalBitmap.recycle()
-        } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
+        } catch (e: Exception) { 
+            Log.e(TAG, "FATAL CRASH processing ${file.name}", e)
+        }
         withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
     }
     currentFile.appendText(footer)
