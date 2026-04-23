@@ -220,13 +220,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             }
                             exactCrop.recycle(); paddedCrop.recycle()
                         }
+                        
+                        val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
+                        if (allResults.isNotEmpty()) {
+                            bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
+                        }
+                        
                         alignRes.alignedImage.recycle()
                     } else { alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) }
-                    
-                    val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                    if (allResults.isNotEmpty()) {
-                        bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxBy { it.value }.key
-                    }
                 }
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
             }
