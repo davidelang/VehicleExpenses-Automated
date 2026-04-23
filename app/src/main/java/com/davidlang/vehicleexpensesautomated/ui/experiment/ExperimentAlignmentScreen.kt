@@ -209,13 +209,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     val elapsedAlign = System.currentTimeMillis() - t0
                     if (alignRes.success && alignRes.alignedImage != null) {
                         alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
-                        
+
                         // Phase 58: Refinement Matrix (4 Crops x 4 Processing x 2 Engines)
                         val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
                         if (exactCrop != null) {
                             val cropVariants = listOf("Exact", "Padded", "48px", "48px-Padded")
                             val processingVariants = listOf("Original", "CLAHE", "Otsu", "CLAHE+Otsu")
-                            
+
                             cropVariants.forEach { cVar ->
                                 val baseCrop = when (cVar) {
                                     "Exact" -> exactCrop.copy(Bitmap.Config.ARGB_8888, true)
@@ -232,7 +232,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
                                     else -> exactCrop.copy(Bitmap.Config.ARGB_8888, true)
                                 }
-                                
+
                                 processingVariants.forEach { pVar ->
                                     val tRef0 = System.currentTimeMillis()
                                     val procCrop = when (pVar) {
@@ -242,10 +242,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         "CLAHE+Otsu" -> OdometerOcrUtils.applyClaheOtsu(baseCrop)
                                         else -> baseCrop.copy(Bitmap.Config.ARGB_8888, true)
                                     }
-                                    
+
                                     val stratName = "$cVar ($pVar)"
                                     val results = mutableListOf<OcrStepResult>()
-                                    
+
                                     // Run both engines for each processed crop
                                     listOf("ML Kit", "Paddle-Lite").forEach { engineName ->
                                         val text = if (engineName == "ML Kit") {
@@ -257,7 +257,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         }
                                         results.add(OcrStepResult(engineName, procCrop.copy(Bitmap.Config.ARGB_8888, true), text))
                                     }
-                                    
+
                                     refinementTraces[stratName] = RefinementTrace(stratName, System.currentTimeMillis() - tRef0, results)
                                     procCrop.recycle()
                                 }
@@ -266,13 +266,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             exactCrop.recycle()
                         }
                         alignRes.alignedImage.recycle()
-                        
+
                         // Move consensus inside winner block
                         val allReadings = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
                         if (allReadings.isNotEmpty()) {
                             bestOdometer = allReadings.groupBy { it }.maxBy { it.value.size }.key
                         }
-                    } else { alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) }
+                    } else { 
+                        alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata)
+                        finalWinnerName = "No match" // Reset if alignment failed
+                    }
                 }
                 vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
             }
@@ -357,7 +360,7 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
     val allReadings = mutableListOf<String>()
     strategies.forEach { strat ->
         appendLine("<td>")
-        if (vRes != null) {
+        if (vRes != null && vRes.refinementTraces.containsKey(strat)) {
             val trace = vRes.refinementTraces[strat]
             if (trace != null) {
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
