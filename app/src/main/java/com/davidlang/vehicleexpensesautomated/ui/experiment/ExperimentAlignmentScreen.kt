@@ -156,9 +156,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 58 Strategies
     val strategies = listOf(
         "ML Kit (Exact)", "ML Kit (Padded 10px)",
-        "ML Kit 48px (Exact)", "ML Kit 48px (Padded 10px)"
-        // "Paddle FR (Exact)", "Paddle FR (Padded 10px)",
-        // "Paddle 48px (Exact)", "Paddle 48px (Padded 10px)"
+        "ML Kit 48px (Exact)", "ML Kit 48px (Padded 10px)",
+        "Paddle (Exact)", "Paddle (Padded 10px)"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 

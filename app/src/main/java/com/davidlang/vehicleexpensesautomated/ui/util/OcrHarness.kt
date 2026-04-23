@@ -37,7 +37,7 @@ object OcrHarness {
         val filtered = OdometerOcrUtils.applyBilateral(gray)
         gray.recycle()
 
-        val enginesList = mutableListOf<OcrEngine>(TesseractEngine(), MlKitEngine())
+        val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
         
         // Add Paddle-Lite for refinement if available
         val paddle = NativePaddleEngine(context, isConstrained = true)
