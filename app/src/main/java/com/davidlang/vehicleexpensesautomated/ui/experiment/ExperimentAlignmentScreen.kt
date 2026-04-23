@@ -31,6 +31,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -216,7 +217,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             
                             cropVariants.forEach { cVar ->
                                 val baseCrop = when (cVar) {
-                                    "Exact" -> exactCrop.copy(exactCrop.config, true)
+                                    "Exact" -> exactCrop.copy(Bitmap.Config.ARGB_8888, true)
                                     "Padded" -> OdometerOcrUtils.addPadding(exactCrop, 10, Color.BLACK)
                                     "48px" -> {
                                         val scale = 48f / exactCrop.height.toFloat()
@@ -228,17 +229,17 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val padded = OdometerOcrUtils.addPadding(scaled, 10, Color.BLACK)
                                         scaled.recycle(); padded
                                     }
-                                    else -> exactCrop.copy(exactCrop.config, true)
+                                    else -> exactCrop.copy(Bitmap.Config.ARGB_8888, true)
                                 }
                                 
                                 processingVariants.forEach { pVar ->
                                     val tRef0 = System.currentTimeMillis()
                                     val procCrop = when (pVar) {
-                                        "Original" -> baseCrop.copy(baseCrop.config, true)
+                                        "Original" -> baseCrop.copy(Bitmap.Config.ARGB_8888, true)
                                         "CLAHE" -> OdometerOcrUtils.applyClahe(baseCrop)
                                         "Otsu" -> OdometerOcrUtils.applyOtsu(baseCrop)
                                         "CLAHE+Otsu" -> OdometerOcrUtils.applyClaheOtsu(baseCrop)
-                                        else -> baseCrop.copy(baseCrop.config, true)
+                                        else -> baseCrop.copy(Bitmap.Config.ARGB_8888, true)
                                     }
                                     
                                     val stratName = "$cVar ($pVar)"
@@ -249,11 +250,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val text = if (engineName == "ML Kit") {
                                             val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
                                             val visionText = recognizer.process(com.google.mlkit.vision.common.InputImage.fromBitmap(procCrop, 0)).await()
-                                            visionText.text.filter { it.isDigit() }
+                                            visionText.text.filter { c -> c.isDigit() }
                                         } else {
                                             NativePaddleEngine.runConstrainedStatic(procCrop, procCrop.height, paddleEngine.getDictionary())
                                         }
-                                        results.add(OcrStepResult(engineName, procCrop.copy(procCrop.config, true), text))
+                                        results.add(OcrStepResult(engineName, procCrop.copy(Bitmap.Config.ARGB_8888, true), text))
                                     }
                                     
                                     refinementTraces[stratName] = RefinementTrace(stratName, System.currentTimeMillis() - tRef0, results)
