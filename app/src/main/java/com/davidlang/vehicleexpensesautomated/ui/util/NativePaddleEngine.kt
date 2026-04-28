@@ -124,7 +124,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
-    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+    override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
+
+    suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
         val predictor = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
