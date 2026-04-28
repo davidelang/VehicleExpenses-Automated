@@ -39,24 +39,25 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
             val tStart = System.currentTimeMillis()
-            val targetHeight = 48; val targetWidth = 640
+            val targetHeight = 48
+            val scale = targetHeight.toFloat() / bitmap.height.toFloat()
+            val sw = (bitmap.width * scale).toInt()
+            val targetWidth = ((sw + 31) / 32) * 32
+            
             val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
             val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
-            val scale = targetHeight.toFloat() / bitmap.height.toFloat()
-            val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
-            val sh = targetHeight
-            val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+            val scaled = Bitmap.createScaledBitmap(bitmap, sw, targetHeight, true)
             val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(padded); canvas.drawColor(Color.BLACK); canvas.drawBitmap(scaled, 0f, 0f, null)
             scaled.recycle()
 
-            val mean = floatArrayOf(0.485f, 0.456f, 0.406f); val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+            val mean = 0.5f; val std = 0.5f
             for (y in 0 until targetHeight) {
                 for (x in 0 until targetWidth) {
                     val px = padded.getPixel(x, y)
-                    floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
-                    floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
-                    floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                    floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                    floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
+                    floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
                 }
             }
             padded.recycle()
