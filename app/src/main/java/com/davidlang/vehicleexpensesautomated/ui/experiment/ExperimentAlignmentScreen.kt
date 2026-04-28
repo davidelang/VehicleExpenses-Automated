@@ -176,8 +176,8 @@ data class ProcessedPhotoResult(
 
 private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
     val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.sortedBy { it.name } ?: return@withContext
-    val total = photos.size; val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-    val groundTruth = loadGroundTruth(context)
+    val total = photos.size
+    val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val paddleEngineV2 = NativePaddleEngine(context, variant = "V2")
     val paddleEngineV3 = NativePaddleEngine(context, variant = "V3")
 
@@ -224,7 +224,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
                 val queryLandmarksPrimary = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
                 val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksPrimary, cachedRefs.map { it.vehicle }, "ML Kit")
-                val hardcodedWinner = groundTruth[file.name.lowercase()]
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
 
                 cachedRefs.forEach { ref ->
@@ -278,14 +277,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, hardcodedWinner, strategies)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies)
                 jsonResults.put(photoJson)
                 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
                 
                 val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
-                currentResult = ProcessedPhotoResult(finalWinnerName, bestOdometer, bestOdometer, tDeskewTotal, tDiscoveryTotal, deskewedBase64, queryOcrDiscovery.debugText, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, hardcodedWinner, emptyMap())
+                currentResult = ProcessedPhotoResult(finalWinnerName, bestOdometer, bestOdometer, tDeskewTotal, tDiscoveryTotal, deskewedBase64, queryOcrDiscovery.debugText, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, null, emptyMap())
 
                 // Ensure UI update is dispatched BEFORE we move to cleanup
                 withContext(Dispatchers.Main) { 
@@ -331,10 +330,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 private fun serializePhotoResultToJson(
     lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tDiscovery: Long,
     discovery: OcrResult, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
-    vehicles: List<Vehicle>, groundTruth: String?, strategies: List<String>
+    vehicles: List<Vehicle>, strategies: List<String>
 ): JSONObject {
     return JSONObject().apply {
-        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", groundTruth ?: "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
+        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
         val fullImageOcrTimings = JSONObject(); fullImageOcrTimings.put("ML Kit", tDeskew + discovery.executionTimeMs)
         put("has_heatmap", discovery.rawHeatmap != null); put("full_image_ocr_timings", fullImageOcrTimings)
         val vSweepJson = JSONObject(); val safeVehicles = vetoSweep.filter { !it.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }
@@ -418,11 +417,6 @@ private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
     val width = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt(); val height = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
     if (width <= 0 || height <= 0) return null
     return Bitmap.createBitmap(bmp, left, top, width.coerceAtMost(bmp.width - left), height.coerceAtMost(bmp.height - top))
-}
-
-private fun loadGroundTruth(context: Context): Map<String, String> {
-    val file = File(context.filesDir, "ground_truth.json"); if (!file.exists()) return emptyMap()
-    return try { val json = JSONObject(file.readText()); val map = mutableMapOf<String, String>(); val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); map[key.lowercase()] = json.getString(key) }; map } catch (e: Exception) { emptyMap() }
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
