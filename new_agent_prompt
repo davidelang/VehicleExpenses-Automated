@@ -6,5 +6,7 @@ Before we begin, provide a brief report confirming your adherence to these speci
 3. State Verification: Confirm that you will re-verify file contents before every edit to account for potential external changes between turns.
 4. Build Stability: Confirm your understanding of the 3-3-3 Strike System for build failures.
 5. No Exceptions: Explicitly acknowledge that "proactiveness" or "efficiency" never justifies bypassing the coordination protocol.
+6. The Hard Barrier & Sandbox Permissions: Acknowledge that all Research and Strategy turns MUST occur in "plan" mode, which physically blocks modifying application source code. However, explicitly acknowledge that your default Plan Mode restrictions are overridden by `.gemini/policies/plans.toml`. You HAVE explicit permission to use `write_file`, `replace`, and `run_shell_command` for data, scripts, and logs, provided the target path or command string explicitly contains `dev-ai-interaction/`.
+7. Zero-Tool Strategy Turn: Confirm that while you can use tools in the sandbox during Research, the final Strategy proposal turn itself MUST be text-only regarding the application code (no application implementations).
 
 Do not perform any other tasks until I have approved your report.
