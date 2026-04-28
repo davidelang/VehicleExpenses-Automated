@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Usage: ./build_app ["Commit Message"] [file1 file2 ...]
+# If only a commit message is provided, or no arguments are provided, 
+# the script skips committing and only builds.
+
+if [ "$#" -ge 2 ]; then
+    COMMIT_MSG="$1"
+    shift
+
+    # Add specified files
+    for file in "$@"; do
+        git add "$file"
+    done
+
+    # Commit
+    git commit -m "$COMMIT_MSG"
+    if [ $? -ne 0 ]; then
+        echo "Commit failed."
+        exit 1
+    fi
+elif [ "$#" -eq 1 ]; then
+    echo "Info: Only a commit message provided. Skipping commit phase."
+fi
+
+# Check for uncommitted tracked files
+DIRTY_FILES=$(git status --porcelain -uno)
+if [ -n "$DIRTY_FILES" ]; then
+    echo "Error: Uncommitted tracked files detected:"
+    echo "$DIRTY_FILES"
+    echo "Compile aborted to ensure accurate 'git describe' versioning."
+    exit 1
+fi
+
+# Build
+./gradlew assembleDebug
+if [ $? -eq 0 ]; then
+    echo "Build successful. Updating 'builds' tag."
+    git tag -f builds
+    exit 0
+else
+    echo "Build failed. Rolling back commit to keep history clean."
+    if [ "$#" -ge 2 ]; then
+        git reset HEAD~1
+    fi
+    exit 1
+fi
