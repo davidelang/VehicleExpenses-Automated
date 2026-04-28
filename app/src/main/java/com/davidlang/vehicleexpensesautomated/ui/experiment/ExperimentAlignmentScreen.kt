@@ -245,6 +245,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             // Phase 58: Refinement Loop
                             val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
                             if (exactCrop != null) {
+                                // Reconstruct Ground Truth: Save raw crop for host-side labeling
+                                val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
+                                try {
+                                    cropFile.outputStream().use { out ->
+                                        exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                                    }
+                                } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
+
                                 for (strat in strategies) {
                                     val tRef0 = System.currentTimeMillis()
                                     val engine = when {
