@@ -19,7 +19,7 @@ import kotlin.math.min
  */
 class HybridOcrEngine(private val context: Context) : OcrEngine {
     override val name = "Paddle-ML-Hybrid"
-    private val paddleDiscovery = NativePaddleEngine(context, isConstrained = false)
+    private val paddleDiscovery = NativePaddleEngine(context, variant = "V3")
     private val mlKitRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {

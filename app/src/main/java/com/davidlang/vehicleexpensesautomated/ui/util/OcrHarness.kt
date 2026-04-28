@@ -40,7 +40,7 @@ object OcrHarness {
         val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
         
         // Add Paddle-Lite for refinement if available
-        val paddle = NativePaddleEngine(context, isConstrained = true)
+        val paddle = NativePaddleEngine(context, variant = "V3")
         if (paddle.isAvailable) enginesList.add(paddle)
 
         val results = enginesList.associate { engine ->
