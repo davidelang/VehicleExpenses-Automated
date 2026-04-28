@@ -65,6 +65,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var currentPhotoName by remember { mutableStateOf("") }
+    var totalPhotos by remember { mutableIntStateOf(0) }
     val resultsList = remember { mutableStateListOf<PhotoResultSummary>() }
 
     val experimentDir = File(context.filesDir, "experiment_photos")
@@ -82,15 +83,34 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
         Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
         if (isRunning) {
-            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(currentPhotoName, style = MaterialTheme.typography.labelSmall); Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall) }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { 
+                    Text(currentPhotoName, style = MaterialTheme.typography.labelSmall)
+                    Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall) 
+                }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
         Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
-        Button(onClick = { if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }; scope.launch { isRunning = true; resultsList.clear(); runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p -> resultsList.add(res); progress = p; currentPhotoName = res.photoName }; isRunning = false; status = "Complete! Reports saved." } }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
+        Button(onClick = { 
+            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
+            scope.launch { 
+                totalPhotos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.size ?: 0
+                isRunning = true; resultsList.clear()
+                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p -> 
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName 
+                }
+                isRunning = false; status = "Complete! Reports saved." 
+            } 
+        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
@@ -169,7 +189,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         var finalWinnerName = "No match"
         var bestOdometer = "FAILED"
         try {
-            withContext(Dispatchers.Main) { onLog("Processing ${file.name}...") }
+            withContext(Dispatchers.Main) { onLog("") }
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
             val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
