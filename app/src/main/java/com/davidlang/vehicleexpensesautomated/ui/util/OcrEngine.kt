@@ -102,7 +102,7 @@ data class OcrResult(
     }
 }
 
-data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?)
+data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?, val boxes: List<android.graphics.Rect> = emptyList())
 
 interface OcrEngine {
     val name: String

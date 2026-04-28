@@ -158,11 +158,27 @@ data class AlignmentTraceResult(
     val metadata: Map<String, String> = emptyMap()
 )
 
+data class ProcessedPhotoResult(
+    val winnerName: String,
+    val bestOdometer: String,
+    val bestOdometerDisplay: String,
+    val tDeskewTotal: Long,
+    val tDiscoveryTotal: Long,
+    val deskewedBase64: String,
+    val discoveryDebugText: String,
+    val discoveryResult: OcrResult,
+    val primaryVetoResults: Map<Int, VetoResult>,
+    val vehicleResultsMap: Map<Int, SingleVehicleResult>,
+    val hardcodedWinner: String?,
+    val annotatedCrops: Map<String, String>
+)
+
 private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
     val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.sortedBy { it.name } ?: return@withContext
     val total = photos.size; val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val groundTruth = loadGroundTruth(context)
-    val paddleEngine = NativePaddleEngine(context, isConstrained = true)
+    val paddleEngineV2 = NativePaddleEngine(context, variant = "V2")
+    val paddleEngineV3 = NativePaddleEngine(context, variant = "V3")
 
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
@@ -176,9 +192,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 58 Strategies
     val strategies = listOf(
-        "ML Kit (Exact)", "ML Kit (Padded 10px)",
-        "ML Kit 48px (Exact)", "ML Kit 48px (Padded 10px)",
-        "Paddle (Exact)", "Paddle (Padded 10px)"
+        "ML Kit Native (Exact)", "ML Kit 48px (Exact)", "ML Kit 32px (Exact)",
+        "Paddle V2 Greedy", "Paddle V3 Greedy"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -187,81 +202,121 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     var currentFile = startNewFile()
     
     photos.forEachIndexed { index, file ->
+        var currentResult: ProcessedPhotoResult? = null
         var finalWinnerName = "No match"
         var bestOdometer = "FAILED"
         try {
             withContext(Dispatchers.Main) { onLog("") }
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
-            var originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
-            val deskewedBase64 = createScaledBase64(originalBitmap, 150, 50)
-            val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap)
-            val tilt = deskewRes.angle; val tDeskewTotal = deskewRes.timeMs
-            if (Math.abs(tilt) > 0.2f) { 
-                val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap, -tilt)
-                if (leveled != originalBitmap) { originalBitmap.recycle(); originalBitmap = leveled }
-            }
-            val tDiscoveryStart = System.currentTimeMillis()
-            val queryOcrDiscovery = OcrHarness.runDiscovery(originalBitmap, context)
-            val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
-            val queryLandmarksPrimary = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
-            val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksPrimary, cachedRefs.map { it.vehicle }, "ML Kit")
-            val hardcodedWinner = groundTruth[file.name.lowercase()]
-            val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
-
-            cachedRefs.forEach { ref ->
-                val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
-                val tMatchStart = System.currentTimeMillis()
-                val isWinner = finalWinnerName == "No match" && !veto.isVetoed
-                val tMatchTotal = System.currentTimeMillis() - tMatchStart
-                var alignmentTrace: AlignmentTraceResult? = null
-                val refinementTraces = mutableMapOf<String, RefinementTrace>()
-                
-                if (isWinner) {
-                    finalWinnerName = ref.vehicle.name
-                    val t0 = System.currentTimeMillis()
-                    val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
-                    val elapsedAlign = System.currentTimeMillis() - t0
-                    if (alignRes.success && alignRes.alignedImage != null) {
-                        alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
-                        
-                        // Phase 58: Refinement Loop
-                        val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
-                        if (exactCrop != null) {
-                            val paddedCrop = OdometerOcrUtils.addPadding(exactCrop, 10, Color.BLACK)
-                            
-                            for (strat in strategies) {
-                                val tRef0 = System.currentTimeMillis()
-                                val engine = if (strat.contains("ML Kit")) "ML Kit" else "Paddle-Lite"
-                                val h = if (strat.contains("48px") || strat.contains("49px")) 48 else null
-                                val bmpInput = if (strat.contains("Padded")) paddedCrop else exactCrop
-                                
-                                val steps = OdometerOcrUtils.runMultiStepOcr(bmpInput, context, engine, h, paddleEngine)
-                                refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
-                            }
-                            exactCrop.recycle(); paddedCrop.recycle()
-                        }
-                        
-                        val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                        if (allResults.isNotEmpty()) {
-                            bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
-                        }
-                        
-                        alignRes.alignedImage.recycle()
-                    } else { alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) }
+            var originalBitmap: Bitmap? = null
+            try {
+                originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
+                val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!)
+                val tilt = deskewRes.angle; val tDeskewTotal = deskewRes.timeMs
+                if (Math.abs(tilt) > 0.2f) { 
+                    val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap!!, -tilt)
+                    if (leveled != originalBitmap) { originalBitmap!!.recycle(); originalBitmap = leveled }
                 }
-                vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, tMatchTotal, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
+                val tDiscoveryStart = System.currentTimeMillis()
+                val queryOcrDiscovery = OcrHarness.runDiscovery(originalBitmap!!, context)
+                val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
+                val queryLandmarksPrimary = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
+                val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksPrimary, cachedRefs.map { it.vehicle }, "ML Kit")
+                val hardcodedWinner = groundTruth[file.name.lowercase()]
+                val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
+
+                cachedRefs.forEach { ref ->
+                    val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
+                    val tMatchStart = System.currentTimeMillis()
+                    val isWinner = finalWinnerName == "No match" && !veto.isVetoed
+                    
+                    var alignmentTrace: AlignmentTraceResult? = null
+                    val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                    
+                    if (isWinner) {
+                        finalWinnerName = ref.vehicle.name
+                        val t0 = System.currentTimeMillis()
+                        val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
+                        val elapsedAlign = System.currentTimeMillis() - t0
+                        if (alignRes.success && alignRes.alignedImage != null) {
+                            alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
+                            
+                            // Phase 58: Refinement Loop
+                            val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
+                            if (exactCrop != null) {
+                                for (strat in strategies) {
+                                    val tRef0 = System.currentTimeMillis()
+                                    val engine = when {
+                                        strat.contains("ML Kit") -> "ML Kit"
+                                        strat.contains("V2") -> "Paddle V2 Greedy"
+                                        else -> "Paddle V3 Greedy"
+                                    }
+                                    val h = when {
+                                        strat.contains("48px") -> 48
+                                        strat.contains("32px") -> 32
+                                        else -> null
+                                    }
+                                    val activePaddle = if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
+                                    
+                                    val steps = OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
+                                    refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
+                                }
+                                exactCrop.recycle()
+                            }
+                            
+                            val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
+                            if (allResults.isNotEmpty()) {
+                                bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
+                            }
+                            
+                            alignRes.alignedImage.recycle()
+                        } else { alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) }
+                    }
+                    vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, System.currentTimeMillis() - tMatchStart, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
+                }
+
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, hardcodedWinner, strategies)
+                jsonResults.put(photoJson)
+                
+                if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
+                currentFile.appendText(rowHtml); currentSize += rowHtml.length
+                
+                val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
+                currentResult = ProcessedPhotoResult(finalWinnerName, bestOdometer, bestOdometer, tDeskewTotal, tDiscoveryTotal, deskewedBase64, queryOcrDiscovery.debugText, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, hardcodedWinner, emptyMap())
+
+                // Ensure UI update is dispatched BEFORE we move to cleanup
+                withContext(Dispatchers.Main) { 
+                    onProgress(resultSummary, (index + 1).toFloat() / total) 
+                }
+                
+                val runtime = Runtime.getRuntime(); val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+                Log.i("MEMORY_CHECK", "[Image ${index + 1}/${total}] Used Heap: ${usedMem}MB / ${runtime.maxMemory() / 1024 / 1024}MB")
+                
+                delay(150)
+            } finally {
+                if (originalBitmap != rawBitmap) rawBitmap.recycle()
+                originalBitmap?.recycle()
             }
-
-            val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
-            val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, hardcodedWinner, strategies)
-            jsonResults.put(photoJson)
-
-            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
-            currentFile.appendText(rowHtml); currentSize += rowHtml.length
-            vehicleResultsMap.values.forEach { vr -> vr.refinementTraces.values.forEach { tr -> tr.steps.forEach { step -> step.bitmap.recycle() } } }
-            originalBitmap.recycle()
-        } catch (e: Exception) { Log.e(TAG, "Failed ${file.name}", e) }
-        withContext(Dispatchers.Main) { onProgress(PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer), (index + 1).toFloat() / total) }
+        } catch (e: Exception) { 
+            Log.e(TAG, "Failed ${file.name}", e) 
+        } finally {
+            // DEFENSIVE CLEANUP: Recycle all bitmaps generated for this photo
+            currentResult?.let { res ->
+                res.discoveryResult.croppedBitmap?.let { if (!it.isRecycled) it.recycle() }
+                res.discoveryResult.openCvProcessedBitmap?.let { if (!it.isRecycled) it.recycle() }
+                res.vehicleResultsMap.values.forEach { vr ->
+                    vr.refinementTraces.values.forEach { tr ->
+                        tr.steps.forEach { step ->
+                            if (!step.bitmap.isRecycled) step.bitmap.recycle()
+                        }
+                    }
+                }
+            }
+            currentResult = null // Explicitly nullify to prevent re-access
+            System.gc()
+        }
     }
     currentFile.appendText(footer)
     val finalReport = JSONObject().apply {

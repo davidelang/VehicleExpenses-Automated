@@ -241,54 +241,74 @@ object OdometerOcrUtils {
      * Phase 58: Multi-Column OCR Refinement.
      */
     suspend fun runMultiStepOcr(
-        bitmap: Bitmap, 
-        context: Context, 
-        engineName: String = "ML Kit", 
+        bitmap: Bitmap,
+        context: Context,
+        engineName: String = "ML Kit",
         targetHeight: Int? = null,
         paddleEngine: NativePaddleEngine? = null
     ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
         val mlKitClient = if (engineName == "ML Kit") TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
-        
-        suspend fun exec(bmp: Bitmap): String? {
+
+        suspend fun exec(bmp: Bitmap): Pair<String?, List<Rect>> {
             return when (engineName) {
                 "ML Kit" -> {
+                    val scale = if (targetHeight != null) targetHeight.toFloat() / bmp.height.toFloat() else 1.0f
                     val resized = if (targetHeight != null) {
-                        val scale = targetHeight.toFloat() / bmp.height.toFloat()
                         Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
                     } else bmp
                     val image = InputImage.fromBitmap(resized, 0)
                     try {
                         val visionText = mlKitClient!!.process(image).await()
                         val res = visionText.text.filter { it.isDigit() }
+                        val boxes = visionText.textBlocks.flatMap { block ->
+                            block.lines.flatMap { line ->
+                                line.elements.mapNotNull { element ->
+                                    element.boundingBox?.let { b ->
+                                        if (targetHeight != null) {
+                                            Rect((b.left / scale).toInt(), (b.top / scale).toInt(), (b.right / scale).toInt(), (b.bottom / scale).toInt())
+                                        } else b
+                                    }
+                                }
+                            }
+                        }
                         if (resized != bmp) resized.recycle()
-                        res
-                    } catch (e: Exception) { null }
+                        Pair(if (res.isNotBlank()) res else null, boxes)
+                    } catch (e: Exception) { Pair(null, emptyList()) }
                 }
-                "Paddle-Lite" -> {
+                "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
-                        NativePaddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary())
-                    }
+                        val res = NativePaddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary(), it.isV3())
+                        Pair(res, emptyList())
+                    } ?: Pair(null, emptyList())
                 }
-                else -> runOcr(bmp)
+                else -> Pair(runOcr(bmp), emptyList())
             }
         }
 
+        val paint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 2f }
+
         // 1. Raw (Fresh Copy)
         val raw = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        steps.add(OcrStepResult("Raw", raw, exec(raw)))
+        val res1 = exec(raw)
+        if (engineName == "ML Kit") { val canvas = Canvas(raw); res1.second.forEach { canvas.drawRect(it, paint) } }
+        steps.add(OcrStepResult("Raw", raw, res1.first, res1.second))
 
         // 2. Grayscale
         val gray = applyGrayscale(bitmap)
-        steps.add(OcrStepResult("Grayscale", gray, exec(gray)))
+        val res2 = exec(gray)
+        if (engineName == "ML Kit") { val canvas = Canvas(gray); res2.second.forEach { canvas.drawRect(it, paint) } }
+        steps.add(OcrStepResult("Grayscale", gray, res2.first, res2.second))
 
         // 3. Bilateral
         val bile = applyBilateral(bitmap)
-        steps.add(OcrStepResult("Bilateral", bile, exec(bile)))
+        val res3 = exec(bile)
+        if (engineName == "ML Kit") { val canvas = Canvas(bile); res3.second.forEach { canvas.drawRect(it, paint) } }
+        steps.add(OcrStepResult("Bilateral", bile, res3.first, res3.second))
 
+        if (mlKitClient != null) mlKitClient.close()
         return steps
     }
-
     fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {
         val out = Bitmap.createBitmap(bitmap.width + 2 * padding, bitmap.height + 2 * padding, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
