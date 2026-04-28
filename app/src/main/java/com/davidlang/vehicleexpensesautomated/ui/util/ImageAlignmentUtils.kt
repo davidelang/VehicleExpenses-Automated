@@ -117,7 +117,7 @@ object ImageAlignmentUtils {
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
                         // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
-                        if (kotlin.math.abs(rot) > 4.0f) continue
+                        if (kotlin.math.abs(rot) > 1.5f) continue
                         val tx = r1cx - (s * q1cx)
                         val ty = r1cy - (s * q1cy)
 
@@ -166,7 +166,7 @@ object ImageAlignmentUtils {
                                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
 
                                         // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
-                                        if (kotlin.math.abs(rot) > 4.0f) continue
+                                        if (kotlin.math.abs(rot) > 1.5f) continue
                                         val tx = rAcx - (s * qAcx)
                                         val ty = rAcy - (s * qAcy)
 
@@ -180,25 +180,23 @@ object ImageAlignmentUtils {
             }
         }
 
-        val top3 = allCandidates.sortedByDescending { it.distance }.take(3)
-        if (top3.isEmpty()) return AnchorResult(false, message = "No valid anchor sets.", timeMs = System.currentTimeMillis() - t0)
+        if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchor sets.", timeMs = System.currentTimeMillis() - t0)
 
-        // Average the top 3 candidates
-        val avgScale = top3.map { it.scale }.average().toFloat()
-        val avgRotation = top3.map { it.rotation }.average().toFloat()
-        val avgTx = top3.map { it.tx }.average().toFloat()
-        val avgTy = top3.map { it.ty }.average().toFloat()
+        // Robust Median Consensus
+        val medScale = allCandidates.map { it.scale }.median()
+        val medTx = allCandidates.map { it.tx }.median()
+        val medTy = allCandidates.map { it.ty }.median()
 
         val matrix = android.graphics.Matrix()
-        matrix.postScale(avgScale, avgScale)
+        matrix.postScale(medScale, medScale)
         // Phase 53: Zero-Rotation Warp. Global deskew already handled rotation.
-        matrix.postTranslate(avgTx, avgTy)
+        matrix.postTranslate(medTx, medTy)
 
         val metadata = mapOf(
-            "Candidates" to top3.mapIndexed { i, c ->
+            "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Average" to "S=%.3f, R=%.1f (Ignored), tx=%.1f, ty=%.1f".format(avgScale, avgRotation, avgTx, avgTy)
+            "Median" to "S=%.3f, tx=%.1f, ty=%.1f (of %d pairs)".format(medScale, medTx, medTy, allCandidates.size)
         )
 
         return try {
@@ -206,8 +204,17 @@ object ImageAlignmentUtils {
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Avg: S=%.3f, R=%.1f (Ignored), tx=%.1f, ty=%.1f".format(avgScale, avgRotation, avgTx, avgTy))
+            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Med: S=%.3f, tx=%.1f, ty=%.1f (%d)".format(medScale, medTx, medTy, allCandidates.size))
         } catch (e: Exception) {
+            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
+        }
+    }
+
+    private fun List<Float>.median(): Float {
+        if (isEmpty()) return 0f
+        val sorted = sorted()
+        return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2f else sorted[size / 2]
+    }
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
     }
