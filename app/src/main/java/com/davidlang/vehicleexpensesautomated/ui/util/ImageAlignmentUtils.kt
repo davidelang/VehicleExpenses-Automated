@@ -210,15 +210,6 @@ object ImageAlignmentUtils {
         }
     }
 
-    private fun List<Float>.median(): Float {
-        if (isEmpty()) return 0f
-        val sorted = sorted()
-        return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2f else sorted[size / 2]
-    }
-            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
-        }
-    }
-
     private fun dist(a: TextBlock, b: TextBlock): Double {
         val dx = (a.boundingBox.centerX() - b.boundingBox.centerX()).toDouble()
         val dy = (a.boundingBox.centerY() - b.boundingBox.centerY()).toDouble()
@@ -317,5 +308,11 @@ object ImageAlignmentUtils {
         val b = block.boundingBox
         val bL = b.left.toFloat() / imgW; val bT = b.top.toFloat() / imgH; val bR = b.right.toFloat() / imgW; val bB = b.bottom.toFloat() / imgH
         return bL >= crop.left && bR <= crop.right && bT >= crop.top && bB <= crop.bottom
+    }
+
+    private fun List<Float>.median(): Float {
+        if (isEmpty()) return 0f
+        val sorted = sorted()
+        return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2f else sorted[size / 2]
     }
 }
