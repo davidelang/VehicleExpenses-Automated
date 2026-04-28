@@ -1,0 +1,47 @@
+# .gemini/policies/plans.toml
+
+# BLOCK ALL tool calls that contain path traversal (..) in Plan Mode
+[[rule]]
+toolName = ["write_file", "replace", "run_shell_command", "read_file"]
+argsPattern = ".*\\.\\..*"
+decision = "deny"
+priority = 900
+modes = ["plan"]
+
+# ONLY allow write_file and replace if they target the dev-ai-interaction/ sandbox
+[[rule]]
+toolName = ["write_file", "replace"]
+argsPattern = ".*\"file_path\":\"dev-ai-interaction/.*"
+decision = "allow"
+priority = 850
+modes = ["plan"]
+
+# Deny all other write/replace in plan mode to protect the main tree
+[[rule]]
+toolName = ["write_file", "replace"]
+decision = "deny"
+priority = 840
+modes = ["plan"]
+
+# Allow shell commands ONLY if they are executed with the working directory explicitly set inside the sandbox.
+[[rule]]
+toolName = "run_shell_command"
+argsPattern = ".*\"dir_path\":\"[^\"]*dev-ai-interaction[^\"]*\""
+decision = "allow"
+priority = 800
+modes = ["plan"]
+
+# Explicitly block commands that attempt to traverse out of the sandbox via relative paths
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "(cd\\s+\\.\\.|\\.\\./)"
+decision = "deny"
+priority = 810
+modes = ["plan"]
+
+# Block sub-agent invocation in Plan Mode to prevent execution bypass of the "Atomic Turn" rule
+[[rule]]
+toolName = "invoke_agent"
+decision = "deny"
+priority = 950
+modes = ["plan"]
