@@ -285,7 +285,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes.rawBlocks)
                 jsonResults.put(photoJson)
                 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
@@ -336,12 +336,28 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 }
 
 private fun serializePhotoResultToJson(
-    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tDiscovery: Long,
+    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
-    vehicles: List<Vehicle>, strategies: List<String>
+    vehicles: List<Vehicle>, strategies: List<String>, deskewBlocks: List<TextBlock>
 ): JSONObject {
     return JSONObject().apply {
-        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("discovery_time_ms", tDiscovery)
+        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
+        
+        val deskewArray = JSONArray()
+        deskewBlocks.forEach { block ->
+            deskewArray.put(JSONObject().apply {
+                put("text", block.text)
+                put("cx", block.boundingBox.centerX().toDouble() / 1500.0)
+                // Normalize height using the same 1500px aspect ratio scaling logic
+                val aspect = discovery.imageHeight.toDouble() / discovery.imageWidth.toDouble()
+                put("cy", block.boundingBox.centerY().toDouble() / (1500.0 * aspect))
+                put("w", block.boundingBox.width().toDouble() / 1500.0)
+                put("h", block.boundingBox.height().toDouble() / (1500.0 * aspect))
+                put("angle", block.angle)
+            })
+        }
+        put("deskew_data", deskewArray)
+
         val fullImageOcrTimings = JSONObject(); fullImageOcrTimings.put("ML Kit", tDeskew + discovery.executionTimeMs)
         put("has_heatmap", discovery.rawHeatmap != null); put("full_image_ocr_timings", fullImageOcrTimings)
         val vSweepJson = JSONObject(); val safeVehicles = vetoSweep.filter { !it.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }

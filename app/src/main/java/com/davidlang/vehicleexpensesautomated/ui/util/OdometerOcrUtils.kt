@@ -39,7 +39,7 @@ object OdometerOcrUtils {
         }
     }
 
-    data class DeskewResult(val angle: Float, val timeMs: Long)
+    data class DeskewResult(val angle: Float, val timeMs: Long, val rawBlocks: List<TextBlock> = emptyList())
 
     suspend fun calculateAverageTextAngle(bitmap: Bitmap): DeskewResult {
         val t0 = System.currentTimeMillis()
@@ -47,11 +47,33 @@ object OdometerOcrUtils {
         val scaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * scale).toInt(), true)
         val ocrResult = extractFromPhotoBitmap(scaled)
         scaled.recycle()
-        val angles = ocrResult.textBlocks.map { it.angle }
+        
         val elapsed = System.currentTimeMillis() - t0
-        if (angles.isEmpty()) return DeskewResult(0f, elapsed)
-        val sortedAngles = angles.sorted()
-        return DeskewResult(sortedAngles[sortedAngles.size / 2], elapsed)
+        // Robust Filtering: Ignore very small blocks and noise
+        val candidates = ocrResult.textBlocks.filter { it.text.length > 1 && it.boundingBox.width() > 10 }
+        if (candidates.isEmpty()) return DeskewResult(0f, elapsed, ocrResult.textBlocks)
+        
+        // Width-Weighted Median Calculation
+        // 1. Sort by angle
+        val sorted = candidates.sortedBy { it.angle }
+        // 2. Total weight
+        val totalWeight = sorted.sumOf { it.boundingBox.width().toDouble() }
+        if (totalWeight == 0.0) return DeskewResult(0f, elapsed, candidates)
+        
+        // 3. Find the angle where cumulative weight reaches 50%
+        var cumulativeWeight = 0.0
+        var weightedMedianAngle = 0f
+        for (block in sorted) {
+            cumulativeWeight += block.boundingBox.width().toDouble()
+            if (cumulativeWeight >= totalWeight / 2.0) {
+                weightedMedianAngle = block.angle
+                break
+            }
+        }
+        
+        // Phase 62: Rotational Gating. Cap the deskew to reasonable limits to prevent "spinning" on noise.
+        val finalAngle = weightedMedianAngle.coerceIn(-20f, 20f)
+        return DeskewResult(finalAngle, elapsed, candidates)
     }
 
     fun cleanLandmarkString(text: String): String {
