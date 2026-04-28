@@ -286,18 +286,6 @@ object OdometerOcrUtils {
         val bile = applyBilateral(bitmap)
         steps.add(OcrStepResult("Bilateral", bile, exec(bile)))
 
-        // 4. CLAHE
-        val clahe = applyClahe(bitmap)
-        steps.add(OcrStepResult("CLAHE", clahe, exec(clahe)))
-
-        // 5. Otsu (After CLAHE)
-        val otsu = applyOtsu(clahe)
-        steps.add(OcrStepResult("Otsu", otsu, exec(otsu)))
-
-        // 6. Otsu-No-CLAHE (Phase 58)
-        val otsuNoClahe = applyOtsu(bile)
-        steps.add(OcrStepResult("Otsu-No-CLAHE", otsuNoClahe, exec(otsuNoClahe)))
-
         return steps
     }
 
