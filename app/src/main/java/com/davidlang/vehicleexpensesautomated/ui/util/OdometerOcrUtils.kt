@@ -260,7 +260,17 @@ object OdometerOcrUtils {
                     val image = InputImage.fromBitmap(resized, 0)
                     try {
                         val visionText = mlKitClient!!.process(image).await()
-                        val res = visionText.text.filter { it.isDigit() }
+                        val resBuilder = java.lang.StringBuilder()
+                        for (block in visionText.textBlocks) {
+                            for (line in block.lines) {
+                                val isFlipped = Math.abs(line.angle) > 135f
+                                val cleanedText = clean7SegmentDigits(line.text, isFlipped).filter { it.isDigit() }
+                                if (cleanedText.isNotBlank()) {
+                                    resBuilder.append(cleanedText)
+                                }
+                            }
+                        }
+                        val res = resBuilder.toString()
                         val boxes = visionText.textBlocks.flatMap { block ->
                             block.lines.flatMap { line ->
                                 line.elements.mapNotNull { element ->
