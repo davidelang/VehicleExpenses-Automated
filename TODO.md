@@ -45,6 +45,10 @@
 - [ ] **Improve reference dash photo setup UI:** Add odometer confirmation dialog.
 - [ ] **Settings Toggle:** Add settings toggle for OCR confidence threshold.
 
+## Refactoring & Technical Debt
+- [ ] **Refactor `OdometerOcrUtils.kt`:** Decompose into smaller utilities (`BitmapMathUtils`, `OpenCvFilters`, `MlKitWrapper`, `DigitSanitizationUtils`).
+- [ ] **Refactor `TfLiteOcrUtils.kt`:** Extract DBNet post-processing logic into a standalone `DbNetMath` object to separate algorithms from Android framework dependencies.
+
 ## Engineering Mandates (New)
 - [ ] **Memory Safety:** Every intermediate bitmap must be recycled immediately after use.
 

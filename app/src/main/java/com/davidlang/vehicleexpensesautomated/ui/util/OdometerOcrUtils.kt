@@ -10,25 +10,25 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.opencv.android.OpenCVLoader
-import org.opencv.core.*
-import org.opencv.imgproc.Imgproc
-import java.io.File
-import com.googlecode.tesseract.android.TessBaseAPI
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import kotlinx.coroutines.tasks.await
-import org.tensorflow.lite.Interpreter
+import com.googlecode.tesseract.android.TessBaseAPI
+import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import org.json.JSONArray
-import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.min
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import org.opencv.android.OpenCVLoader
+import org.opencv.core.Mat
+import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
 
 object OdometerOcrUtils {
     init {
@@ -296,24 +296,37 @@ object OdometerOcrUtils {
             }
         }
 
-        val paint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 2f }
+        val paint = Paint().apply { 
+            color = Color.RED
+            style = Paint.Style.STROKE
+            strokeWidth = 2f 
+        }
 
         // 1. Raw (Fresh Copy)
         val raw = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         val res1 = exec(raw)
-        if (engineName == "ML Kit") { val canvas = Canvas(raw); res1.second.forEach { canvas.drawRect(it, paint) } }
+        if (engineName == "ML Kit") { 
+            val canvas = Canvas(raw)
+            res1.second.forEach { canvas.drawRect(it, paint) } 
+        }
         steps.add(OcrStepResult("Raw", raw, res1.first, res1.second))
 
         // 2. Grayscale
         val gray = applyGrayscale(bitmap)
         val res2 = exec(gray)
-        if (engineName == "ML Kit") { val canvas = Canvas(gray); res2.second.forEach { canvas.drawRect(it, paint) } }
+        if (engineName == "ML Kit") { 
+            val canvas = Canvas(gray)
+            res2.second.forEach { canvas.drawRect(it, paint) } 
+        }
         steps.add(OcrStepResult("Grayscale", gray, res2.first, res2.second))
 
         // 3. Bilateral
         val bile = applyBilateral(bitmap)
         val res3 = exec(bile)
-        if (engineName == "ML Kit") { val canvas = Canvas(bile); res3.second.forEach { canvas.drawRect(it, paint) } }
+        if (engineName == "ML Kit") { 
+            val canvas = Canvas(bile)
+            res3.second.forEach { canvas.drawRect(it, paint) } 
+        }
         steps.add(OcrStepResult("Bilateral", bile, res3.first, res3.second))
 
         if (mlKitClient != null) mlKitClient.close()
@@ -403,9 +416,14 @@ object OdometerOcrUtils {
                 val blocks = mutableListOf<TextBlock>()
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
-                    val cx = obj.getDouble("cx"); val cy = obj.getDouble("cy"); val w = obj.getDouble("w"); val h = obj.getDouble("h")
-                    val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt()
-                    val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
+                    val cx = obj.getDouble("cx")
+                    val cy = obj.getDouble("cy")
+                    val w = obj.getDouble("w")
+                    val h = obj.getDouble("h")
+                    val left = ((cx - w / 2.0) * imgW).toInt()
+                    val top = ((cy - h / 2.0) * imgH).toInt()
+                    val right = ((cx + w / 2.0) * imgW).toInt()
+                    val bottom = ((cy + h / 2.0) * imgH).toInt()
                     blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom)))
                 }
                 results[name] = OcrResult(engineName = name, textBlocks = blocks, imageWidth = imgW, imageHeight = imgH, debugText = blocks.joinToString(" ") { it.text })

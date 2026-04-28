@@ -97,13 +97,19 @@ object ImageAlignmentUtils {
         if (uniqueMatches.size >= 2) {
             for (i in uniqueMatches.indices) {
                 for (j in i + 1 until uniqueMatches.size) {
-                    val r1 = uniqueMatches[i].first; val r2 = uniqueMatches[j].first
-                    val q1 = uniqueMatches[i].second; val q2 = uniqueMatches[j].second
+                    val r1 = uniqueMatches[i].first
+                    val r2 = uniqueMatches[j].first
+                    val q1 = uniqueMatches[i].second
+                    val q2 = uniqueMatches[j].second
                     
-                    val r1cx = r1.boundingBox.centerX() * refScale; val r1cy = r1.boundingBox.centerY() * refScale
-                    val r2cx = r2.boundingBox.centerX() * refScale; val r2cy = r2.boundingBox.centerY() * refScale
-                    val q1cx = q1.boundingBox.centerX() * queScale; val q1cy = q1.boundingBox.centerY() * queScale
-                    val q2cx = q2.boundingBox.centerX() * queScale; val q2cy = q2.boundingBox.centerY() * queScale
+                    val r1cx = r1.boundingBox.centerX() * refScale
+                    val r1cy = r1.boundingBox.centerY() * refScale
+                    val r2cx = r2.boundingBox.centerX() * refScale
+                    val r2cy = r2.boundingBox.centerY() * refScale
+                    val q1cx = q1.boundingBox.centerX() * queScale
+                    val q1cy = q1.boundingBox.centerY() * queScale
+                    val q2cx = q2.boundingBox.centerX() * queScale
+                    val q2cy = q2.boundingBox.centerY() * queScale
                     
                     val refDist = sqrt((r1cx - r2cx).toDouble().pow(2.0) + (r1cy - r2cy).toDouble().pow(2.0))
                     val queDist = sqrt((q1cx - q2cx).toDouble().pow(2.0) + (q1cy - q2cy).toDouble().pow(2.0))
@@ -133,27 +139,45 @@ object ImageAlignmentUtils {
             for (i in commonWords.indices) {
                 for (j in i + 1 until commonWords.size) {
                     for (k in j + 1 until commonWords.size) {
-                        val w1 = commonWords[i]; val w2 = commonWords[j]; val w3 = commonWords[k]
-                        val r1s = refLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }; val r2s = refLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }; val r3s = refLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
-                        val q1s = queryLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }; val q2s = queryLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }; val q3s = queryLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
+                        val w1 = commonWords[i]
+                        val w2 = commonWords[j]
+                        val w3 = commonWords[k]
+                        val r1s = refLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }
+                        val r2s = refLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }
+                        val r3s = refLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
+                        val q1s = queryLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }
+                        val q2s = queryLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }
+                        val q3s = queryLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
                         
                         for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
-                            val rD12 = dist(r1, r2); val rD23 = dist(r2, r3); val rD31 = dist(r3, r1)
+                            val rD12 = dist(r1, r2)
+                            val rD23 = dist(r2, r3)
+                            val rD31 = dist(r3, r1)
                             if (rD12 == 0.0 || rD23 == 0.0 || rD31 == 0.0) continue
                             for (q1 in q1s) for (q2 in q2s) for (q3 in q3s) {
-                                val qD12 = dist(q1, q2); val qD23 = dist(q2, q3); val qD31 = dist(q3, q1)
+                                val qD12 = dist(q1, q2)
+                                val qD23 = dist(q2, q3)
+                                val qD31 = dist(q3, q1)
                                 if (qD12 == 0.0 || qD23 == 0.0 || qD31 == 0.0) continue
-                                val ratio1 = (qD12 / rD12) / (qD23 / rD23); val ratio2 = (qD23 / rD23) / (qD31 / rD31)
+                                val ratio1 = (qD12 / rD12) / (qD23 / rD23)
+                                val ratio2 = (qD23 / rD23) / (qD31 / rD31)
                                 if (abs(ratio1 - 1.0) < 0.05 && abs(ratio2 - 1.0) < 0.05) {
-                                    val rPairs = listOf(r1 to r2, r2 to r3, r3 to r1); val qPairs = listOf(q1 to q2, q2 to q3, q3 to q1)
+                                    val rPairs = listOf(r1 to r2, r2 to r3, r3 to r1)
+                                    val qPairs = listOf(q1 to q2, q2 to q3, q3 to q1)
                                     val longestIdx = listOf(rD12, rD23, rD31).indices.maxBy { listOf(rD12, rD23, rD31)[it] }
-                                    val rA = rPairs[longestIdx].first; val rB = rPairs[longestIdx].second
-                                    val qA = qPairs[longestIdx].first; val qB = qPairs[longestIdx].second
+                                    val rA = rPairs[longestIdx].first
+                                    val rB = rPairs[longestIdx].second
+                                    val qA = qPairs[longestIdx].first
+                                    val qB = qPairs[longestIdx].second
                                     
-                                    val rAcx = rA.boundingBox.centerX() * refScale; val rAcy = rA.boundingBox.centerY() * refScale
-                                    val rBcx = rB.boundingBox.centerX() * refScale; val rBcy = rB.boundingBox.centerY() * refScale
-                                    val qAcx = qA.boundingBox.centerX() * queScale; val qAcy = qA.boundingBox.centerY() * queScale
-                                    val qBcx = qB.boundingBox.centerX() * queScale; val qBcy = qB.boundingBox.centerY() * queScale
+                                    val rAcx = rA.boundingBox.centerX() * refScale
+                                    val rAcy = rA.boundingBox.centerY() * refScale
+                                    val rBcx = rB.boundingBox.centerX() * refScale
+                                    val rBcy = rB.boundingBox.centerY() * refScale
+                                    val qAcx = qA.boundingBox.centerX() * queScale
+                                    val qAcy = qA.boundingBox.centerY() * queScale
+                                    val qBcx = qB.boundingBox.centerX() * queScale
+                                    val qBcy = qB.boundingBox.centerY() * queScale
                                     
                                     val dR = sqrt((rAcx - rBcx).toDouble().pow(2.0) + (rAcy - rBcy).toDouble().pow(2.0))
                                     val dQ = sqrt((qAcx - qBcx).toDouble().pow(2.0) + (qAcy - qBcy).toDouble().pow(2.0))
@@ -306,7 +330,10 @@ object ImageAlignmentUtils {
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, imgW: Int, imgH: Int): Boolean {
         if (crop == null) return false
         val b = block.boundingBox
-        val bL = b.left.toFloat() / imgW; val bT = b.top.toFloat() / imgH; val bR = b.right.toFloat() / imgW; val bB = b.bottom.toFloat() / imgH
+        val bL = b.left.toFloat() / imgW
+        val bT = b.top.toFloat() / imgH
+        val bR = b.right.toFloat() / imgW
+        val bB = b.bottom.toFloat() / imgH
         return bL >= crop.left && bR <= crop.right && bT >= crop.top && bB <= crop.bottom
     }
 
