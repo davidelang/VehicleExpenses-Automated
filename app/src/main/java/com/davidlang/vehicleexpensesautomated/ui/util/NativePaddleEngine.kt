@@ -14,8 +14,9 @@ import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.min
 
-class NativePaddleEngine(private val context: Context, private val isConstrained: Boolean = false) : OcrEngine {
-    override val name = if (isConstrained) "Paddle-Lite (Odo)" else "Paddle-Lite"
+class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
+    override val name = "Paddle $variant Greedy"
+    fun isV3() = variant == "V3"
     
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
@@ -24,7 +25,8 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
 
     companion object {
         private var sharedDetector: PaddlePredictor? = null
-        private var sharedRecognizer: PaddlePredictor? = null
+        private var sharedRecognizerV3: PaddlePredictor? = null
+        private var sharedRecognizerNumeric: PaddlePredictor? = null
         private var isNativeLibLoaded = false
         private var detectionInputBuffer: FloatArray? = null
         private var lastUsedInputSize = 0
@@ -32,13 +34,14 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         /**
          * Phase 58: Static-like helper for experimental refinement without re-initializing.
          */
-        suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>): String = withContext(Dispatchers.IO) {
-            if (sharedRecognizer == null) return@withContext ""
-            runRecognitionStageStatic(bitmap, targetHeight, dictionary).text
+        suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): String = withContext(Dispatchers.IO) {
+            val predictor = if (isV3) sharedRecognizerV3 else sharedRecognizerNumeric
+            if (predictor == null) return@withContext ""
+            runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor).text
         }
 
-        private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>): RecStageResult {
-            val tStart = System.currentTimeMillis(); val predictor = sharedRecognizer ?: return RecStageResult("", 0, 0f)
+        private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
+            val tStart = System.currentTimeMillis()
             val targetHeight = 48; val targetWidth = 640
             val inputTensor = predictor.getInput(0); inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
             val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
@@ -65,7 +68,10 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
                 val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape(); val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val data = outputTensor.floatData
                 val result = StringBuilder(); var lastIdx = -1; var totalConf = 0f; var charCount = 0
                 for (i in 0 until seqLen) {
-                    var maxIdx = 0; var maxVal = -1f; for (j in 0 until dictSize) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
+                    var maxIdx = 0; var maxVal = -1f; 
+                    // GREEDY DIGITS: Only consider indices 1..10 (0 is blank)
+                    val searchLimit = 11.coerceAtMost(dictSize)
+                    for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
                     if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) { result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++ }
                     lastIdx = maxIdx
                 }
@@ -79,12 +85,18 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
     init {
         try {
             val arch = detectArch()
-            if (sharedDetector == null || sharedRecognizer == null) {
+            if (sharedDetector == null) {
                 if (!isNativeLibLoaded) { loadNativeLibrary(); isNativeLibLoaded = true }
                 val detPath = copyAssetToInternal("paddle/det_v4_dynamic_$arch.nb")
-                val recPath = copyAssetToInternal("paddle/rec_v3_$arch.nb")
                 sharedDetector = createPredictor(detPath)
-                sharedRecognizer = createPredictor(recPath)
+            }
+            if (variant == "V3" && sharedRecognizerV3 == null) {
+                if (!isNativeLibLoaded) { loadNativeLibrary(); isNativeLibLoaded = true }
+                sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
+            }
+            if (variant == "V2" && sharedRecognizerNumeric == null) {
+                if (!isNativeLibLoaded) { loadNativeLibrary(); isNativeLibLoaded = true }
+                sharedRecognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_$arch.nb"))
             }
             loadDictionary("paddle/en_dict.txt")
             isAvailable = true
@@ -104,6 +116,10 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
 
     private fun copyAssetToInternal(assetPath: String): String {
         val file = File(context.filesDir, assetPath.replace("/", "_"))
+        if (!context.assets.list(File(assetPath).parent ?: "")!!.contains(File(assetPath).name)) {
+            Log.e("Paddle", "Asset not found: $assetPath")
+            throw Exception("Asset not found: $assetPath")
+        }
         context.assets.open(assetPath).use { input -> FileOutputStream(file).use { output -> input.copyTo(output) } }
         return file.absolutePath
     }
@@ -120,17 +136,14 @@ class NativePaddleEngine(private val context: Context, private val isConstrained
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
-    override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
-
-    suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
+    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
-        if (isConstrained) recognizeConstrained(bitmap, t0) else recognizeDiscovery(bitmap, t0, isRecursive)
-    }
-
-    private suspend fun recognizeConstrained(bitmap: Bitmap, t0: Long): OcrResult {
-        val finalResult = runRecognitionStage(bitmap, 48)
-        return OcrResult(
+        val predictor = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
+        if (predictor == null) return@withContext OcrResult(engineName = name, debugText = "Predictor null", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        
+        val finalResult = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
+        OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
             odometer = finalResult.text,
