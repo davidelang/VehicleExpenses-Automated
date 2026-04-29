@@ -1,5 +1,11 @@
 # .gemini/policies/plans.toml
 
+[[rule]]
+toolName = "exit_plan_mode"
+decision = "allow"
+priority = 999
+modes = ["plan"]
+
 # BLOCK ALL tool calls that contain path traversal (..) in Plan Mode
 [[rule]]
 toolName = ["write_file", "replace", "run_shell_command", "read_file"]
