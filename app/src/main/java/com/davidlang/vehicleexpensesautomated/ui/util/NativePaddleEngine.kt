@@ -21,6 +21,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     override val name = "Paddle $variant Greedy"
     fun isV3() = variant == "V3"
     
+    data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val scale: Float)
+
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
     var isAvailable = false
@@ -33,6 +35,57 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var isNativeLibLoaded = false
         private var detectionInputBuffer: FloatArray? = null
         private var lastUsedInputSize = 0
+
+        fun detect(bitmap: Bitmap): DetectionResult? {
+            val predictor = sharedDetector ?: return null
+            val inputSize = 1280
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
+            
+            if (detectionInputBuffer == null || lastUsedInputSize != inputSize) {
+                detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
+                lastUsedInputSize = inputSize
+            }
+            val floatData = detectionInputBuffer!!
+            
+            val scale = min(inputSize.toFloat() / bitmap.width, inputSize.toFloat() / bitmap.height)
+            val sw = (bitmap.width * scale).toInt()
+            val sh = (bitmap.height * scale).toInt()
+            
+            val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+            val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(padded)
+            canvas.drawColor(Color.BLACK)
+            canvas.drawBitmap(scaled, 0f, 0f, null)
+            scaled.recycle()
+            
+            // Standard ImageNet normalization (Paddle DBNet usually uses this)
+            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+            
+            for (y in 0 until inputSize) {
+                for (x in 0 until inputSize) {
+                    val px = padded.getPixel(x, y)
+                    floatData[0 * inputSize * inputSize + y * inputSize + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                    floatData[1 * inputSize * inputSize + y * inputSize + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
+                    floatData[2 * inputSize * inputSize + y * inputSize + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                }
+            }
+            padded.recycle()
+            
+            try {
+                inputTensor.setData(floatData)
+                predictor.run()
+                val outputTensor = predictor.getOutput(0)
+                val dims = outputTensor.shape()
+                val outH = dims[2].toInt()
+                val outW = dims[3].toInt()
+                return DetectionResult(outputTensor.floatData, outW, outH, scale)
+            } catch (t: Throwable) {
+                Log.e("PaddleDetect", "Detection failed", t)
+                return null
+            }
+        }
         
         suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): String = withContext(Dispatchers.IO) {
             val predictor = if (isV3) sharedRecognizerV3 else sharedRecognizerNumeric
@@ -193,6 +246,27 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             odometer = finalResult.text,
             debugText = finalResult.text,
             textBlocks = listOf(TextBlock(finalResult.text, Rect(0,0,bitmap.width, bitmap.height))),
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height
+        )
+    }
+
+    suspend fun runDetectionOnly(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val det = detect(bitmap) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        
+        // Process heatmap to get boxes
+        val blocks = OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, det.scale, bitmap, "Native")
+        
+        OcrResult(
+            engineName = name,
+            executionTimeMs = System.currentTimeMillis() - t0,
+            debugText = "(Detection Only)",
+            textBlocks = blocks,
+            rawHeatmap = det.heatmap,
+            heatmapWidth = det.width,
+            heatmapHeight = det.height,
+            scaleFactor = det.scale,
             imageWidth = bitmap.width,
             imageHeight = bitmap.height
         )

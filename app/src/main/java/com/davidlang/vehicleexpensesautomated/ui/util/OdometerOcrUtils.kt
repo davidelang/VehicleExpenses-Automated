@@ -422,6 +422,65 @@ object OdometerOcrUtils {
         return out
     }
 
+    /**
+     * Phase 63: Heatmap Post-Processing
+     */
+    fun processPaddleHeatmap(
+        heatmap: FloatArray, w: Int, h: Int, scale: Float, 
+        sourceBitmap: Bitmap, algorithm: String = "Native"
+    ): List<TextBlock> {
+        val invScale = 1.0 / scale.toDouble()
+        val mask = Mat(h, w, CvType.CV_8U)
+        val maskThreshold = 0.20f
+        
+        val data = ByteArray(heatmap.size)
+        for (i in heatmap.indices) {
+            data[i] = if (heatmap[i] > maskThreshold) (-1).toByte() else 0.toByte()
+        }
+        mask.put(0, 0, data)
+
+        val contours = mutableListOf<org.opencv.core.MatOfPoint>()
+        val hierarchy = Mat()
+        val sourceMat = Mat()
+        val results = mutableListOf<TextBlock>()
+
+        try {
+            Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+            org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
+
+            for (contour in contours) {
+                if (Imgproc.contourArea(contour) < 10) continue
+                val rotatedRect = Imgproc.minAreaRect(org.opencv.core.MatOfPoint2f(*contour.toArray()))
+                
+                // For Increment 1, we only need Native boxes. 
+                // We'll leave Valley expansion for Increment 3 to keep this phase minimal.
+                val bounds = android.graphics.Rect(
+                    (rotatedRect.boundingRect().x * invScale).toInt(),
+                    (rotatedRect.boundingRect().y * invScale).toInt(),
+                    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
+                    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
+                )
+                
+                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat()))
+            }
+        } finally {
+            mask.release()
+            hierarchy.release()
+            sourceMat.release()
+            contours.forEach { it.release() }
+        }
+        return results
+    }
+
+    fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap {
+        val left = rect.left.coerceIn(0, bitmap.width - 1)
+        val top = rect.top.coerceIn(0, bitmap.height - 1)
+        val width = rect.width().coerceAtMost(bitmap.width - left)
+        val height = rect.height().coerceAtMost(bitmap.height - top)
+        if (width <= 0 || height <= 0) return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(bitmap, left, top, width, height)
+    }
+
     fun pickBestOdometer(results: List<OcrStepResult>): String? {
         val candidates = results.mapNotNull { it.text }.filter { it.length in 4..7 && it.all { c -> c.isDigit() } }
         if (candidates.isEmpty()) return null

@@ -76,6 +76,8 @@ data class OcrResult(
     val croppedBitmap: Bitmap? = null,
     val openCvProcessedBitmap: Bitmap? = null,
     val rawHeatmap: FloatArray? = null,
+    val heatmapWidth: Int = 0,
+    val heatmapHeight: Int = 0,
     val discoveryHeatmap: FloatArray? = null,
     val rawDiscoveryBoxes: List<RectF> = emptyList(),
     val scaleFactor: Float = 1.0f,
@@ -102,7 +104,7 @@ data class OcrResult(
     }
 }
 
-data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?, val boxes: List<android.graphics.Rect> = emptyList())
+data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?, val boxes: List<Rect> = emptyList(), val normalizedBoxes: List<TextBlock> = emptyList())
 
 interface OcrEngine {
     val name: String
