@@ -33,7 +33,6 @@ import org.opencv.core.MatOfInt
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import java.util.Collections
-import org.opencv.imgproc.Imgproc
 
 object OdometerOcrUtils {
     init {
