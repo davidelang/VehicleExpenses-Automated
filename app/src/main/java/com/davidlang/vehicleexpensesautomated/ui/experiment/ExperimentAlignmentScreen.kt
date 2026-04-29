@@ -367,6 +367,7 @@ private fun serializePhotoResultToJson(
                 landmarksArray.put(JSONObject().apply { 
                     put("text", cleanedText); put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble()); put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
                     put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble()); put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
+                    put("angle", block.angle)
                 })
             }
         }; dResults.put("ML Kit", landmarksArray); put("discovery_landmarks", dResults)
