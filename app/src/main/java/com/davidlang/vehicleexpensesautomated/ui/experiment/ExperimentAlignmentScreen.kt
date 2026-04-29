@@ -194,7 +194,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 58 Strategies
     val strategies = listOf(
         "ML Kit Native (Exact)", "ML Kit 48px (Exact)", "ML Kit 32px (Exact)",
-        "Paddle V2 Greedy", "Paddle V3 Greedy"
+        "Paddle V2 Greedy", "Paddle V3 Greedy",
+        "Paddle V2 Disc (Padded)", "Paddle V3 Disc (Padded)"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -261,8 +262,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val tRef0 = System.currentTimeMillis()
                                     val engine = when {
                                         strat.contains("ML Kit") -> "ML Kit"
-                                        strat.contains("V2") -> "Paddle V2 Greedy"
-                                        else -> "Paddle V3 Greedy"
+                                        strat.contains("V2") -> if (strat.contains("Disc")) "Paddle V2 Disc (Padded)" else "Paddle V2 Greedy"
+                                        else -> if (strat.contains("Disc")) "Paddle V3 Disc (Padded)" else "Paddle V3 Greedy"
                                     }
                                     val h = when {
                                         strat.contains("48px") -> 48
@@ -271,7 +272,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
                                     val activePaddle = if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
                                     
-                                    val steps = OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
+                                    val steps = if (strat.contains("Disc")) {
+                                        DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle)
+                                    } else {
+                                        OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
+                                    }
                                     refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
                                 }
                                 exactCrop.recycle()

@@ -2,7 +2,7 @@
 decision = "allow"
 priority = 950
 toolName = "write_file"
-argsPattern = '\\0\"file_path\":\"dev\-ai\-interaction/paddle\-build/BUILD_REPORT\.md\"\\0'
+argsPattern = '\\0\"file_path\":\"dev\-ai\-interaction/*\"\\0'
 modes = [ "default", "autoEdit", "yolo" ]
 
 [[rule]]
@@ -30,7 +30,8 @@ decision = "allow"
 priority = 950
 toolName = "run_shell_command"
 commandPrefix = [ "adb" ]
-modes = [ "autoEdit", "yolo" ]
+modes = [ "plan", "default", "autoEdit", "yolo" ]
+allowRedirection = true
 
 [[rule]]
 decision = "allow"
@@ -45,3 +46,68 @@ priority = 950
 toolName = "run_shell_command"
 commandPrefix = [ "jq" ]
 modes = [ "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "git", "cp" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "adb", "tail" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "git", "chmod" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "cd", "python3" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "/home/dlang/miniconda3/envs/paddle_env_v3/bin/python" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "cat" ]
+allowRedirection = true
+modes = [ "plan", "default", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "./build_app" ]
+modes = [ "default", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "grep", "awk" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "git", "cat" ]
+allowRedirection = true
+modes = [ "plan", "autoEdit", "yolo" ]
