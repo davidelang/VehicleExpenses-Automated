@@ -6,6 +6,15 @@
 - [ ] **PLAN:** Phase 3 - ImageNet (Norm B) vs Standard (Norm A) Normalization Sweep (linked to `dev-ai-interaction/plans/normalization-sweep.md`)
 
 ## Core Logic & Recovery
+- **OCR Engine Stabilization (Active):**
+  - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
+    - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
+    - [ ] Add rotational gating (±20°) to deskew logic.
+    - [ ] Implement `applyContrastStretch` using OpenCV histogram analysis.
+    - [ ] Expand `runMultiStepOcr` refinement loop with S-75% and S-80% stages.
+    - [ ] Add `deskew_data` forensic logging to JSON reports.
+    - [ ] Include landmark `angle` in discovery results.
+    - [ ] Synchronize Python scripts for `.strip()` consistency.
 - **Identity & Matching:**
   - [ ] **Conflict Resolution Integration:** Connect the existing `ConflictResolutionScreen` to the identification flow for ambiguous results.
 

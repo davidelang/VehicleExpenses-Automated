@@ -26,8 +26,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.opencv.android.OpenCVLoader
+import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.MatOfFloat
+import org.opencv.core.MatOfInt
 import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
+import java.util.Collections
 import org.opencv.imgproc.Imgproc
 
 object OdometerOcrUtils {
@@ -120,6 +125,44 @@ object OdometerOcrUtils {
         org.opencv.android.Utils.matToBitmap(filtered, out)
         mat.release(); gray.release(); filtered.release()
         return out
+    }
+
+    fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
+        val src = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, src)
+        val gray = Mat()
+        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY)
+        else src.copyTo(gray)
+        
+        val hist = Mat()
+        Imgproc.calcHist(Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+        
+        val totalPixels = gray.rows() * gray.cols()
+        var floorBin = 0
+        var ceilingBin = 255
+        
+        var sum = 0.0
+        for (i in 0..255) {
+            sum += hist.get(i, 0)[0]
+            if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break }
+        }
+        
+        sum = 0.0
+        for (i in 0..255) {
+            sum += hist.get(i, 0)[0]
+            if (sum >= totalPixels * 0.98) { ceilingBin = i; break }
+        }
+        
+        val dst = Mat()
+        val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0
+        val beta = -floorBin * alpha
+        gray.convertTo(dst, CvType.CV_8U, alpha, beta)
+        
+        val outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(dst, outBmp)
+        
+        src.release(); gray.release(); hist.release(); dst.release()
+        return outBmp
     }
 
     fun applyClahe(bitmap: Bitmap): Bitmap {
@@ -350,6 +393,24 @@ object OdometerOcrUtils {
             res3.second.forEach { canvas.drawRect(it, paint) } 
         }
         steps.add(OcrStepResult("Bilateral", bile, res3.first, res3.second))
+
+        // 4. Enhanced (75% Stretch)
+        val s75 = applyContrastStretch(bile, 75)
+        val res4 = exec(s75)
+        if (engineName == "ML Kit") {
+            val canvas = Canvas(s75)
+            res4.second.forEach { canvas.drawRect(it, paint) }
+        }
+        steps.add(OcrStepResult("Enhanced (75% Stretch)", s75, res4.first, res4.second))
+
+        // 5. Enhanced (80% Stretch)
+        val s80 = applyContrastStretch(bile, 80)
+        val res5 = exec(s80)
+        if (engineName == "ML Kit") {
+            val canvas = Canvas(s80)
+            res5.second.forEach { canvas.drawRect(it, paint) }
+        }
+        steps.add(OcrStepResult("Enhanced (80% Stretch)", s80, res5.first, res5.second))
 
         if (mlKitClient != null) mlKitClient.close()
         return steps
