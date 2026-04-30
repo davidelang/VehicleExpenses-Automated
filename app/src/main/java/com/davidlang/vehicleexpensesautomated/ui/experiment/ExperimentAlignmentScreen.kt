@@ -188,7 +188,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         ReferenceCache(v, refBase64, curated, bmp)
     }
     
-    val jsonResults = JSONArray(); var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
+    val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
+    jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"total_photos\": $total,\n  \"results\": [\n")
+    
+    var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
     val footer = "</table></body></html>"
     
     // Phase 58 Strategies
@@ -295,7 +298,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
                 val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes.rawBlocks, paddleDeskewDiscovery)
-                jsonResults.put(photoJson)
+                val comma = if (index < total - 1) "," else ""
+                jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
@@ -336,12 +340,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         }
     }
     currentFile.appendText(footer)
-    val finalReport = JSONObject().apply {
-        put("timestamp", timestamp); put("total_photos", total)
-        val refManifest = JSONObject(); vehicles.forEach { v -> refManifest.put(v.name, if (v.landmarkTextBlocksJson.isNullOrEmpty()) JSONObject() else JSONObject(v.landmarkTextBlocksJson)) }
-        put("reference_vehicles", refManifest); put("results", jsonResults)
-    }
-    File(reportDir, "alignment_results_${timestamp}.json").writeText(finalReport.toString(2)); cachedRefs.forEach { it.bmp.recycle() }
+    jsonFile.appendText("\n  ]\n}")
+    cachedRefs.forEach { it.bmp.recycle() }
 }
 
 private fun serializePhotoResultToJson(
