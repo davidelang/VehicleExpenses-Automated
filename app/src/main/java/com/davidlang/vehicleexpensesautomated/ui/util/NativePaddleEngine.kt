@@ -49,6 +49,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 lastUsedInputSize = inputSize
             }
             val floatData = detectionInputBuffer!!
+            floatData.fill(0.0f)
             
             // Phase 3 Optimization: Scale features to 320px within the 1280px tensor
             val featureSize = 320
