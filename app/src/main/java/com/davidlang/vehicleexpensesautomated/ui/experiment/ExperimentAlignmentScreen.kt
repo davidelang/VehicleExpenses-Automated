@@ -198,7 +198,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val strategies = listOf(
         "ML Kit Native (Exact)", "ML Kit 48px (Exact)", "ML Kit 32px (Exact)",
         "Paddle V2 Greedy", "Paddle V3 Greedy",
-        "Paddle V2 Disc (Padded)", "Paddle V3 Disc (Padded)"
+        "Paddle V3 Disc (Unclip)", "Paddle V3 Disc (Valley)"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -274,9 +274,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         else -> null
                                     }
                                     val activePaddle = if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
+                                    val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
                                     val steps = if (strat.contains("Disc")) {
-                                        DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle)
+                                        DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle, expansionMode)
                                     } else {
                                         OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
                                     }
