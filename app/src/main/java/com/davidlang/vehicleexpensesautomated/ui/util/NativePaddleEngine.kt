@@ -37,9 +37,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var lastUsedInputSize = 0
 
         fun detect(bitmap: Bitmap, inputSize: Int = 1280): DetectionResult? {
+            Log.d("PADDLE_DEBUG", "detect() entry - inputSize=$inputSize, bitmap=${bitmap.width}x${bitmap.height}")
             val predictor = sharedDetector ?: return null
             val inputTensor = predictor.getInput(0)
+            Log.d("PADDLE_DEBUG", "detect() resize start - inputSize=$inputSize")
             inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
+            Log.d("PADDLE_DEBUG", "detect() resize end")
             
             if (detectionInputBuffer == null || lastUsedInputSize != inputSize) {
                 detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
@@ -73,8 +76,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             padded.recycle()
             
             try {
+                Log.d("PADDLE_DEBUG", "predictor.run() start")
                 inputTensor.setData(floatData)
                 predictor.run()
+                Log.d("PADDLE_DEBUG", "predictor.run() end")
                 val outputTensor = predictor.getOutput(0)
                 val dims = outputTensor.shape()
                 val outH = dims[2].toInt()
@@ -100,7 +105,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val targetWidth = ((sw + 31) / 32) * 32
             
             val inputTensor = predictor.getInput(0)
+            Log.d("PADDLE_DEBUG", "runRecStage() resize start - H=$targetHeight, W=$targetWidth")
             inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
+            Log.d("PADDLE_DEBUG", "runRecStage() resize end")
             val floatData = FloatArray(1 * 3 * targetHeight * targetWidth)
             val scaled = Bitmap.createScaledBitmap(bitmap, sw, targetHeight, true)
             val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
@@ -121,8 +128,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             padded.recycle()
             try {
+                Log.d("PADDLE_DEBUG", "predictor.run() start")
                 inputTensor.setData(floatData)
                 predictor.run()
+                Log.d("PADDLE_DEBUG", "predictor.run() end")
                 val outputTensor = predictor.getOutput(0)
                 val dims = outputTensor.shape()
                 val seqLen = dims[1].toInt()
