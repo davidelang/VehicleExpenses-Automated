@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
-import android.graphics.RectF
 import android.util.Log
 import org.opencv.android.Utils
 import org.opencv.core.*
@@ -15,8 +14,9 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Phase 63 Increment 8: Phase 3 - Paddle Discovery Implementation.
- * Implements Red Box detection and Orange Box refinement (Unclip/Valley Expansion).
+ * Phase 63 Increment 8: Phase 3 - Discovery Visualization & Logging.
+ * Performs detection (Red Box) and expansion (Orange Box) with detailed logging.
+ * Recognition is disabled to prevent SIGSEGV while debugging.
  */
 object DiscoveryOcrUtils {
 
@@ -31,17 +31,17 @@ object DiscoveryOcrUtils {
         if (paddleEngine == null) return emptyList()
 
         val isValley = engineName.contains("Valley") || engineName.contains("Padded")
-        Log.i("DiscoveryOcr", "Starting full discovery refinement for $engineName")
+        Log.d("DISCOVERY_DEBUG", "--- Starting Discovery for $engineName ---")
+        Log.d("DISCOVERY_DEBUG", "Crop dimensions: ${bitmap.width}x${bitmap.height}")
 
         /**
-         * Executes sequential detection and recognition.
+         * Executes sequential detection and expansion visualization.
          */
         suspend fun exec(bmp: Bitmap, stageName: String): OcrStepResult {
             val sb = StringBuilder()
             val finalBlocks = mutableListOf<TextBlock>()
             
-            // 1. Detection at standard 1280px (Verified stable resolution)
-            // We use 1280 for discovery to ensure native engine stability
+            // 1. Detection at standard 1280px (Stable)
             val det = paddleEngine.runDetectionOnly(bmp, 1280)
             val invScale = 1.0 / det.scaleFactor.toDouble()
             val sortedBlocks = det.textBlocks.sortedBy { it.boundingBox.left }
@@ -51,7 +51,7 @@ object DiscoveryOcrUtils {
             val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 2f }
             val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
 
-            for (block in sortedBlocks) {
+            for ((i, block) in sortedBlocks.withIndex()) {
                 val rawBox = Rect(
                     (block.boundingBox.left * invScale).toInt(),
                     (block.boundingBox.top * invScale).toInt(),
@@ -64,27 +64,19 @@ object DiscoveryOcrUtils {
 
                 val unclipBox = unclipRect(rawBox, 1.5f)
                 val valleyBox = if (isValley) expandByValleyStop(rawBox, bmp) else unclipBox
-                val safeValley = Rect(max(0, valleyBox.left), max(0, valleyBox.top), min(bmp.width, valleyBox.right), min(bmp.height, valleyBox.bottom))
+                val orangeBox = Rect(max(0, valleyBox.left), max(0, valleyBox.top), min(bmp.width, valleyBox.right), min(bmp.height, valleyBox.bottom))
                 
                 // Draw Orange Box (Refinement)
-                canvas.drawRect(safeValley, orangePaint)
+                canvas.drawRect(orangeBox, orangePaint)
 
-                if (safeValley.width() > 0 && safeValley.height() > 0) {
-                    val subCrop = OdometerOcrUtils.cropBitmap(bmp, safeValley)
-                    try {
-                        val text = NativePaddleEngine.runConstrainedStatic(subCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
-                        if (text.isNotBlank()) {
-                            if (sb.isNotEmpty()) sb.append(" ")
-                            sb.append(text)
-                        }
-                        finalBlocks.add(TextBlock(
-                            text = text,
-                            boundingBox = safeValley
-                        ))
-                    } finally {
-                        subCrop.recycle()
-                    }
-                }
+                // Log exact pixel coordinates
+                Log.d("DISCOVERY_DEBUG", "[$stageName] Block $i:")
+                Log.d("DISCOVERY_DEBUG", "  Red Box:    [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}] (W=${rawBox.width()}, H=${rawBox.height()})")
+                Log.d("DISCOVERY_DEBUG", "  Orange Box: [L=${orangeBox.left}, T=${orangeBox.top}, R=${orangeBox.right}, B=${orangeBox.bottom}] (W=${orangeBox.width()}, H=${orangeBox.height()})")
+
+                // RECOGNITION DISABLED: We only visualize and log dimensions.
+                sb.append("(Visual) ")
+                finalBlocks.add(TextBlock(text = "(Visual)", boundingBox = orangeBox))
             }
 
             return OcrStepResult(
