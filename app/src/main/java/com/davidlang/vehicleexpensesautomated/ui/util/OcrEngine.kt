@@ -106,6 +106,8 @@ data class OcrResult(
 
 data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?, val boxes: List<Rect> = emptyList(), val normalizedBoxes: List<TextBlock> = emptyList())
 
+enum class DiscoveryExpansion { UNCLIP, VALLEY }
+
 interface OcrEngine {
     val name: String
     suspend fun recognize(bitmap: Bitmap): OcrResult

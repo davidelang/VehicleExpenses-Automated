@@ -25,13 +25,13 @@ object DiscoveryOcrUtils {
         context: Context,
         engineName: String,
         targetHeight: Int? = null,
-        paddleEngine: NativePaddleEngine? = null
+        paddleEngine: NativePaddleEngine? = null,
+        expansion: DiscoveryExpansion = DiscoveryExpansion.UNCLIP
     ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
         if (paddleEngine == null) return emptyList()
 
-        val isValley = engineName.contains("Valley") || engineName.contains("Padded")
-        Log.d("DISCOVERY_DEBUG", "--- Starting Discovery for $engineName ---")
+        Log.d("DISCOVERY_DEBUG", "--- Starting Discovery for $engineName ($expansion) ---")
         Log.d("DISCOVERY_DEBUG", "Crop dimensions: ${bitmap.width}x${bitmap.height}")
 
         /**
@@ -63,8 +63,8 @@ object DiscoveryOcrUtils {
                 canvas.drawRect(rawBox, redPaint)
 
                 val unclipBox = unclipRect(rawBox, 1.5f)
-                val valleyBox = if (isValley) expandByValleyStop(rawBox, bmp) else unclipBox
-                val orangeBox = Rect(max(0, valleyBox.left), max(0, valleyBox.top), min(bmp.width, valleyBox.right), min(bmp.height, valleyBox.bottom))
+                val refinedBox = if (expansion == DiscoveryExpansion.VALLEY) expandByValleyStop(rawBox, bmp) else unclipBox
+                val orangeBox = Rect(max(0, refinedBox.left), max(0, refinedBox.top), min(bmp.width, refinedBox.right), min(bmp.height, refinedBox.bottom))
                 
                 // Draw Orange Box (Refinement)
                 canvas.drawRect(orangeBox, orangePaint)
