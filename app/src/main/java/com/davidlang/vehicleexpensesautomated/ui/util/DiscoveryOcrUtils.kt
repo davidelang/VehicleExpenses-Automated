@@ -40,9 +40,9 @@ object DiscoveryOcrUtils {
             val sb = StringBuilder()
             val finalBlocks = mutableListOf<TextBlock>()
             
-            // 1. Detection at standard 1280px (Using the dynamic model at sub-resolution)
-            // We use 320 for discovery to focus on the odometer digits within the crop
-            val det = paddleEngine.runDetectionOnly(bmp, 320)
+            // 1. Detection at 640px (Testing intermediate resolution support)
+            // We use 640 for discovery to focus on the odometer digits within the crop
+            val det = paddleEngine.runDetectionOnly(bmp, 640)
             val invScale = 1.0 / det.scaleFactor.toDouble()
             val sortedBlocks = det.textBlocks.sortedBy { it.boundingBox.left }
             
