@@ -36,9 +36,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var detectionInputBuffer: FloatArray? = null
         private var lastUsedInputSize = 0
 
-        fun detect(bitmap: Bitmap): DetectionResult? {
+        fun detect(bitmap: Bitmap, inputSize: Int = 1280): DetectionResult? {
             val predictor = sharedDetector ?: return null
-            val inputSize = 1280
             val inputTensor = predictor.getInput(0)
             inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
             
@@ -251,9 +250,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         )
     }
 
-    suspend fun runDetectionOnly(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun runDetectionOnly(bitmap: Bitmap, inputSize: Int = 1280): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
-        val det = detect(bitmap) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        val det = detect(bitmap, inputSize) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
         
         // Process heatmap to get boxes
         val blocks = OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, det.scale, bitmap, "Native")
