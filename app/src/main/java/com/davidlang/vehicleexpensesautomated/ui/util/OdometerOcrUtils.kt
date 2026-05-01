@@ -43,18 +43,18 @@ object OdometerOcrUtils {
         }
     }
 
-    data class DeskewResult(val angle: Float, val timeMs: Long, val rawBlocks: List<TextBlock> = emptyList())
+    data class DeskewResult(val angle: Float, val timeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
 
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
         val t0 = System.currentTimeMillis()
         
-        // 1. Scale to 2048px (Maximum precision for forensic alignment)
-        val targetSize = 2048
-        val scale = targetSize.toFloat() / bitmap.width
-        val baselineBmp = Bitmap.createScaledBitmap(bitmap, targetSize, (bitmap.height * scale).toInt(), true)
+        // 1. Paddle Detection at 2048px (Maximum precision for forensic alignment)
+        val pTargetSize = 2048
+        val pScale = pTargetSize.toFloat() / bitmap.width
+        val baselineBmp = Bitmap.createScaledBitmap(bitmap, pTargetSize, (bitmap.height * pScale).toInt(), true)
 
         // --- PADDLE INDEPENDENT MULTI-SPIKE ALGORITHM ---
-        val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, targetSize, targetSize)
+        val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, pTargetSize, pTargetSize)
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
@@ -118,8 +118,14 @@ object OdometerOcrUtils {
             }
         }
 
+        // 2. ML Kit Recognition at 1500px (Stable fallback)
+        val mScale = 1500f / bitmap.width
+        val mScaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * mScale).toInt(), true)
+        
         // --- ML KIT INDEPENDENT ALGORITHM (Fallback) ---
-        val mlResult = extractFromPhotoBitmap(baselineBmp)
+        val mlResult = extractFromPhotoBitmap(mScaled)
+        mScaled.recycle()
+        
         val mlCandidates = mlResult.textBlocks.filter { it.text.length > 1 }
         var mlAngle = 0f
         if (mlCandidates.isNotEmpty()) {
@@ -147,7 +153,9 @@ object OdometerOcrUtils {
         val elapsed = System.currentTimeMillis() - t0
         // Trust ML Kit by default while Paddle detection is being refined
         val finalAngle = mlAngle
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), elapsed, pdCandidates.ifEmpty { mlCandidates })
+        
+        // Return both lists explicitly so they can be logged without overwriting
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), elapsed, mlCandidates, pdCandidates)
     }
 
     fun cleanLandmarkString(text: String): String {

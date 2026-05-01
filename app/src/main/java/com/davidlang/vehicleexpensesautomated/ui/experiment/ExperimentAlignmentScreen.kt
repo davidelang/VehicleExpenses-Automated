@@ -297,7 +297,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes.rawBlocks)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
@@ -347,14 +347,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 private fun serializePhotoResultToJson(
     lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
-    vehicles: List<Vehicle>, strategies: List<String>, deskewBlocks: List<TextBlock>
+    vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult
 ): JSONObject {
     return JSONObject().apply {
         put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
         
-        val deskewArray = JSONArray()
-        deskewBlocks.forEach { block ->
-            deskewArray.put(JSONObject().apply {
+        val mlArray = JSONArray()
+        deskewRes.mlBlocks.forEach { block ->
+            mlArray.put(JSONObject().apply {
                 put("text", block.text)
                 put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble())
                 put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
@@ -363,7 +363,21 @@ private fun serializePhotoResultToJson(
                 put("angle", block.angle)
             })
         }
-        put("deskew_data", deskewArray)
+        put("deskew_data", mlArray) // Keep primary as 'deskew_data' for backwards compatibility
+        put("deskew_data_mlkit", mlArray)
+
+        val pdArray = JSONArray()
+        deskewRes.paddleBlocks.forEach { block ->
+            pdArray.put(JSONObject().apply {
+                put("text", block.text)
+                put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble())
+                put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
+                put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble())
+                put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
+                put("angle", block.angle)
+            })
+        }
+        put("deskew_data_paddle", pdArray)
 
         val fullImageOcrTimings = JSONObject(); fullImageOcrTimings.put("ML Kit", tDeskew + discovery.executionTimeMs)
         put("has_heatmap", discovery.rawHeatmap != null); put("full_image_ocr_timings", fullImageOcrTimings)
