@@ -69,9 +69,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             canvas.drawBitmap(scaled, 0f, 0f, null)
             scaled.recycle()
 
-            // Normalization loop...
-            val mean = floatArrayOf(0.5f, 0.5f, 0.5f)
-            val std = floatArrayOf(0.5f, 0.5f, 0.5f)
+            // Historical ImageNet normalization (Standard for DBNet)
+            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
 
             for (y in 0 until targetHeight) {
                 for (x in 0 until targetWidth) {
