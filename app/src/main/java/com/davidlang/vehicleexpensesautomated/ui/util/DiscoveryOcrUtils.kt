@@ -51,6 +51,9 @@ object DiscoveryOcrUtils {
             val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 2f }
             val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
 
+            var primaryRawBox: Rect? = null
+            var primaryRefinedBox: Rect? = null
+
             for ((i, block) in sortedBlocks.withIndex()) {
                 val rawBox = Rect(
                     (block.boundingBox.left * invScale).toInt(),
@@ -69,6 +72,11 @@ object DiscoveryOcrUtils {
                 // Draw Orange Box (Refinement)
                 canvas.drawRect(orangeBox, orangePaint)
 
+                if (i == 0) {
+                    primaryRawBox = rawBox
+                    primaryRefinedBox = orangeBox
+                }
+
                 // Log exact pixel coordinates
                 Log.d("DISCOVERY_DEBUG", "[$stageName] Block $i:")
                 Log.d("DISCOVERY_DEBUG", "  Red Box:    [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}] (W=${rawBox.width()}, H=${rawBox.height()})")
@@ -83,7 +91,9 @@ object DiscoveryOcrUtils {
                 stageName = stageName,
                 bitmap = annotatedBmp,
                 text = sb.toString().trim(),
-                normalizedBoxes = finalBlocks
+                normalizedBoxes = finalBlocks,
+                rawBox = primaryRawBox,
+                refinedBox = primaryRefinedBox
             )
         }
 

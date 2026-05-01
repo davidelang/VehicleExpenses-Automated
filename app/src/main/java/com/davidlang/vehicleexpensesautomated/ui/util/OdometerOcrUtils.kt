@@ -443,7 +443,8 @@ object OdometerOcrUtils {
             val canvas = Canvas(raw)
             res1.second.forEach { canvas.drawRect(it, paint) } 
         }
-        steps.add(OcrStepResult("Raw", raw, res1.first, res1.second))
+        val box1 = res1.second.firstOrNull() ?: Rect(0,0,raw.width,raw.height)
+        steps.add(OcrStepResult("Raw", raw, res1.first, res1.second, rawBox = box1, refinedBox = box1))
 
         // 2. Grayscale
         val gray = applyGrayscale(bitmap)
@@ -452,7 +453,8 @@ object OdometerOcrUtils {
             val canvas = Canvas(gray)
             res2.second.forEach { canvas.drawRect(it, paint) } 
         }
-        steps.add(OcrStepResult("Grayscale", gray, res2.first, res2.second))
+        val box2 = res2.second.firstOrNull() ?: Rect(0,0,gray.width,gray.height)
+        steps.add(OcrStepResult("Grayscale", gray, res2.first, res2.second, rawBox = box2, refinedBox = box2))
 
         // 3. Bilateral
         val bile = applyBilateral(bitmap)
@@ -461,7 +463,8 @@ object OdometerOcrUtils {
             val canvas = Canvas(bile)
             res3.second.forEach { canvas.drawRect(it, paint) } 
         }
-        steps.add(OcrStepResult("Bilateral", bile, res3.first, res3.second))
+        val box3 = res3.second.firstOrNull() ?: Rect(0,0,bile.width,bile.height)
+        steps.add(OcrStepResult("Bilateral", bile, res3.first, res3.second, rawBox = box3, refinedBox = box3))
 
         // 4. Enhanced (75% Stretch)
         val s75 = applyContrastStretch(bile, 75)
@@ -470,7 +473,8 @@ object OdometerOcrUtils {
             val canvas = Canvas(s75)
             res4.second.forEach { canvas.drawRect(it, paint) }
         }
-        steps.add(OcrStepResult("Enhanced (75% Stretch)", s75, res4.first, res4.second))
+        val box4 = res4.second.firstOrNull() ?: Rect(0,0,s75.width,s75.height)
+        steps.add(OcrStepResult("Enhanced (75% Stretch)", s75, res4.first, res4.second, rawBox = box4, refinedBox = box4))
 
         // 5. Enhanced (80% Stretch)
         val s80 = applyContrastStretch(bile, 80)
@@ -479,7 +483,8 @@ object OdometerOcrUtils {
             val canvas = Canvas(s80)
             res5.second.forEach { canvas.drawRect(it, paint) }
         }
-        steps.add(OcrStepResult("Enhanced (80% Stretch)", s80, res5.first, res5.second))
+        val box5 = res5.second.firstOrNull() ?: Rect(0,0,s80.width,s80.height)
+        steps.add(OcrStepResult("Enhanced (80% Stretch)", s80, res5.first, res5.second, rawBox = box5, refinedBox = box5))
 
         if (mlKitClient != null) mlKitClient.close()
         return steps

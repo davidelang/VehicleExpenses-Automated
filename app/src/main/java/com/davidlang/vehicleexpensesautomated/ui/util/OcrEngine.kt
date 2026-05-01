@@ -104,7 +104,7 @@ data class OcrResult(
     }
 }
 
-data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?, val boxes: List<Rect> = emptyList(), val normalizedBoxes: List<TextBlock> = emptyList())
+data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?, val boxes: List<Rect> = emptyList(), val normalizedBoxes: List<TextBlock> = emptyList(), val rawBox: Rect? = null, val refinedBox: Rect? = null)
 
 enum class DiscoveryExpansion { UNCLIP, VALLEY }
 
