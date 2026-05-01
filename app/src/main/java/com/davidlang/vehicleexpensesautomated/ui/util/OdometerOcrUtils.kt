@@ -502,7 +502,7 @@ object OdometerOcrUtils {
      */
     fun processPaddleHeatmap(
         heatmap: FloatArray, w: Int, h: Int, scale: Float, 
-        sourceBitmap: Bitmap
+        sourceBitmap: Bitmap, algorithm: String = "Native"
     ): List<TextBlock> {
         val invScale = 1.0 / scale.toDouble()
         val mask = Mat(h, w, CvType.CV_8U)
@@ -516,17 +516,19 @@ object OdometerOcrUtils {
 
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()
         val hierarchy = Mat()
+        val sourceMat = Mat()
         val results = mutableListOf<TextBlock>()
 
         try {
-            Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+            Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+            org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
 
             for (contour in contours) {
-                if (Imgproc.contourArea(contour) < 5) continue
-                val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
-                val rotatedRect = Imgproc.minAreaRect(p2f)
-                p2f.release()
+                if (Imgproc.contourArea(contour) < 10) continue
+                val rotatedRect = Imgproc.minAreaRect(org.opencv.core.MatOfPoint2f(*contour.toArray()))
                 
+                // For Increment 1, we only need Native boxes. 
+                // We'll leave Valley expansion for Increment 3 to keep this phase minimal.
                 val bounds = android.graphics.Rect(
                     (rotatedRect.boundingRect().x * invScale).toInt(),
                     (rotatedRect.boundingRect().y * invScale).toInt(),
@@ -539,9 +541,10 @@ object OdometerOcrUtils {
         } finally {
             mask.release()
             hierarchy.release()
+            sourceMat.release()
             contours.forEach { it.release() }
         }
-        return results.sortedBy { it.boundingBox.left }
+        return results
     }
 
     fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap {
