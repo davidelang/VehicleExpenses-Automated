@@ -145,8 +145,8 @@ object OdometerOcrUtils {
 
         baselineBmp.recycle()
         val elapsed = System.currentTimeMillis() - t0
-        // Use Paddle if it found a reasonable number of blocks (> 5), otherwise fallback to ML Kit's word-level precision
-        val finalAngle = if (paddleResult != null && pdCandidates.size >= 5) paddleAngle else mlAngle
+        // Trust ML Kit by default while Paddle detection is being refined
+        val finalAngle = mlAngle
         return DeskewResult(finalAngle.coerceIn(-20f, 20f), elapsed, pdCandidates.ifEmpty { mlCandidates })
     }
 
