@@ -220,7 +220,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                 // Phase 63: Optimized Multi-Spike Deskew (Paddle-preferred)
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, paddleEngineV3)
-                val tilt = deskewRes.angle; val tDeskewTotal = deskewRes.timeMs
+                val tilt = deskewRes.angle
+                val tMl = deskewRes.mlTimeMs
+                val tPd = deskewRes.paddleTimeMs
 
                 if (Math.abs(tilt) > 0.2f) { 
                     val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap!!, -tilt)
@@ -296,8 +298,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, System.currentTimeMillis() - tMatchStart, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tMl + tPd, tDiscoveryTotal)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tMl, tPd, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
