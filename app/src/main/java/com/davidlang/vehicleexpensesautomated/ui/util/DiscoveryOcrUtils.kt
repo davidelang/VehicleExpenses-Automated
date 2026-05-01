@@ -48,8 +48,8 @@ object DiscoveryOcrUtils {
             
             val annotatedBmp = bmp.copy(Bitmap.Config.ARGB_8888, true)
             val canvas = Canvas(annotatedBmp)
-            val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 2f }
-            val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
+            val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL_AND_STROKE; alpha = 50; strokeWidth = 2f }
+            val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 6f }
 
             var primaryRawBox: Rect? = null
             var primaryRefinedBox: Rect? = null
@@ -61,15 +61,16 @@ object DiscoveryOcrUtils {
                     block.boundingBox.right.toInt(),
                     block.boundingBox.bottom.toInt()
                 )
-                
-                // Draw Red Box (Detection)
+
+                // Draw Red Box (Filled & Transparent)
                 canvas.drawRect(rawBox, redPaint)
 
                 val unclipBox = unclipRect(rawBox, 1.5f)
                 val refinedBox = if (expansion == DiscoveryExpansion.VALLEY) expandByValleyStop(rawBox, bmp) else unclipBox
-                val orangeBox = Rect(max(0, refinedBox.left), max(0, refinedBox.top), min(bmp.width, refinedBox.right), min(bmp.height, refinedBox.bottom))
-                
-                // Draw Orange Box (Refinement)
+                // Inset orangeBox slightly to ensure lines stay within canvas
+                val orangeBox = Rect(max(2, refinedBox.left), max(2, refinedBox.top), min(bmp.width - 2, refinedBox.right), min(bmp.height - 2, refinedBox.bottom))
+
+                // Draw Orange Box (Thick Stroke)
                 canvas.drawRect(orangeBox, orangePaint)
 
                 if (i == 0) {
@@ -82,7 +83,7 @@ object DiscoveryOcrUtils {
                 Log.d("DISCOVERY_DEBUG", "  Red Box:    [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}] (W=${rawBox.width()}, H=${rawBox.height()})")
                 Log.d("DISCOVERY_DEBUG", "  Orange Box: [L=${orangeBox.left}, T=${orangeBox.top}, R=${orangeBox.right}, B=${orangeBox.bottom}] (W=${orangeBox.width()}, H=${orangeBox.height()})")
 
-                // RECOGNITION DISABLED: We only visualize and log dimensions.
+                // RECOGNITION DISABLED: Visual only.
                 sb.append("(Visual) ")
                 finalBlocks.add(TextBlock(text = "(Visual)", boundingBox = orangeBox))
             }
@@ -95,6 +96,7 @@ object DiscoveryOcrUtils {
                 rawBox = primaryRawBox,
                 refinedBox = primaryRefinedBox
             )
+
         }
 
         // Sequential pipeline
