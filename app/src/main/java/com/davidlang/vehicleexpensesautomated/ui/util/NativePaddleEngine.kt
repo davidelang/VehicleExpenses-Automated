@@ -38,13 +38,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var lastUsedBufferArea = 0
 
         fun detect(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): DetectionResult? {
-            Log.d("PADDLE_DEBUG", "detect() entry - target=${targetWidth}x${targetHeight}, bitmap=${bitmap.width}x${bitmap.height}")
             val predictor = if (targetWidth <= 320) sharedDetectorSmall else sharedDetectorLarge
             if (predictor == null) return null
             val inputTensor = predictor.getInput(0)
             
-            // Native Resizing
-            inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
+            // DIAGNOSTIC LOGGING: Verifying the actual native shapes
+            val inShape = inputTensor.shape()
+            Log.d("PADDLE_DEBUG", "detect() entry - target=${targetWidth}x${targetHeight}, actualNativeInput=${inShape[3]}x${inShape[2]}")
             
             val area = targetWidth * targetHeight
             if (detectionInputBuffer == null || lastUsedBufferArea != area) {
@@ -69,7 +69,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             canvas.drawBitmap(scaled, 0f, 0f, null)
             scaled.recycle()
 
-            // Paddle DBNet normalization (0.5, 0.5)
+            // Normalization loop...
             val mean = floatArrayOf(0.5f, 0.5f, 0.5f)
             val std = floatArrayOf(0.5f, 0.5f, 0.5f)
 
@@ -83,15 +83,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             padded.recycle()
             try {
-                Log.d("PADDLE_DEBUG", "predictor.run() start - ${targetWidth}x${targetHeight}")
+                Log.d("PADDLE_DEBUG", "predictor.run() start")
                 inputTensor.setData(floatData)
                 predictor.run()
-                Log.d("PADDLE_DEBUG", "predictor.run() end")
                 val outputTensor = predictor.getOutput(0)
                 val dims = outputTensor.shape()
-                val outH = dims[2].toInt()
-                val outW = dims[3].toInt()
-                return DetectionResult(outputTensor.floatData, outW, outH, scale)
+                Log.d("PADDLE_DEBUG", "predictor.run() end - actualNativeOutput=${dims[3]}x${dims[2]}")
+                return DetectionResult(outputTensor.floatData, dims[3].toInt(), dims[2].toInt(), scale)
             } catch (t: Throwable) {
                 Log.e("PaddleDetect", "Detection failed", t)
                 return null
@@ -186,9 +184,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
             if (sharedDetectorLarge == null) {
                 sharedDetectorLarge = createPredictor(modelPath)
+                sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
             }
             if (sharedDetectorSmall == null) {
                 sharedDetectorSmall = createPredictor(modelPath)
+                sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 320))
             }
             if (variant == "V3" && sharedRecognizerV3 == null) {
                 sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
