@@ -56,10 +56,10 @@ object DiscoveryOcrUtils {
 
             for ((i, block) in sortedBlocks.withIndex()) {
                 val rawBox = Rect(
-                    (block.boundingBox.left * invScale).toInt(),
-                    (block.boundingBox.top * invScale).toInt(),
-                    (block.boundingBox.right * invScale).toInt(),
-                    (block.boundingBox.bottom * invScale).toInt()
+                    block.boundingBox.left.toInt(),
+                    block.boundingBox.top.toInt(),
+                    block.boundingBox.right.toInt(),
+                    block.boundingBox.bottom.toInt()
                 )
                 
                 // Draw Red Box (Detection)
