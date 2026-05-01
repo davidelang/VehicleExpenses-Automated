@@ -48,75 +48,69 @@ object OdometerOcrUtils {
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
         val t0 = System.currentTimeMillis()
         
+        fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
+            if (candidates.isEmpty()) return 0f
+            
+            // 1. Height Spike Filter
+            val heights = candidates.map { it.boundingBox.height().toFloat() / imgHeight.toFloat() }
+            val roundedHeights = heights.map { Math.round(it / 0.005f) * 0.005f }
+            val counts = roundedHeights.groupingBy { it }.eachCount()
+            val threshold = Math.max(2, (candidates.size * 0.15).toInt())
+            val peaks = counts.filter { it.value >= threshold }.keys
+            
+            val floor = if (peaks.isNotEmpty()) {
+                peaks.minOrNull()!! / 2.0f
+            } else {
+                val sortedH = heights.sorted()
+                sortedH[sortedH.size / 2] / 2.0f
+            }
+
+            val heightFiltered = candidates.filter { 
+                (it.boundingBox.height().toFloat() / imgHeight.toFloat()) >= floor 
+            }
+
+            if (heightFiltered.isEmpty()) return 0f
+
+            // 2. Outlier Removal (Median Deviation)
+            val angles = heightFiltered.map { it.angle }.sorted()
+            val medianAngle = angles[angles.size / 2]
+            
+            val outlierFiltered = heightFiltered.filter { Math.abs(it.angle - medianAngle) <= 5.0f }
+            
+            if (outlierFiltered.isEmpty()) return medianAngle
+
+            // 3. True Width-Weighted Average
+            var sumAW = 0.0
+            var sumW = 0.0
+            for (b in outlierFiltered) {
+                val w = b.boundingBox.width().toDouble()
+                sumAW += b.angle * w
+                sumW += w
+            }
+            return if (sumW > 0) (sumAW / sumW).toFloat() else medianAngle
+        }
+
         // 1. Paddle Detection at 2048px (Maximum precision for forensic alignment)
         val pTargetSize = 2048
         val pScale = pTargetSize.toFloat() / bitmap.width
-        val baselineBmp = Bitmap.createScaledBitmap(bitmap, pTargetSize, (bitmap.height * pScale).toInt(), true)
+        val pHeight = (bitmap.height * pScale).toInt()
+        val baselineBmp = Bitmap.createScaledBitmap(bitmap, pTargetSize, pHeight, true)
 
-        // --- PADDLE INDEPENDENT MULTI-SPIKE ALGORITHM ---
+        // --- PADDLE INDEPENDENT WEIGHTED AVERAGE ---
         val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, pTargetSize, pTargetSize)
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
             // Normalize: Map sides-as-bottom back to relative tilt
-            if (Math.abs(a - 90f) < 25f) a -= 90f
-            else if (Math.abs(a + 90f) < 25f) a += 90f
-            else if (Math.abs(a - 180f) < 25f) a -= 180f
+            if (Math.abs(a - 90f) < 45f) a -= 90f
+            else if (Math.abs(a + 90f) < 45f) a += 90f
+            else if (Math.abs(a - 180f) < 45f) a -= 180f
+            else if (Math.abs(a + 180f) < 45f) a += 180f
             
-            // Rejection Threshold: Ignore wild orientations (> 35 deg)
-            if (Math.abs(a) <= 35f) {
-                pdCandidates.add(block.copy(angle = a))
-            }
+            pdCandidates.add(block.copy(angle = a))
         }
 
-        var paddleAngle = 0f
-        if (pdCandidates.isNotEmpty()) {
-            // Find Height Spikes (clusters > 15% of blocks)
-            val heights = pdCandidates.map { it.boundingBox.height() }
-            val maxH = heights.maxOrNull() ?: 0
-            if (maxH > 0) {
-                val bins = 20
-                val hist = IntArray(bins)
-                pdCandidates.forEach { b ->
-                    val bin = ((b.boundingBox.height().toFloat() / maxH.toFloat()) * (bins - 1)).toInt().coerceIn(0, bins - 1)
-                    hist[bin]++
-                }
-                
-                val threshold = Math.max(2, (pdCandidates.size * 0.15).toInt())
-                val validBins = hist.indices.filter { hist[it] >= threshold }
-                
-                val minValidBin = validBins.minOrNull() ?: 0
-                val maxValidBin = validBins.maxOrNull() ?: 0
-                val minSpikeH = (minValidBin.toFloat() / bins.toFloat()) * maxH.toFloat()
-                val maxSpikeH = (maxValidBin.toFloat() / bins.toFloat()) * maxH.toFloat()
-                
-                // Keep blocks in spikes OR near the spike range
-                // Floor: Discard dust (below 0.7x of smallest spike)
-                // Ceiling: Discard Super-Blocks (above 1.5x of largest spike)
-                val floor = minSpikeH * 0.7f
-                val ceiling = maxSpikeH * 1.5f
-                
-                val pool = pdCandidates.filter { block ->
-                    val h = block.boundingBox.height().toFloat()
-                    val bin = ((h / maxH.toFloat()) * (bins - 1)).toInt().coerceIn(0, bins - 1)
-                    val isInSpike = validBins.contains(bin)
-                    val isWithinSafeRange = h >= floor && h <= ceiling
-                    isInSpike || isWithinSafeRange
-                }.sortedBy { it.angle }
-
-                if (pool.isNotEmpty()) {
-                    val totalW = pool.sumOf { it.boundingBox.width().toDouble() }
-                    var cumW = 0.0
-                    for (b in pool) {
-                        cumW += b.boundingBox.width().toDouble()
-                        if (cumW >= totalW / 2.0) {
-                            paddleAngle = b.angle
-                            break
-                        }
-                    }
-                }
-            }
-        }
+        val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
 
         // 2. ML Kit Recognition at 1500px (Stable fallback)
         val mScale = 1500f / bitmap.width
@@ -126,28 +120,15 @@ object OdometerOcrUtils {
         val mlResult = extractFromPhotoBitmap(mScaled)
         mScaled.recycle()
         
-        val mlCandidates = mlResult.textBlocks.filter { it.text.length > 1 }
-        var mlAngle = 0f
-        if (mlCandidates.isNotEmpty()) {
-            val sortedMl = mlCandidates.map { block ->
-                var a = block.angle
-                if (Math.abs(a - 180f) < 35f) a -= 180f
-                else if (Math.abs(a + 180f) < 35f) a += 180f
-                block.copy(angle = a)
-            }.filter { Math.abs(it.angle) <= 35f }.sortedBy { it.angle }
-            
-            if (sortedMl.isNotEmpty()) {
-                val totalW = sortedMl.sumOf { it.boundingBox.width().toDouble() }
-                var cumW = 0.0
-                for (b in sortedMl) {
-                    cumW += b.boundingBox.width().toDouble()
-                    if (cumW >= totalW / 2.0) {
-                        mlAngle = b.angle
-                        break
-                    }
-                }
-            }
+        val mlCandidates = mlResult.textBlocks.filter { it.text.length > 1 }.map { block ->
+            var a = block.angle
+            if (a > 90f) a -= 180f
+            else if (a < -90f) a += 180f
+            block.copy(angle = a)
         }
+        
+        val mHeight = (bitmap.height * mScale).toInt()
+        val mlAngle = calculateWeightedAverage(mlCandidates, mHeight)
 
         baselineBmp.recycle()
         val elapsed = System.currentTimeMillis() - t0
