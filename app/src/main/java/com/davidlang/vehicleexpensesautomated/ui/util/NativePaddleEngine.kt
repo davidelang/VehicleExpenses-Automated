@@ -38,12 +38,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val inputTensor = predictor.getInput(0)
 
         val area = targetWidth * targetHeight
-        if (detectionInputBuffer == null || lastUsedBufferArea != area) {
-            detectionInputBuffer = FloatArray(1 * 3 * targetHeight * targetWidth)
-            lastUsedBufferArea = area
+        if (detectionInputBuffer == null || detectionInputBuffer!!.size != 3 * area) {
+            detectionInputBuffer = FloatArray(3 * area)
         }
         val floatData = detectionInputBuffer!!
         floatData.fill(0.0f)
+
 
         val scaleW = targetWidth.toFloat() / bitmap.width
         val scaleH = targetHeight.toFloat() / bitmap.height
