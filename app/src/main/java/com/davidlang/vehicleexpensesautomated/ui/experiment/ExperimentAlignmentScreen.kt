@@ -350,7 +350,7 @@ private fun serializePhotoResultToJson(
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult
 ): JSONObject {
     return JSONObject().apply {
-        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
+        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("deskew_time_mlkit_ms", deskewRes.mlTimeMs); put("deskew_time_paddle_ms", deskewRes.paddleTimeMs); put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
         
         val mlArray = JSONArray()
         deskewRes.mlBlocks.forEach { block ->
