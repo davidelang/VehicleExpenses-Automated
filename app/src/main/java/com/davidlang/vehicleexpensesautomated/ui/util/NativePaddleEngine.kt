@@ -29,7 +29,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private set
 
     companion object {
-        private var sharedDetector: PaddlePredictor? = null
+        private var sharedDetector1280: PaddlePredictor? = null
+        private var sharedDetector320: PaddlePredictor? = null
         private var sharedRecognizerV3: PaddlePredictor? = null
         private var sharedRecognizerNumeric: PaddlePredictor? = null
         private var isNativeLibLoaded = false
@@ -38,7 +39,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         fun detect(bitmap: Bitmap, inputSize: Int = 1280): DetectionResult? {
             Log.d("PADDLE_DEBUG", "detect() entry - inputSize=$inputSize, bitmap=${bitmap.width}x${bitmap.height}")
-            val predictor = sharedDetector ?: return null
+            val predictor = if (inputSize <= 320) sharedDetector320 else sharedDetector1280
+            if (predictor == null) return null
             val inputTensor = predictor.getInput(0)
             Log.d("PADDLE_DEBUG", "detect() resize start - inputSize=$inputSize")
             inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
@@ -178,8 +180,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 loadNativeLibrary()
                 isNativeLibLoaded = true 
             }
-            if (sharedDetector == null) {
-                sharedDetector = createPredictor(copyAssetToInternal("paddle/det_v4_dynamic_$arch.nb"))
+            val modelPath = copyAssetToInternal("paddle/det_v4_dynamic_$arch.nb")
+            if (sharedDetector1280 == null) {
+                sharedDetector1280 = createPredictor(modelPath)
+            }
+            if (sharedDetector320 == null) {
+                sharedDetector320 = createPredictor(modelPath)
             }
             if (variant == "V3" && sharedRecognizerV3 == null) {
                 sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
