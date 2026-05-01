@@ -54,6 +54,7 @@ data class TextBlock(
     val text: String,
     val boundingBox: Rect, // Final Crop Pixel coordinates
     val angle: Float = 0f,
+    val points: List<org.opencv.core.Point> = emptyList(),
     val rawDiscoveryBox: RectF? = null,    // RED tier
     val refinedDiscoveryBox: RectF? = null, // ORANGE tier
     val metadata: Map<String, String> = emptyMap()
