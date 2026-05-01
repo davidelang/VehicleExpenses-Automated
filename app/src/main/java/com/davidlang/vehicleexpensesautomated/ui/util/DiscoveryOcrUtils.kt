@@ -83,9 +83,14 @@ object DiscoveryOcrUtils {
                 Log.d("DISCOVERY_DEBUG", "  Red Box:    [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}] (W=${rawBox.width()}, H=${rawBox.height()})")
                 Log.d("DISCOVERY_DEBUG", "  Orange Box: [L=${orangeBox.left}, T=${orangeBox.top}, R=${orangeBox.right}, B=${orangeBox.bottom}] (W=${orangeBox.width()}, H=${orangeBox.height()})")
 
-                // RECOGNITION DISABLED: Visual only.
-                sb.append("(Visual) ")
-                finalBlocks.add(TextBlock(text = "(Visual)", boundingBox = orangeBox))
+                // Phase 63: Zero-Allocation Recognition (Sub-bitmap view)
+                val recognitionCrop = Bitmap.createBitmap(bmp, orangeBox.left, orangeBox.top, orangeBox.width(), orangeBox.height())
+                val recognizedText = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
+                
+                if (recognizedText.isNotBlank()) {
+                    sb.append("$recognizedText ")
+                }
+                finalBlocks.add(TextBlock(text = recognizedText, boundingBox = orangeBox))
             }
 
             return OcrStepResult(
