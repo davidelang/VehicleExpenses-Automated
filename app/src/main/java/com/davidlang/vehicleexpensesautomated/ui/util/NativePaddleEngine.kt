@@ -162,15 +162,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 loadNativeLibrary()
                 isNativeLibLoaded = true 
             }
-            val modelPath = copyAssetToInternal("paddle/det_v4_4000_\$arch.nb")
+            val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
             sharedDetector = createPredictor(modelPath)
             
             if (variant == "V3" && recognizerV3 == null) {
-                recognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_\$arch.nb"))
+                recognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
                 recognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
             }
             if (variant == "V2" && recognizerNumeric == null) {
-                recognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_\$arch.nb"))
+                recognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_$arch.nb"))
                 recognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
             }
             loadDictionary("paddle/en_dict.txt")
@@ -184,7 +184,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private fun loadNativeLibrary() {
         val abi = Build.SUPPORTED_ABIS[0]
         val libName = "libpaddle_lite_jni.so"
-        val assetPath = "libs_backup/\${abi}_\$libName"
+        val assetPath = "libs_backup/${abi}_$libName"
         try { 
             val internalLibPath = copyAssetToInternal(assetPath)
             System.load(internalLibPath) 

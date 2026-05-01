@@ -198,7 +198,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val strategies = listOf(
         "ML Kit Native (Exact)", "ML Kit 48px (Exact)", "ML Kit 32px (Exact)",
         "Paddle V3 Greedy",
-        "Paddle V3 Disc (Unclip)", "Paddle V3 Disc (Valley)"
+        "Paddle V3 Unclip", "Paddle V3 Valley"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -264,9 +264,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                 for (strat in strategies) {
                                     val tRef0 = System.currentTimeMillis()
+                                    val isDisc = strat.contains("Unclip") || strat.contains("Valley")
                                     val engine = when {
                                         strat.contains("ML Kit") -> "ML Kit"
-                                        strat.contains("Disc") -> {
+                                        isDisc -> {
                                             val expansionLabel = if (strat.contains("Valley")) "Valley" else "Unclip"
                                             if (strat.contains("V3")) "Paddle V3 $expansionLabel" else "Paddle V2 $expansionLabel"
                                         }
@@ -280,7 +281,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val activePaddle = if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
                                     val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
-                                    val steps = if (strat.contains("Disc")) {
+                                    val steps = if (isDisc) {
                                         DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle, expansionMode)
                                     } else {
                                         OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
