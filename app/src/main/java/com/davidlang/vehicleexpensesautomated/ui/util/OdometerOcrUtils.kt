@@ -501,6 +501,7 @@ object OdometerOcrUtils {
         var maxHeat = 0f
         for (v in heatmap) { if (v > maxHeat) maxHeat = v }
         val maskThreshold = 0.20f
+        Log.i("PADDLE_HEATMAP_DIAG", "Heatmap Max: $maxHeat, Threshold: $maskThreshold")
 
         val mask = Mat(h, w, CvType.CV_8U)
         val data = ByteArray(heatmap.size)
