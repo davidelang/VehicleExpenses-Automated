@@ -505,12 +505,15 @@ object OdometerOcrUtils {
         sourceBitmap: Bitmap, algorithm: String = "Native"
     ): List<TextBlock> {
         val invScale = 1.0 / scale.toDouble()
-        val mask = Mat(h, w, CvType.CV_8U)
+
+        var maxHeat = 0f
+        for (v in heatmap) { if (v > maxHeat) maxHeat = v }
         val maskThreshold = 0.20f
-        
+
+        val mask = Mat(h, w, CvType.CV_8U)
         val data = ByteArray(heatmap.size)
         for (i in heatmap.indices) {
-            data[i] = if (heatmap[i] > maskThreshold) (-1).toByte() else 0.toByte()
+            data[i] = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte()
         }
         mask.put(0, 0, data)
 
@@ -520,15 +523,15 @@ object OdometerOcrUtils {
         val results = mutableListOf<TextBlock>()
 
         try {
-            Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+            Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
             org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
 
             for (contour in contours) {
                 if (Imgproc.contourArea(contour) < 10) continue
-                val rotatedRect = Imgproc.minAreaRect(org.opencv.core.MatOfPoint2f(*contour.toArray()))
+                val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
+                val rotatedRect = Imgproc.minAreaRect(p2f)
+                p2f.release() // CRITICAL: Prevent native memory leak
                 
-                // For Increment 1, we only need Native boxes. 
-                // We'll leave Valley expansion for Increment 3 to keep this phase minimal.
                 val bounds = android.graphics.Rect(
                     (rotatedRect.boundingRect().x * invScale).toInt(),
                     (rotatedRect.boundingRect().y * invScale).toInt(),
