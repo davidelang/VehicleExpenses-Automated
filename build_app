@@ -39,9 +39,6 @@ if [ $? -eq 0 ]; then
     git tag -f builds
     exit 0
 else
-    echo "Build failed. Rolling back commit to keep history clean."
-    if [ "$#" -ge 2 ]; then
-        git reset HEAD~1
-    fi
+    echo "Build failed."
     exit 1
 fi
