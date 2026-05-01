@@ -414,7 +414,7 @@ object OdometerOcrUtils {
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
-                        val res = NativePaddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary(), it.isV3())
+                        val res = paddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary(), it.isV3())
                         Pair(res, emptyList())
                     } ?: Pair(null, emptyList())
                 }
