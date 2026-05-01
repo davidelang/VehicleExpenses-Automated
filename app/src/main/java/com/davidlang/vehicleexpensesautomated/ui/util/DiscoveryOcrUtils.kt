@@ -41,8 +41,8 @@ object DiscoveryOcrUtils {
             val sb = StringBuilder()
             val finalBlocks = mutableListOf<TextBlock>()
             
-            // 1. Detection at standard 1280px (Stable)
-            val det = paddleEngine.runDetectionOnly(bmp, 1280)
+            // 1. Detection at 320px (High-speed discovery path)
+            val det = paddleEngine.runDetectionOnly(bmp, 320)
             val invScale = 1.0 / det.scaleFactor.toDouble()
             val sortedBlocks = det.textBlocks.sortedBy { it.boundingBox.left }
             
