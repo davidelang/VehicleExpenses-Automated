@@ -91,6 +91,7 @@ object OdometerOcrUtils {
         }
 
         // 1. Paddle Detection at 2048px (Maximum precision for forensic alignment)
+        val tPaddleStart = System.currentTimeMillis()
         val pTargetSize = 2048
         val pScale = pTargetSize.toFloat() / bitmap.width
         val pHeight = (bitmap.height * pScale).toInt()
@@ -111,8 +112,10 @@ object OdometerOcrUtils {
         }
 
         val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
+        val paddleTimeMs = System.currentTimeMillis() - tPaddleStart
 
         // 2. ML Kit Recognition at 1500px (Stable fallback)
+        val tMlStart = System.currentTimeMillis()
         val mScale = 1500f / bitmap.width
         val mScaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * mScale).toInt(), true)
         
@@ -129,14 +132,14 @@ object OdometerOcrUtils {
         
         val mHeight = (bitmap.height * mScale).toInt()
         val mlAngle = calculateWeightedAverage(mlCandidates, mHeight)
+        val mlTimeMs = System.currentTimeMillis() - tMlStart
 
         baselineBmp.recycle()
-        val elapsed = System.currentTimeMillis() - t0
         // Trust ML Kit by default while Paddle detection is being refined
         val finalAngle = mlAngle
         
         // Return both lists explicitly so they can be logged without overwriting
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), elapsed, mlCandidates, pdCandidates)
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
     }
 
     fun cleanLandmarkString(text: String): String {
