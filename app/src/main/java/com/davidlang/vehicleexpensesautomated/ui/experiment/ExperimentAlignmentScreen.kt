@@ -217,13 +217,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             try {
                 originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
                 val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
-                
-                // Phase 63 Increment 1: Pre-Deskew Forensic Scan
-                val paddleDeskewDiscovery = if (paddleEngineV3.isAvailable) paddleEngineV3.runDetectionOnly(originalBitmap!!) else null
-                
-                // Pass paddleEngineV3 for optimized deskew calculation
+
+                // Phase 63: Optimized Multi-Spike Deskew (Paddle-preferred)
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, paddleEngineV3)
                 val tilt = deskewRes.angle; val tDeskewTotal = deskewRes.timeMs
+
                 if (Math.abs(tilt) > 0.2f) { 
                     val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap!!, -tilt)
                     if (leveled != originalBitmap) { originalBitmap!!.recycle(); originalBitmap = leveled }
@@ -299,7 +297,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tDeskewTotal, tDiscoveryTotal)
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes.rawBlocks, paddleDeskewDiscovery)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, tDeskewTotal, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes.rawBlocks)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
@@ -349,7 +347,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 private fun serializePhotoResultToJson(
     lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
-    vehicles: List<Vehicle>, strategies: List<String>, deskewBlocks: List<TextBlock>, paddleDiscovery: OcrResult? = null
+    vehicles: List<Vehicle>, strategies: List<String>, deskewBlocks: List<TextBlock>
 ): JSONObject {
     return JSONObject().apply {
         put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
@@ -358,31 +356,14 @@ private fun serializePhotoResultToJson(
         deskewBlocks.forEach { block ->
             deskewArray.put(JSONObject().apply {
                 put("text", block.text)
-                put("cx", block.boundingBox.centerX().toDouble() / 1500.0)
-                // Normalize height using the same 1500px aspect ratio scaling logic
-                val aspect = discovery.imageHeight.toDouble() / discovery.imageWidth.toDouble()
-                put("cy", block.boundingBox.centerY().toDouble() / (1500.0 * aspect))
-                put("w", block.boundingBox.width().toDouble() / 1500.0)
-                put("h", block.boundingBox.height().toDouble() / (1500.0 * aspect))
+                put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble())
+                put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
+                put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble())
+                put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
                 put("angle", block.angle)
             })
         }
         put("deskew_data", deskewArray)
-
-        paddleDiscovery?.let { p ->
-            val pArray = JSONArray()
-            p.textBlocks.forEach { block ->
-                pArray.put(JSONObject().apply {
-                    put("text", block.text)
-                    put("cx", block.boundingBox.centerX().toDouble() / p.imageWidth.toDouble())
-                    put("cy", block.boundingBox.centerY().toDouble() / p.imageHeight.toDouble())
-                    put("w", block.boundingBox.width().toDouble() / p.imageWidth.toDouble())
-                    put("h", block.boundingBox.height().toDouble() / p.imageHeight.toDouble())
-                    put("angle", block.angle)
-                })
-            }
-            put("paddle_deskew_data", pArray)
-        }
 
         val fullImageOcrTimings = JSONObject(); fullImageOcrTimings.put("ML Kit", tDeskew + discovery.executionTimeMs)
         put("has_heatmap", discovery.rawHeatmap != null); put("full_image_ocr_timings", fullImageOcrTimings)
