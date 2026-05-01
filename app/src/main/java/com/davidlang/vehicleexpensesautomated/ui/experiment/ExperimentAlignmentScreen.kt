@@ -385,7 +385,19 @@ private fun serializePhotoResultToJson(
                 val refDetails = JSONObject()
                 vr.refinementTraces.forEach { (strat, trace) -> 
                     val stratObj = JSONObject(); stratObj.put("time_ms", trace.timeMs)
-                    val stepsArr = JSONArray(); trace.steps.forEach { step -> val stepObj = JSONObject(); stepObj.put("stage", step.stageName); stepObj.put("text", step.text); stepsArr.put(stepObj) }
+                    val stepsArr = JSONArray()
+                    trace.steps.forEach { step -> 
+                        val stepObj = JSONObject()
+                        stepObj.put("stage", step.stageName)
+                        stepObj.put("text", step.text)
+                        step.rawBox?.let { box ->
+                            stepObj.put("raw_box", JSONArray().apply { put(box.left); put(box.top); put(box.right); put(box.bottom) })
+                        }
+                        step.refinedBox?.let { box ->
+                            stepObj.put("refined_box", JSONArray().apply { put(box.left); put(box.top); put(box.right); put(box.bottom) })
+                        }
+                        stepsArr.put(stepObj)
+                    }
                     stratObj.put("steps", stepsArr); refDetails.put(strat, stratObj)
                 }
                 put("refinement_details", refDetails)
