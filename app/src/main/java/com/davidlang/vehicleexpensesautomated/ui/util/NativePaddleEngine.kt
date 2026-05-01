@@ -29,38 +29,41 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private set
 
     companion object {
-        private var sharedDetector1280: PaddlePredictor? = null
-        private var sharedDetector320: PaddlePredictor? = null
+        private var sharedDetectorLarge: PaddlePredictor? = null
+        private var sharedDetectorSmall: PaddlePredictor? = null
         private var sharedRecognizerV3: PaddlePredictor? = null
         private var sharedRecognizerNumeric: PaddlePredictor? = null
         private var isNativeLibLoaded = false
         private var detectionInputBuffer: FloatArray? = null
-        private var lastUsedInputSize = 0
+        private var lastUsedBufferArea = 0
 
-        fun detect(bitmap: Bitmap, inputSize: Int = 1280): DetectionResult? {
-            Log.d("PADDLE_DEBUG", "detect() entry - inputSize=$inputSize, bitmap=${bitmap.width}x${bitmap.height}")
-            val predictor = if (inputSize <= 320) sharedDetector320 else sharedDetector1280
+        fun detect(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): DetectionResult? {
+            Log.d("PADDLE_DEBUG", "detect() entry - target=${targetWidth}x${targetHeight}, bitmap=${bitmap.width}x${bitmap.height}")
+            val predictor = if (targetWidth <= 320) sharedDetectorSmall else sharedDetectorLarge
             if (predictor == null) return null
             val inputTensor = predictor.getInput(0)
-            Log.d("PADDLE_DEBUG", "detect() resize start - inputSize=$inputSize")
-            inputTensor.resize(longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong()))
-            Log.d("PADDLE_DEBUG", "detect() resize end")
             
-            if (detectionInputBuffer == null || lastUsedInputSize != inputSize) {
-                detectionInputBuffer = FloatArray(1 * 3 * inputSize * inputSize)
-                lastUsedInputSize = inputSize
+            // Native Resizing
+            inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
+            
+            val area = targetWidth * targetHeight
+            if (detectionInputBuffer == null || lastUsedBufferArea != area) {
+                detectionInputBuffer = FloatArray(1 * 3 * targetWidth * targetHeight)
+                lastUsedBufferArea = area
             }
             val floatData = detectionInputBuffer!!
             floatData.fill(0.0f)
             
-            // Phase 3 Optimization: Scale features to 320px within the 1280px tensor
-            val featureSize = 320
-            val scale = min(featureSize.toFloat() / bitmap.width, featureSize.toFloat() / bitmap.height)
+            // Robust Asymmetrical Scaling: fits inside the box, preserves aspect ratio
+            val scaleW = targetWidth.toFloat() / bitmap.width
+            val scaleH = targetHeight.toFloat() / bitmap.height
+            val scale = min(scaleW, scaleH)
+            
             val sw = (bitmap.width * scale).toInt()
             val sh = (bitmap.height * scale).toInt()
             
             val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
-            val padded = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+            val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(padded)
             canvas.drawColor(Color.BLACK)
             canvas.drawBitmap(scaled, 0f, 0f, null)
@@ -70,17 +73,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val mean = floatArrayOf(0.5f, 0.5f, 0.5f)
             val std = floatArrayOf(0.5f, 0.5f, 0.5f)
 
-            for (y in 0 until inputSize) {
-                for (x in 0 until inputSize) {
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
                     val px = padded.getPixel(x, y)
-                    floatData[0 * inputSize * inputSize + y * inputSize + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
-                    floatData[1 * inputSize * inputSize + y * inputSize + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
-                    floatData[2 * inputSize * inputSize + y * inputSize + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                    floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                    floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
+                    floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
                 }
             }
             padded.recycle()
             try {
-                Log.d("PADDLE_DEBUG", "predictor.run() start")
+                Log.d("PADDLE_DEBUG", "predictor.run() start - ${targetWidth}x${targetHeight}")
                 inputTensor.setData(floatData)
                 predictor.run()
                 Log.d("PADDLE_DEBUG", "predictor.run() end")
@@ -180,12 +183,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 loadNativeLibrary()
                 isNativeLibLoaded = true 
             }
-            val modelPath = copyAssetToInternal("paddle/det_v4_dynamic_$arch.nb")
-            if (sharedDetector1280 == null) {
-                sharedDetector1280 = createPredictor(modelPath)
+            val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
+            if (sharedDetectorLarge == null) {
+                sharedDetectorLarge = createPredictor(modelPath)
             }
-            if (sharedDetector320 == null) {
-                sharedDetector320 = createPredictor(modelPath)
+            if (sharedDetectorSmall == null) {
+                sharedDetectorSmall = createPredictor(modelPath)
             }
             if (variant == "V3" && sharedRecognizerV3 == null) {
                 sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
@@ -267,9 +270,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         )
     }
 
-    suspend fun runDetectionOnly(bitmap: Bitmap, inputSize: Int = 1280): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun runDetectionOnly(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
-        val det = detect(bitmap, inputSize) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        val det = detect(bitmap, targetWidth, targetHeight) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
         
         // Process heatmap to get boxes
         val blocks = OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, det.scale, bitmap, "Native")
