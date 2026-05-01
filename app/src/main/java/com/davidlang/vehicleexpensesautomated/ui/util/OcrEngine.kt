@@ -263,7 +263,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 val cropRect = Rect(max(0, left), max(0, top), min(bitmap.width, right), min(bitmap.height, bottom))
                 
                 if (cropRect.width() <= 0 || cropRect.height() <= 0) {
-                    textBlocks.add(TextBlock("", cropRect, 0f, rawBox.boundingBox, refinedBox?.boundingBox))
+                    textBlocks.add(TextBlock("", cropRect, 0f, emptyList(), rawBox.boundingBox, refinedBox?.boundingBox))
                     continue
                 }
 
@@ -282,7 +282,7 @@ class NativeTfliteEngine(private val context: Context) : OcrEngine {
                 android.util.Log.i("OCR_TRACE", "Engine: $name | Source: ${bitmap.width}x${bitmap.height} | Text: '$text' | RED: [W=$rawW, H=$rawH, L=$rawL, T=$rawT] | ORANGE: [W=$refW, H=$refH, L=$refL, T=$refT] | YELLOW: [W=${cropRect.width()}, H=${cropRect.height()}, L=${cropRect.left}, T=${cropRect.top}]")
 
                 if (text.isNotBlank()) debugText.append("$text ")
-                textBlocks.add(TextBlock(text, cropRect, refinedBox?.angle ?: 0f, rawBox.boundingBox, refinedBox?.boundingBox))
+                textBlocks.add(TextBlock(text, cropRect, refinedBox?.angle ?: 0f, emptyList(), rawBox.boundingBox, refinedBox?.boundingBox))
             }
             padded.recycle(); detInterpreter.close(); engine.close()
             return@withContext OcrResult(
