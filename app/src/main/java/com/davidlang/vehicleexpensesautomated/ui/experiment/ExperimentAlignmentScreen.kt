@@ -266,11 +266,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val tRef0 = System.currentTimeMillis()
                                     val engine = when {
                                         strat.contains("ML Kit") -> "ML Kit"
-                                        strat.contains("V2") -> if (strat.contains("Disc")) "Paddle V2 Disc (Padded)" else "Paddle V2 Greedy"
-                                        else -> if (strat.contains("Disc")) "Paddle V3 Disc (Padded)" else "Paddle V3 Greedy"
+                                        strat.contains("Disc") -> {
+                                            val expansionLabel = if (strat.contains("Valley")) "Valley" else "Unclip"
+                                            if (strat.contains("V3")) "Paddle V3 $expansionLabel" else "Paddle V2 $expansionLabel"
+                                        }
+                                        strat.contains("V2") -> "Paddle V2 Greedy"
+                                        else -> "Paddle V3 Greedy"
                                     }
-                                    val h = when {
-                                        strat.contains("48px") -> 48
+                                    val h = when {                                        strat.contains("48px") -> 48
                                         strat.contains("32px") -> 32
                                         else -> null
                                     }
