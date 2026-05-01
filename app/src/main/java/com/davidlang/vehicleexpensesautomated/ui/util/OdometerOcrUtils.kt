@@ -48,10 +48,10 @@ object OdometerOcrUtils {
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
         val t0 = System.currentTimeMillis()
         
-        // 1. Paddle Detection at 2000px (Primary)
-        val pScale = 2000f / bitmap.width
-        val pScaled = Bitmap.createScaledBitmap(bitmap, 2000, (bitmap.height * pScale).toInt(), true)
-        val paddleResult = paddleEngine?.runDetectionOnly(pScaled, 2000)
+        // 1. Paddle Detection at 1280px (Primary - Stay within model limits)
+        val pScale = 1280f / bitmap.width
+        val pScaled = Bitmap.createScaledBitmap(bitmap, 1280, (bitmap.height * pScale).toInt(), true)
+        val paddleResult = paddleEngine?.runDetectionOnly(pScaled, 1280)
         pScaled.recycle()
 
         // --- PADDLE INDEPENDENT MULTI-SPIKE ALGORITHM ---
