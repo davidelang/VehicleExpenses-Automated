@@ -48,9 +48,11 @@ object OdometerOcrUtils {
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
         val t0 = System.currentTimeMillis()
         
-        // 1. Get raw candidates from both engines
-        val mlResult = extractFromPhotoBitmap(bitmap)
-        val paddleResult = paddleEngine?.runDetectionOnly(bitmap, 1280)
+        // 1. Paddle Detection at 2000px (Primary)
+        val pScale = 2000f / bitmap.width
+        val pScaled = Bitmap.createScaledBitmap(bitmap, 2000, (bitmap.height * pScale).toInt(), true)
+        val paddleResult = paddleEngine?.runDetectionOnly(pScaled, 2000)
+        pScaled.recycle()
 
         // --- PADDLE INDEPENDENT MULTI-SPIKE ALGORITHM ---
         val pdCandidates = mutableListOf<TextBlock>()
@@ -71,6 +73,7 @@ object OdometerOcrUtils {
         if (pdCandidates.isNotEmpty()) {
             // Find Height Spikes (clusters > 15% of blocks)
             val heights = pdCandidates.map { it.boundingBox.height() }
+            val minH = heights.minOrNull() ?: 0
             val maxH = heights.maxOrNull() ?: 0
             if (maxH > 0) {
                 val bins = 20
@@ -106,7 +109,12 @@ object OdometerOcrUtils {
             }
         }
 
-        // --- ML KIT INDEPENDENT ALGORITHM (Stable fallback) ---
+        // 2. ML Kit Recognition at 1500px (Stable fallback)
+        val mScale = 1500f / bitmap.width
+        val mScaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * mScale).toInt(), true)
+        val mlResult = extractFromPhotoBitmap(mScaled)
+        mScaled.recycle()
+
         val mlCandidates = mlResult.textBlocks.filter { it.text.length > 1 }
         var mlAngle = 0f
         if (mlCandidates.isNotEmpty()) {
@@ -135,7 +143,6 @@ object OdometerOcrUtils {
         val finalAngle = if (paddleResult != null && pdCandidates.isNotEmpty()) paddleAngle else mlAngle
         return DeskewResult(finalAngle.coerceIn(-20f, 20f), elapsed, pdCandidates.ifEmpty { mlCandidates })
     }
-
 
     fun cleanLandmarkString(text: String): String {
         val filtered = text.filter { it.code in 32..126 }
