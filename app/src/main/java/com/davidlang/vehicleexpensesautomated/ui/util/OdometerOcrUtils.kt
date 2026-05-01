@@ -45,40 +45,97 @@ object OdometerOcrUtils {
 
     data class DeskewResult(val angle: Float, val timeMs: Long, val rawBlocks: List<TextBlock> = emptyList())
 
-    suspend fun calculateAverageTextAngle(bitmap: Bitmap): DeskewResult {
+    suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
         val t0 = System.currentTimeMillis()
-        val scale = 1500f / bitmap.width
-        val scaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * scale).toInt(), true)
-        val ocrResult = extractFromPhotoBitmap(scaled)
-        scaled.recycle()
         
-        val elapsed = System.currentTimeMillis() - t0
-        // Robust Filtering: Ignore very small blocks and noise
-        val candidates = ocrResult.textBlocks.filter { it.text.length > 1 && it.boundingBox.width() > 10 }
-        if (candidates.isEmpty()) return DeskewResult(0f, elapsed, ocrResult.textBlocks)
-        
-        // Width-Weighted Median Calculation
-        // 1. Sort by angle
-        val sorted = candidates.sortedBy { it.angle }
-        // 2. Total weight
-        val totalWeight = sorted.sumOf { it.boundingBox.width().toDouble() }
-        if (totalWeight == 0.0) return DeskewResult(0f, elapsed, candidates)
-        
-        // 3. Find the angle where cumulative weight reaches 50%
-        var cumulativeWeight = 0.0
-        var weightedMedianAngle = 0f
-        for (block in sorted) {
-            cumulativeWeight += block.boundingBox.width().toDouble()
-            if (cumulativeWeight >= totalWeight / 2.0) {
-                weightedMedianAngle = block.angle
-                break
+        // 1. Get raw candidates from both engines
+        val mlResult = extractFromPhotoBitmap(bitmap)
+        val paddleResult = paddleEngine?.runDetectionOnly(bitmap, 1280)
+
+        // --- PADDLE INDEPENDENT MULTI-SPIKE ALGORITHM ---
+        val pdCandidates = mutableListOf<TextBlock>()
+        paddleResult?.textBlocks?.forEach { block ->
+            var a = block.angle
+            // Normalize: Map sides-as-bottom back to relative tilt
+            if (Math.abs(a - 90f) < 25f) a -= 90f
+            else if (Math.abs(a + 90f) < 25f) a += 90f
+            else if (Math.abs(a - 180f) < 25f) a -= 180f
+            
+            // Rejection Threshold: Ignore wild orientations (> 35 deg)
+            if (Math.abs(a) <= 35f) {
+                pdCandidates.add(block.copy(angle = a))
             }
         }
-        
-        // Phase 62: Rotational Gating. Cap the deskew to reasonable limits to prevent "spinning" on noise.
-        val finalAngle = weightedMedianAngle.coerceIn(-20f, 20f)
-        return DeskewResult(finalAngle, elapsed, candidates)
+
+        var paddleAngle = 0f
+        if (pdCandidates.isNotEmpty()) {
+            // Find Height Spikes (clusters > 15% of blocks)
+            val heights = pdCandidates.map { it.boundingBox.height() }
+            val maxH = heights.maxOrNull() ?: 0
+            if (maxH > 0) {
+                val bins = 20
+                val hist = IntArray(bins)
+                pdCandidates.forEach { b ->
+                    val bin = ((b.boundingBox.height().toFloat() / maxH.toFloat()) * (bins - 1)).toInt().coerceIn(0, bins - 1)
+                    hist[bin]++
+                }
+                
+                val threshold = Math.max(2, (pdCandidates.size * 0.15).toInt())
+                val validBins = hist.indices.filter { hist[it] >= threshold }
+                val minValidBin = validBins.minOrNull() ?: 0
+                val minSpikeH = (minValidBin.toFloat() / bins.toFloat()) * maxH.toFloat()
+                
+                // Keep blocks in spikes OR >= 0.5x of the smallest spike
+                val floor = minSpikeH * 0.5f
+                val pool = pdCandidates.filter { block ->
+                    val bin = ((block.boundingBox.height().toFloat() / maxH.toFloat()) * (bins - 1)).toInt().coerceIn(0, bins - 1)
+                    validBins.contains(bin) || block.boundingBox.height() >= floor
+                }.sortedBy { it.angle }
+
+                if (pool.isNotEmpty()) {
+                    val totalW = pool.sumOf { it.boundingBox.width().toDouble() }
+                    var cumW = 0.0
+                    for (b in pool) {
+                        cumW += b.boundingBox.width().toDouble()
+                        if (cumW >= totalW / 2.0) {
+                            paddleAngle = b.angle
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- ML KIT INDEPENDENT ALGORITHM (Stable fallback) ---
+        val mlCandidates = mlResult.textBlocks.filter { it.text.length > 1 }
+        var mlAngle = 0f
+        if (mlCandidates.isNotEmpty()) {
+            val sortedMl = mlCandidates.map { block ->
+                var a = block.angle
+                if (Math.abs(a - 180f) < 35f) a -= 180f
+                else if (Math.abs(a + 180f) < 35f) a += 180f
+                block.copy(angle = a)
+            }.filter { Math.abs(it.angle) <= 35f }.sortedBy { it.angle }
+            
+            if (sortedMl.isNotEmpty()) {
+                val totalW = sortedMl.sumOf { it.boundingBox.width().toDouble() }
+                var cumW = 0.0
+                for (b in sortedMl) {
+                    cumW += b.boundingBox.width().toDouble()
+                    if (cumW >= totalW / 2.0) {
+                        mlAngle = b.angle
+                        break
+                    }
+                }
+            }
+        }
+
+        val elapsed = System.currentTimeMillis() - t0
+        // Trust Paddle by default as it is more sensitive to non-zero tilt
+        val finalAngle = if (paddleResult != null && pdCandidates.isNotEmpty()) paddleAngle else mlAngle
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), elapsed, pdCandidates.ifEmpty { mlCandidates })
     }
+
 
     fun cleanLandmarkString(text: String): String {
         val filtered = text.filter { it.code in 32..126 }
