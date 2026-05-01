@@ -63,11 +63,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             canvas.drawColor(Color.BLACK)
             canvas.drawBitmap(scaled, 0f, 0f, null)
             scaled.recycle()
-            
-            // Standard ImageNet normalization (Paddle DBNet usually uses this)
-            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
-            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
-            
+
+            // Paddle DBNet normalization (0.5, 0.5)
+            val mean = floatArrayOf(0.5f, 0.5f, 0.5f)
+            val std = floatArrayOf(0.5f, 0.5f, 0.5f)
+
             for (y in 0 until inputSize) {
                 for (x in 0 until inputSize) {
                     val px = padded.getPixel(x, y)
@@ -77,7 +77,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
             }
             padded.recycle()
-            
             try {
                 Log.d("PADDLE_DEBUG", "predictor.run() start")
                 inputTensor.setData(floatData)
