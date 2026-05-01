@@ -43,7 +43,7 @@ object OdometerOcrUtils {
         }
     }
 
-    data class DeskewResult(val angle: Float, val timeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
+    data class DeskewResult(val angle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
 
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
         val t0 = System.currentTimeMillis()
