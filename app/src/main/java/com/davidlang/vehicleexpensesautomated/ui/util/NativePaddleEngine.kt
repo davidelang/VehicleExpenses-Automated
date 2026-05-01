@@ -31,35 +31,37 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private var detectionInputBuffer: FloatArray? = null
     private var lastUsedBufferArea = 0
     private var recognitionInputBuffer: FloatArray? = null
-    fun detect(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): DetectionResult? {
+    fun detect(bitmap: Bitmap, targetWidth: Int = 320, targetHeight: Int = 128): DetectionResult? {
         val predictor = sharedDetector ?: return null
-        
+
+        // No native resize: Tensor is pre-locked to 128x320
         val inputTensor = predictor.getInput(0)
-        inputTensor.resize(longArrayOf(1, 3, targetHeight.toLong(), targetWidth.toLong()))
-        
+
         val area = targetWidth * targetHeight
         if (detectionInputBuffer == null || lastUsedBufferArea != area) {
-            detectionInputBuffer = FloatArray(1 * 3 * targetWidth * targetHeight)
+            detectionInputBuffer = FloatArray(1 * 3 * targetHeight * targetWidth)
             lastUsedBufferArea = area
         }
         val floatData = detectionInputBuffer!!
         floatData.fill(0.0f)
-        
+
         val scaleW = targetWidth.toFloat() / bitmap.width
         val scaleH = targetHeight.toFloat() / bitmap.height
         val scale = min(scaleW, scaleH)
-        
+
         val sw = (bitmap.width * scale).toInt()
         val sh = (bitmap.height * scale).toInt()
-        
+
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
         val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded)
         canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
+
         val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
         val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+
         for (y in 0 until targetHeight) {
             for (x in 0 until targetWidth) {
                 val px = padded.getPixel(x, y)
@@ -79,6 +81,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             return null
         }
     }
+
     
     suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): String = withContext(Dispatchers.IO) {
         val predictor = if (isV3) recognizerV3 else recognizerNumeric
