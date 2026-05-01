@@ -48,13 +48,12 @@ object OdometerOcrUtils {
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
         val t0 = System.currentTimeMillis()
         
-        // 1. Paddle Detection at 1280px (Primary - Stay within model limits)
-        val pScale = 1280f / bitmap.width
-        val pScaled = Bitmap.createScaledBitmap(bitmap, 1280, (bitmap.height * pScale).toInt(), true)
-        val paddleResult = paddleEngine?.runDetectionOnly(pScaled, 1280)
-        pScaled.recycle()
+        // 1. Scale to a high-resolution 1500px baseline (Proven precision)
+        val baselineScale = 1500f / bitmap.width
+        val baselineBmp = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * baselineScale).toInt(), true)
 
         // --- PADDLE INDEPENDENT MULTI-SPIKE ALGORITHM ---
+        val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, 1280)
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
@@ -73,7 +72,6 @@ object OdometerOcrUtils {
         if (pdCandidates.isNotEmpty()) {
             // Find Height Spikes (clusters > 15% of blocks)
             val heights = pdCandidates.map { it.boundingBox.height() }
-            val minH = heights.minOrNull() ?: 0
             val maxH = heights.maxOrNull() ?: 0
             if (maxH > 0) {
                 val bins = 20
@@ -85,14 +83,24 @@ object OdometerOcrUtils {
                 
                 val threshold = Math.max(2, (pdCandidates.size * 0.15).toInt())
                 val validBins = hist.indices.filter { hist[it] >= threshold }
-                val minValidBin = validBins.minOrNull() ?: 0
-                val minSpikeH = (minValidBin.toFloat() / bins.toFloat()) * maxH.toFloat()
                 
-                // Keep blocks in spikes OR >= 0.5x of the smallest spike
-                val floor = minSpikeH * 0.5f
+                val minValidBin = validBins.minOrNull() ?: 0
+                val maxValidBin = validBins.maxOrNull() ?: 0
+                val minSpikeH = (minValidBin.toFloat() / bins.toFloat()) * maxH.toFloat()
+                val maxSpikeH = (maxValidBin.toFloat() / bins.toFloat()) * maxH.toFloat()
+                
+                // Keep blocks in spikes OR near the spike range
+                // Floor: Discard dust (below 0.7x of smallest spike)
+                // Ceiling: Discard Super-Blocks (above 1.5x of largest spike)
+                val floor = minSpikeH * 0.7f
+                val ceiling = maxSpikeH * 1.5f
+                
                 val pool = pdCandidates.filter { block ->
-                    val bin = ((block.boundingBox.height().toFloat() / maxH.toFloat()) * (bins - 1)).toInt().coerceIn(0, bins - 1)
-                    validBins.contains(bin) || block.boundingBox.height() >= floor
+                    val h = block.boundingBox.height().toFloat()
+                    val bin = ((h / maxH.toFloat()) * (bins - 1)).toInt().coerceIn(0, bins - 1)
+                    val isInSpike = validBins.contains(bin)
+                    val isWithinSafeRange = h >= floor && h <= ceiling
+                    isInSpike || isWithinSafeRange
                 }.sortedBy { it.angle }
 
                 if (pool.isNotEmpty()) {
@@ -109,12 +117,8 @@ object OdometerOcrUtils {
             }
         }
 
-        // 2. ML Kit Recognition at 1500px (Stable fallback)
-        val mScale = 1500f / bitmap.width
-        val mScaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * mScale).toInt(), true)
-        val mlResult = extractFromPhotoBitmap(mScaled)
-        mScaled.recycle()
-
+        // --- ML KIT INDEPENDENT ALGORITHM (Fallback) ---
+        val mlResult = extractFromPhotoBitmap(baselineBmp)
         val mlCandidates = mlResult.textBlocks.filter { it.text.length > 1 }
         var mlAngle = 0f
         if (mlCandidates.isNotEmpty()) {
@@ -138,9 +142,10 @@ object OdometerOcrUtils {
             }
         }
 
+        baselineBmp.recycle()
         val elapsed = System.currentTimeMillis() - t0
-        // Trust Paddle by default as it is more sensitive to non-zero tilt
-        val finalAngle = if (paddleResult != null && pdCandidates.isNotEmpty()) paddleAngle else mlAngle
+        // Use Paddle if it found a reasonable number of blocks (> 5), otherwise fallback to ML Kit's word-level precision
+        val finalAngle = if (paddleResult != null && pdCandidates.size >= 5) paddleAngle else mlAngle
         return DeskewResult(finalAngle.coerceIn(-20f, 20f), elapsed, pdCandidates.ifEmpty { mlCandidates })
     }
 
