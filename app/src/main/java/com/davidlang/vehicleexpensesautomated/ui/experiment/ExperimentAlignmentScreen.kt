@@ -221,7 +221,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 // Phase 63 Increment 1: Pre-Deskew Forensic Scan
                 val paddleDeskewDiscovery = if (paddleEngineV3.isAvailable) paddleEngineV3.runDetectionOnly(originalBitmap!!) else null
                 
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!)
+                // Pass paddleEngineV3 for optimized deskew calculation
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, paddleEngineV3)
                 val tilt = deskewRes.angle; val tDeskewTotal = deskewRes.timeMs
                 if (Math.abs(tilt) > 0.2f) { 
                     val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap!!, -tilt)
