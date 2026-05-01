@@ -197,7 +197,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 58 Strategies
     val strategies = listOf(
         "ML Kit Native (Exact)", "ML Kit 48px (Exact)", "ML Kit 32px (Exact)",
-        "Paddle V2 Greedy", "Paddle V3 Greedy",
+        "Paddle V3 Greedy",
         "Paddle V3 Disc (Unclip)", "Paddle V3 Disc (Valley)"
     )
 
