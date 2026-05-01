@@ -1,5 +1,4 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
-
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -16,18 +15,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
 class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
     override val name = "Paddle $variant Greedy"
     fun isV3() = variant == "V3"
     
     data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val scale: Float)
-
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
     var isAvailable = false
         private set
-
     private var sharedDetector: PaddlePredictor? = null
     private var recognizerV3: PaddlePredictor? = null
     private var recognizerNumeric: PaddlePredictor? = null
@@ -35,7 +31,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private var detectionInputBuffer: FloatArray? = null
     private var lastUsedBufferArea = 0
     private var recognitionInputBuffer: FloatArray? = null
-
     fun detect(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): DetectionResult? {
         val predictor = sharedDetector ?: return null
         
@@ -63,10 +58,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
-
         val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
         val std = floatArrayOf(0.229f, 0.224f, 0.225f)
-
         for (y in 0 until targetHeight) {
             for (x in 0 until targetWidth) {
                 val px = padded.getPixel(x, y)
@@ -94,10 +87,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) {
             return@withContext "(Skipped: Memory)"
         }
-
         runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor!!).text
     }
-
     private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
         val tStart = System.currentTimeMillis()
         val targetHeight = 48
@@ -108,7 +99,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         val floatData = recognitionInputBuffer!!
         floatData.fill(0.0f)
-
         val scale = targetHeight.toFloat() / bitmap.height.toFloat()
         val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, targetHeight, true)
@@ -117,7 +107,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
-
         val mean = 0.5f
         val std = 0.5f
         for (y in 0 until targetHeight) {
@@ -162,9 +151,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, if (charCount > 0) totalConf / charCount else 0f)
     }
-
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
-
     init {
         try {
             val arch = detectArch()
@@ -191,7 +178,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             Log.e("PaddleLite", "Failed to initialize predictors", e)
         }
     }
-
     private fun loadNativeLibrary() {
         val abi = Build.SUPPORTED_ABIS[0]
         val libName = "libpaddle_lite_jni.so"
@@ -203,13 +189,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             System.loadLibrary("paddle_lite_jni") 
         }
     }
-
     private fun detectArch(): String = when (Build.SUPPORTED_ABIS[0]) { 
         "arm64-v8a" -> "armv8"
         "armeabi-v7a" -> "armv7"
         else -> "x86_64" 
     }
-
     private fun copyAssetToInternal(assetPath: String): String {
         val file = File(context.filesDir, assetPath.replace("/", "_"))
         context.assets.open(assetPath).use { input -> 
@@ -219,7 +203,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         return file.absolutePath
     }
-
     private fun loadDictionary(assetPath: String) {
         dictionary.clear()
         context.assets.open(assetPath).bufferedReader().use { reader -> 
@@ -228,7 +211,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
     
     fun getDictionary(): List<String> = dictionary
-
     private fun createPredictor(modelPath: String): PaddlePredictor {
         val config = MobileConfig()
         config.setModelFromFile(modelPath)
@@ -236,9 +218,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         config.setPowerMode(PowerMode.LITE_POWER_HIGH)
         return PaddlePredictor.createPaddlePredictor(config)
     }
-
     override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
-
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: \$initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
@@ -256,7 +236,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             imageHeight = bitmap.height
         )
     }
-
     suspend fun runDetectionOnly(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val det = detect(bitmap, targetWidth, targetHeight) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
@@ -277,4 +256,3 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         )
     }
 }
-EOF
