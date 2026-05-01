@@ -501,7 +501,7 @@ object OdometerOcrUtils {
         var maxHeat = 0f
         for (v in heatmap) { if (v > maxHeat) maxHeat = v }
         val maskThreshold = 0.20f
-        Log.i("PADDLE_HEATMAP_DIAG", "Heatmap Max: $maxHeat, Threshold: $maskThreshold")
+        Log.e("PADDLE_HEATMAP_DIAG", "Heatmap Max: $maxHeat, Threshold: $maskThreshold")
 
         val mask = Mat(h, w, CvType.CV_8U)
         val data = ByteArray(heatmap.size)
@@ -523,7 +523,9 @@ object OdometerOcrUtils {
                 if (Imgproc.contourArea(contour) < 10) continue
                 val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
                 val rotatedRect = Imgproc.minAreaRect(p2f)
-                p2f.release() // CRITICAL: Prevent native memory leak
+                val points = arrayOf(org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point())
+                rotatedRect.points(points)
+                p2f.release() 
                 
                 val bounds = android.graphics.Rect(
                     (rotatedRect.boundingRect().x * invScale).toInt(),
@@ -532,7 +534,8 @@ object OdometerOcrUtils {
                     ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
                 )
                 
-                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat()))
+                val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
+                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints))
             }
         } finally {
             mask.release()
