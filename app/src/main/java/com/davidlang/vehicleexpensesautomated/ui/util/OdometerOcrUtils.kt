@@ -422,30 +422,26 @@ object OdometerOcrUtils {
             )
         }
 
-        // 1. Raw (Fresh Copy)
-        val raw = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        steps.add(exec(raw, "Raw"))
-        // No more manual Canvas drawing here; it's handled in exec -> takeSnapshot
-
-        // 2. Grayscale
-        val gray = applyGrayscale(bitmap)
-        steps.add(exec(gray, "Grayscale"))
-
-        // 3. Bilateral
-        val bile = applyBilateral(bitmap)
-        steps.add(exec(bile, "Bilateral"))
-
-        // 4. Enhanced (75% Stretch)
-        val s75 = applyContrastStretch(bile, 75)
-        steps.add(exec(s75, "Enhanced (75% Stretch)"))
-
-        // 5. Enhanced (80% Stretch)
-        val s80 = applyContrastStretch(bile, 80)
-        steps.add(exec(s80, "Enhanced (80% Stretch)"))
-
+        // Preprocessing Overhaul: Test filter combinations on Monochrome Baseline
+        
+        // 1. Raw (Monochrome Baseline)
+        steps.add(exec(bitmap, "Raw"))
+        
+        // 2. 80% Stretch Only
+        val s80Only = applyContrastStretch(bitmap, 80)
+        steps.add(exec(s80Only, "80% Stretch Only"))
+        
+        // 3. Bile -> 80% Stretch
+        val bileBase = applyBilateral(bitmap)
+        val bileThen80 = applyContrastStretch(bileBase, 80)
+        steps.add(exec(bileThen80, "Bile -> 80% Stretch"))
+        
+        // 4. 80% Stretch -> Bile
+        val stretchBase = applyContrastStretch(bitmap, 80)
+        val stretchThenBile = applyBilateral(stretchBase)
+        steps.add(exec(stretchThenBile, "80% Stretch -> Bile"))
+        
         if (mlKitClient != null) mlKitClient.close()
-        // Cleanup all stage bitmaps immediately since thumbnails are already Base64
-        raw.recycle(); gray.recycle(); bile.recycle(); s75.recycle(); s80.recycle()
         return steps
     }
     fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {
