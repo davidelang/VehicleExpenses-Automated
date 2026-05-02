@@ -259,16 +259,26 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val char = if (maxIdx > 0 && maxIdx <= dictionary.size) dictionary[maxIdx - 1] else "BLANK/UNK"
             Log.d("OCR_DEBUG", "  Slot $i: idx=$maxIdx ($char), conf=$maxVal, lastIdx=$lastIdx")
 
-            // Phase 63: 0.5 Confidence Floor to suppress hallucinations
-            if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size && maxVal >= 0.5f) { 
-                result.append(dictionary[maxIdx - 1])
-                totalConf += maxVal
-                charCount++ 
-                Log.d("OCR_DEBUG", "    APPENDED: ${dictionary[maxIdx - 1]}")
+            // Phase 67: Relative Confidence Drop to kill ghosts (at 60% ratio)
+            // Accepts the first digit >= 0.40, then requires each subsequent to be >= 60% of prior.
+            if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
+                if (maxVal >= 0.40f) {
+                    if (result.isEmpty() || maxVal >= (0.60f * lastConf)) {
+                        val appendedChar = dictionary[maxIdx - 1]
+                        result.append(appendedChar)
+                        totalConf += maxVal
+                        charCount++
+                        lastConf = maxVal
+                        Log.d("OCR_DEBUG", "    APPENDED: $appendedChar")
+                    } else {
+                        Log.d("OCR_DEBUG", "    TRUNCATED: Confidence drop detected ($maxVal < ${0.60f * lastConf})")
+                        break // End the sequence
+                    }
+                } else {
+                    Log.d("OCR_DEBUG", "    REJECTED: Confidence too low ($maxVal < 0.40)")
+                }
             } else if (maxIdx > 0 && maxIdx == lastIdx) {
                 Log.d("OCR_DEBUG", "    SKIPPED: Repeat/CTC rule")
-            } else if (maxIdx > 0 && maxVal < 0.5f) {
-                Log.d("OCR_DEBUG", "    REJECTED: Confidence too low ($maxVal < 0.5)")
             }
             lastIdx = maxIdx
         }

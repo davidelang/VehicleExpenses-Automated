@@ -113,29 +113,14 @@ object OdometerOcrUtils {
         val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
         val paddleTimeMs = System.currentTimeMillis() - tPaddleStart
 
-        // 2. ML Kit Recognition at 1500px (Stable fallback)
-        val tMlStart = System.currentTimeMillis()
-        val mScale = 1500f / bitmap.width
-        val mScaled = Bitmap.createScaledBitmap(bitmap, 1500, (bitmap.height * mScale).toInt(), true)
-        
-        // --- ML KIT INDEPENDENT ALGORITHM (Fallback) ---
-        val mlResult = extractFromPhotoBitmap(mScaled)
-        mScaled.recycle()
-        
-        val mlCandidates = mlResult.textBlocks.filter { it.text.length > 1 }.map { block ->
-            var a = block.angle
-            if (a > 90f) a -= 180f
-            else if (a < -90f) a += 180f
-            block.copy(angle = a)
-        }
-        
-        val mHeight = (bitmap.height * mScale).toInt()
-        val mlAngle = calculateWeightedAverage(mlCandidates, mHeight)
-        val mlTimeMs = System.currentTimeMillis() - tMlStart
+        // 2. ML Kit Recognition disabled (Phase 67 Optimization)
+        val mlTimeMs = 0L
+        val mlAngle = 0f
+        val mlCandidates = emptyList<TextBlock>()
 
         baselineBmp.recycle()
-        // Trust ML Kit by default while Paddle detection is being refined
-        val finalAngle = mlAngle
+        // Final result: Trust Paddle for deskew
+        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else mlAngle
         
         // Return both lists explicitly so they can be logged without overwriting
         return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
