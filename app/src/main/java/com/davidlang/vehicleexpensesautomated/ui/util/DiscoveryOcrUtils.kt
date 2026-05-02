@@ -54,43 +54,69 @@ object DiscoveryOcrUtils {
             var primaryRawBox: Rect? = null
             var primaryRefinedBox: Rect? = null
 
-            for ((i, block) in sortedBlocks.withIndex()) {
+            // Phase 63: Row-Aware Consolidation
+            val orangeFragments = mutableListOf<Rect>()
+            for (block in sortedBlocks) {
                 val rawBox = Rect(
                     block.boundingBox.left.toInt(),
                     block.boundingBox.top.toInt(),
                     block.boundingBox.right.toInt(),
                     block.boundingBox.bottom.toInt()
                 )
-
-                // Draw Red Box (Filled & Transparent)
                 canvas.drawRect(rawBox, redPaint)
 
                 val unclipBox = unclipRect(rawBox, 1.5f)
                 val refinedBox = if (expansion == DiscoveryExpansion.VALLEY) expandByValleyStop(rawBox, bmp) else unclipBox
-                // Inset orangeBox slightly to ensure lines stay within canvas
                 val orangeBox = Rect(max(2, refinedBox.left), max(2, refinedBox.top), min(bmp.width - 2, refinedBox.right), min(bmp.height - 2, refinedBox.bottom))
+                orangeFragments.add(orangeBox)
+                if (primaryRawBox == null) primaryRawBox = rawBox
+            }
 
-                // Draw Orange Box (Thick Stroke)
-                canvas.drawRect(orangeBox, orangePaint)
-
-                if (i == 0) {
-                    primaryRawBox = rawBox
-                    primaryRefinedBox = orangeBox
+            // Group fragments into rows based on vertical overlap (>50% of shorter box)
+            val rows = mutableListOf<MutableList<Rect>>()
+            val sortedFragments = orangeFragments.sortedBy { it.top }
+            
+            for (frag in sortedFragments) {
+                var placed = false
+                for (row in rows) {
+                    val anchor = row[0]
+                    val overlapTop = max(frag.top, anchor.top)
+                    val overlapBottom = min(frag.bottom, anchor.bottom)
+                    val overlapHeight = max(0, overlapBottom - overlapTop)
+                    val minHeight = min(frag.height(), anchor.height())
+                    
+                    if (overlapHeight > minHeight * 0.5) {
+                        row.add(frag)
+                        placed = true
+                        break
+                    }
                 }
+                if (!placed) rows.add(mutableListOf(frag))
+            }
 
-                // Log exact pixel coordinates
-                Log.d("DISCOVERY_DEBUG", "[$stageName] Block $i:")
-                Log.d("DISCOVERY_DEBUG", "  Red Box:    [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}] (W=${rawBox.width()}, H=${rawBox.height()})")
-                Log.d("DISCOVERY_DEBUG", "  Orange Box: [L=${orangeBox.left}, T=${orangeBox.top}, R=${orangeBox.right}, B=${orangeBox.bottom}] (W=${orangeBox.width()}, H=${orangeBox.height()})")
+            // Consolidate rows horizontally and run OCR
+            val rowRects = rows.map { row ->
+                Rect(
+                    row.minOf { it.left },
+                    row.minOf { it.top },
+                    row.maxOf { it.right },
+                    row.maxOf { it.bottom }
+                )
+            }.sortedBy { it.top }
 
-                // Phase 63: Zero-Allocation Recognition (Sub-bitmap view)
-                val recognitionCrop = Bitmap.createBitmap(bmp, orangeBox.left, orangeBox.top, orangeBox.width(), orangeBox.height())
+            for ((i, consolidatedRow) in rowRects.withIndex()) {
+                canvas.drawRect(consolidatedRow, orangePaint)
+                if (i == 0) primaryRefinedBox = consolidatedRow
+
+                Log.d("DISCOVERY_DEBUG", "[$stageName] Consolidated Row $i: [L=${consolidatedRow.left}, T=${consolidatedRow.top}, R=${consolidatedRow.right}, B=${consolidatedRow.bottom}]")
+
+                val recognitionCrop = Bitmap.createBitmap(bmp, consolidatedRow.left, consolidatedRow.top, consolidatedRow.width(), consolidatedRow.height())
                 val recognizedText = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
                 
                 if (recognizedText.isNotBlank()) {
                     sb.append("$recognizedText ")
                 }
-                finalBlocks.add(TextBlock(text = recognizedText, boundingBox = orangeBox))
+                finalBlocks.add(TextBlock(text = recognizedText, boundingBox = consolidatedRow))
             }
 
             return OcrStepResult(
