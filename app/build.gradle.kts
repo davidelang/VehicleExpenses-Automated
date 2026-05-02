@@ -86,8 +86,6 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.4")
     // OpenCV for dashboard image alignment and preprocessing
     implementation("org.opencv:opencv:4.10.0")
-    // Tesseract (main OCR engine)
-    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     // TFLite core
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)

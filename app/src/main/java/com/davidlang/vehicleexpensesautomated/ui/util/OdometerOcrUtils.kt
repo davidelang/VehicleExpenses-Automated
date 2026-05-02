@@ -13,7 +13,6 @@ import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.googlecode.tesseract.android.TessBaseAPI
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -255,43 +254,6 @@ object OdometerOcrUtils {
 
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
         return OcrUtils.isBlockInCrop(block, crop, w, h)
-    }
-
-    fun runRawOcr(bitmap: Bitmap, whitelist: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"): Pair<String, List<TextBlock>> {
-        val tess = TessBaseAPI()
-        val blocks = mutableListOf<TextBlock>()
-        try {
-            val tessDataPath = "/data/user/0/com.davidlang.vehicleexpensesautomated/files"
-            if (!tess.init(tessDataPath, "eng")) {
-                tess.clear()
-                return "(Tesseract init failed)" to emptyList()
-            }
-            tess.setVariable("tessedit_char_whitelist", whitelist)
-            tess.setImage(bitmap)
-            val text = tess.utF8Text ?: ""
-            val resultIterator = tess.resultIterator
-            if (resultIterator != null) {
-                resultIterator.begin()
-                do {
-                    val hunk = resultIterator.getUTF8Text(TessBaseAPI.PageIteratorLevel.RIL_WORD)
-                    val box = resultIterator.getBoundingRect(TessBaseAPI.PageIteratorLevel.RIL_WORD)
-                    if (hunk != null && box != null) {
-                        blocks.add(TextBlock(hunk, box))
-                    }
-                } while (resultIterator.next(TessBaseAPI.PageIteratorLevel.RIL_WORD))
-            }
-            tess.clear()
-            return text to blocks
-        } catch (e: Exception) {
-            Log.e("OdometerOcr", "Tesseract failed", e)
-            return "(Tesseract error: ${e.message})" to emptyList()
-        } finally {
-            tess.recycle()
-        }
-    }
-
-    fun runOcr(bitmap: Bitmap): String {
-        return runRawOcr(bitmap, "0123456789").first
     }
 
     fun decodeBitmapSafely(context: Context, path: String): Bitmap? {
