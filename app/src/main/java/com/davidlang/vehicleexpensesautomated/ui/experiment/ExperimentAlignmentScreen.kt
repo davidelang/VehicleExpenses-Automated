@@ -257,10 +257,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         val t0 = System.currentTimeMillis()
                         val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                         val elapsedAlign = System.currentTimeMillis() - t0
+                        
                         if (alignRes.success && alignRes.alignedImage != null) {
                             alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
                             
-                            // Phase 58: Refinement Loop
+                            // Phase 58: Refinement Loop (Only executed on successful alignment)
                             val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
                             if (exactCrop != null) {
                                 // Reconstruct Ground Truth: Save raw crop for host-side labeling
@@ -307,7 +308,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             }
                             
                             alignRes.alignedImage.recycle()
-                        } else { alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) }
+                        } else { 
+                            Log.d(TAG, "Vehicle identified as ${ref.vehicle.name}, but alignment failed: ${alignRes.message}")
+                            alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) 
+                        }
                     }
                     vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, System.currentTimeMillis() - tMatchStart, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
                 }
