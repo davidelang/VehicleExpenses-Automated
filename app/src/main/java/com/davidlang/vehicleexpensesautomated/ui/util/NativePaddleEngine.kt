@@ -188,13 +188,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val floatData = bufferRec!!
         floatData.fill(0.0f)
 
-        val scale = targetHeight.toFloat() / bitmap.height.toFloat()
-        val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
-        val scaled = Bitmap.createScaledBitmap(bitmap, sw, targetHeight, true)
+        // Phase 63: 312x40 Padded Center-Crop
+        val safeW = 312
+        val safeH = 40
+        val padding = 4
+
+        val scale = safeH.toFloat() / bitmap.height.toFloat()
+        val sw = (bitmap.width * scale).toInt().coerceAtMost(safeW)
+        val scaled = Bitmap.createScaledBitmap(bitmap, sw, safeH, true)
+        
         val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded)
         canvas.drawColor(Color.BLACK)
-        canvas.drawBitmap(scaled, 0f, 0f, null)
+        // Draw scaled image at offset (4, 4)
+        canvas.drawBitmap(scaled, padding.toFloat(), padding.toFloat(), null)
         scaled.recycle()
 
         val mean = 0.5f
