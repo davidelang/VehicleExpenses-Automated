@@ -123,7 +123,7 @@ object ImageAlignmentUtils {
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
                         // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
-                        if (kotlin.math.abs(rot) > 1.5f) continue
+                        if (kotlin.math.abs(rot) > 4.0f) continue
                         val tx = r1cx - (s * q1cx)
                         val ty = r1cy - (s * q1cy)
 
@@ -206,21 +206,45 @@ object ImageAlignmentUtils {
 
         if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchor sets.", timeMs = System.currentTimeMillis() - t0)
 
-        // Robust Median Consensus
-        val medScale = allCandidates.map { it.scale }.median()
-        val medTx = allCandidates.map { it.tx }.median()
-        val medTy = allCandidates.map { it.ty }.median()
+        // RANSAC-Lite Consensus (Phase 64)
+        // Find the candidate group with the most mutual agreement
+        var bestGroup = mutableListOf<AnchorCandidate>()
+        var maxSupport = -1
+
+        for (c1 in allCandidates) {
+            val supportGroup = mutableListOf<AnchorCandidate>()
+            for (c2 in allCandidates) {
+                val ds = kotlin.math.abs(c1.scale - c2.scale) / c1.scale
+                val dtx = kotlin.math.abs(c1.tx - c2.tx)
+                val dty = kotlin.math.abs(c1.ty - c2.ty)
+                
+                // Agreement threshold: 5% scale, 0.05 normalized translation
+                if (ds < 0.05f && dtx < 0.05f && dty < 0.05f) {
+                    supportGroup.add(c2)
+                }
+            }
+            if (supportGroup.size > maxSupport) {
+                maxSupport = supportGroup.size
+                bestGroup = supportGroup
+            }
+        }
+
+        // Distance-Weighted Average of the winning consensus group
+        val totalWeight = bestGroup.sumOf { it.distance }
+        val finalScale = if (totalWeight > 0) (bestGroup.sumOf { it.scale * it.distance } / totalWeight).toFloat() else allCandidates.map { it.scale }.median()
+        val finalTx = if (totalWeight > 0) (bestGroup.sumOf { it.tx * it.distance } / totalWeight).toFloat() else allCandidates.map { it.tx }.median()
+        val finalTy = if (totalWeight > 0) (bestGroup.sumOf { it.ty * it.distance } / totalWeight).toFloat() else allCandidates.map { it.ty }.median()
 
         val matrix = android.graphics.Matrix()
-        matrix.postScale(medScale, medScale)
+        matrix.postScale(finalScale, finalScale)
         // Phase 53: Zero-Rotation Warp. Global deskew already handled rotation.
-        matrix.postTranslate(medTx, medTy)
+        matrix.postTranslate(finalTx, finalTy)
 
         val metadata = mapOf(
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Median" to "S=%.3f, tx=%.1f, ty=%.1f (of %d pairs)".format(medScale, medTx, medTy, allCandidates.size)
+            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size)
         )
 
         return try {
@@ -228,7 +252,7 @@ object ImageAlignmentUtils {
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Med: S=%.3f, tx=%.1f, ty=%.1f (%d)".format(medScale, medTx, medTy, allCandidates.size))
+            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d): S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, finalScale, finalTx, finalTy))
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
