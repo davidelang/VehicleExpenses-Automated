@@ -371,17 +371,16 @@ object OdometerOcrUtils {
                             }
                         }
                         if (resized != bmp) resized.recycle()
-                        Pair(if (resStr.isNotBlank()) resStr else null, detBoxes)
-                    } catch (e: Exception) { Pair(null, emptyList()) }
+                        Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, null as String?)
+                    } catch (e: Exception) { Triple(null, emptyList(), null as String?) }
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
-                        // Corrected: use recognize() to get metadata
                         val ocrRes = paddleEngine.recognize(bmp)
-                        Pair(ocrRes.debugText, emptyList<Rect>(), ocrRes.metadata["ocrInput"])
-                    } ?: Pair(null, emptyList<Rect>(), null)
+                        Triple(ocrRes.debugText, emptyList<Rect>(), ocrRes.metadata["ocrInput"])
+                    } ?: Triple(null, emptyList<Rect>(), null)
                 }
-                else -> Pair(null, emptyList<Rect>(), null)
+                else -> Triple(null, emptyList<Rect>(), null)
             }
             
             // Phase 63: Immediate Snapshot (Zero-Allocation)
