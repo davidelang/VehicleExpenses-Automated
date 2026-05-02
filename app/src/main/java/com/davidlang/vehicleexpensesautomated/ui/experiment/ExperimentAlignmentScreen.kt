@@ -224,9 +224,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val tMl = deskewRes.mlTimeMs
                 val tPd = deskewRes.paddleTimeMs
 
+                var tRotate = 0L
                 if (Math.abs(tilt) > 0.2f) { 
+                    val tRot0 = System.currentTimeMillis()
                     val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap!!, -tilt)
                     if (leveled != originalBitmap) { originalBitmap!!.recycle(); originalBitmap = leveled }
+                    tRotate = System.currentTimeMillis() - tRot0
                 }
                 val tDiscoveryStart = System.currentTimeMillis()
                 val queryOcrDiscovery = OcrHarness.runDiscovery(originalBitmap!!, context)
@@ -302,8 +305,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, System.currentTimeMillis() - tMatchStart, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, tMl + tPd, tDiscoveryTotal)
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
@@ -311,7 +314,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
                 
                 val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
-                currentResult = ProcessedPhotoResult(finalWinnerName, bestOdometer, bestOdometer, (tMl + tPd), tDiscoveryTotal, deskewedBase64, queryOcrDiscovery.debugText, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, null, emptyMap())
+                currentResult = ProcessedPhotoResult(finalWinnerName, bestOdometer, bestOdometer, (tMl + tPd + tRotate), tDiscoveryTotal, deskewedBase64, queryOcrDiscovery.debugText, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, null, emptyMap())
 
                 // Ensure UI update is dispatched BEFORE we move to cleanup
                 withContext(Dispatchers.Main) { 
@@ -351,12 +354,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 }
 
 private fun serializePhotoResultToJson(
-    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, deskewAngle: Float, tDiscovery: Long,
+    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult
 ): JSONObject {
     return JSONObject().apply {
-        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo); put("deskew_time_ms", tDeskew); put("deskew_time_mlkit_ms", deskewRes.mlTimeMs); put("deskew_time_paddle_ms", deskewRes.paddleTimeMs); put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
+        put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo)
+        put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_mlkit_ms", deskewRes.mlTimeMs); put("deskew_time_paddle_ms", deskewRes.paddleTimeMs); put("deskew_time_rotation_ms", tRotate)
+        put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
         
         val mlArray = JSONArray()
         deskewRes.mlBlocks.forEach { block ->
