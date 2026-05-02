@@ -89,8 +89,6 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.4")
     // OpenCV for dashboard image alignment and preprocessing
     implementation("org.opencv:opencv:4.10.0")
-    // TFLite core
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // Native Paddle-Lite Java Wrapper
