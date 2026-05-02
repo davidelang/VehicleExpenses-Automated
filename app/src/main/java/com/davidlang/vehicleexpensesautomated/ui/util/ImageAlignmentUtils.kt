@@ -53,7 +53,9 @@ data class AnchorCandidate(
     val ty: Float,
     val distance: Double,
     val message: String,
-    val cyRef: Float = 0.5f
+    val cyRef: Float = 0.5f,
+    val y1Ref: Float = 0.5f,
+    val y2Ref: Float = 0.5f
 )
 
 data class AnchorResult(
@@ -132,7 +134,7 @@ object ImageAlignmentUtils {
                         val ty = r1cy - (s * q1cy)
                         val cyRef = (r1cy + r2cy) / 2.0f
 
-                        allCandidates.add(AnchorCandidate("A (Unique)", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef))
+                        allCandidates.add(AnchorCandidate("A (Unique)", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, r1cy, r2cy))
                     }
                 }
             }
@@ -200,7 +202,7 @@ object ImageAlignmentUtils {
                                         val ty = rAcy - (s * qAcy)
                                         val cyRef = (rAcy + rBcy) / 2.0f
 
-                                        allCandidates.add(AnchorCandidate("B (Tri)", listOf(w1, w2, w3), s, rot, tx, ty, dR, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef))
+                                        allCandidates.add(AnchorCandidate("B (Tri)", listOf(w1, w2, w3), s, rot, tx, ty, dR, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, rAcy, rBcy))
                                     }
                                 }
                             }
@@ -240,6 +242,7 @@ object ImageAlignmentUtils {
         val finalScale: Float
         val finalTx: Float
         val finalTy: Float
+        var bracketedCount = 0
 
         if (bestGroup.isNotEmpty()) {
             var sumScale = 0.0
@@ -247,9 +250,14 @@ object ImageAlignmentUtils {
             var sumTy = 0.0
             var totalW = 0.0
             for (c in bestGroup) {
+                // Phase 66: Midline Bracketing Bonus
+                // A pair "brackets" the odometer if one point is above and one is below the midline.
+                val isBracketed = (c.y1Ref - targetY) * (c.y2Ref - targetY) < 0
+                val bracketBonus = if (isBracketed) { bracketedCount++; 5.0 } else 1.0
+
                 // Vertical Proximity Weighting (Phase 65): Favor landmarks near the odometer midline
                 val vDist = kotlin.math.abs(c.cyRef - targetY)
-                val w = c.distance / (vDist + 0.05)
+                val w = (c.distance * bracketBonus) / (vDist + 0.05)
                 sumScale += c.scale * w
                 sumTx += c.tx * w
                 sumTy += c.ty * w
@@ -273,7 +281,7 @@ object ImageAlignmentUtils {
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size)
+            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount)
         )
 
         return try {
@@ -281,7 +289,7 @@ object ImageAlignmentUtils {
             val canvas = android.graphics.Canvas(outBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d): S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, finalScale, finalTx, finalTy))
+            AnchorResult(true, outBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d) [B:%d]: S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, bracketedCount, finalScale, finalTx, finalTy))
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
