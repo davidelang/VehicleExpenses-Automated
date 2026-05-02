@@ -200,6 +200,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 58 Strategies
     val strategies = listOf(
         "ML Kit 48px (Exact)",
+        "ML Kit 48px Mono",
         "Paddle V3 Valley",
         "Paddle V3 Valley Mono"
     )
@@ -274,6 +275,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val tRef0 = System.currentTimeMillis()
                                     val isDisc = strat.contains("Unclip") || strat.contains("Valley")
                                     val engine = when {
+                                        strat.contains("ML Kit Mono") -> "ML Kit Mono"
                                         strat.contains("ML Kit") -> "ML Kit"
                                         isDisc -> {
                                             val expansionLabel = if (strat.contains("Valley")) "Valley" else "Unclip"
