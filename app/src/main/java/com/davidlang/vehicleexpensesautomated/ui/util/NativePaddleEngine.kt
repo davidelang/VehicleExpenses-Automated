@@ -208,6 +208,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
             }
         }
+        
+        // Phase 63: Capture Exact OCR Input (Convert floatData back to Bitmap)
+        val snapshot = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        for (y in 0 until targetHeight) {
+            for (x in 0 until targetWidth) {
+                val r = ((floatData[0 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
+                val g = ((floatData[1 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
+                val b = ((floatData[2 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
+                snapshot.setPixel(x, y, Color.rgb(r, g, b))
+            }
+        }
+        val ocrInputB64 = OcrUtils.bitmapToBase64(snapshot, 60)
+        snapshot.recycle()
         padded.recycle()
         
         predictor.getInput(0).setData(floatData)
@@ -240,10 +253,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             lastIdx = maxIdx
         }
-        return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, if (charCount > 0) totalConf / charCount else 0f)
+        return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, if (charCount > 0) totalConf / charCount else 0f, ocrInputB64)
     }
 
-    private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
+    private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
     
@@ -260,7 +273,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             debugText = finalResult.text,
             textBlocks = listOf(TextBlock(finalResult.text, Rect(0,0,bitmap.width, bitmap.height))),
             imageWidth = bitmap.width,
-            imageHeight = bitmap.height
+            imageHeight = bitmap.height,
+            metadata = mapOf("ocrInput" to (finalResult.ocrInputB64 ?: ""))
         )
     }
 
