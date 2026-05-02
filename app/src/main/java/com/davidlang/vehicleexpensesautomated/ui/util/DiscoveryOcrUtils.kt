@@ -45,6 +45,7 @@ object DiscoveryOcrUtils {
             val det = paddleEngine.runDetectionOnly(bmp, 320, 128)
             val invScale = 1.0 / det.scaleFactor.toDouble()
             val sortedBlocks = det.textBlocks.sortedBy { it.boundingBox.left }
+            Log.d("DISCOVERY_DEBUG", "[$stageName] Found ${sortedBlocks.size} fragments")
             
             val annotatedBmp = bmp.copy(Bitmap.Config.ARGB_8888, true)
             val canvas = Canvas(annotatedBmp)
@@ -56,13 +57,14 @@ object DiscoveryOcrUtils {
 
             // Phase 63: Row-Aware Consolidation
             val orangeFragments = mutableListOf<Rect>()
-            for (block in sortedBlocks) {
+            for ((idx, block) in sortedBlocks.withIndex()) {
                 val rawBox = Rect(
                     block.boundingBox.left.toInt(),
                     block.boundingBox.top.toInt(),
                     block.boundingBox.right.toInt(),
                     block.boundingBox.bottom.toInt()
                 )
+                Log.d("DISCOVERY_DEBUG", "  Fragment $idx: [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}]")
                 canvas.drawRect(rawBox, redPaint)
 
                 val unclipBox = unclipRect(rawBox, 1.5f)
