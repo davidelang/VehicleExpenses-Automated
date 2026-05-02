@@ -198,7 +198,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 58 Strategies
     val strategies = listOf(
-        "Paddle V3 Valley"
+        "ML Kit 48px (Exact)",
+        "Paddle V3 Unclip", "Paddle V3 Valley"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -215,7 +216,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
             var originalBitmap: Bitmap? = null
             try {
-                originalBitmap = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
+                val rotated = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
+                originalBitmap = OdometerOcrUtils.applyGrayscale(rotated)
+                if (rotated != originalBitmap) rotated.recycle()
                 val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
 
                 // Phase 63: Optimized Multi-Spike Deskew (Paddle-preferred)

@@ -282,7 +282,7 @@ object OdometerOcrUtils {
     }
 
     suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
-        val processed = applyBilateral(applyGrayscale(bitmap))
+        val processed = applyBilateral(bitmap)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val image = InputImage.fromBitmap(processed, 0)
         return try {
@@ -596,7 +596,7 @@ object OdometerOcrUtils {
     suspend fun discoverLandmarks(photoPath: String, odometerCrop: RectF? = null, otherTextCrop: RectF? = null): List<TextBlock> = withContext(Dispatchers.IO) {
         val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        val processed = applyBilateral(applyGrayscale(rotated))
+        val processed = applyBilateral(rotated)
         val ocrResult = extractFromPhotoBitmap(processed)
         val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
         processed.recycle(); if (rotated != rawBitmap) rotated.recycle(); rawBitmap.recycle(); landmarks

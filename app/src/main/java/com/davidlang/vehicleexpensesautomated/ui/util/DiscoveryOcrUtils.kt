@@ -140,23 +140,33 @@ object DiscoveryOcrUtils {
                 rawBox = primaryRawBox,
                 refinedBox = primaryRefinedBox
             )
+        // Preprocessing Overhaul: Test filter combinations on Monochrome Baseline
 
-        }
+        // 1. Raw (Monochrome Baseline)
+        steps.add(exec(bitmap, "Raw"))
 
-        // Sequential pipeline: SINGLE PASS FOR VALIDATION
-        // steps.add(exec(bitmap, "Raw"))
-        val gray = OdometerOcrUtils.applyGrayscale(bitmap) //; steps.add(exec(gray, "Grayscale"))
-        val baseBile = OdometerOcrUtils.applyBilateral(bitmap) //; steps.add(exec(baseBile, "Bilateral"))
-        // val s75 = OdometerOcrUtils.applyContrastStretch(baseBile, 75); steps.add(exec(s75, "Enhanced (75% Stretch)")); s75.recycle()
-        val s80 = OdometerOcrUtils.applyContrastStretch(baseBile, 80); steps.add(exec(s80, "Enhanced (80% Stretch)")); s80.recycle()
-        
-        // Phase 69: Grayscale 80% Stretch (Bypassing Bilateral)
-        val s80Gray = OdometerOcrUtils.applyContrastStretch(gray, 80)
-        steps.add(exec(s80Gray, "Enhanced Grayscale (80% Stretch)"))
-        s80Gray.recycle()
+        // 2. 80% Stretch Only
+        val s80Only = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
+        steps.add(exec(s80Only, "80% Stretch Only"))
+        if (s80Only != bitmap) s80Only.recycle()
 
-        gray.recycle()
-        baseBile.recycle()
+        // 3. Bile -> 80% Stretch
+        val bileBase = OdometerOcrUtils.applyBilateral(bitmap)
+        val bileThen80 = OdometerOcrUtils.applyContrastStretch(bileBase, 80)
+        steps.add(exec(bileThen80, "Bile -> 80% Stretch"))
+        if (bileThen80 != bileBase && bileThen80 != bitmap) bileThen80.recycle()
+
+        // 4. 80% Stretch -> Bile
+        // We reuse s80Only logic here, but need a new bitmap since we recycled it
+        val stretchBase = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
+        val stretchThenBile = OdometerOcrUtils.applyBilateral(stretchBase)
+        steps.add(exec(stretchThenBile, "80% Stretch -> Bile"))
+
+        // Cleanup intermediate bases
+        if (stretchThenBile != stretchBase && stretchThenBile != bitmap) stretchThenBile.recycle()
+        if (stretchBase != bitmap) stretchBase.recycle()
+        if (bileBase != bitmap) bileBase.recycle()
+
         return steps
     }
 
