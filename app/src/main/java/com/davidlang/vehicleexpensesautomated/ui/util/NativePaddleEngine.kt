@@ -252,13 +252,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val char = if (maxIdx > 0 && maxIdx <= dictionary.size) dictionary[maxIdx - 1] else "BLANK/UNK"
             Log.d("OCR_DEBUG", "  Slot $i: idx=$maxIdx ($char), conf=$maxVal, lastIdx=$lastIdx")
 
-            if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) { 
+            // Phase 63: 0.5 Confidence Floor to suppress hallucinations
+            if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size && maxVal >= 0.5f) { 
                 result.append(dictionary[maxIdx - 1])
                 totalConf += maxVal
                 charCount++ 
                 Log.d("OCR_DEBUG", "    APPENDED: ${dictionary[maxIdx - 1]}")
             } else if (maxIdx > 0 && maxIdx == lastIdx) {
                 Log.d("OCR_DEBUG", "    SKIPPED: Repeat/CTC rule")
+            } else if (maxIdx > 0 && maxVal < 0.5f) {
+                Log.d("OCR_DEBUG", "    REJECTED: Confidence too low ($maxVal < 0.5)")
             }
             lastIdx = maxIdx
         }
