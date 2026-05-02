@@ -338,8 +338,8 @@ object OdometerOcrUtils {
         val steps = mutableListOf<OcrStepResult>()
         val mlKitClient = if (engineName == "ML Kit") TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
 
-        suspend fun exec(bmp: Bitmap): Pair<String?, List<Rect>> {
-            return when (engineName) {
+        suspend fun exec(bmp: Bitmap, stageName: String, boxes: List<Rect> = emptyList()): OcrStepResult {
+            val res = when (engineName) {
                 "ML Kit" -> {
                     val scale = if (targetHeight != null) targetHeight.toFloat() / bmp.height.toFloat() else 1.0f
                     val resized = if (targetHeight != null) {
@@ -358,8 +358,8 @@ object OdometerOcrUtils {
                                 }
                             }
                         }
-                        val res = resBuilder.toString()
-                        val boxes = visionText.textBlocks.flatMap { block ->
+                        val resStr = resBuilder.toString()
+                        val detBoxes = visionText.textBlocks.flatMap { block ->
                             block.lines.flatMap { line ->
                                 line.elements.mapNotNull { element ->
                                     element.boundingBox?.let { b ->
@@ -371,76 +371,56 @@ object OdometerOcrUtils {
                             }
                         }
                         if (resized != bmp) resized.recycle()
-                        Pair(if (res.isNotBlank()) res else null, boxes)
+                        Pair(if (resStr.isNotBlank()) resStr else null, detBoxes)
                     } catch (e: Exception) { Pair(null, emptyList()) }
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
-                        val res = paddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary(), it.isV3())
-                        Pair(res, emptyList())
+                        val resStr = paddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary(), it.isV3())
+                        Pair(resStr, emptyList())
                     } ?: Pair(null, emptyList())
                 }
                 else -> Pair(null, emptyList())
             }
-        }
+            
+            // Phase 63: Immediate Snapshot (Zero-Allocation)
+            val b64 = OcrUtils.takeSnapshot(bmp, consolidatedRows = res.second)
+            val box = res.second.firstOrNull() ?: Rect(0,0,bmp.width,bmp.height)
 
-        val paint = Paint().apply { 
-            color = Color.RED
-            style = Paint.Style.STROKE
-            strokeWidth = 2f 
+            return OcrStepResult(
+                stageName = stageName,
+                thumbB64 = b64,
+                text = res.first,
+                boxes = res.second,
+                rawBox = box,
+                refinedBox = box
+            )
         }
 
         // 1. Raw (Fresh Copy)
         val raw = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        val res1 = exec(raw)
-        if (engineName == "ML Kit") { 
-            val canvas = Canvas(raw)
-            res1.second.forEach { canvas.drawRect(it, paint) } 
-        }
-        val box1 = res1.second.firstOrNull() ?: Rect(0,0,raw.width,raw.height)
-        steps.add(OcrStepResult("Raw", raw, res1.first, res1.second, rawBox = box1, refinedBox = box1))
+        steps.add(exec(raw, "Raw"))
+        // No more manual Canvas drawing here; it's handled in exec -> takeSnapshot
 
         // 2. Grayscale
         val gray = applyGrayscale(bitmap)
-        val res2 = exec(gray)
-        if (engineName == "ML Kit") { 
-            val canvas = Canvas(gray)
-            res2.second.forEach { canvas.drawRect(it, paint) } 
-        }
-        val box2 = res2.second.firstOrNull() ?: Rect(0,0,gray.width,gray.height)
-        steps.add(OcrStepResult("Grayscale", gray, res2.first, res2.second, rawBox = box2, refinedBox = box2))
+        steps.add(exec(gray, "Grayscale"))
 
         // 3. Bilateral
         val bile = applyBilateral(bitmap)
-        val res3 = exec(bile)
-        if (engineName == "ML Kit") { 
-            val canvas = Canvas(bile)
-            res3.second.forEach { canvas.drawRect(it, paint) } 
-        }
-        val box3 = res3.second.firstOrNull() ?: Rect(0,0,bile.width,bile.height)
-        steps.add(OcrStepResult("Bilateral", bile, res3.first, res3.second, rawBox = box3, refinedBox = box3))
+        steps.add(exec(bile, "Bilateral"))
 
         // 4. Enhanced (75% Stretch)
         val s75 = applyContrastStretch(bile, 75)
-        val res4 = exec(s75)
-        if (engineName == "ML Kit") {
-            val canvas = Canvas(s75)
-            res4.second.forEach { canvas.drawRect(it, paint) }
-        }
-        val box4 = res4.second.firstOrNull() ?: Rect(0,0,s75.width,s75.height)
-        steps.add(OcrStepResult("Enhanced (75% Stretch)", s75, res4.first, res4.second, rawBox = box4, refinedBox = box4))
+        steps.add(exec(s75, "Enhanced (75% Stretch)"))
 
         // 5. Enhanced (80% Stretch)
         val s80 = applyContrastStretch(bile, 80)
-        val res5 = exec(s80)
-        if (engineName == "ML Kit") {
-            val canvas = Canvas(s80)
-            res5.second.forEach { canvas.drawRect(it, paint) }
-        }
-        val box5 = res5.second.firstOrNull() ?: Rect(0,0,s80.width,s80.height)
-        steps.add(OcrStepResult("Enhanced (80% Stretch)", s80, res5.first, res5.second, rawBox = box5, refinedBox = box5))
+        steps.add(exec(s80, "Enhanced (80% Stretch)"))
 
         if (mlKitClient != null) mlKitClient.close()
+        // Cleanup all stage bitmaps immediately since thumbnails are already Base64
+        raw.recycle(); gray.recycle(); bile.recycle(); s75.recycle(); s80.recycle()
         return steps
     }
     fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {

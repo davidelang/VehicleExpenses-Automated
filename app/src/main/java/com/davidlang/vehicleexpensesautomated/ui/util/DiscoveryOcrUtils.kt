@@ -120,17 +120,14 @@ object DiscoveryOcrUtils {
                 if (recognizedText.isNotBlank()) {
                     sb.append("$recognizedText ")
                 }
-                // Store BOTH the fragments and the consolidated box for late-stage annotation
-                finalStepBlocks.add(TextBlock(
-                    text = recognizedText, 
-                    boundingBox = consolidatedBox, 
-                    metadata = mapOf("frags" to rawFragments.joinToString("|") { "${it.left},${it.top},${it.right},${it.bottom}" })
-                ))
+                finalStepBlocks.add(TextBlock(text = recognizedText, boundingBox = consolidatedBox))
             }
+
+            val b64 = OcrUtils.takeSnapshot(bmp, rawFragments, consolidatedBoxes)
 
             return OcrStepResult(
                 stageName = stageName,
-                bitmap = bmp, // CLEAN OCR: No annotations on source
+                thumbB64 = b64, // Use pre-rendered thumbnail
                 text = sb.toString().trim(),
                 normalizedBoxes = finalStepBlocks,
                 rawBox = primaryRawBox,

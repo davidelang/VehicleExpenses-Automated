@@ -452,43 +452,7 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-                    
-                    // Phase 63: Zero-Allocation Late-Stage Annotation on Shared Buffer
-                    val scale = 48f / step.bitmap.height
-                    val targetWidth = (step.bitmap.width * scale).toInt().coerceAtMost(320)
-                    
-                    val b64 = synchronized(NativePaddleEngine.sharedReportBitmap) {
-                        val canvas = NativePaddleEngine.sharedReportCanvas
-                        val thumb = NativePaddleEngine.sharedReportBitmap
-                        
-                        // 1. Clear and Draw thumbnail
-                        canvas.drawColor(Color.BLACK)
-                        val destRect = Rect(0, 0, targetWidth, 48)
-                        canvas.drawBitmap(step.bitmap, null, destRect, null)
-                        
-                        // 2. Apply Annotations
-                        step.normalizedBoxes.forEach { block ->
-                            // Draw Fragments (Red) from metadata
-                            block.metadata["frags"]?.split("|")?.forEach { coordStr ->
-                                val c = coordStr.split(",").map { it.toFloat() * scale }
-                                if (c.size == 4) canvas.drawRect(c[0], c[1], c[2], c[3], NativePaddleEngine.redPaint)
-                            }
-                            // Draw Consolidated Row (Orange)
-                            canvas.drawRect(
-                                block.boundingBox.left * scale, 
-                                block.boundingBox.top * scale, 
-                                block.boundingBox.right * scale, 
-                                block.boundingBox.bottom * scale, 
-                                NativePaddleEngine.orangePaint
-                            )
-                        }
-                        
-                        // 3. Create Subset View for Base64 (No allocation)
-                        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, 48)
-                        bitmapToBase64(view, 60)
-                    }
-
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,$b64'><br>${step.text ?: "---"}</div>") 
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'><br>${step.text ?: "---"}</div>") 
                 }
             } else appendLine("<i>No refinement data</i>")
         } else appendLine("<i>No match</i>")
