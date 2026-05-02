@@ -167,14 +167,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
-    suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): String = withContext(Dispatchers.IO) {
+    suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): RecStageResult = withContext(Dispatchers.IO) {
         val predictor = if (isV3) sharedRecognizerV3 else sharedRecognizerNumeric
-        if (predictor == null) return@withContext ""
+        if (predictor == null) return@withContext RecStageResult("", 0, 0f, null)
         
         if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) {
-            return@withContext "(Skipped: Memory)"
+            return@withContext RecStageResult("(Skipped: Memory)", 0, 0f, null)
         }
-        runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor!!).text
+        runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor!!)
     }
 
     private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
@@ -256,7 +256,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, if (charCount > 0) totalConf / charCount else 0f, ocrInputB64)
     }
 
-    private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
+    data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
 
     override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
     
