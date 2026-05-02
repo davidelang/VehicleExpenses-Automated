@@ -49,7 +49,8 @@ object DiscoveryOcrUtils {
             
             val annotatedBmp = bmp.copy(Bitmap.Config.ARGB_8888, true)
             val canvas = Canvas(annotatedBmp)
-            val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL_AND_STROKE; alpha = 50; strokeWidth = 2f }
+            // Brighter, Thicker Red Boxes for fragments
+            val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 4f }
             val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 6f }
 
             var primaryRawBox: Rect? = null
@@ -74,20 +75,21 @@ object DiscoveryOcrUtils {
                 if (primaryRawBox == null) primaryRawBox = rawBox
             }
 
-            // Group fragments into rows based on vertical overlap (>50% of shorter box)
+            // Group fragments into rows with AGGRESSIVE merging (any overlap or within 10% height)
             val rows = mutableListOf<MutableList<Rect>>()
             val sortedFragments = orangeFragments.sortedBy { it.top }
             
             for (frag in sortedFragments) {
                 var placed = false
+                val fragHeight = frag.height()
                 for (row in rows) {
                     val anchor = row[0]
                     val overlapTop = max(frag.top, anchor.top)
                     val overlapBottom = min(frag.bottom, anchor.bottom)
-                    val overlapHeight = max(0, overlapBottom - overlapTop)
-                    val minHeight = min(frag.height(), anchor.height())
+                    val overlapHeight = overlapBottom - overlapTop
                     
-                    if (overlapHeight > minHeight * 0.5) {
+                    // Merge if they overlap at all, or are within a tiny vertical distance
+                    if (overlapHeight > -(fragHeight * 0.1)) {
                         row.add(frag)
                         placed = true
                         break
@@ -98,12 +100,14 @@ object DiscoveryOcrUtils {
 
             // Consolidate rows horizontally and run OCR
             val rowRects = rows.map { row ->
-                Rect(
+                val consolidated = Rect(
                     row.minOf { it.left },
                     row.minOf { it.top },
                     row.maxOf { it.right },
                     row.maxOf { it.bottom }
                 )
+                Log.d("DISCOVERY_DEBUG", "  Merged Row (from ${row.size} frags): [L=${consolidated.left}, T=${consolidated.top}, R=${consolidated.right}, B=${consolidated.bottom}]")
+                consolidated
             }.sortedBy { it.top }
 
             for ((i, consolidatedRow) in rowRects.withIndex()) {
