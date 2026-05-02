@@ -140,6 +140,8 @@ object DiscoveryOcrUtils {
                 rawBox = primaryRawBox,
                 refinedBox = primaryRefinedBox
             )
+        }
+
         // Preprocessing Overhaul: Test filter combinations on Monochrome Baseline
 
         // 1. Raw (Monochrome Baseline)

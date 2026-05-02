@@ -398,5 +398,4 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
 private fun calculateFitImageRect(viewW: Float, viewH: Float, imgW: Float, imgH: Float): Rect {
     val aspect = imgW / imgH; val viewAspect = viewW / viewH
     return if (aspect > viewAspect) { val fitH = viewW / aspect; Rect(0f, (viewH - fitH) / 2f, viewW, (viewH + fitH) / 2f) } else { val fitW = viewH * aspect; Rect((viewW - fitW) / 2f, 0f, (viewW + fitW) / 2f, viewH) }
-}f, viewH) }
 }
