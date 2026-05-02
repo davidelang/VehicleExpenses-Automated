@@ -34,6 +34,10 @@ import org.opencv.imgproc.Imgproc
 import java.util.Collections
 
 object OdometerOcrUtils {
+    // Zero-Allocation Buffers for ML Kit Mono (NV21) Conversion
+    private var sharedPixelsBuffer: IntArray? = null
+    private var sharedNv21Buffer: ByteArray? = null
+
     init {
         if (!OpenCVLoader.initLocal()) {
             Log.e("OdometerOcr", "OpenCV initialization failed!")
@@ -321,16 +325,51 @@ object OdometerOcrUtils {
         paddleEngine: NativePaddleEngine? = null
     ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
-        val mlKitClient = if (engineName == "ML Kit") TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
+        val mlKitClient = if (engineName.startsWith("ML Kit")) TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
 
         suspend fun exec(bmp: Bitmap, stageName: String, boxes: List<Rect> = emptyList()): OcrStepResult {
             val res = when (engineName) {
-                "ML Kit" -> {
+                "ML Kit", "ML Kit Mono" -> {
                     val scale = if (targetHeight != null) targetHeight.toFloat() / bmp.height.toFloat() else 1.0f
                     val resized = if (targetHeight != null) {
                         Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
                     } else bmp
-                    val image = InputImage.fromBitmap(resized, 0)
+                    
+                    val image = if (engineName == "ML Kit Mono") {
+                        val w = resized.width
+                        val h = resized.height
+                        val frameSize = w * h
+                        val nv21Size = frameSize * 3 / 2
+                        
+                        if (sharedPixelsBuffer == null || sharedPixelsBuffer!!.size < frameSize) {
+                            sharedPixelsBuffer = IntArray(frameSize)
+                        }
+                        if (sharedNv21Buffer == null || sharedNv21Buffer!!.size < nv21Size) {
+                            sharedNv21Buffer = ByteArray(nv21Size)
+                        }
+                        
+                        val pixels = sharedPixelsBuffer!!
+                        val nv21 = sharedNv21Buffer!!
+                        
+                        resized.getPixels(pixels, 0, w, 0, 0, w, h)
+                        
+                        // Extract Luminance (Y) channel. Input is grayscale, so R=G=B. We take R.
+                        for (i in 0 until frameSize) {
+                            val r = (pixels[i] shr 16) and 0xFF
+                            nv21[i] = r.toByte()
+                        }
+                        
+                        // Fill U/V channels with neutral chroma (128)
+                        for (i in frameSize until nv21Size) {
+                            nv21[i] = 128.toByte()
+                        }
+                        
+                        val buffer = java.nio.ByteBuffer.wrap(nv21)
+                        InputImage.fromByteBuffer(buffer, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
+                    } else {
+                        InputImage.fromBitmap(resized, 0)
+                    }
+                    
                     try {
                         val visionText = mlKitClient!!.process(image).await()
                         val resBuilder = java.lang.StringBuilder()
