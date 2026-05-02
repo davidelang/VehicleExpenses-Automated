@@ -25,11 +25,25 @@ The format for the variable is:
 `"<tensor_name>:<min_shape>:<opt_shape>:<max_shape>"`
 
 *   **tensor_name:** Usually `x` for detection and `x` or `image` for recognition.
-*   **min_shape:** The absolute minimum resolution the model will accept (e.g., `1,3,128,128`).
+*   **min_shape:** The absolute minimum resolution the model will accept (e.g., `1,3,128,128` for RGB or `1,1,128,128` for Monochrome).
 *   **opt_shape:** The resolution the engine should pre-allocate memory for and tune kernels for (e.g., `1,3,1280,1280`).
 *   **max_shape:** The absolute maximum resolution (e.g., `1,3,4000,4000`).
 
-## 3. Step-by-Step Instructions
+## 3. Monochrome Model Conversion
+
+To handle 1-channel (monochrome) input files directly, the source model's first layer and weights must be surgically modified **before** optimization.
+
+### Step 1: Weight Averaging
+The first convolution layer typically expects 3 channels (RGB). We must average these weights into a single channel:
+`new_weight = (R_weight + G_weight + B_weight) / 3`
+
+### Step 2: Graph Modification
+The model's input variable shape must be updated from `(-1, 3, H, W)` to `(-1, 1, H, W)`.
+
+### Automation
+Use the `dev-ai-interaction/research/convert_mono.py` script to automate this for Paddle inference models. It loads the model, averages the weights in the first `conv2d`, updates the program description, and saves the modified model.
+
+## 4. Step-by-Step Instructions
 
 ### Step 1: Define the Range
 Decide on your resolutions. Note that very large resolutions (like 4000px) will significantly increase the memory footprint on the device.
