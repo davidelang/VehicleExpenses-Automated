@@ -51,7 +51,7 @@ object DiscoveryOcrUtils {
             val canvas = Canvas(annotatedBmp)
             // Brighter, Filled Red Boxes for fragments
             val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
-            val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 6f }
+            val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 12f }
 
             var primaryRawBox: Rect? = null
             var primaryRefinedBox: Rect? = null
