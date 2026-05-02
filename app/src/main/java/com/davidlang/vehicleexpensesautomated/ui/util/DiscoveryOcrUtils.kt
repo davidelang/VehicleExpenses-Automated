@@ -49,8 +49,8 @@ object DiscoveryOcrUtils {
             
             val annotatedBmp = bmp.copy(Bitmap.Config.ARGB_8888, true)
             val canvas = Canvas(annotatedBmp)
-            // Brighter, Thicker Red Boxes for fragments
-            val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 4f }
+            // Brighter, Filled Red Boxes for fragments
+            val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
             val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 6f }
 
             var primaryRawBox: Rect? = null
@@ -170,11 +170,67 @@ object DiscoveryOcrUtils {
         val valleyThreshold = hillBrightness * 0.40; val maxH = gray.rows(); val maxW = gray.cols()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
         val requiredBridgeHeight = (maxY - minY) * 0.15
+        val lookAheadLimit = redFloor.height().toDouble()
 
-        while (minY > 0 && (sY - minY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true, valleyThreshold) < 8) break; minY -= 1.0 }
-        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineInkCount(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true, valleyThreshold) < 8) break; maxY += 1.0 }
-        while (minX > 0 && (sX - minX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; minX -= 1.0 }
-        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineInkCount(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false, valleyThreshold) < requiredBridgeHeight) break; maxX += 1.0 }
+        // 1. Expand Vertically (Top)
+        var lastGoodY = minY
+        var lookY = minY
+        while (lookY > 0 && (sY - lookY) < vL) {
+            val ink = getLineInkCount(gray, minX.toInt(), maxX.toInt(), (lookY - 1).toInt(), true, valleyThreshold)
+            if (ink >= 8) {
+                lastGoodY = lookY - 1
+                lookY = lastGoodY
+            } else {
+                if (lastGoodY - lookY > lookAheadLimit) break
+                lookY -= 1.0
+            }
+        }
+        minY = lastGoodY
+
+        // 2. Expand Vertically (Bottom)
+        lastGoodY = maxY
+        lookY = maxY
+        while (lookY < maxH - 1 && (lookY - sYY) < vL) {
+            val ink = getLineInkCount(gray, minX.toInt(), maxX.toInt(), (lookY + 1).toInt(), true, valleyThreshold)
+            if (ink >= 8) {
+                lastGoodY = lookY + 1
+                lookY = lastGoodY
+            } else {
+                if (lookY - lastGoodY > lookAheadLimit) break
+                lookY += 1.0
+            }
+        }
+        maxY = lastGoodY
+
+        // 3. Expand Horizontally (Left)
+        var lastGoodX = minX
+        var lookX = minX
+        while (lookX > 0 && (sX - lookX) < hL) {
+            val ink = getLineInkCount(gray, minY.toInt(), maxY.toInt(), (lookX - 1).toInt(), false, valleyThreshold)
+            if (ink >= requiredBridgeHeight) {
+                lastGoodX = lookX - 1
+                lookX = lastGoodX
+            } else {
+                if (lastGoodX - lookX > lookAheadLimit) break
+                lookX -= 1.0
+            }
+        }
+        minX = lastGoodX
+
+        // 4. Expand Horizontally (Right)
+        lastGoodX = maxX
+        lookX = maxX
+        while (lookX < maxW - 1 && (lookX - sXX) < hL) {
+            val ink = getLineInkCount(gray, minY.toInt(), maxY.toInt(), (lookX + 1).toInt(), false, valleyThreshold)
+            if (ink >= requiredBridgeHeight) {
+                lastGoodX = lookX + 1
+                lookX = lastGoodX
+            } else {
+                if (lookX - lastGoodX > lookAheadLimit) break
+                lookX += 1.0
+            }
+        }
+        maxX = lastGoodX
 
         gray.release()
         return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
