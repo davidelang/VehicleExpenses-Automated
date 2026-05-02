@@ -242,6 +242,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         var lastIdx = -1
         var totalConf = 0f
         var charCount = 0
+        var lastConf = 1.0f
         
         Log.d("OCR_DEBUG", "START: seqLen=$seqLen, dictSize=$dictSize")
         for (i in 0 until seqLen) {
