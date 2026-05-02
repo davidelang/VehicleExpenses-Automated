@@ -260,23 +260,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val char = if (maxIdx > 0 && maxIdx <= dictionary.size) dictionary[maxIdx - 1] else "BLANK/UNK"
             Log.d("OCR_DEBUG", "  Slot $i: idx=$maxIdx ($char), conf=$maxVal, lastIdx=$lastIdx")
 
-            // Phase 68: Extreme floor (0.10) to rescue everything
+            // Phase 69: Extreme floor (0.00) to rescue faint leading digits
+            // The first 4 digits are immune to the relative drop rule.
             if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
-                if (maxVal >= 0.10f) {
-                    // Rule: First digit accepted, then each must be >= 60% of prior.
-                    if (result.isEmpty() || maxVal >= (0.60f * lastConf)) {
-                        val appendedChar = dictionary[maxIdx - 1]
-                        result.append(appendedChar)
-                        totalConf += maxVal
-                        charCount++
-                        lastConf = maxVal
-                        Log.d("OCR_DEBUG", "    APPENDED: $appendedChar")
-                    } else {
-                        Log.d("OCR_DEBUG", "    TRUNCATED: Confidence drop detected ($maxVal < ${0.60f * lastConf})")
-                        break // Stop search
-                    }
+                val isImmune = result.length < 4
+                if (isImmune || maxVal >= (0.60f * lastConf)) {
+                    val appendedChar = dictionary[maxIdx - 1]
+                    result.append(appendedChar)
+                    totalConf += maxVal
+                    charCount++
+                    lastConf = maxVal
+                    Log.d("OCR_DEBUG", "    APPENDED: $appendedChar")
                 } else {
-                    Log.d("OCR_DEBUG", "    REJECTED: Confidence too low ($maxVal < 0.10)")
+                    Log.d("OCR_DEBUG", "    TRUNCATED: Confidence drop detected at index ${result.length} ($maxVal < ${0.60f * lastConf})")
+                    break // Stop search
                 }
             } else if (maxIdx > 0 && maxIdx == lastIdx) {
                 Log.d("OCR_DEBUG", "    SKIPPED: Repeat/CTC rule")
