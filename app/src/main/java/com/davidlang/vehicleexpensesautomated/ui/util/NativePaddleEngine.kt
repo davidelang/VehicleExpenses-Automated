@@ -15,6 +15,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
 class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
     override val name = "Paddle $variant Greedy"
     fun isV3() = variant == "V3"
@@ -24,26 +25,100 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private var initError: String? = null
     var isAvailable = false
         private set
-    private var sharedDetector: PaddlePredictor? = null
-    private var recognizerV3: PaddlePredictor? = null
-    private var recognizerNumeric: PaddlePredictor? = null
-    private var isNativeLibLoaded = false
-    private var detectionInputBuffer: FloatArray? = null
-    private var lastUsedBufferArea = 0
-    private var recognitionInputBuffer: FloatArray? = null
-    fun detect(bitmap: Bitmap, targetWidth: Int = 320, targetHeight: Int = 128): DetectionResult? {
-        val predictor = sharedDetector ?: return null
 
-        // No native resize: Tensor is pre-locked to 128x320
-        val inputTensor = predictor.getInput(0)
+    companion object {
+        private var sharedDetectorLarge: PaddlePredictor? = null
+        private var sharedDetectorSmall: PaddlePredictor? = null
+        private var sharedRecognizerV3: PaddlePredictor? = null
+        private var sharedRecognizerNumeric: PaddlePredictor? = null
+        private var isNativeLibLoaded = false
+
+        private var bufferLarge: FloatArray? = null
+        private var bufferSmall: FloatArray? = null
+        private var bufferRec: FloatArray? = null
+    }
+    
+    init {
+        try {
+            val arch = detectArch()
+            if (!isNativeLibLoaded) { 
+                System.loadLibrary("paddle_lite_jni")
+                isNativeLibLoaded = true 
+            }
+            val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
+            
+            if (sharedDetectorLarge == null) {
+                sharedDetectorLarge = createPredictor(modelPath)
+                sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
+            }
+            if (sharedDetectorSmall == null) {
+                sharedDetectorSmall = createPredictor(modelPath)
+                sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 320))
+            }
+            
+            if (variant == "V3" && sharedRecognizerV3 == null) {
+                sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
+                sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
+            }
+            if (variant == "V2" && sharedRecognizerNumeric == null) {
+                sharedRecognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_$arch.nb"))
+                sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
+            }
+            loadDictionary("paddle/en_dict.txt")
+            isAvailable = true
+        } catch (e: Throwable) {
+            isAvailable = false
+            initError = e.message
+            Log.e("PaddleLite", "Failed to initialize predictors", e)
+        }
+    }
+
+    private fun detectArch(): String = when (Build.SUPPORTED_ABIS[0]) { 
+        "arm64-v8a" -> "armv8"
+        "armeabi-v7a" -> "armv7"
+        else -> "x86_64" 
+    }
+
+    private fun copyAssetToInternal(assetPath: String): String {
+        val file = File(context.filesDir, assetPath.replace("/", "_"))
+        context.assets.open(assetPath).use { input -> 
+            FileOutputStream(file).use { output -> 
+                input.copyTo(output) 
+            } 
+        }
+        return file.absolutePath
+    }
+
+    private fun loadDictionary(assetPath: String) {
+        dictionary.clear()
+        context.assets.open(assetPath).bufferedReader().use { reader -> 
+            reader.forEachLine { dictionary.add(it) } 
+        }
+    }
+    
+    fun getDictionary(): List<String> = dictionary
+
+    private fun createPredictor(modelPath: String): PaddlePredictor {
+        val config = MobileConfig()
+        config.setModelFromFile(modelPath)
+        config.setThreads(4)
+        config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+        return PaddlePredictor.createPaddlePredictor(config)
+    }
+
+    fun detect(bitmap: Bitmap, targetWidth: Int = 320, targetHeight: Int = 128): DetectionResult? {
+        val predictor = if (targetWidth >= 2048) sharedDetectorLarge else sharedDetectorSmall
+        if (predictor == null) return null
 
         val area = targetWidth * targetHeight
-        if (detectionInputBuffer == null || detectionInputBuffer!!.size != 3 * area) {
-            detectionInputBuffer = FloatArray(3 * area)
+        val floatData = if (targetWidth >= 2048) {
+            if (bufferLarge == null) bufferLarge = FloatArray(3 * 2048 * 2048)
+            bufferLarge!!
+        } else {
+            if (bufferSmall == null) bufferSmall = FloatArray(3 * 320 * 128)
+            bufferSmall!!
         }
-        val floatData = detectionInputBuffer!!
         floatData.fill(0.0f)
-
 
         val scaleW = targetWidth.toFloat() / bitmap.width
         val scaleH = targetHeight.toFloat() / bitmap.height
@@ -71,20 +146,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
         }
         padded.recycle()
+
         try {
+            val inputTensor = predictor.getInput(0)
             inputTensor.setData(floatData)
             predictor.run()
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
             return DetectionResult(outputTensor.floatData, dims[3].toInt(), dims[2].toInt(), scale)
         } catch (t: Throwable) {
+            Log.e("PaddleDetect", "Detection failed", t)
             return null
         }
     }
 
-    
     suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): String = withContext(Dispatchers.IO) {
-        val predictor = if (isV3) recognizerV3 else recognizerNumeric
+        val predictor = if (isV3) sharedRecognizerV3 else sharedRecognizerNumeric
         if (predictor == null) return@withContext ""
         
         if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) {
@@ -92,16 +169,18 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor!!).text
     }
+
     private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
         val tStart = System.currentTimeMillis()
         val targetHeight = 48
         val targetWidth = 320
         
-        if (recognitionInputBuffer == null) {
-            recognitionInputBuffer = FloatArray(1 * 3 * targetHeight * targetWidth)
+        if (bufferRec == null) {
+            bufferRec = FloatArray(3 * 48 * 320)
         }
-        val floatData = recognitionInputBuffer!!
+        val floatData = bufferRec!!
         floatData.fill(0.0f)
+
         val scale = targetHeight.toFloat() / bitmap.height.toFloat()
         val sw = (bitmap.width * scale).toInt().coerceAtMost(targetWidth)
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, targetHeight, true)
@@ -110,14 +189,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(scaled, 0f, 0f, null)
         scaled.recycle()
+
         val mean = 0.5f
         val std = 0.5f
+        val area = targetHeight * targetWidth
         for (y in 0 until targetHeight) {
             for (x in 0 until targetWidth) {
                 val px = padded.getPixel(x, y)
-                floatData[0 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
-                floatData[1 * targetHeight * targetWidth + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
-                floatData[2 * targetHeight * targetWidth + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
+                floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
+                floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
             }
         }
         padded.recycle()
@@ -154,80 +235,28 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, if (charCount > 0) totalConf / charCount else 0f)
     }
+
     private data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float)
-    init {
-        try {
-            val arch = detectArch()
-            if (!isNativeLibLoaded) { 
-                System.loadLibrary("paddle_lite_jni")
-                isNativeLibLoaded = true 
-            }
-            val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
-            sharedDetector = createPredictor(modelPath)
-            
-            if (variant == "V3" && recognizerV3 == null) {
-                recognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
-                recognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
-            }
-            if (variant == "V2" && recognizerNumeric == null) {
-                recognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_$arch.nb"))
-                recognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
-            }
-            loadDictionary("paddle/en_dict.txt")
-            isAvailable = true
-        } catch (e: Throwable) {
-            isAvailable = false
-            initError = e.message
-            Log.e("PaddleLite", "Failed to initialize predictors", e)
-        }
-    }
-    private fun detectArch(): String = when (Build.SUPPORTED_ABIS[0]) { 
-        "arm64-v8a" -> "armv8"
-        "armeabi-v7a" -> "armv7"
-        else -> "x86_64" 
-    }
-    private fun copyAssetToInternal(assetPath: String): String {
-        val file = File(context.filesDir, assetPath.replace("/", "_"))
-        context.assets.open(assetPath).use { input -> 
-            FileOutputStream(file).use { output -> 
-                input.copyTo(output) 
-            } 
-        }
-        return file.absolutePath
-    }
-    private fun loadDictionary(assetPath: String) {
-        dictionary.clear()
-        context.assets.open(assetPath).bufferedReader().use { reader -> 
-            reader.forEachLine { dictionary.add(it) } 
-        }
-    }
-    
-    fun getDictionary(): List<String> = dictionary
-    private fun createPredictor(modelPath: String): PaddlePredictor {
-        val config = MobileConfig()
-        config.setModelFromFile(modelPath)
-        config.setThreads(4)
-        config.setPowerMode(PowerMode.LITE_POWER_HIGH)
-        return PaddlePredictor.createPaddlePredictor(config)
-    }
+
     override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
+    
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
-        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: \$initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
-        val predictor = if (variant == "V3") recognizerV3 else recognizerNumeric
+        val predictor = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
         if (predictor == null) return@withContext OcrResult(engineName = name, debugText = "Predictor null", imageWidth = bitmap.width, imageHeight = bitmap.height)
         
         val finalResult = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
         OcrResult(
             engineName = name,
             executionTimeMs = System.currentTimeMillis() - t0,
-            odometer = finalResult.text,
             debugText = finalResult.text,
             textBlocks = listOf(TextBlock(finalResult.text, Rect(0,0,bitmap.width, bitmap.height))),
             imageWidth = bitmap.width,
             imageHeight = bitmap.height
         )
     }
+
     suspend fun runDetectionOnly(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val det = detect(bitmap, targetWidth, targetHeight) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
