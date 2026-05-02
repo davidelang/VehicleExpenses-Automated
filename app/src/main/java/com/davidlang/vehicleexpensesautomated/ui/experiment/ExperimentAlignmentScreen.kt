@@ -442,9 +442,6 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
                     appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'><br>")
-                    step.ocrInputB64?.let { b64 -> 
-                        appendLine("<i>OCR Input:</i><br><img src='data:image/jpeg;base64,$b64'><br>")
-                    }
                     appendLine("${step.text ?: "---"}</div>") 
                 }
             } else appendLine("<i>No refinement data</i>")

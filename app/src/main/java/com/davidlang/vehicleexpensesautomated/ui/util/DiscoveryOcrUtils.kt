@@ -145,11 +145,17 @@ object DiscoveryOcrUtils {
 
         // Sequential pipeline: SINGLE PASS FOR VALIDATION
         // steps.add(exec(bitmap, "Raw"))
-        // val gray = OdometerOcrUtils.applyGrayscale(bitmap); steps.add(exec(gray, "Grayscale")); gray.recycle()
+        val gray = OdometerOcrUtils.applyGrayscale(bitmap) //; steps.add(exec(gray, "Grayscale"))
         val baseBile = OdometerOcrUtils.applyBilateral(bitmap) //; steps.add(exec(baseBile, "Bilateral"))
         // val s75 = OdometerOcrUtils.applyContrastStretch(baseBile, 75); steps.add(exec(s75, "Enhanced (75% Stretch)")); s75.recycle()
         val s80 = OdometerOcrUtils.applyContrastStretch(baseBile, 80); steps.add(exec(s80, "Enhanced (80% Stretch)")); s80.recycle()
+        
+        // Phase 69: Grayscale 80% Stretch (Bypassing Bilateral)
+        val s80Gray = OdometerOcrUtils.applyContrastStretch(gray, 80)
+        steps.add(exec(s80Gray, "Enhanced Grayscale (80% Stretch)"))
+        s80Gray.recycle()
 
+        gray.recycle()
         baseBile.recycle()
         return steps
     }
