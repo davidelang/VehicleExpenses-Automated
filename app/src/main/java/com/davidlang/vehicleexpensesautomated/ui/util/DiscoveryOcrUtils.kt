@@ -47,17 +47,12 @@ object DiscoveryOcrUtils {
             val sortedBlocks = det.textBlocks.sortedBy { it.boundingBox.left }
             Log.d("DISCOVERY_DEBUG", "[$stageName] Found ${sortedBlocks.size} fragments")
             
-            val annotatedBmp = bmp.copy(Bitmap.Config.ARGB_8888, true)
-            val canvas = Canvas(annotatedBmp)
-            // Brighter, Filled Red Boxes for fragments
-            val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
-            val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 12f }
-
             var primaryRawBox: Rect? = null
             var primaryRefinedBox: Rect? = null
 
-            // Phase 63: Row-Aware Consolidation
+            // Phase 63: Row-Aware Consolidation (Calculations only, no drawing)
             val orangeFragments = mutableListOf<Rect>()
+            val rawFragments = mutableListOf<Rect>()
             for ((idx, block) in sortedBlocks.withIndex()) {
                 val rawBox = Rect(
                     block.boundingBox.left.toInt(),
@@ -66,7 +61,7 @@ object DiscoveryOcrUtils {
                     block.boundingBox.bottom.toInt()
                 )
                 Log.d("DISCOVERY_DEBUG", "  Fragment $idx: [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}]")
-                canvas.drawRect(rawBox, redPaint)
+                rawFragments.add(rawBox)
 
                 val unclipBox = unclipRect(rawBox, 1.5f)
                 val refinedBox = if (expansion == DiscoveryExpansion.VALLEY) expandByValleyStop(rawBox, bmp) else unclipBox
@@ -113,8 +108,8 @@ object DiscoveryOcrUtils {
             } while (merged)
 
             // Final Recognition Pass on stable boxes (sorted by top for reading order)
+            val finalStepBlocks = mutableListOf<TextBlock>()
             for ((i, consolidatedBox) in consolidatedBoxes.sortedBy { it.top }.withIndex()) {
-                canvas.drawRect(consolidatedBox, orangePaint)
                 if (i == 0) primaryRefinedBox = consolidatedBox
 
                 Log.d("DISCOVERY_DEBUG", "  Consolidated Row $i: [L=${consolidatedBox.left}, T=${consolidatedBox.top}, R=${consolidatedBox.right}, B=${consolidatedBox.bottom}]")
@@ -125,14 +120,19 @@ object DiscoveryOcrUtils {
                 if (recognizedText.isNotBlank()) {
                     sb.append("$recognizedText ")
                 }
-                finalBlocks.add(TextBlock(text = recognizedText, boundingBox = consolidatedBox))
+                // Store BOTH the fragments and the consolidated box for late-stage annotation
+                finalStepBlocks.add(TextBlock(
+                    text = recognizedText, 
+                    boundingBox = consolidatedBox, 
+                    metadata = mapOf("frags" to rawFragments.joinToString("|") { "${it.left},${it.top},${it.right},${it.bottom}" })
+                ))
             }
 
             return OcrStepResult(
                 stageName = stageName,
-                bitmap = annotatedBmp,
+                bitmap = bmp, // CLEAN OCR: No annotations on source
                 text = sb.toString().trim(),
-                normalizedBoxes = finalBlocks,
+                normalizedBoxes = finalStepBlocks,
                 rawBox = primaryRawBox,
                 refinedBox = primaryRefinedBox
             )

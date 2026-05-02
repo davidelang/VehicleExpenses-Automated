@@ -452,12 +452,34 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-                    // Scale to 48px high for HTML output
+                    
+                    // Phase 63: Late-Stage Annotation on Thumbnails
                     val scale = 48f / step.bitmap.height
                     val sw = (step.bitmap.width * scale).toInt()
-                    val scaled = Bitmap.createScaledBitmap(step.bitmap, sw, 48, true)
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${bitmapToBase64(scaled, 60)}'><br>${step.text ?: "---"}</div>") 
-                    scaled.recycle()
+                    val thumb = Bitmap.createScaledBitmap(step.bitmap, sw, 48, true)
+                    
+                    val canvas = Canvas(thumb)
+                    val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
+                    val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
+                    
+                    step.normalizedBoxes.forEach { block ->
+                        // 1. Draw Fragments (Red) from metadata
+                        block.metadata["frags"]?.split("|")?.forEach { coordStr ->
+                            val c = coordStr.split(",").map { it.toFloat() * scale }
+                            if (c.size == 4) canvas.drawRect(c[0], c[1], c[2], c[3], redPaint)
+                        }
+                        // 2. Draw Consolidated Row (Orange)
+                        canvas.drawRect(
+                            block.boundingBox.left * scale, 
+                            block.boundingBox.top * scale, 
+                            block.boundingBox.right * scale, 
+                            block.boundingBox.bottom * scale, 
+                            orangePaint
+                        )
+                    }
+
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${bitmapToBase64(thumb, 60)}'><br>${step.text ?: "---"}</div>") 
+                    thumb.recycle()
                 }
             } else appendLine("<i>No refinement data</i>")
         } else appendLine("<i>No match</i>")
