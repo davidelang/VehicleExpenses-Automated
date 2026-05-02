@@ -332,18 +332,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         } catch (e: Exception) { 
             Log.e(TAG, "Failed ${file.name}", e) 
         } finally {
-            // DEFENSIVE CLEANUP: Recycle all bitmaps generated for this photo
-            currentResult?.let { res ->
-                res.discoveryResult.croppedBitmap?.let { if (!it.isRecycled) it.recycle() }
-                res.discoveryResult.openCvProcessedBitmap?.let { if (!it.isRecycled) it.recycle() }
-                res.vehicleResultsMap.values.forEach { vr ->
-                    vr.refinementTraces.values.forEach { tr ->
-                        tr.steps.forEach { step ->
-                            if (!step.bitmap.isRecycled) step.bitmap.recycle()
-                        }
-                    }
-                }
-            }
+            // DEFENSIVE CLEANUP: Bitmaps are now recycled immediately in the OCR loop.
             currentResult = null // Explicitly nullify to prevent re-access
             System.gc()
         }
