@@ -9,10 +9,8 @@ import android.graphics.Bitmap
 object OcrHarness {
 
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): OcrResult {
-        // MANDATE: Apply Grayscale and Bilateral filter GLOBALLY before discovery pass
-        val gray = OdometerOcrUtils.applyGrayscale(bitmap)
-        val filtered = OdometerOcrUtils.applyBilateral(gray)
-        gray.recycle()
+        // MANDATE: Apply Bilateral filter GLOBALLY before discovery pass (input is already grayscale)
+        val filtered = OdometerOcrUtils.applyBilateral(bitmap)
 
         // Phase 55: ML Kit is the sole discovery engine
         val rawResult = MlKitEngine().recognize(filtered)
@@ -33,9 +31,7 @@ object OcrHarness {
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
         // Refinement also benefits from the same clean input
-        val gray = OdometerOcrUtils.applyGrayscale(bitmap)
-        val filtered = OdometerOcrUtils.applyBilateral(gray)
-        gray.recycle()
+        val filtered = OdometerOcrUtils.applyBilateral(bitmap)
 
         val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
         
