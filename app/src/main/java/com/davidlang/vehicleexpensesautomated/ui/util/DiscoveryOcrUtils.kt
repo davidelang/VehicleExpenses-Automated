@@ -75,54 +75,57 @@ object DiscoveryOcrUtils {
                 if (primaryRawBox == null) primaryRawBox = rawBox
             }
 
-            // Group fragments into rows with AGGRESSIVE merging (any overlap or within 10% height)
-            val rows = mutableListOf<MutableList<Rect>>()
-            val sortedFragments = orangeFragments.sortedBy { it.top }
-            
-            for (frag in sortedFragments) {
-                var placed = false
-                val fragHeight = frag.height()
-                for (row in rows) {
-                    val anchor = row[0]
-                    val overlapTop = max(frag.top, anchor.top)
-                    val overlapBottom = min(frag.bottom, anchor.bottom)
-                    val overlapHeight = overlapBottom - overlapTop
-                    
-                    // Merge if they overlap at all, or are within a tiny vertical distance
-                    if (overlapHeight > -(fragHeight * 0.1)) {
-                        row.add(frag)
-                        placed = true
-                        break
+            // Phase 63: Iterative Row-Aware Consolidation (20% overlap, no vertical gap)
+            val consolidatedBoxes = orangeFragments.toMutableList()
+            do {
+                var merged = false
+                var i = 0
+                while (i < consolidatedBoxes.size && !merged) {
+                    var j = i + 1
+                    while (j < consolidatedBoxes.size && !merged) {
+                        val a = consolidatedBoxes[i]
+                        val b = consolidatedBoxes[j]
+
+                        val overlapTop = max(a.top, b.top)
+                        val overlapBottom = min(a.bottom, b.bottom)
+                        val overlapHeight = overlapBottom - overlapTop
+                        
+                        if (overlapHeight > 0) { // No vertical gap
+                            val minH = min(a.height(), b.height())
+                            if (overlapHeight >= minH * 0.20) { // At least 20% overlap of shorter box
+                                // Union A and B into a single bounding box
+                                val union = Rect(
+                                    min(a.left, b.left),
+                                    min(a.top, b.top),
+                                    max(a.right, b.right),
+                                    max(a.bottom, b.bottom)
+                                )
+                                consolidatedBoxes.removeAt(j)
+                                consolidatedBoxes.removeAt(i)
+                                consolidatedBoxes.add(union)
+                                merged = true
+                            }
+                        }
+                        j++
                     }
+                    i++
                 }
-                if (!placed) rows.add(mutableListOf(frag))
-            }
+            } while (merged)
 
-            // Consolidate rows horizontally and run OCR
-            val rowRects = rows.map { row ->
-                val consolidated = Rect(
-                    row.minOf { it.left },
-                    row.minOf { it.top },
-                    row.maxOf { it.right },
-                    row.maxOf { it.bottom }
-                )
-                Log.d("DISCOVERY_DEBUG", "  Merged Row (from ${row.size} frags): [L=${consolidated.left}, T=${consolidated.top}, R=${consolidated.right}, B=${consolidated.bottom}]")
-                consolidated
-            }.sortedBy { it.top }
+            // Final Recognition Pass on stable boxes (sorted by top for reading order)
+            for ((i, consolidatedBox) in consolidatedBoxes.sortedBy { it.top }.withIndex()) {
+                canvas.drawRect(consolidatedBox, orangePaint)
+                if (i == 0) primaryRefinedBox = consolidatedBox
 
-            for ((i, consolidatedRow) in rowRects.withIndex()) {
-                canvas.drawRect(consolidatedRow, orangePaint)
-                if (i == 0) primaryRefinedBox = consolidatedRow
+                Log.d("DISCOVERY_DEBUG", "  Consolidated Row $i: [L=${consolidatedBox.left}, T=${consolidatedBox.top}, R=${consolidatedBox.right}, B=${consolidatedBox.bottom}]")
 
-                Log.d("DISCOVERY_DEBUG", "[$stageName] Consolidated Row $i: [L=${consolidatedRow.left}, T=${consolidatedRow.top}, R=${consolidatedRow.right}, B=${consolidatedRow.bottom}]")
-
-                val recognitionCrop = Bitmap.createBitmap(bmp, consolidatedRow.left, consolidatedRow.top, consolidatedRow.width(), consolidatedRow.height())
+                val recognitionCrop = Bitmap.createBitmap(bmp, consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
                 val recognizedText = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
                 
                 if (recognizedText.isNotBlank()) {
                     sb.append("$recognizedText ")
                 }
-                finalBlocks.add(TextBlock(text = recognizedText, boundingBox = consolidatedRow))
+                finalBlocks.add(TextBlock(text = recognizedText, boundingBox = consolidatedBox))
             }
 
             return OcrStepResult(
