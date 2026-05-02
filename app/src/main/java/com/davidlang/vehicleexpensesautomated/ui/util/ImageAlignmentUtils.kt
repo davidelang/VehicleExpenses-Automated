@@ -52,7 +52,8 @@ data class AnchorCandidate(
     val tx: Float,
     val ty: Float,
     val distance: Double,
-    val message: String
+    val message: String,
+    val cyRef: Float = 0.5f
 )
 
 data class AnchorResult(
@@ -80,6 +81,9 @@ object ImageAlignmentUtils {
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
+        val targetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
+            (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
+        } else 0.5f
         
         // Phase 48: Landmarks are now extracted from full-res images, no scaling needed.
         val refScale = 1.0f
@@ -126,8 +130,9 @@ object ImageAlignmentUtils {
                         if (kotlin.math.abs(rot) > 4.0f) continue
                         val tx = r1cx - (s * q1cx)
                         val ty = r1cy - (s * q1cy)
+                        val cyRef = (r1cy + r2cy) / 2.0f
 
-                        allCandidates.add(AnchorCandidate("A (Unique)", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty)))
+                        allCandidates.add(AnchorCandidate("A (Unique)", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef))
                     }
                 }
             }
@@ -190,11 +195,12 @@ object ImageAlignmentUtils {
                                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
 
                                         // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
-                                        if (kotlin.math.abs(rot) > 1.5f) continue
+                                        if (kotlin.math.abs(rot) > 4.0f) continue
                                         val tx = rAcx - (s * qAcx)
                                         val ty = rAcy - (s * qAcy)
+                                        val cyRef = (rAcy + rBcy) / 2.0f
 
-                                        allCandidates.add(AnchorCandidate("B (Tri)", listOf(w1, w2, w3), s, rot, tx, ty, dR, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty)))
+                                        allCandidates.add(AnchorCandidate("B (Tri)", listOf(w1, w2, w3), s, rot, tx, ty, dR, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef))
                                     }
                                 }
                             }
@@ -203,6 +209,7 @@ object ImageAlignmentUtils {
                 }
             }
         }
+
 
         if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchor sets.", timeMs = System.currentTimeMillis() - t0)
 
@@ -229,11 +236,33 @@ object ImageAlignmentUtils {
             }
         }
 
-        // Distance-Weighted Average of the winning consensus group
-        val totalWeight = bestGroup.sumOf { it.distance }
-        val finalScale = if (totalWeight > 0) (bestGroup.sumOf { it.scale * it.distance } / totalWeight).toFloat() else allCandidates.map { it.scale }.median()
-        val finalTx = if (totalWeight > 0) (bestGroup.sumOf { it.tx * it.distance } / totalWeight).toFloat() else allCandidates.map { it.tx }.median()
-        val finalTy = if (totalWeight > 0) (bestGroup.sumOf { it.ty * it.distance } / totalWeight).toFloat() else allCandidates.map { it.ty }.median()
+        // Distance-Weighted and Proximity-Weighted Average of the winning consensus group
+        val finalScale: Float
+        val finalTx: Float
+        val finalTy: Float
+
+        if (bestGroup.isNotEmpty()) {
+            var sumScale = 0.0
+            var sumTx = 0.0
+            var sumTy = 0.0
+            var totalW = 0.0
+            for (c in bestGroup) {
+                // Vertical Proximity Weighting (Phase 65): Favor landmarks near the odometer midline
+                val vDist = kotlin.math.abs(c.cyRef - targetY)
+                val w = c.distance / (vDist + 0.05)
+                sumScale += c.scale * w
+                sumTx += c.tx * w
+                sumTy += c.ty * w
+                totalW += w
+            }
+            finalScale = if (totalW > 0) (sumScale / totalW).toFloat() else allCandidates.map { it.scale }.median()
+            finalTx = if (totalW > 0) (sumTx / totalW).toFloat() else allCandidates.map { it.tx }.median()
+            finalTy = if (totalW > 0) (sumTy / totalW).toFloat() else allCandidates.map { it.ty }.median()
+        } else {
+            finalScale = allCandidates.map { it.scale }.median()
+            finalTx = allCandidates.map { it.tx }.median()
+            finalTy = allCandidates.map { it.ty }.median()
+        }
 
         val matrix = android.graphics.Matrix()
         matrix.postScale(finalScale, finalScale)
