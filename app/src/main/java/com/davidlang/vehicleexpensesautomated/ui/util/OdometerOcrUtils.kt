@@ -380,7 +380,7 @@ object OdometerOcrUtils {
                         Pair(res, emptyList())
                     } ?: Pair(null, emptyList())
                 }
-                else -> Pair(runOcr(bmp), emptyList())
+                else -> Pair(null, emptyList())
             }
         }
 
