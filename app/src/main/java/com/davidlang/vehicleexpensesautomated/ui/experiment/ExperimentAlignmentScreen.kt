@@ -182,6 +182,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val paddleEngineV2 = NativePaddleEngine(context, variant = "V2")
     val paddleEngineV3 = NativePaddleEngine(context, variant = "V3")
+    val paddleEngineV3Mono = NativePaddleEngine(context, variant = "V3", useMono = true)
 
     val cachedRefs = vehicles.map { v ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
@@ -199,7 +200,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 58 Strategies
     val strategies = listOf(
         "ML Kit 48px (Exact)",
-        "Paddle V3 Unclip", "Paddle V3 Valley"
+        "Paddle V3 Valley",
+        "Paddle V3 Valley Mono"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -284,7 +286,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         strat.contains("32px") -> 32
                                         else -> null
                                     }
-                                    val activePaddle = if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
+                                    val activePaddle = if (strat.contains("Mono")) paddleEngineV3Mono else if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
                                     val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
                                     val steps = if (isDisc) {
