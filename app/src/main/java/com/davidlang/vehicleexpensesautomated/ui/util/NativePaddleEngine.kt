@@ -17,8 +17,8 @@ import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
-    override val name = "Paddle $variant Greedy"
+class NativePaddleEngine(private val context: Context, private val variant: String = "V3", val useMono: Boolean = false) : OcrEngine {
+    override val name = "Paddle $variant Greedy" + if (useMono) " Mono" else ""
     fun isV3() = variant == "V3"
     
     data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val scale: Float)
@@ -32,11 +32,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var sharedDetectorSmall: PaddlePredictor? = null
         private var sharedRecognizerV3: PaddlePredictor? = null
         private var sharedRecognizerNumeric: PaddlePredictor? = null
+        
+        // Mono Models
+        private var sharedDetectorLargeMono: PaddlePredictor? = null
+        private var sharedDetectorSmallMono: PaddlePredictor? = null
+        private var sharedRecognizerV3Mono: PaddlePredictor? = null
+        private var sharedRecognizerNumericMono: PaddlePredictor? = null
+
         private var isNativeLibLoaded = false
 
         private var bufferLarge: FloatArray? = null
         private var bufferSmall: FloatArray? = null
         private var bufferRec: FloatArray? = null
+        
+        // Mono Buffers (1-Channel)
+        private var bufferLargeMono: FloatArray? = null
+        private var bufferSmallMono: FloatArray? = null
+        private var bufferRecMono: FloatArray? = null
 
         // Phase 63: Permanent Shared Reporting Buffers
         val sharedReportBitmap: Bitmap by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
@@ -52,24 +64,45 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 System.loadLibrary("paddle_lite_jni")
                 isNativeLibLoaded = true 
             }
-            val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
             
-            if (sharedDetectorLarge == null) {
-                sharedDetectorLarge = createPredictor(modelPath)
-                sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
-            }
-            if (sharedDetectorSmall == null) {
-                sharedDetectorSmall = createPredictor(modelPath)
-                sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 320))
-            }
-            
-            if (variant == "V3" && sharedRecognizerV3 == null) {
-                sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
-                sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
-            }
-            if (variant == "V2" && sharedRecognizerNumeric == null) {
-                sharedRecognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_$arch.nb"))
-                sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
+            if (useMono) {
+                val modelPath = copyAssetToInternal("paddle/det_v4_4000_mono_$arch.nb")
+                if (sharedDetectorLargeMono == null) {
+                    sharedDetectorLargeMono = createPredictor(modelPath)
+                    sharedDetectorLargeMono!!.getInput(0).resize(longArrayOf(1, 1, 2048, 2048))
+                }
+                if (sharedDetectorSmallMono == null) {
+                    sharedDetectorSmallMono = createPredictor(modelPath)
+                    sharedDetectorSmallMono!!.getInput(0).resize(longArrayOf(1, 1, 128, 320))
+                }
+                
+                if (variant == "V3" && sharedRecognizerV3Mono == null) {
+                    sharedRecognizerV3Mono = createPredictor(copyAssetToInternal("paddle/rec_v3_mono_$arch.nb"))
+                    sharedRecognizerV3Mono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
+                }
+                if (variant == "V2" && sharedRecognizerNumericMono == null) {
+                    sharedRecognizerNumericMono = createPredictor(copyAssetToInternal("paddle/rec_numeric_mono_$arch.nb"))
+                    sharedRecognizerNumericMono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
+                }
+            } else {
+                val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
+                if (sharedDetectorLarge == null) {
+                    sharedDetectorLarge = createPredictor(modelPath)
+                    sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
+                }
+                if (sharedDetectorSmall == null) {
+                    sharedDetectorSmall = createPredictor(modelPath)
+                    sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 320))
+                }
+                
+                if (variant == "V3" && sharedRecognizerV3 == null) {
+                    sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
+                    sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
+                }
+                if (variant == "V2" && sharedRecognizerNumeric == null) {
+                    sharedRecognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_$arch.nb"))
+                    sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
+                }
             }
             loadDictionary("paddle/en_dict.txt")
             isAvailable = true
@@ -114,16 +147,31 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     fun detect(bitmap: Bitmap, targetWidth: Int = 320, targetHeight: Int = 128): DetectionResult? {
-        val predictor = if (targetWidth >= 2048) sharedDetectorLarge else sharedDetectorSmall
+        val predictor = if (targetWidth >= 2048) {
+            if (useMono) sharedDetectorLargeMono else sharedDetectorLarge
+        } else {
+            if (useMono) sharedDetectorSmallMono else sharedDetectorSmall
+        }
         if (predictor == null) return null
 
         val area = targetWidth * targetHeight
-        val floatData = if (targetWidth >= 2048) {
-            if (bufferLarge == null) bufferLarge = FloatArray(3 * 2048 * 2048)
-            bufferLarge!!
+        val floatData: FloatArray
+        if (useMono) {
+            if (targetWidth >= 2048) {
+                if (bufferLargeMono == null) bufferLargeMono = FloatArray(1 * 2048 * 2048)
+                floatData = bufferLargeMono!!
+            } else {
+                if (bufferSmallMono == null) bufferSmallMono = FloatArray(1 * 320 * 128)
+                floatData = bufferSmallMono!!
+            }
         } else {
-            if (bufferSmall == null) bufferSmall = FloatArray(3 * 320 * 128)
-            bufferSmall!!
+            if (targetWidth >= 2048) {
+                if (bufferLarge == null) bufferLarge = FloatArray(3 * 2048 * 2048)
+                floatData = bufferLarge!!
+            } else {
+                if (bufferSmall == null) bufferSmall = FloatArray(3 * 320 * 128)
+                floatData = bufferSmall!!
+            }
         }
         floatData.fill(0.0f)
 
@@ -144,12 +192,21 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
         val std = floatArrayOf(0.229f, 0.224f, 0.225f)
 
-        for (y in 0 until targetHeight) {
-            for (x in 0 until targetWidth) {
-                val px = padded.getPixel(x, y)
-                floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
-                floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
-                floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+        if (useMono) {
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = padded.getPixel(x, y)
+                    floatData[y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                }
+            }
+        } else {
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = padded.getPixel(x, y)
+                    floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                    floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
+                    floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                }
             }
         }
         padded.recycle()
@@ -168,24 +225,33 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): RecStageResult = withContext(Dispatchers.IO) {
-        val predictor = if (isV3) sharedRecognizerV3 else sharedRecognizerNumeric
+        val predictor = if (isV3) {
+            if (useMono) sharedRecognizerV3Mono else sharedRecognizerV3
+        } else {
+            if (useMono) sharedRecognizerNumericMono else sharedRecognizerNumeric
+        }
         if (predictor == null) return@withContext RecStageResult("", 0, 0f, null)
         
         if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) {
             return@withContext RecStageResult("(Skipped: Memory)", 0, 0f, null)
         }
-        runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor!!)
+        runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor)
     }
 
     private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
         val tStart = System.currentTimeMillis()
         val targetHeight = 48
         val targetWidth = 320
+        val area = targetHeight * targetWidth
         
-        if (bufferRec == null) {
-            bufferRec = FloatArray(3 * 48 * 320)
+        val floatData: FloatArray
+        if (useMono) {
+            if (bufferRecMono == null) bufferRecMono = FloatArray(1 * area)
+            floatData = bufferRecMono!!
+        } else {
+            if (bufferRec == null) bufferRec = FloatArray(3 * area)
+            floatData = bufferRec!!
         }
-        val floatData = bufferRec!!
         floatData.fill(0.0f)
 
         // Phase 63: 312x40 Padded Center-Crop
@@ -197,6 +263,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sw = (bitmap.width * scale).toInt().coerceAtMost(safeW)
         val scaled = Bitmap.createScaledBitmap(bitmap, sw, safeH, true)
         
+        // We use a shared ARGB_8888 bitmap for safety, but will only extract 1 channel if useMono
         val padded = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded)
         canvas.drawColor(Color.BLACK)
@@ -206,13 +273,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         val mean = 0.5f
         val std = 0.5f
-        val area = targetHeight * targetWidth
-        for (y in 0 until targetHeight) {
-            for (x in 0 until targetWidth) {
-                val px = padded.getPixel(x, y)
-                floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
-                floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
-                floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
+        
+        if (useMono) {
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = padded.getPixel(x, y)
+                    // Just read the Red channel (since it's grayscale, R=G=B)
+                    floatData[y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                }
+            }
+        } else {
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = padded.getPixel(x, y)
+                    floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                    floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
+                    floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
+                }
             }
         }
         
