@@ -260,10 +260,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val char = if (maxIdx > 0 && maxIdx <= dictionary.size) dictionary[maxIdx - 1] else "BLANK/UNK"
             Log.d("OCR_DEBUG", "  Slot $i: idx=$maxIdx ($char), conf=$maxVal, lastIdx=$lastIdx")
 
-            // Phase 67: Relative Confidence Drop to kill ghosts (at 60% ratio)
-            // Accepts the first digit >= 0.40, then requires each subsequent to be >= 60% of prior.
+            // Phase 68: Extreme floor (0.10) to rescue everything
             if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
-                if (maxVal >= 0.40f) {
+                if (maxVal >= 0.10f) {
+                    // Rule: First digit accepted, then each must be >= 60% of prior.
                     if (result.isEmpty() || maxVal >= (0.60f * lastConf)) {
                         val appendedChar = dictionary[maxIdx - 1]
                         result.append(appendedChar)
@@ -273,10 +273,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                         Log.d("OCR_DEBUG", "    APPENDED: $appendedChar")
                     } else {
                         Log.d("OCR_DEBUG", "    TRUNCATED: Confidence drop detected ($maxVal < ${0.60f * lastConf})")
-                        break // End the sequence
+                        break // Stop search
                     }
                 } else {
-                    Log.d("OCR_DEBUG", "    REJECTED: Confidence too low ($maxVal < 0.40)")
+                    Log.d("OCR_DEBUG", "    REJECTED: Confidence too low ($maxVal < 0.10)")
                 }
             } else if (maxIdx > 0 && maxIdx == lastIdx) {
                 Log.d("OCR_DEBUG", "    SKIPPED: Repeat/CTC rule")
