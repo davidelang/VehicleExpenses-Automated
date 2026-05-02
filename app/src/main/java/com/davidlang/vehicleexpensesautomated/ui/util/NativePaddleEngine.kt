@@ -235,6 +235,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         var lastIdx = -1
         var totalConf = 0f
         var charCount = 0
+        
+        Log.d("OCR_DEBUG", "START: seqLen=$seqLen, dictSize=$dictSize")
         for (i in 0 until seqLen) {
             var maxIdx = 0
             var maxVal = -1f 
@@ -246,14 +248,24 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     maxIdx = j 
                 } 
             }
+            
+            val char = if (maxIdx > 0 && maxIdx <= dictionary.size) dictionary[maxIdx - 1] else "BLANK/UNK"
+            Log.d("OCR_DEBUG", "  Slot $i: idx=$maxIdx ($char), conf=$maxVal, lastIdx=$lastIdx")
+
             if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) { 
                 result.append(dictionary[maxIdx - 1])
                 totalConf += maxVal
                 charCount++ 
+                Log.d("OCR_DEBUG", "    APPENDED: ${dictionary[maxIdx - 1]}")
+            } else if (maxIdx > 0 && maxIdx == lastIdx) {
+                Log.d("OCR_DEBUG", "    SKIPPED: Repeat/CTC rule")
             }
             lastIdx = maxIdx
         }
-        return RecStageResult(result.toString(), System.currentTimeMillis() - tStart, if (charCount > 0) totalConf / charCount else 0f, ocrInputB64)
+        val finalStr = result.toString()
+        val finalConf = if (charCount > 0) totalConf / charCount else 0f
+        Log.d("OCR_DEBUG", "END: text='$finalStr', avgConf=$finalConf")
+        return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, ocrInputB64)
     }
 
     data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
