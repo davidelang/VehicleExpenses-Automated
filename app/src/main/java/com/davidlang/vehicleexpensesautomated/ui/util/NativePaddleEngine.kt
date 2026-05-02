@@ -159,7 +159,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         try {
             val arch = detectArch()
             if (!isNativeLibLoaded) { 
-                loadNativeLibrary()
+                System.loadLibrary("paddle_lite_jni")
                 isNativeLibLoaded = true 
             }
             val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
@@ -179,17 +179,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             isAvailable = false
             initError = e.message
             Log.e("PaddleLite", "Failed to initialize predictors", e)
-        }
-    }
-    private fun loadNativeLibrary() {
-        val abi = Build.SUPPORTED_ABIS[0]
-        val libName = "libpaddle_lite_jni.so"
-        val assetPath = "libs_backup/${abi}_$libName"
-        try { 
-            val internalLibPath = copyAssetToInternal(assetPath)
-            System.load(internalLibPath) 
-        } catch (e: Exception) { 
-            System.loadLibrary("paddle_lite_jni") 
         }
     }
     private fun detectArch(): String = when (Build.SUPPORTED_ABIS[0]) { 

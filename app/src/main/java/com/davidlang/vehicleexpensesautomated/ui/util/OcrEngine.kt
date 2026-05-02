@@ -114,15 +114,6 @@ interface OcrEngine {
     suspend fun recognize(bitmap: Bitmap): OcrResult
 }
 
-class TesseractEngine : OcrEngine {
-    override val name = "Tesseract"
-    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
-        val t0 = System.currentTimeMillis()
-        val (text, blocks) = OdometerOcrUtils.runRawOcr(bitmap, "0123456789")
-        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = text, textBlocks = blocks, imageWidth = bitmap.width, imageHeight = bitmap.height)
-    }
-}
-
 class MlKitEngine : OcrEngine {
     override val name = "ML Kit"
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {

@@ -12,6 +12,7 @@
     <application
         android:name=".VehicleExpensesApplication"
         android:allowBackup="true"
+        android:extractNativeLibs="true"
         android:label="VehicleExpenses"
         android:icon="@mipmap/ic_vehicleexpenses"
         android:roundIcon="@mipmap/ic_vehicleexpenses_round"
