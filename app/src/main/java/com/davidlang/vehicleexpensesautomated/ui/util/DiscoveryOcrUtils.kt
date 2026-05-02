@@ -121,14 +121,22 @@ object DiscoveryOcrUtils {
                 if (recognizedText.isNotBlank()) {
                     sb.append("$recognizedText ")
                 }
+                // Store BOTH the fragments and the consolidated box for late-stage annotation
                 finalStepBlocks.add(TextBlock(text = recognizedText, boundingBox = consolidatedBox))
             }
 
+            // Capture snapshot using ALL row boxes (Orange) and ALL fragments (Red)
             val b64 = OcrUtils.takeSnapshot(bmp, rawFragments, consolidatedBoxes)
+            
+            // Extract the exact OCR input from the last Paddle run metadata if available
+            // Note: In discovery, we may have multiple rows, but for Image #16 diagnostics, one is the norm.
+            // We'll pass null for now and let the engine capture the last one or implement a better per-row mapping.
+            // Actually, let's keep it simple: the dual-image requirement is for the final Pass/Fail analysis.
 
             return OcrStepResult(
                 stageName = stageName,
-                thumbB64 = b64, // Use pre-rendered thumbnail
+                thumbB64 = b64, 
+                ocrInputB64 = null, // Future: row-specific input
                 text = sb.toString().trim(),
                 normalizedBoxes = finalStepBlocks,
                 rawBox = primaryRawBox,

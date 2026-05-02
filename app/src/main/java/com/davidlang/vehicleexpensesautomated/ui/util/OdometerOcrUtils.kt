@@ -376,11 +376,12 @@ object OdometerOcrUtils {
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
-                        val resStr = paddleEngine.runConstrainedStatic(bmp, targetHeight ?: bmp.height, it.getDictionary(), it.isV3())
-                        Pair(resStr, emptyList())
-                    } ?: Pair(null, emptyList())
+                        // Corrected: use recognize() to get metadata
+                        val ocrRes = paddleEngine.recognize(bmp)
+                        Pair(ocrRes.debugText, emptyList<Rect>(), ocrRes.metadata["ocrInput"])
+                    } ?: Pair(null, emptyList<Rect>(), null)
                 }
-                else -> Pair(null, emptyList())
+                else -> Pair(null, emptyList<Rect>(), null)
             }
             
             // Phase 63: Immediate Snapshot (Zero-Allocation)
@@ -390,6 +391,7 @@ object OdometerOcrUtils {
             return OcrStepResult(
                 stageName = stageName,
                 thumbB64 = b64,
+                ocrInputB64 = res.third,
                 text = res.first,
                 boxes = res.second,
                 rawBox = box,

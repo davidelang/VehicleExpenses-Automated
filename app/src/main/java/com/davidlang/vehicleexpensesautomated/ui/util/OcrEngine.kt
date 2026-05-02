@@ -104,7 +104,16 @@ data class OcrResult(
     }
 }
 
-data class OcrStepResult(val stageName: String, val thumbB64: String, val text: String?, val boxes: List<Rect> = emptyList(), val normalizedBoxes: List<TextBlock> = emptyList(), val rawBox: Rect? = null, val refinedBox: Rect? = null)
+data class OcrStepResult(
+    val stageName: String, 
+    val thumbB64: String, 
+    val ocrInputB64: String? = null, // Phase 63: Exact 320x48 buffer passed to model
+    val text: String?, 
+    val boxes: List<Rect> = emptyList(), 
+    val normalizedBoxes: List<TextBlock> = emptyList(), 
+    val rawBox: Rect? = null, 
+    val refinedBox: Rect? = null
+)
 
 enum class DiscoveryExpansion { UNCLIP, VALLEY }
 
