@@ -110,13 +110,16 @@ object DiscoveryOcrUtils {
 
             // Final Recognition Pass on stable boxes (sorted by top for reading order)
             val finalStepBlocks = mutableListOf<TextBlock>()
+            var lastOcrInputB64: String? = null
             for ((i, consolidatedBox) in consolidatedBoxes.sortedBy { it.top }.withIndex()) {
                 if (i == 0) primaryRefinedBox = consolidatedBox
 
                 Log.d("DISCOVERY_DEBUG", "  Consolidated Row $i: [L=${consolidatedBox.left}, T=${consolidatedBox.top}, R=${consolidatedBox.right}, B=${consolidatedBox.bottom}]")
 
                 val recognitionCrop = Bitmap.createBitmap(bmp, consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
-                val recognizedText = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
+                val ocrResult = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
+                val recognizedText = ocrResult.text
+                lastOcrInputB64 = ocrResult.ocrInputB64
                 
                 if (recognizedText.isNotBlank()) {
                     sb.append("$recognizedText ")
@@ -127,16 +130,11 @@ object DiscoveryOcrUtils {
 
             // Capture snapshot using ALL row boxes (Orange) and ALL fragments (Red)
             val b64 = OcrUtils.takeSnapshot(bmp, rawFragments, consolidatedBoxes)
-            
-            // Extract the exact OCR input from the last Paddle run metadata if available
-            // Note: In discovery, we may have multiple rows, but for Image #16 diagnostics, one is the norm.
-            // We'll pass null for now and let the engine capture the last one or implement a better per-row mapping.
-            // Actually, let's keep it simple: the dual-image requirement is for the final Pass/Fail analysis.
 
             return OcrStepResult(
                 stageName = stageName,
                 thumbB64 = b64, 
-                ocrInputB64 = null, // Future: row-specific input
+                ocrInputB64 = lastOcrInputB64,
                 text = sb.toString().trim(),
                 normalizedBoxes = finalStepBlocks,
                 rawBox = primaryRawBox,
