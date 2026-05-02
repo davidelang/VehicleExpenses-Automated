@@ -104,7 +104,7 @@ data class OcrResult(
     }
 }
 
-data class OcrStepResult(val stageName: String, val bitmap: Bitmap, val text: String?, val boxes: List<Rect> = emptyList(), val normalizedBoxes: List<TextBlock> = emptyList(), val rawBox: Rect? = null, val refinedBox: Rect? = null)
+data class OcrStepResult(val stageName: String, val thumbB64: String, val text: String?, val boxes: List<Rect> = emptyList(), val normalizedBoxes: List<TextBlock> = emptyList(), val rawBox: Rect? = null, val refinedBox: Rect? = null)
 
 enum class DiscoveryExpansion { UNCLIP, VALLEY }
 
@@ -127,5 +127,43 @@ object OcrUtils {
         if (crop == null || w == 0 || h == 0) return false
         val cx = block.boundingBox.centerX().toFloat() / w; val cy = block.boundingBox.centerY().toFloat() / h
         return cx >= crop.left && cx <= crop.right && cy >= crop.top && cy <= crop.bottom
+    }
+
+    fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
+        val outputStream = java.io.ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+        return android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.NO_WRAP)
+    }
+
+    /**
+     * Captures a 48px high thumbnail into the shared reporting buffer and returns its Base64 representation.
+     * This is used to implement zero-allocation late-stage annotation.
+     */
+    fun takeSnapshot(
+        source: Bitmap, 
+        rawFragments: List<Rect> = emptyList(), 
+        consolidatedRows: List<Rect> = emptyList()
+    ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
+        val scale = 48f / source.height
+        val targetWidth = (source.width * scale).toInt().coerceAtMost(320)
+        val canvas = NativePaddleEngine.sharedReportCanvas
+        val thumb = NativePaddleEngine.sharedReportBitmap
+        
+        // 1. Clear and Draw thumbnail
+        canvas.drawColor(android.graphics.Color.BLACK)
+        val destRect = Rect(0, 0, targetWidth, 48)
+        canvas.drawBitmap(source, null, destRect, null)
+        
+        // 2. Apply Annotations
+        rawFragments.forEach { r -> 
+            canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint)
+        }
+        consolidatedRows.forEach { r ->
+            canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint)
+        }
+        
+        // 3. Create Subset View for Base64 (No allocation)
+        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, 48)
+        bitmapToBase64(view, 60)
     }
 }
