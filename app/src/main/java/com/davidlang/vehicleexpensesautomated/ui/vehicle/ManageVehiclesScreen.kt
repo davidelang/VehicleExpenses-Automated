@@ -381,7 +381,8 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
             )
         ) {
             Image(painter = rememberAsyncImagePainter(photoUrl), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }; val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { maxHeight.toPx() }
+            val scope = this@BoxWithConstraints
+            val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { scope.maxWidth.toPx() }; val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { scope.maxHeight.toPx() }
             val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
             Canvas(modifier = Modifier.fillMaxSize()) {
                 currentDragRect?.let { r -> drawRect(Color.Red, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f / scale)) }
