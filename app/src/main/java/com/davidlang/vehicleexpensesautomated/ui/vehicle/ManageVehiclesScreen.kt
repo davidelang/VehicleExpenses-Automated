@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -319,28 +321,73 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDragRect by remember { mutableStateOf<Rect?>(null) }
     var viewSize by remember { mutableStateOf(Offset.Zero) }
+    
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(260.dp).onSizeChanged { size -> viewSize = Offset(size.width.toFloat(), size.height.toFloat()); onSizeChanged(viewSize) }.pointerInput(isOdo, isOther, viewSize, originalSize) {
-        if (!isOdo && !isOther) return@pointerInput
-        detectDragGestures(onDragStart = { offset -> dragStart = offset; currentDragRect = null }, onDrag = { change, _ ->
-            change.consume(); val start = dragStart; val end = change.position
-            if (start != null && viewSize.x > 0 && originalSize.x > 0) {
-                val fitRect = calculateFitImageRect(viewSize.x, viewSize.y, originalSize.x, originalSize.y)
-                val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                currentDragRect = Rect(left, top, right, bottom)
+    BoxWithConstraints(modifier = Modifier
+        .fillMaxWidth()
+        .height(260.dp)
+        .onSizeChanged { size -> viewSize = Offset(size.width.toFloat(), size.height.toFloat()); onSizeChanged(viewSize) }
+        .pointerInput(Unit) {
+            detectTransformGestures { _, pan, zoom, _ ->
+                scale = (scale * zoom).coerceIn(1f, 5f)
+                val newOffset = offset + pan
+                // Basic bounds checking for pan could be added here if desired
+                offset = newOffset
             }
-        }, onDragEnd = { val final = currentDragRect; if (final != null) { if (isOdo) onCropChanged(final, otherRect) else onCropChanged(odoRect, final) }; currentDragRect = null; dragStart = null })
-    }) {
-        Image(painter = rememberAsyncImagePainter(photoUrl), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-        val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }; val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { maxHeight.toPx() }
-        val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            currentDragRect?.let { r -> drawRect(Color.Red, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f)) }
-            odoRect?.let { r -> drawRect(Color.Blue, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f)) }
-            otherRect?.let { r -> drawRect(Color.Green, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f)) }
+        }
+        .pointerInput(isOdo, isOther, viewSize, originalSize, scale, offset) {
+            if (!isOdo && !isOther) return@pointerInput
+            detectDragGestures(
+                onDragStart = { startOffset -> 
+                    // Inverse transform the start coordinate
+                    dragStart = (startOffset - offset) / scale
+                    currentDragRect = null 
+                }, 
+                onDrag = { change, _ ->
+                    change.consume()
+                    val start = dragStart
+                    // Inverse transform the current coordinate
+                    val end = (change.position - offset) / scale
+                    
+                    if (start != null && viewSize.x > 0 && originalSize.x > 0) {
+                        val fitRect = calculateFitImageRect(viewSize.x, viewSize.y, originalSize.x, originalSize.y)
+                        val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                        val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                        val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
+                        val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
+                        currentDragRect = Rect(left, top, right, bottom)
+                    }
+                }, 
+                onDragEnd = { 
+                    val final = currentDragRect
+                    if (final != null) { 
+                        if (isOdo) onCropChanged(final, otherRect) else onCropChanged(odoRect, final) 
+                    }
+                    currentDragRect = null
+                    dragStart = null 
+                }
+            )
+        }
+    ) {
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                translationX = offset.x,
+                translationY = offset.y
+            )
+        ) {
+            Image(painter = rememberAsyncImagePainter(photoUrl), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }; val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { maxHeight.toPx() }
+            val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                currentDragRect?.let { r -> drawRect(Color.Red, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f / scale)) }
+                odoRect?.let { r -> drawRect(Color.Blue, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f / scale)) }
+                otherRect?.let { r -> drawRect(Color.Green, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f / scale)) }
+            }
         }
     }
 }
