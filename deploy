@@ -1,4 +1,5 @@
 #!/bin/bash
+git describe --always
 
 # Usage: ./deploy [alias1 alias2 ...]
 # If no arguments are provided, it deploys to all connected devices.
