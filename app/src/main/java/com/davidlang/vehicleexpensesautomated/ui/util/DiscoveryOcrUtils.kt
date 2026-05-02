@@ -171,7 +171,10 @@ object DiscoveryOcrUtils {
         val valleyThreshold = hillBrightness * 0.40; val maxH = gray.rows(); val maxW = gray.cols()
         val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
         val requiredBridgeHeight = (maxY - minY) * 0.15
-        val lookAheadLimit = redFloor.height().toDouble()
+        
+        // Phase 63: Differentiated Look-Ahead (Horizontal needs more reach)
+        val lookAheadLimitV = redFloor.height().toDouble()
+        val lookAheadLimitH = redFloor.height().toDouble() * 2.0
 
         // 1. Expand Vertically (Top)
         var lastGoodY = minY
@@ -182,7 +185,7 @@ object DiscoveryOcrUtils {
                 lastGoodY = lookY - 1
                 lookY = lastGoodY
             } else {
-                if (lastGoodY - lookY > lookAheadLimit) break
+                if (lastGoodY - lookY > lookAheadLimitV) break
                 lookY -= 1.0
             }
         }
@@ -197,7 +200,7 @@ object DiscoveryOcrUtils {
                 lastGoodY = lookY + 1
                 lookY = lastGoodY
             } else {
-                if (lookY - lastGoodY > lookAheadLimit) break
+                if (lookY - lastGoodY > lookAheadLimitV) break
                 lookY += 1.0
             }
         }
@@ -212,7 +215,7 @@ object DiscoveryOcrUtils {
                 lastGoodX = lookX - 1
                 lookX = lastGoodX
             } else {
-                if (lastGoodX - lookX > lookAheadLimit) break
+                if (lastGoodX - lookX > lookAheadLimitH) break
                 lookX -= 1.0
             }
         }
@@ -227,7 +230,7 @@ object DiscoveryOcrUtils {
                 lastGoodX = lookX + 1
                 lookX = lastGoodX
             } else {
-                if (lookX - lastGoodX > lookAheadLimit) break
+                if (lookX - lastGoodX > lookAheadLimitH) break
                 lookX += 1.0
             }
         }
