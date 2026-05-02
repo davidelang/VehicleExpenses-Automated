@@ -36,6 +36,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var bufferLarge: FloatArray? = null
         private var bufferSmall: FloatArray? = null
         private var bufferRec: FloatArray? = null
+
+        // Phase 63: Permanent Shared Reporting Buffers
+        val sharedReportBitmap: Bitmap by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
+        val sharedReportCanvas: Canvas by lazy { Canvas(sharedReportBitmap) }
+        val redPaint: Paint by lazy { Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 } }
+        val orangePaint: Paint by lazy { Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f } }
     }
     
     init {

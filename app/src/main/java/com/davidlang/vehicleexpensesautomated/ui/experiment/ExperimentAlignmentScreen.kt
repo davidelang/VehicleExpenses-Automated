@@ -453,33 +453,42 @@ private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64:
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
                     
-                    // Phase 63: Late-Stage Annotation on Thumbnails
+                    // Phase 63: Zero-Allocation Late-Stage Annotation on Shared Buffer
                     val scale = 48f / step.bitmap.height
-                    val sw = (step.bitmap.width * scale).toInt()
-                    val thumb = Bitmap.createScaledBitmap(step.bitmap, sw, 48, true)
+                    val targetWidth = (step.bitmap.width * scale).toInt().coerceAtMost(320)
                     
-                    val canvas = Canvas(thumb)
-                    val redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
-                    val orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
-                    
-                    step.normalizedBoxes.forEach { block ->
-                        // 1. Draw Fragments (Red) from metadata
-                        block.metadata["frags"]?.split("|")?.forEach { coordStr ->
-                            val c = coordStr.split(",").map { it.toFloat() * scale }
-                            if (c.size == 4) canvas.drawRect(c[0], c[1], c[2], c[3], redPaint)
+                    val b64 = synchronized(NativePaddleEngine.sharedReportBitmap) {
+                        val canvas = NativePaddleEngine.sharedReportCanvas
+                        val thumb = NativePaddleEngine.sharedReportBitmap
+                        
+                        // 1. Clear and Draw thumbnail
+                        canvas.drawColor(Color.BLACK)
+                        val destRect = Rect(0, 0, targetWidth, 48)
+                        canvas.drawBitmap(step.bitmap, null, destRect, null)
+                        
+                        // 2. Apply Annotations
+                        step.normalizedBoxes.forEach { block ->
+                            // Draw Fragments (Red) from metadata
+                            block.metadata["frags"]?.split("|")?.forEach { coordStr ->
+                                val c = coordStr.split(",").map { it.toFloat() * scale }
+                                if (c.size == 4) canvas.drawRect(c[0], c[1], c[2], c[3], NativePaddleEngine.redPaint)
+                            }
+                            // Draw Consolidated Row (Orange)
+                            canvas.drawRect(
+                                block.boundingBox.left * scale, 
+                                block.boundingBox.top * scale, 
+                                block.boundingBox.right * scale, 
+                                block.boundingBox.bottom * scale, 
+                                NativePaddleEngine.orangePaint
+                            )
                         }
-                        // 2. Draw Consolidated Row (Orange)
-                        canvas.drawRect(
-                            block.boundingBox.left * scale, 
-                            block.boundingBox.top * scale, 
-                            block.boundingBox.right * scale, 
-                            block.boundingBox.bottom * scale, 
-                            orangePaint
-                        )
+                        
+                        // 3. Create Subset View for Base64 (No allocation)
+                        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, 48)
+                        bitmapToBase64(view, 60)
                     }
 
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${bitmapToBase64(thumb, 60)}'><br>${step.text ?: "---"}</div>") 
-                    thumb.recycle()
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,$b64'><br>${step.text ?: "---"}</div>") 
                 }
             } else appendLine("<i>No refinement data</i>")
         } else appendLine("<i>No match</i>")
