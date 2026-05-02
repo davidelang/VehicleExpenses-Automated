@@ -70,42 +70,43 @@ object DiscoveryOcrUtils {
                 if (primaryRawBox == null) primaryRawBox = rawBox
             }
 
-            // Phase 63: Iterative Row-Aware Consolidation (20% overlap, no vertical gap)
-            val consolidatedBoxes = orangeFragments.toMutableList()
-            do {
-                var merged = false
-                var i = 0
-                while (i < consolidatedBoxes.size && !merged) {
-                    var j = i + 1
-                    while (j < consolidatedBoxes.size && !merged) {
-                        val a = consolidatedBoxes[i]
-                        val b = consolidatedBoxes[j]
-
-                        val overlapTop = max(a.top, b.top)
-                        val overlapBottom = min(a.bottom, b.bottom)
+            // Phase 63: Robust Clustering (Union-Find style)
+            val clusters = mutableListOf<MutableList<Rect>>()
+            for (frag in orangeFragments) {
+                val matchingClusters = mutableListOf<Int>()
+                for ((idx, cluster) in clusters.withIndex()) {
+                    if (cluster.any { c ->
+                        val overlapTop = max(frag.top, c.top)
+                        val overlapBottom = min(frag.bottom, c.bottom)
                         val overlapHeight = overlapBottom - overlapTop
-                        
-                        if (overlapHeight > 0) { // No vertical gap
-                            val minH = min(a.height(), b.height())
-                            if (overlapHeight >= minH * 0.20) { // At least 20% overlap of shorter box
-                                // Union A and B into a single bounding box
-                                val union = Rect(
-                                    min(a.left, b.left),
-                                    min(a.top, b.top),
-                                    max(a.right, b.right),
-                                    max(a.bottom, b.bottom)
-                                )
-                                consolidatedBoxes.removeAt(j)
-                                consolidatedBoxes.removeAt(i)
-                                consolidatedBoxes.add(union)
-                                merged = true
-                            }
-                        }
-                        j++
+                        overlapHeight > 0 && overlapHeight >= min(frag.height(), c.height()) * 0.20
+                    }) {
+                        matchingClusters.add(idx)
                     }
-                    i++
                 }
-            } while (merged)
+
+                if (matchingClusters.isEmpty()) {
+                    clusters.add(mutableListOf(frag))
+                } else {
+                    val firstIdx = matchingClusters[0]
+                    clusters[firstIdx].add(frag)
+                    // Merge multiple matching clusters if needed
+                    for (k in matchingClusters.size - 1 downTo 1) {
+                        clusters[firstIdx].addAll(clusters[matchingClusters[k]])
+                        clusters.removeAt(matchingClusters[k])
+                    }
+                }
+            }
+
+            // Convert clusters to single bounding boxes
+            val consolidatedBoxes = clusters.map { cluster ->
+                Rect(
+                    cluster.minOf { it.left },
+                    cluster.minOf { it.top },
+                    cluster.maxOf { it.right },
+                    cluster.maxOf { it.bottom }
+                )
+            }
 
             // Final Recognition Pass on stable boxes (sorted by top for reading order)
             val finalStepBlocks = mutableListOf<TextBlock>()
