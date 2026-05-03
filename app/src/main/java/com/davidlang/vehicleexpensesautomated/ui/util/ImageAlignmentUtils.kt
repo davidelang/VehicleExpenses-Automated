@@ -78,52 +78,105 @@ object ImageAlignmentUtils {
         dashLandmarks: List<TextBlock>,
         refLandmarks: List<TextBlock>
     ): List<TextBlock> {
-        // Only use reference landmarks with physical position for disambiguation geometry
-        val uniqueRef = refLandmarks.filter { it.instanceId == 0 && it.boundingBox.width() > 0 }
-        val ambiguousRef = refLandmarks.filter { it.instanceId > 0 && it.boundingBox.width() > 0 }
-        if (ambiguousRef.isEmpty()) return dashLandmarks
+        // Step 0: Filter to candidates that exist in both sets and have position
+        val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
+        val refValid = refLandmarks.filter { it.boundingBox.width() > 0 }
+        if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
-        return dashLandmarks.map { dashMark ->
-            val refCandidates = ambiguousRef.filter { it.text == dashMark.text }
-            if (refCandidates.isEmpty()) return@map dashMark
+        val commonTexts = dashValid.map { it.text }.intersect(refValid.map { it.text }.toSet())
+        if (commonTexts.size < 3) return dashLandmarks // Need at least a triangle
 
-            // Try to identify which instance this dashMark is by checking shape against 2 unique anchors
-            var matchedId = 0
-            if (uniqueRef.size >= 2) {
-                outer@for (i in uniqueRef.indices) {
-                    for (j in i + 1 until uniqueRef.size) {
-                        val r1 = uniqueRef[i]
-                        val r2 = uniqueRef[j]
-                        // Dash counterpart must also have position
-                        val q1 = dashLandmarks.find { it.text == r1.text && it.boundingBox.width() > 0 } ?: continue
-                        val q2 = dashLandmarks.find { it.text == r2.text && it.boundingBox.width() > 0 } ?: continue
+        // Step 1: Prioritized Seed Selection
+        // T1: Globally Unique (1 on dash, 1 on ref)
+        // T2: Unique on Dash (1 on dash, N on ref)
+        // T3: Minimal Multiplicity on Dash
+        val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
+        val refCounts = refValid.groupBy { it.text }.mapValues { it.value.size }
 
-                        // Ref Triangle: (r1, r2, refCand)
-                        // Dash Triangle: (q1, q2, dashMark)
-                        val rD12 = dist(r1, r2)
-                        val qD12 = dist(q1, q2)
-                        if (rD12 == 0.0 || qD12 == 0.0) continue
+        val seedPool = commonTexts.map { text ->
+            val dCount = dashCounts[text] ?: 0
+            val rCount = refCounts[text] ?: 0
+            val tier = when {
+                dCount == 1 && rCount == 1 -> 1
+                dCount == 1 -> 2
+                else -> 3
+            }
+            Triple(text, tier, dCount)
+        }.sortedWith(compareBy({ it.second }, { it.third }))
 
-                        for (cand in refCandidates) {
-                            val rD1C = dist(r1, cand)
-                            val rD2C = dist(r2, cand)
-                            val qD1C = dist(q1, dashMark)
-                            val qD2C = dist(q2, dashMark)
+        // Step 2: Find the First Matching Triangle
+        var certifiedPairs = mutableListOf<Pair<TextBlock, TextBlock>>()
+        
+        // Exhaustive but prioritized search for the first 3 matches
+        outer@for (i in seedPool.indices) {
+            for (j in i + 1 until seedPool.indices.size) {
+                for (k in j + 1 until seedPool.indices.size) {
+                    val t1 = seedPool[i].first; val t2 = seedPool[j].first; val t3 = seedPool[k].first
+                    
+                    val d1s = dashValid.filter { it.text == t1 }; val d2s = dashValid.filter { it.text == t2 }; val d3s = dashValid.filter { it.text == t3 }
+                    val r1s = refValid.filter { it.text == t1 }; val r2s = refValid.filter { it.text == t2 }; val r3s = refValid.filter { it.text == t3 }
+                    
+                    for (d1 in d1s) for (d2 in d2s) for (d3 in d3s) {
+                        val qD12 = dist(d1, d2); val qD23 = dist(d2, d3); val qD31 = dist(d3, d1)
+                        if (qD12 < 10.0 || qD23 < 10.0 || qD31 < 10.0) continue // Reject tiny/unstable triangles
 
-                            // Shape similarity check: Side length ratios must match
-                            val ratio1 = (qD1C / rD1C) / (qD12 / rD12)
-                            val ratio2 = (qD2C / rD2C) / (qD12 / rD12)
+                        for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
+                            val rD12 = dist(r1, r2); val rD23 = dist(r2, r3); val rD31 = dist(r3, r1)
+                            if (rD12 == 0.0 || rD23 == 0.0 || rD31 == 0.0) continue
+
+                            val ratio1 = (qD12 / rD12) / (qD23 / rD23)
+                            val ratio2 = (qD23 / rD23) / (qD31 / rD31)
 
                             if (abs(ratio1 - 1.0) < 0.05 && abs(ratio2 - 1.0) < 0.05) {
-                                matchedId = cand.instanceId
+                                certifiedPairs.add(d1 to r1)
+                                certifiedPairs.add(d2 to r2)
+                                certifiedPairs.add(d3 to r3)
                                 break@outer
                             }
                         }
                     }
                 }
             }
-            if (matchedId > 0) dashMark.copy(instanceId = matchedId) else dashMark
         }
+
+        if (certifiedPairs.isEmpty()) return dashLandmarks
+
+        // Step 3: Bootstrap - Use the 3 certified unique points to identify the rest
+        val p1 = certifiedPairs[0]; val p2 = certifiedPairs[1]
+        val results = dashLandmarks.toMutableList()
+        
+        for (idx in results.indices) {
+            val dashMark = results[idx]
+            // Skip if already in certified
+            if (certifiedPairs.any { it.first === dashMark }) {
+                val refMatch = certifiedPairs.find { it.first === dashMark }!!.second
+                results[idx] = dashMark.copy(instanceId = refMatch.instanceId)
+                continue
+            }
+
+            val refCandidates = refValid.filter { it.text == dashMark.text }
+            if (refCandidates.isEmpty()) continue
+
+            var bestId = 0
+            val qD1C = dist(p1.first, dashMark); val qD2C = dist(p2.first, dashMark)
+            val qD12 = dist(p1.first, p2.first)
+
+            for (cand in refCandidates) {
+                val rD1C = dist(p1.second, cand); val rD2C = dist(p2.second, cand)
+                val rD12 = dist(p1.second, p2.second)
+
+                val ratio1 = (qD1C / rD1C) / (qD12 / rD12)
+                val ratio2 = (qD2C / rD2C) / (qD12 / rD12)
+
+                if (abs(ratio1 - 1.0) < 0.05 && abs(ratio2 - 1.0) < 0.05) {
+                    bestId = cand.instanceId
+                    break
+                }
+            }
+            if (bestId > 0) results[idx] = dashMark.copy(instanceId = bestId)
+        }
+
+        return results
     }
 
     fun anchorAlign(
