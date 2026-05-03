@@ -529,16 +529,8 @@ private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
-    if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
-    try {
-        val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else { val keys = root.keys(); if (keys.hasNext()) root.getJSONArray(keys.next()) else null } ?: return emptyList()
-        for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
-            val cleanText = OdometerOcrUtils.cleanLandmarkString(text); val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt(); val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
-            list.add(TextBlock(cleanText, android.graphics.Rect(left, top, right, bottom)))
-        }
-    } catch (e: Exception) { Log.e("ExperimentAlignment", "Failed to parse landmarks", e) }
-    return list
+    val results = OdometerOcrUtils.deserializeMultiEngineLandmarks(json, imgW, imgH)
+    return results[engineName]?.textBlocks ?: emptyList()
 }
 
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
