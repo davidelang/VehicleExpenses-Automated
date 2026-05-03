@@ -196,3 +196,37 @@ object ImageAlignmentUtils {
         return result
     }
 }
+
+    data class VetoResult(
+        val isVetoed: Boolean,
+        val reasonWord: String = "",
+        val tierReached: Int = 0,
+        val queryWords: List<String> = emptyList(),
+        val myManifest: List<String> = emptyList(),
+        val vetoPool: List<String> = emptyList()
+    )
+
+    fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>, engineName: String): Map<Int, VetoResult> {
+        val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
+        val queryWordsSet = queryWordsList.toSet()
+        val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
+        
+        val initialResults = allVehicles.associate { currentVehicle ->
+            val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
+            val otherWordsPool = vehicleLandmarks.filter { it.key != currentVehicle.id }
+                .values.flatten().toSet()
+            
+            val vetoPool = otherWordsPool - myWords
+            val triggers = queryWordsSet.intersect(vetoPool).sorted()
+            
+            currentVehicle.id to VetoResult(
+                isVetoed = triggers.isNotEmpty(),
+                reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",
+                tierReached = 0,
+                queryWords = queryWordsList,
+                myManifest = myWords.toList().sorted(),
+                vetoPool = vetoPool.toList().sorted()
+            )
+        }
+        return initialResults
+    }
