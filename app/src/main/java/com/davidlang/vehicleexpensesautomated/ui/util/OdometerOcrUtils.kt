@@ -93,41 +93,36 @@ object OdometerOcrUtils {
             return if (sumW > 0) (sumAW / sumW).toFloat() else medianAngle
         }
 
-        // 1. Paddle Detection at 2048px (Maximum precision for forensic alignment)
-        val tPaddleStart = System.currentTimeMillis()
+        // 1. Paddle Detection (Standard)
         val pTargetSize = 2048
         val pScale = pTargetSize.toFloat() / bitmap.width
         val pHeight = (bitmap.height * pScale).toInt()
-        val baselineBmp = Bitmap.createScaledBitmap(bitmap, pTargetSize, pHeight, true)
 
-        // --- PADDLE INDEPENDENT WEIGHTED AVERAGE ---
-        val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, pTargetSize, pTargetSize)
+        val paddleBmp = NativePaddleEngine.sharedBmp2048
+        val canvas = NativePaddleEngine.sharedCanvas2048
+        canvas.drawColor(android.graphics.Color.BLACK)
+        val matrix = android.graphics.Matrix()
+        matrix.postScale(pScale, pScale)
+        canvas.drawBitmap(bitmap, matrix, null)
+        
+        val paddleResult = paddleEngine?.runDetectionOnly(paddleBmp, pTargetSize, pTargetSize)
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
-            // Normalize: Map sides-as-bottom back to relative tilt
-            if (Math.abs(a - 90f) < 45f) a -= 90f
-            else if (Math.abs(a + 90f) < 45f) a += 90f
-            else if (Math.abs(a - 180f) < 45f) a -= 180f
-            else if (Math.abs(a + 180f) < 45f) a += 180f
-            
+            if (abs(a - 90f) < 45f) a -= 90f else if (abs(a + 90f) < 45f) a += 90f else if (abs(a - 180f) < 45f) a -= 180f else if (abs(a + 180f) < 45f) a += 180f
             pdCandidates.add(block.copy(angle = a))
         }
 
-        val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
-        val paddleTimeMs = System.currentTimeMillis() - tPaddleStart
-
-        // 2. ML Kit Recognition disabled (Phase 67 Optimization)
-        val mlTimeMs = 0L
-        val mlAngle = 0f
-        val mlCandidates = emptyList<TextBlock>()
-
-        baselineBmp.recycle()
-        // Final result: Trust Paddle for deskew
-        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else mlAngle
+        // 2. Deskew Authority: If paddle is enabled, it is the sole authority.
+        // No silent fallbacks to ML Kit.
+        val finalAngle = if (paddleEngine != null) {
+            calculateWeightedAverage(pdCandidates, pHeight)
+        } else {
+            val mlOcr = extractFromPhotoBitmap(bitmap)
+            calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
+        }
         
-        // Return both lists explicitly so they can be logged without overwriting
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), 0L, 0L, emptyList(), pdCandidates)
     }
 
     fun cleanLandmarkString(text: String): String {
