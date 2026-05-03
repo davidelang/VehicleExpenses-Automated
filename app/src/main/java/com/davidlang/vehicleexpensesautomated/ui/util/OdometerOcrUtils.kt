@@ -132,19 +132,27 @@ object OdometerOcrUtils {
         val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
         val paddleTimeMs = System.currentTimeMillis() - tPaddleStart
 
-        // 2. ML Kit Parallel Deskew
+        // 2. ML Kit Parallel Deskew (Standard vs Mono)
         val tMlStart = System.currentTimeMillis()
         val mlOcr = extractFromPhotoBitmap(baselineBmp)
         val mlCandidates = mlOcr.textBlocks
         val mlAngle = calculateWeightedAverage(mlCandidates, pHeight)
+
+        // Process Mono stream (requires Grayscale)
+        val monoBmp = applyGrayscale(baselineBmp)
+        val mlOcrMono = extractFromPhotoBitmap(monoBmp)
+        val mlCandidatesMono = mlOcrMono.textBlocks
+        val mlAngleMono = calculateWeightedAverage(mlCandidatesMono, pHeight)
         val mlTimeMs = System.currentTimeMillis() - tMlStart
+        monoBmp.recycle()
 
         baselineBmp.recycle()
-        // Final result: Trust ML Kit for deskew
-        val finalAngle = mlAngle
         
-        // Return results for benchmarking
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
+        // Final result: Select authority based on useMono
+        val finalAngle = if (useMono) mlAngleMono else mlAngle
+        val finalCandidates = if (useMono) mlCandidatesMono else mlCandidates
+        
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, finalCandidates, pdCandidates)
     }
 
     fun cleanLandmarkString(text: String): String {
