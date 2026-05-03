@@ -145,9 +145,6 @@ object OdometerOcrUtils {
         val mlCandidatesMono = mlOcrMono.textBlocks
         val mlAngleMono = calculateWeightedAverage(mlCandidatesMono, pHeight)
         
-        monoBmp.recycle()
-        baselineBmp.recycle()
-        
         // Final authority: ML Kit Standard (useMono = false)
         val finalAngle = mlAngle
         val finalCandidates = mlCandidates
