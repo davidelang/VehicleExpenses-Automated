@@ -56,7 +56,8 @@ data class TextBlock(
     val points: List<org.opencv.core.Point> = emptyList(),
     val rawDiscoveryBox: RectF? = null,    // RED tier
     val refinedDiscoveryBox: RectF? = null, // ORANGE tier
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
+    val instanceId: Int = 0 // Phase 71: Support for duplicate landmark disambiguation (e.g., '80-1', '80-2')
 )
 
 /**

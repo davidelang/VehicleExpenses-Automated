@@ -581,15 +581,20 @@ object OdometerOcrUtils {
         val root = JSONObject()
         results.forEach { (engineName, res) ->
             val array = JSONArray()
+            val textCounts = mutableMapOf<String, Int>()
             res.textBlocks.forEach { block ->
                 val cleaned = cleanLandmarkString(block.text)
                 if (cleaned.length > 1) {
+                    val instance = (textCounts[cleaned] ?: 0) + 1
+                    textCounts[cleaned] = instance
+
                     val obj = JSONObject()
                     obj.put("text", cleaned)
                     obj.put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
                     obj.put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
                     obj.put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
                     obj.put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
+                    obj.put("instance", instance) // Phase 71: Disambiguation ID
                     array.put(obj)
                 }
             }
@@ -615,11 +620,12 @@ object OdometerOcrUtils {
                     val cy = obj.getDouble("cy")
                     val w = obj.getDouble("w")
                     val h = obj.getDouble("h")
+                    val instanceId = obj.optInt("instance", 0) // Phase 71
                     val left = ((cx - w / 2.0) * imgW).toInt()
                     val top = ((cy - h / 2.0) * imgH).toInt()
                     val right = ((cx + w / 2.0) * imgW).toInt()
                     val bottom = ((cy + h / 2.0) * imgH).toInt()
-                    blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom)))
+                    blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
                 }
                 results[name] = OcrResult(engineName = name, textBlocks = blocks, imageWidth = imgW, imageHeight = imgH, debugText = blocks.joinToString(" ") { it.text })
             }
