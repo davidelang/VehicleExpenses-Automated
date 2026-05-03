@@ -78,8 +78,9 @@ object ImageAlignmentUtils {
         dashLandmarks: List<TextBlock>,
         refLandmarks: List<TextBlock>
     ): List<TextBlock> {
-        val uniqueRef = refLandmarks.filter { it.instanceId == 0 }
-        val ambiguousRef = refLandmarks.filter { it.instanceId > 0 }
+        // Only use reference landmarks with physical position for disambiguation geometry
+        val uniqueRef = refLandmarks.filter { it.instanceId == 0 && it.boundingBox.width() > 0 }
+        val ambiguousRef = refLandmarks.filter { it.instanceId > 0 && it.boundingBox.width() > 0 }
         if (ambiguousRef.isEmpty()) return dashLandmarks
 
         return dashLandmarks.map { dashMark ->
@@ -93,8 +94,9 @@ object ImageAlignmentUtils {
                     for (j in i + 1 until uniqueRef.size) {
                         val r1 = uniqueRef[i]
                         val r2 = uniqueRef[j]
-                        val q1 = dashLandmarks.find { it.text == r1.text } ?: continue
-                        val q2 = dashLandmarks.find { it.text == r2.text } ?: continue
+                        // Dash counterpart must also have position
+                        val q1 = dashLandmarks.find { it.text == r1.text && it.boundingBox.width() > 0 } ?: continue
+                        val q2 = dashLandmarks.find { it.text == r2.text && it.boundingBox.width() > 0 } ?: continue
 
                         // Ref Triangle: (r1, r2, refCand)
                         // Dash Triangle: (q1, q2, dashMark)
@@ -144,9 +146,14 @@ object ImageAlignmentUtils {
 
         // Simplified 1:1 Matching: Since landmarks are now unique-id'd, 
         // we can just pair them up directly without O(N^3) search.
+        // Mandate: Only use landmarks with width > 0 (excludes manual positionless anchors)
         val pairs = mutableListOf<Pair<TextBlock, TextBlock>>()
-        refLandmarks.forEach { refMark ->
-            val dashMark = disambiguatedDash.find { it.text == refMark.text && it.instanceId == refMark.instanceId }
+        refLandmarks.filter { it.boundingBox.width() > 0 }.forEach { refMark ->
+            val dashMark = disambiguatedDash.find { 
+                it.text == refMark.text && 
+                it.instanceId == refMark.instanceId && 
+                it.boundingBox.width() > 0 
+            }
             if (dashMark != null) {
                 pairs.add(refMark to dashMark)
             }
