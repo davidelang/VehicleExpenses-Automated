@@ -140,11 +140,11 @@ object OdometerOcrUtils {
         val mlAngle = calculateWeightedAverage(mlCandidates, pHeight)
         val mlTimeMs = System.currentTimeMillis() - tMlStart
 
-        // Final result: Trust Paddle for deskew exclusively. If it fails, report error.
-        if (pdCandidates.isEmpty()) {
-            throw Exception("Paddle deskew detection failed: No text blocks found")
+        // Final result: Trust Paddle for deskew exclusively. Fallback to 0.0f if detection fails.
+        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else {
+            Log.w("OdometerOcr", "Paddle deskew detection failed: No text blocks found, defaulting to 0.0f")
+            0.0f
         }
-        val finalAngle = paddleAngle
         
         // Return results for benchmarking
         return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
