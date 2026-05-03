@@ -226,7 +226,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
 
                 // Phase 63: Optimized Multi-Spike Deskew (Paddle-preferred)
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, paddleEngineV3)
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, paddleEngineV3, useMono = false)
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
                 val tPd = deskewRes.paddleTimeMs

@@ -46,9 +46,9 @@ object OdometerOcrUtils {
         }
     }
 
-    data class DeskewResult(val angle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
+    data class DeskewResult(val angle: Float, val mlAngle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
 
-    suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
+    suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null, useMono: Boolean = false): DeskewResult {
         val t0 = System.currentTimeMillis()
         
         fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
@@ -98,7 +98,14 @@ object OdometerOcrUtils {
         val pTargetSize = 2048
         val pScale = pTargetSize.toFloat() / bitmap.width
         val pHeight = (bitmap.height * pScale).toInt()
-        val baselineBmp = Bitmap.createScaledBitmap(bitmap, pTargetSize, pHeight, true)
+        
+        // Zero-Allocation Scaling onto Shared 2048 buffer
+        val baselineBmp = NativePaddleEngine.sharedBmp2048
+        val canvas = NativePaddleEngine.sharedCanvas2048
+        canvas.drawColor(Color.BLACK)
+        NativePaddleEngine.sharedMatrix.reset()
+        NativePaddleEngine.sharedMatrix.postScale(pScale, pScale)
+        canvas.drawBitmap(bitmap, NativePaddleEngine.sharedMatrix, null)
 
         // --- PADDLE INDEPENDENT WEIGHTED AVERAGE ---
         val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, pTargetSize, pTargetSize)
@@ -117,17 +124,20 @@ object OdometerOcrUtils {
         val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
         val paddleTimeMs = System.currentTimeMillis() - tPaddleStart
 
-        // 2. ML Kit Recognition disabled (Phase 67 Optimization)
-        val mlTimeMs = 0L
-        val mlAngle = 0f
-        val mlCandidates = emptyList<TextBlock>()
+        // 2. ML Kit Parallel Deskew (Benchmarking only, does not control final angle)
+        val tMlStart = System.currentTimeMillis()
+        // ML Kit performs best on filtered images, but we use the same baselineBmp for consistency
+        val mlOcr = extractFromPhotoBitmap(baselineBmp)
+        val mlCandidates = mlOcr.textBlocks
+        val mlAngle = calculateWeightedAverage(mlCandidates, pHeight)
+        val mlTimeMs = System.currentTimeMillis() - tMlStart
 
-        baselineBmp.recycle()
+        // baselineBmp.recycle() // NEVER RECYCLE SHARED BUFFERS
         // Final result: Trust Paddle for deskew
         val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else mlAngle
         
         // Return both lists explicitly so they can be logged without overwriting
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
     }
 
     fun cleanLandmarkString(text: String): String {

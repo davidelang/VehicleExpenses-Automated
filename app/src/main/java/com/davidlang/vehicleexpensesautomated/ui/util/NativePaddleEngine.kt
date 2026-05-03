@@ -61,7 +61,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedCanvasRec by lazy { Canvas(sharedBmpRec) }
 
         // Shared Matrix for Zero-Allocation Scaling
-        private val sharedMatrix = android.graphics.Matrix()
+        val sharedMatrix = android.graphics.Matrix()
 
         // Phase 63: Permanent Shared Reporting Buffers
         val sharedReportBitmap: Bitmap by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
