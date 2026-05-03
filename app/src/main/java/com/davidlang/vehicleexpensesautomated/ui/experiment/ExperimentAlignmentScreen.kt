@@ -145,8 +145,9 @@ data class RefinementTrace(
 data class SingleVehicleResult(
     val vehicleName: String,
     val vetoReason: String,
-    val matchTimeMs: Long,
+    val tMatchMs: Long,
     val alignmentTrace: AlignmentTraceResult?,
+    val alignmentTraceMono: AlignmentTraceResult?,
     val refinementTraces: Map<String, RefinementTrace>,
     val vetoQueryWords: List<String>,
     val vetoMyManifest: List<String>,
@@ -250,14 +251,29 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     val isWinner = finalWinnerName == "No match" && !veto.isVetoed
                     
                     var alignmentTrace: AlignmentTraceResult? = null
+                    var alignmentTraceMono: AlignmentTraceResult? = null
                     val refinementTraces = mutableMapOf<String, RefinementTrace>()
                     
                     if (isWinner) {
                         finalWinnerName = ref.vehicle.name
+                        
+                        // 1. Standard Alignment (Standard)
                         val t0 = System.currentTimeMillis()
-                        val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
+                        val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle, useMono = false)
                         val elapsedAlign = System.currentTimeMillis() - t0
                         
+                        // 2. Mono Alignment (Benchmarking)
+                        val t0Mono = System.currentTimeMillis()
+                        val alignResMono = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle, useMono = true)
+                        val elapsedAlignMono = System.currentTimeMillis() - t0Mono
+                        
+                        if (alignResMono.success && alignResMono.alignedImage != null) {
+                            alignmentTraceMono = AlignmentTraceResult(true, elapsedAlignMono, "", alignResMono.metadata)
+                            alignResMono.alignedImage.recycle()
+                        } else {
+                            alignmentTraceMono = AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
+                        }
+
                         if (alignRes.success && alignRes.alignedImage != null) {
                             alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
                             
@@ -313,7 +329,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) 
                         }
                     }
-                    vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, System.currentTimeMillis() - tMatchStart, alignmentTrace, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
+                    vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, System.currentTimeMillis() - tMatchStart, alignmentTrace, alignmentTraceMono, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
                 }
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
@@ -360,6 +376,29 @@ private fun serializePhotoResultToJson(
 ): JSONObject {
     return JSONObject().apply {
         put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo)
+        
+        // Benchmarking: Alignment (Standard vs Mono)
+        val winnerVehicle = vehicles.find { it.name == winner }
+        val winnerRes = winnerVehicle?.let { vResults[it.id] }
+        if (winnerRes?.alignmentTrace != null && winnerRes.alignmentTraceMono != null) {
+            put("alignment_time_std_ms", winnerRes.alignmentTrace.timeMs)
+            put("alignment_time_mono_ms", winnerRes.alignmentTraceMono.timeMs)
+            
+            val stdS = winnerRes.alignmentTrace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
+            val stdTx = winnerRes.alignmentTrace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
+            val stdTy = winnerRes.alignmentTrace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
+            
+            val monoS = winnerRes.alignmentTraceMono.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
+            val monoTx = winnerRes.alignmentTraceMono.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
+            val monoTy = winnerRes.alignmentTraceMono.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
+            
+            put("alignment_delta_scale", monoS - stdS)
+            put("alignment_delta_tx", monoTx - stdTx)
+            put("alignment_delta_ty", monoTy - stdTy)
+            put("alignment_consensus_std", winnerRes.alignmentTrace.metadata["Consensus"] ?: "")
+            put("alignment_consensus_mono", winnerRes.alignmentTraceMono.metadata["Consensus"] ?: "")
+        }
+        
         put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_mlkit_ms", deskewRes.mlTimeMs); put("deskew_time_paddle_ms", deskewRes.paddleTimeMs); put("deskew_time_rotation_ms", tRotate)
         put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
         

@@ -79,7 +79,8 @@ object ImageAlignmentUtils {
         queryBmp: Bitmap,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
-        vehicle: Vehicle
+        vehicle: Vehicle,
+        useMono: Boolean = false
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
@@ -281,7 +282,10 @@ object ImageAlignmentUtils {
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount)
+            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
+            "raw_scale" to finalScale.toString(),
+            "raw_tx" to finalTx.toString(),
+            "raw_ty" to finalTy.toString()
         )
 
         return try {
