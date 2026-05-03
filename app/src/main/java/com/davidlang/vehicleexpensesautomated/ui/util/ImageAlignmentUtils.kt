@@ -78,21 +78,18 @@ object ImageAlignmentUtils {
         dashLandmarks: List<TextBlock>,
         refLandmarks: List<TextBlock>
     ): List<TextBlock> {
-        // Step 0: Filter to candidates that exist in both sets and have position
+        // Step 0: Filter to common candidates with physical positions
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
         val refValid = refLandmarks.filter { it.boundingBox.width() > 0 }
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
-        val commonTexts = dashValid.map { it.text }.intersect(refValid.map { it.text }.toSet())
-        if (commonTexts.size < 3) return dashLandmarks // Need at least a triangle
-
-        // Step 1: Prioritized Seed Selection
-        // T1: Globally Unique (1 on dash, 1 on ref)
-        // T2: Unique on Dash (1 on dash, N on ref)
-        // T3: Minimal Multiplicity on Dash
         val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
         val refCounts = refValid.groupBy { it.text }.mapValues { it.value.size }
+        val commonTexts = dashCounts.keys.intersect(refCounts.keys).toList()
 
+        if (commonTexts.size < 3) return dashLandmarks
+
+        // Step 1: Prioritize Seed Pool (Tier 1: Globally Unique, Tier 2: Unique on Dash, Tier 3: Fewest on Dash)
         val seedPool = commonTexts.map { text ->
             val dCount = dashCounts[text] ?: 0
             val rCount = refCounts[text] ?: 0
@@ -104,13 +101,12 @@ object ImageAlignmentUtils {
             Triple(text, tier, dCount)
         }.sortedWith(compareBy({ it.second }, { it.third }))
 
-        // Step 2: Find the First Matching Triangle
+        // Step 2: Find the First Matching Triangle with geometric distance weighting
         var certifiedPairs = mutableListOf<Pair<TextBlock, TextBlock>>()
         
-        // Exhaustive but prioritized search for the first 3 matches
         outer@for (i in seedPool.indices) {
-            for (j in i + 1 until seedPool.indices.size) {
-                for (k in j + 1 until seedPool.indices.size) {
+            for (j in i + 1 until seedPool.size) {
+                for (k in j + 1 until seedPool.size) {
                     val t1 = seedPool[i].first; val t2 = seedPool[j].first; val t3 = seedPool[k].first
                     
                     val d1s = dashValid.filter { it.text == t1 }; val d2s = dashValid.filter { it.text == t2 }; val d3s = dashValid.filter { it.text == t3 }
@@ -118,7 +114,8 @@ object ImageAlignmentUtils {
                     
                     for (d1 in d1s) for (d2 in d2s) for (d3 in d3s) {
                         val qD12 = dist(d1, d2); val qD23 = dist(d2, d3); val qD31 = dist(d3, d1)
-                        if (qD12 < 10.0 || qD23 < 10.0 || qD31 < 10.0) continue // Reject tiny/unstable triangles
+                        // Geometric Stability Mandate: Prioritize triangles whose points are furthest apart
+                        if (qD12 < 20.0 || qD23 < 20.0 || qD31 < 20.0) continue
 
                         for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
                             val rD12 = dist(r1, r2); val rD23 = dist(r2, r3); val rD31 = dist(r3, r1)
@@ -128,9 +125,7 @@ object ImageAlignmentUtils {
                             val ratio2 = (qD23 / rD23) / (qD31 / rD31)
 
                             if (abs(ratio1 - 1.0) < 0.05 && abs(ratio2 - 1.0) < 0.05) {
-                                certifiedPairs.add(d1 to r1)
-                                certifiedPairs.add(d2 to r2)
-                                certifiedPairs.add(d3 to r3)
+                                certifiedPairs.add(d1 to r1); certifiedPairs.add(d2 to r2); certifiedPairs.add(d3 to r3)
                                 break@outer
                             }
                         }
@@ -143,37 +138,27 @@ object ImageAlignmentUtils {
 
         // Step 3: Bootstrap - Use the 3 certified unique points to identify the rest
         val p1 = certifiedPairs[0]; val p2 = certifiedPairs[1]
-        val results = dashLandmarks.toMutableList()
-        
-        for (idx in results.indices) {
-            val dashMark = results[idx]
-            // Skip if already in certified
-            if (certifiedPairs.any { it.first === dashMark }) {
-                val refMatch = certifiedPairs.find { it.first === dashMark }!!.second
-                results[idx] = dashMark.copy(instanceId = refMatch.instanceId)
-                continue
-            }
+        val results = dashLandmarks.map { dashMark ->
+            // If already certified, just copy the ID
+            val exactMatch = certifiedPairs.find { it.first === dashMark }
+            if (exactMatch != null) return@map dashMark.copy(instanceId = exactMatch.second.instanceId)
 
             val refCandidates = refValid.filter { it.text == dashMark.text }
-            if (refCandidates.isEmpty()) continue
+            if (refCandidates.isEmpty()) return@map dashMark
 
-            var bestId = 0
-            val qD1C = dist(p1.first, dashMark); val qD2C = dist(p2.first, dashMark)
-            val qD12 = dist(p1.first, p2.first)
+            var matchedId = 0
+            val qD1C = dist(p1.first, dashMark); val qD2C = dist(p2.first, dashMark); val qD12 = dist(p1.first, p2.first)
 
             for (cand in refCandidates) {
-                val rD1C = dist(p1.second, cand); val rD2C = dist(p2.second, cand)
-                val rD12 = dist(p1.second, p2.second)
-
+                val rD1C = dist(p1.second, cand); val rD2C = dist(p2.second, cand); val rD12 = dist(p1.second, p2.second)
                 val ratio1 = (qD1C / rD1C) / (qD12 / rD12)
                 val ratio2 = (qD2C / rD2C) / (qD12 / rD12)
-
                 if (abs(ratio1 - 1.0) < 0.05 && abs(ratio2 - 1.0) < 0.05) {
-                    bestId = cand.instanceId
+                    matchedId = cand.instanceId
                     break
                 }
             }
-            if (bestId > 0) results[idx] = dashMark.copy(instanceId = bestId)
+            if (matchedId > 0) dashMark.copy(instanceId = matchedId) else dashMark
         }
 
         return results
