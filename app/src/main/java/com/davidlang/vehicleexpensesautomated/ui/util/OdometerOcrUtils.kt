@@ -129,30 +129,45 @@ object OdometerOcrUtils {
             pdCandidates.add(block.copy(angle = a))
         }
 
+        // 1. Paddle Detection (Standard)
+        val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, pTargetSize, pTargetSize)
+        val pdCandidates = mutableListOf<TextBlock>()
+        paddleResult?.textBlocks?.forEach { block ->
+            var a = block.angle
+            if (abs(a - 90f) < 45f) a -= 90f else if (abs(a + 90f) < 45f) a += 90f else if (abs(a - 180f) < 45f) a -= 180f else if (abs(a + 180f) < 45f) a += 180f
+            pdCandidates.add(block.copy(angle = a))
+        }
         val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
-        val paddleTimeMs = System.currentTimeMillis() - tPaddleStart
 
-        // 2. ML Kit Parallel Deskew (Standard vs Mono)
-        val tMlStart = System.currentTimeMillis()
+        // 1b. Paddle Detection (Mono)
+        val monoBmp = applyGrayscale(baselineBmp)
+        val paddleResultMono = paddleEngine?.runDetectionOnly(monoBmp, pTargetSize, pTargetSize)
+        val pdCandidatesMono = mutableListOf<TextBlock>()
+        paddleResultMono?.textBlocks?.forEach { block ->
+            var a = block.angle
+            if (abs(a - 90f) < 45f) a -= 90f else if (abs(a + 90f) < 45f) a += 90f else if (abs(a - 180f) < 45f) a -= 180f else if (abs(a + 180f) < 45f) a += 180f
+            pdCandidatesMono.add(block.copy(angle = a))
+        }
+        val paddleAngleMono = calculateWeightedAverage(pdCandidatesMono, pHeight)
+
+        // 2. ML Kit Detection (Standard)
         val mlOcr = extractFromPhotoBitmap(baselineBmp)
         val mlCandidates = mlOcr.textBlocks
         val mlAngle = calculateWeightedAverage(mlCandidates, pHeight)
 
-        // Process Mono stream (requires Grayscale)
-        val monoBmp = applyGrayscale(baselineBmp)
+        // 2b. ML Kit Detection (Mono)
         val mlOcrMono = extractFromPhotoBitmap(monoBmp)
         val mlCandidatesMono = mlOcrMono.textBlocks
         val mlAngleMono = calculateWeightedAverage(mlCandidatesMono, pHeight)
-        val mlTimeMs = System.currentTimeMillis() - tMlStart
+        
         monoBmp.recycle()
-
         baselineBmp.recycle()
         
-        // Final result: Select authority based on useMono
-        val finalAngle = if (useMono) mlAngleMono else mlAngle
-        val finalCandidates = if (useMono) mlCandidatesMono else mlCandidates
+        // Final authority: ML Kit Standard (useMono = false)
+        val finalAngle = mlAngle
+        val finalCandidates = mlCandidates
         
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, finalCandidates, pdCandidates)
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, 0L, 0L, finalCandidates, pdCandidates)
     }
 
     fun cleanLandmarkString(text: String): String {
