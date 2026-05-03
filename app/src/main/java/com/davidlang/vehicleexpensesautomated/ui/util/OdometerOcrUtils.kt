@@ -116,28 +116,14 @@ object OdometerOcrUtils {
         canvas.drawBitmap(bitmap, NativePaddleEngine.sharedMatrix, null)
 
         // --- PADDLE INDEPENDENT WEIGHTED AVERAGE ---
-        val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, pTargetSize, pTargetSize)
-        val pdCandidates = mutableListOf<TextBlock>()
-        paddleResult?.textBlocks?.forEach { block ->
-            var a = block.angle
-            // Normalize: Map sides-as-bottom back to relative tilt
-            if (Math.abs(a - 90f) < 45f) a -= 90f
-            else if (Math.abs(a + 90f) < 45f) a += 90f
-            else if (Math.abs(a - 180f) < 45f) a -= 180f
-            else if (Math.abs(a + 180f) < 45f) a += 180f
-            
-            pdCandidates.add(block.copy(angle = a))
-        }
-
         // 1. Paddle Detection (Standard)
         val paddleResult = paddleEngine?.runDetectionOnly(baselineBmp, pTargetSize, pTargetSize)
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
-            if (abs(a - 90f) < 45f) a -= 90f else if (abs(a + 90f) < 45f) a += 90f else if (abs(a - 180f) < 45f) a -= 180f else if (abs(a + 180f) < 45f) a += 180f
+            if (Math.abs(a - 90f) < 45f) a -= 90f else if (Math.abs(a + 90f) < 45f) a += 90f else if (Math.abs(a - 180f) < 45f) a -= 180f else if (Math.abs(a + 180f) < 45f) a += 180f
             pdCandidates.add(block.copy(angle = a))
         }
-        val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
 
         // 1b. Paddle Detection (Mono)
         val monoBmp = applyGrayscale(baselineBmp)
@@ -145,10 +131,9 @@ object OdometerOcrUtils {
         val pdCandidatesMono = mutableListOf<TextBlock>()
         paddleResultMono?.textBlocks?.forEach { block ->
             var a = block.angle
-            if (abs(a - 90f) < 45f) a -= 90f else if (abs(a + 90f) < 45f) a += 90f else if (abs(a - 180f) < 45f) a -= 180f else if (abs(a + 180f) < 45f) a += 180f
+            if (Math.abs(a - 90f) < 45f) a -= 90f else if (Math.abs(a + 90f) < 45f) a += 90f else if (Math.abs(a - 180f) < 45f) a -= 180f else if (Math.abs(a + 180f) < 45f) a += 180f
             pdCandidatesMono.add(block.copy(angle = a))
         }
-        val paddleAngleMono = calculateWeightedAverage(pdCandidatesMono, pHeight)
 
         // 2. ML Kit Detection (Standard)
         val mlOcr = extractFromPhotoBitmap(baselineBmp)
