@@ -124,7 +124,7 @@ object ImageAlignmentUtils {
         return results
     }
 
-    fun anchorAlign(
+    fun alignWithDisambiguation(
         refBmp: Bitmap,
         queryBmp: Bitmap,
         refLandmarks: List<TextBlock>,
@@ -132,8 +132,21 @@ object ImageAlignmentUtils {
         vehicle: Vehicle,
         useMono: Boolean = false
     ): AnchorResult {
-        val t0 = System.currentTimeMillis()
+        // Disambiguate landmarks first to get the 1:1 map
         val disambiguatedDash = disambiguateLandmarks(queryLandmarks, refLandmarks)
+        // Perform alignment with disambiguated IDs
+        return anchorAlign(refBmp, queryBmp, refLandmarks, disambiguatedDash, vehicle, useMono)
+    }
+
+    fun anchorAlign(
+        refBmp: Bitmap,
+        queryBmp: Bitmap,
+        refLandmarks: List<TextBlock>,
+        disambiguatedDash: List<TextBlock>,
+        vehicle: Vehicle,
+        useMono: Boolean = false
+    ): AnchorResult {
+        val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
         val pairs = mutableListOf<Pair<TextBlock, TextBlock>>()
         refLandmarks.filter { it.boundingBox.width() > 0 }.forEach { refMark ->
