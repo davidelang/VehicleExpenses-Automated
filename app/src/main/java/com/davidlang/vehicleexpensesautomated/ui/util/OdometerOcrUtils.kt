@@ -132,19 +132,16 @@ object OdometerOcrUtils {
         val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
         val paddleTimeMs = System.currentTimeMillis() - tPaddleStart
 
-        // 2. ML Kit Parallel Deskew (Benchmarking only, does not control final angle)
+        // 2. ML Kit Parallel Deskew
         val tMlStart = System.currentTimeMillis()
-        // ML Kit performs best on filtered images, but we use the same baselineBmp for consistency
         val mlOcr = extractFromPhotoBitmap(baselineBmp)
         val mlCandidates = mlOcr.textBlocks
         val mlAngle = calculateWeightedAverage(mlCandidates, pHeight)
         val mlTimeMs = System.currentTimeMillis() - tMlStart
 
-        // Final result: Trust Paddle for deskew exclusively. Fallback to 0.0f if detection fails.
-        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else {
-            Log.w("OdometerOcr", "Paddle deskew detection failed: No text blocks found, defaulting to 0.0f")
-            0.0f
-        }
+        baselineBmp.recycle()
+        // Final result: Trust ML Kit for deskew
+        val finalAngle = mlAngle
         
         // Return results for benchmarking
         return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, mlCandidates, pdCandidates)
