@@ -46,7 +46,14 @@ object OdometerOcrUtils {
         }
     }
 
-    data class DeskewResult(val angle: Float, val mlAngle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
+    data class DeskewResult(
+        val angle: Float, 
+        val mlAngle: Float,
+        val mlTimeMs: Long, 
+        val paddleTimeMs: Long, 
+        val mlBlocks: List<TextBlock> = emptyList(), 
+        val paddleBlocks: List<TextBlock> = emptyList()
+    )
 
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null, useMono: Boolean = false): DeskewResult {
         val t0 = System.currentTimeMillis()
@@ -99,9 +106,10 @@ object OdometerOcrUtils {
         val pScale = pTargetSize.toFloat() / bitmap.width
         val pHeight = (bitmap.height * pScale).toInt()
         
-        // Zero-Allocation Scaling onto Shared 2048 buffer
-        val baselineBmp = NativePaddleEngine.sharedBmp2048
-        val canvas = NativePaddleEngine.sharedCanvas2048
+        // Zero-Allocation Scaling onto Shared 2048 buffer (Standard or Mono)
+        val baselineBmp = if (useMono) NativePaddleEngine.sharedBmp2048Mono else NativePaddleEngine.sharedBmp2048
+        val canvas = if (useMono) NativePaddleEngine.sharedCanvas2048Mono else NativePaddleEngine.sharedCanvas2048
+        
         canvas.drawColor(Color.BLACK)
         NativePaddleEngine.sharedMatrix.reset()
         NativePaddleEngine.sharedMatrix.postScale(pScale, pScale)
@@ -132,7 +140,6 @@ object OdometerOcrUtils {
         val mlAngle = calculateWeightedAverage(mlCandidates, pHeight)
         val mlTimeMs = System.currentTimeMillis() - tMlStart
 
-        // baselineBmp.recycle() // NEVER RECYCLE SHARED BUFFERS
         // Final result: Trust Paddle for deskew
         val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else mlAngle
         
