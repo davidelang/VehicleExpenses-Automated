@@ -400,7 +400,7 @@ private fun serializePhotoResultToJson(
         }
         
         put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_mlkit_ms", deskewRes.mlTimeMs); put("deskew_time_paddle_ms", deskewRes.paddleTimeMs); put("deskew_time_rotation_ms", tRotate)
-        put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
+        put("deskew_angle", deskewAngle); put("deskew_angle_mlkit", deskewRes.mlAngle); put("discovery_time_ms", tDiscovery)
         
         val mlArray = JSONArray()
         deskewRes.mlBlocks.forEach { block ->
