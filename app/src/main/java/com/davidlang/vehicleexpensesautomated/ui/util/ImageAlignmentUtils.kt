@@ -33,6 +33,15 @@ data class AnchorResult(
     val message: String = ""
 )
 
+data class VetoResult(
+    val isVetoed: Boolean,
+    val reasonWord: String = "",
+    val tierReached: Int = 0,
+    val queryWords: List<String> = emptyList(),
+    val myManifest: List<String> = emptyList(),
+    val vetoPool: List<String> = emptyList()
+)
+
 object ImageAlignmentUtils {
     init {
         if (!OpenCVLoader.initLocal()) {
@@ -195,16 +204,6 @@ object ImageAlignmentUtils {
         } catch (e: Exception) { Log.e("ImageAlignment", "JSON parse failed", e) }
         return result
     }
-}
-
-    data class VetoResult(
-        val isVetoed: Boolean,
-        val reasonWord: String = "",
-        val tierReached: Int = 0,
-        val queryWords: List<String> = emptyList(),
-        val myManifest: List<String> = emptyList(),
-        val vetoPool: List<String> = emptyList()
-    )
 
     fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>, engineName: String): Map<Int, VetoResult> {
         val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
@@ -230,3 +229,4 @@ object ImageAlignmentUtils {
         }
         return initialResults
     }
+}
