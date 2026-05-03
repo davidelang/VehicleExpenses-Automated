@@ -109,7 +109,7 @@ object OdometerOcrUtils {
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
-            if (abs(a - 90f) < 45f) a -= 90f else if (abs(a + 90f) < 45f) a += 90f else if (abs(a - 180f) < 45f) a -= 180f else if (abs(a + 180f) < 45f) a += 180f
+            if (Math.abs(a - 90f) < 45f) a -= 90f else if (Math.abs(a + 90f) < 45f) a += 90f else if (Math.abs(a - 180f) < 45f) a -= 180f else if (Math.abs(a + 180f) < 45f) a += 180f
             pdCandidates.add(block.copy(angle = a))
         }
 
