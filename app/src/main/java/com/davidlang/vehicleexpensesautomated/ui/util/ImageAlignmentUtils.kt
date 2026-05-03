@@ -138,10 +138,14 @@ object ImageAlignmentUtils {
         val pairs = mutableListOf<Pair<TextBlock, TextBlock>>()
         refLandmarks.filter { it.boundingBox.width() > 0 }.forEach { refMark ->
             val dashMark = disambiguatedDash.find { 
-                it.text == refMark.text && it.instanceId == refMark.instanceId && it.boundingBox.width() > 0 
+                it.text == refMark.text && 
+                it.instanceId == refMark.instanceId && 
+                it.boundingBox.width() > 0 &&
+                it.instanceId != -1
             }
             if (dashMark != null) pairs.add(refMark to dashMark)
         }
+
 
         if (pairs.size >= 2) {
             for (i in pairs.indices) {
