@@ -49,51 +49,6 @@ object OdometerOcrUtils {
     data class DeskewResult(val angle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
 
     suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
-        val t0 = System.currentTimeMillis()
-        
-        fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
-            if (candidates.isEmpty()) return 0f
-            
-            // 1. Height Spike Filter
-            val heights = candidates.map { it.boundingBox.height().toFloat() / imgHeight.toFloat() }
-            val roundedHeights = heights.map { Math.round(it / 0.005f) * 0.005f }
-            val counts = roundedHeights.groupingBy { it }.eachCount()
-            val threshold = Math.max(2, (candidates.size * 0.15).toInt())
-            val peaks = counts.filter { it.value >= threshold }.keys
-            
-            val floor = if (peaks.isNotEmpty()) {
-                peaks.minOrNull()!! / 2.0f
-            } else {
-                val sortedH = heights.sorted()
-                sortedH[sortedH.size / 2] / 2.0f
-            }
-
-            val heightFiltered = candidates.filter { 
-                (it.boundingBox.height().toFloat() / imgHeight.toFloat()) >= floor 
-            }
-
-            if (heightFiltered.isEmpty()) return 0f
-
-            // 2. Outlier Removal (Median Deviation)
-            val angles = heightFiltered.map { it.angle }.sorted()
-            val medianAngle = angles[angles.size / 2]
-            
-            val outlierFiltered = heightFiltered.filter { Math.abs(it.angle - medianAngle) <= 5.0f }
-            
-            if (outlierFiltered.isEmpty()) return medianAngle
-
-            // 3. True Width-Weighted Average
-            var sumAW = 0.0
-            var sumW = 0.0
-            for (b in outlierFiltered) {
-                val w = b.boundingBox.width().toDouble()
-                sumAW += b.angle * w
-                sumW += w
-            }
-            return if (sumW > 0) (sumAW / sumW).toFloat() else medianAngle
-        }
-
-        // 1. Paddle Detection (Standard)
         val pTargetSize = 2048
         val pScale = pTargetSize.toFloat() / bitmap.width
         val pHeight = (bitmap.height * pScale).toInt()
@@ -113,16 +68,56 @@ object OdometerOcrUtils {
             pdCandidates.add(block.copy(angle = a))
         }
 
-        // 2. Deskew Authority: If paddle is enabled, it is the sole authority.
-        // No silent fallbacks to ML Kit.
-        val finalAngle = if (paddleEngine != null) {
-            calculateWeightedAverage(pdCandidates, pHeight)
-        } else {
-            val mlOcr = extractFromPhotoBitmap(bitmap)
-            calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
-        }
+        return computeFinalDeskewAngle(pdCandidates, bitmap, pHeight)
+    }
+
+    private suspend fun computeFinalDeskewAngle(
+        pdCandidates: List<TextBlock>,
+        bitmap: Bitmap,
+        pHeight: Int
+    ): DeskewResult {
+        val mlOcr = extractFromPhotoBitmap(bitmap)
+        val finalAngle = calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), 0L, 0L, mlOcr.textBlocks, pdCandidates)
+    }
+
+    private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
+        if (candidates.isEmpty()) return 0f
         
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), 0L, 0L, emptyList(), pdCandidates)
+        val heights = candidates.map { it.boundingBox.height().toFloat() / imgHeight.toFloat() }
+        val roundedHeights = heights.map { Math.round(it / 0.005f) * 0.005f }
+        val counts = roundedHeights.groupingBy { it }.eachCount()
+        val threshold = Math.max(2, (candidates.size * 0.15).toInt())
+        val peaks = counts.filter { it.value >= threshold }.keys
+        
+        val floor = if (peaks.isNotEmpty()) {
+            peaks.minOrNull()!! / 2.0f
+        } else {
+            val sortedH = heights.sorted()
+            sortedH[sortedH.size / 2] / 2.0f
+        }
+
+        val heightFiltered = candidates.filter { 
+            (it.boundingBox.height().toFloat() / imgHeight.toFloat()) >= floor 
+        }
+
+        if (heightFiltered.isEmpty()) return 0f
+
+        val angles = heightFiltered.map { it.angle }.sorted()
+        val medianAngle = angles[angles.size / 2]
+        
+        val outlierFiltered = heightFiltered.filter { Math.abs(it.angle - medianAngle) <= 5.0f }
+        
+        if (outlierFiltered.isEmpty()) return medianAngle
+
+        var sumAW = 0.0
+        var sumW = 0.0
+        for (b in outlierFiltered) {
+            val w = b.boundingBox.width().toDouble()
+            sumAW += b.angle * w
+            sumW += w
+        }
+        return if (sumW > 0) (sumAW / sumW).toFloat() else medianAngle
     }
 
     fun cleanLandmarkString(text: String): String {
