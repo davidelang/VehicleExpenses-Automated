@@ -46,21 +46,26 @@ object OdometerOcrUtils {
         }
     }
 
-    data class DeskewResult(val angle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
+    data class DeskewResult(val angle: Float, val mlAngle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
 
-    suspend fun calculateAverageTextAngle(bitmap: Bitmap, paddleEngine: NativePaddleEngine? = null): DeskewResult {
+    suspend fun calculateAverageTextAngle(
+        sourceBitmap: Bitmap,
+        targetBitmap: Bitmap,
+        paddleEngine: NativePaddleEngine? = null
+    ): DeskewResult {
+        val t0 = System.currentTimeMillis()
         val pTargetSize = 2048
-        val pScale = pTargetSize.toFloat() / bitmap.width
-        val pHeight = (bitmap.height * pScale).toInt()
+        val pScale = pTargetSize.toFloat() / sourceBitmap.width
+        val pHeight = (sourceBitmap.height * pScale).toInt()
 
-        val paddleBmp = NativePaddleEngine.sharedBmp2048
-        val canvas = NativePaddleEngine.sharedCanvas2048
+        val isMono = (targetBitmap === NativePaddleEngine.sharedBmp2048Mono)
+        val canvas = if (isMono) NativePaddleEngine.sharedCanvas2048Mono else NativePaddleEngine.sharedCanvas2048
         canvas.drawColor(android.graphics.Color.BLACK)
-        val matrix = android.graphics.Matrix()
-        matrix.postScale(pScale, pScale)
-        canvas.drawBitmap(bitmap, matrix, null)
+        NativePaddleEngine.sharedMatrix.reset()
+        NativePaddleEngine.sharedMatrix.postScale(pScale, pScale)
+        canvas.drawBitmap(sourceBitmap, NativePaddleEngine.sharedMatrix, null)
         
-        val paddleResult = paddleEngine?.runDetectionOnly(paddleBmp, pTargetSize, pTargetSize)
+        val paddleResult = paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize)
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
@@ -68,17 +73,25 @@ object OdometerOcrUtils {
             pdCandidates.add(block.copy(angle = a))
         }
 
-        return computeFinalDeskewAngle(pdCandidates, bitmap, pHeight)
+        val paddleAngle = calculateWeightedAverage(pdCandidates, pHeight)
+        val paddleTimeMs = System.currentTimeMillis() - t0
+        return computeFinalDeskewAngle(pdCandidates, paddleAngle, targetBitmap, pHeight, paddleTimeMs)
     }
 
     private suspend fun computeFinalDeskewAngle(
         pdCandidates: List<TextBlock>,
+        paddleAngle: Float,
         bitmap: Bitmap,
-        pHeight: Int
+        pHeight: Int,
+        paddleTimeMs: Long
     ): DeskewResult {
+        val tMl = System.currentTimeMillis()
         val mlOcr = extractFromPhotoBitmap(bitmap)
-        val finalAngle = calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), 0L, 0L, mlOcr.textBlocks, pdCandidates)
+        val mlAngle = calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
+        val mlTimeMs = System.currentTimeMillis() - tMl
+        
+        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else mlAngle
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, mlOcr.textBlocks, pdCandidates)
     }
 
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
