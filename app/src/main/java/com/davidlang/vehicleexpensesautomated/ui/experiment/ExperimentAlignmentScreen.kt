@@ -561,12 +561,15 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
     if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
     try {
         val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else { val keys = root.keys(); if (keys.hasNext()) root.getJSONArray(keys.next()) else null } ?: return emptyList()
+        Log.d("LANDMARK_LOAD", "Loading Engine: $engineName | Total in JSON: ${array.length()}")
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
             val instanceId = obj.optInt("instance", -1)
             val cleanText = OdometerOcrUtils.cleanLandmarkString(text); val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt(); val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
+            Log.d("LANDMARK_LOAD", "  -> Loaded: '$cleanText' | Instance: $instanceId")
             list.add(TextBlock(cleanText, android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
         }
+        Log.d("LANDMARK_LOAD", "Total Landmarks successfully parsed: ${list.size}")
     } catch (e: Exception) { Log.e("ExperimentAlignment", "Failed to parse landmarks", e) }
     return list
 }
