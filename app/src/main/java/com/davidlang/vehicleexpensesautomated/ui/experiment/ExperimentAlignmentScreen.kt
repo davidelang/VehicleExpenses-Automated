@@ -438,6 +438,7 @@ private fun serializePhotoResultToJson(
                     put("text", cleanedText); put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble()); put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
                     put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble()); put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
                     put("angle", block.angle)
+                    put("instance", block.instanceId)
                 })
             }
         }; dResults.put("ML Kit", landmarksArray); put("discovery_landmarks", dResults)
@@ -445,6 +446,9 @@ private fun serializePhotoResultToJson(
         val vehicleResults = JSONArray(); vResults.values.forEach { vr -> 
             vehicleResults.put(JSONObject().apply { 
                 put("vehicle", vr.vehicleName); put("veto_reason", vr.vetoReason)
+                put("veto_query_words", JSONArray(vr.vetoQueryWords))
+                put("veto_my_manifest", JSONArray(vr.vetoMyManifest))
+                put("veto_pool", JSONArray(vr.vetoPool))
                 val refDetails = JSONObject()
                 vr.refinementTraces.forEach { (strat, trace) -> 
                     val stratObj = JSONObject(); stratObj.put("time_ms", trace.timeMs)
