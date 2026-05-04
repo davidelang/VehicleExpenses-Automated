@@ -258,14 +258,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     if (isWinner) {
                         finalWinnerName = ref.vehicle.name
                         
-                        // 1. Standard Alignment (Standard)
+                        // 1. Standard Alignment (In-place on originalBitmap)
                         val t0 = System.currentTimeMillis()
-                        val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, NativePaddleEngine.sharedBmp2048, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
+                        val alignRes = ImageAlignmentUtils.anchorAlign(originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                         val elapsedAlign = System.currentTimeMillis() - t0
                         
-                        // 2. Mono Alignment (Benchmarking)
+                        // 2. Mono Alignment (Benchmarking: New Mono buffer)
+                        val monoBitmap = originalBitmap!!.copy(Bitmap.Config.ALPHA_8, true)
                         val t0Mono = System.currentTimeMillis()
-                        val alignResMono = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, NativePaddleEngine.sharedBmp2048Mono, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
+                        val alignResMono = ImageAlignmentUtils.anchorAlign(monoBitmap, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                         val elapsedAlignMono = System.currentTimeMillis() - t0Mono
                         
                         if (alignResMono.success && alignResMono.alignedImage != null) {
@@ -273,6 +274,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         } else {
                             alignmentTraceMono = AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
                         }
+                        monoBitmap.recycle()
 
                         if (alignRes.success && alignRes.alignedImage != null) {
                             alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)

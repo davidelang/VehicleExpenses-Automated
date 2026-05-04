@@ -150,9 +150,7 @@ object ImageAlignmentUtils {
     }
 
     fun anchorAlign(
-        refBmp: Bitmap,
-        queryBmp: Bitmap,
-        targetBmp: Bitmap,
+        bmp: Bitmap,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
         vehicle: Vehicle
@@ -301,10 +299,12 @@ object ImageAlignmentUtils {
             for (c2 in allCandidates) {
                 val ds = kotlin.math.abs(c1.scale - c2.scale) / c1.scale
                 val dtx = kotlin.math.abs(c1.tx - c2.tx)
+                val dtxNorm = dtx / bmp.width
                 val dty = kotlin.math.abs(c1.ty - c2.ty)
+                val dtyNorm = dty / bmp.height
                 
                 // Agreement threshold: 5% scale, 0.05 normalized translation
-                if (ds < 0.05f && dtx < 0.05f && dty < 0.05f) {
+                if (ds < 0.05f && dtxNorm < 0.05f && dtyNorm < 0.05f) {
                     supportGroup.add(c2)
                 }
             }
@@ -364,10 +364,18 @@ object ImageAlignmentUtils {
         )
 
         return try {
-            val canvas = android.graphics.Canvas(targetBmp)
+            // Phase 92: In-Place Morphing. We use a temporary scratch bitmap to warp, then draw it back.
+            val scratch = Bitmap.createBitmap(bmp.width, bmp.height, bmp.config ?: Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(scratch)
             canvas.drawColor(android.graphics.Color.BLACK)
-            canvas.drawBitmap(queryBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            AnchorResult(true, targetBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d) [B:%d]: S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, bracketedCount, finalScale, finalTx, finalTy))
+            canvas.drawBitmap(bmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+            
+            // Draw scratch back to the original passed buffer
+            val originalCanvas = android.graphics.Canvas(bmp)
+            originalCanvas.drawBitmap(scratch, 0f, 0f, null)
+            scratch.recycle()
+            
+            AnchorResult(true, bmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d) [B:%d]: S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, bracketedCount, finalScale, finalTx, finalTy))
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
