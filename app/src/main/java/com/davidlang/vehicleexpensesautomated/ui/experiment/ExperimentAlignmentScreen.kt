@@ -239,9 +239,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 val tDiscoveryStart = System.currentTimeMillis()
-                val queryOcrDiscovery = OcrHarness.runDiscovery(originalBitmap!!, context)
+                val (queryOcrDiscovery, queryLandmarksPrimary) = performLandmarkDiscovery(originalBitmap!!, context)
                 val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
-                val queryLandmarksPrimary = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
                 val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksPrimary, cachedRefs.map { it.vehicle }, "ML Kit")
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
 
@@ -553,4 +552,19 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
             }
         }; true
     } catch (e: Exception) { false }
+}
+
+private suspend fun performLandmarkDiscovery(
+    bitmap: Bitmap,
+    context: Context
+): Pair<OcrResult, List<TextBlock>> {
+    val queryOcrDiscovery = OcrHarness.runDiscovery(bitmap, context)
+    val landmarks = OdometerOcrUtils.processRawLandmarks(
+        queryOcrDiscovery.textBlocks, 
+        null, 
+        null, 
+        queryOcrDiscovery.imageWidth, 
+        queryOcrDiscovery.imageHeight
+    )
+    return Pair(queryOcrDiscovery, landmarks)
 }
