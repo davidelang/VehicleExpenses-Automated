@@ -47,21 +47,28 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferLargeMono by lazy { FloatArray(1 * 2048 * 2048) }
         val sharedBmp2048 by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888) }
         val sharedCanvas2048 by lazy { Canvas(sharedBmp2048) }
+        val sharedBmp2048Mono by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888) }
+        val sharedCanvas2048Mono by lazy { Canvas(sharedBmp2048Mono) }
 
         // 2. Discovery Standard (320x128)
         private val bufferSmall by lazy { FloatArray(3 * 320 * 128) }
         private val bufferSmallMono by lazy { FloatArray(1 * 320 * 128) }
         val sharedBmpSmall by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
         val sharedCanvasSmall by lazy { Canvas(sharedBmpSmall) }
+        val sharedBmpSmallMono by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
+        val sharedCanvasSmallMono by lazy { Canvas(sharedBmpSmallMono) }
 
         // 3. Recognition (320x48)
         private val bufferRec by lazy { FloatArray(3 * 320 * 48) }
         private val bufferRecMono by lazy { FloatArray(1 * 320 * 48) }
         val sharedBmpRec by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
         val sharedCanvasRec by lazy { Canvas(sharedBmpRec) }
+        val sharedBmpRecMono by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
+        val sharedCanvasRecMono by lazy { Canvas(sharedBmpRecMono) }
+        val sharedNv21Buffer by lazy { ByteArray(320 * 48 * 3 / 2) }
 
         // Shared Matrix for Zero-Allocation Scaling
-        private val sharedMatrix = android.graphics.Matrix()
+        val sharedMatrix = android.graphics.Matrix()
 
         // Phase 63: Permanent Shared Reporting Buffers
         val sharedReportBitmap: Bitmap by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
