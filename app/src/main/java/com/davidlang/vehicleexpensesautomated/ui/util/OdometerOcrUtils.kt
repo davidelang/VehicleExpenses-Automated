@@ -173,7 +173,7 @@ object OdometerOcrUtils {
         if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-        val out = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
+        val out = Bitmap.createBitmap(filtered.cols(), filtered.rows(), bitmap.config ?: Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(filtered, out)
         mat.release(); gray.release(); filtered.release()
         return out
@@ -341,32 +341,7 @@ object OdometerOcrUtils {
                     val image = if (engineName == "ML Kit Mono") {
                         val w = resized.width
                         val h = resized.height
-                        val frameSize = w * h
-                        val nv21Size = frameSize * 3 / 2
-                        
-                        if (sharedPixelsBuffer == null || sharedPixelsBuffer!!.size < frameSize) {
-                            sharedPixelsBuffer = IntArray(frameSize)
-                        }
-                        if (sharedNv21Buffer == null || sharedNv21Buffer!!.size < nv21Size) {
-                            sharedNv21Buffer = ByteArray(nv21Size)
-                        }
-                        
-                        val pixels = sharedPixelsBuffer!!
-                        val nv21 = sharedNv21Buffer!!
-                        
-                        resized.getPixels(pixels, 0, w, 0, 0, w, h)
-                        
-                        // Extract Luminance (Y) channel. Input is grayscale, so R=G=B. We take R.
-                        for (i in 0 until frameSize) {
-                            val r = (pixels[i] shr 16) and 0xFF
-                            nv21[i] = r.toByte()
-                        }
-                        
-                        // Fill U/V channels with neutral chroma (128)
-                        for (i in frameSize until nv21Size) {
-                            nv21[i] = 128.toByte()
-                        }
-                        
+                        val nv21 = OcrUtils.bitmapToNv21(resized)
                         val buffer = java.nio.ByteBuffer.wrap(nv21)
                         InputImage.fromByteBuffer(buffer, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
                     } else {

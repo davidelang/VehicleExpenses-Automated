@@ -125,14 +125,93 @@ interface OcrEngine {
 
 class MlKitEngine : OcrEngine {
     override val name = "ML Kit"
+    
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            return@withContext recognizeMono(bitmap)
+        }
         val t0 = System.currentTimeMillis()
         val res = OdometerOcrUtils.extractFromPhotoBitmap(bitmap)
         res.copy(engineName = name, executionTimeMs = System.currentTimeMillis() - t0)
     }
+
+    private suspend fun recognizeMono(bitmap: Bitmap): OcrResult {
+        val t0 = System.currentTimeMillis()
+        val w = bitmap.width
+        val h = bitmap.height
+        
+        // 1. Convert to NV21 via shared helper
+        val nv21 = OcrUtils.bitmapToNv21(bitmap)
+        val buffer = java.nio.ByteBuffer.wrap(nv21)
+        val image = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+            buffer, w, h, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+        )
+        
+        val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+        return try {
+            val visionText = recognizer.process(image).await()
+            val blocks = mutableListOf<TextBlock>()
+            val sb = StringBuilder()
+            for (block in visionText.textBlocks) {
+                for (line in block.lines) {
+                    for (element in line.elements) {
+                        val box = element.boundingBox
+                        if (box != null) {
+                            blocks.add(TextBlock(element.text, box, line.angle))
+                            sb.append(element.text).append(" ")
+                        }
+                    }
+                }
+            }
+            OcrResult(
+                engineName = "$name Mono",
+                executionTimeMs = System.currentTimeMillis() - t0,
+                debugText = sb.toString().trim(),
+                textBlocks = blocks,
+                imageWidth = w,
+                imageHeight = h
+            )
+        } catch (e: Exception) {
+            Log.e("MlKitEngine", "Mono OCR failed", e)
+            OcrResult(engineName = "$name Mono", debugText = "Error: ${e.message}", imageWidth = w, imageHeight = h)
+        }
+    }
 }
 
 object OcrUtils {
+    /**
+     * Converts a Bitmap to NV21 format (YUV 4:2:0) suitable for ML Kit.
+     * This ensures 1-channel (Grayscale) input is handled efficiently.
+     * @param bitmap The source bitmap (ARGB_8888 or ALPHA_8).
+     * @return A ByteArray containing NV21 data.
+     */
+    fun bitmapToNv21(bitmap: Bitmap): ByteArray {
+        val w = bitmap.width
+        val h = bitmap.height
+        val frameSize = w * h
+        val nv21 = ByteArray(frameSize * 3 / 2)
+        
+        val pixels = IntArray(frameSize)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+        
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            for (i in 0 until frameSize) {
+                nv21[i] = (pixels[i] shr 24 and 0xFF).toByte()
+            }
+        } else {
+            for (i in 0 until frameSize) {
+                // Input is grayscale ARGB, so R=G=B. Take Red.
+                nv21[i] = (pixels[i] shr 16 and 0xFF).toByte()
+            }
+        }
+        
+        // Neutral Chroma (U=128, V=128)
+        for (i in frameSize until nv21.size) {
+            nv21[i] = 128.toByte()
+        }
+        return nv21
+    }
+
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
         if (crop == null || w == 0 || h == 0) return false
         val cx = block.boundingBox.centerX().toFloat() / w; val cy = block.boundingBox.centerY().toFloat() / h
