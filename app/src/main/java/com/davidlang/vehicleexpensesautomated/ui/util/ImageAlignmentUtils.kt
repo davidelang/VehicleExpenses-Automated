@@ -80,6 +80,8 @@ object ImageAlignmentUtils {
     ): List<TextBlock> {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
         val refValid = refLandmarks.filter { it.boundingBox.width() > 0 }
+        
+        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size}")
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
         val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
@@ -88,15 +90,19 @@ object ImageAlignmentUtils {
 
         val results = dashValid.map { it.copy(instanceId = -1) }.toMutableList()
 
+        // Pass 1: 1:1 Match unique strings (instanceId 1 on both sides)
         for (i in results.indices) {
             val dashMark = results[i]
             if (dashCounts[dashMark.text] == 1 && refCounts[dashMark.text] == 1) {
                 val refMatch = refValid.find { it.text == dashMark.text }!!
                 results[i] = dashMark.copy(instanceId = refMatch.instanceId)
+                Log.d("DISAMB_TRACE", "  Pass 1 [Unique]: '${dashMark.text}' matched Instance ${refMatch.instanceId}")
             }
         }
 
+        // Pass 2: If < 2 anchors, find seed triangle
         if (results.count { it.instanceId != -1 } < 2) {
+            Log.d("DISAMB_TRACE", "  Pass 2: Insufficient anchors (${results.count { it.instanceId != -1 }}). Searching for seed triangle...")
             val seedPool = commonTexts.map { text ->
                 val dCount = dashCounts[text] ?: 0
                 val rCount = refCounts[text] ?: 0
@@ -119,6 +125,7 @@ object ImageAlignmentUtils {
                                     results[results.indexOf(d1)] = d1.copy(instanceId = r1.instanceId)
                                     results[results.indexOf(d2)] = d2.copy(instanceId = r2.instanceId)
                                     results[results.indexOf(d3)] = d3.copy(instanceId = r3.instanceId)
+                                    Log.d("DISAMB_TRACE", "  Pass 2 [Seed]: Triangle found ('${d1.text}'-${r1.instanceId}, '${d2.text}'-${r2.instanceId}, '${d3.text}'-${r3.instanceId})")
                                     break@outer
                                 }
                             }
@@ -128,8 +135,10 @@ object ImageAlignmentUtils {
             }
         }
 
+        // Pass 3: Bootstrap ambiguous landmarks (instanceId == -1) using confirmed anchors
         val confirmed = results.filter { it.instanceId != -1 }
         if (confirmed.size >= 2) {
+            Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from ${confirmed.size} anchors...")
             val p1 = confirmed[0]; val p2 = confirmed[1]
             for (idx in results.indices) {
                 if (results[idx].instanceId != -1) continue
@@ -141,11 +150,14 @@ object ImageAlignmentUtils {
                     if (abs((dist(p1, results[idx]) / rD1C) / (dist(p1, p2) / rD12) - 1.0) < 0.05 && 
                         abs((dist(p2, results[idx]) / rD2C) / (dist(p1, p2) / rD12) - 1.0) < 0.05) {
                         results[idx] = results[idx].copy(instanceId = cand.instanceId)
+                        Log.d("DISAMB_TRACE", "    -> Bootstrap Match: '${results[idx].text}' assigned Instance ${cand.instanceId}")
                         break
                     }
                 }
             }
         }
+        
+        Log.d("DISAMB_TRACE", "FINISH: Tagged ${results.count { it.instanceId != -1 }}/${dashValid.size} landmarks")
         return results
     }
 
