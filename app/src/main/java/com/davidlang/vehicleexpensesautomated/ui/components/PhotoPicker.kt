@@ -96,8 +96,13 @@ fun PhotoPicker(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
-                photoUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.camera/photo.jpg")
-                cameraLauncher.launch(photoUri!!)
+                val uri = photoStorageManager.createMediaStoreUri("photo_${System.currentTimeMillis()}.jpg", photoType)
+                if (uri != null) {
+                    photoUri = uri
+                    cameraLauncher.launch(uri)
+                } else {
+                    Toast.makeText(context, "Failed to create photo storage location", Toast.LENGTH_SHORT).show()
+                }
             }, modifier = Modifier.weight(1f)) {
                 Text("📸 Take Photo")
             }
