@@ -225,8 +225,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 if (rotated != originalBitmap) rotated.recycle()
                 val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
 
-                // Phase 63: Optimized Multi-Spike Deskew (Paddle-preferred)
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, paddleEngineV3)
+                // Phase 63: Optimized Multi-Spike Deskew (Benchmarking Standard vs Mono)
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048, paddleEngineV3)
+                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048Mono, paddleEngineV3Mono)
+                
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
                 val tPd = deskewRes.paddleTimeMs
@@ -371,7 +373,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 private fun serializePhotoResultToJson(
     lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
-    vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult
+    vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
 ): JSONObject {
     return JSONObject().apply {
         put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo)
@@ -398,8 +400,33 @@ private fun serializePhotoResultToJson(
             put("alignment_consensus_mono", winnerRes.alignmentTraceMono.metadata["Consensus"] ?: "")
         }
         
-        put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_mlkit_ms", deskewRes.mlTimeMs); put("deskew_time_paddle_ms", deskewRes.paddleTimeMs); put("deskew_time_rotation_ms", tRotate)
-        put("deskew_angle", deskewAngle); put("discovery_time_ms", tDiscovery)
+        put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_rotation_ms", tRotate)
+        
+        val timingsObj = JSONObject().apply {
+            put("paddle", JSONObject().apply { 
+                put("standard_ms", deskewRes.paddleTimeMs)
+                put("mono_ms", deskewResMono?.paddleTimeMs ?: 0L)
+            })
+            put("mlkit", JSONObject().apply {
+                put("standard_ms", deskewRes.mlTimeMs)
+                put("mono_ms", deskewResMono?.mlTimeMs ?: 0L)
+            })
+        }
+        put("deskew_timings", timingsObj)
+        
+        val anglesObj = JSONObject().apply {
+            put("paddle", JSONObject().apply { 
+                put("standard", deskewAngle)
+                put("mono", deskewResMono?.angle ?: 0f)
+            })
+            put("mlkit", JSONObject().apply {
+                put("standard", deskewRes.mlAngle)
+                put("mono", deskewResMono?.mlAngle ?: 0f)
+            })
+        }
+        put("deskew_angles", anglesObj)
+        
+        put("discovery_time_ms", tDiscovery)
         
         val mlArray = JSONArray()
         deskewRes.mlBlocks.forEach { block ->
