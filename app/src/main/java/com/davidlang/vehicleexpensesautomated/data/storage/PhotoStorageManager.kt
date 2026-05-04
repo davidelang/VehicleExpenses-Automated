@@ -1,8 +1,12 @@
 package com.davidlang.vehicleexpensesautomated.data.storage
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
@@ -21,10 +25,6 @@ class PhotoStorageManager @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) {
 
-    private val photosDir: File by lazy {
-        File(context.filesDir, "photos").apply { mkdirs() }
-    }
-
     private suspend fun getDriveService(): Drive {
         val account = GoogleSignIn.getLastSignedInAccount(context) ?: throw IllegalStateException("No Google account signed in")
         val credential = GoogleAccountCredential.usingOAuth2(context, listOf("https://www.googleapis.com/auth/drive.file"))
@@ -32,6 +32,25 @@ class PhotoStorageManager @Inject constructor(
         return Drive.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
             .setApplicationName("VehicleExpenses-Automated")
             .build()
+    }
+
+    /**
+     * Creates a MediaStore URI in the shared Pictures/VehicleExpenses folder.
+     * This is used by the camera to save photos directly to shared storage.
+     */
+    fun createMediaStoreUri(fileName: String, photoType: PhotoType): Uri? {
+        val resolver = context.contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "${photoType.name.lowercase()}_$fileName")
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/VehicleExpenses")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+
+        val contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        return resolver.insert(contentUri, contentValues)
     }
 
     suspend fun savePhoto(uri: Uri, fileName: String, photoType: PhotoType): String? {
@@ -80,14 +99,38 @@ class PhotoStorageManager @Inject constructor(
     }
 
     private fun saveLocally(uri: Uri, fileName: String, photoType: PhotoType): String? {
-        val destFile = File(photosDir, "${photoType.name.lowercase()}_$fileName")
+        // If it's already a MediaStore URI (starts with content://media/), it's already saved locally
+        if (uri.toString().startsWith("content://media/")) {
+            // Finalize the file by removing IS_PENDING on Android Q+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    }
+                    context.contentResolver.update(uri, contentValues, null, null)
+                } catch (e: Exception) {
+                    // Ignore failures in finalizing
+                }
+            }
+            return uri.toString()
+        }
+
+        // Otherwise, copy it to a new MediaStore location
+        val destUri = createMediaStoreUri(fileName, photoType) ?: return null
         return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(destFile).use { output ->
+                context.contentResolver.openOutputStream(destUri)?.use { output ->
                     input.copyTo(output)
                 }
             }
-            destFile.absolutePath
+            // Finalize
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }
+                context.contentResolver.update(destUri, contentValues, null, null)
+            }
+            destUri.toString()
         } catch (e: Exception) {
             null
         }
@@ -113,13 +156,20 @@ class PhotoStorageManager @Inject constructor(
 
     fun savePhotoFromBitmap(bitmap: Bitmap, photoType: PhotoType): String {
         val fileName = "${photoType.name.lowercase()}_${System.currentTimeMillis()}.jpg"
-        val destFile = File(photosDir, fileName)
+        val destUri = createMediaStoreUri(fileName, photoType) ?: throw IllegalArgumentException("Cannot create MediaStore URI")
 
         return try {
-            FileOutputStream(destFile).use { output ->
+            context.contentResolver.openOutputStream(destUri)?.use { output ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)
             }
-            destFile.absolutePath
+            // Finalize
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }
+                context.contentResolver.update(destUri, contentValues, null, null)
+            }
+            destUri.toString()
         } catch (e: Exception) {
             throw IllegalArgumentException("Cannot save photo from Bitmap", e)
         }
