@@ -260,17 +260,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         
                         // 1. Standard Alignment (Standard)
                         val t0 = System.currentTimeMillis()
-                        val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle, useMono = false)
+                        val alignRes = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, NativePaddleEngine.sharedBmp2048, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                         val elapsedAlign = System.currentTimeMillis() - t0
                         
                         // 2. Mono Alignment (Benchmarking)
                         val t0Mono = System.currentTimeMillis()
-                        val alignResMono = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle, useMono = true)
+                        val alignResMono = ImageAlignmentUtils.anchorAlign(ref.bmp, originalBitmap!!, NativePaddleEngine.sharedBmp2048Mono, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                         val elapsedAlignMono = System.currentTimeMillis() - t0Mono
                         
                         if (alignResMono.success && alignResMono.alignedImage != null) {
                             alignmentTraceMono = AlignmentTraceResult(true, elapsedAlignMono, "", alignResMono.metadata)
-                            alignResMono.alignedImage.recycle()
                         } else {
                             alignmentTraceMono = AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
                         }
@@ -323,8 +322,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             if (allResults.isNotEmpty()) {
                                 bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
                             }
-                            
-                            alignRes.alignedImage.recycle()
                         } else { 
                             Log.d(TAG, "Vehicle identified as ${ref.vehicle.name}, but alignment failed: ${alignRes.message}")
                             alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) 
