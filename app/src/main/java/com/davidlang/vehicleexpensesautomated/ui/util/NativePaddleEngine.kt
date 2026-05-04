@@ -333,7 +333,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             var charCount = 0
             var lastConf = 1.0f
             
-            Log.d("OCR_DEBUG", "START: seqLen=$seqLen, dictSize=$dictSize")
             for (i in 0 until seqLen) {
                 var maxIdx = 0
                 var maxVal = -1f 
@@ -347,7 +346,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 
                 val char = if (maxIdx > 0 && maxIdx <= dictionary.size) dictionary[maxIdx - 1] else "BLANK/UNK"
-                Log.d("OCR_DEBUG", "  Slot $i: idx=$maxIdx ($char), conf=$maxVal, lastIdx=$lastIdx")
 
                 // Phase 69: Extreme floor (0.00) to rescue faint leading digits
                 // The first 4 digits are immune to the relative drop rule.
@@ -359,19 +357,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                         totalConf += maxVal
                         charCount++
                         lastConf = maxVal
-                        Log.d("OCR_DEBUG", "    APPENDED: $appendedChar")
                     } else {
-                        Log.d("OCR_DEBUG", "    TRUNCATED: Confidence drop detected at index ${result.length} ($maxVal < ${0.60f * lastConf})")
                         break // Stop search
                     }
                 } else if (maxIdx > 0 && maxIdx == lastIdx) {
-                    Log.d("OCR_DEBUG", "    SKIPPED: Repeat/CTC rule")
                 }
                 lastIdx = maxIdx
             }
             val finalStr = result.toString()
             val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            Log.d("OCR_DEBUG", "END: text='$finalStr', avgConf=$finalConf")
             return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, ocrInputB64)
         }
     }

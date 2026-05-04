@@ -31,8 +31,6 @@ object DiscoveryOcrUtils {
         val steps = mutableListOf<OcrStepResult>()
         if (paddleEngine == null) return emptyList()
 
-        Log.d("DISCOVERY_DEBUG", "--- Starting Discovery for $engineName ($expansion) ---")
-        Log.d("DISCOVERY_DEBUG", "Crop dimensions: ${bitmap.width}x${bitmap.height}")
 
         /**
          * Executes sequential detection and expansion visualization.
@@ -45,7 +43,6 @@ object DiscoveryOcrUtils {
             val det = paddleEngine.runDetectionOnly(bmp, 320, 128)
             val invScale = 1.0 / det.scaleFactor.toDouble()
             val sortedBlocks = det.textBlocks.sortedBy { it.boundingBox.left }
-            Log.d("DISCOVERY_DEBUG", "[$stageName] Found ${sortedBlocks.size} fragments")
             
             var primaryRawBox: Rect? = null
             var primaryRefinedBox: Rect? = null
@@ -60,7 +57,6 @@ object DiscoveryOcrUtils {
                     block.boundingBox.right.toInt(),
                     block.boundingBox.bottom.toInt()
                 )
-                Log.d("DISCOVERY_DEBUG", "  Fragment $idx: [L=${rawBox.left}, T=${rawBox.top}, R=${rawBox.right}, B=${rawBox.bottom}]")
                 rawFragments.add(rawBox)
 
                 val unclipBox = unclipRect(rawBox, 1.5f)
@@ -114,7 +110,6 @@ object DiscoveryOcrUtils {
             for ((i, consolidatedBox) in consolidatedBoxes.sortedBy { it.top }.withIndex()) {
                 if (i == 0) primaryRefinedBox = consolidatedBox
 
-                Log.d("DISCOVERY_DEBUG", "  Consolidated Row $i: [L=${consolidatedBox.left}, T=${consolidatedBox.top}, R=${consolidatedBox.right}, B=${consolidatedBox.bottom}]")
 
                 val recognitionCrop = Bitmap.createBitmap(bmp, consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
                 val ocrResult = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())

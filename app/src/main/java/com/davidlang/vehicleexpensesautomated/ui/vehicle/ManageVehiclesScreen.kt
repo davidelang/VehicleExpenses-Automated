@@ -284,8 +284,6 @@ fun ManageVehiclesScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { scope.launch { 
-                Log.d("DB_PERSIST", "Saving Vehicle: $name | Landmark JSON Length: ${landmarkTextBlocksJson?.length ?: 0}")
-                landmarkTextBlocksJson?.let { Log.d("DB_PERSIST", "  JSON Preview: ${it.take(150)}...") }
                 
                 if (isNewVehicle) { 
                     vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) 

@@ -544,7 +544,6 @@ object OdometerOcrUtils {
             val array = JSONArray()
             val textCounts = mutableMapOf<String, Int>()
             val isMono = (res.debugText.contains("[Mono]")) // Heuristic from current pipeline
-            Log.d("LANDMARK_SAVE", "Serializing Engine: $engineName (Mode: ${if (isMono) "Mono" else "Standard"})")
             
             res.textBlocks.forEach { block ->
                 val cleaned = cleanLandmarkString(block.text)
@@ -554,7 +553,6 @@ object OdometerOcrUtils {
                         textCounts[cleaned] = count
                         count
                     }
-                    Log.d("LANDMARK_SAVE", "  -> Landmark: '$cleaned' | Instance: $instance")
                     val obj = JSONObject()
                     obj.put("text", cleaned)
                     obj.put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
@@ -565,10 +563,8 @@ object OdometerOcrUtils {
                     array.put(obj)
                 }
             }
-            Log.d("LANDMARK_SAVE", "Total Landmarks for $engineName: ${array.length()}")
             root.put(engineName, array)
         }
-        Log.i("OCR_PERF", "serializeMultiEngineLandmarks took ${System.currentTimeMillis() - t0}ms")
         return root.toString()
     }
 
