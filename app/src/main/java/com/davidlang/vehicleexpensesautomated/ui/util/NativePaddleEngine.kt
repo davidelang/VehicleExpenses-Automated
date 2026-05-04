@@ -47,7 +47,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferLargeMono by lazy { FloatArray(1 * 2048 * 2048) }
         val sharedBmp2048 by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888) }
         val sharedCanvas2048 by lazy { Canvas(sharedBmp2048) }
-        val sharedBmp2048Mono by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888) }
+        val sharedBmp2048Mono by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8) }
         val sharedCanvas2048Mono by lazy { Canvas(sharedBmp2048Mono) }
 
         // 2. Discovery Standard (320x128)
@@ -55,7 +55,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferSmallMono by lazy { FloatArray(1 * 320 * 128) }
         val sharedBmpSmall by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
         val sharedCanvasSmall by lazy { Canvas(sharedBmpSmall) }
-        val sharedBmpSmallMono by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
+        val sharedBmpSmallMono by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ALPHA_8) }
         val sharedCanvasSmallMono by lazy { Canvas(sharedBmpSmallMono) }
 
         // 3. Recognition (320x48)
@@ -63,7 +63,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferRecMono by lazy { FloatArray(1 * 320 * 48) }
         val sharedBmpRec by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
         val sharedCanvasRec by lazy { Canvas(sharedBmpRec) }
-        val sharedBmpRecMono by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
+        val sharedBmpRecMono by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ALPHA_8) }
         val sharedCanvasRecMono by lazy { Canvas(sharedBmpRecMono) }
         val sharedNv21Buffer by lazy { ByteArray(320 * 48 * 3 / 2) }
 
@@ -210,7 +210,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
                         val px = targetBmp.getPixel(x, y)
-                        floatData[y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                        floatData[y * targetWidth + x] = ((px shr 24 and 0xFF) / 255.0f - mean[0]) / std[0]
                     }
                 }
             } else {
@@ -286,7 +286,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
                         val px = targetBmp.getPixel(x, y)
-                        floatData[y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                        floatData[y * targetWidth + x] = ((px shr 24 and 0xFF) / 255.0f - mean) / std
                     }
                 }
             } else {
@@ -313,7 +313,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                         g = ((floatData[1 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
                         b = ((floatData[2 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
                     }
-                    snapshot.setPixel(x, y, Color.rgb(r, g, b))
+                    snapshot.setPixel(x, y, Color.argb(255, r, g, b))
                 }
             }
             val ocrInputB64 = OcrUtils.bitmapToBase64(snapshot, 60)
@@ -377,7 +377,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
-        val predictor = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
+        val predictor = if (variant == "V3") {
+            if (useMono) sharedRecognizerV3Mono else sharedRecognizerV3
+        } else {
+            if (useMono) sharedRecognizerNumericMono else sharedRecognizerNumeric
+        }
         if (predictor == null) return@withContext OcrResult(engineName = name, debugText = "Predictor null", imageWidth = bitmap.width, imageHeight = bitmap.height)
         
         val finalResult = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
