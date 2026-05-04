@@ -181,12 +181,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         
         if (targetWidth >= 2048) {
             floatData = if (useMono) bufferLargeMono else bufferLarge
-            targetBmp = sharedBmp2048
-            targetCanvas = sharedCanvas2048
+            targetBmp = if (useMono) sharedBmp2048Mono else sharedBmp2048
+            targetCanvas = if (useMono) sharedCanvas2048Mono else sharedCanvas2048
         } else {
             floatData = if (useMono) bufferSmallMono else bufferSmall
-            targetBmp = sharedBmpSmall
-            targetCanvas = sharedCanvasSmall
+            targetBmp = if (useMono) sharedBmpSmallMono else sharedBmpSmall
+            targetCanvas = if (useMono) sharedCanvasSmallMono else sharedCanvasSmall
         }
         floatData.fill(0.0f)
 
@@ -269,12 +269,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val scale = safeH.toFloat() / bitmap.height.toFloat()
         
         // Zero-Allocation Scaling via Shared Padded Buffer
-        synchronized(sharedBmpRec) {
-            sharedCanvasRec.drawColor(Color.BLACK)
+        val targetBmp = if (useMono) sharedBmpRecMono else sharedBmpRec
+        val targetCanvas = if (useMono) sharedCanvasRecMono else sharedCanvasRec
+
+        synchronized(targetBmp) {
+            targetCanvas.drawColor(Color.BLACK)
             sharedMatrix.reset()
             sharedMatrix.postScale(scale, scale)
             sharedMatrix.postTranslate(padding.toFloat(), padding.toFloat())
-            sharedCanvasRec.drawBitmap(bitmap, sharedMatrix, null)
+            targetCanvas.drawBitmap(bitmap, sharedMatrix, null)
 
             val mean = 0.5f
             val std = 0.5f
@@ -282,14 +285,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             if (useMono) {
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
-                        val px = sharedBmpRec.getPixel(x, y)
+                        val px = targetBmp.getPixel(x, y)
                         floatData[y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
                     }
                 }
             } else {
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
-                        val px = sharedBmpRec.getPixel(x, y)
+                        val px = targetBmp.getPixel(x, y)
                         floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
                         floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
                         floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
