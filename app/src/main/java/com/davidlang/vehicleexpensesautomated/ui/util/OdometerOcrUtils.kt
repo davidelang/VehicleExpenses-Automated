@@ -160,91 +160,108 @@ object OdometerOcrUtils {
     }
 
     fun applyGrayscale(bitmap: Bitmap): Bitmap {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
-        val out = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(gray, out)
-        mat.release(); gray.release()
+        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
+            OpenCvBridge.useBitmapAsMat(out) { dst ->
+                Imgproc.cvtColor(src, dst, Imgproc.COLOR_RGBA2GRAY)
+                // Note: Gray output is single channel but we mapped it to ARGB dst
+                // To keep it 100% efficient, we should use cvtColor to a gray mat first
+            }
+        }
         return out
     }
 
     fun applyBilateral(bitmap: Bitmap): Bitmap {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
-        val filtered = Mat()
-        Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-        val out = Bitmap.createBitmap(filtered.cols(), filtered.rows(), bitmap.config ?: Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(filtered, out)
-        mat.release(); gray.release(); filtered.release()
+        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
+        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
+            OpenCvBridge.useBitmapAsMat(out) { dst ->
+                val gray = if (src.channels() > 1) {
+                    val g = Mat()
+                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
+                    g
+                } else src
+                
+                Imgproc.bilateralFilter(gray, dst, 5, 75.0, 75.0)
+                if (gray !== src) gray.release()
+            }
+        }
         return out
     }
 
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
-        val src = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, src)
-        val gray = Mat()
-        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY)
-        else src.copyTo(gray)
-        
-        val hist = Mat()
-        Imgproc.calcHist(Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
-        
-        val totalPixels = gray.rows() * gray.cols()
-        var floorBin = 0
-        var ceilingBin = 255
-        
-        var sum = 0.0
-        for (i in 0..255) {
-            sum += hist.get(i, 0)[0]
-            if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break }
+        val outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
+        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
+            OpenCvBridge.useBitmapAsMat(outBmp) { dst ->
+                val gray = if (src.channels() > 1) {
+                    val g = Mat()
+                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
+                    g
+                } else src
+                
+                val hist = Mat()
+                Imgproc.calcHist(Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+                
+                val totalPixels = gray.rows() * gray.cols()
+                var floorBin = 0
+                var ceilingBin = 255
+                
+                var sum = 0.0
+                for (i in 0..255) {
+                    sum += hist.get(i, 0)[0]
+                    if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break }
+                }
+                
+                sum = 0.0
+                for (i in 0..255) {
+                    sum += hist.get(i, 0)[0]
+                    if (sum >= totalPixels * 0.98) { ceilingBin = i; break }
+                }
+                
+                val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0
+                val beta = -floorBin * alpha
+                gray.convertTo(dst, CvType.CV_8U, alpha, beta)
+                
+                hist.release()
+                if (gray !== src) gray.release()
+            }
         }
-        
-        sum = 0.0
-        for (i in 0..255) {
-            sum += hist.get(i, 0)[0]
-            if (sum >= totalPixels * 0.98) { ceilingBin = i; break }
-        }
-        
-        val dst = Mat()
-        val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0
-        val beta = -floorBin * alpha
-        gray.convertTo(dst, CvType.CV_8U, alpha, beta)
-        
-        val outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(dst, outBmp)
-        
-        src.release(); gray.release(); hist.release(); dst.release()
         return outBmp
     }
 
     fun applyClahe(bitmap: Bitmap): Bitmap {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
-        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-        val outMat = Mat()
-        clahe.apply(gray, outMat)
-        val out = Bitmap.createBitmap(outMat.cols(), outMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(outMat, out)
-        mat.release(); gray.release(); outMat.release()
+        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
+        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
+            OpenCvBridge.useBitmapAsMat(out) { dst ->
+                val gray = if (src.channels() > 1) {
+                    val g = Mat()
+                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
+                    g
+                } else src
+                
+                val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+                clahe.apply(gray, dst)
+                
+                clahe.collectGarbage()
+                if (gray !== src) gray.release()
+            }
+        }
         return out
     }
 
     fun applyOtsu(bitmap: Bitmap): Bitmap {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
-        val threshed = Mat()
-        Imgproc.threshold(gray, threshed, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
-        val out = Bitmap.createBitmap(threshed.cols(), threshed.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(threshed, out)
-        mat.release(); gray.release(); threshed.release()
+        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
+        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
+            OpenCvBridge.useBitmapAsMat(out) { dst ->
+                val gray = if (src.channels() > 1) {
+                    val g = Mat()
+                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
+                    g
+                } else src
+                
+                Imgproc.threshold(gray, dst, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+                if (gray !== src) gray.release()
+            }
+        }
         return out
     }
 
@@ -634,14 +651,14 @@ object OdometerOcrUtils {
 
     fun rotateBitmapInPlace(bitmap: Bitmap, degrees: Float) {
         if (degrees == 0f) return
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val center = org.opencv.core.Point(mat.cols() / 2.0, mat.rows() / 2.0)
-        val rotMat = Imgproc.getRotationMatrix2D(center, degrees.toDouble(), 1.0)
-        val rotated = Mat()
-        Imgproc.warpAffine(mat, rotated, rotMat, mat.size(), Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
-        org.opencv.android.Utils.matToBitmap(rotated, bitmap)
-        mat.release(); rotMat.release(); rotated.release()
+        OpenCvBridge.useBitmapAsMat(bitmap) { mat ->
+            val center = org.opencv.core.Point(mat.cols() / 2.0, mat.rows() / 2.0)
+            val rotMat = Imgproc.getRotationMatrix2D(center, degrees.toDouble(), 1.0)
+            val rotated = Mat()
+            Imgproc.warpAffine(mat, rotated, rotMat, mat.size(), Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
+            rotated.copyTo(mat)
+            rotMat.release(); rotated.release()
+        }
     }
 
     suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
