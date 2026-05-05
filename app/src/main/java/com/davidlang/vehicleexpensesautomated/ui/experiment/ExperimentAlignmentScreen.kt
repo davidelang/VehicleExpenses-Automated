@@ -241,12 +241,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 val tDiscoveryStart = System.currentTimeMillis()
-                val (queryOcrDiscovery, queryLandmarksPrimary) = performLandmarkDiscovery(originalBitmap!!, context)
+                val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(originalBitmap!!, context)
                 val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
-                val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksPrimary, cachedRefs.map { it.vehicle }, "ML Kit")
+                val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksRaw, cachedRefs.map { it.vehicle }, "ML Kit")
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
 
                 cachedRefs.forEach { ref ->
+                    // Phase 108: Disambiguate per vehicle to ensure correct instance matching
+                    val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, ref.curatedLandmarks)
                     val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
                     val tMatchStart = System.currentTimeMillis()
                     val isWinner = finalWinnerName == "No match" && !veto.isVetoed

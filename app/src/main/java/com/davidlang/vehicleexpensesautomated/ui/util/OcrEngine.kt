@@ -57,7 +57,13 @@ data class TextBlock(
     val rawDiscoveryBox: RectF? = null,    // RED tier
     val refinedDiscoveryBox: RectF? = null, // ORANGE tier
     val metadata: Map<String, String> = emptyMap(),
-    val instanceId: Int = -1 // Phase 91
+    /**
+     * Phase 109: Instance tracking for landmark disambiguation.
+     * -1: Unmapped/Initial state (default for discovered landmarks).
+     *  0: Globally unique landmark (appears only once in the vehicle manifest).
+     * 1+: Specific instance of a duplicate landmark (1st, 2nd, etc. occurrence).
+     */
+    val instanceId: Int = -1
 )
 
 /**
