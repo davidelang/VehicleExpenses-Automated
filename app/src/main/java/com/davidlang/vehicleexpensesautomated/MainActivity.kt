@@ -86,32 +86,6 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
 
-                // STARTUP SENSITIVITY TEST (Force-Sync removed as per Directive)
-                LaunchedEffect(Unit) {
-                    scope.launch(Dispatchers.IO) {
-                        Log.i("MainActivity", "Starting AUTOMATED STARTUP SENSITIVITY TEST...")
-                        val photosDir = File(context.filesDir, "photos")
-                        val hondaRef = photosDir.listFiles()?.find { it.name.contains("honda_ref") }
-                        
-                        if (hondaRef != null) {
-                            val bitmap = OdometerOcrUtils.decodeBitmapSafely(context, hondaRef.absolutePath)
-                            bitmap?.let { bmp ->
-                                Log.i("MainActivity", "Test 1: Baseline ImageNet Normalization")
-                                val res1 = OcrHarness.runDiscovery(bmp, context)
-                                Log.i("MainActivity", "Test 1 Landmarks: ${res1.textBlocks.size}")
-                                
-                                Log.i("MainActivity", "Test 2: CLAHE Pre-processing")
-                                val claheBmp = OdometerOcrUtils.applyClahe(bmp)
-                                val res2 = OcrHarness.runDiscovery(claheBmp, context)
-                                Log.i("MainActivity", "Test 2 Landmarks: ${res2.textBlocks.size}")
-                                
-                                claheBmp.recycle()
-                                bmp.recycle()
-                            }
-                        }
-                    }
-                }
-
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
