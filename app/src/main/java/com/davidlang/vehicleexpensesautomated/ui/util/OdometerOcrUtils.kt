@@ -568,18 +568,28 @@ object OdometerOcrUtils {
         results.forEach { (engineName, res) ->
             val array = JSONArray()
             
-            // Pass 1: Count total occurrences to determine uniqueness (Phase 109)
-            val globalCounts = res.textBlocks.groupBy { cleanLandmarkString(it.text) }.mapValues { it.value.size }
+            // Pass 1: Count total occurrences for detectable landmarks ONLY (Phase 109 Refined)
+            // Manual landmarks (width=0) are excluded from this uniqueness tally.
+            val globalCounts = res.textBlocks
+                .filter { it.boundingBox.width() > 0 }
+                .groupBy { cleanLandmarkString(it.text) }
+                .mapValues { it.value.size }
             
             val runningCounts = mutableMapOf<String, Int>()
             res.textBlocks.forEach { block ->
                 val cleaned = cleanLandmarkString(block.text)
                 if (cleaned.length > 1) {
+                    val isManual = block.boundingBox.width() == 0
                     val total = globalCounts[cleaned] ?: 0
-                    val instance = if (total == 1) 0 else {
+                    
+                    val instance = if (isManual) {
+                        -2 // Tag as Manual (Invisible to alignment, visible to Veto)
+                    } else if (total == 1) {
+                        0  // Globally Unique Detectable Landmark
+                    } else {
                         val count = (runningCounts[cleaned] ?: 0) + 1
                         runningCounts[cleaned] = count
-                        count
+                        count // Specific instance of duplicate (1, 2, ...)
                     }
                     
                     val obj = JSONObject()
