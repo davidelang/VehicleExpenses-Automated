@@ -564,7 +564,8 @@ private suspend fun processPhotoInternal(
             tRotate = System.currentTimeMillis() - tRot0
         }
         val tDiscoveryStart = System.currentTimeMillis()
-        val (queryOcrDiscovery, queryLandmarksPrimary) = performLandmarkDiscovery(originalBitmap!!, context)
+        val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(originalBitmap!!, context)
+        val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, cachedRefs.flatMap { it.curatedLandmarks }.distinct())
         val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
         val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksPrimary, cachedRefs.map { it.vehicle }, "ML Kit")
         val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
