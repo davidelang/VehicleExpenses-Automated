@@ -142,8 +142,14 @@ object ImageAlignmentUtils {
                             if (dPerim == 0.0) continue
                             
                             if (triCount < 5) {
-                                Log.d("DISAMB_TRI", "    Trying Dash Triangle: [${d1.text}, ${d2.text}, ${d3.text}] | Prop: %.2f, %.2f, %.2f".format(d12/dPerim, d23/dPerim, d31/dPerim))
-                                triCount++
+                                for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
+                                    val r12 = dist(r1, r2); val r23 = dist(r2, r3); val r31 = dist(r3, r1)
+                                    val rPerim = r12 + r23 + r31
+                                    if (rPerim == 0.0) continue
+                                    Log.d("DISAMB_TRI", "    Trying Dash Triangle: matching ['${d1.text}'-${r1.instanceId}, '${d2.text}'-${r2.instanceId}, '${d3.text}'-${r3.instanceId}] | Prop: %.2f, %.2f, %.2f".format(d12/dPerim, d23/dPerim, d31/dPerim))
+                                    triCount++
+                                    if (triCount >= 5) break
+                                }
                             }
                             
                             for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
@@ -195,7 +201,7 @@ object ImageAlignmentUtils {
                 val d12 = dist(p1, p2)
                 val r12 = dist(rP1, rP2)
 
-                Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from baseline ['${p1.text}'-${p1.instanceId}, '${p2.text}'-${p2.instanceId}] dist=$maxDist")
+                Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from baseline ['${p1.text}'-${p1.instanceId}, '${p2.text}'-${p2.instanceId}]")
 
                 for (idx in results.indices) {
                     if (results[idx].instanceId != -1) continue
@@ -219,7 +225,7 @@ object ImageAlignmentUtils {
                             Log.d("DISAMB_TRACE", "    Triangle found ('${p1.text}'-${p1.instanceId}, '${p2.text}'-${p2.instanceId}, '${dashMark.text}'-${cand.instanceId}) | Devs: %.3f, %.3f, %.3f".format(dev1, dev2, dev3))
                             break
                         } else {
-                            Log.d("DISAMB_TRI", "    Trying Dash Triangle: [${p1.text}, ${p2.text}, ${dashMark.text}] | Prop: %.2f, %.2f, %.2f vs Cand ${cand.instanceId}".format(d12/dPerim, d1c/dPerim, d2c/dPerim))
+                            Log.d("DISAMB_TRI", "    Trying Dash Triangle: matching '${dashMark.text}'-${cand.instanceId} | Prop: %.2f, %.2f".format(d1c/dPerim, d2c/dPerim))
                         }
                     }
                 }
