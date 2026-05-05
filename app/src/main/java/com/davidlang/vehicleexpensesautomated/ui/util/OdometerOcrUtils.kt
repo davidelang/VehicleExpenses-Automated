@@ -609,17 +609,21 @@ object OdometerOcrUtils {
                 val array = root.getJSONArray(name)
                 val blocks = mutableListOf<TextBlock>()
                 for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    val cx = obj.getDouble("cx")
-                    val cy = obj.getDouble("cy")
-                    val w = obj.getDouble("w")
-                    val h = obj.getDouble("h")
-                    val instanceId = obj.optInt("instance", -1)
-                    val left = ((cx - w / 2.0) * imgW).toInt()
-                    val top = ((cy - h / 2.0) * imgH).toInt()
-                    val right = ((cx + w / 2.0) * imgW).toInt()
-                    val bottom = ((cy + h / 2.0) * imgH).toInt()
-                    blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
+                    try {
+                        val obj = array.getJSONObject(i)
+                        val cx = obj.getDouble("cx")
+                        val cy = obj.getDouble("cy")
+                        val w = obj.getDouble("w")
+                        val h = obj.getDouble("h")
+                        val instanceId = if (obj.has("instance")) obj.getInt("instance") else -1
+                        val left = ((cx - w / 2.0) * imgW).toInt()
+                        val top = ((cy - h / 2.0) * imgH).toInt()
+                        val right = ((cx + w / 2.0) * imgW).toInt()
+                        val bottom = ((cy + h / 2.0) * imgH).toInt()
+                        blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
+                    } catch (e: Exception) {
+                        Log.w("OdometerOcr", "Skipping malformed landmark entry in JSON: ${e.message}")
+                    }
                 }
                 results[name] = OcrResult(engineName = name, textBlocks = blocks, imageWidth = imgW, imageHeight = imgH, debugText = blocks.joinToString(" ") { it.text })
             }
