@@ -47,7 +47,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferLargeMono by lazy { FloatArray(1 * 2048 * 2048) }
         val sharedBmp2048 by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888) }
         val sharedCanvas2048 by lazy { Canvas(sharedBmp2048) }
-        val sharedBmp2048Mono by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888) }
+        val sharedBmp2048Mono by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8) }
         val sharedCanvas2048Mono by lazy { Canvas(sharedBmp2048Mono) }
 
         // 2. Discovery Standard (320x128)
@@ -55,7 +55,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferSmallMono by lazy { FloatArray(1 * 320 * 128) }
         val sharedBmpSmall by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
         val sharedCanvasSmall by lazy { Canvas(sharedBmpSmall) }
-        val sharedBmpSmallMono by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
+        val sharedBmpSmallMono by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ALPHA_8) }
         val sharedCanvasSmallMono by lazy { Canvas(sharedBmpSmallMono) }
 
         // 3. Recognition (320x48)
@@ -63,7 +63,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferRecMono by lazy { FloatArray(1 * 320 * 48) }
         val sharedBmpRec by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
         val sharedCanvasRec by lazy { Canvas(sharedBmpRec) }
-        val sharedBmpRecMono by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
+        val sharedBmpRecMono by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ALPHA_8) }
         val sharedCanvasRecMono by lazy { Canvas(sharedBmpRecMono) }
         val sharedNv21Buffer by lazy { ByteArray(320 * 48 * 3 / 2) }
 
@@ -198,7 +198,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         // Zero-Allocation Scaling via Canvas
         synchronized(targetBmp) {
-            targetCanvas.drawColor(Color.BLACK)
+            targetBmp.eraseColor(0)
             sharedMatrix.reset()
             sharedMatrix.postScale(scale, scale)
             targetCanvas.drawBitmap(bitmap, sharedMatrix, null)
@@ -210,6 +210,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
                         val px = targetBmp.getPixel(x, y)
+                        // ALPHA_8 stores luminance in the Alpha channel (shr 24)
                         floatData[y * targetWidth + x] = ((px shr 24 and 0xFF) / 255.0f - mean[0]) / std[0]
                     }
                 }

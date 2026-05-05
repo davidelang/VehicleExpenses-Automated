@@ -61,11 +61,13 @@ object OdometerOcrUtils {
 
         val isMono = (targetBitmap === NativePaddleEngine.sharedBmp2048Mono)
         val canvas = if (isMono) NativePaddleEngine.sharedCanvas2048Mono else NativePaddleEngine.sharedCanvas2048
-        canvas.drawColor(android.graphics.Color.BLACK)
         
-        val matrix = android.graphics.Matrix()
-        matrix.postScale(pScale, pScale)
-        canvas.drawBitmap(sourceBitmap, matrix, null)
+        synchronized(targetBitmap) {
+            targetBitmap.eraseColor(0)
+            val matrix = android.graphics.Matrix()
+            matrix.postScale(pScale, pScale)
+            canvas.drawBitmap(sourceBitmap, matrix, null)
+        }
         
         val paddleResult = runBlocking { paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize) }
         val pdCandidates = mutableListOf<TextBlock>()
