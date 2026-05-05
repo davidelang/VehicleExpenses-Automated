@@ -18,12 +18,16 @@ object LandmarkDisambiguator {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
         val refValid = refLandmarks.filter { it.boundingBox.width() > 0 }
         
-        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size}")
+        val dashTexts = dashValid.map { it.text }.toSet()
+        val refTexts = refValid.map { it.text }.toSet()
+        val commonTexts = dashTexts.intersect(refTexts)
+        val potentialCount = dashValid.count { it.text in refTexts }
+
+        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size} | CommonUnique=${commonTexts.size}, DashPotential=$potentialCount")
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
         val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
         val refCounts = refValid.groupBy { it.text }.mapValues { it.value.size }
-        val commonTexts = dashCounts.keys.intersect(refCounts.keys).toList()
 
         val results = dashValid.map { it.copy(instanceId = -1) }.toMutableList()
 

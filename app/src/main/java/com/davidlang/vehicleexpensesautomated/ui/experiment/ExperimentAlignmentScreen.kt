@@ -571,15 +571,17 @@ private suspend fun processPhotoInternal(
         val tDiscoveryStart = System.currentTimeMillis()
         val queryOcrDiscovery = OdometerOcrUtils.extractFromPhotoBitmapRaw(standardBmp!!)
         val queryLandmarksRaw = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, standardBmp.width, standardBmp.height)
-        val queryLandmarksPrimary = LandmarkDisambiguator.disambiguate(queryLandmarksRaw, cachedRefs.flatMap { it.curatedLandmarks }.distinct())
+        
         val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
 
-        val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksPrimary, cachedRefs.map { it.vehicle }, "ML Kit")
+        val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksRaw, cachedRefs.map { it.vehicle }, "ML Kit")
         val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
         var finalWinnerName = "No match"
         var bestOdometer = "FAILED"
 
         cachedRefs.forEach { ref ->
+            // Phase 108: Disambiguate per vehicle to ensure correct instance matching
+            val queryLandmarksPrimary = LandmarkDisambiguator.disambiguate(queryLandmarksRaw, ref.curatedLandmarks)
             val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
             val tMatchStart = System.currentTimeMillis()
             val isWinner = finalWinnerName == "No match" && !veto.isVetoed
