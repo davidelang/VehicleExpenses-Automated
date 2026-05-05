@@ -246,92 +246,83 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksRaw, cachedRefs.map { it.vehicle }, "ML Kit")
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
 
-                cachedRefs.forEach { ref ->
-                    // Phase 108: Disambiguate per vehicle to ensure correct instance matching
-                    val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, ref.curatedLandmarks)
-                    val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
-                    val tMatchStart = System.currentTimeMillis()
-                    val isWinner = finalWinnerName == "No match" && !veto.isVetoed
-                    
-                    var alignmentTrace: AlignmentTraceResult? = null
-                    var alignmentTraceMono: AlignmentTraceResult? = null
-                    val refinementTraces = mutableMapOf<String, RefinementTrace>()
-                    
-                    if (isWinner) {
-                        finalWinnerName = ref.vehicle.name
-                        
-                        // 1. Standard Alignment (In-place on originalBitmap)
-                        val t0 = System.currentTimeMillis()
-                        val alignRes = ImageAlignmentUtils.anchorAlign(originalBitmap!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
-                        val elapsedAlign = System.currentTimeMillis() - t0
-                        
-                        // 2. Mono Alignment (Benchmarking: New Mono buffer)
-                        val monoBitmap = originalBitmap!!.copy(Bitmap.Config.ALPHA_8, true)
-                        val t0Mono = System.currentTimeMillis()
-                        val alignResMono = ImageAlignmentUtils.anchorAlign(monoBitmap, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
-                        val elapsedAlignMono = System.currentTimeMillis() - t0Mono
-                        
-                        if (alignResMono.success && alignResMono.alignedImage != null) {
-                            alignmentTraceMono = AlignmentTraceResult(true, elapsedAlignMono, "", alignResMono.metadata)
-                        } else {
-                            alignmentTraceMono = AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
-                        }
-                        monoBitmap.recycle()
+                // Identification Pass: Find the winning vehicle
+                val winnerId = primaryVetoResults.entries.find { !it.value.isVetoed }?.key
+                val winnerRef = cachedRefs.find { it.vehicle.id == winnerId }
 
-                        if (alignRes.success && alignRes.alignedImage != null) {
-                            alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
-                            
-                            // Phase 58: Refinement Loop (Only executed on successful alignment)
-                            val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
-                            if (exactCrop != null) {
-                                // Reconstruct Ground Truth: Save raw crop for host-side labeling
-                                val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
-                                try {
-                                    cropFile.outputStream().use { out ->
-                                        exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out)
-                                    }
-                                } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
-
-                                for (strat in strategies) {
-                                    val tRef0 = System.currentTimeMillis()
-                                    val isDisc = strat.contains("Unclip") || strat.contains("Valley")
-                                    val engine = when {
-                                        strat.contains("ML Kit Mono") -> "ML Kit Mono"
-                                        strat.contains("ML Kit") -> "ML Kit"
-                                        isDisc -> {
-                                            val expansionLabel = if (strat.contains("Valley")) "Valley" else "Unclip"
-                                            if (strat.contains("V3")) "Paddle V3 $expansionLabel" else "Paddle V2 $expansionLabel"
-                                        }
-                                        strat.contains("V2") -> "Paddle V2 Greedy"
-                                        else -> "Paddle V3 Greedy"
-                                    }
-                                    val h = when {                                        strat.contains("48px") -> 48
-                                        strat.contains("32px") -> 32
-                                        else -> null
-                                    }
-                                    val activePaddle = if (strat.contains("Mono")) paddleEngineV3Mono else if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
-                                    val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
-                                    
-                                    val steps = if (isDisc) {
-                                        DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle, expansionMode)
-                                    } else {
-                                        OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
-                                    }
-                                    refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
-                                }
-                                exactCrop.recycle()
-                            }
-                            
-                            val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                            if (allResults.isNotEmpty()) {
-                                bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
-                            }
-                        } else { 
-                            Log.d(TAG, "Vehicle identified as ${ref.vehicle.name}, but alignment failed: ${alignRes.message}")
-                            alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata) 
-                        }
+                // Winner-Only Processing block
+                if (winnerRef != null) {
+                    finalWinnerName = winnerRef.vehicle.name
+                    Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName ---")
+                    
+                    // Phase 108: Disambiguate exactly once for the correct vehicle
+                    val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
+                    
+                    // 1. Standard Alignment (In-place on originalBitmap)
+                    val t0 = System.currentTimeMillis()
+                    val alignRes = ImageAlignmentUtils.anchorAlign(originalBitmap!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
+                    val elapsedAlign = System.currentTimeMillis() - t0
+                    
+                    // 2. Mono Alignment (Benchmarking: New Mono buffer)
+                    val monoBitmap = originalBitmap!!.copy(Bitmap.Config.ALPHA_8, true)
+                    val t0Mono = System.currentTimeMillis()
+                    val alignResMono = ImageAlignmentUtils.anchorAlign(monoBitmap, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
+                    val elapsedAlignMono = System.currentTimeMillis() - t0Mono
+                    
+                    val alignmentTraceMono = if (alignResMono.success && alignResMono.alignedImage != null) {
+                        AlignmentTraceResult(true, elapsedAlignMono, "", alignResMono.metadata)
+                    } else {
+                        AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
                     }
-                    vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, System.currentTimeMillis() - tMatchStart, alignmentTrace, alignmentTraceMono, refinementTraces, veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), isWinner)
+                    monoBitmap.recycle()
+
+                    if (alignRes.success && alignRes.alignedImage != null) {
+                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
+                        val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                        
+                        // Phase 58: Refinement Loop (Only executed on successful alignment)
+                        val exactCrop = manualCropOdometer(alignRes.alignedImage, winnerRef.vehicle)
+                        if (exactCrop != null) {
+                            val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
+                            try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
+
+                            for (strat in strategies) {
+                                val tRef0 = System.currentTimeMillis()
+                                val isDisc = strat.contains("Unclip") || strat.contains("Valley")
+                                val engine = when {
+                                    strat.contains("ML Kit Mono") -> "ML Kit Mono"
+                                    strat.contains("ML Kit") -> "ML Kit"
+                                    isDisc -> if (strat.contains("V3")) "Paddle V3 ${if (strat.contains("Valley")) "Valley" else "Unclip"}" else "Paddle V2 ${if (strat.contains("Valley")) "Valley" else "Unclip"}"
+                                    strat.contains("V2") -> "Paddle V2 Greedy"
+                                    else -> "Paddle V3 Greedy"
+                                }
+                                val h = if (strat.contains("48px")) 48 else if (strat.contains("32px")) 32 else null
+                                val activePaddle = if (strat.contains("Mono")) paddleEngineV3Mono else if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
+                                val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
+                                
+                                val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
+                                refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
+                            }
+                            exactCrop.recycle()
+                        }
+                        
+                        val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
+                        if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
+
+                        // Reporting Pass: Store result for winner
+                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true)
+                    } else { 
+                        Log.d(TAG, "Vehicle identified as ${winnerRef.vehicle.name}, but alignment failed: ${alignRes.message}")
+                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata), alignmentTraceMono, emptyMap(), emptyList(), emptyList(), emptyList(), true)
+                    }
+                }
+
+                // Reporting Pass: Populate status for all other vehicles (Veto results)
+                cachedRefs.forEach { ref ->
+                    if (ref.vehicle.id != winnerId) {
+                        val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
+                        vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, 0L, null, null, emptyMap(), veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), false)
+                    }
                 }
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
@@ -564,10 +555,14 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
     try {
         val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else { val keys = root.keys(); if (keys.hasNext()) root.getJSONArray(keys.next()) else null } ?: return emptyList()
         for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
-            val instanceId = obj.optInt("instance", -1)
-            val cleanText = OdometerOcrUtils.cleanLandmarkString(text); val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt(); val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
-            list.add(TextBlock(cleanText, android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
+            try {
+                val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
+                val instanceId = if (obj.has("instance")) obj.getInt("instance") else -1
+                val cleanText = OdometerOcrUtils.cleanLandmarkString(text); val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt(); val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
+                list.add(TextBlock(cleanText, android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
+            } catch (e: Exception) { 
+                Log.w("ExperimentAlignment", "Skipping malformed landmark entry in JSON: ${e.message}")
+            }
         }
     } catch (e: Exception) { Log.e("ExperimentAlignment", "Failed to parse landmarks", e) }
     return list
