@@ -255,35 +255,30 @@ object ImageAlignmentUtils {
             (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
         } else 0.5f
         
-        // Phase 48: Landmarks are now extracted from full-res images, no scaling needed.
-        val refScale = 1.0f
-        val queScale = 1.0f
-
-        // 1. STRATEGY A: Uniqueness
-        val refCounts = refLandmarks.groupBy { it.text }.mapValues { it.value.size }
-        val queCounts = queryLandmarks.groupBy { it.text }.mapValues { it.value.size }
-
-        val uniqueMatches = refLandmarks.filter { refCounts[it.text] == 1 && it.boundingBox.width() > 0 }
-            .mapNotNull { refMark ->
-                val queMark = queryLandmarks.find { it.text == refMark.text && queCounts[it.text] == 1 && it.boundingBox.width() > 0 }
-                if (queMark != null) refMark to queMark else null
+        // 1. Filter and Match Confirmed Landmarks
+        val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
+            .mapNotNull { queMark ->
+                val refMark = refLandmarks.find { it.text == queMark.text && it.instanceId == queMark.instanceId && it.boundingBox.width() > 0 }
+                if (refMark != null) refMark to queMark else null
             }
-        if (uniqueMatches.size >= 2) {
-            for (i in uniqueMatches.indices) {
-                for (j in i + 1 until uniqueMatches.size) {
-                    val r1 = uniqueMatches[i].first
-                    val r2 = uniqueMatches[j].first
-                    val q1 = uniqueMatches[i].second
-                    val q2 = uniqueMatches[j].second
+
+        // 2. Generate Alignment Candidates from Pairs of Confirmed Anchors
+        if (confirmedPairs.size >= 2) {
+            for (i in confirmedPairs.indices) {
+                for (j in i + 1 until confirmedPairs.size) {
+                    val r1 = confirmedPairs[i].first
+                    val r2 = confirmedPairs[j].first
+                    val q1 = confirmedPairs[i].second
+                    val q2 = confirmedPairs[j].second
                     
-                    val r1cx = r1.boundingBox.centerX() * refScale
-                    val r1cy = r1.boundingBox.centerY() * refScale
-                    val r2cx = r2.boundingBox.centerX() * refScale
-                    val r2cy = r2.boundingBox.centerY() * refScale
-                    val q1cx = q1.boundingBox.centerX() * queScale
-                    val q1cy = q1.boundingBox.centerY() * queScale
-                    val q2cx = q2.boundingBox.centerX() * queScale
-                    val q2cy = q2.boundingBox.centerY() * queScale
+                    val r1cx = r1.boundingBox.centerX().toFloat()
+                    val r1cy = r1.boundingBox.centerY().toFloat()
+                    val r2cx = r2.boundingBox.centerX().toFloat()
+                    val r2cy = r2.boundingBox.centerY().toFloat()
+                    val q1cx = q1.boundingBox.centerX().toFloat()
+                    val q1cy = q1.boundingBox.centerY().toFloat()
+                    val q2cx = q2.boundingBox.centerX().toFloat()
+                    val q2cy = q2.boundingBox.centerY().toFloat()
                     
                     val refDist = sqrt((r1cx - r2cx).toDouble().pow(2.0) + (r1cy - r2cy).toDouble().pow(2.0))
                     val queDist = sqrt((q1cx - q2cx).toDouble().pow(2.0) + (q1cy - q2cy).toDouble().pow(2.0))
@@ -302,86 +297,13 @@ object ImageAlignmentUtils {
                         val ty = r1cy - (s * q1cy)
                         val cyRef = (r1cy + r2cy) / 2.0f
 
-                        allCandidates.add(AnchorCandidate("A (Unique)", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, r1cy, r2cy))
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, r1cy, r2cy))
                     }
                 }
             }
         } 
-        
-        // 2. STRATEGY B: Triangle Similarity
-        val commonWords = refCounts.keys.intersect(queCounts.keys).toList()
-        if (commonWords.size >= 3) {
-            for (i in commonWords.indices) {
-                for (j in i + 1 until commonWords.size) {
-                    for (k in j + 1 until commonWords.size) {
-                        val w1 = commonWords[i]
-                        val w2 = commonWords[j]
-                        val w3 = commonWords[k]
-                        val r1s = refLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }
-                        val r2s = refLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }
-                        val r3s = refLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
-                        val q1s = queryLandmarks.filter { it.text == w1 && it.boundingBox.width() > 0 }
-                        val q2s = queryLandmarks.filter { it.text == w2 && it.boundingBox.width() > 0 }
-                        val q3s = queryLandmarks.filter { it.text == w3 && it.boundingBox.width() > 0 }
-                        
-                        for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
-                            val rD12 = dist(r1, r2)
-                            val rD23 = dist(r2, r3)
-                            val rD31 = dist(r3, r1)
-                            if (rD12 == 0.0 || rD23 == 0.0 || rD31 == 0.0) continue
-                            for (q1 in q1s) for (q2 in q2s) for (q3 in q3s) {
-                                val qD12 = dist(q1, q2)
-                                val qD23 = dist(q2, q3)
-                                val qD31 = dist(q3, q1)
-                                if (qD12 == 0.0 || qD23 == 0.0 || qD31 == 0.0) continue
-                                val ratio1 = (qD12 / rD12) / (qD23 / rD23)
-                                val ratio2 = (qD23 / rD23) / (qD31 / rD31)
-                                if (abs(ratio1 - 1.0) < 0.05 && abs(ratio2 - 1.0) < 0.05) {
-                                    val rPairs = listOf(r1 to r2, r2 to r3, r3 to r1)
-                                    val qPairs = listOf(q1 to q2, q2 to q3, q3 to q1)
-                                    val longestIdx = listOf(rD12, rD23, rD31).indices.maxBy { listOf(rD12, rD23, rD31)[it] }
-                                    val rA = rPairs[longestIdx].first
-                                    val rB = rPairs[longestIdx].second
-                                    val qA = qPairs[longestIdx].first
-                                    val qB = qPairs[longestIdx].second
-                                    
-                                    val rAcx = rA.boundingBox.centerX() * refScale
-                                    val rAcy = rA.boundingBox.centerY() * refScale
-                                    val rBcx = rB.boundingBox.centerX() * refScale
-                                    val rBcy = rB.boundingBox.centerY() * refScale
-                                    val qAcx = qA.boundingBox.centerX() * queScale
-                                    val qAcy = qA.boundingBox.centerY() * queScale
-                                    val qBcx = qB.boundingBox.centerX() * queScale
-                                    val qBcy = qB.boundingBox.centerY() * queScale
-                                    
-                                    val dR = sqrt((rAcx - rBcx).toDouble().pow(2.0) + (rAcy - rBcy).toDouble().pow(2.0))
-                                    val dQ = sqrt((qAcx - qBcx).toDouble().pow(2.0) + (qAcy - qBcy).toDouble().pow(2.0))
-                                    if (dQ > 0) {
-                                        val s = (dR / dQ).toFloat()
-                                        
-                                        // Calculate Rotation (Phase 44)
-                                        val rAngle = Math.atan2((rBcy - rAcy).toDouble(), (rBcx - rAcx).toDouble())
-                                        val qAngle = Math.atan2((qBcy - qAcy).toDouble(), (qBcx - qAcx).toDouble())
-                                        val rot = Math.toDegrees(rAngle - qAngle).toFloat()
 
-                                        // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
-                                        if (kotlin.math.abs(rot) > 4.0f) continue
-                                        val tx = rAcx - (s * qAcx)
-                                        val ty = rAcy - (s * qAcy)
-                                        val cyRef = (rAcy + rBcy) / 2.0f
-
-                                        allCandidates.add(AnchorCandidate("B (Tri)", listOf(w1, w2, w3), s, rot, tx, ty, dR, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, rAcy, rBcy))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-
-        if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchor sets.", timeMs = System.currentTimeMillis() - t0)
+        if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchor sets after disambiguation.", timeMs = System.currentTimeMillis() - t0)
 
         // RANSAC-Lite Consensus (Phase 64)
         // Find the candidate group with the most mutual agreement
