@@ -9,8 +9,17 @@ import android.graphics.Bitmap
 object OcrHarness {
 
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): OcrResult {
-        // MANDATE: Apply Bilateral filter GLOBALLY before discovery pass (input is already grayscale)
-        val filtered = OdometerOcrUtils.applyBilateral(bitmap)
+        // MANDATE: Apply Bilateral filter GLOBALLY before discovery pass
+        // To avoid allocation, we use the shared working buffer
+        val workingBmp = NativePaddleEngine.sharedBmp2048
+        val workingCanvas = NativePaddleEngine.sharedCanvas2048
+        
+        val filtered = synchronized(workingBmp) {
+            workingBmp.eraseColor(0)
+            workingCanvas.drawBitmap(bitmap, 0f, 0f, null)
+            OdometerOcrUtils.applyBilateralInPlace(workingBmp)
+            workingBmp
+        }
 
         // Phase 55: ML Kit is the sole discovery engine
         val rawResult = MlKitEngine().recognize(filtered)
@@ -25,13 +34,20 @@ object OcrHarness {
             debugText = cleanedBlocks.joinToString(" ") { it.text }
         )
         
-        filtered.recycle()
         return sanitizedResult
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
         // Refinement also benefits from the same clean input
-        val filtered = OdometerOcrUtils.applyBilateral(bitmap)
+        val workingBmp = NativePaddleEngine.sharedBmpSmall // Small is enough for odometer crops
+        val workingCanvas = NativePaddleEngine.sharedCanvasSmall
+        
+        val filtered = synchronized(workingBmp) {
+            workingBmp.eraseColor(0)
+            workingCanvas.drawBitmap(bitmap, 0f, 0f, null)
+            OdometerOcrUtils.applyBilateralInPlace(workingBmp)
+            workingBmp
+        }
 
         val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
         
@@ -43,7 +59,6 @@ object OcrHarness {
             engine.name to engine.recognize(filtered)
         }
         
-        filtered.recycle()
         return results
     }
 }

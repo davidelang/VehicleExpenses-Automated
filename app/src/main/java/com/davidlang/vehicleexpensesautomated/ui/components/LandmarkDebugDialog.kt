@@ -92,9 +92,12 @@ fun LandmarkDebugDialog(
                     } else null
                     
                     if (raw != null) {
-                        // Apply heavy filters on background thread
-                        val filtered = OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(raw))
-                        processedBitmap = filtered
+                        // Create a mutable copy for in-place filtering
+                        val mutableBmp = raw.copy(Bitmap.Config.ARGB_8888, true)
+                        // Apply heavy filters in-place on the copy
+                        OdometerOcrUtils.applyGrayscaleInPlace(mutableBmp)
+                        OdometerOcrUtils.applyBilateralInPlace(mutableBmp)
+                        processedBitmap = mutableBmp
                         raw.recycle()
                     }
                 } catch (e: Exception) {

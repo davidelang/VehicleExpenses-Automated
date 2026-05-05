@@ -163,8 +163,11 @@ fun ManageVehiclesScreen(
                     val rawBmp = withContext(Dispatchers.IO) { 
                         OdometerOcrUtils.decodeBitmapSafely(context, photoPathOrUri) 
                     } ?: return@launch
-                    val leveledBmp = OdometerOcrUtils.applyGrayscale(rawBmp)
-                    if (rawBmp != leveledBmp) rawBmp.recycle()
+                    
+                    // Create a mutable copy and process in-place
+                    val leveledBmp = rawBmp.copy(Bitmap.Config.ARGB_8888, true)
+                    OdometerOcrUtils.applyGrayscaleInPlace(leveledBmp)
+                    rawBmp.recycle()
                     
                     val rawResult = withContext(Dispatchers.Default) {
                         OcrHarness.runDiscovery(leveledBmp, context)

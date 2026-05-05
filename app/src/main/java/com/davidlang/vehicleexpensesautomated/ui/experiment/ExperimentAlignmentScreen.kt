@@ -548,28 +548,34 @@ private suspend fun processPhotoInternal(
     try {
         // Step 1: Initialize Persistent Authorities
         val rotatedRaw = OdometerOcrUtils.rotateImageIfRequired(rawBmp, file.absolutePath)
-        standardBmp = OdometerOcrUtils.applyGrayscale(rotatedRaw)
+        
+        // Zero-Allocation Grayscale via shared buffer pattern
+        standardBmp = Bitmap.createBitmap(rotatedRaw.width, rotatedRaw.height, Bitmap.Config.ARGB_8888)
+        val workingCanvas = Canvas(standardBmp)
+        workingCanvas.drawBitmap(rotatedRaw, 0f, 0f, null)
+        OdometerOcrUtils.applyGrayscaleInPlace(standardBmp)
+        
         monoBmp = standardBmp.copy(Bitmap.Config.ALPHA_8, true)
         if (rotatedRaw != rawBmp) rotatedRaw.recycle()
         
         val deskewedBase64 = createScaledBase64(rawBmp, 150, 50) // Use raw for report baseline
 
         // Step 2: Deskew Calculation & In-Place Rotation
-        val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(standardBmp!!, NativePaddleEngine.sharedBmp2048, v3)
+        val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(standardBmp, NativePaddleEngine.sharedBmp2048, v3)
         val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(monoBmp!!, NativePaddleEngine.sharedBmp2048Mono, v3Mono)
         
         val tilt = deskewRes.angle
         var tRotate = 0L
         if (Math.abs(tilt) > 0.2f) {
             val tRot0 = System.currentTimeMillis()
-            OdometerOcrUtils.rotateBitmapInPlace(standardBmp!!, -tilt)
+            OdometerOcrUtils.rotateBitmapInPlace(standardBmp, -tilt)
             OdometerOcrUtils.rotateBitmapInPlace(monoBmp!!, -tilt)
             tRotate = System.currentTimeMillis() - tRot0
         }
 
         // Step 3: Discovery & Disambiguation (Now executing!)
         val tDiscoveryStart = System.currentTimeMillis()
-        val queryOcrDiscovery = OdometerOcrUtils.extractFromPhotoBitmapRaw(standardBmp!!)
+        val queryOcrDiscovery = OdometerOcrUtils.extractFromPhotoBitmapRaw(standardBmp)
         val queryLandmarksRaw = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, standardBmp.width, standardBmp.height)
         
         val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
