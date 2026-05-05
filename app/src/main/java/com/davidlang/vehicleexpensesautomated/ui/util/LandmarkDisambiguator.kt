@@ -31,13 +31,15 @@ object LandmarkDisambiguator {
 
         val results = dashValid.map { it.copy(instanceId = -1) }.toMutableList()
 
-        // Pass 1: 1:1 Match unique strings (instanceId 1 on both sides)
+        // Pass 1: Match unique strings (Phase 109: Prioritize Instance 0)
         for (i in results.indices) {
             val dashMark = results[i]
-            if (dashCounts[dashMark.text] == 1 && refCounts[dashMark.text] == 1) {
-                val refMatch = refValid.find { it.text == dashMark.text }!!
-                results[i] = dashMark.copy(instanceId = refMatch.instanceId)
-                Log.d("DISAMB_TRACE", "  Pass 1 [Unique]: '${dashMark.text}' matched Instance ${refMatch.instanceId}")
+            if (dashCounts[dashMark.text] == 1) {
+                val refMatch = refValid.find { it.text == dashMark.text && it.instanceId == 0 }
+                if (refMatch != null) {
+                    results[i] = dashMark.copy(instanceId = 0)
+                    Log.d("DISAMB_TRACE", "  Pass 1 [Unique]: '${dashMark.text}' matched Instance 0")
+                }
             }
         }
 
@@ -47,7 +49,8 @@ object LandmarkDisambiguator {
             val seedPool = commonTexts.map { text ->
                 val dCount = dashCounts[text] ?: 0
                 val rCount = refCounts[text] ?: 0
-                val tier = if (dCount == 1 && rCount == 1) 1 else if (dCount == 1) 2 else 3
+                // Tier 1: Unique on both sides. Tier 2: Unique on Dash. Tier 3: Duplicates.
+                val tier = if (dCount == 1 && (refValid.any { it.text == text && it.instanceId == 0 })) 1 else if (dCount == 1) 2 else 3
                 Triple(text, tier, dCount)
             }.sortedWith(compareBy({ it.second }, { it.third }))
 
@@ -58,15 +61,24 @@ object LandmarkDisambiguator {
                         val r1s = refValid.filter { it.text == seedPool[i].first }; val r2s = refValid.filter { it.text == seedPool[j].first }; val r3s = refValid.filter { it.text == seedPool[k].first }
                         
                         for (d1 in d1s) for (d2 in d2s) for (d3 in d3s) {
-                            if (dist(d1, d2) < 20.0 || dist(d2, d3) < 20.0 || dist(d3, d1) < 20.0) continue
+                            val dist12 = dist(d1, d2); val dist23 = dist(d2, d3); val dist31 = dist(d3, d1)
+                            if (dist12 < 20.0 || dist23 < 20.0 || dist31 < 20.0) continue
+                            
+                            Log.d("DISAMB_TRI", "    Trying Dash Triangle: [${d1.text}, ${d2.text}, ${d3.text}] | Dists: %.1f, %.1f, %.1f".format(dist12, dist23, dist31))
+                            
                             for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
-                                if (dist(r1, r2) == 0.0 || dist(r2, r3) == 0.0 || dist(r3, r1) == 0.0) continue
-                                if (abs((dist(d1, d2) / dist(r1, r2)) / (dist(d2, d3) / dist(r2, r3)) - 1.0) < 0.05 && 
-                                    abs((dist(d2, d3) / dist(r2, r3)) / (dist(d3, d1) / dist(r3, r1)) - 1.0) < 0.05) {
+                                val rd12 = dist(r1, r2); val rd23 = dist(r2, r3); val rd31 = dist(r3, r1)
+                                if (rd12 == 0.0 || rd23 == 0.0 || rd31 == 0.0) continue
+                                
+                                val ratio1 = (dist12 / rd12) / (dist23 / rd23)
+                                val ratio2 = (dist23 / rd23) / (dist31 / rd31)
+                                val dev1 = abs(ratio1 - 1.0); val dev2 = abs(ratio2 - 1.0)
+                                
+                                if (dev1 < 0.05 && dev2 < 0.05) {
                                     results[results.indexOf(d1)] = d1.copy(instanceId = r1.instanceId)
                                     results[results.indexOf(d2)] = d2.copy(instanceId = r2.instanceId)
                                     results[results.indexOf(d3)] = d3.copy(instanceId = r3.instanceId)
-                                    Log.d("DISAMB_TRACE", "  Pass 2 [Seed]: Triangle found ('${d1.text}'-${r1.instanceId}, '${d2.text}'-${r2.instanceId}, '${d3.text}'-${r3.instanceId})")
+                                    Log.d("DISAMB_TRACE", "  Pass 2 [Seed]: Triangle found ('${d1.text}'-${r1.instanceId}, '${d2.text}'-${r2.instanceId}, '${d3.text}'-${r3.instanceId}) | Devs: %.3f, %.3f".format(dev1, dev2))
                                     break@outer
                                 }
                             }
@@ -81,17 +93,28 @@ object LandmarkDisambiguator {
         if (confirmed.size >= 2) {
             Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from ${confirmed.size} anchors...")
             val p1 = confirmed[0]; val p2 = confirmed[1]
+            val rP1 = refValid.find { it.text == p1.text && it.instanceId == p1.instanceId }!!
+            val rP2 = refValid.find { it.text == p2.text && it.instanceId == p2.instanceId }!!
+            val rDist12 = dist(rP1, rP2)
+
             for (idx in results.indices) {
                 if (results[idx].instanceId != -1) continue
-                val refCandidates = refValid.filter { it.text == results[idx].text }
+                val dashMark = results[idx]
+                val refCandidates = refValid.filter { it.text == dashMark.text }
+                
+                Log.d("DISAMB_BOOT", "    Bootstrapping '${dashMark.text}' | Candidates: ${refCandidates.size}")
+                
                 for (cand in refCandidates) {
-                    val rD1C = dist(confirmed.find { it.text == p1.text && it.instanceId == p1.instanceId }!!, cand)
-                    val rD2C = dist(confirmed.find { it.text == p2.text && it.instanceId == p2.instanceId }!!, cand)
-                    val rD12 = dist(confirmed.find { it.text == p1.text && it.instanceId == p1.instanceId }!!, confirmed.find { it.text == p2.text && it.instanceId == p2.instanceId }!!)
-                    if (abs((dist(p1, results[idx]) / rD1C) / (dist(p1, p2) / rD12) - 1.0) < 0.05 && 
-                        abs((dist(p2, results[idx]) / rD2C) / (dist(p1, p2) / rD12) - 1.0) < 0.05) {
-                        results[idx] = results[idx].copy(instanceId = cand.instanceId)
-                        Log.d("DISAMB_TRACE", "    -> Bootstrap Match: '${results[idx].text}' assigned Instance ${cand.instanceId}")
+                    val rD1C = dist(rP1, cand); val rD2C = dist(rP2, cand)
+                    if (rD1C == 0.0 || rD2C == 0.0 || rDist12 == 0.0) continue
+                    
+                    val ratio1 = (dist(p1, dashMark) / rD1C) / (dist(p1, p2) / rDist12)
+                    val ratio2 = (dist(p2, dashMark) / rD2C) / (dist(p1, p2) / rDist12)
+                    val dev1 = abs(ratio1 - 1.0); val dev2 = abs(ratio2 - 1.0)
+                    
+                    if (dev1 < 0.05 && dev2 < 0.05) {
+                        results[idx] = dashMark.copy(instanceId = cand.instanceId)
+                        Log.d("DISAMB_TRACE", "    -> Bootstrap Match: '${dashMark.text}' assigned Instance ${cand.instanceId} | Devs: %.3f, %.3f".format(dev1, dev2))
                         break
                     }
                 }

@@ -544,17 +544,21 @@ object OdometerOcrUtils {
         val root = JSONObject()
         results.forEach { (engineName, res) ->
             val array = JSONArray()
-            val textCounts = mutableMapOf<String, Int>()
-            val isMono = (res.debugText.contains("[Mono]")) // Heuristic from current pipeline
             
+            // Pass 1: Count total occurrences to determine uniqueness (Phase 109)
+            val globalCounts = res.textBlocks.groupBy { cleanLandmarkString(it.text) }.mapValues { it.value.size }
+            
+            val runningCounts = mutableMapOf<String, Int>()
             res.textBlocks.forEach { block ->
                 val cleaned = cleanLandmarkString(block.text)
                 if (cleaned.length > 1) {
-                    val instance = if (block.instanceId != -1) block.instanceId else {
-                        val count = (textCounts[cleaned] ?: 0) + 1
-                        textCounts[cleaned] = count
+                    val total = globalCounts[cleaned] ?: 0
+                    val instance = if (total == 1) 0 else {
+                        val count = (runningCounts[cleaned] ?: 0) + 1
+                        runningCounts[cleaned] = count
                         count
                     }
+                    
                     val obj = JSONObject()
                     obj.put("text", cleaned)
                     obj.put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
