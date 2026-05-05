@@ -159,110 +159,129 @@ object OdometerOcrUtils {
         }.filter { it.text.length > 1 }.sortedBy { it.text }
     }
 
-    fun applyGrayscale(bitmap: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
-            OpenCvBridge.useBitmapAsMat(out) { dst ->
-                Imgproc.cvtColor(src, dst, Imgproc.COLOR_RGBA2GRAY)
-                // Note: Gray output is single channel but we mapped it to ARGB dst
-                // To keep it 100% efficient, we should use cvtColor to a gray mat first
+    fun applyGrayscaleInPlace(bitmap: Bitmap) {
+        OpenCvBridge.useBitmapAsMat(bitmap) { mat ->
+            if (mat.channels() > 1) {
+                val gray = Mat()
+                Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY)
+                // Write back to the original 4-channel buffer
+                Imgproc.cvtColor(gray, mat, Imgproc.COLOR_GRAY2RGBA)
+                gray.release()
             }
         }
-        return out
     }
 
-    fun applyBilateral(bitmap: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
-        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
-            OpenCvBridge.useBitmapAsMat(out) { dst ->
-                val gray = if (src.channels() > 1) {
-                    val g = Mat()
-                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
-                    g
-                } else src
-                
-                Imgproc.bilateralFilter(gray, dst, 5, 75.0, 75.0)
-                if (gray !== src) gray.release()
+    fun applyBilateralInPlace(bitmap: Bitmap) {
+        OpenCvBridge.useBitmapAsMat(bitmap) { mat ->
+            val gray = if (mat.channels() > 1) {
+                val g = Mat()
+                Imgproc.cvtColor(mat, g, Imgproc.COLOR_RGBA2GRAY)
+                g
+            } else mat
+            
+            val filtered = Mat()
+            Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
+            
+            if (mat.channels() > 1) {
+                Imgproc.cvtColor(filtered, mat, Imgproc.COLOR_GRAY2RGBA)
+            } else {
+                filtered.copyTo(mat)
             }
+
+            filtered.release()
+            if (gray !== mat) gray.release()
         }
-        return out
     }
 
-    fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
-        val outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
-        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
-            OpenCvBridge.useBitmapAsMat(outBmp) { dst ->
-                val gray = if (src.channels() > 1) {
-                    val g = Mat()
-                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
-                    g
-                } else src
-                
-                val hist = Mat()
-                Imgproc.calcHist(Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
-                
-                val totalPixels = gray.rows() * gray.cols()
-                var floorBin = 0
-                var ceilingBin = 255
-                
-                var sum = 0.0
-                for (i in 0..255) {
-                    sum += hist.get(i, 0)[0]
-                    if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break }
-                }
-                
-                sum = 0.0
-                for (i in 0..255) {
-                    sum += hist.get(i, 0)[0]
-                    if (sum >= totalPixels * 0.98) { ceilingBin = i; break }
-                }
-                
-                val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0
-                val beta = -floorBin * alpha
-                gray.convertTo(dst, CvType.CV_8U, alpha, beta)
-                
-                hist.release()
-                if (gray !== src) gray.release()
+    fun applyContrastStretchInPlace(bitmap: Bitmap, floorPercentile: Int) {
+        OpenCvBridge.useBitmapAsMat(bitmap) { mat ->
+            val gray = if (mat.channels() > 1) {
+                val g = Mat()
+                Imgproc.cvtColor(mat, g, Imgproc.COLOR_RGBA2GRAY)
+                g
+            } else mat
+            
+            val hist = Mat()
+            Imgproc.calcHist(Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+            
+            val totalPixels = gray.rows() * gray.cols()
+            var floorBin = 0
+            var ceilingBin = 255
+            
+            var sum = 0.0
+            for (i in 0..255) {
+                sum += hist.get(i, 0)[0]
+                if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break }
             }
+            
+            sum = 0.0
+            for (i in 0..255) {
+                sum += hist.get(i, 0)[0]
+                if (sum >= totalPixels * 0.98) { ceilingBin = i; break }
+            }
+            
+            val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0
+            val beta = -floorBin * alpha
+            
+            val stretched = Mat()
+            gray.convertTo(stretched, CvType.CV_8U, alpha, beta)
+
+            if (mat.channels() > 1) {
+                Imgproc.cvtColor(stretched, mat, Imgproc.COLOR_GRAY2RGBA)
+            } else {
+                stretched.copyTo(mat)
+            }
+            
+            hist.release()
+            stretched.release()
+            if (gray !== mat) gray.release()
         }
-        return outBmp
     }
 
-    fun applyClahe(bitmap: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
-        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
-            OpenCvBridge.useBitmapAsMat(out) { dst ->
-                val gray = if (src.channels() > 1) {
-                    val g = Mat()
-                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
-                    g
-                } else src
-                
-                val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-                clahe.apply(gray, dst)
-                
-                clahe.collectGarbage()
-                if (gray !== src) gray.release()
+    fun applyClaheInPlace(bitmap: Bitmap) {
+        OpenCvBridge.useBitmapAsMat(bitmap) { mat ->
+            val gray = if (mat.channels() > 1) {
+                val g = Mat()
+                Imgproc.cvtColor(mat, g, Imgproc.COLOR_RGBA2GRAY)
+                g
+            } else mat
+            
+            val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+            val processed = Mat()
+            clahe.apply(gray, processed)
+
+            if (mat.channels() > 1) {
+                Imgproc.cvtColor(processed, mat, Imgproc.COLOR_GRAY2RGBA)
+            } else {
+                processed.copyTo(mat)
             }
+            
+            processed.release()
+            clahe.collectGarbage()
+            if (gray !== mat) gray.release()
         }
-        return out
     }
 
-    fun applyOtsu(bitmap: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
-        OpenCvBridge.useBitmapAsMat(bitmap) { src ->
-            OpenCvBridge.useBitmapAsMat(out) { dst ->
-                val gray = if (src.channels() > 1) {
-                    val g = Mat()
-                    Imgproc.cvtColor(src, g, Imgproc.COLOR_RGBA2GRAY)
-                    g
-                } else src
-                
-                Imgproc.threshold(gray, dst, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
-                if (gray !== src) gray.release()
+    fun applyOtsuInPlace(bitmap: Bitmap) {
+        OpenCvBridge.useBitmapAsMat(bitmap) { mat ->
+            val gray = if (mat.channels() > 1) {
+                val g = Mat()
+                Imgproc.cvtColor(mat, g, Imgproc.COLOR_RGBA2GRAY)
+                g
+            } else mat
+            
+            val threshed = Mat()
+            Imgproc.threshold(gray, threshed, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+
+            if (mat.channels() > 1) {
+                Imgproc.cvtColor(threshed, mat, Imgproc.COLOR_GRAY2RGBA)
+            } else {
+                threshed.copyTo(mat)
             }
+
+            threshed.release()
+            if (gray !== mat) gray.release()
         }
-        return out
     }
 
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {

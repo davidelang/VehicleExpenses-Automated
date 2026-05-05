@@ -137,32 +137,45 @@ object DiscoveryOcrUtils {
             )
         }
 
-        // Preprocessing Overhaul: Test filter combinations on Monochrome Baseline
+        // Established shared working buffer from NativePaddleEngine
+        val workingBmp = NativePaddleEngine.sharedBmp2048Mono
+        val workingCanvas = NativePaddleEngine.sharedCanvas2048Mono
+        val paint = Paint()
 
-        // 1. Raw (Monochrome Baseline)
-        steps.add(exec(bitmap, "Raw"))
+        /**
+         * Resets working buffer from pristine source and applies filters.
+         */
+        suspend fun prepare(filters: (Bitmap) -> Unit): Bitmap {
+            synchronized(workingBmp) {
+                workingBmp.eraseColor(0)
+                // Fast native copy from source to working buffer
+                workingCanvas.drawBitmap(bitmap, 0f, 0f, paint)
+                filters(workingBmp)
+            }
+            return workingBmp
+        }
+
+        // 1. Raw
+        val rawBmp = prepare { }
+        steps.add(exec(rawBmp, "Raw"))
 
         // 2. 80% Stretch Only
-        val s80Only = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
-        steps.add(exec(s80Only, "80% Stretch Only"))
-        if (s80Only != bitmap) s80Only.recycle()
+        val s80Bmp = prepare { OdometerOcrUtils.applyContrastStretchInPlace(it, 80) }
+        steps.add(exec(s80Bmp, "80% Stretch Only"))
 
         // 3. Bile -> 80% Stretch
-        val bileBase = OdometerOcrUtils.applyBilateral(bitmap)
-        val bileThen80 = OdometerOcrUtils.applyContrastStretch(bileBase, 80)
-        steps.add(exec(bileThen80, "Bile -> 80% Stretch"))
-        if (bileThen80 != bileBase && bileThen80 != bitmap) bileThen80.recycle()
+        val b80Bmp = prepare { 
+            OdometerOcrUtils.applyBilateralInPlace(it)
+            OdometerOcrUtils.applyContrastStretchInPlace(it, 80)
+        }
+        steps.add(exec(b80Bmp, "Bile -> 80% Stretch"))
 
         // 4. 80% Stretch -> Bile
-        // We reuse s80Only logic here, but need a new bitmap since we recycled it
-        val stretchBase = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
-        val stretchThenBile = OdometerOcrUtils.applyBilateral(stretchBase)
-        steps.add(exec(stretchThenBile, "80% Stretch -> Bile"))
-
-        // Cleanup intermediate bases
-        if (stretchThenBile != stretchBase && stretchThenBile != bitmap) stretchThenBile.recycle()
-        if (stretchBase != bitmap) stretchBase.recycle()
-        if (bileBase != bitmap) bileBase.recycle()
+        val sBmp = prepare {
+            OdometerOcrUtils.applyContrastStretchInPlace(it, 80)
+            OdometerOcrUtils.applyBilateralInPlace(it)
+        }
+        steps.add(exec(sBmp, "80% Stretch -> Bile"))
 
         return steps
     }
