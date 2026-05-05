@@ -329,7 +329,17 @@ object OdometerOcrUtils {
     }
 
     fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
-        val processed = applyBilateral(bitmap)
+        // Use the shared working buffer to avoid allocation
+        val workingBmp = NativePaddleEngine.sharedBmp2048Mono
+        val workingCanvas = NativePaddleEngine.sharedCanvas2048Mono
+        
+        val processed = synchronized(workingBmp) {
+            workingBmp.eraseColor(0)
+            workingCanvas.drawBitmap(bitmap, 0f, 0f, null)
+            applyBilateralInPlace(workingBmp)
+            workingBmp
+        }
+        
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val image = InputImage.fromBitmap(processed, 0)
         return try {
@@ -352,8 +362,6 @@ object OdometerOcrUtils {
         } catch (e: Exception) {
             Log.e("OdometerOcr", "ML Kit failed", e)
             OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
-        } finally {
-            processed.recycle()
         }
     }
 
@@ -369,6 +377,19 @@ object OdometerOcrUtils {
     ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
         val mlKitClient = if (engineName.startsWith("ML Kit")) TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
+        
+        val workingBmp = NativePaddleEngine.sharedBmp2048Mono
+        val workingCanvas = NativePaddleEngine.sharedCanvas2048Mono
+        val paint = Paint()
+
+        suspend fun prepare(filters: (Bitmap) -> Unit): Bitmap {
+            synchronized(workingBmp) {
+                workingBmp.eraseColor(0)
+                workingCanvas.drawBitmap(bitmap, 0f, 0f, paint)
+                filters(workingBmp)
+            }
+            return workingBmp
+        }
 
         suspend fun exec(bmp: Bitmap, stageName: String, boxes: List<Rect> = emptyList()): OcrStepResult {
             val res = when (engineName) {
@@ -440,24 +461,23 @@ object OdometerOcrUtils {
             )
         }
 
-        // Preprocessing Overhaul: Test filter combinations on Monochrome Baseline
-        
-        // 1. Raw (Monochrome Baseline)
-        steps.add(exec(bitmap, "Raw"))
+        // 1. Raw
+        steps.add(exec(prepare { }, "Raw"))
         
         // 2. 80% Stretch Only
-        val s80Only = applyContrastStretch(bitmap, 80)
-        steps.add(exec(s80Only, "80% Stretch Only"))
+        steps.add(exec(prepare { applyContrastStretchInPlace(it, 80) }, "80% Stretch Only"))
         
         // 3. Bile -> 80% Stretch
-        val bileBase = applyBilateral(bitmap)
-        val bileThen80 = applyContrastStretch(bileBase, 80)
-        steps.add(exec(bileThen80, "Bile -> 80% Stretch"))
+        steps.add(exec(prepare { 
+            applyBilateralInPlace(it)
+            applyContrastStretchInPlace(it, 80)
+        }, "Bile -> 80% Stretch"))
         
         // 4. 80% Stretch -> Bile
-        val stretchBase = applyContrastStretch(bitmap, 80)
-        val stretchThenBile = applyBilateral(stretchBase)
-        steps.add(exec(stretchThenBile, "80% Stretch -> Bile"))
+        steps.add(exec(prepare {
+            applyContrastStretchInPlace(it, 80)
+            applyBilateralInPlace(it)
+        }, "80% Stretch -> Bile"))
         
         if (mlKitClient != null) mlKitClient.close()
         return steps
