@@ -105,11 +105,9 @@ object ImageAlignmentUtils {
         // Step 2: Unique Sanity Check
         val uniqueCounts = results.filter { it.instanceId == 0 }.groupBy { it.text }.mapValues { it.value.size }
         for (i in results.indices) {
-            if (results[i].instanceId == 0) {
-                val text = results[i].text
-                if ((uniqueCounts[text] ?: 0) > 1) {
-                    results[i] = results[i].copy(instanceId = -2)
-                }
+            val text = results[i].text
+            if (results[i].instanceId == 0 && (uniqueCounts[text] ?: 0) > 1) {
+                results[i] = results[i].copy(instanceId = -2)
             }
         }
 
