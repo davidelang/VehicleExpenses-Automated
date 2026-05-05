@@ -16,12 +16,14 @@ object OpenCvBridge {
      * Locks the bitmap pixels and returns a pointer to a newly created cv::Mat
      * that wraps the pixels directly.
      */
-    private external fun lockBitmapToMat(bitmap: Bitmap): Long
+    @PublishedApi
+    internal external fun lockBitmapToMat(bitmap: Bitmap): Long
 
     /**
      * Unlocks the bitmap pixels and deletes the native Mat header.
      */
-    private external fun unlockBitmap(bitmap: Bitmap, matPtr: Long)
+    @PublishedApi
+    internal external fun unlockBitmap(bitmap: Bitmap, matPtr: Long)
 
     /**
      * Safely executes an OpenCV block with a Mat that wraps the Bitmap pixels directly.
