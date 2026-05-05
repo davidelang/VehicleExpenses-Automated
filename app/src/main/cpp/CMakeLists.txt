@@ -10,6 +10,9 @@ project("opencv_bridge")
 # but let's try to link against the OpenCV provided by the implementation.
 # The `opencv` implementation in build.gradle usually includes native libs.
 
+add_library(opencv_java4 SHARED IMPORTED)
+set_target_properties(opencv_java4 PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libopencv_java4.so)
+
 add_library(opencv_bridge SHARED OpenCvBridge.cpp)
 
 include_directories(include)
@@ -18,5 +21,5 @@ include_directories(include)
 target_link_libraries(opencv_bridge
     jnigraphics
     log
-    opencv_java4 # This links against the .so provided by the opencv implementation
+    opencv_java4
 )
