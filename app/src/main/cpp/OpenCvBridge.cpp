@@ -45,11 +45,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_OpenCvBridge_unlockBitmap(
         JNIEnv* env, jobject thiz, jobject bitmap, jlong mat_ptr) {
 
     AndroidBitmap_unlockPixels(env, bitmap);
-
-    cv::Mat* mat = (cv::Mat*)mat_ptr;
-    if (mat) {
-        delete mat;
-    }
+    
+    // We do NOT delete the cv::Mat* here because the Java Mat object 
+    // that was created from this pointer will delete it in its finalize() method.
+    // Deleting it here causes a SIGSEGV (Double-Free).
 }
 
 }

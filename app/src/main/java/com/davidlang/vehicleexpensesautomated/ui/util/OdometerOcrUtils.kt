@@ -474,35 +474,34 @@ object OdometerOcrUtils {
 
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()
         val hierarchy = Mat()
-        val sourceMat = Mat()
         val results = mutableListOf<TextBlock>()
 
         try {
             Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-            org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
-
-            for (contour in contours) {
-                if (Imgproc.contourArea(contour) < 10) continue
-                val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
-                val rotatedRect = Imgproc.minAreaRect(p2f)
-                val points = arrayOf(org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point())
-                rotatedRect.points(points)
-                p2f.release() 
-                
-                val bounds = android.graphics.Rect(
-                    (rotatedRect.boundingRect().x * invScale).toInt(),
-                    (rotatedRect.boundingRect().y * invScale).toInt(),
-                    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
-                    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
-                )
-                
-                val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
-                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints))
+            
+            OpenCvBridge.useBitmapAsMat(sourceBitmap) { sourceMat ->
+                for (contour in contours) {
+                    if (Imgproc.contourArea(contour) < 10) continue
+                    val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
+                    val rotatedRect = Imgproc.minAreaRect(p2f)
+                    val points = arrayOf(org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point())
+                    rotatedRect.points(points)
+                    p2f.release() 
+                    
+                    val bounds = android.graphics.Rect(
+                        (rotatedRect.boundingRect().x * invScale).toInt(),
+                        (rotatedRect.boundingRect().y * invScale).toInt(),
+                        ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
+                        ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
+                    )
+                    
+                    val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
+                    results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints))
+                }
             }
         } finally {
             mask.release()
             hierarchy.release()
-            sourceMat.release()
             contours.forEach { it.release() }
         }
         return results

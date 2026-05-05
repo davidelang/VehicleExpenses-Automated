@@ -177,86 +177,98 @@ object DiscoveryOcrUtils {
 
     private fun expandByValleyStop(redFloor: Rect, sourceBitmap: Bitmap): Rect {
         if (redFloor.width() < 1 || redFloor.height() < 1) return redFloor
-        val mat = Mat(); Utils.bitmapToMat(sourceBitmap, mat)
-        val gray = Mat(); if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY) else mat.copyTo(gray)
-        mat.release()
-
-        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble(); var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-        val safeFloor = Rect(max(0, redFloor.left), max(0, redFloor.top), min(gray.cols(), redFloor.right), min(gray.rows(), redFloor.bottom))
-        if (safeFloor.width() < 1 || safeFloor.height() < 1) { gray.release(); return redFloor }
         
-        val hillSub = gray.submat(safeFloor.top, safeFloor.bottom, safeFloor.left, safeFloor.right)
-        val hillBrightness = Core.mean(hillSub).`val`[0]; hillSub.release()
-        val valleyThreshold = hillBrightness * 0.40; val maxH = gray.rows(); val maxW = gray.cols()
-        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-        val requiredBridgeHeight = (maxY - minY) * 0.15
-        
-        // Phase 63: Differentiated Look-Ahead (Horizontal needs more reach)
-        val lookAheadLimitV = redFloor.height().toDouble()
-        val lookAheadLimitH = redFloor.height().toDouble() * 2.0
+        var result = redFloor
+        OpenCvBridge.useBitmapAsMat(sourceBitmap) { mat ->
+            val gray = if (mat.channels() > 1) {
+                val g = Mat()
+                Imgproc.cvtColor(mat, g, Imgproc.COLOR_RGBA2GRAY)
+                g
+            } else mat
 
-        // 1. Expand Vertically (Top)
-        var lastGoodY = minY
-        var lookY = minY
-        while (lookY > 0 && (sY - lookY) < vL) {
-            val ink = getLineInkCount(gray, minX.toInt(), maxX.toInt(), (lookY - 1).toInt(), true, valleyThreshold)
-            if (ink >= 8) {
-                lastGoodY = lookY - 1
-                lookY = lastGoodY
-            } else {
-                if (lastGoodY - lookY > lookAheadLimitV) break
-                lookY -= 1.0
+            try {
+                var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble(); var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
+                val safeFloor = Rect(max(0, redFloor.left), max(0, redFloor.top), min(gray.cols(), redFloor.right), min(gray.rows(), redFloor.bottom))
+                if (safeFloor.width() < 1 || safeFloor.height() < 1) {
+                    return@useBitmapAsMat
+                }
+                
+                val hillSub = gray.submat(safeFloor.top, safeFloor.bottom, safeFloor.left, safeFloor.right)
+                val hillBrightness = Core.mean(hillSub).`val`[0]; hillSub.release()
+                val valleyThreshold = hillBrightness * 0.40; val maxH = gray.rows(); val maxW = gray.cols()
+                val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; var sYY = maxY
+                val requiredBridgeHeight = (maxY - minY) * 0.15
+                
+                // Phase 63: Differentiated Look-Ahead (Horizontal needs more reach)
+                val lookAheadLimitV = redFloor.height().toDouble()
+                val lookAheadLimitH = redFloor.height().toDouble() * 2.0
+
+                // 1. Expand Vertically (Top)
+                var lastGoodY = minY
+                var lookY = minY
+                while (lookY > 0 && (sY - lookY) < vL) {
+                    val ink = getLineInkCount(gray, minX.toInt(), maxX.toInt(), (lookY - 1).toInt(), true, valleyThreshold)
+                    if (ink >= 8) {
+                        lastGoodY = lookY - 1
+                        lookY = lastGoodY
+                    } else {
+                        if (lastGoodY - lookY > lookAheadLimitV) break
+                        lookY -= 1.0
+                    }
+                }
+                minY = lastGoodY
+
+                // 2. Expand Vertically (Bottom)
+                lastGoodY = maxY
+                lookY = maxY
+                while (lookY < maxH - 1 && (lookY - sYY) < vL) {
+                    val ink = getLineInkCount(gray, minX.toInt(), maxX.toInt(), (lookY + 1).toInt(), true, valleyThreshold)
+                    if (ink >= 8) {
+                        lastGoodY = lookY + 1
+                        lookY = lastGoodY
+                    } else {
+                        if (lookY - lastGoodY > lookAheadLimitV) break
+                        lookY += 1.0
+                    }
+                }
+                maxY = lastGoodY
+
+                // 3. Expand Horizontally (Left)
+                var lastGoodX = minX
+                var lookX = minX
+                while (lookX > 0 && (sX - lookX) < hL) {
+                    val ink = getLineInkCount(gray, minY.toInt(), maxY.toInt(), (lookX - 1).toInt(), false, valleyThreshold)
+                    if (ink >= requiredBridgeHeight) {
+                        lastGoodX = lookX - 1
+                        lookX = lastGoodX
+                    } else {
+                        if (lastGoodX - lookX > lookAheadLimitH) break
+                        lookX -= 1.0
+                    }
+                }
+                minX = lastGoodX
+
+                // 4. Expand Horizontally (Right)
+                lastGoodX = maxX
+                lookX = maxX
+                while (lookX < maxW - 1 && (lookX - sXX) < hL) {
+                    val ink = getLineInkCount(gray, minY.toInt(), maxY.toInt(), (lookX + 1).toInt(), false, valleyThreshold)
+                    if (ink >= requiredBridgeHeight) {
+                        lastGoodX = lookX + 1
+                        lookX = lastGoodX
+                    } else {
+                        if (lookX - lastGoodX > lookAheadLimitH) break
+                        lookX += 1.0
+                    }
+                }
+                maxX = lastGoodX
+
+                result = Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
+            } finally {
+                if (gray !== mat) gray.release()
             }
         }
-        minY = lastGoodY
-
-        // 2. Expand Vertically (Bottom)
-        lastGoodY = maxY
-        lookY = maxY
-        while (lookY < maxH - 1 && (lookY - sYY) < vL) {
-            val ink = getLineInkCount(gray, minX.toInt(), maxX.toInt(), (lookY + 1).toInt(), true, valleyThreshold)
-            if (ink >= 8) {
-                lastGoodY = lookY + 1
-                lookY = lastGoodY
-            } else {
-                if (lookY - lastGoodY > lookAheadLimitV) break
-                lookY += 1.0
-            }
-        }
-        maxY = lastGoodY
-
-        // 3. Expand Horizontally (Left)
-        var lastGoodX = minX
-        var lookX = minX
-        while (lookX > 0 && (sX - lookX) < hL) {
-            val ink = getLineInkCount(gray, minY.toInt(), maxY.toInt(), (lookX - 1).toInt(), false, valleyThreshold)
-            if (ink >= requiredBridgeHeight) {
-                lastGoodX = lookX - 1
-                lookX = lastGoodX
-            } else {
-                if (lastGoodX - lookX > lookAheadLimitH) break
-                lookX -= 1.0
-            }
-        }
-        minX = lastGoodX
-
-        // 4. Expand Horizontally (Right)
-        lastGoodX = maxX
-        lookX = maxX
-        while (lookX < maxW - 1 && (lookX - sXX) < hL) {
-            val ink = getLineInkCount(gray, minY.toInt(), maxY.toInt(), (lookX + 1).toInt(), false, valleyThreshold)
-            if (ink >= requiredBridgeHeight) {
-                lastGoodX = lookX + 1
-                lookX = lastGoodX
-            } else {
-                if (lookX - lastGoodX > lookAheadLimitH) break
-                lookX += 1.0
-            }
-        }
-        maxX = lastGoodX
-
-        gray.release()
-        return Rect(max(0, minX.toInt()), max(0, minY.toInt()), min(maxW, maxX.toInt()), min(maxH, maxY.toInt()))
+        return result
     }
 
     private fun getLineInkCount(mat: Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean, threshold: Double): Int {
