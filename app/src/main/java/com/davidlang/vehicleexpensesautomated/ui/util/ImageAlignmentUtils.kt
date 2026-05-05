@@ -80,32 +80,46 @@ object ImageAlignmentUtils {
     ): List<TextBlock> {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
         val refValid = refLandmarks.filter { it.boundingBox.width() > 0 }
-        
-        val refTexts = refValid.map { it.text }.toSet()
-        val dashPotential = dashValid.filter { it.text in refTexts }
-        val commonTexts = dashValid.map { it.text }.toSet().intersect(refTexts)
-
-        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size} | CommonUnique=${commonTexts.size}, DashPotential=${dashPotential.size}")
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
-        val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
-        val refCounts = refValid.groupBy { it.text }.mapValues { it.value.size }
+        val refTexts = refValid.map { it.text }.toSet()
+        val refUniqueMap = refValid.filter { it.instanceId == 0 }.associateBy { it.text }
+        
+        // Step 1: Initialization & Unique Match
+        val results = dashValid.map { dashMark ->
+            val isPotential = dashMark.text in refTexts
+            val uniqueRef = refUniqueMap[dashMark.text]
+            if (!isPotential) {
+                dashMark.copy(instanceId = -2)
+            } else if (uniqueRef != null) {
+                dashMark.copy(instanceId = 0)
+            } else {
+                dashMark.copy(instanceId = -1)
+            }
+        }.toMutableList()
 
-        val results = dashValid.map { it.copy(instanceId = -1) }.toMutableList()
-
-        // Pass 1: Global Uniqueness Match
+        // Step 2: Unique Sanity Check
+        val uniqueCounts = results.filter { it.instanceId == 0 }.groupBy { it.text }.mapValues { it.value.size }
         for (i in results.indices) {
-            val dashMark = results[i]
-            if (dashCounts[dashMark.text] == 1 && refCounts[dashMark.text] == 1) {
-                val refMatch = refValid.find { it.text == dashMark.text }!!
-                results[i] = dashMark.copy(instanceId = refMatch.instanceId)
-                Log.d("DISAMB_TRACE", "  Pass 1 [Global Unique]: '${dashMark.text}' matched Instance ${refMatch.instanceId}")
+            if (results[i].instanceId == 0) {
+                val text = results[i].text
+                if ((uniqueCounts[text] ?: 0) > 1) {
+                    results[i] = results[i].copy(instanceId = -2)
+                }
             }
         }
 
+        val potentialCount = results.count { it.instanceId == -1 }
+        val commonUniqueCount = results.count { it.instanceId == 0 }
+        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size} | CommonUnique=$commonUniqueCount, DashPotential=$potentialCount")
+
         // Pass 2: If < 2 anchors, find seed triangle
-        if (results.count { it.instanceId != -1 } < 2) {
-            Log.d("DISAMB_TRACE", "  Pass 2: Insufficient anchors (${results.count { it.instanceId != -1 }}). Searching for seed triangle...")
+        if (results.count { it.instanceId >= 0 } < 2) {
+            Log.d("DISAMB_TRACE", "  Pass 2: Insufficient anchors (${results.count { it.instanceId >= 0 }}). Searching for seed triangle...")
+            val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
+            val refCounts = refValid.groupBy { it.text }.mapValues { it.value.size }
+            val commonTexts = dashValid.map { it.text }.toSet().intersect(refTexts)
+
             val seedPool = commonTexts.map { text ->
                 val dCount = dashCounts[text] ?: 0
                 val rCount = refCounts[text] ?: 0
@@ -153,44 +167,66 @@ object ImageAlignmentUtils {
             }
         }
 
-        // Pass 3: Bootstrapping
-        val confirmed = results.filter { it.instanceId != -1 }
+        // Pass 3: Bootstrapping with Optimal Baseline
+        val confirmed = results.filter { it.instanceId >= 0 }
         if (confirmed.size >= 2) {
-            Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from ${confirmed.size} anchors...")
-            val p1 = confirmed[0]; val p2 = confirmed[1]
-            val rP1 = refValid.find { it.text == p1.text && it.instanceId == p1.instanceId }!!
-            val rP2 = refValid.find { it.text == p2.text && it.instanceId == p2.instanceId }!!
+            // Find most distant baseline pair
+            var bestP1: TextBlock? = null
+            var bestP2: TextBlock? = null
+            var maxDist = -1.0
             
-            // Reference baseline for bootstrapping
-            val r12 = dist(rP1, rP2)
-            val d12 = dist(p1, p2)
+            for (i in confirmed.indices) {
+                for (j in i + 1 until confirmed.size) {
+                    val d = dist(confirmed[i], confirmed[j])
+                    if (d > maxDist) {
+                        maxDist = d
+                        bestP1 = confirmed[i]
+                        bestP2 = confirmed[j]
+                    }
+                }
+            }
+            
+            if (bestP1 != null && bestP2 != null) {
+                val p1 = bestP1!!; val p2 = bestP2!!
+                val rP1 = refValid.find { it.text == p1.text && it.instanceId == p1.instanceId }!!
+                val rP2 = refValid.find { it.text == p2.text && it.instanceId == p2.instanceId }!!
+                val d12 = dist(p1, p2)
+                val r12 = dist(rP1, rP2)
 
-            for (idx in results.indices) {
-                if (results[idx].instanceId != -1) continue
-                val dashMark = results[idx]
-                if (dashMark.text !in refTexts) continue
+                Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from baseline ['${p1.text}'-${p1.instanceId}, '${p2.text}'-${p2.instanceId}] dist=$maxDist")
 
-                val refCandidates = refValid.filter { it.text == dashMark.text }
-                for (cand in refCandidates) {
-                    val r1c = dist(rP1, cand); val r2c = dist(rP2, cand)
+                for (idx in results.indices) {
+                    if (results[idx].instanceId != -1) continue
+                    val dashMark = results[idx]
                     val d1c = dist(p1, dashMark); val d2c = dist(p2, dashMark)
+                    val dPerim = d12 + d1c + d2c
+                    if (dPerim == 0.0) continue
                     
-                    // Ratio of candidate distances to known anchor distance
-                    if (r1c == 0.0 || r2c == 0.0 || r12 == 0.0 || d12 == 0.0) continue
-                    
-                    val dev1 = abs((d1c/d12) / (r1c/r12) - 1.0)
-                    val dev2 = abs((d2c/d12) / (r2c/r12) - 1.0)
-                    
-                    if (dev1 < 0.05 && dev2 < 0.05) {
-                        results[idx] = dashMark.copy(instanceId = cand.instanceId)
-                        Log.d("DISAMB_TRACE", "    -> Bootstrap Match: '${dashMark.text}' assigned Instance ${cand.instanceId}")
-                        break
-                    } else {
-                        Log.d("DISAMB_BOOT_FAIL", "    '${dashMark.text}' cand ${cand.instanceId} rejected: devs=%.3f, %.3f".format(dev1, dev2))
+                    val refCandidates = refValid.filter { it.text == dashMark.text }
+                    for (cand in refCandidates) {
+                        val r1c = dist(rP1, cand); val r2c = dist(rP2, cand)
+                        val rPerim = r12 + r1c + r2c
+                        if (rPerim == 0.0) continue
+                        
+                        val dev1 = abs((d12/dPerim) / (r12/rPerim) - 1.0)
+                        val dev2 = abs((d1c/dPerim) / (r1c/rPerim) - 1.0)
+                        val dev3 = abs((d2c/dPerim) / (r2c/rPerim) - 1.0)
+                        
+                        if (dev1 < 0.05 && dev2 < 0.05 && dev3 < 0.05) {
+                            results[idx] = dashMark.copy(instanceId = cand.instanceId)
+                            Log.d("DISAMB_TRACE", "    Triangle found ('${p1.text}'-${p1.instanceId}, '${p2.text}'-${p2.instanceId}, '${dashMark.text}'-${cand.instanceId}) | Devs: %.3f, %.3f, %.3f".format(dev1, dev2, dev3))
+                            break
+                        } else {
+                            Log.d("DISAMB_TRI", "    Trying Dash Triangle: [${p1.text}, ${p2.text}, ${dashMark.text}] | Prop: %.2f, %.2f, %.2f vs Cand ${cand.instanceId}".format(d12/dPerim, d1c/dPerim, d2c/dPerim))
+                        }
                     }
                 }
             }
         }
+        
+        Log.d("DISAMB_TRACE", "FINISH: Tagged ${results.count { it.instanceId >= 0 }}/${dashValid.size} landmarks")
+        return results
+    }
         
         Log.d("DISAMB_TRACE", "FINISH: Tagged ${results.count { it.instanceId != -1 }}/${dashValid.size} landmarks")
         return results
