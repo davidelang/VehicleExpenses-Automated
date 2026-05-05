@@ -664,7 +664,12 @@ object OdometerOcrUtils {
         val rawBitmap = if (context != null) decodeBitmapSafely(context, photoPath) else BitmapFactory.decodeFile(photoPath)
         if (rawBitmap == null) return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        val processed = applyBilateral(applyGrayscale(rotated))
+        
+        // Use a mutable copy for in-place processing
+        val processed = rotated.copy(Bitmap.Config.ARGB_8888, true)
+        applyGrayscaleInPlace(processed)
+        applyBilateralInPlace(processed)
+        
         var bitmap = processed
         if (cropRect != null) {
             val left = (cropRect.left * processed.width).toInt().coerceIn(0, processed.width)
@@ -675,13 +680,17 @@ object OdometerOcrUtils {
         }
         val res = extractFromPhotoBitmap(bitmap)
         if (bitmap != processed) bitmap.recycle()
-        processed.recycle(); rotated.recycle(); res.copy(originalPhotoPath = photoPath)
+        processed.recycle(); rotated.recycle(); if (rotated != rawBitmap) rawBitmap.recycle(); res.copy(originalPhotoPath = photoPath)
     }
 
     suspend fun discoverLandmarks(photoPath: String, odometerCrop: RectF? = null, otherTextCrop: RectF? = null): List<TextBlock> = withContext(Dispatchers.IO) {
         val rawBitmap = BitmapFactory.decodeFile(photoPath) ?: return@withContext emptyList()
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
-        val processed = applyBilateral(rotated)
+        
+        // Use a mutable copy for in-place processing
+        val processed = rotated.copy(Bitmap.Config.ARGB_8888, true)
+        applyBilateralInPlace(processed)
+        
         val ocrResult = extractFromPhotoBitmap(processed)
         val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
         processed.recycle(); if (rotated != rawBitmap) rotated.recycle(); rawBitmap.recycle(); landmarks
