@@ -18,12 +18,11 @@ object LandmarkDisambiguator {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
         val refValid = refLandmarks.filter { it.boundingBox.width() > 0 }
         
-        val dashTexts = dashValid.map { it.text }.toSet()
         val refTexts = refValid.map { it.text }.toSet()
-        val commonTexts = dashTexts.intersect(refTexts)
-        val potentialCount = dashValid.count { it.text in refTexts }
+        val dashPotential = dashValid.filter { it.text in refTexts }
+        val commonTexts = dashValid.map { it.text }.toSet().intersect(refTexts)
 
-        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size} | CommonUnique=${commonTexts.size}, DashPotential=$potentialCount")
+        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size} | CommonUnique=${commonTexts.size}, DashPotential=${dashPotential.size}")
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
         val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
@@ -31,15 +30,14 @@ object LandmarkDisambiguator {
 
         val results = dashValid.map { it.copy(instanceId = -1) }.toMutableList()
 
-        // Pass 1: Match unique strings (Phase 109: Prioritize Instance 0)
+        // Pass 1: Global Uniqueness Match (Phase 110)
+        // If a string is unique on BOTH sides, it's a guaranteed match.
         for (i in results.indices) {
             val dashMark = results[i]
-            if (dashCounts[dashMark.text] == 1) {
-                val refMatch = refValid.find { it.text == dashMark.text && it.instanceId == 0 }
-                if (refMatch != null) {
-                    results[i] = dashMark.copy(instanceId = 0)
-                    Log.d("DISAMB_TRACE", "  Pass 1 [Unique]: '${dashMark.text}' matched Instance 0")
-                }
+            if (dashCounts[dashMark.text] == 1 && refCounts[dashMark.text] == 1) {
+                val refMatch = refValid.find { it.text == dashMark.text }!!
+                results[i] = dashMark.copy(instanceId = refMatch.instanceId)
+                Log.d("DISAMB_TRACE", "  Pass 1 [Global Unique]: '${dashMark.text}' matched Instance ${refMatch.instanceId}")
             }
         }
 
@@ -49,11 +47,11 @@ object LandmarkDisambiguator {
             val seedPool = commonTexts.map { text ->
                 val dCount = dashCounts[text] ?: 0
                 val rCount = refCounts[text] ?: 0
-                // Tier 1: Unique on both sides. Tier 2: Unique on Dash. Tier 3: Duplicates.
-                val tier = if (dCount == 1 && (refValid.any { it.text == text && it.instanceId == 0 })) 1 else if (dCount == 1) 2 else 3
+                val tier = if (dCount == 1 && rCount == 1) 1 else if (dCount == 1) 2 else 3
                 Triple(text, tier, dCount)
             }.sortedWith(compareBy({ it.second }, { it.third }))
 
+            var triCount = 0
             outer@for (i in seedPool.indices) {
                 for (j in i + 1 until seedPool.size) {
                     for (k in j + 1 until seedPool.size) {
@@ -64,7 +62,10 @@ object LandmarkDisambiguator {
                             val dist12 = dist(d1, d2); val dist23 = dist(d2, d3); val dist31 = dist(d3, d1)
                             if (dist12 < 20.0 || dist23 < 20.0 || dist31 < 20.0) continue
                             
-                            Log.d("DISAMB_TRI", "    Trying Dash Triangle: [${d1.text}, ${d2.text}, ${d3.text}] | Dists: %.1f, %.1f, %.1f".format(dist12, dist23, dist31))
+                            if (triCount < 5) {
+                                Log.d("DISAMB_TRI", "    Trying Dash Triangle: [${d1.text}, ${d2.text}, ${d3.text}] | Dists: %.1f, %.1f, %.1f".format(dist12, dist23, dist31))
+                                triCount++
+                            }
                             
                             for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
                                 val rd12 = dist(r1, r2); val rd23 = dist(r2, r3); val rd31 = dist(r3, r1)
@@ -88,7 +89,7 @@ object LandmarkDisambiguator {
             }
         }
 
-        // Pass 3: Bootstrap ambiguous landmarks (instanceId == -1) using confirmed anchors
+        // Pass 3: Bootstrapping (ONLY look at dashPotential items)
         val confirmed = results.filter { it.instanceId != -1 }
         if (confirmed.size >= 2) {
             Log.d("DISAMB_TRACE", "  Pass 3: Bootstrapping from ${confirmed.size} anchors...")
@@ -100,10 +101,9 @@ object LandmarkDisambiguator {
             for (idx in results.indices) {
                 if (results[idx].instanceId != -1) continue
                 val dashMark = results[idx]
+                if (dashMark.text !in refTexts) continue // Junk Filtering (Phase 110)
+
                 val refCandidates = refValid.filter { it.text == dashMark.text }
-                
-                Log.d("DISAMB_BOOT", "    Bootstrapping '${dashMark.text}' | Candidates: ${refCandidates.size}")
-                
                 for (cand in refCandidates) {
                     val rD1C = dist(rP1, cand); val rD2C = dist(rP2, cand)
                     if (rD1C == 0.0 || rD2C == 0.0 || rDist12 == 0.0) continue
@@ -114,8 +114,10 @@ object LandmarkDisambiguator {
                     
                     if (dev1 < 0.05 && dev2 < 0.05) {
                         results[idx] = dashMark.copy(instanceId = cand.instanceId)
-                        Log.d("DISAMB_TRACE", "    -> Bootstrap Match: '${dashMark.text}' assigned Instance ${cand.instanceId} | Devs: %.3f, %.3f".format(dev1, dev2))
+                        Log.d("DISAMB_TRACE", "    -> Bootstrap Match: '${dashMark.text}' assigned Instance ${cand.instanceId}")
                         break
+                    } else {
+                        Log.d("DISAMB_BOOT_FAIL", "    '${dashMark.text}' candidate ${cand.instanceId} rejected: devs=%.3f, %.3f".format(dev1, dev2))
                     }
                 }
             }
