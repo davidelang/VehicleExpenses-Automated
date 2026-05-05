@@ -85,10 +85,14 @@ object ImageAlignmentUtils {
         val refTexts = refValid.map { it.text }.toSet()
         val refUniqueMap = refValid.filter { it.instanceId == 0 }.associateBy { it.text }
         
+        Log.d("DISAMB_TRACE", "Ref Landmarks with instanceId=0: ${refUniqueMap.keys}")
+        
         // Step 1: Initialization & Unique Match
         val results = dashValid.map { dashMark ->
             val isPotential = dashMark.text in refTexts
             val uniqueRef = refUniqueMap[dashMark.text]
+            Log.d("DISAMB_TRACE", "  Init DashMark: '${dashMark.text}' | isPotential=$isPotential, uniqueRefInstance=${uniqueRef?.instanceId ?: "null"}")
+            
             if (!isPotential) {
                 dashMark.copy(instanceId = -2)
             } else if (uniqueRef != null) {
@@ -111,7 +115,7 @@ object ImageAlignmentUtils {
 
         val potentialCount = results.count { it.instanceId == -1 }
         val commonUniqueCount = results.count { it.instanceId == 0 }
-        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size} | CommonUnique=$commonUniqueCount, DashPotential=$potentialCount")
+        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size}, RefUnique= ${refUniqueMap.size} | CommonUnique=$commonUniqueCount, DashPotential=$potentialCount")
 
         // Pass 2: If < 2 anchors, find seed triangle
         if (results.count { it.instanceId >= 0 } < 2) {
