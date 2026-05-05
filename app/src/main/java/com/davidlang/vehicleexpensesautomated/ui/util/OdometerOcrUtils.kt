@@ -20,6 +20,7 @@ import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -48,7 +49,7 @@ object OdometerOcrUtils {
 
     data class DeskewResult(val angle: Float, val mlAngle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
 
-    suspend fun calculateAverageTextAngle(
+    fun calculateAverageTextAngle(
         sourceBitmap: Bitmap,
         targetBitmap: Bitmap,
         paddleEngine: NativePaddleEngine? = null
@@ -61,9 +62,10 @@ object OdometerOcrUtils {
         val isMono = (targetBitmap === NativePaddleEngine.sharedBmp2048Mono)
         val canvas = if (isMono) NativePaddleEngine.sharedCanvas2048Mono else NativePaddleEngine.sharedCanvas2048
         canvas.drawColor(android.graphics.Color.BLACK)
-        NativePaddleEngine.sharedMatrix.reset()
-        NativePaddleEngine.sharedMatrix.postScale(pScale, pScale)
-        canvas.drawBitmap(sourceBitmap, NativePaddleEngine.sharedMatrix, null)
+        
+        val matrix = android.graphics.Matrix()
+        matrix.postScale(pScale, pScale)
+        canvas.drawBitmap(sourceBitmap, matrix, null)
         
         val paddleResult = paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize)
         val pdCandidates = mutableListOf<TextBlock>()
@@ -78,7 +80,7 @@ object OdometerOcrUtils {
         return computeFinalDeskewAngle(pdCandidates, paddleAngle, targetBitmap, pHeight, paddleTimeMs)
     }
 
-    private suspend fun computeFinalDeskewAngle(
+    private fun computeFinalDeskewAngle(
         pdCandidates: List<TextBlock>,
         paddleAngle: Float,
         bitmap: Bitmap,
@@ -288,12 +290,12 @@ object OdometerOcrUtils {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
+    fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
         val processed = applyBilateral(bitmap)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val image = InputImage.fromBitmap(processed, 0)
         return try {
-            val visionText = recognizer.process(image).await()
+            val visionText = runBlocking { recognizer.process(image).await() }
             val blocks = mutableListOf<TextBlock>()
             val text = StringBuilder()
             for (block in visionText.textBlocks) {
