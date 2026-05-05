@@ -243,6 +243,7 @@ object OcrUtils {
         rawFragments: List<Rect> = emptyList(), 
         consolidatedRows: List<Rect> = emptyList()
     ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
+        val t0 = System.nanoTime()
         val scale = 48f / source.height
         val targetWidth = (source.width * scale).toInt().coerceAtMost(320)
         val canvas = NativePaddleEngine.sharedReportCanvas
@@ -260,9 +261,13 @@ object OcrUtils {
         consolidatedRows.forEach { r ->
             canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint)
         }
+        val t1 = System.nanoTime()
         
         // 3. Encode base64 directly from the buffer
-        // Note: targetWidth ensures we ignore the black padding on the right
-        bitmapToBase64(thumb, 60)
+        val res = bitmapToBase64(thumb, 60)
+        val t2 = System.nanoTime()
+        
+        Log.d("PERF_SNAP", "Snapshot: Draw=%.2fms, Base64=%.2fms".format((t1 - t0) / 1e6, (t2 - t1) / 1e6))
+        res
     }
 }
