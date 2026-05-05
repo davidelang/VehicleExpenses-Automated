@@ -530,6 +530,7 @@ private suspend fun runRefinementStrategies(
     return refinementTraces
 }
 
+
 private suspend fun processPhotoInternal(
     file: File,
     cachedRefs: List<ReferenceCache>,
@@ -540,20 +541,20 @@ private suspend fun processPhotoInternal(
     debugCropDir: File,
     strategies: List<String>
 ): PhotoProcessingResult? {
-    val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: return null
+    val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: return null
     var standardBmp: Bitmap? = null
     var monoBmp: Bitmap? = null
+    
     try {
-        // Step 1: Initialize dual buffers (Phase 107)
-        val rotatedRaw = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
+        // Step 1: Initialize Persistent Authorities
+        val rotatedRaw = OdometerOcrUtils.rotateImageIfRequired(rawBmp, file.absolutePath)
         standardBmp = OdometerOcrUtils.applyGrayscale(rotatedRaw)
         monoBmp = standardBmp.copy(Bitmap.Config.ALPHA_8, true)
-        if (rotatedRaw != rawBitmap) rotatedRaw.recycle()
-        rawBitmap.recycle()
+        if (rotatedRaw != rawBmp) rotatedRaw.recycle()
         
-        val deskewedBase64 = createScaledBase64(standardBmp!!, 150, 50)
+        val deskewedBase64 = createScaledBase64(rawBmp, 150, 50) // Use raw for report baseline
 
-        // Step 2: Deskew Calculation (Using shared static buffers)
+        // Step 2: Deskew Calculation & In-Place Rotation
         val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(standardBmp!!, NativePaddleEngine.sharedBmp2048, v3)
         val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(monoBmp!!, NativePaddleEngine.sharedBmp2048Mono, v3Mono)
         
@@ -561,16 +562,15 @@ private suspend fun processPhotoInternal(
         var tRotate = 0L
         if (Math.abs(tilt) > 0.2f) {
             val tRot0 = System.currentTimeMillis()
-            val leveledStd = OdometerOcrUtils.rotateBitmap(standardBmp!!, -tilt)
-            val leveledMono = OdometerOcrUtils.rotateBitmap(monoBmp!!, -tilt)
-            if (leveledStd != standardBmp) { standardBmp!!.recycle(); standardBmp = leveledStd }
-            if (leveledMono != monoBmp) { monoBmp!!.recycle(); monoBmp = leveledMono }
+            OdometerOcrUtils.rotateBitmapInPlace(standardBmp!!, -tilt)
+            OdometerOcrUtils.rotateBitmapInPlace(monoBmp!!, -tilt)
             tRotate = System.currentTimeMillis() - tRot0
         }
 
-        // Step 3: Discovery & Disambiguation
+        // Step 3: Discovery & Disambiguation (Now executing!)
         val tDiscoveryStart = System.currentTimeMillis()
-        val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(standardBmp!!, context)
+        val queryOcrDiscovery = OdometerOcrUtils.extractFromPhotoBitmapRaw(standardBmp!!)
+        val queryLandmarksRaw = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, standardBmp.width, standardBmp.height)
         val queryLandmarksPrimary = LandmarkDisambiguator.disambiguate(queryLandmarksRaw, cachedRefs.flatMap { it.curatedLandmarks }.distinct())
         val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
 
@@ -591,7 +591,7 @@ private suspend fun processPhotoInternal(
             if (isWinner) {
                 finalWinnerName = ref.vehicle.name
                 
-                // Phase 107: Alignment in-place on persistent buffers
+                // Step 4: In-Place Alignment Warp
                 val t0 = System.currentTimeMillis()
                 val alignRes = ImageAlignmentUtils.anchorAlign(standardBmp!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                 val elapsedAlign = System.currentTimeMillis() - t0
@@ -600,16 +600,13 @@ private suspend fun processPhotoInternal(
                 val alignResMono = ImageAlignmentUtils.anchorAlign(monoBmp!!, ref.curatedLandmarks, queryLandmarksPrimary, ref.vehicle)
                 val elapsedAlignMono = System.currentTimeMillis() - t0Mono
                 
-                if (alignResMono.success && alignResMono.alignedImage != null) {
-                    alignmentTraceMono = AlignmentTraceResult(true, elapsedAlignMono, "", alignResMono.metadata)
-                    alignResMono.alignedImage.recycle()
-                } else {
-                    alignmentTraceMono = AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
-                }
+                alignmentTraceMono = AlignmentTraceResult(alignResMono.success, elapsedAlignMono, "", alignResMono.metadata)
 
-                if (alignRes.success && alignRes.alignedImage != null) {
-                    alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
-                    val exactCrop = manualCropOdometer(alignRes.alignedImage, ref.vehicle)
+                if (alignRes.success) {
+                    alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(standardBmp!!, 400, 70), alignRes.metadata)
+                    
+                    // Step 5: Odometer Extraction from Morphed Authority
+                    val exactCrop = manualCropOdometer(standardBmp!!, ref.vehicle)
                     if (exactCrop != null) {
                         val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                         try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { }
@@ -620,7 +617,6 @@ private suspend fun processPhotoInternal(
                     if (allResults.isNotEmpty()) {
                         bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
                     }
-                    alignRes.alignedImage.recycle()
                 } else {
                     alignmentTrace = AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata)
                 }
@@ -630,7 +626,9 @@ private suspend fun processPhotoInternal(
         
         return PhotoProcessingResult(finalWinnerName, bestOdometer, deskewRes, deskewResMono, tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, deskewedBase64)
     } finally {
+        rawBmp.recycle()
         standardBmp?.recycle()
         monoBmp?.recycle()
     }
 }
+

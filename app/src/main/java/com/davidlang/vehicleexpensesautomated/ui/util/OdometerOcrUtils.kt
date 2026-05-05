@@ -623,4 +623,42 @@ object OdometerOcrUtils {
         val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
         processed.recycle(); if (rotated != rawBitmap) rotated.recycle(); rawBitmap.recycle(); landmarks
     }
+
+    fun rotateBitmapInPlace(bitmap: Bitmap, degrees: Float) {
+        if (degrees == 0f) return
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val center = org.opencv.core.Point(mat.cols() / 2.0, mat.rows() / 2.0)
+        val rotMat = Imgproc.getRotationMatrix2D(center, degrees.toDouble(), 1.0)
+        val rotated = Mat()
+        Imgproc.warpAffine(mat, rotated, rotMat, mat.size(), Imgproc.INTER_LINEAR + Imgproc.WARP_FILL_OUTLIERS)
+        org.opencv.android.Utils.matToBitmap(rotated, bitmap)
+        mat.release(); rotMat.release(); rotated.release()
+    }
+
+    suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
+        val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+        val image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
+        return try {
+            val visionText = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+            val blocks = mutableListOf<TextBlock>()
+            val text = StringBuilder()
+            for (block in visionText.textBlocks) {
+                for (line in block.lines) {
+                    for (element in line.elements) {
+                        val hunk = element.text
+                        val box = element.boundingBox
+                        if (box != null) {
+                            blocks.add(TextBlock(hunk, box, line.angle))
+                            text.append(hunk).append(" ")
+                        }
+                    }
+                }
+            }
+            OcrResult(engineName = "ML Kit", debugText = text.toString().trim(), textBlocks = blocks, imageWidth = bitmap.width, imageHeight = bitmap.height)
+        } catch (e: Exception) {
+            OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        }
+    }
+
 }
