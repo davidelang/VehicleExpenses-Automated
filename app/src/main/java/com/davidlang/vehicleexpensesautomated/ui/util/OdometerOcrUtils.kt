@@ -594,7 +594,7 @@ object OdometerOcrUtils {
             }
             root.put(engineName, array)
         }
-        Log.i("OCR_PERF", "serializeMultiEngineLandmarks took ${System.currentTimeMillis() - t0}ms")
+        Log.i("OCR_PERF", "serializeMultiEngineLandmarks took ${System.currentTimeMillis() - t0}ms ${root.toString()}")
         return root.toString()
     }
 
