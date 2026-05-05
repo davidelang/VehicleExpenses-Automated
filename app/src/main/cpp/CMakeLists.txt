@@ -12,6 +12,8 @@ project("opencv_bridge")
 
 add_library(opencv_bridge SHARED OpenCvBridge.cpp)
 
+include_directories(include)
+
 # Link against Android NDK libraries
 target_link_libraries(opencv_bridge
     jnigraphics
