@@ -137,9 +137,10 @@ object DiscoveryOcrUtils {
             )
         }
 
-        // Established shared working buffer from NativePaddleEngine
-        val workingBmp = NativePaddleEngine.sharedBmp2048Mono
-        val workingCanvas = NativePaddleEngine.sharedCanvas2048Mono
+        // Establish shared working buffer from NativePaddleEngine
+        val useMono = bitmap.config == Bitmap.Config.ALPHA_8
+        val workingBmp = if (useMono) NativePaddleEngine.sharedBmp2048Mono else NativePaddleEngine.sharedBmp2048
+        val workingCanvas = if (useMono) NativePaddleEngine.sharedCanvas2048Mono else NativePaddleEngine.sharedCanvas2048
         val paint = Paint()
 
         /**

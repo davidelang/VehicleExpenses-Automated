@@ -261,8 +261,8 @@ object OcrUtils {
             canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint)
         }
         
-        // 3. Create Subset View for Base64 (No allocation)
-        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, 48)
-        bitmapToBase64(view, 60)
+        // 3. Encode base64 directly from the buffer
+        // Note: targetWidth ensures we ignore the black padding on the right
+        bitmapToBase64(thumb, 60)
     }
 }
