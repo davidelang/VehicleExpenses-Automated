@@ -67,7 +67,7 @@ object OdometerOcrUtils {
         matrix.postScale(pScale, pScale)
         canvas.drawBitmap(sourceBitmap, matrix, null)
         
-        val paddleResult = paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize)
+        val paddleResult = runBlocking { paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize) }
         val pdCandidates = mutableListOf<TextBlock>()
         paddleResult?.textBlocks?.forEach { block ->
             var a = block.angle
