@@ -227,10 +227,6 @@ object ImageAlignmentUtils {
         Log.d("DISAMB_TRACE", "FINISH: Tagged ${results.count { it.instanceId >= 0 }}/${dashValid.size} landmarks")
         return results
     }
-        
-        Log.d("DISAMB_TRACE", "FINISH: Tagged ${results.count { it.instanceId != -1 }}/${dashValid.size} landmarks")
-        return results
-    }
 
     fun anchorAlign(
         bmp: Bitmap,
