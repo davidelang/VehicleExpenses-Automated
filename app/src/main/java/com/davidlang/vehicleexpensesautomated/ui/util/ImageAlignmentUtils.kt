@@ -79,7 +79,14 @@ object ImageAlignmentUtils {
         refLandmarks: List<TextBlock>
     ): List<TextBlock> {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
-        val refValid = refLandmarks.filter { it.boundingBox.width() > 0 }
+        
+        /**
+         * Phase 109 Architecture: Manual Landmarks (instanceId == -2)
+         * 1. Uniqueness: Presence of a manual landmark makes other visible instances of the same word non-unique.
+         * 2. Veto system: Manual landmarks like "FORD" are used by performTier1Veto to disqualify incorrect vehicles.
+         * 3. Alignment: Manual landmarks are filtered out here because they lack coordinates for geometric math.
+         */
+        val refValid = refLandmarks.filter { it.boundingBox.width() > 0 && it.instanceId != -2 }
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
 
         val refTexts = refValid.map { it.text }.toSet()
@@ -102,7 +109,7 @@ object ImageAlignmentUtils {
             }
         }.toMutableList()
 
-        // Step 2: Unique Sanity Check
+        // Step 2: Unique Sanity Check (Only invalidate if multiple dash marks claim to be unique instance 0)
         val uniqueCounts = results.filter { it.instanceId == 0 }.groupBy { it.text }.mapValues { it.value.size }
         for (i in results.indices) {
             val text = results[i].text
@@ -222,10 +229,10 @@ object ImageAlignmentUtils {
                         
                         if (dev1 < 0.05 && dev2 < 0.05 && dev3 < 0.05) {
                             results[idx] = dashMark.copy(instanceId = cand.instanceId)
-                            Log.d("DISAMB_TRACE", "    Triangle found ('${p1.text}'-${p1.instanceId}, '${p2.text}'-${p2.instanceId}, '${dashMark.text}'-${cand.instanceId}) | Devs: %.3f, %.3f, %.3f".format(dev1, dev2, dev3))
+                            Log.d("DISAMB_TRACE", "    -> Landmark #$idx Matched: '${dashMark.text}'-${cand.instanceId} | Devs: %.3f, %.3f, %.3f".format(dev1, dev2, dev3))
                             break
                         } else {
-                            Log.d("DISAMB_TRI", "    Trying Dash Triangle: matching '${dashMark.text}'-${cand.instanceId} | Prop: %.2f, %.2f".format(d1c/dPerim, d2c/dPerim))
+                            Log.d("DISAMB_TRI", "    Trying Dash Landmark #$idx: matching '${dashMark.text}'-${cand.instanceId} | Prop: %.2f, %.2f".format(d1c/dPerim, d2c/dPerim))
                         }
                     }
                 }

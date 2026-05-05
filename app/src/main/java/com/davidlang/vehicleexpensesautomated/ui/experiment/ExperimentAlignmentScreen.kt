@@ -253,7 +253,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 // Winner-Only Processing block
                 if (winnerRef != null) {
                     finalWinnerName = winnerRef.vehicle.name
-                    Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName ---")
+                    Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
                     
                     // Phase 108: Disambiguate exactly once for the correct vehicle
                     val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
