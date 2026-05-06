@@ -432,9 +432,14 @@ object OdometerOcrUtils {
                         
                         resized.getPixels(pixels, 0, w, 0, 0, w, h)
                         
-                        // Extract Luminance (Y) channel. Input is grayscale, so R=G=B. We take R.
+                        // Extract Luminance (Y) channel.
+                        val isAlpha8 = resized.config == Bitmap.Config.ALPHA_8
                         for (i in 0 until frameSize) {
-                            val r = (pixels[i] shr 16) and 0xFF
+                            val r = if (isAlpha8) {
+                                (pixels[i] ushr 24) and 0xFF
+                            } else {
+                                (pixels[i] shr 16) and 0xFF
+                            }
                             nv21[i] = r.toByte()
                         }
                         

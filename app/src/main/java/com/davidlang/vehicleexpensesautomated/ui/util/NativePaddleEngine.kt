@@ -268,7 +268,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
                         val px = targetBmp.getPixel(x, y)
-                        floatData[y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                        floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean[0]) / std[0]
                     }
                 }
             } else {
@@ -344,7 +344,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
                         val px = targetBmp.getPixel(x, y)
-                        floatData[y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                        floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
                     }
                 }
             } else {
