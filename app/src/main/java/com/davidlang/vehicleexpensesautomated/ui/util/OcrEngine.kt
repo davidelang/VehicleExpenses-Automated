@@ -171,7 +171,10 @@ object OcrUtils {
         // 1. Clear and Draw thumbnail
         canvas.drawColor(android.graphics.Color.BLACK)
         val destRect = Rect(0, 0, targetWidth, targetHeight)
-        canvas.drawBitmap(source, null, destRect, null)
+        
+        // Phase 115: Monochrome-Aware Rendering
+        val paint = if (source.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
+        canvas.drawBitmap(source, null, destRect, paint)
         
         // 2. Apply Annotations
         rawFragments.forEach { r -> 

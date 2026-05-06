@@ -320,10 +320,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 
                                 val ocrInput = if (strat.contains("Mono")) {
                                     // Phase 115: Isolated Mono Refinement. 
-                                    // Populating sharedBmpOdoScratchMono (Currently default draw, results in solid white as requested)
+                                    // Populating sharedBmpOdoScratchMono via Luminance-to-Alpha mapping
                                     val monoCanvas = NativePaddleEngine.sharedCanvasOdoScratchMono
                                     monoCanvas.drawColor(android.graphics.Color.BLACK)
-                                    monoCanvas.drawBitmap(exactCrop, 0f, 0f, null)
+                                    monoCanvas.drawBitmap(exactCrop, 0f, 0f, NativePaddleEngine.grayToAlphaPaint)
                                     NativePaddleEngine.sharedBmpOdoScratchMono
                                 } else exactCrop
 

@@ -94,6 +94,33 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedReportCanvas: Canvas by lazy { Canvas(sharedReportBitmap) }
         val redPaint: Paint by lazy { Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 } }
         val orangePaint: Paint by lazy { Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f } }
+
+        // Phase 115: Grayscale/Alpha Mapping Filters
+        // grayToAlpha: Maps Red (Luminance) channel to Alpha channel
+        val grayToAlphaPaint: Paint by lazy {
+            val paint = Paint()
+            val matrix = ColorMatrix(floatArrayOf(
+                0f, 0f, 0f, 0f, 0f,
+                0f, 0f, 0f, 0f, 0f,
+                0f, 0f, 0f, 0f, 0f,
+                1f, 0f, 0f, 0f, 0f
+            ))
+            paint.colorFilter = ColorMatrixColorFilter(matrix)
+            paint
+        }
+        
+        // alphaToGray: Maps Alpha channel back to RGB channels for rendering
+        val alphaToGrayPaint: Paint by lazy {
+            val paint = Paint()
+            val matrix = ColorMatrix(floatArrayOf(
+                0f, 0f, 0f, 1f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+                0f, 0f, 0f, 0f, 255f
+            ))
+            paint.colorFilter = ColorMatrixColorFilter(matrix)
+            paint
+        }
     }
     
     init {
