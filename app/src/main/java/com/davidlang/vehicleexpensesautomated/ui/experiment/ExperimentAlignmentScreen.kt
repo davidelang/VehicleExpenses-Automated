@@ -614,20 +614,31 @@ private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
 
 private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
     val l = vehicle.odometerCropLeft ?: return null
+    val srcW = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt()
+    val srcH = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
+    if (srcW <= 0 || srcH <= 0) return null
+
     val left = (l * bmp.width).toInt().coerceAtLeast(0); val top = ((vehicle.odometerCropTop ?: 0f) * bmp.height).toInt().coerceAtLeast(0)
-    val width = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt(); val height = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
-    if (width <= 0 || height <= 0) return null
     
-    // Phase 115: Direct-to-buffer crop using shared small buffer
-    val target = NativePaddleEngine.sharedBmpSmall
-    val canvas = android.graphics.Canvas(target)
-    canvas.drawColor(android.graphics.Color.BLACK)
+    // Phase 115: Proportional fit-within scaling via dedicated scratch buffer
+    val target = NativePaddleEngine.sharedBmpOdoScratch
+    val targetCanvas = NativePaddleEngine.sharedCanvasOdoScratch
+    targetCanvas.drawColor(android.graphics.Color.BLACK)
     
-    val src = android.graphics.Rect(left, top, left + width, top + height)
-    val dst = android.graphics.Rect(0, 0, target.width, target.height)
-    canvas.drawBitmap(bmp, src, dst, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+    // Maintain aspect ratio: use the smaller scale factor for both dimensions
+    val s = kotlin.math.min(320f / srcW.toFloat(), 128f / srcH.toFloat())
+    val targetW = (srcW * s).toInt().coerceIn(1, 320)
+    val targetH = (srcH * s).toInt().coerceIn(1, 128)
+
+    val matrix = android.graphics.Matrix()
+    matrix.postScale(s, s)
     
-    return target
+    val srcRect = android.graphics.Rect(left, top, left + srcW, top + srcH)
+    val dstRect = android.graphics.Rect(0, 0, targetW, targetH)
+    targetCanvas.drawBitmap(bmp, srcRect, dstRect, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+    
+    // Return a view of only the scaled image area to preserve aspect ratio in HTML
+    return Bitmap.createBitmap(target, 0, 0, targetW, targetH)
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {

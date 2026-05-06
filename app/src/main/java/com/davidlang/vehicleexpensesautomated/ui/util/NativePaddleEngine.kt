@@ -80,6 +80,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedCanvasRecMono by lazy { Canvas(sharedBmpRecMono) }
         val sharedNv21Buffer by lazy { ByteArray(4000 * 3000 * 3 / 2) }
 
+        // Phase 115: Dedicated Odometer Refinement Buffer (Prevents collision with Small buffer)
+        val sharedBmpOdoScratch by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
+        val sharedCanvasOdoScratch by lazy { Canvas(sharedBmpOdoScratch) }
+
         // Shared Matrix for Zero-Allocation Scaling
         val sharedMatrix = android.graphics.Matrix()
 
