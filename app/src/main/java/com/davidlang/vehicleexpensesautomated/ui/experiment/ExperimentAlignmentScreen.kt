@@ -224,14 +224,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val masterCanvas = NativePaddleEngine.sharedCanvasFull
             masterCanvas.drawColor(android.graphics.Color.BLACK)
             masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
+            
+            // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
+            val originalBase64 = createScaledBase64(masterBmp, 150, 50)
+            
             rawBitmap.recycle()
 
             // Apply global filters to established baseline
             OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
             OdometerOcrUtils.applyBilateralInPlace(masterBmp, NativePaddleEngine.sharedBmpScratch)
             
-            val deskewedBase64 = createScaledBase64(masterBmp, 150, 50)
-
             try {
                 // Step 2 (Deskew): Draw a scaled version into 2048 buffer and calculate tilt
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp, NativePaddleEngine.sharedBmp2048, null)
@@ -265,6 +267,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 // Identification Pass: Find the winning vehicle
                 val winnerId = primaryVetoResults.entries.find { !it.value.isVetoed }?.key
                 val winnerRef = cachedRefs.find { it.vehicle.id == winnerId }
+                
+                var alignedBase64 = ""
 
                 // Winner-Only Processing block
                 if (winnerRef != null) {
@@ -278,6 +282,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     val t0 = System.currentTimeMillis()
                     val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
                     val elapsedAlign = System.currentTimeMillis() - t0
+                    
+                    // Capture ALIGNED Thumbnail for Report
+                    alignedBase64 = createScaledBase64(masterBmp, 150, 50)
                     
                     // 2. Mono Alignment (Bypassed)
                     val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap())
@@ -330,7 +337,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, deskewedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
                 val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -499,14 +506,42 @@ private fun serializePhotoResultToJson(
 private fun buildHtmlHeader(time: String, total: Int, strategies: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
-    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:200px;'># & Original</th>")
+    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:200px;'># & Original</th><th style='width:200px;'>Aligned & Stats</th>")
     strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
     appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
 }
 
-private fun buildHtmlRowDynamic(rowIndex: Int, fileName: String, deskewedBase64: String, discovery: String, vehicleResults: Map<Int, SingleVehicleResult>, cachedRefs: List<ReferenceCache>, winnerName: String, strategies: List<String>, tDeskew: Long, tDiscovery: Long): String = buildString {
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$deskewedBase64'></td>")
+private fun buildHtmlRowDynamic(
+    rowIndex: Int, 
+    fileName: String, 
+    originalBase64: String, 
+    alignedBase64: String,
+    discovery: String, 
+    vehicleResults: Map<Int, SingleVehicleResult>, 
+    cachedRefs: List<ReferenceCache>, 
+    winnerName: String, 
+    strategies: List<String>, 
+    tDeskew: Long, 
+    tDiscovery: Long
+): String = buildString {
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
+    
+    // Aligned Column
+    appendLine("<td>")
+    if (alignedBase64.isNotEmpty()) {
+        appendLine("<img src='data:image/jpeg;base64,$alignedBase64'><br>")
+        vRes?.alignmentTrace?.let { trace ->
+            val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
+            val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
+            val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
+            appendLine("<small>Scale: %.3f<br>TX: %.1f, TY: %.1f</small>".format(s, tx, ty))
+        }
+    } else {
+        appendLine("<i>Not Aligned</i>")
+    }
+    appendLine("</td>")
     
     val allReadings = mutableListOf<String>()
     strategies.forEach { strat ->
