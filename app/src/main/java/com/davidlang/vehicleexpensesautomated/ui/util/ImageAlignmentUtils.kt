@@ -380,16 +380,15 @@ object ImageAlignmentUtils {
         )
 
         return try {
-            // Phase 92: In-Place Morphing. We use a temporary scratch bitmap to warp, then draw it back.
-            val scratch = Bitmap.createBitmap(bmp.width, bmp.height, bmp.config ?: Bitmap.Config.ARGB_8888)
+            // Phase 115: In-Place Morphing using shared scratch buffer.
+            val scratch = NativePaddleEngine.sharedBmpScratch
             val canvas = android.graphics.Canvas(scratch)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(bmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
             
-            // Draw scratch back to the original passed buffer
+            // Draw scratch back to the original passed buffer (bmp)
             val originalCanvas = android.graphics.Canvas(bmp)
             originalCanvas.drawBitmap(scratch, 0f, 0f, null)
-            scratch.recycle()
             
             AnchorResult(true, bmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d) [B:%d]: S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, bracketedCount, finalScale, finalTx, finalTy))
         } catch (e: Exception) {

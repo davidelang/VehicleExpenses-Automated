@@ -133,7 +133,7 @@ class MlKitEngine : OcrEngine {
     override val name = "ML Kit"
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
-        val res = OdometerOcrUtils.extractFromPhotoBitmap(bitmap)
+        val res = OdometerOcrUtils.extractFromPhotoBitmapRaw(bitmap)
         res.copy(engineName = name, executionTimeMs = System.currentTimeMillis() - t0)
     }
 }

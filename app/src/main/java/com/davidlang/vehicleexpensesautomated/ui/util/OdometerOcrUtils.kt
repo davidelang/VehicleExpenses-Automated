@@ -78,6 +78,32 @@ object OdometerOcrUtils {
         return computeFinalDeskewAngle(pdCandidates, paddleAngle, targetBitmap, pHeight, paddleTimeMs)
     }
 
+    suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val image = InputImage.fromBitmap(bitmap, 0)
+        return try {
+            val visionText = recognizer.process(image).await()
+            val blocks = mutableListOf<TextBlock>()
+            val text = StringBuilder()
+            for (block in visionText.textBlocks) {
+                for (line in block.lines) {
+                    for (element in line.elements) {
+                        val hunk = element.text
+                        val box = element.boundingBox
+                        if (box != null) {
+                            blocks.add(TextBlock(hunk, box, line.angle))
+                            text.append(hunk).append(" ")
+                        }
+                    }
+                }
+            }
+            OcrResult(engineName = "ML Kit", debugText = text.toString().trim(), textBlocks = blocks, imageWidth = bitmap.width, imageHeight = bitmap.height)
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "ML Kit failed", e)
+            OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        }
+    }
+
     private suspend fun computeFinalDeskewAngle(
         pdCandidates: List<TextBlock>,
         paddleAngle: Float,
@@ -86,7 +112,7 @@ object OdometerOcrUtils {
         paddleTimeMs: Long
     ): DeskewResult {
         val tMl = System.currentTimeMillis()
-        val mlOcr = extractFromPhotoBitmap(bitmap)
+        val mlOcr = extractFromPhotoBitmapRaw(bitmap)
         val mlAngle = calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
         val mlTimeMs = System.currentTimeMillis() - tMl
         
@@ -153,6 +179,39 @@ object OdometerOcrUtils {
         return filtered.map { block ->
             block.copy(text = cleanLandmarkString(block.text))
         }.filter { it.text.length > 1 }.sortedBy { it.text }
+    }
+
+    fun applyGrayscaleInPlace(bitmap: Bitmap) {
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat()
+        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        // Convert back to ARGB_8888 in-place
+        Imgproc.cvtColor(gray, mat, Imgproc.COLOR_GRAY2RGBA)
+        org.opencv.android.Utils.matToBitmap(mat, bitmap)
+        mat.release(); gray.release()
+    }
+
+    fun applyBilateralInPlace(bitmap: Bitmap, scratchBmp: Bitmap) {
+        val src = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, src)
+        val gray = Mat()
+        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
+        val filtered = Mat()
+        Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
+        
+        // Convert back to ARGB_8888
+        val outMat = Mat()
+        Imgproc.cvtColor(filtered, outMat, Imgproc.COLOR_GRAY2RGBA)
+        
+        // We use the scratch buffer because bilateral cannot be perfectly in-place on the same Mat
+        org.opencv.android.Utils.matToBitmap(outMat, scratchBmp)
+        
+        // Draw back to original
+        val canvas = Canvas(bitmap)
+        canvas.drawBitmap(scratchBmp, 0f, 0f, null)
+        
+        src.release(); gray.release(); filtered.release(); outMat.release()
     }
 
     fun applyGrayscale(bitmap: Bitmap): Bitmap {

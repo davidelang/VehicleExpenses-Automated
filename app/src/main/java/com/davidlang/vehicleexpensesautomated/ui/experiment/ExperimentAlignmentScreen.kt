@@ -218,16 +218,23 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         try {
             withContext(Dispatchers.Main) { onLog("") }
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
-            var originalBitmap: Bitmap? = null
-            try {
-                val rotated = OdometerOcrUtils.rotateImageIfRequired(rawBitmap, file.absolutePath)
-                originalBitmap = OdometerOcrUtils.applyGrayscale(rotated)
-                if (rotated != originalBitmap) rotated.recycle()
-                val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
+            
+            // Phase 115: Acquisition & Preprocessing (Zero-Allocation Pipeline)
+            val masterBmp = NativePaddleEngine.sharedBmpFull
+            val masterCanvas = NativePaddleEngine.sharedCanvasFull
+            masterCanvas.drawColor(android.graphics.Color.BLACK)
+            masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
+            rawBitmap.recycle()
 
-                // Phase 63: Optimized Multi-Spike Deskew (Benchmarking Standard vs Mono disabled, Paddle disabled)
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048, null)
-                // val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048Mono, paddleEngineV3Mono)
+            // Apply global filters to established baseline
+            OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
+            OdometerOcrUtils.applyBilateralInPlace(masterBmp, NativePaddleEngine.sharedBmpScratch)
+            
+            val deskewedBase64 = createScaledBase64(masterBmp, 150, 50)
+
+            try {
+                // Step 2 (Deskew): Draw a scaled version into 2048 buffer and calculate tilt
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp, NativePaddleEngine.sharedBmp2048, null)
                 val deskewResMono = deskewRes.copy() // Bypass mono deskew
                 
                 val tilt = deskewRes.angle
@@ -237,12 +244,20 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 var tRotate = 0L
                 if (Math.abs(tilt) > 0.2f) { 
                     val tRot0 = System.currentTimeMillis()
-                    val leveled = OdometerOcrUtils.rotateBitmap(originalBitmap!!, -tilt)
-                    if (leveled != originalBitmap) { originalBitmap!!.recycle(); originalBitmap = leveled }
+                    // Rotate masterBmp in-place using scratch buffer
+                    val scratch = NativePaddleEngine.sharedBmpScratch
+                    val scratchCanvas = NativePaddleEngine.sharedCanvasScratch
+                    scratchCanvas.drawColor(android.graphics.Color.BLACK)
+                    val matrix = android.graphics.Matrix()
+                    matrix.postRotate(-tilt, masterBmp.width / 2f, masterBmp.height / 2f)
+                    scratchCanvas.drawBitmap(masterBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+                    
+                    masterCanvas.drawBitmap(scratch, 0f, 0f, null)
                     tRotate = System.currentTimeMillis() - tRot0
                 }
+                
                 val tDiscoveryStart = System.currentTimeMillis()
-                val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(originalBitmap!!, context)
+                val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(masterBmp, context)
                 val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
                 val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksRaw, cachedRefs.map { it.vehicle }, "ML Kit")
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
@@ -259,33 +274,20 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     // Phase 108: Disambiguate exactly once for the correct vehicle
                     val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
                     
-                    // 1. Standard Alignment (In-place on originalBitmap)
+                    // 1. Standard Alignment (In-place on masterBmp)
                     val t0 = System.currentTimeMillis()
-                    val alignRes = ImageAlignmentUtils.anchorAlign(originalBitmap!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
+                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
                     val elapsedAlign = System.currentTimeMillis() - t0
                     
-                    // 2. Mono Alignment (Benchmarking disabled to shorten dev cycle)
-                    /*
-                    val monoBitmap = originalBitmap!!.copy(Bitmap.Config.ALPHA_8, true)
-                    val t0Mono = System.currentTimeMillis()
-                    val alignResMono = ImageAlignmentUtils.anchorAlign(monoBitmap, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
-                    val elapsedAlignMono = System.currentTimeMillis() - t0Mono
-                    
-                    val alignmentTraceMono = if (alignResMono.success && alignResMono.alignedImage != null) {
-                        AlignmentTraceResult(true, elapsedAlignMono, "", alignResMono.metadata)
-                    } else {
-                        AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
-                    }
-                    monoBitmap.recycle()
-                    */
-                    val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap()) // Bypass mono alignment
+                    // 2. Mono Alignment (Bypassed)
+                    val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap())
 
-                    if (alignRes.success && alignRes.alignedImage != null) {
-                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
+                    if (alignRes.success) {
+                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp, 400, 70), alignRes.metadata)
                         val refinementTraces = mutableMapOf<String, RefinementTrace>()
                         
                         // Phase 58: Refinement Loop (Only executed on successful alignment)
-                        val exactCrop = manualCropOdometer(alignRes.alignedImage, winnerRef.vehicle)
+                        val exactCrop = manualCropOdometer(masterBmp, winnerRef.vehicle)
                         if (exactCrop != null) {
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                             try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
@@ -307,7 +309,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
                                 refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
                             }
-                            exactCrop.recycle()
                         }
                         
                         val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
@@ -551,7 +552,17 @@ private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
     val left = (l * bmp.width).toInt().coerceAtLeast(0); val top = ((vehicle.odometerCropTop ?: 0f) * bmp.height).toInt().coerceAtLeast(0)
     val width = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt(); val height = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
     if (width <= 0 || height <= 0) return null
-    return Bitmap.createBitmap(bmp, left, top, width.coerceAtMost(bmp.width - left), height.coerceAtMost(bmp.height - top))
+    
+    // Phase 115: Direct-to-buffer crop using shared small buffer
+    val target = NativePaddleEngine.sharedBmpSmall
+    val canvas = android.graphics.Canvas(target)
+    canvas.drawColor(android.graphics.Color.BLACK)
+    
+    val src = android.graphics.Rect(left, top, left + width, top + height)
+    val dst = android.graphics.Rect(0, 0, target.width, target.height)
+    canvas.drawBitmap(bmp, src, dst, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+    
+    return target
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
