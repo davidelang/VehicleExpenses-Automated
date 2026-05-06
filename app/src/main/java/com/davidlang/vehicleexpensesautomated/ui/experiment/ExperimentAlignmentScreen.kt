@@ -225,8 +225,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 if (rotated != originalBitmap) rotated.recycle()
                 val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
 
-                // Phase 63: Optimized Multi-Spike Deskew (Benchmarking Standard vs Mono disabled)
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048, paddleEngineV3)
+                // Phase 63: Optimized Multi-Spike Deskew (Benchmarking Standard vs Mono disabled, Paddle disabled)
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048, null)
                 // val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048Mono, paddleEngineV3Mono)
                 val deskewResMono = deskewRes.copy() // Bypass mono deskew
                 
