@@ -133,7 +133,9 @@ data class ReferenceCache(
     val vehicle: Vehicle, 
     val referenceBase64: String, 
     val curatedLandmarks: List<TextBlock>, 
-    val bmp: Bitmap
+    val bmp: Bitmap,
+    val width: Int,
+    val height: Int
 )
 
 data class RefinementTrace(
@@ -189,7 +191,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, v.referenceDashPhotoUrl!!) ?: BitmapFactory.decodeFile(v.referenceDashPhotoUrl)
         val curated = getFullLandmarksFromJson(v.landmarkTextBlocksJson, "ML Kit", bmp.width, bmp.height)
         val annotatedBmp = drawCropBoxesOnReference(bmp, v); val refBase64 = createScaledBase64(annotatedBmp, 400, 70); annotatedBmp.recycle()
-        ReferenceCache(v, refBase64, curated, bmp)
+        ReferenceCache(v, refBase64, curated, bmp, bmp.width, bmp.height)
     }
     
     val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
@@ -281,8 +283,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     
                     // 1. Standard Alignment (In-place on masterBmp)
                     val t0 = System.currentTimeMillis()
-                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
+                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height)
                     val elapsedAlign = System.currentTimeMillis() - t0
+
                     
                     // Capture ALIGNED Thumbnail for Report
                     alignedBase64 = createScaledBase64(masterBmp, 150, 50)
@@ -339,6 +342,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 }
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
+
                 val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")

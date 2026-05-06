@@ -247,7 +247,9 @@ object ImageAlignmentUtils {
         bmp: Bitmap,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
-        vehicle: Vehicle
+        vehicle: Vehicle,
+        refW: Int = 4000,
+        refH: Int = 3000
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
@@ -271,33 +273,41 @@ object ImageAlignmentUtils {
                     val q1 = confirmedPairs[i].second
                     val q2 = confirmedPairs[j].second
                     
-                    val r1cx = r1.boundingBox.centerX().toFloat()
-                    val r1cy = r1.boundingBox.centerY().toFloat()
-                    val r2cx = r2.boundingBox.centerX().toFloat()
-                    val r2cy = r2.boundingBox.centerY().toFloat()
+                    // Corrected: Map normalized reference landmarks to pixels
+                    val r1cx = (r1.boundingBox.centerX().toFloat() / 1.0f) * refW 
+                    val r1cy = (r1.boundingBox.centerY().toFloat() / 1.0f) * refH
+                    val r2cx = (r2.boundingBox.centerX().toFloat() / 1.0f) * refW
+                    val r2cy = (r2.boundingBox.centerY().toFloat() / 1.0f) * refH
+                    
+                    // Case: if ref landmarks are already in pixel space (width > 1), don't scale
+                    val finalR1x = if (r1.boundingBox.width() > 1) r1.boundingBox.centerX().toFloat() else r1cx
+                    val finalR1y = if (r1.boundingBox.width() > 1) r1.boundingBox.centerY().toFloat() else r1cy
+                    val finalR2x = if (r2.boundingBox.width() > 1) r2.boundingBox.centerX().toFloat() else r2cx
+                    val finalR2y = if (r2.boundingBox.width() > 1) r2.boundingBox.centerY().toFloat() else r2cy
+
                     val q1cx = q1.boundingBox.centerX().toFloat()
                     val q1cy = q1.boundingBox.centerY().toFloat()
                     val q2cx = q2.boundingBox.centerX().toFloat()
                     val q2cy = q2.boundingBox.centerY().toFloat()
                     
-                    val refDist = sqrt((r1cx - r2cx).toDouble().pow(2.0) + (r1cy - r2cy).toDouble().pow(2.0))
+                    val refDist = sqrt((finalR1x - finalR2x).toDouble().pow(2.0) + (finalR1y - finalR2y).toDouble().pow(2.0))
                     val queDist = sqrt((q1cx - q2cx).toDouble().pow(2.0) + (q1cy - q2cy).toDouble().pow(2.0))
                     
                     if (queDist > 0) {
                         val s = (refDist / queDist).toFloat()
                         
                         // Calculate Rotation (Phase 44)
-                        val rAngle = Math.atan2((r2cy - r1cy).toDouble(), (r2cx - r1cx).toDouble())
+                        val rAngle = Math.atan2((finalR2y - finalR1y).toDouble(), (finalR2x - finalR1x).toDouble())
                         val qAngle = Math.atan2((q2cy - q1cy).toDouble(), (q2cx - q1cx).toDouble())
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
                         // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
                         if (kotlin.math.abs(rot) > 4.0f) continue
-                        val tx = r1cx - (s * q1cx)
-                        val ty = r1cy - (s * q1cy)
-                        val cyRef = (r1cy + r2cy) / 2.0f
+                        val tx = finalR1x - (s * q1cx)
+                        val ty = finalR1y - (s * q1cy)
+                        val cyRef = (finalR1y + finalR2y) / 2.0f
 
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, r1cy, r2cy))
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, finalR1y, finalR2y))
                     }
                 }
             }
