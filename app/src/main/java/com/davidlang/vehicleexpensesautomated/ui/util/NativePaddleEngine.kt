@@ -109,6 +109,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 1f, 0f, 0f, 0f, 0f  // A' = R (Takes luminance from red)
             ))
             paint.colorFilter = ColorMatrixColorFilter(matrix)
+            // CRITICAL: Mode.SRC ensures source pixels replace destination (no blending)
+            paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
             paint
         }
         
@@ -122,6 +124,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 0f, 0f, 0f, 0f, 255f // A' = 255 (Opaque)
             ))
             paint.colorFilter = ColorMatrixColorFilter(matrix)
+            paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
             paint
         }
 
