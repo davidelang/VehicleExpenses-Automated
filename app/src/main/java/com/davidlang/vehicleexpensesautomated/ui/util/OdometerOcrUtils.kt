@@ -273,17 +273,21 @@ object OdometerOcrUtils {
     private fun bitmapToMatMono(bitmap: Bitmap): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
         val buffer = NativePaddleEngine.sharedMonoBuffer
+        val bytes = NativePaddleEngine.sharedMonoBytes
         buffer.rewind()
         bitmap.copyPixelsToBuffer(buffer)
         buffer.rewind()
-        mat.put(0, 0, buffer)
+        buffer.get(bytes, 0, bitmap.width * bitmap.height)
+        mat.put(0, 0, bytes)
         return mat
     }
 
     private fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
+        val bytes = NativePaddleEngine.sharedMonoBytes
+        mat.get(0, 0, bytes)
         val buffer = NativePaddleEngine.sharedMonoBuffer
         buffer.rewind()
-        mat.get(0, 0, buffer)
+        buffer.put(bytes, 0, bitmap.width * bitmap.height)
         buffer.rewind()
         bitmap.copyPixelsFromBuffer(buffer)
     }
