@@ -325,7 +325,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val monoCanvas = NativePaddleEngine.sharedCanvasOdoScratchMono
                                         monoCanvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
                                         monoCanvas.drawBitmap(exactCrop, 0f, 0f, NativePaddleEngine.grayToAlphaPaint)
-                                        NativePaddleEngine.sharedBmpOdoScratchMono
+                                        // Phase 115: Subset view ensures OpenCV calculates contrast only on actual image data, not empty buffer space
+                                        Bitmap.createBitmap(NativePaddleEngine.sharedBmpOdoScratchMono, 0, 0, exactCrop.width, exactCrop.height)
                                     } else exactCrop
 
                                     val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
