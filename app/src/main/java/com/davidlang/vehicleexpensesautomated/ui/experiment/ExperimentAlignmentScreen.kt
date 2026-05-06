@@ -587,13 +587,16 @@ private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): 
     targetCanvas.drawColor(android.graphics.Color.BLACK)
     
     val scale = targetWidth.toFloat() / bitmap.width
+    val targetHeight = (bitmap.height * scale).toInt().coerceAtMost(target.height)
+    
     val matrix = android.graphics.Matrix()
     matrix.postScale(scale, scale)
     
     targetCanvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
     
-    // Return Base64 from the shared buffer
-    return bitmapToBase64(target, quality)
+    // CRITICAL: Create a view of only the scaled image area to preserve aspect ratio in HTML
+    val view = Bitmap.createBitmap(target, 0, 0, targetWidth, targetHeight)
+    return bitmapToBase64(view, quality)
 }
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
