@@ -283,7 +283,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     
                     // 1. Standard Alignment (In-place on masterBmp)
                     val t0 = System.currentTimeMillis()
-                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height)
+                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH)
                     val elapsedAlign = System.currentTimeMillis() - t0
 
                     
