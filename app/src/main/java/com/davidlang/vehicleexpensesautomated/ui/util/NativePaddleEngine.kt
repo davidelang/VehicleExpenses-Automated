@@ -99,13 +99,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         // Phase 115: Grayscale/Alpha Mapping Filters
         // grayToAlpha: Maps Red (Luminance) channel to Alpha channel
+        // Correct Mapping: [ R G B A W ]
         val grayToAlphaPaint: Paint by lazy {
             val paint = Paint()
             val matrix = ColorMatrix(floatArrayOf(
-                0f, 0f, 0f, 0f, 0f,
-                0f, 0f, 0f, 0f, 0f,
-                0f, 0f, 0f, 0f, 0f,
-                1f, 0f, 0f, 0f, 0f
+                0f, 0f, 0f, 0f, 0f, // R' = 0
+                0f, 0f, 0f, 0f, 0f, // G' = 0
+                0f, 0f, 0f, 0f, 0f, // B' = 0
+                1f, 0f, 0f, 0f, 0f  // A' = R (Takes luminance from red)
             ))
             paint.colorFilter = ColorMatrixColorFilter(matrix)
             paint
@@ -115,14 +116,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val alphaToGrayPaint: Paint by lazy {
             val paint = Paint()
             val matrix = ColorMatrix(floatArrayOf(
-                0f, 0f, 0f, 1f, 0f, // R = A
-                0f, 0f, 0f, 1f, 0f, // G = A
-                0f, 0f, 0f, 1f, 0f, // B = A
-                0f, 0f, 0f, 0f, 255f // A = 255
+                0f, 0f, 0f, 1f, 0f, // R' = A
+                0f, 0f, 0f, 1f, 0f, // G' = A
+                0f, 0f, 0f, 1f, 0f, // B' = A
+                0f, 0f, 0f, 0f, 255f // A' = 255 (Opaque)
             ))
             paint.colorFilter = ColorMatrixColorFilter(matrix)
             paint
         }
+
+        // Shared Byte Buffer for Zero-Allocation Mono Bridge (320x128 max refinement size)
+        val sharedMonoBuffer by lazy { java.nio.ByteBuffer.allocateDirect(320 * 128) }
     }
     
     init {

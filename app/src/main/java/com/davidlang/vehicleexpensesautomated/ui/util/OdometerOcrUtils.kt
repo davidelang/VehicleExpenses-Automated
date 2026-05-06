@@ -194,92 +194,100 @@ object OdometerOcrUtils {
     }
 
     fun applyBilateralInPlace(bitmap: Bitmap, scratchBmp: Bitmap) {
-        if (bitmap.config == Bitmap.Config.ALPHA_8) return
-        val src = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, src)
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        }
         val gray = Mat()
         if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
         
-        // Convert back to ARGB_8888
-        val outMat = Mat()
-        Imgproc.cvtColor(filtered, outMat, Imgproc.COLOR_GRAY2RGBA)
-        
-        // We use the scratch buffer because bilateral cannot be perfectly in-place on the same Mat
-        org.opencv.android.Utils.matToBitmap(outMat, scratchBmp)
-        
-        // Draw back to original
-        val canvas = Canvas(bitmap)
-        canvas.drawBitmap(scratchBmp, 0f, 0f, null)
-        
-        src.release(); gray.release(); filtered.release(); outMat.release()
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            matToBitmapMono(filtered, bitmap)
+        } else {
+            val outMat = Mat(); Imgproc.cvtColor(filtered, outMat, Imgproc.COLOR_GRAY2RGBA)
+            org.opencv.android.Utils.matToBitmap(outMat, scratchBmp)
+            Canvas(bitmap).drawBitmap(scratchBmp, 0f, 0f, null)
+            outMat.release()
+        }
+        src.release(); gray.release(); filtered.release()
     }
 
     fun applyGrayscale(bitmap: Bitmap): Bitmap {
         if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        val mat = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat(); Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
         val out = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(gray, out)
-        mat.release(); gray.release()
-        return out
+        mat.release(); gray.release(); return out
     }
 
     fun applyBilateral(bitmap: Bitmap): Bitmap {
-        if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        }
         val gray = Mat()
-        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
+        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-        val out = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(filtered, out)
-        mat.release(); gray.release(); filtered.release()
-        return out
+        
+        val outBmp: Bitmap
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ALPHA_8)
+            matToBitmapMono(filtered, outBmp)
+        } else {
+            outBmp = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(filtered, outBmp)
+        }
+        src.release(); gray.release(); filtered.release(); return outBmp
     }
 
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
-        if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
-        val src = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, src)
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        }
         val gray = Mat()
-        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY)
-        else src.copyTo(gray)
+        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY) else src.copyTo(gray)
         
         val hist = Mat()
-        Imgproc.calcHist(Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+        Imgproc.calcHist(java.util.Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+        val totalPixels = gray.rows() * gray.cols(); var floorBin = 0; var ceilingBin = 255; var sum = 0.0
+        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break } }
+        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
         
-        val totalPixels = gray.rows() * gray.cols()
-        var floorBin = 0
-        var ceilingBin = 255
-        
-        var sum = 0.0
-        for (i in 0..255) {
-            sum += hist.get(i, 0)[0]
-            if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break }
-        }
-        
-        sum = 0.0
-        for (i in 0..255) {
-            sum += hist.get(i, 0)[0]
-            if (sum >= totalPixels * 0.98) { ceilingBin = i; break }
-        }
-        
-        val dst = Mat()
-        val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0
-        val beta = -floorBin * alpha
+        val dst = Mat(); val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
         gray.convertTo(dst, CvType.CV_8U, alpha, beta)
         
-        val outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(dst, outBmp)
-        
-        src.release(); gray.release(); hist.release(); dst.release()
-        return outBmp
+        val outBmp: Bitmap
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ALPHA_8)
+            matToBitmapMono(dst, outBmp)
+        } else {
+            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(dst, outBmp)
+        }
+        src.release(); gray.release(); hist.release(); dst.release(); return outBmp
     }
+
+    // Phase 115: CV_8UC1 Monochrome Bridge
+    private fun bitmapToMatMono(bitmap: Bitmap): Mat {
+        val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
+        val buffer = NativePaddleEngine.sharedMonoBuffer; buffer.rewind()
+        bitmap.copyPixelsToBuffer(buffer)
+        val bytes = ByteArray(bitmap.width * bitmap.height)
+        buffer.rewind(); buffer.get(bytes)
+        mat.put(0, 0, bytes)
+        return mat
+    }
+
+    private fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
+        val bytes = ByteArray(bitmap.width * bitmap.height)
+        mat.get(0, 0, bytes)
+        val buffer = NativePaddleEngine.sharedMonoBuffer; buffer.rewind()
+        buffer.put(bytes); buffer.rewind()
+        bitmap.copyPixelsFromBuffer(buffer)
+    }
+        
 
     fun applyClahe(bitmap: Bitmap): Bitmap {
         val mat = Mat()
