@@ -218,21 +218,23 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         try {
             withContext(Dispatchers.Main) { onLog("") }
             val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
-            
-            // Phase 115: Acquisition & Preprocessing (Zero-Allocation Pipeline)
-            val masterBmp = NativePaddleEngine.sharedBmpFull
-            val masterCanvas = NativePaddleEngine.sharedCanvasFull
+            val imgW = rawBitmap.width
+            val imgH = rawBitmap.height
+
+            // Phase 115: Per-Row Master Buffers (Native Resolution)
+            val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+            val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+            val masterCanvas = android.graphics.Canvas(masterBmp)
             masterCanvas.drawColor(android.graphics.Color.BLACK)
             masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
             
             // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
             val originalBase64 = createScaledBase64(masterBmp, 150, 50)
-            
             rawBitmap.recycle()
 
             // Apply global filters to established baseline
             OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
-            OdometerOcrUtils.applyBilateralInPlace(masterBmp, NativePaddleEngine.sharedBmpScratch)
+            OdometerOcrUtils.applyBilateralInPlace(masterBmp, scratchBmp)
             
             try {
                 // Step 2 (Deskew): Draw a scaled version into 2048 buffer and calculate tilt
@@ -247,14 +249,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 if (Math.abs(tilt) > 0.2f) { 
                     val tRot0 = System.currentTimeMillis()
                     // Rotate masterBmp in-place using scratch buffer
-                    val scratch = NativePaddleEngine.sharedBmpScratch
-                    val scratchCanvas = NativePaddleEngine.sharedCanvasScratch
+                    val scratchCanvas = android.graphics.Canvas(scratchBmp)
                     scratchCanvas.drawColor(android.graphics.Color.BLACK)
                     val matrix = android.graphics.Matrix()
                     matrix.postRotate(-tilt, masterBmp.width / 2f, masterBmp.height / 2f)
                     scratchCanvas.drawBitmap(masterBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                     
-                    masterCanvas.drawBitmap(scratch, 0f, 0f, null)
+                    masterCanvas.drawBitmap(scratchBmp, 0f, 0f, null)
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 
@@ -337,7 +338,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal)
                 val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -358,7 +359,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 delay(150)
             } finally {
-                // No per-photo recycle for masterBmp as it is a shared buffer.
+                masterBmp?.recycle()
+                scratchBmp?.recycle()
             }
         } catch (e: Exception) { 
             Log.e(TAG, "Failed ${file.name}", e) 
@@ -506,7 +508,7 @@ private fun serializePhotoResultToJson(
 private fun buildHtmlHeader(time: String, total: Int, strategies: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
-    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:200px;'># & Original</th><th style='width:200px;'>Aligned & Stats</th>")
+    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:250px;'># & Original</th><th style='width:250px;'>Aligned & Stats</th>")
     strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
     appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
 }
@@ -514,6 +516,8 @@ private fun buildHtmlHeader(time: String, total: Int, strategies: List<String>):
 private fun buildHtmlRowDynamic(
     rowIndex: Int, 
     fileName: String, 
+    imgW: Int,
+    imgH: Int,
     originalBase64: String, 
     alignedBase64: String,
     discovery: String, 
@@ -524,7 +528,7 @@ private fun buildHtmlRowDynamic(
     tDeskew: Long, 
     tDiscovery: Long
 ): String = buildString {
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>Res: ${imgW}x${imgH}</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     
@@ -571,8 +575,21 @@ private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
 }
 
 private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
-    if (bitmap.isRecycled) return ""; val scale = targetWidth.toFloat() / bitmap.width; val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, (bitmap.height * scale).toInt(), true)
-    val b64 = bitmapToBase64(scaled, quality); scaled.recycle(); return b64
+    if (bitmap.isRecycled) return ""
+    
+    // Phase 115: Zero-allocation scaling via shared buffer
+    val target = NativePaddleEngine.sharedBmpSmall
+    val targetCanvas = NativePaddleEngine.sharedCanvasSmall
+    targetCanvas.drawColor(android.graphics.Color.BLACK)
+    
+    val scale = targetWidth.toFloat() / bitmap.width
+    val matrix = android.graphics.Matrix()
+    matrix.postScale(scale, scale)
+    
+    targetCanvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+    
+    // Return Base64 from the shared buffer
+    return bitmapToBase64(target, quality)
 }
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
