@@ -172,11 +172,12 @@ object OcrUtils {
         canvas.drawColor(android.graphics.Color.BLACK)
         val destRect = Rect(0, 0, targetWidth, targetHeight)
         
-        // Phase 115: Monochrome-Aware Rendering
+        // Phase 115: Monochrome-to-RGB Bridging for Diagnostics
+        // If source is ALPHA_8, we use a filter to map Alpha -> RGB grayscale
         val paint = if (source.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
         canvas.drawBitmap(source, null, destRect, paint)
         
-        // 2. Apply Annotations
+        // 2. Apply Annotations (Now always visible on color-mapped grayscale)
         rawFragments.forEach { r -> 
             canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint)
         }
