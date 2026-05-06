@@ -129,7 +129,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         // Shared Byte Buffer for Zero-Allocation Mono Bridge (320x128 max refinement size)
-        val sharedMonoBuffer by lazy { java.nio.ByteBuffer.allocateDirect(320 * 128) }
+        val sharedMonoBuffer by lazy { 
+            java.nio.ByteBuffer.allocateDirect(320 * 128).order(java.nio.ByteOrder.nativeOrder())
+        }
     }
     
     init {

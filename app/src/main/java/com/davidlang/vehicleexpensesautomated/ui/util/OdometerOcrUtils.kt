@@ -269,22 +269,22 @@ object OdometerOcrUtils {
         src.release(); gray.release(); hist.release(); dst.release(); return outBmp
     }
 
-    // Phase 115: CV_8UC1 Monochrome Bridge
+    // Phase 115: CV_8UC1 Monochrome Bridge (Zero-Allocation)
     private fun bitmapToMatMono(bitmap: Bitmap): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
-        val buffer = NativePaddleEngine.sharedMonoBuffer; buffer.rewind()
+        val buffer = NativePaddleEngine.sharedMonoBuffer
+        buffer.rewind()
         bitmap.copyPixelsToBuffer(buffer)
-        val bytes = ByteArray(bitmap.width * bitmap.height)
-        buffer.rewind(); buffer.get(bytes)
-        mat.put(0, 0, bytes)
+        buffer.rewind()
+        mat.put(0, 0, buffer)
         return mat
     }
 
     private fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
-        val bytes = ByteArray(bitmap.width * bitmap.height)
-        mat.get(0, 0, bytes)
-        val buffer = NativePaddleEngine.sharedMonoBuffer; buffer.rewind()
-        buffer.put(bytes); buffer.rewind()
+        val buffer = NativePaddleEngine.sharedMonoBuffer
+        buffer.rewind()
+        mat.get(0, 0, buffer)
+        buffer.rewind()
         bitmap.copyPixelsFromBuffer(buffer)
     }
         
