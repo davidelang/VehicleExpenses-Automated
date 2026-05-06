@@ -225,9 +225,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 if (rotated != originalBitmap) rotated.recycle()
                 val deskewedBase64 = createScaledBase64(originalBitmap!!, 150, 50)
 
-                // Phase 63: Optimized Multi-Spike Deskew (Benchmarking Standard vs Mono)
+                // Phase 63: Optimized Multi-Spike Deskew (Benchmarking Standard vs Mono disabled)
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048, paddleEngineV3)
-                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048Mono, paddleEngineV3Mono)
+                // val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(originalBitmap!!, NativePaddleEngine.sharedBmp2048Mono, paddleEngineV3Mono)
+                val deskewResMono = deskewRes.copy() // Bypass mono deskew
                 
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
@@ -263,7 +264,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     val alignRes = ImageAlignmentUtils.anchorAlign(originalBitmap!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
                     val elapsedAlign = System.currentTimeMillis() - t0
                     
-                    // 2. Mono Alignment (Benchmarking: New Mono buffer)
+                    // 2. Mono Alignment (Benchmarking disabled to shorten dev cycle)
+                    /*
                     val monoBitmap = originalBitmap!!.copy(Bitmap.Config.ALPHA_8, true)
                     val t0Mono = System.currentTimeMillis()
                     val alignResMono = ImageAlignmentUtils.anchorAlign(monoBitmap, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle)
@@ -275,6 +277,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         AlignmentTraceResult(false, elapsedAlignMono, "", alignResMono.metadata)
                     }
                     monoBitmap.recycle()
+                    */
+                    val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap()) // Bypass mono alignment
 
                     if (alignRes.success && alignRes.alignedImage != null) {
                         val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(alignRes.alignedImage, 400, 70), alignRes.metadata)
