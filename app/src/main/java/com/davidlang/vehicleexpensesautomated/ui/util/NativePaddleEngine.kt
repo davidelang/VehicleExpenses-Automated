@@ -115,10 +115,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val alphaToGrayPaint: Paint by lazy {
             val paint = Paint()
             val matrix = ColorMatrix(floatArrayOf(
-                0f, 0f, 0f, 1f, 0f,
-                0f, 0f, 0f, 1f, 0f,
-                0f, 0f, 0f, 1f, 0f,
-                0f, 0f, 0f, 0f, 255f
+                0f, 0f, 0f, 1f, 0f, // R = A
+                0f, 0f, 0f, 1f, 0f, // G = A
+                0f, 0f, 0f, 1f, 0f, // B = A
+                0f, 0f, 0f, 0f, 255f // A = 255
             ))
             paint.colorFilter = ColorMatrixColorFilter(matrix)
             paint
