@@ -305,30 +305,34 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
                             for (strat in strategies) {
-                                val tRef0 = System.currentTimeMillis()
-                                val isDisc = strat.contains("Unclip") || strat.contains("Valley")
-                                val engine = when {
-                                    strat.contains("ML Kit Mono") -> "ML Kit Mono"
-                                    strat.contains("ML Kit") -> "ML Kit"
-                                    isDisc -> if (strat.contains("V3")) "Paddle V3 ${if (strat.contains("Valley")) "Valley" else "Unclip"}" else "Paddle V2 ${if (strat.contains("Valley")) "Valley" else "Unclip"}"
-                                    strat.contains("V2") -> "Paddle V2 Greedy"
-                                    else -> "Paddle V3 Greedy"
-                                }
-                                val h = if (strat.contains("48px")) 48 else if (strat.contains("32px")) 32 else null
-                                val activePaddle = if (strat.contains("Mono")) paddleEngineV3Mono else if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
-                                val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
-                                
-                                val ocrInput = if (strat.contains("Mono")) {
-                                    // Phase 115: Isolated Mono Refinement. 
-                                    // Populating sharedBmpOdoScratchMono via Luminance-to-Alpha mapping
-                                    val monoCanvas = NativePaddleEngine.sharedCanvasOdoScratchMono
-                                    monoCanvas.drawColor(android.graphics.Color.BLACK)
-                                    monoCanvas.drawBitmap(exactCrop, 0f, 0f, NativePaddleEngine.grayToAlphaPaint)
-                                    NativePaddleEngine.sharedBmpOdoScratchMono
-                                } else exactCrop
+                                try {
+                                    val tRef0 = System.currentTimeMillis()
+                                    val isDisc = strat.contains("Unclip") || strat.contains("Valley")
+                                    val engine = when {
+                                        strat.contains("ML Kit Mono") -> "ML Kit Mono"
+                                        strat.contains("ML Kit") -> "ML Kit"
+                                        isDisc -> if (strat.contains("V3")) "Paddle V3 ${if (strat.contains("Valley")) "Valley" else "Unclip"}" else "Paddle V2 ${if (strat.contains("Valley")) "Valley" else "Unclip"}"
+                                        strat.contains("V2") -> "Paddle V2 Greedy"
+                                        else -> "Paddle V3 Greedy"
+                                    }
+                                    val h = if (strat.contains("48px")) 48 else if (strat.contains("32px")) 32 else null
+                                    val activePaddle = if (strat.contains("Mono")) paddleEngineV3Mono else if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
+                                    val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
+                                    
+                                    val ocrInput = if (strat.contains("Mono")) {
+                                        // Phase 115: Isolated Mono Refinement. 
+                                        // Populating sharedBmpOdoScratchMono via Luminance-to-Alpha mapping
+                                        val monoCanvas = NativePaddleEngine.sharedCanvasOdoScratchMono
+                                        monoCanvas.drawColor(android.graphics.Color.BLACK)
+                                        monoCanvas.drawBitmap(exactCrop, 0f, 0f, NativePaddleEngine.grayToAlphaPaint)
+                                        NativePaddleEngine.sharedBmpOdoScratchMono
+                                    } else exactCrop
 
-                                val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
-                                refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
+                                    val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
+                                    refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Strategy $strat failed for ${file.name}", e)
+                                }
                             }
                         }
                         

@@ -182,6 +182,7 @@ object OdometerOcrUtils {
     }
 
     fun applyGrayscaleInPlace(bitmap: Bitmap) {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) return
         val mat = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, mat)
         val gray = Mat()
@@ -193,6 +194,7 @@ object OdometerOcrUtils {
     }
 
     fun applyBilateralInPlace(bitmap: Bitmap, scratchBmp: Bitmap) {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) return
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, src)
         val gray = Mat()
@@ -215,6 +217,7 @@ object OdometerOcrUtils {
     }
 
     fun applyGrayscale(bitmap: Bitmap): Bitmap {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
         val mat = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, mat)
         val gray = Mat()
@@ -226,6 +229,7 @@ object OdometerOcrUtils {
     }
 
     fun applyBilateral(bitmap: Bitmap): Bitmap {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
         val mat = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, mat)
         val gray = Mat()
@@ -239,6 +243,7 @@ object OdometerOcrUtils {
     }
 
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
         val src = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, src)
         val gray = Mat()
