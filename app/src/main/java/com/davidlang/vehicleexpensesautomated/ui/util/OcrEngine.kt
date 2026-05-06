@@ -169,7 +169,7 @@ object OcrUtils {
         val thumb = NativePaddleEngine.sharedReportBitmap
         
         // 1. Clear and Draw thumbnail
-        canvas.drawColor(android.graphics.Color.BLACK)
+        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
         val destRect = Rect(0, 0, targetWidth, targetHeight)
         
         // Phase 115: Monochrome-to-RGB Bridging for Diagnostics
