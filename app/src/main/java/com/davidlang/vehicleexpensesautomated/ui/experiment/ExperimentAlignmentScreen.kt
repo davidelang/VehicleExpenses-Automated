@@ -231,7 +231,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
             
             // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
-            val originalBase64 = createScaledBase64(masterBmp, 150, 50)
+            val originalBase64 = createScaledBase64(masterBmp!!, 150, 50, scratchBmp)
+
             rawBitmap.recycle()
 
             // Apply global filters to established baseline
@@ -288,13 +289,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                     
                     // Capture ALIGNED Thumbnail for Report
-                    alignedBase64 = createScaledBase64(masterBmp, 150, 50)
+                    alignedBase64 = createScaledBase64(masterBmp!!, 150, 50, scratchBmp)
                     
                     // 2. Mono Alignment (Bypassed)
                     val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap())
 
                     if (alignRes.success) {
-                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp, 400, 70), alignRes.metadata)
+                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 400, 70, scratchBmp), alignRes.metadata)
                         val refinementTraces = mutableMapOf<String, RefinementTrace>()
                         
                         // Phase 58: Refinement Loop (Only executed on successful alignment)
@@ -578,25 +579,31 @@ private fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
     val outputStream = ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream); return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 }
 
-private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int): String {
+private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, targetBuffer: Bitmap? = null): String {
     if (bitmap.isRecycled) return ""
     
-    // Phase 115: Zero-allocation scaling via shared buffer
-    val target = NativePaddleEngine.sharedBmpSmall
-    val targetCanvas = NativePaddleEngine.sharedCanvasSmall
-    targetCanvas.drawColor(android.graphics.Color.BLACK)
-    
     val scale = targetWidth.toFloat() / bitmap.width
-    val targetHeight = (bitmap.height * scale).toInt().coerceAtMost(target.height)
+    val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+    
+    // Phase 115: Scaled thumbnail via target buffer (zero-allocation if buffer provided)
+    val target = targetBuffer ?: Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+    val targetCanvas = android.graphics.Canvas(target)
+    
+    // Clear target if reused
+    if (targetBuffer != null) targetCanvas.drawColor(android.graphics.Color.BLACK)
     
     val matrix = android.graphics.Matrix()
     matrix.postScale(scale, scale)
-    
     targetCanvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
     
     // CRITICAL: Create a view of only the scaled image area to preserve aspect ratio in HTML
     val view = Bitmap.createBitmap(target, 0, 0, targetWidth, targetHeight)
-    return bitmapToBase64(view, quality)
+    val b64 = bitmapToBase64(view, quality)
+    
+    // Only recycle if we allocated it here
+    if (targetBuffer == null) target.recycle()
+    
+    return b64
 }
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
