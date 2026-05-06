@@ -547,7 +547,11 @@ object OdometerOcrUtils {
 
         try {
             Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-            org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
+            
+            // Phase 115: ALPHA_8 Safety for Heatmap processing
+            if (sourceBitmap.config != Bitmap.Config.ALPHA_8) {
+                org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
+            }
 
             for (contour in contours) {
                 if (Imgproc.contourArea(contour) < 10) continue
