@@ -351,8 +351,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 delay(150)
             } finally {
-                if (originalBitmap != rawBitmap) rawBitmap.recycle()
-                originalBitmap?.recycle()
+                // No per-photo recycle for masterBmp as it is a shared buffer.
             }
         } catch (e: Exception) { 
             Log.e(TAG, "Failed ${file.name}", e) 
