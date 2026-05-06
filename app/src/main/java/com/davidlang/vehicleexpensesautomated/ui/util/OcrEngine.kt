@@ -160,14 +160,17 @@ object OcrUtils {
         rawFragments: List<Rect> = emptyList(), 
         consolidatedRows: List<Rect> = emptyList()
     ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
-        val scale = 48f / source.height
-        val targetWidth = (source.width * scale).toInt().coerceAtMost(320)
+        // Phase 115: Proportional fit-within scaling
+        val scale = kotlin.math.min(320f / source.width.toFloat(), 48f / source.height.toFloat())
+        val targetWidth = (source.width * scale).toInt().coerceIn(1, 320)
+        val targetHeight = (source.height * scale).toInt().coerceIn(1, 48)
+        
         val canvas = NativePaddleEngine.sharedReportCanvas
         val thumb = NativePaddleEngine.sharedReportBitmap
         
         // 1. Clear and Draw thumbnail
         canvas.drawColor(android.graphics.Color.BLACK)
-        val destRect = Rect(0, 0, targetWidth, 48)
+        val destRect = Rect(0, 0, targetWidth, targetHeight)
         canvas.drawBitmap(source, null, destRect, null)
         
         // 2. Apply Annotations
@@ -179,7 +182,7 @@ object OcrUtils {
         }
         
         // 3. Create Subset View for Base64 (No allocation)
-        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, 48)
+        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, targetHeight)
         bitmapToBase64(view, 60)
     }
 }

@@ -318,7 +318,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val activePaddle = if (strat.contains("Mono")) paddleEngineV3Mono else if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
                                 val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                 
-                                val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(exactCrop, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(exactCrop, context, engine, h, activePaddle)
+                                val ocrInput = if (strat.contains("Mono")) {
+                                    // Phase 115: Isolated Mono Refinement. 
+                                    // Populating sharedBmpOdoScratchMono (Currently default draw, results in solid white as requested)
+                                    val monoCanvas = NativePaddleEngine.sharedCanvasOdoScratchMono
+                                    monoCanvas.drawColor(android.graphics.Color.BLACK)
+                                    monoCanvas.drawBitmap(exactCrop, 0f, 0f, null)
+                                    NativePaddleEngine.sharedBmpOdoScratchMono
+                                } else exactCrop
+
+                                val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
                                 refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
                             }
                         }
