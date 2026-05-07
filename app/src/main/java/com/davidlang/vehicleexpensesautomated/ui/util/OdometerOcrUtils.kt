@@ -416,50 +416,19 @@ object OdometerOcrUtils {
                         Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
                     } else bmp
                     
-                    val image = if (engineName == "ML Kit Mono") {
-                        val w = resized.width
-                        val h = resized.height
-                        val frameSize = w * h
-                        val nv21Size = frameSize * 3 / 2
-                        
-                        if (sharedPixelsBuffer == null || sharedPixelsBuffer!!.size < frameSize) {
-                            sharedPixelsBuffer = IntArray(frameSize)
-                        }
-                        if (sharedNv21Buffer == null || sharedNv21Buffer!!.size < nv21Size) {
-                            sharedNv21Buffer = ByteArray(nv21Size)
-                        }
-                        
-                        val nv21 = sharedNv21Buffer!!
-                        
-                        // Extract Luminance (Y) channel.
-                        if (resized.config == Bitmap.Config.ALPHA_8) {
-                            // Fast path: ALPHA_8 perfectly maps to Y-plane bytes
-                            val buffer = NativePaddleEngine.sharedMonoBuffer
-                            buffer.rewind()
-                            resized.copyPixelsToBuffer(buffer)
-                            buffer.rewind()
-                            buffer.get(nv21, 0, frameSize)
-                        } else {
-                            val pixels = sharedPixelsBuffer!!
-                            resized.getPixels(pixels, 0, w, 0, 0, w, h)
-                            for (i in 0 until frameSize) {
-                                nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
-                            }
-                        }
-                        
-                        // Fill U/V channels with neutral chroma (128)
-                        for (i in frameSize until nv21Size) {
-                            nv21[i] = 128.toByte()
-                        }
-                        
-                        val buffer = java.nio.ByteBuffer.wrap(nv21)
-                        InputImage.fromByteBuffer(buffer, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
-                    } else {
-                        InputImage.fromBitmap(resized, 0)
-                    }
+                    val argbMonoBmp: Bitmap? = if (engineName == "ML Kit Mono" && resized.config == Bitmap.Config.ALPHA_8) {
+                        val argb = Bitmap.createBitmap(resized.width, resized.height, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(argb)
+                        canvas.drawBitmap(resized, 0f, 0f, NativePaddleEngine.alphaToGrayPaint)
+                        argb
+                    } else null
+
+                    val image = InputImage.fromBitmap(argbMonoBmp ?: resized, 0)
                     
                     try {
                         val visionText = mlKitClient!!.process(image).await()
+                        argbMonoBmp?.recycle()
+                        
                         val resBuilder = java.lang.StringBuilder()
                         for (block in visionText.textBlocks) {
                             for (line in block.lines) {
