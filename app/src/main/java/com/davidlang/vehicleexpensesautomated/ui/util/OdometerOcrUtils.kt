@@ -480,7 +480,9 @@ object OdometerOcrUtils {
                         
                         Pair(img, forensicMap)
                     } else {
-                        Pair(InputImage.fromBitmap(resized, 0), mutableMapOf<String, Any?>())
+                        val meta = mutableMapOf<String, Any?>()
+                        meta["ocrInput"] = OcrUtils.takeSnapshot(resized)
+                        Pair(InputImage.fromBitmap(resized, 0), meta)
                     }
                     
                     try {
