@@ -128,6 +128,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             paint
         }
 
+        // Phase 115: Internal Scaling Overwrite Paint
+        val srcPaint: Paint by lazy {
+            val paint = Paint()
+            paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
+            paint
+        }
+
         // Shared Byte Buffer and Array for Zero-Allocation Mono Bridge (320x128 max refinement size)
         val sharedMonoBuffer by lazy { 
             java.nio.ByteBuffer.allocateDirect(320 * 128).order(java.nio.ByteOrder.nativeOrder())
@@ -256,10 +263,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         // Zero-Allocation Scaling via Canvas
         synchronized(targetBmp) {
-            targetCanvas.drawColor(Color.BLACK)
+            if (useMono) {
+                targetCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+            } else {
+                targetCanvas.drawColor(Color.BLACK)
+            }
             sharedMatrix.reset()
             sharedMatrix.postScale(scale, scale)
-            targetCanvas.drawBitmap(bitmap, sharedMatrix, null)
+            targetCanvas.drawBitmap(bitmap, sharedMatrix, if (useMono) srcPaint else null)
 
             val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
             val std = floatArrayOf(0.229f, 0.224f, 0.225f)
@@ -331,11 +342,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val targetCanvas = if (useMono) sharedCanvasRecMono else sharedCanvasRec
 
         synchronized(targetBmp) {
-            targetCanvas.drawColor(Color.BLACK)
+            if (useMono) {
+                targetCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+            } else {
+                targetCanvas.drawColor(Color.BLACK)
+            }
             sharedMatrix.reset()
             sharedMatrix.postScale(scale, scale)
             sharedMatrix.postTranslate(padding.toFloat(), padding.toFloat())
-            targetCanvas.drawBitmap(bitmap, sharedMatrix, null)
+            targetCanvas.drawBitmap(bitmap, sharedMatrix, if (useMono) srcPaint else null)
 
             val mean = 0.5f
             val std = 0.5f
