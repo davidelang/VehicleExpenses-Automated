@@ -467,7 +467,9 @@ object OdometerOcrUtils {
                         if (stageName == "Raw") {
                             try {
                                 val monoB64 = android.util.Base64.encodeToString(nv21.sliceArray(0 until frameSize), android.util.Base64.NO_WRAP)
+                                val fullNv21B64 = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
                                 forensicMap["forensic_a8_bytes"] = monoB64
+                                forensicMap["forensic_nv21_bytes"] = fullNv21B64
                                 forensicMap["bitmap_stride"] = resized.rowBytes.toString()
                                 forensicMap["bitmap_byte_count"] = resized.byteCount.toString()
                             } catch (e: Exception) { Log.e("FORENSIC", "Failed to encode bytes", e) }
