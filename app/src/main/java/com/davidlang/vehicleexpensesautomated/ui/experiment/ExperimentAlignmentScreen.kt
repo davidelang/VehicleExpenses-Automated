@@ -11,7 +11,6 @@ import android.graphics.Paint
 
 import android.graphics.RectF
 import android.graphics.Rect
-import android.graphics.Color
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
