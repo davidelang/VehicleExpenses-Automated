@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
@@ -413,7 +415,15 @@ object OdometerOcrUtils {
                 "ML Kit", "ML Kit Mono" -> {
                     val scale = if (targetHeight != null) targetHeight.toFloat() / bmp.height.toFloat() else 1.0f
                     val resized = if (targetHeight != null) {
-                        Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
+                        // Phase 115: Preserve ALPHA_8 format during scaling to avoid luminance loss
+                        val targetW = (bmp.width * scale).toInt().coerceAtLeast(1)
+                        val targetH = targetHeight
+                        val r = Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(r)
+                        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                        val matrix = Matrix(); matrix.postScale(scale, scale)
+                        canvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
+                        r
                     } else bmp
                     
                     val resTuple = if (engineName == "ML Kit Mono") {
@@ -431,11 +441,12 @@ object OdometerOcrUtils {
                         val nv21 = sharedNv21Buffer!!
                         
                         if (resized.config == Bitmap.Config.ALPHA_8) {
-                            // Robust NV21 Construction: Allocate a perfectly sized buffer for the dynamic crop to avoid stride/padding corruption
-                            val buffer = java.nio.ByteBuffer.allocateDirect(frameSize).order(java.nio.ByteOrder.nativeOrder())
+                            // Robust NV21 Construction: Allocate a perfectly sized buffer for the dynamic crop
+                            val buffer = java.nio.ByteBuffer.allocateDirect(resized.byteCount).order(java.nio.ByteOrder.nativeOrder())
                             resized.copyPixelsToBuffer(buffer)
                             buffer.rewind()
-                            buffer.get(nv21, 0, frameSize)
+                            // Note: We perform a direct bulk copy. The forensic output will reveal if hardware stride padding exists.
+                            buffer.get(nv21, 0, frameSize.coerceAtMost(resized.byteCount))
                         } else {
                             val pixels = sharedPixelsBuffer!!
                             resized.getPixels(pixels, 0, w, 0, 0, w, h)
@@ -456,9 +467,9 @@ object OdometerOcrUtils {
                         if (stageName == "Raw") {
                             try {
                                 val monoB64 = android.util.Base64.encodeToString(nv21.sliceArray(0 until frameSize), android.util.Base64.NO_WRAP)
-                                val fullNv21B64 = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
                                 forensicMap["forensic_a8_bytes"] = monoB64
-                                forensicMap["forensic_nv21_bytes"] = fullNv21B64
+                                forensicMap["bitmap_stride"] = resized.rowBytes.toString()
+                                forensicMap["bitmap_byte_count"] = resized.byteCount.toString()
                             } catch (e: Exception) { Log.e("FORENSIC", "Failed to encode bytes", e) }
                         }
                         
