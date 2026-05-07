@@ -138,7 +138,8 @@ object DiscoveryOcrUtils {
                 text = sb.toString().trim(),
                 normalizedBoxes = finalStepBlocks,
                 rawBox = primaryRawBox,
-                refinedBox = primaryRefinedBox
+                refinedBox = primaryRefinedBox,
+                metadata = emptyMap()
             )
         }
 
