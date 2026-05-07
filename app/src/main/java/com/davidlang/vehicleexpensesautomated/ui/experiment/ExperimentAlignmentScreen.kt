@@ -205,10 +205,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 58 Strategies
     val strategies = listOf(
-        "ML Kit 48px (Exact)",
-        "ML Kit 48px Mono",
-        "Paddle V3 Valley",
-        "Paddle V3 Valley Mono"
+        "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy",
+        "ML Kit", "ML Kit Mono", "ML Kit 48px Mono Stride", "ML Kit 96px Mono", "ML Kit 96px Mono Stride"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -334,6 +332,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
                                     refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
+                                    
+                                    // Phase 115: Recycle dynamic Mono buffer
+                                    if (ocrInput !== exactCrop) ocrInput.recycle()
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Strategy $strat failed for ${file.name}", e)
                                 }
@@ -674,10 +675,17 @@ private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
 
 private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
     val l = vehicle.odometerCropLeft ?: return null
-    val left = (l * bmp.width).toInt().coerceAtLeast(0); val top = ((vehicle.odometerCropTop ?: 0f) * bmp.height).toInt().coerceAtLeast(0)
-    val width = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt(); val height = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
-    if (width <= 0 || height <= 0) return null
-    return Bitmap.createBitmap(bmp, left, top, width.coerceAtMost(bmp.width - left), height.coerceAtMost(bmp.height - top))
+    val left = (l * bmp.width).toInt().coerceIn(0, bmp.width - 1)
+    val top = ((vehicle.odometerCropTop ?: 0f) * bmp.height).toInt().coerceIn(0, bmp.height - 1)
+    val srcW = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt()
+    val srcH = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
+    
+    // Phase 115: 32x2 Alignment Mandate
+    val targetW = (srcW / 32) * 32
+    val targetH = (srcH / 2) * 2
+    if (targetW <= 0 || targetH <= 0) return null
+    
+    return Bitmap.createBitmap(bmp, left, top, targetW.coerceAtMost(bmp.width - left), targetH.coerceAtMost(bmp.height - top))
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {

@@ -416,12 +416,15 @@ object OdometerOcrUtils {
                     val scale = if (targetHeight != null) targetHeight.toFloat() / bmp.height.toFloat() else 1.0f
                     val resized = if (targetHeight != null) {
                         // Phase 115: Preserve ALPHA_8 format during scaling to avoid luminance loss
-                        val targetW = (bmp.width * scale).toInt().coerceAtLeast(1)
-                        val targetH = targetHeight
+                        val scaleW = (bmp.width * scale).toInt().coerceAtLeast(1)
+                        // Ensure NV21 compliance: Width multiple of 4, Height multiple of 2
+                        val targetW = ((scaleW + 3) / 4) * 4
+                        val targetH = (targetHeight / 2) * 2
                         val r = Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
                         val canvas = Canvas(r)
                         canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-                        val matrix = Matrix(); matrix.postScale(scale, scale)
+                        val matrix = Matrix()
+                        matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
                         canvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
                         r
                     } else bmp
@@ -473,6 +476,8 @@ object OdometerOcrUtils {
                             if (stageName == "Raw") {
                                 forensicMap["forensic_a8_bytes"] = android.util.Base64.encodeToString(nv21.sliceArray(0 until frameSize), android.util.Base64.NO_WRAP)
                                 forensicMap["forensic_nv21_bytes"] = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
+                                forensicMap["bitmap_width"] = w.toString()
+                                forensicMap["bitmap_height"] = h.toString()
                                 forensicMap["bitmap_stride"] = resized.rowBytes.toString()
                                 forensicMap["bitmap_byte_count"] = resized.byteCount.toString()
                             }
