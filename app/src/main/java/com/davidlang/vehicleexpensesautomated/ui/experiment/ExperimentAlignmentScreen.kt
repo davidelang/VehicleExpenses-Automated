@@ -585,7 +585,13 @@ private fun buildHtmlRowDynamic(
                     
                     // Phase 115: OCR Input Transparency
                     step.ocrInputB64?.let { inputB64 ->
-                        appendLine("<br><b>OCR Input:</b><br><img src='data:image/jpeg;base64,$inputB64'>")
+                        val stride = step.metadata["stride_info"] ?: ""
+                        appendLine("<br><b>OCR Input:</b> ($stride)<br><img src='data:image/jpeg;base64,$inputB64'>")
+                    }
+                    
+                    val rawText = step.metadata["raw_text"]
+                    if (rawText != null) {
+                        appendLine("<br><small>Raw: $rawText</small>")
                     }
 
                     // Phase 115: Forensic Visual Audit
