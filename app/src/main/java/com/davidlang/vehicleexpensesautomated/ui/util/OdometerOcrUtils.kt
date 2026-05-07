@@ -429,20 +429,22 @@ object OdometerOcrUtils {
                             sharedNv21Buffer = ByteArray(nv21Size)
                         }
                         
-                        val pixels = sharedPixelsBuffer!!
                         val nv21 = sharedNv21Buffer!!
                         
-                        resized.getPixels(pixels, 0, w, 0, 0, w, h)
-                        
                         // Extract Luminance (Y) channel.
-                        val isAlpha8 = resized.config == Bitmap.Config.ALPHA_8
-                        for (i in 0 until frameSize) {
-                            val r = if (isAlpha8) {
-                                (pixels[i] ushr 24) and 0xFF
-                            } else {
-                                (pixels[i] shr 16) and 0xFF
+                        if (resized.config == Bitmap.Config.ALPHA_8) {
+                            // Fast path: ALPHA_8 perfectly maps to Y-plane bytes
+                            val buffer = NativePaddleEngine.sharedMonoBuffer
+                            buffer.rewind()
+                            resized.copyPixelsToBuffer(buffer)
+                            buffer.rewind()
+                            buffer.get(nv21, 0, frameSize)
+                        } else {
+                            val pixels = sharedPixelsBuffer!!
+                            resized.getPixels(pixels, 0, w, 0, 0, w, h)
+                            for (i in 0 until frameSize) {
+                                nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
                             }
-                            nv21[i] = r.toByte()
                         }
                         
                         // Fill U/V channels with neutral chroma (128)
