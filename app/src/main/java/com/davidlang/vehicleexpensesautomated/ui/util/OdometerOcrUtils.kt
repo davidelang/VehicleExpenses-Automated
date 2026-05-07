@@ -508,9 +508,14 @@ object OdometerOcrUtils {
                 else -> Triple(null, emptyList<Rect>(), null)
             }
             
-            // Phase 63: Immediate Snapshot (Zero-Allocation)
-            val b64 = OcrUtils.takeSnapshot(bmp, consolidatedRows = res.second)
+            // Capture snapshot using ALL row boxes (Orange) and ALL fragments (Red)
+            val b64 = OcrUtils.takeSnapshot(bmp, rawFragments, consolidatedRows = res.second)
             val box = res.second.firstOrNull() ?: Rect(0,0,bmp.width,bmp.height)
+            
+            val forensicMetadata = (res.third as? Map<String, String>)?.toMutableMap() ?: mutableMapOf()
+            forensicMetadata["bitmap_config"] = bmp.config?.name ?: "UNKNOWN"
+            forensicMetadata["bitmap_width"] = bmp.width.toString()
+            forensicMetadata["bitmap_height"] = bmp.height.toString()
 
             return OcrStepResult(
                 stageName = stageName,
@@ -520,7 +525,7 @@ object OdometerOcrUtils {
                 boxes = res.second,
                 rawBox = box,
                 refinedBox = box,
-                metadata = if (res.third is Map<*, *>) res.third as Map<String, String> else emptyMap()
+                metadata = forensicMetadata
             )
         }
 
