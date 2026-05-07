@@ -320,13 +320,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
                                     val ocrInput = if (strat.contains("Mono")) {
-                                        // Phase 115: Isolated Mono Refinement. 
-                                        // Populating sharedBmpOdoScratchMono via Luminance-to-Alpha mapping
-                                        val monoCanvas = NativePaddleEngine.sharedCanvasOdoScratchMono
+                                        // Phase 115: Isolated Mono Refinement (Dynamic Resolution)
+                                        // Allocate a distinct ALPHA_8 buffer matching the exact crop dimensions
+                                        val monoBmp = Bitmap.createBitmap(exactCrop.width, exactCrop.height, Bitmap.Config.ALPHA_8)
+                                        val monoCanvas = android.graphics.Canvas(monoBmp)
                                         monoCanvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
                                         monoCanvas.drawBitmap(exactCrop, 0f, 0f, NativePaddleEngine.grayToAlphaPaint)
-                                        // Phase 115: Subset view ensures OpenCV calculates contrast only on actual image data, not empty buffer space
-                                        Bitmap.createBitmap(NativePaddleEngine.sharedBmpOdoScratchMono, 0, 0, exactCrop.width, exactCrop.height)
+                                        monoBmp
                                     } else exactCrop
 
                                     val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
@@ -628,31 +628,10 @@ private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
 
 private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
     val l = vehicle.odometerCropLeft ?: return null
-    val srcW = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt()
-    val srcH = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
-    if (srcW <= 0 || srcH <= 0) return null
-
     val left = (l * bmp.width).toInt().coerceAtLeast(0); val top = ((vehicle.odometerCropTop ?: 0f) * bmp.height).toInt().coerceAtLeast(0)
-    
-    // Phase 115: Proportional fit-within scaling via dedicated scratch buffer
-    val target = NativePaddleEngine.sharedBmpOdoScratch
-    val targetCanvas = NativePaddleEngine.sharedCanvasOdoScratch
-    targetCanvas.drawColor(android.graphics.Color.BLACK)
-    
-    // Maintain aspect ratio: use the smaller scale factor for both dimensions
-    val s = kotlin.math.min(320f / srcW.toFloat(), 128f / srcH.toFloat())
-    val targetW = (srcW * s).toInt().coerceIn(1, 320)
-    val targetH = (srcH * s).toInt().coerceIn(1, 128)
-
-    val matrix = android.graphics.Matrix()
-    matrix.postScale(s, s)
-    
-    val srcRect = android.graphics.Rect(left, top, left + srcW, top + srcH)
-    val dstRect = android.graphics.Rect(0, 0, targetW, targetH)
-    targetCanvas.drawBitmap(bmp, srcRect, dstRect, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-    
-    // Return a view of only the scaled image area to preserve aspect ratio in HTML
-    return Bitmap.createBitmap(target, 0, 0, targetW, targetH)
+    val width = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt(); val height = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
+    if (width <= 0 || height <= 0) return null
+    return Bitmap.createBitmap(bmp, left, top, width.coerceAtMost(bmp.width - left), height.coerceAtMost(bmp.height - top))
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {

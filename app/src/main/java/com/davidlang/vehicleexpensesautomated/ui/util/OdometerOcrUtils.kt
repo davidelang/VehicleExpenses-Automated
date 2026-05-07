@@ -269,25 +269,27 @@ object OdometerOcrUtils {
         src.release(); gray.release(); hist.release(); dst.release(); return outBmp
     }
 
-    // Phase 115: CV_8UC1 Monochrome Bridge (Zero-Allocation)
-    private fun bitmapToMatMono(bitmap: Bitmap): Mat {
+    // Phase 115: CV_8UC1 Monochrome Bridge (Dynamic Allocation)
+    fun bitmapToMatMono(bitmap: Bitmap): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
-        val buffer = NativePaddleEngine.sharedMonoBuffer
-        val bytes = NativePaddleEngine.sharedMonoBytes
+        val capacity = bitmap.width * bitmap.height
+        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val bytes = ByteArray(capacity)
         buffer.rewind()
         bitmap.copyPixelsToBuffer(buffer)
         buffer.rewind()
-        buffer.get(bytes, 0, bitmap.width * bitmap.height)
+        buffer.get(bytes, 0, capacity)
         mat.put(0, 0, bytes)
         return mat
     }
 
-    private fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
-        val bytes = NativePaddleEngine.sharedMonoBytes
+    fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
+        val capacity = bitmap.width * bitmap.height
+        val bytes = ByteArray(capacity)
         mat.get(0, 0, bytes)
-        val buffer = NativePaddleEngine.sharedMonoBuffer
+        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
         buffer.rewind()
-        buffer.put(bytes, 0, bitmap.width * bitmap.height)
+        buffer.put(bytes, 0, capacity)
         buffer.rewind()
         bitmap.copyPixelsFromBuffer(buffer)
     }

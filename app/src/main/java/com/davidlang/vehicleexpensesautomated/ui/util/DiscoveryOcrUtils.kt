@@ -182,9 +182,13 @@ object DiscoveryOcrUtils {
 
     private fun expandByValleyStop(redFloor: Rect, sourceBitmap: Bitmap): Rect {
         if (redFloor.width() < 1 || redFloor.height() < 1) return redFloor
-        val mat = Mat(); Utils.bitmapToMat(sourceBitmap, mat)
-        val gray = Mat(); if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY) else mat.copyTo(gray)
-        mat.release()
+        val gray = if (sourceBitmap.config == Bitmap.Config.ALPHA_8) {
+            OdometerOcrUtils.bitmapToMatMono(sourceBitmap)
+        } else {
+            val mat = Mat(); org.opencv.android.Utils.bitmapToMat(sourceBitmap, mat)
+            val g = Mat(); if (mat.channels() > 1) Imgproc.cvtColor(mat, g, Imgproc.COLOR_RGBA2GRAY) else mat.copyTo(g)
+            mat.release(); g
+        }
 
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble(); var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         val safeFloor = Rect(max(0, redFloor.left), max(0, redFloor.top), min(gray.cols(), redFloor.right), min(gray.rows(), redFloor.bottom))
