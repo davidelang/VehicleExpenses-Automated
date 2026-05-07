@@ -119,7 +119,8 @@ data class OcrStepResult(
     val boxes: List<Rect> = emptyList(), 
     val normalizedBoxes: List<TextBlock> = emptyList(), 
     val rawBox: Rect? = null, 
-    val refinedBox: Rect? = null
+    val refinedBox: Rect? = null,
+    val metadata: Map<String, String> = emptyMap()
 )
 
 enum class DiscoveryExpansion { UNCLIP, VALLEY }

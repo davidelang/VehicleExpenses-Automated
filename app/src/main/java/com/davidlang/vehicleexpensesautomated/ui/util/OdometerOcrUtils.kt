@@ -416,7 +416,7 @@ object OdometerOcrUtils {
                         Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
                     } else bmp
                     
-                    val image = if (engineName == "ML Kit Mono") {
+                    val resTuple = if (engineName == "ML Kit Mono") {
                         val w = resized.width
                         val h = resized.height
                         val frameSize = w * h
@@ -449,10 +449,26 @@ object OdometerOcrUtils {
                             nv21[i] = 128.toByte()
                         }
                         // Use fromByteArray to ensure ML Kit parses the contiguous memory exactly as provided
-                        InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
+                        val inputImage = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
+                        
+                        // Phase 115: Forensic Audit (Only for "Raw" stage to minimize JSON bloat)
+                        val forensicMap = mutableMapOf<String, String>()
+                        if (stageName == "Raw") {
+                            try {
+                                val monoB64 = android.util.Base64.encodeToString(nv21.sliceArray(0 until frameSize), android.util.Base64.NO_WRAP)
+                                val fullNv21B64 = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
+                                forensicMap["forensic_a8_bytes"] = monoB64
+                                forensicMap["forensic_nv21_bytes"] = fullNv21B64
+                            } catch (e: Exception) { Log.e("FORENSIC", "Failed to encode bytes", e) }
+                        }
+                        
+                        Triple(inputImage, forensicMap, null as String?)
                     } else {
-                        InputImage.fromBitmap(resized, 0)
+                        Triple(InputImage.fromBitmap(resized, 0), emptyMap<String, String>(), null as String?)
                     }
+                    
+                    val image = resTuple.first
+                    val metadata = resTuple.second
                     
                     try {
                         val visionText = mlKitClient!!.process(image).await()
@@ -480,8 +496,8 @@ object OdometerOcrUtils {
                             }
                         }
                         if (resized != bmp) resized.recycle()
-                        Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, null as String?)
-                    } catch (e: Exception) { Triple(null, emptyList(), null as String?) }
+                        Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, metadata)
+                    } catch (e: Exception) { Triple(null, emptyList(), metadata) }
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
@@ -499,11 +515,12 @@ object OdometerOcrUtils {
             return OcrStepResult(
                 stageName = stageName,
                 thumbB64 = b64,
-                ocrInputB64 = res.third,
+                ocrInputB64 = if (res.third is String) res.third as String else null,
                 text = res.first,
                 boxes = res.second,
                 rawBox = box,
-                refinedBox = box
+                refinedBox = box,
+                metadata = if (res.third is Map<*, *>) res.third as Map<String, String> else emptyMap()
             )
         }
 

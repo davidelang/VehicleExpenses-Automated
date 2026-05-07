@@ -514,6 +514,9 @@ private fun serializePhotoResultToJson(
                         step.refinedBox?.let { box ->
                             stepObj.put("refined_box", JSONArray().apply { put(box.left); put(box.top); put(box.right); put(box.bottom) })
                         }
+                        if (step.metadata.isNotEmpty()) {
+                            stepObj.put("metadata", JSONObject(step.metadata as Map<String, Any>))
+                        }
                         stepsArr.put(stepObj)
                     }
                     stratObj.put("steps", stepsArr); refDetails.put(strat, stratObj)
