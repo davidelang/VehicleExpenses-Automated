@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
@@ -197,7 +198,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     }
     
     val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
-    jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"total_photos\": $total,\n  \"results\": [\n")
+    jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
     
     var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
     val footer = "</table></body></html>"
@@ -211,7 +212,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
-        writeText(buildHtmlHeader(timestamp, total, strategies)) 
+        writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, strategies)) 
     }
     var currentFile = startNewFile()
     
@@ -529,10 +530,10 @@ private fun serializePhotoResultToJson(
     }
 }
 
-private fun buildHtmlHeader(time: String, total: Int, strategies: List<String>): String = buildString {
+private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
-    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Total:</b> $total</p><table><tr><th style='width:250px;'># & Original</th><th style='width:250px;'>Aligned & Stats</th>")
+    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:250px;'># & Original</th><th style='width:250px;'>Aligned & Stats</th>")
     strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
     appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
 }
