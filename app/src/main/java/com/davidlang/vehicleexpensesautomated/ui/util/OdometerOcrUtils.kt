@@ -426,7 +426,7 @@ object OdometerOcrUtils {
                         r
                     } else bmp
                     
-                    val resTuple = if (engineName == "ML Kit Mono") {
+                    val (inputImage, resMetadata) = if (engineName == "ML Kit Mono") {
                         val w = resized.width
                         val h = resized.height
                         val frameSize = w * h
@@ -445,7 +445,6 @@ object OdometerOcrUtils {
                             val buffer = java.nio.ByteBuffer.allocateDirect(resized.byteCount).order(java.nio.ByteOrder.nativeOrder())
                             resized.copyPixelsToBuffer(buffer)
                             buffer.rewind()
-                            // Note: We perform a direct bulk copy. The forensic output will reveal if hardware stride padding exists.
                             buffer.get(nv21, 0, frameSize.coerceAtMost(resized.byteCount))
                         } else {
                             val pixels = sharedPixelsBuffer!!
@@ -460,31 +459,25 @@ object OdometerOcrUtils {
                             nv21[i] = 128.toByte()
                         }
                         // Use fromByteArray to ensure ML Kit parses the contiguous memory exactly as provided
-                        val inputImage = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
+                        val img = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
                         
-                        // Phase 115: Forensic Audit (Only for "Raw" stage to minimize JSON bloat)
-                        val forensicMap = mutableMapOf<String, String>()
-                        if (stageName == "Raw") {
-                            try {
-                                val monoB64 = android.util.Base64.encodeToString(nv21.sliceArray(0 until frameSize), android.util.Base64.NO_WRAP)
-                                val fullNv21B64 = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
-                                forensicMap["forensic_a8_bytes"] = monoB64
-                                forensicMap["forensic_nv21_bytes"] = fullNv21B64
-                                forensicMap["bitmap_stride"] = resized.rowBytes.toString()
-                                forensicMap["bitmap_byte_count"] = resized.byteCount.toString()
-                            } catch (e: Exception) { Log.e("FORENSIC", "Failed to encode bytes", e) }
-                        }
+                        // Phase 115: Forensic Audit - Reconstruct visible thumbnail from raw NV21 bytes
+                        val forensicMap = mutableMapOf<String, Any?>()
+                        try {
+                            val forensicBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8)
+                            val yBuf = java.nio.ByteBuffer.wrap(nv21, 0, frameSize)
+                            forensicBmp.copyPixelsFromBuffer(yBuf)
+                            forensicMap["ocrInput"] = OcrUtils.takeSnapshot(forensicBmp)
+                            forensicBmp.recycle()
+                        } catch (e: Exception) { Log.e("FORENSIC", "Failed to reconstruct", e) }
                         
-                        Triple(inputImage, forensicMap, null as String?)
+                        Pair(img, forensicMap)
                     } else {
-                        Triple(InputImage.fromBitmap(resized, 0), emptyMap<String, String>(), null as String?)
+                        Pair(InputImage.fromBitmap(resized, 0), mutableMapOf<String, Any?>())
                     }
                     
-                    val image = resTuple.first
-                    val metadata = resTuple.second
-                    
                     try {
-                        val visionText = mlKitClient!!.process(image).await()
+                        val visionText = mlKitClient!!.process(inputImage).await()
                         
                         val resBuilder = java.lang.StringBuilder()
                         for (block in visionText.textBlocks) {
@@ -509,23 +502,25 @@ object OdometerOcrUtils {
                             }
                         }
                         if (resized != bmp) resized.recycle()
-                        Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, metadata)
-                    } catch (e: Exception) { Triple(null, emptyList(), metadata) }
+                        Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, resMetadata)
+                    } catch (e: Exception) { Triple(null, emptyList(), resMetadata) }
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
                         val ocrRes = paddleEngine.recognize(bmp)
-                        Triple(ocrRes.debugText, emptyList<Rect>(), ocrRes.metadata["ocrInput"])
-                    } ?: Triple(null, emptyList<Rect>(), null)
+                        val meta = mutableMapOf<String, Any?>()
+                        meta["ocrInput"] = ocrRes.metadata["ocrInput"]
+                        Triple(ocrRes.debugText, emptyList<Rect>(), meta)
+                    } ?: Triple(null, emptyList<Rect>(), mutableMapOf<String, Any?>())
                 }
-                else -> Triple(null, emptyList<Rect>(), null)
+                else -> Triple(null, emptyList<Rect>(), mutableMapOf<String, Any?>())
             }
             
             // Capture snapshot using ALL row boxes (Orange) and ALL fragments (Red)
             val b64 = OcrUtils.takeSnapshot(bmp, emptyList(), consolidatedRows = res.second)
             val box = res.second.firstOrNull() ?: Rect(0,0,bmp.width,bmp.height)
             
-            val forensicMetadata = (res.third as? Map<String, String>)?.toMutableMap() ?: mutableMapOf()
+            val forensicMetadata = (res.third as? MutableMap<String, Any?>) ?: mutableMapOf()
             forensicMetadata["bitmap_config"] = bmp.config?.name ?: "UNKNOWN"
             forensicMetadata["bitmap_width"] = bmp.width.toString()
             forensicMetadata["bitmap_height"] = bmp.height.toString()
@@ -533,12 +528,12 @@ object OdometerOcrUtils {
             return OcrStepResult(
                 stageName = stageName,
                 thumbB64 = b64,
-                ocrInputB64 = if (res.third is String) res.third as String else null,
+                ocrInputB64 = forensicMetadata["ocrInput"] as? String,
                 text = res.first,
                 boxes = res.second,
                 rawBox = box,
                 refinedBox = box,
-                metadata = forensicMetadata
+                metadata = forensicMetadata.mapValues { it.value.toString() }
             )
         }
 
