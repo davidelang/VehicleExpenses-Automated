@@ -581,8 +581,13 @@ private fun buildHtmlRowDynamic(
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'><br>")
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
                     
+                    // Phase 115: OCR Input Transparency
+                    step.ocrInputB64?.let { inputB64 ->
+                        appendLine("<br><b>OCR Input:</b><br><img src='data:image/jpeg;base64,$inputB64'>")
+                    }
+
                     // Phase 115: Forensic Visual Audit
                     step.metadata["forensic_nv21_bytes"]?.let { nv21B64 ->
                         try {

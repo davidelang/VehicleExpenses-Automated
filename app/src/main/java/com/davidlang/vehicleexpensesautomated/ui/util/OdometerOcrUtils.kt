@@ -461,7 +461,7 @@ object OdometerOcrUtils {
                         // Use fromByteArray to ensure ML Kit parses the contiguous memory exactly as provided
                         val img = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
                         
-                        // Phase 115: Forensic Audit - Reconstruct visible thumbnail from raw NV21 bytes
+                        // Phase 115: Forensic Audit - Reconstruct visible thumbnail and capture raw bytes
                         val forensicMap = mutableMapOf<String, Any?>()
                         try {
                             val forensicBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8)
@@ -469,7 +469,14 @@ object OdometerOcrUtils {
                             forensicBmp.copyPixelsFromBuffer(yBuf)
                             forensicMap["ocrInput"] = OcrUtils.takeSnapshot(forensicBmp)
                             forensicBmp.recycle()
-                        } catch (e: Exception) { Log.e("FORENSIC", "Failed to reconstruct", e) }
+
+                            if (stageName == "Raw") {
+                                forensicMap["forensic_a8_bytes"] = android.util.Base64.encodeToString(nv21.sliceArray(0 until frameSize), android.util.Base64.NO_WRAP)
+                                forensicMap["forensic_nv21_bytes"] = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
+                                forensicMap["bitmap_stride"] = resized.rowBytes.toString()
+                                forensicMap["bitmap_byte_count"] = resized.byteCount.toString()
+                            }
+                        } catch (e: Exception) { Log.e("FORENSIC", "Failed forensic capture", e) }
                         
                         Pair(img, forensicMap)
                     } else {
