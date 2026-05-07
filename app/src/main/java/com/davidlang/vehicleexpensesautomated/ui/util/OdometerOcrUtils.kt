@@ -509,7 +509,7 @@ object OdometerOcrUtils {
             }
             
             // Capture snapshot using ALL row boxes (Orange) and ALL fragments (Red)
-            val b64 = OcrUtils.takeSnapshot(bmp, rawFragments, consolidatedRows = res.second)
+            val b64 = OcrUtils.takeSnapshot(bmp, emptyList(), consolidatedRows = res.second)
             val box = res.second.firstOrNull() ?: Rect(0,0,bmp.width,bmp.height)
             
             val forensicMetadata = (res.third as? Map<String, String>)?.toMutableMap() ?: mutableMapOf()
