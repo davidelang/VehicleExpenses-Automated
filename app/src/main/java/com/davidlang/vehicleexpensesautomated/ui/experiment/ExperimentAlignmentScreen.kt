@@ -206,7 +206,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 58 Strategies
     val strategies = listOf(
         "Paddle V3 Valley", "Paddle V3 Valley Mono",
-        "ML Kit", "ML Kit Mono", "ML Kit 48px Mono Stride", "ML Kit 96px Mono", "ML Kit 96px Mono Stride"
+        "ML Kit", "ML Kit Mono"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -519,7 +519,13 @@ private fun serializePhotoResultToJson(
                             stepObj.put("refined_box", JSONArray().apply { put(box.left); put(box.top); put(box.right); put(box.bottom) })
                         }
                         if (step.metadata.isNotEmpty()) {
-                            stepObj.put("metadata", JSONObject(step.metadata as Map<String, Any>))
+                            val metaObj = JSONObject()
+                        step.metadata.forEach { (k, v) ->
+                            if (!k.startsWith("forensic_")) {
+                                metaObj.put(k, v)
+                            }
+                        }
+                        stepObj.put("metadata", metaObj)
                         }
                         stepsArr.put(stepObj)
                     }
@@ -586,34 +592,12 @@ private fun buildHtmlRowDynamic(
                     
                     // Phase 115: OCR Input Transparency
                     step.ocrInputB64?.let { inputB64 ->
-                        val stride = step.metadata["stride_info"] ?: ""
-                        appendLine("<br><b>OCR Input:</b> ($stride)<br><img src='data:image/jpeg;base64,$inputB64'>")
+                        appendLine("<br><img src='data:image/jpeg;base64,$inputB64'>")
                     }
                     
                     val rawText = step.metadata["raw_text"]
                     if (rawText != null) {
                         appendLine("<br><small>Raw: $rawText</small>")
-                    }
-
-                    // Phase 115: Forensic Visual Audit
-                    step.metadata["forensic_nv21_bytes"]?.let { nv21B64 ->
-                        try {
-                            val nv21Bytes = android.util.Base64.decode(nv21B64, android.util.Base64.NO_WRAP)
-                            val w = step.metadata["bitmap_width"]?.toInt() ?: 160
-                            val h = step.metadata["bitmap_height"]?.toInt() ?: 54
-                            val forensicBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                            val fCanvas = android.graphics.Canvas(forensicBmp)
-                            fCanvas.drawColor(android.graphics.Color.BLACK)
-                            
-                            // Reconstruct grayscale from NV21 Y-plane bytes (first w*h bytes)
-                            val yBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8)
-                            val yBuf = java.nio.ByteBuffer.wrap(nv21Bytes, 0, w * h)
-                            yBmp.copyPixelsFromBuffer(yBuf)
-                            fCanvas.drawBitmap(yBmp, 0f, 0f, NativePaddleEngine.alphaToGrayPaint)
-                            val forensicB64 = bitmapToBase64(forensicBmp, 60)
-                            appendLine("<b>Forensic NV21:</b><br><img src='data:image/jpeg;base64,$forensicB64'><br>")
-                            yBmp.recycle(); forensicBmp.recycle()
-                        } catch (e: Exception) { Log.e("FORENSIC", "Failed to reconstruct", e) }
                     }
 
                     appendLine("${step.text ?: "---"}</div>") 

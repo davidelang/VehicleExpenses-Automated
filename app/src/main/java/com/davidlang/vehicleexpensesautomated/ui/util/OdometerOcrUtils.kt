@@ -464,29 +464,14 @@ object OdometerOcrUtils {
                         // Use fromByteArray to ensure ML Kit parses the contiguous memory exactly as provided
                         val img = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
                         
-                        // Phase 115: Forensic Audit - Reconstruct visible thumbnail and capture raw bytes
+                        // Phase 115: Forensic Audit - capture basic info for diagnostics
                         val forensicMap = mutableMapOf<String, Any?>()
-                        try {
-                            val forensicBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8)
-                            val yBuf = java.nio.ByteBuffer.wrap(nv21, 0, frameSize)
-                            forensicBmp.copyPixelsFromBuffer(yBuf)
-                            forensicMap["ocrInput"] = OcrUtils.takeSnapshot(forensicBmp)
-                            forensicBmp.recycle()
-
-                            if (stageName == "Raw") {
-                                forensicMap["forensic_a8_bytes"] = android.util.Base64.encodeToString(nv21.sliceArray(0 until frameSize), android.util.Base64.NO_WRAP)
-                                forensicMap["forensic_nv21_bytes"] = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
-                                forensicMap["bitmap_width"] = w.toString()
-                                forensicMap["bitmap_height"] = h.toString()
-                                forensicMap["bitmap_stride"] = resized.rowBytes.toString()
-                                forensicMap["bitmap_byte_count"] = resized.byteCount.toString()
-                            }
-                        } catch (e: Exception) { Log.e("FORENSIC", "Failed forensic capture", e) }
+                        forensicMap["bitmap_width"] = w.toString()
+                        forensicMap["bitmap_height"] = h.toString()
                         
                         Pair(img, forensicMap)
                     } else {
                         val meta = mutableMapOf<String, Any?>()
-                        meta["ocrInput"] = OcrUtils.takeSnapshot(resized)
                         Pair(InputImage.fromBitmap(resized, 0), meta)
                     }
                     
@@ -506,7 +491,10 @@ object OdometerOcrUtils {
                             }
                         }
                         val resStr = resBuilder.toString()
-                        resMetadata["raw_text"] = verbatimBuilder.toString().trim()
+                        // Persistence: Only populate raw_text if it hasn't been set by a previous (Raw) stage
+                        if (resMetadata["raw_text"] == null) {
+                            resMetadata["raw_text"] = verbatimBuilder.toString().trim()
+                        }
                         resMetadata["bitmap_width"] = resized.width.toString()
                         resMetadata["bitmap_height"] = resized.height.toString()
                         
