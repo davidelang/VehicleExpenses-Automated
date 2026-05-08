@@ -7,7 +7,7 @@ import java.nio.ByteBuffer
 // Top-level JNI declarations (outside class) for absolute naming stability.
 // These result in Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_ naming
 private external fun nativeSetup(width: Int, height: Int): Long
-private external fun nativeGetDirectBuffer(handle: Long): ByteBuffer?
+private external fun nativeGetMasterBuffer(handle: Long): ByteBuffer?
 private external fun nativeGetMatPtr(handle: Long): Long
 private external fun nativeRelease(handle: Long)
 
@@ -36,7 +36,7 @@ class MemoryBridge(val width: Int, val height: Int) {
         }
 
         // Step 2: Get the DirectByteBuffer view (wraps the native pointer)
-        masterBuffer = nativeGetDirectBuffer(nativeHandle) ?: 
+        masterBuffer = nativeGetMasterBuffer(nativeHandle) ?: 
             throw IllegalStateException("Failed to wrap native memory in DirectBuffer")
 
         // Step 3: Allocate matching ALPHA_8 bitmap for Paddle/Thumbnails
