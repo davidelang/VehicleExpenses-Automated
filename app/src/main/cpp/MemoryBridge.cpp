@@ -83,7 +83,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
     
     // Create the Return Object: MemoryBridge.NativeHandle(matPtr, buffer)
     jclass handleClass = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/MemoryBridge$NativeHandle");
-    jmethod_id constructor = env->GetMethodID(handleClass, "<init>", "(JLjava/nio/ByteBuffer;)V");
+    jmethodID constructor = env->GetMethodID(handleClass, "<init>", "(JLjava/nio/ByteBuffer;)V");
     
     jobject directBuffer = env->NewDirectByteBuffer(pixels, (jlong)actualByteCount);
     jobject result = env->NewObject(handleClass, constructor, (jlong)handle, directBuffer);
