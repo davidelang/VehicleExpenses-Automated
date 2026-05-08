@@ -494,9 +494,11 @@ object OdometerOcrUtils {
                         val visionText = mlKitClient!!.process(inputImage).await()
                         
                         val resBuilder = java.lang.StringBuilder()
+                        val verbatimBuilder = java.lang.StringBuilder()
                         for (block in visionText.textBlocks) {
                             for (line in block.lines) {
                                 val isFlipped = Math.abs(line.angle) > 135f
+                                verbatimBuilder.append(line.text).append(" ")
                                 val cleanedText = clean7SegmentDigits(line.text, isFlipped).filter { it.isDigit() }
                                 if (cleanedText.isNotBlank()) {
                                     resBuilder.append(cleanedText)
@@ -504,6 +506,10 @@ object OdometerOcrUtils {
                             }
                         }
                         val resStr = resBuilder.toString()
+                        resMetadata["raw_text"] = verbatimBuilder.toString().trim()
+                        resMetadata["bitmap_width"] = w.toString()
+                        resMetadata["bitmap_height"] = h.toString()
+                        
                         val detBoxes = visionText.textBlocks.flatMap { block ->
                             block.lines.flatMap { line ->
                                 line.elements.mapNotNull { element ->

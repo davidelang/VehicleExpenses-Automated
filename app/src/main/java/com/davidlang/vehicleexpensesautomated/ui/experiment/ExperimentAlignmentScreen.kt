@@ -205,7 +205,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 58 Strategies
     val strategies = listOf(
-        "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy",
+        "Paddle V3 Valley", "Paddle V3 Valley Mono",
         "ML Kit", "ML Kit Mono", "ML Kit 48px Mono Stride", "ML Kit 96px Mono", "ML Kit 96px Mono Stride"
     )
 
@@ -599,24 +599,17 @@ private fun buildHtmlRowDynamic(
                     step.metadata["forensic_nv21_bytes"]?.let { nv21B64 ->
                         try {
                             val nv21Bytes = android.util.Base64.decode(nv21B64, android.util.Base64.NO_WRAP)
-                            val w = step.metadata["bitmap_width"]?.toInt() ?: 1
-                            val h = step.metadata["bitmap_height"]?.toInt() ?: 1
+                            val w = step.metadata["bitmap_width"]?.toInt() ?: 160
+                            val h = step.metadata["bitmap_height"]?.toInt() ?: 54
                             val forensicBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                             val fCanvas = android.graphics.Canvas(forensicBmp)
-                            val fPaint = Paint().apply { 
-                                val matrix = ColorMatrix(floatArrayOf(
-                                    1f, 0f, 0f, 0f, 0f,
-                                    1f, 0f, 0f, 0f, 0f,
-                                    1f, 0f, 0f, 0f, 0f,
-                                    0f, 0f, 0f, 0f, 255f
-                                ))
-                                colorFilter = ColorMatrixColorFilter(matrix)
-                            }
+                            fCanvas.drawColor(android.graphics.Color.BLACK)
+                            
                             // Reconstruct grayscale from NV21 Y-plane bytes (first w*h bytes)
                             val yBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8)
                             val yBuf = java.nio.ByteBuffer.wrap(nv21Bytes, 0, w * h)
                             yBmp.copyPixelsFromBuffer(yBuf)
-                            fCanvas.drawBitmap(yBmp, 0f, 0f, fPaint)
+                            fCanvas.drawBitmap(yBmp, 0f, 0f, NativePaddleEngine.alphaToGrayPaint)
                             val forensicB64 = bitmapToBase64(forensicBmp, 60)
                             appendLine("<b>Forensic NV21:</b><br><img src='data:image/jpeg;base64,$forensicB64'><br>")
                             yBmp.recycle(); forensicBmp.recycle()
