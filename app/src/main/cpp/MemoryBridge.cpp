@@ -32,7 +32,7 @@ struct UnifiedHandle {
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeLock(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
     JNIEnv* env, jobject thiz, jobject bitmap, jint width, jint height) {
     
     AndroidBitmapInfo info;
@@ -69,7 +69,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeUnlock(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeUnlock(
     JNIEnv* env, jobject thiz, jobject bitmap, jlong handlePtr) {
     
     AndroidBitmap_unlockPixels(env, bitmap);
@@ -78,13 +78,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetMatPtr(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetMatPtr(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
     return (jlong)reinterpret_cast<UnifiedHandle*>(handlePtr)->yMat;
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetDirectBuffer(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetDirectBuffer(
     JNIEnv* env, jobject thiz, jobject bitmap) {
     
     void* pixels = nullptr;
