@@ -1,0 +1,70 @@
+package com.davidlang.vehicleexpensesautomated.ui.util
+
+import android.graphics.Bitmap
+import org.opencv.core.Mat
+import java.nio.ByteBuffer
+
+/**
+ * MemoryBridge implements a zero-copy "Triple-View" onto a shared memory block.
+ * It uses an ALPHA_8 Bitmap allocated at 1.5x height as the master memory backing.
+ */
+class MemoryBridge(val width: Int, val height: Int) {
+    private val masterBitmap: Bitmap
+    private var nativeHandle: Long = 0
+    private val nv21Buffer: ByteBuffer
+
+    init {
+        // Allocate 1.5x height to accommodate NV21 chroma tail
+        val masterHeight = (height * 1.5).toInt()
+        masterBitmap = Bitmap.createBitmap(width, masterHeight, Bitmap.Config.ALPHA_8)
+        
+        // Lock the bitmap in native memory and get the handle
+        nativeHandle = nativeLock(masterBitmap, width, height)
+        if (nativeHandle == 0L) {
+            throw IllegalStateException("Failed to lock bitmap in MemoryBridge")
+        }
+
+        // Create the NV21 ByteBuffer view (Direct)
+        nv21Buffer = nativeGetDirectBuffer(masterBitmap)
+    }
+
+    /**
+     * Returns the master ALPHA_8 bitmap. 
+     * Paddle/UI should only operate on the top [height] rows.
+     */
+    fun getBitmap(): Bitmap = masterBitmap
+
+    /**
+     * Returns an OpenCV Mat header (CV_8UC1) pointing to the same memory.
+     */
+    fun getMat(): Mat {
+        val ptr = nativeGetMatPtr(nativeHandle)
+        return Mat(ptr)
+    }
+
+    /**
+     * Returns a Direct ByteBuffer for ML Kit (IMAGE_FORMAT_NV21).
+     */
+    fun getNv21(): ByteBuffer = nv21Buffer
+
+    /**
+     * Call this when the bridge is no longer needed to unlock native pixels.
+     */
+    fun release() {
+        if (nativeHandle != 0L) {
+            nativeUnlock(masterBitmap, nativeHandle)
+            nativeHandle = 0
+        }
+    }
+
+    companion object {
+        init {
+            System.loadLibrary("memory_bridge")
+        }
+
+        @JvmStatic private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
+        @JvmStatic private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
+        @JvmStatic private external fun nativeGetMatPtr(handle: Long): Long
+        @JvmStatic private external fun nativeGetDirectBuffer(bitmap: Bitmap): ByteBuffer
+    }
+}

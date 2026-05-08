@@ -66,19 +66,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedCanvas2048Mono by lazy { Canvas(sharedBmp2048Mono) }
 
         // 2. Discovery Standard (320x128)
-        private val bufferSmall by lazy { FloatArray(3 * 320 * 128) }
-        private val bufferSmallMono by lazy { FloatArray(1 * 320 * 128) }
-        val sharedBmpSmall by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
-        val sharedCanvasSmall by lazy { Canvas(sharedBmpSmall) }
-        val sharedBmpSmallMono by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ALPHA_8) }
+        val sharedBridgeSmall by lazy { MemoryBridge(320, 128) }
+        val sharedBmpSmallMono: Bitmap get() = sharedBridgeSmall.getBitmap()
         val sharedCanvasSmallMono by lazy { Canvas(sharedBmpSmallMono) }
 
         // 3. Recognition (320x48)
-        private val bufferRec by lazy { FloatArray(3 * 320 * 48) }
-        private val bufferRecMono by lazy { FloatArray(1 * 320 * 48) }
-        val sharedBmpRec by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
-        val sharedCanvasRec by lazy { Canvas(sharedBmpRec) }
-        val sharedBmpRecMono by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ALPHA_8) }
+        val sharedBridgeRec by lazy { MemoryBridge(320, 48) }
+        val sharedBmpRecMono: Bitmap get() = sharedBridgeRec.getBitmap()
         val sharedCanvasRecMono by lazy { Canvas(sharedBmpRecMono) }
         val sharedNv21Buffer by lazy { ByteArray(4000 * 3000 * 3 / 2) }
 
