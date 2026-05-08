@@ -32,22 +32,22 @@ struct UnifiedHandle {
 
 extern "C" {
 
-JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
+JNIEXPORT jlongArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeLock(
     JNIEnv* env, jobject thiz, jobject bitmap, jint width, jint height) {
     
-    if (bitmap == nullptr) return 0;
+    if (bitmap == nullptr) return nullptr;
 
     AndroidBitmapInfo info;
     void* pixels = nullptr;
     int ret;
 
-    if ((ret = AndroidBitmap_getInfo(env, bitmap, &info)) < 0) return 0;
-    if (info.format != ANDROID_BITMAP_FORMAT_A_8) return 0;
-    if ((ret = AndroidBitmap_lockPixels(env, bitmap, &pixels)) < 0) return 0;
+    if ((ret = AndroidBitmap_getInfo(env, bitmap, &info)) < 0) return nullptr;
+    if (info.format != ANDROID_BITMAP_FORMAT_A_8) return nullptr;
+    if ((ret = AndroidBitmap_lockPixels(env, bitmap, &pixels)) < 0) return nullptr;
     if (pixels == nullptr) {
         AndroidBitmap_unlockPixels(env, bitmap);
-        return 0;
+        return nullptr;
     }
 
     size_t frameSize = (size_t)width * (size_t)height;
@@ -56,18 +56,27 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
 
     if (totalSize > actualByteCount) {
         AndroidBitmap_unlockPixels(env, bitmap);
-        return 0;
+        return nullptr;
     }
 
     std::memset(pixels, 0, frameSize);
     std::memset((uint8_t*)pixels + frameSize, 128, totalSize - frameSize);
 
     auto* handle = new UnifiedHandle(pixels, (size_t)width, (size_t)height, (size_t)info.stride, actualByteCount);
-    return (jlong)handle;
+    
+    // Return primitives: [handlePtr, pixelPtr, byteCount]
+    jlongArray result = env->NewLongArray(3);
+    jlong fill[3];
+    fill[0] = (jlong)handle;
+    fill[1] = (jlong)pixels;
+    fill[2] = (jlong)actualByteCount;
+    env->SetLongArrayRegion(result, 0, 3, fill);
+    
+    return result;
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeUnlock(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeUnlock(
     JNIEnv* env, jobject thiz, jobject bitmap, jlong handlePtr) {
     
     if (bitmap != nullptr) {
@@ -81,7 +90,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeUnlock(
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetMatPtr(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetMatPtr(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr) return 0;
@@ -89,7 +98,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetMatPtr
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetDirectBuffer(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetDirectBuffer(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
     
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
