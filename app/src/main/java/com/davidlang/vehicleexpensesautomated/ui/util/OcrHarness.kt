@@ -21,12 +21,12 @@ object OcrHarness {
         val sanitizedResult = rawResult.copy(
             textBlocks = cleanedBlocks,
             debugText = cleanedBlocks.joinToString(" ") { it.text }
-            )
+        )
 
-            return sanitizedResult
-            }
+        return sanitizedResult
+    }
 
-            suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
+    suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
             // Phase 115: Refinement uses the provided cropped bitmap (already filtered or raw depending on strategy)
             // No redundant bilateral filter here.
             val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
