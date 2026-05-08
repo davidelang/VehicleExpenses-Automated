@@ -66,9 +66,9 @@ class MemoryBridge(val width: Int, val height: Int) {
             }
         }
 
-        @JvmStatic internal external fun nativeLock(bitmap: android.graphics.Bitmap, w: Int, h: Int): Long
-        @JvmStatic internal external fun nativeUnlock(bitmap: android.graphics.Bitmap, handle: Long)
-        @JvmStatic internal external fun nativeGetMatPtr(handle: Long): Long
-        @JvmStatic internal external fun nativeGetDirectBuffer(bitmap: android.graphics.Bitmap): java.nio.ByteBuffer
+        @JvmStatic public external fun nativeLock(bitmap: android.graphics.Bitmap, w: Int, h: Int): Long
+        @JvmStatic public external fun nativeUnlock(bitmap: android.graphics.Bitmap, handle: Long)
+        @JvmStatic public external fun nativeGetMatPtr(handle: Long): Long
+        @JvmStatic public external fun nativeGetDirectBuffer(bitmap: android.graphics.Bitmap): java.nio.ByteBuffer
     }
 }
