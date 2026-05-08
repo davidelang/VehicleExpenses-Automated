@@ -18,16 +18,16 @@ class MemoryBridge(val width: Int, val height: Int) {
         val masterHeight = (height * 1.5).toInt()
         masterBitmap = Bitmap.createBitmap(width, masterHeight, Bitmap.Config.ALPHA_8)
         
-        // Step 1: Lock the bitmap and get primitive data via top-level utility
-        val res = MemoryBridgeNative.nativeLock(masterBitmap, width, height)
+        // Step 1: Lock the bitmap and get primitive data via instance methods
+        val res = nativeLock(masterBitmap, width, height)
         if (res == null || res.size < 1 || res[0] == 0L) {
             throw IllegalStateException("Failed to lock bitmap in MemoryBridge")
         }
         
         nativeHandle = res[0]
         
-        // Step 2: Get the DirectByteBuffer view using the handle via top-level utility
-        nv21Buffer = MemoryBridgeNative.nativeGetDirectBuffer(nativeHandle) ?: 
+        // Step 2: Get the DirectByteBuffer view using the handle
+        nv21Buffer = nativeGetDirectBuffer(nativeHandle) ?: 
             throw IllegalStateException("Failed to create DirectBuffer in MemoryBridge")
     }
 
@@ -41,7 +41,7 @@ class MemoryBridge(val width: Int, val height: Int) {
      * Returns an OpenCV Mat header (CV_8UC1) pointing to the same memory.
      */
     fun getMat(): Mat {
-        val ptr = MemoryBridgeNative.nativeGetMatPtr(nativeHandle)
+        val ptr = nativeGetMatPtr(nativeHandle)
         return Mat(ptr)
     }
 
@@ -55,8 +55,23 @@ class MemoryBridge(val width: Int, val height: Int) {
      */
     fun release() {
         if (nativeHandle != 0L) {
-            MemoryBridgeNative.nativeUnlock(masterBitmap, nativeHandle)
+            nativeUnlock(masterBitmap, nativeHandle)
             nativeHandle = 0
+        }
+    }
+
+    private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): LongArray?
+    private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
+    private external fun nativeGetMatPtr(handle: Long): Long
+    private external fun nativeGetDirectBuffer(handle: Long): ByteBuffer?
+
+    companion object {
+        init {
+            try {
+                System.loadLibrary("memory_bridge")
+            } catch (e: Exception) {
+                android.util.Log.e("MemoryBridge", "Failed to load memory_bridge library", e)
+            }
         }
     }
 }
