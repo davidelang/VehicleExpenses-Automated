@@ -33,8 +33,8 @@ struct UnifiedHandle {
 extern "C" {
 
 JNIEXPORT jlongArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeLock(
-    JNIEnv* env, jobject thiz, jobject bitmap, jint width, jint height) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeNative_nativeLock(
+    JNIEnv* env, jclass clazz, jobject bitmap, jint width, jint height) {
     
     if (bitmap == nullptr) return nullptr;
 
@@ -64,7 +64,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_
 
     auto* handle = new UnifiedHandle(pixels, (size_t)width, (size_t)height, (size_t)info.stride, actualByteCount);
     
-    // Return primitives: [handlePtr, pixelPtr, byteCount]
     jlongArray result = env->NewLongArray(3);
     jlong fill[3];
     fill[0] = (jlong)handle;
@@ -76,8 +75,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeUnlock(
-    JNIEnv* env, jobject thiz, jobject bitmap, jlong handlePtr) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeNative_nativeUnlock(
+    JNIEnv* env, jclass clazz, jobject bitmap, jlong handlePtr) {
     
     if (bitmap != nullptr) {
         AndroidBitmap_unlockPixels(env, bitmap);
@@ -90,16 +89,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetMatPtr(
-    JNIEnv* env, jobject thiz, jlong handlePtr) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeNative_nativeGetMatPtr(
+    JNIEnv* env, jclass clazz, jlong handlePtr) {
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr) return 0;
     return (jlong)handle->yMat;
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetDirectBuffer(
-    JNIEnv* env, jobject thiz, jlong handlePtr) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeNative_nativeGetDirectBuffer(
+    JNIEnv* env, jclass clazz, jlong handlePtr) {
     
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr || handle->pixels == nullptr) return nullptr;
