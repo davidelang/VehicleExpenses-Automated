@@ -6,19 +6,18 @@ import java.nio.ByteBuffer
 
 // Top-level JNI declarations (outside class)
 // These result in Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_ naming
-private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
-private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
+private external fun nativeSetup(buffer: ByteBuffer, width: Int, height: Int): Long
+private external fun nativeRelease(handle: Long)
 private external fun nativeGetMatPtr(handle: Long): Long
-private external fun nativeGetDirectBuffer(handle: Long): ByteBuffer?
 
 /**
  * MemoryBridge implements a zero-copy "Triple-View" onto a shared memory block.
- * It uses an ALPHA_8 Bitmap allocated at 1.5x height as the master memory backing.
+ * It uses a Direct ByteBuffer as the master memory backing for stability with ML Kit.
  */
 class MemoryBridge(val width: Int, val height: Int) {
+    private val masterBuffer: ByteBuffer
     private val masterBitmap: Bitmap
     private var nativeHandle: Long = 0
-    private val nv21Buffer: ByteBuffer
 
     init {
         // Load library once
@@ -28,24 +27,23 @@ class MemoryBridge(val width: Int, val height: Int) {
             android.util.Log.e("MemoryBridge", "Failed to load memory_bridge library", e)
         }
 
-        // Allocate 1.5x height to accommodate NV21 chroma tail
-        val masterHeight = (height * 1.5).toInt()
-        masterBitmap = Bitmap.createBitmap(width, masterHeight, Bitmap.Config.ALPHA_8)
+        // Allocate master memory in JVM as DirectByteBuffer
+        val totalSize = (width * height * 1.5).toInt()
+        masterBuffer = ByteBuffer.allocateDirect(totalSize)
         
-        // Step 1: Lock the bitmap and get primitive data via top-level JNI
-        nativeHandle = nativeLock(masterBitmap, width, height)
+        // Setup native handles and headers
+        nativeHandle = nativeSetup(masterBuffer, width, height)
         if (nativeHandle == 0L) {
-            throw IllegalStateException("Failed to lock bitmap in MemoryBridge")
+            throw IllegalStateException("Failed to setup MemoryBridge native handles")
         }
-        
-        // Step 2: Get the DirectByteBuffer view using the handle
-        nv21Buffer = nativeGetDirectBuffer(nativeHandle) ?: 
-            throw IllegalStateException("Failed to create DirectBuffer in MemoryBridge")
+
+        // Allocate matching ALPHA_8 bitmap for Paddle/Thumbnails
+        masterBitmap = Bitmap.createBitmap(width, (height * 1.5).toInt(), Bitmap.Config.ALPHA_8)
     }
 
     /**
      * Returns the master ALPHA_8 bitmap. 
-     * Paddle/UI should only operate on the top [height] rows.
+     * IMPORTANT: Call [syncToBitmap] if the buffer was modified by OpenCV or ML Kit.
      */
     fun getBitmap(): Bitmap = masterBitmap
 
@@ -58,16 +56,34 @@ class MemoryBridge(val width: Int, val height: Int) {
     }
 
     /**
-     * Returns a Direct ByteBuffer for ML Kit (IMAGE_FORMAT_NV21).
+     * Returns the master Direct ByteBuffer for ML Kit (IMAGE_FORMAT_NV21).
      */
-    fun getNv21(): ByteBuffer = nv21Buffer
+    fun getNv21(): ByteBuffer = masterBuffer
 
     /**
-     * Call this when the bridge is no longer needed to unlock native pixels.
+     * Syncs the master buffer data into the master bitmap for Paddle/UI.
+     */
+    fun syncToBitmap() {
+        masterBuffer.rewind()
+        masterBitmap.copyPixelsFromBuffer(masterBuffer)
+        masterBuffer.rewind()
+    }
+
+    /**
+     * Syncs the bitmap pixels back to the master buffer.
+     */
+    fun syncFromBitmap() {
+        masterBuffer.rewind()
+        masterBitmap.copyPixelsToBuffer(masterBuffer)
+        masterBuffer.rewind()
+    }
+
+    /**
+     * Call this when the bridge is no longer needed to free native headers.
      */
     fun release() {
         if (nativeHandle != 0L) {
-            nativeUnlock(masterBitmap, nativeHandle)
+            nativeRelease(nativeHandle)
             nativeHandle = 0
         }
     }

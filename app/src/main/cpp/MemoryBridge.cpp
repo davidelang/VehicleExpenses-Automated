@@ -1,5 +1,4 @@
 #include <jni.h>
-#include <android/bitmap.h>
 #include <android/log.h>
 #include <opencv2/core.hpp>
 #include <cstring>
@@ -10,19 +9,19 @@
 
 /**
  * UnifiedHandle stores the pointers and headers for a shared memory block
- * anchored to an Android Bitmap.
+ * anchored to a Direct ByteBuffer.
  */
 struct UnifiedHandle {
-    void* pixels;
+    void* data;
     cv::Mat* yMat;
     size_t width;
     size_t height;
-    size_t stride;
     size_t actualByteCount;
 
-    UnifiedHandle(void* p, size_t w, size_t h, size_t s, size_t total) 
-        : pixels(p), width(w), height(h), stride(s), actualByteCount(total) {
-        yMat = new cv::Mat((int)h, (int)w, CV_8UC1, p, s);
+    UnifiedHandle(void* p, size_t w, size_t h, size_t total) 
+        : data(p), width(w), height(h), actualByteCount(total) {
+        // Create Mat header pointing to the buffer. Stride matches width for linear buffer.
+        yMat = new cv::Mat((int)h, (int)w, CV_8UC1, p, w);
     }
 
     ~UnifiedHandle() {
@@ -32,58 +31,39 @@ struct UnifiedHandle {
 
 extern "C" {
 
-/**
- * Note: These methods correspond to top-level external functions in MemoryBridge.kt.
- * Kotlin compiles top-level functions in a file named "MemoryBridge.kt" 
- * into a JVM class named "MemoryBridgeKt".
- */
-
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeLock(
-    JNIEnv* env, jclass clazz, jobject bitmap, jint width, jint height) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeSetup(
+    JNIEnv* env, jclass clazz, jobject buffer, jint width, jint height) {
     
-    if (bitmap == nullptr) return 0;
+    if (buffer == nullptr) return 0;
 
-    AndroidBitmapInfo info;
-    void* pixels = nullptr;
-    int ret;
-
-    if ((ret = AndroidBitmap_getInfo(env, bitmap, &info)) < 0) return 0;
-    if (info.format != ANDROID_BITMAP_FORMAT_A_8) return 0;
-    if ((ret = AndroidBitmap_lockPixels(env, bitmap, &pixels)) < 0) return 0;
-    if (pixels == nullptr) {
-        AndroidBitmap_unlockPixels(env, bitmap);
+    void* data = env->GetDirectBufferAddress(buffer);
+    if (data == nullptr) {
+        LOGE("nativeSetup: Failed to get direct buffer address");
         return 0;
     }
 
     size_t frameSize = (size_t)width * (size_t)height;
     size_t totalSize = frameSize + (frameSize / 2);
-    size_t actualByteCount = (size_t)info.stride * (size_t)info.height;
+    
+    // Initialize: Y = 0 (black), UV = 128 (neutral)
+    std::memset(data, 0, frameSize);
+    std::memset((uint8_t*)data + frameSize, 128, totalSize - frameSize);
 
-    if (totalSize > actualByteCount) {
-        AndroidBitmap_unlockPixels(env, bitmap);
-        return 0;
-    }
-
-    std::memset(pixels, 0, frameSize);
-    std::memset((uint8_t*)pixels + frameSize, 128, totalSize - frameSize);
-
-    auto* handle = new UnifiedHandle(pixels, (size_t)width, (size_t)height, (size_t)info.stride, actualByteCount);
+    auto* handle = new UnifiedHandle(data, (size_t)width, (size_t)height, totalSize);
+    LOGI("nativeSetup: Success. Handle=%p, Ptr=%p, W=%d, H=%d", handle, data, width, height);
     return (jlong)handle;
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeUnlock(
-    JNIEnv* env, jclass clazz, jobject bitmap, jlong handlePtr) {
-    
-    if (bitmap != nullptr) {
-        AndroidBitmap_unlockPixels(env, bitmap);
-    }
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeRelease(
+    JNIEnv* env, jclass clazz, jlong handlePtr) {
     
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle != nullptr) {
         delete handle;
     }
+    LOGI("nativeRelease: Handle freed");
 }
 
 JNIEXPORT jlong JNICALL
@@ -92,16 +72,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeGetMatP
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr) return 0;
     return (jlong)handle->yMat;
-}
-
-JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeGetDirectBuffer(
-    JNIEnv* env, jclass clazz, jlong handlePtr) {
-    
-    auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
-    if (handle == nullptr || handle->pixels == nullptr) return nullptr;
-    
-    return env->NewDirectByteBuffer(handle->pixels, (jlong)handle->actualByteCount);
 }
 
 }
