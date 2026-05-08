@@ -589,21 +589,16 @@ private fun buildHtmlRowDynamic(
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
                     appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
-                    
-                    // Phase 115: OCR Input Transparency
-                    step.ocrInputB64?.let { inputB64 ->
-                        appendLine("<br><img src='data:image/jpeg;base64,$inputB64'>")
-                    }
-                    
                     val rawText = step.metadata["raw_text"]
                     if (rawText != null) {
                         appendLine("<br><small>Raw: $rawText</small>")
                     }
 
                     appendLine("${step.text ?: "---"}</div>") 
-                }
-            } else appendLine("<i>No refinement data</i>")
-        } else appendLine("<i>No match</i>")
+                    }
+                    appendLine("</td>")
+                    }
+                    } else appendLine("<i>No refinement data</i>")
         appendLine("</td>")
     }
     

@@ -13,19 +13,21 @@ class MemoryBridge(val width: Int, val height: Int) {
     private var nativeHandle: Long = 0
     private val nv21Buffer: ByteBuffer
 
+    data class NativeHandle(val handlePtr: Long, val buffer: ByteBuffer)
+
     init {
         // Allocate 1.5x height to accommodate NV21 chroma tail
         val masterHeight = (height * 1.5).toInt()
         masterBitmap = Bitmap.createBitmap(width, masterHeight, Bitmap.Config.ALPHA_8)
         
-        // Lock the bitmap in native memory and get the handle
-        nativeHandle = nativeLock(masterBitmap, width, height)
-        if (nativeHandle == 0L) {
+        // Single native call to lock bitmap and get all handles
+        val result = nativeLock(masterBitmap, width, height)
+        if (result == null || result.handlePtr == 0L) {
             throw IllegalStateException("Failed to lock bitmap in MemoryBridge")
         }
-
-        // Create the NV21 ByteBuffer view (Direct)
-        nv21Buffer = nativeGetDirectBuffer(masterBitmap)
+        
+        nativeHandle = result.handlePtr
+        nv21Buffer = result.buffer
     }
 
     /**
@@ -66,9 +68,8 @@ class MemoryBridge(val width: Int, val height: Int) {
             }
         }
 
-        @JvmStatic public external fun nativeLock(bitmap: android.graphics.Bitmap, w: Int, h: Int): Long
-        @JvmStatic public external fun nativeUnlock(bitmap: android.graphics.Bitmap, handle: Long)
+        @JvmStatic public external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): NativeHandle?
+        @JvmStatic public external fun nativeUnlock(bitmap: Bitmap, handle: Long)
         @JvmStatic public external fun nativeGetMatPtr(handle: Long): Long
-        @JvmStatic public external fun nativeGetDirectBuffer(bitmap: android.graphics.Bitmap): java.nio.ByteBuffer
     }
 }
