@@ -59,12 +59,16 @@ class MemoryBridge(val width: Int, val height: Int) {
 
     companion object {
         init {
-            System.loadLibrary("memory_bridge")
+            try {
+                System.loadLibrary("memory_bridge")
+            } catch (e: Exception) {
+                android.util.Log.e("MemoryBridge", "Failed to load memory_bridge library", e)
+            }
         }
 
-        @JvmStatic private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
-        @JvmStatic private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
-        @JvmStatic private external fun nativeGetMatPtr(handle: Long): Long
-        @JvmStatic private external fun nativeGetDirectBuffer(bitmap: Bitmap): ByteBuffer
+        @JvmStatic internal external fun nativeLock(bitmap: android.graphics.Bitmap, w: Int, h: Int): Long
+        @JvmStatic internal external fun nativeUnlock(bitmap: android.graphics.Bitmap, handle: Long)
+        @JvmStatic internal external fun nativeGetMatPtr(handle: Long): Long
+        @JvmStatic internal external fun nativeGetDirectBuffer(bitmap: android.graphics.Bitmap): java.nio.ByteBuffer
     }
 }

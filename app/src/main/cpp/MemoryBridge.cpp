@@ -35,36 +35,51 @@ JNIEXPORT jlong JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
     JNIEnv* env, jobject thiz, jobject bitmap, jint width, jint height) {
     
+    if (bitmap == nullptr) {
+        LOGE("nativeLock: bitmap is null");
+        return 0;
+    }
+
     AndroidBitmapInfo info;
     void* pixels = nullptr;
     int ret;
 
     if ((ret = AndroidBitmap_getInfo(env, bitmap, &info)) < 0) {
-        LOGE("AndroidBitmap_getInfo() failed ! error=%d", ret);
+        LOGE("nativeLock: AndroidBitmap_getInfo() failed! error=%d", ret);
         return 0;
     }
 
     if (info.format != ANDROID_BITMAP_FORMAT_A_8) {
-        LOGE("Bitmap format must be ALPHA_8 for unified memory bridge!");
+        LOGE("nativeLock: Bitmap format must be ALPHA_8! format=%d", info.format);
         return 0;
     }
 
     if ((ret = AndroidBitmap_lockPixels(env, bitmap, &pixels)) < 0) {
-        LOGE("AndroidBitmap_lockPixels() failed ! error=%d", ret);
+        LOGE("nativeLock: AndroidBitmap_lockPixels() failed! error=%d", ret);
+        return 0;
+    }
+
+    if (pixels == nullptr) {
+        LOGE("nativeLock: locked pixels is null");
+        AndroidBitmap_unlockPixels(env, bitmap);
         return 0;
     }
 
     // Initialize: Y = 0 (black), UV = 128 (neutral)
-    // We assume the bitmap was allocated at height * 1.5
     size_t frameSize = (size_t)width * (size_t)height;
     size_t totalSize = frameSize + (frameSize / 2);
     
-    // Note: If stride > width, the initialization might need to be row-by-row,
-    // but for our 320px buffers, stride will match width.
+    if (totalSize > (info.stride * info.height)) {
+        LOGE("nativeLock: requested size %zu exceeds bitmap capacity %zu", totalSize, (size_t)(info.stride * info.height));
+        AndroidBitmap_unlockPixels(env, bitmap);
+        return 0;
+    }
+
     std::memset(pixels, 0, frameSize);
     std::memset((uint8_t*)pixels + frameSize, 128, totalSize - frameSize);
 
     auto* handle = new UnifiedHandle(pixels, (size_t)width, (size_t)height, (size_t)info.stride);
+    LOGI("nativeLock: Success. Handle=%p, Ptr=%p, Stride=%zu", handle, pixels, (size_t)info.stride);
     return (jlong)handle;
 }
 
@@ -72,30 +87,39 @@ JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeUnlock(
     JNIEnv* env, jobject thiz, jobject bitmap, jlong handlePtr) {
     
-    AndroidBitmap_unlockPixels(env, bitmap);
+    if (bitmap != nullptr) {
+        AndroidBitmap_unlockPixels(env, bitmap);
+    }
+    
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
-    delete handle;
+    if (handle != nullptr) {
+        delete handle;
+    }
+    LOGI("nativeUnlock: Handle freed");
 }
 
 JNIEXPORT jlong JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetMatPtr(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
-    return (jlong)reinterpret_cast<UnifiedHandle*>(handlePtr)->yMat;
+    auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
+    if (handle == nullptr) return 0;
+    return (jlong)handle->yMat;
 }
 
 JNIEXPORT jobject JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetDirectBuffer(
     JNIEnv* env, jobject thiz, jobject bitmap) {
     
+    if (bitmap == nullptr) return nullptr;
+
     void* pixels = nullptr;
     AndroidBitmapInfo info;
     
-    AndroidBitmap_getInfo(env, bitmap, &info);
-    AndroidBitmap_lockPixels(env, bitmap, &pixels);
-    // Note: We leave it locked for the duration of the bridge,
-    // which is why MemoryBridge.release() calls unlock.
+    if (AndroidBitmap_getInfo(env, bitmap, &info) < 0) return nullptr;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0) return nullptr;
     
-    size_t totalSize = info.stride * info.height;
+    // Safety: we do NOT unlock here; the caller must use MemoryBridge.release()
+    size_t totalSize = (size_t)info.stride * (size_t)info.height;
     return env->NewDirectByteBuffer(pixels, (jlong)totalSize);
 }
 
