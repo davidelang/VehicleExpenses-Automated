@@ -507,8 +507,8 @@ object OdometerOcrUtils {
                         }
                         val resStr = resBuilder.toString()
                         resMetadata["raw_text"] = verbatimBuilder.toString().trim()
-                        resMetadata["bitmap_width"] = w.toString()
-                        resMetadata["bitmap_height"] = h.toString()
+                        resMetadata["bitmap_width"] = resized.width.toString()
+                        resMetadata["bitmap_height"] = resized.height.toString()
                         
                         val detBoxes = visionText.textBlocks.flatMap { block ->
                             block.lines.flatMap { line ->
