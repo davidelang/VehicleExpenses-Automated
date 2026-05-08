@@ -13,7 +13,7 @@ struct UnifiedHandle {
     size_t width;
     size_t height;
     size_t actualByteCount;
-    jobject globalBuffer;   // <-- NEW: global ref to keep buffer alive across threads
+    jobject globalBuffer;
 
     UnifiedHandle(uint8_t* p, size_t w, size_t h, size_t total, jobject buf) 
         : data(p), width(w), height(h), actualByteCount(total), globalBuffer(buf) {
@@ -23,7 +23,6 @@ struct UnifiedHandle {
     ~UnifiedHandle() {
         delete[] data;
         delete yMat;
-        // globalBuffer is deleted in nativeRelease via DeleteGlobalRef
     }
 };
 
@@ -45,7 +44,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeSetup(
     std::memset(data, 0, frameSize);
     std::memset(data + frameSize, 128, totalSize - frameSize);
 
-    // Create ByteBuffer once and make it a global ref (safe for ML Kit threads)
     jobject localBuffer = env->NewDirectByteBuffer(data, totalSize);
     if (localBuffer == nullptr) {
         LOGE("nativeSetup: NewDirectByteBuffer failed");
@@ -86,7 +84,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeGetMast
     JNIEnv* env, jclass clazz, jlong handlePtr) {
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr || handle->globalBuffer == nullptr) return nullptr;
-    return handle->globalBuffer;   // return the stored global ref
+    return handle->globalBuffer;
 }
 
 }
