@@ -29,7 +29,34 @@ struct UnifiedHandle {
     }
 };
 
+// Thread-Safe JNI Caching
+static jclass handleClassGlobal = nullptr;
+static jmethodID handleConstructor = nullptr;
+
 extern "C" {
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    JNIEnv* env;
+    if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        return JNI_ERR;
+    }
+
+    // Cache the NativeHandle class and constructor once
+    jclass localClass = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/MemoryBridge$NativeHandle");
+    if (localClass == nullptr) {
+        LOGE("JNI_OnLoad: Failed to find NativeHandle class");
+        return JNI_ERR;
+    }
+    handleClassGlobal = reinterpret_cast<jclass>(env->NewGlobalRef(localClass));
+    handleConstructor = env->GetMethodID(handleClassGlobal, "<init>", "(JLjava/nio/ByteBuffer;)V");
+    if (handleConstructor == nullptr) {
+        LOGE("JNI_OnLoad: Failed to find NativeHandle constructor");
+        return JNI_ERR;
+    }
+
+    LOGI("JNI_OnLoad: MemoryBridge symbols cached successfully");
+    return JNI_VERSION_1_6;
+}
 
 JNIEXPORT jobject JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
@@ -81,12 +108,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
 
     auto* handle = new UnifiedHandle(pixels, (size_t)width, (size_t)height, (size_t)info.stride);
     
-    // Create the Return Object: MemoryBridge.NativeHandle(matPtr, buffer)
-    jclass handleClass = env->FindClass("com/davidlang/vehicleexpensesautomated/ui/util/MemoryBridge$NativeHandle");
-    jmethodID constructor = env->GetMethodID(handleClass, "<init>", "(JLjava/nio/ByteBuffer;)V");
-    
+    // Safety check for cached symbols
+    if (handleClassGlobal == nullptr || handleConstructor == nullptr) {
+        LOGE("nativeLock: Cached JNI symbols are missing!");
+        AndroidBitmap_unlockPixels(env, bitmap);
+        delete handle;
+        return nullptr;
+    }
+
     jobject directBuffer = env->NewDirectByteBuffer(pixels, (jlong)actualByteCount);
-    jobject result = env->NewObject(handleClass, constructor, (jlong)handle, directBuffer);
+    jobject result = env->NewObject(handleClassGlobal, handleConstructor, (jlong)handle, directBuffer);
 
     LOGI("nativeLock: Success. Handle=%p, Ptr=%p, Stride=%zu", handle, pixels, (size_t)info.stride);
     return result;
