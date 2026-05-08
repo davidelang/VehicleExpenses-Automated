@@ -18,7 +18,7 @@ class MemoryBridge(val width: Int, val height: Int) {
         val masterHeight = (height * 1.5).toInt()
         masterBitmap = Bitmap.createBitmap(width, masterHeight, Bitmap.Config.ALPHA_8)
         
-        // Step 1: Lock the bitmap and get primitive data via Companion (no @JvmStatic)
+        // Step 1: Lock the bitmap and get primitive data via static JNI
         nativeHandle = Companion.nativeLock(masterBitmap, width, height)
         if (nativeHandle == 0L) {
             throw IllegalStateException("Failed to lock bitmap in MemoryBridge")
@@ -67,10 +67,10 @@ class MemoryBridge(val width: Int, val height: Int) {
             }
         }
 
-        // NO @JvmStatic to ensure predictable _00024Companion JNI naming
-        private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
-        private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
-        private external fun nativeGetMatPtr(handle: Long): Long
-        private external fun nativeGetDirectBuffer(handle: Long): ByteBuffer?
+        // @JvmStatic ensures these methods are static on the MemoryBridge class itself.
+        @JvmStatic private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
+        @JvmStatic private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
+        @JvmStatic private external fun nativeGetMatPtr(handle: Long): Long
+        @JvmStatic private external fun nativeGetDirectBuffer(handle: Long): ByteBuffer?
     }
 }

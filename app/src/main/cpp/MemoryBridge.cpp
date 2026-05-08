@@ -33,13 +33,13 @@ struct UnifiedHandle {
 extern "C" {
 
 /**
- * Note: Methods are now in the Companion object to match the Kotlin class structure.
- * We use the explicit _00024Companion mangling for maximum JNI linker reliability.
+ * Note: By using @JvmStatic in Kotlin, these methods are truly static on the MemoryBridge class.
+ * The second argument MUST be jclass clazz.
  */
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeLock(
-    JNIEnv* env, jobject thiz, jobject bitmap, jint width, jint height) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
+    JNIEnv* env, jclass clazz, jobject bitmap, jint width, jint height) {
     
     if (bitmap == nullptr) return 0;
 
@@ -72,8 +72,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeUnlock(
-    JNIEnv* env, jobject thiz, jobject bitmap, jlong handlePtr) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeUnlock(
+    JNIEnv* env, jclass clazz, jobject bitmap, jlong handlePtr) {
     
     if (bitmap != nullptr) {
         AndroidBitmap_unlockPixels(env, bitmap);
@@ -86,16 +86,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetMatPtr(
-    JNIEnv* env, jobject thiz, jlong handlePtr) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetMatPtr(
+    JNIEnv* env, jclass clazz, jlong handlePtr) {
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr) return 0;
     return (jlong)handle->yMat;
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_00024Companion_nativeGetDirectBuffer(
-    JNIEnv* env, jobject thiz, jlong handlePtr) {
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetDirectBuffer(
+    JNIEnv* env, jclass clazz, jlong handlePtr) {
     
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr || handle->pixels == nullptr) return nullptr;
