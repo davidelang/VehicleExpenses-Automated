@@ -33,12 +33,13 @@ struct UnifiedHandle {
 extern "C" {
 
 /**
- * Note: These methods correspond to @JvmStatic methods in MemoryBridge's companion object.
- * The JVM places them on the MemoryBridge class itself.
+ * Note: These methods correspond to top-level external functions in MemoryBridge.kt.
+ * Kotlin compiles top-level functions in a file named "MemoryBridge.kt" 
+ * into a JVM class named "MemoryBridgeKt".
  */
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeLock(
     JNIEnv* env, jclass clazz, jobject bitmap, jint width, jint height) {
     
     if (bitmap == nullptr) return 0;
@@ -72,7 +73,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeLock(
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeUnlock(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeUnlock(
     JNIEnv* env, jclass clazz, jobject bitmap, jlong handlePtr) {
     
     if (bitmap != nullptr) {
@@ -86,7 +87,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeUnlock(
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetMatPtr(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeGetMatPtr(
     JNIEnv* env, jclass clazz, jlong handlePtr) {
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);
     if (handle == nullptr) return 0;
@@ -94,7 +95,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetMatPtr
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridge_nativeGetDirectBuffer(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeGetDirectBuffer(
     JNIEnv* env, jclass clazz, jlong handlePtr) {
     
     auto* handle = reinterpret_cast<UnifiedHandle*>(handlePtr);

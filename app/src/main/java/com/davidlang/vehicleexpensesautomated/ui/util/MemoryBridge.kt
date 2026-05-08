@@ -4,6 +4,13 @@ import android.graphics.Bitmap
 import org.opencv.core.Mat
 import java.nio.ByteBuffer
 
+// Top-level JNI declarations (outside class)
+// These result in Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_ naming
+private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
+private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
+private external fun nativeGetMatPtr(handle: Long): Long
+private external fun nativeGetDirectBuffer(handle: Long): ByteBuffer?
+
 /**
  * MemoryBridge implements a zero-copy "Triple-View" onto a shared memory block.
  * It uses an ALPHA_8 Bitmap allocated at 1.5x height as the master memory backing.
@@ -14,7 +21,7 @@ class MemoryBridge(val width: Int, val height: Int) {
     private val nv21Buffer: ByteBuffer
 
     init {
-        // CRITICAL: Load library in the main class block to ensure @JvmStatic linkage is stable.
+        // Load library once
         try {
             System.loadLibrary("memory_bridge")
         } catch (e: Exception) {
@@ -25,14 +32,14 @@ class MemoryBridge(val width: Int, val height: Int) {
         val masterHeight = (height * 1.5).toInt()
         masterBitmap = Bitmap.createBitmap(width, masterHeight, Bitmap.Config.ALPHA_8)
         
-        // Step 1: Lock the bitmap and get primitive data via static JNI
-        nativeHandle = Companion.nativeLock(masterBitmap, width, height)
+        // Step 1: Lock the bitmap and get primitive data via top-level JNI
+        nativeHandle = nativeLock(masterBitmap, width, height)
         if (nativeHandle == 0L) {
             throw IllegalStateException("Failed to lock bitmap in MemoryBridge")
         }
         
         // Step 2: Get the DirectByteBuffer view using the handle
-        nv21Buffer = Companion.nativeGetDirectBuffer(nativeHandle) ?: 
+        nv21Buffer = nativeGetDirectBuffer(nativeHandle) ?: 
             throw IllegalStateException("Failed to create DirectBuffer in MemoryBridge")
     }
 
@@ -46,7 +53,7 @@ class MemoryBridge(val width: Int, val height: Int) {
      * Returns an OpenCV Mat header (CV_8UC1) pointing to the same memory.
      */
     fun getMat(): Mat {
-        val ptr = Companion.nativeGetMatPtr(nativeHandle)
+        val ptr = nativeGetMatPtr(nativeHandle)
         return Mat(ptr)
     }
 
@@ -60,16 +67,8 @@ class MemoryBridge(val width: Int, val height: Int) {
      */
     fun release() {
         if (nativeHandle != 0L) {
-            Companion.nativeUnlock(masterBitmap, nativeHandle)
+            nativeUnlock(masterBitmap, nativeHandle)
             nativeHandle = 0
         }
-    }
-
-    companion object {
-        // @JvmStatic ensures these methods are static on the MemoryBridge class itself.
-        @JvmStatic private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
-        @JvmStatic private external fun nativeUnlock(bitmap: Bitmap, handle: Long)
-        @JvmStatic private external fun nativeGetMatPtr(handle: Long): Long
-        @JvmStatic private external fun nativeGetDirectBuffer(handle: Long): ByteBuffer?
     }
 }
