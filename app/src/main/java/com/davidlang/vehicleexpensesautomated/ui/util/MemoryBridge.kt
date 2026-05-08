@@ -14,6 +14,13 @@ class MemoryBridge(val width: Int, val height: Int) {
     private val nv21Buffer: ByteBuffer
 
     init {
+        // CRITICAL: Load library in the main class block to ensure @JvmStatic linkage is stable.
+        try {
+            System.loadLibrary("memory_bridge")
+        } catch (e: Exception) {
+            android.util.Log.e("MemoryBridge", "Failed to load memory_bridge library", e)
+        }
+
         // Allocate 1.5x height to accommodate NV21 chroma tail
         val masterHeight = (height * 1.5).toInt()
         masterBitmap = Bitmap.createBitmap(width, masterHeight, Bitmap.Config.ALPHA_8)
@@ -59,14 +66,6 @@ class MemoryBridge(val width: Int, val height: Int) {
     }
 
     companion object {
-        init {
-            try {
-                System.loadLibrary("memory_bridge")
-            } catch (e: Exception) {
-                android.util.Log.e("MemoryBridge", "Failed to load memory_bridge library", e)
-            }
-        }
-
         // @JvmStatic ensures these methods are static on the MemoryBridge class itself.
         @JvmStatic private external fun nativeLock(bitmap: Bitmap, w: Int, h: Int): Long
         @JvmStatic private external fun nativeUnlock(bitmap: Bitmap, handle: Long)

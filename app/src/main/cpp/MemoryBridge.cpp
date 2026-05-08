@@ -33,8 +33,8 @@ struct UnifiedHandle {
 extern "C" {
 
 /**
- * Note: By using @JvmStatic in Kotlin, these methods are truly static on the MemoryBridge class.
- * The second argument MUST be jclass clazz.
+ * Note: These methods correspond to @JvmStatic methods in MemoryBridge's companion object.
+ * The JVM places them on the MemoryBridge class itself.
  */
 
 JNIEXPORT jlong JNICALL
