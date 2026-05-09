@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
+import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import dagger.hilt.android.HiltAndroidApp
 import java.io.File
 import java.io.FileOutputStream
@@ -18,16 +19,33 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     override val workManagerConfiguration: Configuration
         get() {
-            android.util.Log.i("VehicleExpensesApp", "workManagerConfiguration requested. workerFactory initialized: ${::workerFactory.isInitialized}")
             return Configuration.Builder()
                 .setWorkerFactory(workerFactory)
                 .build()
         }
 
+    companion object {
+        var anchoredEngineV3: NativePaddleEngine? = null; private set
+        var anchoredEngineV3Mono: NativePaddleEngine? = null; private set
+    }
+
     override fun onCreate() {
-        android.util.Log.i("VehicleExpensesApp", "onCreate started")
+        // Phase 115: Total Eager Initialization (Synchronized Order)
+        // 1. Initialize stable JNI bridges first on Main thread
+        if (!org.opencv.android.OpenCVLoader.initLocal()) {
+            android.util.Log.e("VehicleExpensesApp", "OpenCV initialization failed!")
+        }
+        com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.initializeGlobalPools()
+        
+        // 2. Initialize Paddle static predictors
+        com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine.initializeGlobalBuffers(this)
+        
+        // 3. Anchor Engine Instances (External to class load loop)
+        anchoredEngineV3 = NativePaddleEngine(this, variant = "V3")
+        anchoredEngineV3Mono = NativePaddleEngine(this, variant = "V3", useMono = true)
+        
+        android.util.Log.i("VehicleExpensesApp", "onCreate complete. Engines anchored.")
         super.onCreate()
-        android.util.Log.i("VehicleExpensesApp", "super.onCreate completed. workerFactory initialized: ${::workerFactory.isInitialized}")
         
         copyTessdataOnce(this)
         try {

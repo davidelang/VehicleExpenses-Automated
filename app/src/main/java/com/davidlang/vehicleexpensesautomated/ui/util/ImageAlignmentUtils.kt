@@ -247,7 +247,11 @@ object ImageAlignmentUtils {
         bmp: Bitmap,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
-        vehicle: Vehicle
+        vehicle: Vehicle,
+        refW: Int = 4000,
+        refH: Int = 3000,
+        queW: Int = 4000,
+        queH: Int = 3000
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
@@ -271,33 +275,37 @@ object ImageAlignmentUtils {
                     val q1 = confirmedPairs[i].second
                     val q2 = confirmedPairs[j].second
                     
-                    val r1cx = r1.boundingBox.centerX().toFloat()
-                    val r1cy = r1.boundingBox.centerY().toFloat()
-                    val r2cx = r2.boundingBox.centerX().toFloat()
-                    val r2cy = r2.boundingBox.centerY().toFloat()
-                    val q1cx = q1.boundingBox.centerX().toFloat()
-                    val q1cy = q1.boundingBox.centerY().toFloat()
-                    val q2cx = q2.boundingBox.centerX().toFloat()
-                    val q2cy = q2.boundingBox.centerY().toFloat()
+                    // Corrected: Map BOTH sets of landmarks to NORMALIZED (0.0 to 1.0) space for math
+                    // This ensures the Scale factor represents the geometric zoom ratio (~1.0)
+                    // and prevents 18x zoom issues when resolutions differ.
+                    val r1nx = if (r1.boundingBox.width() > 1) r1.boundingBox.centerX().toFloat() / refW else r1.boundingBox.centerX().toFloat()
+                    val r1ny = if (r1.boundingBox.width() > 1) r1.boundingBox.centerY().toFloat() / refH else r1.boundingBox.centerY().toFloat()
+                    val r2nx = if (r2.boundingBox.width() > 1) r2.boundingBox.centerX().toFloat() / refW else r2.boundingBox.centerX().toFloat()
+                    val r2ny = if (r2.boundingBox.width() > 1) r2.boundingBox.centerY().toFloat() / refH else r2.boundingBox.centerY().toFloat()
                     
-                    val refDist = sqrt((r1cx - r2cx).toDouble().pow(2.0) + (r1cy - r2cy).toDouble().pow(2.0))
-                    val queDist = sqrt((q1cx - q2cx).toDouble().pow(2.0) + (q1cy - q2cy).toDouble().pow(2.0))
+                    val q1nx = if (q1.boundingBox.width() > 1) q1.boundingBox.centerX().toFloat() / queW else q1.boundingBox.centerX().toFloat()
+                    val q1ny = if (q1.boundingBox.width() > 1) q1.boundingBox.centerY().toFloat() / queH else q1.boundingBox.centerY().toFloat()
+                    val q2nx = if (q2.boundingBox.width() > 1) q2.boundingBox.centerX().toFloat() / queW else q2.boundingBox.centerX().toFloat()
+                    val q2ny = if (q2.boundingBox.width() > 1) q2.boundingBox.centerY().toFloat() / queH else q2.boundingBox.centerY().toFloat()
+                    
+                    val refDist = sqrt((r1nx - r2nx).toDouble().pow(2.0) + (r1ny - r2ny).toDouble().pow(2.0))
+                    val queDist = sqrt((q1nx - q2nx).toDouble().pow(2.0) + (q1ny - q2ny).toDouble().pow(2.0))
                     
                     if (queDist > 0) {
                         val s = (refDist / queDist).toFloat()
                         
                         // Calculate Rotation (Phase 44)
-                        val rAngle = Math.atan2((r2cy - r1cy).toDouble(), (r2cx - r1cx).toDouble())
-                        val qAngle = Math.atan2((q2cy - q1cy).toDouble(), (q2cx - q1cx).toDouble())
+                        val rAngle = Math.atan2((r2ny - r1ny).toDouble(), (r2nx - r1nx).toDouble())
+                        val qAngle = Math.atan2((q2ny - q1ny).toDouble(), (q2nx - q1nx).toDouble())
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
                         // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
                         if (kotlin.math.abs(rot) > 4.0f) continue
-                        val tx = r1cx - (s * q1cx)
-                        val ty = r1cy - (s * q1cy)
-                        val cyRef = (r1cy + r2cy) / 2.0f
+                        val tx = r1nx - (s * q1nx)
+                        val ty = r1ny - (s * q1ny)
+                        val cyRef = (r1ny + r2ny) / 2.0f
 
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.1f, ty=%.1f".format(s, rot, tx, ty), cyRef, r1cy, r2cy))
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.3f, ty=%.3f".format(s, rot, tx, ty), cyRef, r1ny, r2ny))
                     }
                 }
             }
@@ -315,12 +323,10 @@ object ImageAlignmentUtils {
             for (c2 in allCandidates) {
                 val ds = kotlin.math.abs(c1.scale - c2.scale) / c1.scale
                 val dtx = kotlin.math.abs(c1.tx - c2.tx)
-                val dtxNorm = dtx / bmp.width
                 val dty = kotlin.math.abs(c1.ty - c2.ty)
-                val dtyNorm = dty / bmp.height
                 
                 // Agreement threshold: 5% scale, 0.05 normalized translation
-                if (ds < 0.05f && dtxNorm < 0.05f && dtyNorm < 0.05f) {
+                if (ds < 0.05f && dtx < 0.05f && dty < 0.05f) {
                     supportGroup.add(c2)
                 }
             }
@@ -367,29 +373,29 @@ object ImageAlignmentUtils {
         val matrix = android.graphics.Matrix()
         matrix.postScale(finalScale, finalScale)
         // Phase 53: Zero-Rotation Warp. Global deskew already handled rotation.
-        matrix.postTranslate(finalTx, finalTy)
+        // Map normalized translation back to pixels based on the buffer resolution
+        matrix.postTranslate(finalTx * bmp.width, finalTy * bmp.height)
 
         val metadata = mapOf(
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
+            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx * bmp.width, finalTy * bmp.height, bestGroup.size, allCandidates.size, bracketedCount),
             "raw_scale" to finalScale.toString(),
-            "raw_tx" to finalTx.toString(),
-            "raw_ty" to finalTy.toString()
+            "raw_tx" to (finalTx * bmp.width).toString(),
+            "raw_ty" to (finalTy * bmp.height).toString()
         )
 
         return try {
-            // Phase 92: In-Place Morphing. We use a temporary scratch bitmap to warp, then draw it back.
-            val scratch = Bitmap.createBitmap(bmp.width, bmp.height, bmp.config ?: Bitmap.Config.ARGB_8888)
+            // Phase 115: In-Place Morphing using shared scratch buffer.
+            val scratch = NativePaddleEngine.sharedBmpScratch
             val canvas = android.graphics.Canvas(scratch)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(bmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
             
-            // Draw scratch back to the original passed buffer
+            // Draw scratch back to the original passed buffer (bmp)
             val originalCanvas = android.graphics.Canvas(bmp)
             originalCanvas.drawBitmap(scratch, 0f, 0f, null)
-            scratch.recycle()
             
             AnchorResult(true, bmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d) [B:%d]: S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, bracketedCount, finalScale, finalTx, finalTy))
         } catch (e: Exception) {
