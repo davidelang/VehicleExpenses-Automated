@@ -63,9 +63,30 @@ object OdometerOcrUtils {
         val isMono = (targetBitmap === NativePaddleEngine.sharedBmp2048Mono)
         val canvas = if (isMono) NativePaddleEngine.sharedCanvas2048Mono else NativePaddleEngine.sharedCanvas2048
         canvas.drawColor(android.graphics.Color.BLACK)
-        NativePaddleEngine.sharedMatrix.reset()
-        NativePaddleEngine.sharedMatrix.postScale(pScale, pScale)
-        canvas.drawBitmap(sourceBitmap, NativePaddleEngine.sharedMatrix, null)
+        
+        // Phase 115: High-Quality Resize into 2048 buffer using OpenCV (INTER_AREA for clean downscaling)
+        val argbMat = Mat()
+        org.opencv.android.Utils.bitmapToMat(sourceBitmap, argbMat)
+        val grayMat = Mat()
+        Imgproc.cvtColor(argbMat, grayMat, Imgproc.COLOR_RGBA2GRAY)
+        
+        val targetSize = org.opencv.core.Size(pTargetSize.toDouble(), pHeight.toDouble())
+        val interp = Imgproc.INTER_AREA
+        
+        if (isMono) {
+            val targetMat = Mat(pHeight, pTargetSize, org.opencv.core.CvType.CV_8U)
+            Imgproc.resize(grayMat, targetMat, targetSize, 0.0, 0.0, interp)
+            matToBitmapMono(targetMat, targetBitmap)
+            targetMat.release()
+        } else {
+            val resizedGray = Mat()
+            Imgproc.resize(grayMat, resizedGray, targetSize, 0.0, 0.0, interp)
+            val resizedArgb = Mat()
+            Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
+            org.opencv.android.Utils.matToBitmap(resizedArgb, targetBitmap)
+            resizedGray.release(); resizedArgb.release()
+        }
+        argbMat.release(); grayMat.release()
         
         val paddleResult = paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize)
         val pdCandidates = mutableListOf<TextBlock>()
@@ -113,13 +134,9 @@ object OdometerOcrUtils {
         pHeight: Int,
         paddleTimeMs: Long
     ): DeskewResult {
-        val tMl = System.currentTimeMillis()
-        val mlOcr = extractFromPhotoBitmapRaw(bitmap)
-        val mlAngle = calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
-        val mlTimeMs = System.currentTimeMillis() - tMl
-        
-        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else mlAngle
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, paddleTimeMs, mlOcr.textBlocks, pdCandidates)
+        // Fallback to ML Kit removed as requested (Test 2: Paddle-Only Rotation source)
+        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else 0.0f
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), 0.0f, 0L, paddleTimeMs, emptyList(), pdCandidates)
     }
 
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
