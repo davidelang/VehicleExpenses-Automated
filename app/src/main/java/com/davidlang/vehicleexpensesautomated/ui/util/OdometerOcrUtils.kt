@@ -60,11 +60,10 @@ object OdometerOcrUtils {
         val pScale = pTargetSize.toFloat() / sourceBitmap.width
         val pHeight = (sourceBitmap.height * pScale).toInt()
 
-        val isMono = (targetBitmap === NativePaddleEngine.sharedBmp2048Mono)
-        val canvas = if (isMono) NativePaddleEngine.sharedCanvas2048Mono else NativePaddleEngine.sharedCanvas2048
-        canvas.drawColor(android.graphics.Color.BLACK)
+        val isMono = (targetBitmap.config == Bitmap.Config.ALPHA_8)
         
-        // Phase 115: High-Quality Resize into 2048 buffer using OpenCV (INTER_AREA for clean downscaling)
+        // Phase 115 Redesign: Pure OpenCV Pipeline (Zero-Canvas)
+        // Bypasses SkCanvas/drawColor to avoid fatal libhwui.so Hardware UI conflicts on shared bitmaps.
         val argbMat = Mat()
         org.opencv.android.Utils.bitmapToMat(sourceBitmap, argbMat)
         val grayMat = Mat()
@@ -74,17 +73,19 @@ object OdometerOcrUtils {
         val interp = Imgproc.INTER_AREA
         
         if (isMono) {
-            val targetMat = Mat(pHeight, pTargetSize, org.opencv.core.CvType.CV_8U)
-            Imgproc.resize(grayMat, targetMat, targetSize, 0.0, 0.0, interp)
+            val targetMat = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
+            val roiMat = Mat(targetMat, org.opencv.core.Rect(0, 0, pTargetSize, pHeight))
+            Imgproc.resize(grayMat, roiMat, targetSize, 0.0, 0.0, interp)
             matToBitmapMono(targetMat, targetBitmap)
-            targetMat.release()
+            targetMat.release(); roiMat.release()
         } else {
-            val resizedGray = Mat()
-            Imgproc.resize(grayMat, resizedGray, targetSize, 0.0, 0.0, interp)
+            val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
+            val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pTargetSize, pHeight))
+            Imgproc.resize(grayMat, roiMat, targetSize, 0.0, 0.0, interp)
             val resizedArgb = Mat()
             Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
             org.opencv.android.Utils.matToBitmap(resizedArgb, targetBitmap)
-            resizedGray.release(); resizedArgb.release()
+            resizedGray.release(); resizedArgb.release(); roiMat.release()
         }
         argbMat.release(); grayMat.release()
         
