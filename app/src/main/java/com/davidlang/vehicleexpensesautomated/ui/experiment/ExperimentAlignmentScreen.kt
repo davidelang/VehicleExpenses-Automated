@@ -365,12 +365,20 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val wrapped = java.nio.ByteBuffer.wrap(alphaBytes)
                                         monoBmp.copyPixelsFromBuffer(wrapped)
                                         bridge.syncFromBitmap() // Commit to Native Mat
-                                        monoBmp
+                                        
+                                        // Phase 115: Safe Copy Isolation. 
+                                        // Return a lightweight copy so legacy reporting code doesn't recycle our permanent pool view.
+                                        monoBmp.copy(Bitmap.Config.ALPHA_8, false)
                                     } else exactCrop
 
                                     Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
                                     val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
                                     refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
+                                    
+                                    if (ocrInput !== exactCrop) {
+                                        // Safe to recycle the temporary copy
+                                        ocrInput.recycle()
+                                    }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Strategy $strat failed for ${file.name}", e)
                                 }
