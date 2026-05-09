@@ -616,7 +616,8 @@ private fun buildHtmlRowDynamic(
     winnerName: String, 
     strategies: List<String>, 
     tDeskew: Long, 
-    tDiscovery: Long
+    tDiscovery: Long,
+    tilt: Float
 ): String = buildString {
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>Res: ${imgW}x${imgH}</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
@@ -630,7 +631,7 @@ private fun buildHtmlRowDynamic(
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
-            appendLine("<small>Scale: %.3f<br>TX: %.1f, TY: %.1f</small>".format(s, tx, ty))
+            appendLine("<small>Deskew Angle: %.3f<br>Scale: %.3f<br>TX: %.1f, TY: %.1f</small>".format(tilt, s, tx, ty))
         }
     } else {
         appendLine("<i>Not Aligned</i>")
@@ -763,5 +764,4 @@ private suspend fun performLandmarkDiscovery(
         queryOcrDiscovery.imageHeight
     )
     return Pair(queryOcrDiscovery, landmarks)
-}rn Pair(queryOcrDiscovery, landmarks)
 }
