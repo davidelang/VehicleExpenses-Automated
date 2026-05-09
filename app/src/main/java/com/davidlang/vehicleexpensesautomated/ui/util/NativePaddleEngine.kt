@@ -18,6 +18,10 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.opencv.android.Utils
+import org.opencv.core.Mat
+import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
 
 class NativePaddleEngine(private val context: Context, private val variant: String = "V3", val useMono: Boolean = false) : OcrEngine {
     override val name = "Paddle $variant Greedy" + if (useMono) " Mono" else ""
@@ -201,6 +205,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 isAvailableGlobally = true
             } catch (e: Exception) { Log.e("PaddleLite", "Failed Global Init", e) }
         }
+
+        /**
+         * Implementation of high-quality Area-Averaging resize using OpenCV.
+         * Bypasses background-thread Canvas/Paint JNI locks.
+         */
+        fun performHighQualityResize(sourceBmp: Bitmap, targetBridge: MemoryBridge) {
+            val tempMat = Mat()
+            try {
+                Utils.bitmapToMat(sourceBmp, tempMat)
+                Imgproc.resize(tempMat, targetBridge.getMat(), Size(targetBridge.width.toDouble(), targetBridge.height.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+            } finally {
+                tempMat.release()
+            }
+        }
     }
     
     init {
@@ -280,109 +298,71 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         floatData.fill(0.0f)
 
-        val scaleW = targetWidth.toFloat() / bitmap.width
-        val scaleH = targetHeight.toFloat() / bitmap.height
-        val scale = min(scaleW, scaleH)
+        if (useMono && targetWidth <= 320) {
+            // High-Quality OpenCV Area Resize (Requested)
+            val bridge = if (targetWidth == 320) MemoryBridge.pool320x128!! else MemoryBridge.pool320x48!!
+            performHighQualityResize(bitmap, bridge)
+            // Buffer is shared with Mat, so it is already populated.
+        } else {
+            val scaleW = targetWidth.toFloat() / bitmap.width
+            val scaleH = targetHeight.toFloat() / bitmap.height
+            val scale = min(scaleW, scaleH)
+            synchronized(targetBmp) {
+                targetCanvas.drawColor(if (useMono) Color.TRANSPARENT else Color.BLACK, if (useMono) android.graphics.PorterDuff.Mode.CLEAR else android.graphics.PorterDuff.Mode.SRC)
+                sharedMatrix.reset()
+                sharedMatrix.postScale(scale, scale)
+                targetCanvas.drawBitmap(bitmap, sharedMatrix, if (useMono) srcPaint else null)
 
-        // Zero-Allocation Scaling via Canvas
-        synchronized(targetBmp) {
-            if (useMono) {
-                targetCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-            } else {
-                targetCanvas.drawColor(Color.BLACK)
-            }
-            sharedMatrix.reset()
-            sharedMatrix.postScale(scale, scale)
-            targetCanvas.drawBitmap(bitmap, sharedMatrix, if (useMono) srcPaint else null)
-
-            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
-            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
-
-            if (useMono) {
-                for (y in 0 until targetHeight) {
-                    for (x in 0 until targetWidth) {
-                        val px = targetBmp.getPixel(x, y)
-                        floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean[0]) / std[0]
+                val mean = floatArrayOf(0.485f, 0.456f, 0.406f); val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+                if (useMono) {
+                    for (y in 0 until targetHeight) {
+                        for (x in 0 until targetWidth) {
+                            val px = targetBmp.getPixel(x, y)
+                            floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean[0]) / std[0]
+                        }
                     }
-                }
-            } else {
-                for (y in 0 until targetHeight) {
-                    for (x in 0 until targetWidth) {
-                        val px = targetBmp.getPixel(x, y)
-                        floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
-                        floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
-                        floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                } else {
+                    for (y in 0 until targetHeight) {
+                        for (x in 0 until targetWidth) {
+                            val px = targetBmp.getPixel(x, y)
+                            floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean[0]) / std[0]
+                            floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean[1]) / std[1]
+                            floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean[2]) / std[2]
+                        }
                     }
                 }
             }
         }
 
         try {
-            val inputTensor = predictor.getInput(0)
-            inputTensor.setData(floatData)
-            predictor.run()
-            val outputTensor = predictor.getOutput(0)
-            val dims = outputTensor.shape()
-            return DetectionResult(outputTensor.floatData, dims[3].toInt(), dims[2].toInt(), scale)
-        } catch (t: Throwable) {
-            Log.e("PaddleDetect", "Detection failed", t)
-            return null
-        }
+            val inputTensor = predictor.getInput(0); inputTensor.setData(floatData); predictor.run()
+            val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
+            return DetectionResult(outputTensor.floatData, dims[3].toInt(), dims[2].toInt(), targetWidth.toFloat() / bitmap.width)
+        } catch (t: Throwable) { Log.e("PaddleDetect", "Detection failed", t); return null }
     }
 
     suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): RecStageResult = withContext(Dispatchers.IO) {
         if (recognizer == null) return@withContext RecStageResult("", 0, 0f, null)
-        
-        if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) {
-            return@withContext RecStageResult("(Skipped: Memory)", 0, 0f, null)
-        }
+        if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) return@withContext RecStageResult("(Skipped: Memory)", 0, 0f, null)
         runRecognitionStageStatic(bitmap, targetHeight, dictionary, recognizer!!)
     }
 
     private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
         val tStart = System.currentTimeMillis()
-        val targetHeight = 48
-        val targetWidth = 320
-        val area = targetHeight * targetWidth
-        
+        val targetHeight = 48; val targetWidth = 320; val area = targetHeight * targetWidth
         Log.d("OCR_DEBUG", "START RECOGNITION: engine=$name, dims=${bitmap.width}x${bitmap.height}")
-
         val floatData: FloatArray = if (useMono) bufferRec else bufferRec
         floatData.fill(0.0f)
 
-        // Phase 63: 312x40 Padded Center-Crop
-        val safeW = 312
-        val safeH = 40
-        val padding = 4
-
-        val scale = safeH.toFloat() / bitmap.height.toFloat()
-        
-        // Zero-Allocation Scaling via Shared Padded Buffer
-        val targetBmp = if (useMono) sharedBmpRecMono else sharedBmpRec
-        val targetCanvas = if (useMono) sharedCanvasRecMono else sharedCanvasRec
-
-        synchronized(targetBmp) {
-            if (useMono) {
-                targetCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-            } else {
-                targetCanvas.drawColor(Color.BLACK)
-            }
-            sharedMatrix.reset()
-            sharedMatrix.postScale(scale, scale)
-            sharedMatrix.postTranslate(padding.toFloat(), padding.toFloat())
-            targetCanvas.drawBitmap(bitmap, sharedMatrix, if (useMono) srcPaint else null)
-
-            val mean = 0.5f
-            val std = 0.5f
-            
-            if (useMono) {
-                for (y in 0 until targetHeight) {
-                    for (x in 0 until targetWidth) {
-                        val px = targetBmp.getPixel(x, y)
-                        floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
-                    }
-                }
-            } else {
+        if (useMono) {
+            performHighQualityResize(bitmap, MemoryBridge.pool320x48!!)
+        } else {
+            val targetBmp = sharedBmpRec; val targetCanvas = sharedCanvasRec
+            val scale = 40f / bitmap.height.toFloat(); val padding = 4
+            synchronized(targetBmp) {
+                targetCanvas.drawColor(Color.BLACK); sharedMatrix.reset(); sharedMatrix.postScale(scale, scale); sharedMatrix.postTranslate(padding.toFloat(), padding.toFloat())
+                targetCanvas.drawBitmap(bitmap, sharedMatrix, null)
+                val mean = 0.5f; val std = 0.5f
                 for (y in 0 until targetHeight) {
                     for (x in 0 until targetWidth) {
                         val px = targetBmp.getPixel(x, y)
@@ -392,122 +372,42 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     }
                 }
             }
-            
-            // Phase 63: Capture Exact OCR Input for Diagnostics (Reconstruct from floatData)
-            val snapshot = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-            for (y in 0 until targetHeight) {
-                for (x in 0 until targetWidth) {
-                    val r: Int; val g: Int; val b: Int
-                    if (useMono) {
-                        val v = ((floatData[y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
-                        r = v; g = v; b = v
-                    } else {
-                        r = ((floatData[0 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
-                        g = ((floatData[1 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
-                        b = ((floatData[2 * area + y * targetWidth + x] * std + mean) * 255f).toInt().coerceIn(0, 255)
-                    }
-                    snapshot.setPixel(x, y, Color.rgb(r, g, b))
-                }
-            }
-            val ocrInputB64 = OcrUtils.bitmapToBase64(snapshot, 60)
-            snapshot.recycle()
-            
-            predictor.getInput(0).setData(floatData)
-            predictor.run()
-            
-            val outputTensor = predictor.getOutput(0)
-            val dims = outputTensor.shape()
-            val seqLen = dims[1].toInt()
-            val dictSize = dims[2].toInt()
-            val data = outputTensor.floatData
-            val result = StringBuilder()
-            var lastIdx = -1
-            var totalConf = 0f
-            var charCount = 0
-            var lastConf = 1.0f
-            
-            Log.d("OCR_DEBUG", "START: seqLen=$seqLen, dictSize=$dictSize")
-            for (i in 0 until seqLen) {
-                var maxIdx = 0
-                var maxVal = -1f 
-                val searchLimit = 11.coerceAtMost(dictSize)
-                for (j in 0 until searchLimit) { 
-                    val v = data[i * dictSize + j]
-                    if (v > maxVal) { 
-                        maxVal = v
-                        maxIdx = j 
-                    } 
-                }
-                
-                val char = if (maxIdx > 0 && maxIdx <= dictionary.size) dictionary[maxIdx - 1] else "BLANK/UNK"
-                Log.d("OCR_DEBUG", "  Slot $i: idx=$maxIdx ($char), conf=$maxVal, lastIdx=$lastIdx")
-
-                // Phase 69: Extreme floor (0.00) to rescue faint leading digits
-                // The first 4 digits are immune to the relative drop rule.
-                if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
-                    val isImmune = result.length < 4
-                    if (isImmune || maxVal >= (0.60f * lastConf)) {
-                        val appendedChar = dictionary[maxIdx - 1]
-                        result.append(appendedChar)
-                        totalConf += maxVal
-                        charCount++
-                        lastConf = maxVal
-                        Log.d("OCR_DEBUG", "    APPENDED: $appendedChar")
-                    } else {
-                        Log.d("OCR_DEBUG", "    TRUNCATED: Confidence drop detected at index ${result.length} ($maxVal < ${0.60f * lastConf})")
-                        break // Stop search
-                    }
-                } else if (maxIdx > 0 && maxIdx == lastIdx) {
-                    Log.d("OCR_DEBUG", "    SKIPPED: Repeat/CTC rule")
-                }
-                lastIdx = maxIdx
-            }
-            val finalStr = result.toString()
-            val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            Log.d("OCR_DEBUG", "END: text='$finalStr', avgConf=$finalConf")
-            return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, ocrInputB64)
         }
+        
+        predictor.getInput(0).setData(floatData); predictor.run()
+        val outputTensor = predictor.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+        val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder()
+        var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
+        
+        Log.d("OCR_DEBUG", "START: seqLen=$seqLen, dictSize=$dictSize")
+        for (i in 0 until seqLen) {
+            var maxIdx = 0; var maxVal = -1f; val searchLimit = 11.coerceAtMost(dictSize)
+            for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
+            if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
+                if (result.length < 4 || maxVal >= (0.60f * lastConf)) {
+                    result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++; lastConf = maxVal
+                } else break
+            }
+            lastIdx = maxIdx
+        }
+        val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
+        Log.d("OCR_DEBUG", "END: text='$finalStr', avgConf=$finalConf")
+        return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null)
     }
 
     data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
-
     override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
-    
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
-        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
-        val predictor = recognizer
-        if (predictor == null) return@withContext OcrResult(engineName = name, debugText = "Predictor null", imageWidth = bitmap.width, imageHeight = bitmap.height)
-        
-        val finalResult = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
-        OcrResult(
-            engineName = name,
-            executionTimeMs = System.currentTimeMillis() - t0,
-            debugText = finalResult.text,
-            textBlocks = listOf(TextBlock(finalResult.text, Rect(0,0,bitmap.width, bitmap.height))),
-            imageWidth = bitmap.width,
-            imageHeight = bitmap.height,
-            metadata = mapOf("ocrInput" to (finalResult.ocrInputB64 ?: ""))
-        )
+        val predictor = recognizer ?: return@withContext OcrResult(engineName = name, debugText = "Predictor null")
+        val res = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
+        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = res.text, textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))), imageWidth = bitmap.width, imageHeight = bitmap.height)
     }
 
     suspend fun runDetectionOnly(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): OcrResult = withContext(Dispatchers.IO) {
-        val t0 = System.currentTimeMillis()
-        val det = detect(bitmap, targetWidth, targetHeight) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed", imageWidth = bitmap.width, imageHeight = bitmap.height)
-        
+        val t0 = System.currentTimeMillis(); val det = detect(bitmap, targetWidth, targetHeight) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed")
         val blocks = OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, det.scale, bitmap, "Native")
-        
-        OcrResult(
-            engineName = name,
-            executionTimeMs = System.currentTimeMillis() - t0,
-            debugText = "(Detection Only)",
-            textBlocks = blocks,
-            rawHeatmap = det.heatmap,
-            heatmapWidth = det.width,
-            heatmapHeight = det.height,
-            scaleFactor = det.scale,
-            imageWidth = bitmap.width,
-            imageHeight = bitmap.height
-        )
+        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = "(Detection Only)", textBlocks = blocks, rawHeatmap = det.heatmap, heatmapWidth = det.width, heatmapHeight = det.height, scaleFactor = det.scale, imageWidth = bitmap.width, imageHeight = bitmap.height)
     }
 }
