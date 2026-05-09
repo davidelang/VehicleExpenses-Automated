@@ -69,11 +69,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedBmp2048Mono: Bitmap? = null
         private var _sharedCanvas2048Mono: Canvas? = null
         private var _bufferSmall: FloatArray? = null
+        private var _bufferSmallMono: FloatArray? = null
         private var _sharedBmpSmall: Bitmap? = null
         private var _sharedCanvasSmall: Canvas? = null
         private var _sharedBmpSmallMono: Bitmap? = null
         private var _sharedCanvasSmallMono: Canvas? = null
         private var _bufferRec: FloatArray? = null
+        private var _bufferRecMono: FloatArray? = null
         private var _sharedBmpRec: Bitmap? = null
         private var _sharedCanvasRec: Canvas? = null
         private var _sharedBmpRecMono: Bitmap? = null
@@ -108,11 +110,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedBmp2048Mono: Bitmap get() = _sharedBmp2048Mono!!
         val sharedCanvas2048Mono: Canvas get() = _sharedCanvas2048Mono!!
         private val bufferSmall: FloatArray get() = _bufferSmall!!
+        private val bufferSmallMono: FloatArray get() = _bufferSmallMono!!
         val sharedBmpSmall: Bitmap get() = _sharedBmpSmall!!
         val sharedCanvasSmall: Canvas get() = _sharedCanvasSmall!!
         val sharedBmpSmallMono: Bitmap get() = _sharedBmpSmallMono!!
         val sharedCanvasSmallMono: Canvas get() = _sharedCanvasSmallMono!!
         private val bufferRec: FloatArray get() = _bufferRec!!
+        private val bufferRecMono: FloatArray get() = _bufferRecMono!!
         val sharedBmpRec: Bitmap get() = _sharedBmpRec!!
         val sharedCanvasRec: Canvas get() = _sharedCanvasRec!!
         val sharedBmpRecMono: Bitmap get() = _sharedBmpRecMono!!
@@ -147,6 +151,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _sharedBmp2048Mono = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048Mono = Canvas(_sharedBmp2048Mono!!)
 
             _bufferSmall = FloatArray(3 * 512 * 128)
+            _bufferSmallMono = FloatArray(1 * 512 * 128)
             _sharedBmpSmall = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasSmall = Canvas(_sharedBmpSmall!!)
             
             // Anchor Mono Bitmaps
@@ -154,6 +159,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _sharedCanvasSmallMono = Canvas(_sharedBmpSmallMono!!)
 
             _bufferRec = FloatArray(3 * 320 * 48)
+            _bufferRecMono = FloatArray(1 * 320 * 48)
             _sharedBmpRec = Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888); _sharedCanvasRec = Canvas(_sharedBmpRec!!)
             
             // Anchor Mono Bitmaps
@@ -296,7 +302,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             targetBmp = if (useMono) sharedBmp2048Mono else sharedBmp2048
             targetCanvas = if (useMono) sharedCanvas2048Mono else sharedCanvas2048
         } else {
-            floatData = if (useMono) bufferSmall else bufferSmall
+            floatData = if (useMono) bufferSmallMono else bufferSmall
             targetBmp = if (useMono) sharedBmpSmallMono else sharedBmpSmall
             targetCanvas = if (useMono) sharedCanvasSmallMono else sharedCanvasSmall
         }
@@ -306,7 +312,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // High-Quality OpenCV Area Resize (Requested)
             val bridge = if (targetWidth == 512) MemoryBridge.pool512x128!! else MemoryBridge.pool320x48!!
             performHighQualityResize(bitmap, bridge)
-            // Buffer is shared with Mat, so it is already populated.
+            
+            // Post-resize data population for Mono tensor (1 channel)
+            val mean = 0.485f // Paddle standard normalization (can be adjusted to 0.5f if needed for Mono)
+            val std = 0.229f
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = targetBmp.getPixel(x, y)
+                    floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
+                }
+            }
         } else {
             val scaleW = targetWidth.toFloat() / bitmap.width
             val scaleH = targetHeight.toFloat() / bitmap.height
@@ -355,11 +370,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val tStart = System.currentTimeMillis()
         val targetHeight = 48; val targetWidth = 320; val area = targetHeight * targetWidth
         Log.d("OCR_DEBUG", "START RECOGNITION: engine=$name, dims=${bitmap.width}x${bitmap.height}")
-        val floatData: FloatArray = if (useMono) bufferRec else bufferRec
+        val floatData: FloatArray = if (useMono) bufferRecMono else bufferRec
         floatData.fill(0.0f)
 
         if (useMono) {
+            val targetBmp = sharedBmpRecMono
             performHighQualityResize(bitmap, MemoryBridge.pool320x48!!)
+            
+            // Post-resize data population for Mono tensor (1 channel)
+            val mean = 0.5f 
+            val std = 0.5f
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = targetBmp.getPixel(x, y)
+                    floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
+                }
+            }
         } else {
             val targetBmp = sharedBmpRec; val targetCanvas = sharedCanvasRec
             val scale = 40f / bitmap.height.toFloat(); val padding = 4
