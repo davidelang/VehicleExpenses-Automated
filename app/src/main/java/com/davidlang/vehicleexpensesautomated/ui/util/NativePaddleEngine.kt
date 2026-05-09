@@ -30,6 +30,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private set
 
     companion object {
+        var isAvailableGlobally = false; private set
         private var sharedDetectorLarge: PaddlePredictor? = null
         private var sharedDetectorSmall: PaddlePredictor? = null
         private var sharedRecognizerV3: PaddlePredictor? = null
@@ -43,158 +44,178 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         private var isNativeLibLoaded = false
 
-        // Phase 63: Rigid 6-Buffer Static Pool (Zero-Allocation)
-        // Phase 115: Expanded Rigid Buffer Pool (Zero-Allocation Pipeline)
-        // 0. Full Resolution Master (4000x3000)
-        val sharedBmpFull by lazy { Bitmap.createBitmap(4000, 3000, Bitmap.Config.ARGB_8888) }
-        val sharedCanvasFull by lazy { Canvas(sharedBmpFull) }
-        val sharedBmpFullMono by lazy { Bitmap.createBitmap(4000, 3000, Bitmap.Config.ALPHA_8) }
-        val sharedCanvasFullMono by lazy { Canvas(sharedBmpFullMono) }
-        
-        // 0b. Alignment/Rotation Scratch (4000x3000)
-        val sharedBmpScratch by lazy { Bitmap.createBitmap(4000, 3000, Bitmap.Config.ARGB_8888) }
-        val sharedCanvasScratch by lazy { Canvas(sharedBmpScratch) }
-        val sharedBmpScratchMono by lazy { Bitmap.createBitmap(4000, 3000, Bitmap.Config.ALPHA_8) }
-        val sharedCanvasScratchMono by lazy { Canvas(sharedBmpScratchMono) }
+        // Phase 115: Safe Rigid Backing Fields (Eliminates background JNI locks)
+        private var _sharedBmpFull: Bitmap? = null
+        private var _sharedCanvasFull: Canvas? = null
+        private var _sharedBmpFullMono: Bitmap? = null
+        private var _sharedCanvasFullMono: Canvas? = null
+        private var _sharedBmpScratch: Bitmap? = null
+        private var _sharedCanvasScratch: Canvas? = null
+        private var _sharedBmpScratchMono: Bitmap? = null
+        private var _sharedCanvasScratchMono: Canvas? = null
+        private var _bufferLarge: FloatArray? = null
+        private var _bufferLargeMono: FloatArray? = null
+        private var _sharedBmp2048: Bitmap? = null
+        private var _sharedCanvas2048: Canvas? = null
+        private var _sharedBmp2048Mono: Bitmap? = null
+        private var _sharedCanvas2048Mono: Canvas? = null
+        private var _bufferSmall: FloatArray? = null
+        private var _sharedBmpSmall: Bitmap? = null
+        private var _sharedCanvasSmall: Canvas? = null
+        private var _sharedBmpSmallMono: Bitmap? = null
+        private var _sharedCanvasSmallMono: Canvas? = null
+        private var _bufferRec: FloatArray? = null
+        private var _sharedBmpRec: Bitmap? = null
+        private var _sharedCanvasRec: Canvas? = null
+        private var _sharedBmpRecMono: Bitmap? = null
+        private var _sharedCanvasRecMono: Canvas? = null
+        private var _sharedNv21Buffer: ByteArray? = null
+        private var _sharedBmpOdoScratch: Bitmap? = null
+        private var _sharedCanvasOdoScratch: Canvas? = null
+        private var _sharedBmpOdoScratchMono: Bitmap? = null
+        private var _sharedCanvasOdoScratchMono: Canvas? = null
+        private var _sharedReportBitmap: Bitmap? = null
+        private var _sharedReportCanvas: Canvas? = null
+        private var _redPaint: Paint? = null
+        private var _orangePaint: Paint? = null
+        private var _grayToAlphaPaint: Paint? = null
+        private var _alphaToGrayPaint: Paint? = null
+        private var _sharedMonoBuffer: java.nio.ByteBuffer? = null
+        private var _sharedMonoBytes: ByteArray? = null
 
-        // 1. Discovery Forensic (2048x2048)
-        private val bufferLarge by lazy { FloatArray(3 * 2048 * 2048) }
-        private val bufferLargeMono by lazy { FloatArray(1 * 2048 * 2048) }
-        val sharedBmp2048 by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888) }
-        val sharedCanvas2048 by lazy { Canvas(sharedBmp2048) }
-        val sharedBmp2048Mono by lazy { Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8) }
-        val sharedCanvas2048Mono by lazy { Canvas(sharedBmp2048Mono) }
+        // Anchored Engine Instances (Eliminates background JNI creation)
+        var anchoredEngineV3: NativePaddleEngine? = null; private set
+        var anchoredEngineV3Mono: NativePaddleEngine? = null; private set
 
-        // 2. Discovery Standard (320x128)
-        private val bufferSmall by lazy { FloatArray(3 * 320 * 128) }
-        val sharedBmpSmall by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
-        val sharedCanvasSmall by lazy { Canvas(sharedBmpSmall) }
-        val sharedBridgeSmall by lazy { MemoryBridge(320, 128) }
-        val sharedBmpSmallMono: Bitmap get() = sharedBridgeSmall.getBitmap()
-        val sharedCanvasSmallMono by lazy { Canvas(sharedBmpSmallMono) }
-
-        // 3. Recognition (320x48)
-        private val bufferRec by lazy { FloatArray(3 * 320 * 48) }
-        val sharedBmpRec by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
-        val sharedCanvasRec by lazy { Canvas(sharedBmpRec) }
-        val sharedBridgeRec by lazy { MemoryBridge(320, 48) }
-        val sharedBmpRecMono: Bitmap get() = sharedBridgeRec.getBitmap()
-        val sharedCanvasRecMono by lazy { Canvas(sharedBmpRecMono) }
-        val sharedNv21Buffer by lazy { ByteArray(4000 * 3000 * 3 / 2) }
-
-        // Phase 115: Dedicated Odometer Refinement Buffers (Prevents collision with Small buffer)
-        val sharedBmpOdoScratch by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888) }
-        val sharedCanvasOdoScratch by lazy { Canvas(sharedBmpOdoScratch) }
-        val sharedBmpOdoScratchMono by lazy { Bitmap.createBitmap(320, 128, Bitmap.Config.ALPHA_8) }
-        val sharedCanvasOdoScratchMono by lazy { Canvas(sharedBmpOdoScratchMono) }
-
-        // Shared Matrix for Zero-Allocation Scaling
+        // Public Non-Null Accessors (API Stability)
+        val sharedBmpFull: Bitmap get() = _sharedBmpFull!!
+        val sharedCanvasFull: Canvas get() = _sharedCanvasFull!!
+        val sharedBmpFullMono: Bitmap get() = _sharedBmpFullMono!!
+        val sharedCanvasFullMono: Canvas get() = _sharedCanvasFullMono!!
+        val sharedBmpScratch: Bitmap get() = _sharedBmpScratch!!
+        val sharedCanvasScratch: Canvas get() = _sharedCanvasScratch!!
+        val sharedBmpScratchMono: Bitmap get() = _sharedBmpScratchMono!!
+        val sharedCanvasScratchMono: Canvas get() = _sharedCanvasScratchMono!!
+        private val bufferLarge: FloatArray get() = _bufferLarge!!
+        private val bufferLargeMono: FloatArray get() = _bufferLargeMono!!
+        val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
+        val sharedCanvas2048: Canvas get() = _sharedCanvas2048!!
+        val sharedBmp2048Mono: Bitmap get() = _sharedBmp2048Mono!!
+        val sharedCanvas2048Mono: Canvas get() = _sharedCanvas2048Mono!!
+        private val bufferSmall: FloatArray get() = _bufferSmall!!
+        val sharedBmpSmall: Bitmap get() = _sharedBmpSmall!!
+        val sharedCanvasSmall: Canvas get() = _sharedCanvasSmall!!
+        val sharedBmpSmallMono: Bitmap get() = _sharedBmpSmallMono!!
+        val sharedCanvasSmallMono: Canvas get() = _sharedCanvasSmallMono!!
+        private val bufferRec: FloatArray get() = _bufferRec!!
+        val sharedBmpRec: Bitmap get() = _sharedBmpRec!!
+        val sharedCanvasRec: Canvas get() = _sharedCanvasRec!!
+        val sharedBmpRecMono: Bitmap get() = _sharedBmpRecMono!!
+        val sharedCanvasRecMono: Canvas get() = _sharedCanvasRecMono!!
+        val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
+        val sharedBmpOdoScratch: Bitmap get() = _sharedBmpOdoScratch!!
+        val sharedCanvasOdoScratch: Canvas get() = _sharedCanvasOdoScratch!!
+        val sharedBmpOdoScratchMono: Bitmap get() = _sharedBmpOdoScratchMono!!
+        val sharedCanvasOdoScratchMono: Canvas get() = _sharedCanvasOdoScratchMono!!
+        val sharedReportBitmap: Bitmap get() = _sharedReportBitmap!!
+        val sharedReportCanvas: Canvas get() = _sharedReportCanvas!!
+        val redPaint: Paint get() = _redPaint!!
+        val orangePaint: Paint get() = _orangePaint!!
+        val grayToAlphaPaint: Paint get() = _grayToAlphaPaint!!
+        val alphaToGrayPaint: Paint get() = _alphaToGrayPaint!!
+        val srcPaint = Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC) }
+        val sharedMonoBuffer: java.nio.ByteBuffer get() = _sharedMonoBuffer!!
+        val sharedMonoBytes: ByteArray get() = _sharedMonoBytes!!
         val sharedMatrix = android.graphics.Matrix()
 
-        // Phase 63: Permanent Shared Reporting Buffers
-        val sharedReportBitmap: Bitmap by lazy { Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888) }
-        val sharedReportCanvas: Canvas by lazy { Canvas(sharedReportBitmap) }
-        val redPaint: Paint by lazy { Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 } }
-        val orangePaint: Paint by lazy { Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f } }
+        fun initializeGlobalBuffers(context: Context) {
+            if (isAvailableGlobally) return
+            Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
 
-        // Phase 115: Grayscale/Alpha Mapping Filters
-        // grayToAlpha: Maps Red (Luminance) channel to Alpha channel
-        // Correct Mapping: [ R G B A W ]
-        val grayToAlphaPaint: Paint by lazy {
-            val paint = Paint()
-            val matrix = ColorMatrix(floatArrayOf(
-                0f, 0f, 0f, 0f, 0f, // R' = 0
-                0f, 0f, 0f, 0f, 0f, // G' = 0
-                0f, 0f, 0f, 0f, 0f, // B' = 0
-                1f, 0f, 0f, 0f, 0f  // A' = R (Takes luminance from red)
-            ))
-            paint.colorFilter = ColorMatrixColorFilter(matrix)
-            // CRITICAL: Mode.SRC ensures source pixels replace destination (no blending)
-            paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
-            paint
-        }
-        
-        // alphaToGray: Maps Alpha channel back to RGB channels for rendering
-        val alphaToGrayPaint: Paint by lazy {
-            val paint = Paint()
-            val matrix = ColorMatrix(floatArrayOf(
-                0f, 0f, 0f, 1f, 0f, // R' = A
-                0f, 0f, 0f, 1f, 0f, // G' = A
-                0f, 0f, 0f, 1f, 0f, // B' = A
-                0f, 0f, 0f, 0f, 255f // A' = 255 (Opaque)
-            ))
-            paint.colorFilter = ColorMatrixColorFilter(matrix)
-            paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
-            paint
-        }
+            _sharedBmpFull = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ARGB_8888); _sharedCanvasFull = Canvas(_sharedBmpFull!!)
+            _sharedBmpFullMono = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ALPHA_8); _sharedCanvasFullMono = Canvas(_sharedBmpFullMono!!)
+            _sharedBmpScratch = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ARGB_8888); _sharedCanvasScratch = Canvas(_sharedBmpScratch!!)
+            _sharedBmpScratchMono = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ALPHA_8); _sharedCanvasScratchMono = Canvas(_sharedBmpScratchMono!!)
 
-        // Phase 115: Internal Scaling Overwrite Paint
-        val srcPaint: Paint by lazy {
-            val paint = Paint()
-            paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
-            paint
-        }
+            _bufferLarge = FloatArray(3 * 2048 * 2048); _bufferLargeMono = FloatArray(1 * 2048 * 2048)
+            _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
+            _sharedBmp2048Mono = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048Mono = Canvas(_sharedBmp2048Mono!!)
 
-        // Shared Byte Buffer and Array for Zero-Allocation Mono Bridge (320x128 max refinement size)
-        val sharedMonoBuffer by lazy { 
-            java.nio.ByteBuffer.allocateDirect(320 * 128).order(java.nio.ByteOrder.nativeOrder())
+            _bufferSmall = FloatArray(3 * 320 * 128)
+            _sharedBmpSmall = Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888); _sharedCanvasSmall = Canvas(_sharedBmpSmall!!)
+            
+            // Anchor Mono Bitmaps
+            _sharedBmpSmallMono = MemoryBridge.pool320x128!!.getBitmap()
+            _sharedCanvasSmallMono = Canvas(_sharedBmpSmallMono!!)
+
+            _bufferRec = FloatArray(3 * 320 * 48)
+            _sharedBmpRec = Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888); _sharedCanvasRec = Canvas(_sharedBmpRec!!)
+            
+            // Anchor Mono Bitmaps
+            _sharedBmpRecMono = MemoryBridge.pool320x48!!.getBitmap()
+            _sharedCanvasRecMono = Canvas(_sharedBmpRecMono!!)
+            
+            _sharedNv21Buffer = ByteArray(4000 * 3000 * 3 / 2)
+
+            _sharedBmpOdoScratch = Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
+            _sharedBmpOdoScratchMono = Bitmap.createBitmap(320, 128, Bitmap.Config.ALPHA_8); _sharedCanvasOdoScratchMono = Canvas(_sharedBmpOdoScratchMono!!)
+
+            _sharedReportBitmap = Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888); _sharedReportCanvas = Canvas(_sharedReportBitmap!!)
+            _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
+            _orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
+
+            _grayToAlphaPaint = Paint().apply {
+                val matrix = ColorMatrix(floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f))
+                colorFilter = ColorMatrixColorFilter(matrix)
+                xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
+            }
+            _alphaToGrayPaint = Paint().apply {
+                val matrix = ColorMatrix(floatArrayOf(0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 255f))
+                colorFilter = ColorMatrixColorFilter(matrix)
+                xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
+            }
+
+            _sharedMonoBuffer = java.nio.ByteBuffer.allocateDirect(320 * 128).order(java.nio.ByteOrder.nativeOrder())
+            _sharedMonoBytes = ByteArray(320 * 128)
+
+            try {
+                System.loadLibrary("paddle_lite_jni")
+                val arch = if (Build.SUPPORTED_ABIS[0].contains("arm")) "armv8" else "x86_64"
+                fun copy(p: String): String {
+                    val f = File(context.filesDir, p.replace("/", "_"))
+                    context.assets.open(p).use { it.copyTo(FileOutputStream(f)) }
+                    return f.absolutePath
+                }
+                val detPath = copy("paddle/det_v4_4000_$arch.nb"); val detPathMono = copy("paddle/det_v4_4000_mono_$arch.nb")
+                val config = MobileConfig()
+                config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
+                config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 320))
+                config.setModelFromFile(detPathMono); sharedDetectorLargeMono = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLargeMono!!.getInput(0).resize(longArrayOf(1, 1, 2048, 2048))
+                config.setModelFromFile(detPathMono); sharedDetectorSmallMono = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmallMono!!.getInput(0).resize(longArrayOf(1, 1, 128, 320))
+                config.setModelFromFile(copy("paddle/rec_v3_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
+                config.setModelFromFile(copy("paddle/rec_v3_mono_$arch.nb")); sharedRecognizerV3Mono = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3Mono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
+                config.setModelFromFile(copy("paddle/rec_numeric_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
+                config.setModelFromFile(copy("paddle/rec_numeric_mono_$arch.nb")); sharedRecognizerNumericMono = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumericMono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
+                
+                isAvailableGlobally = true
+                
+                // Anchor Engine Instances AFTER isAvailableGlobally is true
+                anchoredEngineV3 = NativePaddleEngine(context, variant = "V3")
+                anchoredEngineV3Mono = NativePaddleEngine(context, variant = "V3", useMono = true)
+            } catch (e: Exception) { Log.e("PaddleLite", "Failed Global Init", e) }
         }
-        val sharedMonoBytes by lazy { ByteArray(320 * 128) }
     }
     
     init {
         try {
-            val arch = detectArch()
-            if (!isNativeLibLoaded) { 
-                System.loadLibrary("paddle_lite_jni")
-                isNativeLibLoaded = true 
+            if (isAvailableGlobally) {
+                isAvailable = true
+                loadDictionary("paddle/en_dict.txt")
             }
-            
-            if (useMono) {
-                val modelPath = copyAssetToInternal("paddle/det_v4_4000_mono_$arch.nb")
-                if (sharedDetectorLargeMono == null) {
-                    sharedDetectorLargeMono = createPredictor(modelPath)
-                    sharedDetectorLargeMono!!.getInput(0).resize(longArrayOf(1, 1, 2048, 2048))
-                }
-                if (sharedDetectorSmallMono == null) {
-                    sharedDetectorSmallMono = createPredictor(modelPath)
-                    sharedDetectorSmallMono!!.getInput(0).resize(longArrayOf(1, 1, 128, 320))
-                }
-                
-                if (variant == "V3" && sharedRecognizerV3Mono == null) {
-                    sharedRecognizerV3Mono = createPredictor(copyAssetToInternal("paddle/rec_v3_mono_$arch.nb"))
-                    sharedRecognizerV3Mono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
-                }
-                if (variant == "V2" && sharedRecognizerNumericMono == null) {
-                    sharedRecognizerNumericMono = createPredictor(copyAssetToInternal("paddle/rec_numeric_mono_$arch.nb"))
-                    sharedRecognizerNumericMono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
-                }
-            } else {
-                val modelPath = copyAssetToInternal("paddle/det_v4_4000_$arch.nb")
-                if (sharedDetectorLarge == null) {
-                    sharedDetectorLarge = createPredictor(modelPath)
-                    sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
-                }
-                if (sharedDetectorSmall == null) {
-                    sharedDetectorSmall = createPredictor(modelPath)
-                    sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 320))
-                }
-                
-                if (variant == "V3" && sharedRecognizerV3 == null) {
-                    sharedRecognizerV3 = createPredictor(copyAssetToInternal("paddle/rec_v3_$arch.nb"))
-                    sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
-                }
-                if (variant == "V2" && sharedRecognizerNumeric == null) {
-                    sharedRecognizerNumeric = createPredictor(copyAssetToInternal("paddle/rec_numeric_$arch.nb"))
-                    sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
-                }
-            }
-            loadDictionary("paddle/en_dict.txt")
-            isAvailable = true
         } catch (e: Throwable) {
             isAvailable = false
             initError = e.message
-            Log.e("PaddleLite", "Failed to initialize predictors", e)
+            Log.e("PaddleLite", "Failed to initialize engine instance", e)
         }
     }
 
@@ -327,6 +348,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val targetWidth = 320
         val area = targetHeight * targetWidth
         
+        Log.d("OCR_DEBUG", "START RECOGNITION: engine=$name, dims=${bitmap.width}x${bitmap.height}")
+
         val floatData: FloatArray = if (useMono) bufferRec else bufferRec
         floatData.fill(0.0f)
 
