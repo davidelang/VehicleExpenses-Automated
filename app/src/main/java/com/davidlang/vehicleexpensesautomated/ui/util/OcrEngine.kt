@@ -119,7 +119,8 @@ data class OcrStepResult(
     val boxes: List<Rect> = emptyList(), 
     val normalizedBoxes: List<TextBlock> = emptyList(), 
     val rawBox: Rect? = null, 
-    val refinedBox: Rect? = null
+    val refinedBox: Rect? = null,
+    val metadata: Map<String, String> = emptyMap()
 )
 
 enum class DiscoveryExpansion { UNCLIP, VALLEY }
@@ -133,7 +134,7 @@ class MlKitEngine : OcrEngine {
     override val name = "ML Kit"
     override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
-        val res = OdometerOcrUtils.extractFromPhotoBitmap(bitmap)
+        val res = OdometerOcrUtils.extractFromPhotoBitmapRaw(bitmap)
         res.copy(engineName = name, executionTimeMs = System.currentTimeMillis() - t0)
     }
 }
@@ -160,17 +161,24 @@ object OcrUtils {
         rawFragments: List<Rect> = emptyList(), 
         consolidatedRows: List<Rect> = emptyList()
     ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
-        val scale = 48f / source.height
-        val targetWidth = (source.width * scale).toInt().coerceAtMost(320)
+        // Phase 115: Proportional fit-within scaling
+        val scale = kotlin.math.min(320f / source.width.toFloat(), 48f / source.height.toFloat())
+        val targetWidth = (source.width * scale).toInt().coerceIn(1, 320)
+        val targetHeight = (source.height * scale).toInt().coerceIn(1, 48)
+        
         val canvas = NativePaddleEngine.sharedReportCanvas
         val thumb = NativePaddleEngine.sharedReportBitmap
         
         // 1. Clear and Draw thumbnail
-        canvas.drawColor(android.graphics.Color.BLACK)
-        val destRect = Rect(0, 0, targetWidth, 48)
-        canvas.drawBitmap(source, null, destRect, null)
+        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+        val destRect = Rect(0, 0, targetWidth, targetHeight)
         
-        // 2. Apply Annotations
+        // Phase 115: Monochrome-to-RGB Bridging for Diagnostics
+        // If source is ALPHA_8, we use a filter to map Alpha -> RGB grayscale
+        val paint = if (source.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
+        canvas.drawBitmap(source, null, destRect, paint)
+        
+        // 2. Apply Annotations (Now always visible on color-mapped grayscale)
         rawFragments.forEach { r -> 
             canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint)
         }
@@ -179,7 +187,7 @@ object OcrUtils {
         }
         
         // 3. Create Subset View for Base64 (No allocation)
-        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, 48)
+        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, targetHeight)
         bitmapToBase64(view, 60)
     }
 }

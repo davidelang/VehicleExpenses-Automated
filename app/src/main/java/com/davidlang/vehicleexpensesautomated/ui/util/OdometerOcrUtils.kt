@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
@@ -78,6 +80,32 @@ object OdometerOcrUtils {
         return computeFinalDeskewAngle(pdCandidates, paddleAngle, targetBitmap, pHeight, paddleTimeMs)
     }
 
+    suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val image = InputImage.fromBitmap(bitmap, 0)
+        return try {
+            val visionText = recognizer.process(image).await()
+            val blocks = mutableListOf<TextBlock>()
+            val text = StringBuilder()
+            for (block in visionText.textBlocks) {
+                for (line in block.lines) {
+                    for (element in line.elements) {
+                        val hunk = element.text
+                        val box = element.boundingBox
+                        if (box != null) {
+                            blocks.add(TextBlock(hunk, box, line.angle))
+                            text.append(hunk).append(" ")
+                        }
+                    }
+                }
+            }
+            OcrResult(engineName = "ML Kit", debugText = text.toString().trim(), textBlocks = blocks, imageWidth = bitmap.width, imageHeight = bitmap.height)
+        } catch (e: Exception) {
+            Log.e("OdometerOcr", "ML Kit failed", e)
+            OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = bitmap.width, imageHeight = bitmap.height)
+        }
+    }
+
     private suspend fun computeFinalDeskewAngle(
         pdCandidates: List<TextBlock>,
         paddleAngle: Float,
@@ -86,7 +114,7 @@ object OdometerOcrUtils {
         paddleTimeMs: Long
     ): DeskewResult {
         val tMl = System.currentTimeMillis()
-        val mlOcr = extractFromPhotoBitmap(bitmap)
+        val mlOcr = extractFromPhotoBitmapRaw(bitmap)
         val mlAngle = calculateWeightedAverage(mlOcr.textBlocks, bitmap.height)
         val mlTimeMs = System.currentTimeMillis() - tMl
         
@@ -155,67 +183,119 @@ object OdometerOcrUtils {
         }.filter { it.text.length > 1 }.sortedBy { it.text }
     }
 
-    fun applyGrayscale(bitmap: Bitmap): Bitmap {
+    fun applyGrayscaleInPlace(bitmap: Bitmap) {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) return
         val mat = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, mat)
         val gray = Mat()
         Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        // Convert back to ARGB_8888 in-place
+        Imgproc.cvtColor(gray, mat, Imgproc.COLOR_GRAY2RGBA)
+        org.opencv.android.Utils.matToBitmap(mat, bitmap)
+        mat.release(); gray.release()
+    }
+
+    fun applyBilateralInPlace(bitmap: Bitmap, scratchBmp: Bitmap) {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        }
+        val gray = Mat()
+        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
+        val filtered = Mat()
+        Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
+        
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            matToBitmapMono(filtered, bitmap)
+        } else {
+            val outMat = Mat(); Imgproc.cvtColor(filtered, outMat, Imgproc.COLOR_GRAY2RGBA)
+            org.opencv.android.Utils.matToBitmap(outMat, scratchBmp)
+            Canvas(bitmap).drawBitmap(scratchBmp, 0f, 0f, null)
+            outMat.release()
+        }
+        src.release(); gray.release(); filtered.release()
+    }
+
+    fun applyGrayscale(bitmap: Bitmap): Bitmap {
+        if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
+        val mat = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val gray = Mat(); Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
         val out = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(gray, out)
-        mat.release(); gray.release()
-        return out
+        mat.release(); gray.release(); return out
     }
 
     fun applyBilateral(bitmap: Bitmap): Bitmap {
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        }
         val gray = Mat()
-        if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY) else mat.copyTo(gray)
+        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-        val out = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(filtered, out)
-        mat.release(); gray.release(); filtered.release()
-        return out
+        
+        val outBmp: Bitmap
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ALPHA_8)
+            matToBitmapMono(filtered, outBmp)
+        } else {
+            outBmp = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(filtered, outBmp)
+        }
+        src.release(); gray.release(); filtered.release(); return outBmp
     }
 
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
-        val src = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, src)
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        }
         val gray = Mat()
-        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY)
-        else src.copyTo(gray)
+        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY) else src.copyTo(gray)
         
         val hist = Mat()
-        Imgproc.calcHist(Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+        Imgproc.calcHist(java.util.Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+        val totalPixels = gray.rows() * gray.cols(); var floorBin = 0; var ceilingBin = 255; var sum = 0.0
+        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break } }
+        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
         
-        val totalPixels = gray.rows() * gray.cols()
-        var floorBin = 0
-        var ceilingBin = 255
-        
-        var sum = 0.0
-        for (i in 0..255) {
-            sum += hist.get(i, 0)[0]
-            if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break }
-        }
-        
-        sum = 0.0
-        for (i in 0..255) {
-            sum += hist.get(i, 0)[0]
-            if (sum >= totalPixels * 0.98) { ceilingBin = i; break }
-        }
-        
-        val dst = Mat()
-        val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0
-        val beta = -floorBin * alpha
+        val dst = Mat(); val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
         gray.convertTo(dst, CvType.CV_8U, alpha, beta)
         
-        val outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(dst, outBmp)
-        
-        src.release(); gray.release(); hist.release(); dst.release()
-        return outBmp
+        val outBmp: Bitmap
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ALPHA_8)
+            matToBitmapMono(dst, outBmp)
+        } else {
+            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(dst, outBmp)
+        }
+        src.release(); gray.release(); hist.release(); dst.release(); return outBmp
     }
+
+    // Phase 115: CV_8UC1 Monochrome Bridge (Dynamic Allocation)
+    fun bitmapToMatMono(bitmap: Bitmap): Mat {
+        val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
+        val capacity = bitmap.width * bitmap.height
+        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val bytes = ByteArray(capacity)
+        buffer.rewind()
+        bitmap.copyPixelsToBuffer(buffer)
+        buffer.rewind()
+        buffer.get(bytes, 0, capacity)
+        mat.put(0, 0, bytes)
+        return mat
+    }
+
+    fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
+        val capacity = bitmap.width * bitmap.height
+        val bytes = ByteArray(capacity)
+        mat.get(0, 0, bytes)
+        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        buffer.rewind()
+        buffer.put(bytes, 0, capacity)
+        buffer.rewind()
+        bitmap.copyPixelsFromBuffer(buffer)
+    }
+        
 
     fun applyClahe(bitmap: Bitmap): Bitmap {
         val mat = Mat()
@@ -335,10 +415,21 @@ object OdometerOcrUtils {
                 "ML Kit", "ML Kit Mono" -> {
                     val scale = if (targetHeight != null) targetHeight.toFloat() / bmp.height.toFloat() else 1.0f
                     val resized = if (targetHeight != null) {
-                        Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), targetHeight, true)
+                        // Phase 115: Preserve ALPHA_8 format during scaling to avoid luminance loss
+                        val scaleW = (bmp.width * scale).toInt().coerceAtLeast(1)
+                        // Ensure NV21 compliance: Width multiple of 4, Height multiple of 2
+                        val targetW = ((scaleW + 3) / 4) * 4
+                        val targetH = (targetHeight / 2) * 2
+                        val r = Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(r)
+                        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                        val matrix = Matrix()
+                        matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
+                        canvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
+                        r
                     } else bmp
                     
-                    val image = if (engineName == "ML Kit Mono") {
+                    val (inputImage, resMetadata) = if (engineName == "ML Kit Mono") {
                         val w = resized.width
                         val h = resized.height
                         val frameSize = w * h
@@ -350,35 +441,49 @@ object OdometerOcrUtils {
                         if (sharedNv21Buffer == null || sharedNv21Buffer!!.size < nv21Size) {
                             sharedNv21Buffer = ByteArray(nv21Size)
                         }
-                        
-                        val pixels = sharedPixelsBuffer!!
                         val nv21 = sharedNv21Buffer!!
                         
-                        resized.getPixels(pixels, 0, w, 0, 0, w, h)
-                        
-                        // Extract Luminance (Y) channel. Input is grayscale, so R=G=B. We take R.
-                        for (i in 0 until frameSize) {
-                            val r = (pixels[i] shr 16) and 0xFF
-                            nv21[i] = r.toByte()
+                        if (resized.config == Bitmap.Config.ALPHA_8) {
+                            // Robust NV21 Construction: Allocate a perfectly sized buffer for the dynamic crop
+                            val buffer = java.nio.ByteBuffer.allocateDirect(resized.byteCount).order(java.nio.ByteOrder.nativeOrder())
+                            resized.copyPixelsToBuffer(buffer)
+                            buffer.rewind()
+                            buffer.get(nv21, 0, frameSize.coerceAtMost(resized.byteCount))
+                        } else {
+                            val pixels = sharedPixelsBuffer!!
+                            resized.getPixels(pixels, 0, w, 0, 0, w, h)
+                            for (i in 0 until frameSize) {
+                                nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
+                            }
                         }
                         
                         // Fill U/V channels with neutral chroma (128)
                         for (i in frameSize until nv21Size) {
                             nv21[i] = 128.toByte()
                         }
+                        // Use fromByteArray to ensure ML Kit parses the contiguous memory exactly as provided
+                        val img = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
                         
-                        val buffer = java.nio.ByteBuffer.wrap(nv21)
-                        InputImage.fromByteBuffer(buffer, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
+                        // Phase 115: Forensic Audit - capture basic info for diagnostics
+                        val forensicMap = mutableMapOf<String, Any?>()
+                        forensicMap["bitmap_width"] = w.toString()
+                        forensicMap["bitmap_height"] = h.toString()
+                        
+                        Pair(img, forensicMap)
                     } else {
-                        InputImage.fromBitmap(resized, 0)
+                        val meta = mutableMapOf<String, Any?>()
+                        Pair(InputImage.fromBitmap(resized, 0), meta)
                     }
                     
                     try {
-                        val visionText = mlKitClient!!.process(image).await()
+                        val visionText = mlKitClient!!.process(inputImage).await()
+                        
                         val resBuilder = java.lang.StringBuilder()
+                        val verbatimBuilder = java.lang.StringBuilder()
                         for (block in visionText.textBlocks) {
                             for (line in block.lines) {
                                 val isFlipped = Math.abs(line.angle) > 135f
+                                verbatimBuilder.append(line.text).append(" ")
                                 val cleanedText = clean7SegmentDigits(line.text, isFlipped).filter { it.isDigit() }
                                 if (cleanedText.isNotBlank()) {
                                     resBuilder.append(cleanedText)
@@ -386,6 +491,13 @@ object OdometerOcrUtils {
                             }
                         }
                         val resStr = resBuilder.toString()
+                        // Persistence: Only populate raw_text if it hasn't been set by a previous (Raw) stage
+                        if (resMetadata["raw_text"] == null) {
+                            resMetadata["raw_text"] = verbatimBuilder.toString().trim()
+                        }
+                        resMetadata["bitmap_width"] = resized.width.toString()
+                        resMetadata["bitmap_height"] = resized.height.toString()
+                        
                         val detBoxes = visionText.textBlocks.flatMap { block ->
                             block.lines.flatMap { line ->
                                 line.elements.mapNotNull { element ->
@@ -398,30 +510,38 @@ object OdometerOcrUtils {
                             }
                         }
                         if (resized != bmp) resized.recycle()
-                        Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, null as String?)
-                    } catch (e: Exception) { Triple(null, emptyList(), null as String?) }
+                        Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, resMetadata)
+                    } catch (e: Exception) { Triple(null, emptyList(), resMetadata) }
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
                         val ocrRes = paddleEngine.recognize(bmp)
-                        Triple(ocrRes.debugText, emptyList<Rect>(), ocrRes.metadata["ocrInput"])
-                    } ?: Triple(null, emptyList<Rect>(), null)
+                        val meta = mutableMapOf<String, Any?>()
+                        meta["ocrInput"] = ocrRes.metadata["ocrInput"]
+                        Triple(ocrRes.debugText, emptyList<Rect>(), meta)
+                    } ?: Triple(null, emptyList<Rect>(), mutableMapOf<String, Any?>())
                 }
-                else -> Triple(null, emptyList<Rect>(), null)
+                else -> Triple(null, emptyList<Rect>(), mutableMapOf<String, Any?>())
             }
             
-            // Phase 63: Immediate Snapshot (Zero-Allocation)
-            val b64 = OcrUtils.takeSnapshot(bmp, consolidatedRows = res.second)
+            // Capture snapshot using ALL row boxes (Orange) and ALL fragments (Red)
+            val b64 = OcrUtils.takeSnapshot(bmp, emptyList(), consolidatedRows = res.second)
             val box = res.second.firstOrNull() ?: Rect(0,0,bmp.width,bmp.height)
+            
+            val forensicMetadata = (res.third as? MutableMap<String, Any?>) ?: mutableMapOf()
+            forensicMetadata["bitmap_config"] = bmp.config?.name ?: "UNKNOWN"
+            forensicMetadata["bitmap_width"] = bmp.width.toString()
+            forensicMetadata["bitmap_height"] = bmp.height.toString()
 
             return OcrStepResult(
                 stageName = stageName,
                 thumbB64 = b64,
-                ocrInputB64 = res.third,
+                ocrInputB64 = forensicMetadata["ocrInput"] as? String,
                 text = res.first,
                 boxes = res.second,
                 rawBox = box,
-                refinedBox = box
+                refinedBox = box,
+                metadata = forensicMetadata.mapValues { it.value.toString() }
             )
         }
 
@@ -483,7 +603,11 @@ object OdometerOcrUtils {
 
         try {
             Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-            org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
+            
+            // Phase 115: ALPHA_8 Safety for Heatmap processing
+            if (sourceBitmap.config != Bitmap.Config.ALPHA_8) {
+                org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
+            }
 
             for (contour in contours) {
                 if (Imgproc.contourArea(contour) < 10) continue

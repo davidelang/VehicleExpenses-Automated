@@ -9,11 +9,9 @@ import android.graphics.Bitmap
 object OcrHarness {
 
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): OcrResult {
-        // MANDATE: Apply Bilateral filter GLOBALLY before discovery pass (input is already grayscale)
-        val filtered = OdometerOcrUtils.applyBilateral(bitmap)
-
-        // Phase 55: ML Kit is the sole discovery engine
-        val rawResult = MlKitEngine().recognize(filtered)
+        // Phase 115: Use the already-filtered sharedBmpFull directly. 
+        // No redundant applyBilateral() call here.
+        val rawResult = MlKitEngine().recognize(bitmap)
         
         // Phase 32: MANDATORY Discovery-Stage Sanitization
         val cleanedBlocks = rawResult.textBlocks.map { block ->
@@ -24,26 +22,24 @@ object OcrHarness {
             textBlocks = cleanedBlocks,
             debugText = cleanedBlocks.joinToString(" ") { it.text }
         )
-        
-        filtered.recycle()
+
         return sanitizedResult
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-        // Refinement also benefits from the same clean input
-        val filtered = OdometerOcrUtils.applyBilateral(bitmap)
+            // Phase 115: Refinement uses the provided cropped bitmap (already filtered or raw depending on strategy)
+            // No redundant bilateral filter here.
+            val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
 
-        val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
-        
-        // Add Paddle-Lite for refinement if available
-        val paddle = NativePaddleEngine(context, variant = "V3")
-        if (paddle.isAvailable) enginesList.add(paddle)
+            // Add Paddle-Lite for refinement if available
+            val paddle = NativePaddleEngine(context, variant = "V3")
+            if (paddle.isAvailable) enginesList.add(paddle)
 
-        val results = enginesList.associate { engine ->
-            engine.name to engine.recognize(filtered)
-        }
-        
-        filtered.recycle()
-        return results
-    }
+            val results = enginesList.associate { engine ->
+            engine.name to engine.recognize(bitmap)
+            }
+
+            return results
+            }
+
 }

@@ -41,8 +41,8 @@ object DiscoveryOcrUtils {
             val sb = StringBuilder()
             val finalBlocks = mutableListOf<TextBlock>()
             
-            // 1. Detection at 320x128 (High-speed asymmetrical discovery path)
-            val det = paddleEngine.runDetectionOnly(bmp, 320, 128)
+            // 1. Detection at 512x128 (High-speed asymmetrical discovery path)
+            val det = paddleEngine.runDetectionOnly(bmp, 512, 128)
             val invScale = 1.0 / det.scaleFactor.toDouble()
             val sortedBlocks = det.textBlocks.sortedBy { it.boundingBox.left }
             Log.d("DISCOVERY_DEBUG", "[$stageName] Found ${sortedBlocks.size} fragments")
@@ -138,7 +138,8 @@ object DiscoveryOcrUtils {
                 text = sb.toString().trim(),
                 normalizedBoxes = finalStepBlocks,
                 rawBox = primaryRawBox,
-                refinedBox = primaryRefinedBox
+                refinedBox = primaryRefinedBox,
+                metadata = emptyMap()
             )
         }
 
@@ -182,9 +183,13 @@ object DiscoveryOcrUtils {
 
     private fun expandByValleyStop(redFloor: Rect, sourceBitmap: Bitmap): Rect {
         if (redFloor.width() < 1 || redFloor.height() < 1) return redFloor
-        val mat = Mat(); Utils.bitmapToMat(sourceBitmap, mat)
-        val gray = Mat(); if (mat.channels() > 1) Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY) else mat.copyTo(gray)
-        mat.release()
+        val gray = if (sourceBitmap.config == Bitmap.Config.ALPHA_8) {
+            OdometerOcrUtils.bitmapToMatMono(sourceBitmap)
+        } else {
+            val mat = Mat(); org.opencv.android.Utils.bitmapToMat(sourceBitmap, mat)
+            val g = Mat(); if (mat.channels() > 1) Imgproc.cvtColor(mat, g, Imgproc.COLOR_RGBA2GRAY) else mat.copyTo(g)
+            mat.release(); g
+        }
 
         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble(); var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
         val safeFloor = Rect(max(0, redFloor.left), max(0, redFloor.top), min(gray.cols(), redFloor.right), min(gray.rows(), redFloor.bottom))
