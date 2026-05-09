@@ -83,10 +83,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedMonoBuffer: java.nio.ByteBuffer? = null
         private var _sharedMonoBytes: ByteArray? = null
 
-        // Anchored Engine Instances (Eliminates background JNI creation)
-        var anchoredEngineV3: NativePaddleEngine? = null; private set
-        var anchoredEngineV3Mono: NativePaddleEngine? = null; private set
-
         // Public Non-Null Accessors (API Stability)
         val sharedBmpFull: Bitmap get() = _sharedBmpFull!!
         val sharedCanvasFull: Canvas get() = _sharedCanvasFull!!
@@ -198,10 +194,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_$arch.nb")); sharedRecognizerNumericMono = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumericMono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
                 
                 isAvailableGlobally = true
-                
-                // Anchor Engine Instances AFTER isAvailableGlobally is true
-                anchoredEngineV3 = NativePaddleEngine(context, variant = "V3")
-                anchoredEngineV3Mono = NativePaddleEngine(context, variant = "V3", useMono = true)
             } catch (e: Exception) { Log.e("PaddleLite", "Failed Global Init", e) }
         }
     }

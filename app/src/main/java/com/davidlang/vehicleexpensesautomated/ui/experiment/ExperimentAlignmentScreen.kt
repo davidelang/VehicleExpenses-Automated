@@ -14,6 +14,7 @@ import android.graphics.Rect
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -306,6 +307,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
                             for (strat in strategies) {
+                                Log.d("OCR_DEBUG", "TRANSITION: Starting strategy '$strat'")
                                 try {
                                     val tRef0 = System.currentTimeMillis()
                                     val isDisc = strat.contains("Unclip") || strat.contains("Valley")
@@ -317,24 +319,42 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         else -> "Paddle V3 Greedy"
                                     }
                                     val h = if (strat.contains("48px")) 48 else if (strat.contains("32px")) 32 else null
-                                    val activePaddle = if (strat.contains("Mono")) paddleEngineV3Mono else if (strat.contains("V3")) paddleEngineV3 else paddleEngineV2
+                                    
+                                    val app = context.applicationContext as VehicleExpensesApplication
+                                    val activePaddle = if (strat.contains("Mono")) {
+                                        VehicleExpensesApplication.anchoredEngineV3Mono!!
+                                    } else if (strat.contains("V3")) {
+                                        VehicleExpensesApplication.anchoredEngineV3!!
+                                    } else paddleEngineV2
+
                                     val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
                                     val ocrInput = if (strat.contains("Mono")) {
-                                        // Phase 115: Isolated Mono Refinement (Dynamic Resolution)
-                                        // Allocate a distinct ALPHA_8 buffer matching the exact crop dimensions
-                                        val monoBmp = Bitmap.createBitmap(exactCrop.width, exactCrop.height, Bitmap.Config.ALPHA_8)
-                                        val monoCanvas = android.graphics.Canvas(monoBmp)
-                                        monoCanvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-                                        monoCanvas.drawBitmap(exactCrop, 0f, 0f, NativePaddleEngine.grayToAlphaPaint)
+                                        Log.d("OCR_DEBUG", "TRANSITION: Converting ARGB to ALPHA_8 via manual Red-channel copy")
+                                        val width = exactCrop.width
+                                        val height = exactCrop.height
+                                        val monoBmp = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
+                                        
+                                        val pixels = IntArray(width * height)
+                                        exactCrop.getPixels(pixels, 0, width, 0, 0, width, height)
+                                        
+                                        val alphaBytes = ByteArray(width * height)
+                                        for (i in pixels.indices) {
+                                            // Red channel (bits 16-23) mapped to target Alpha channel
+                                            alphaBytes[i] = (pixels[i] shr 16 and 0xFF).toByte()
+                                        }
+                                        monoBmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(alphaBytes))
                                         monoBmp
                                     } else exactCrop
 
+                                    Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
                                     val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
                                     refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
                                     
-                                    // Phase 115: Recycle dynamic Mono buffer
-                                    if (ocrInput !== exactCrop) ocrInput.recycle()
+                                    if (ocrInput !== exactCrop) {
+                                        Log.d("OCR_DEBUG", "TRANSITION: Recycling dynamic Mono buffer")
+                                        ocrInput.recycle()
+                                    }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Strategy $strat failed for ${file.name}", e)
                                 }
