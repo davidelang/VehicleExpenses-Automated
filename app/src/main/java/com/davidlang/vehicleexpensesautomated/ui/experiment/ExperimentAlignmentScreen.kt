@@ -349,31 +349,30 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     val bridge = vehicleMonoBridges[winnerRef.vehicle.id]
                                     val ocrInput = if (strat.contains("Mono") && bridge != null) {
-                                        Log.d("OCR_DEBUG", "TRANSITION: Converting ARGB to ALPHA_8 via MemoryBridge pool")
-                                        val width = exactCrop.width
-                                        val height = exactCrop.height
-                                        val monoBmp = bridge.getBitmap()
-                                        val targetW = monoBmp.width
-                                        val targetH = monoBmp.height
+                                        Log.d("OCR_DEBUG", "TRANSITION: Converting ARGB to ALPHA_8 via OpenCV Scale-to-Fit")
+                                        val targetW = bridge.width
+                                        val targetH = bridge.height
                                         
-                                        val pixels = IntArray(width * height)
-                                        exactCrop.getPixels(pixels, 0, width, 0, 0, width, height)
+                                        // Stage 1: Load dynamic ARGB crop into native Mat
+                                        val argbMat = org.opencv.core.Mat()
+                                        org.opencv.android.Utils.bitmapToMat(exactCrop, argbMat)
                                         
-                                        // Padded buffer matching MemoryBridge dimensions
-                                        val alphaBytes = ByteArray(targetW * targetH)
-                                        for (y in 0 until height) {
-                                            for (x in 0 until width) {
-                                                // Map to upper-left corner of the padded target buffer
-                                                alphaBytes[y * targetW + x] = (pixels[y * width + x] shr 16 and 0xFF).toByte()
-                                            }
-                                        }
-                                        val wrapped = java.nio.ByteBuffer.wrap(alphaBytes)
-                                        monoBmp.copyPixelsFromBuffer(wrapped)
-                                        bridge.syncFromBitmap() // Commit to Native Mat
+                                        // Stage 2: Extract Red (Luminance) channel directly to 1-channel Mat
+                                        val redMat = org.opencv.core.Mat()
+                                        org.opencv.core.Core.extractChannel(argbMat, redMat, 0) // 0=Red channel
                                         
-                                        // Phase 115: Safe Copy Isolation. 
-                                        // Return a lightweight copy so legacy reporting code doesn't recycle our permanent pool view.
-                                        monoBmp.copy(Bitmap.Config.ALPHA_8, false)
+                                        // Stage 3: High-Quality Resize into the anchored vehicle pool
+                                        // If shrinking, use INTER_AREA; if enlarging, use INTER_CUBIC
+                                        val interp = if (exactCrop.width > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                        org.opencv.imgproc.Imgproc.resize(redMat, bridge.getMat(), org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                                        
+                                        // Stage 4: Sync and Clean up
+                                        bridge.syncToBitmap() // Force Java Bitmap view to update
+                                        argbMat.release()
+                                        redMat.release()
+                                        
+                                        // Safe Copy Isolation (Protects pool from legacy recycling)
+                                        bridge.getBitmap().copy(Bitmap.Config.ALPHA_8, false)
                                     } else exactCrop
 
                                     Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
