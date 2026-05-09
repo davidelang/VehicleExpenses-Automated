@@ -225,6 +225,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tempMat = Mat(sourceBmp.height, sourceBmp.width, org.opencv.core.CvType.CV_8UC1, buffer)
             try {
                 Imgproc.resize(tempMat, targetBridge.getMat(), Size(targetBridge.width.toDouble(), targetBridge.height.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                targetBridge.syncToBitmap() // <--- Forces Java Bitmap to reflect Native Mat changes
             } finally {
                 tempMat.release()
             }

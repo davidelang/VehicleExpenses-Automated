@@ -89,6 +89,25 @@ runOcr(safeInput)
 safeInput.recycle()
 ```
 
+### Rule D: Explicit Native-to-Java Synchronization (The Stale Data Trap)
+Although the `MemoryBridge` connects a Java `ByteBuffer` and an OpenCV `Mat` to the exact same native memory block (Zero-Copy), the associated Android `Bitmap` object **does not** automatically see those changes. 
+
+If OpenCV modifies the `Mat` (e.g., via `Imgproc.resize`), the native memory updates instantly. However, if a Java engine (like Paddle) subsequently attempts to read pixels from the `bridge.getBitmap()`, it will read **stale or empty zeroes**.
+
+**The Sync Pattern:**
+You MUST explicitly call `syncToBitmap()` after any OpenCV operation to force the Android Bitmap to pull the fresh bytes from the shared native buffer.
+
+```kotlin
+// 1. Perform Native OpenCV Operation
+Imgproc.resize(tempMat, bridge.getMat(), ...)
+
+// 2. CRITICAL: Synchronize the Java Bitmap
+bridge.syncToBitmap()
+
+// 3. Now Java can read the updated pixels
+val px = bridge.getBitmap().getPixel(0, 0)
+```
+
 ## 4. Format Conversion Traps
 - **`drawBitmap` for ALPHA_8:** Never use Android's `Canvas.drawBitmap` with a `ColorMatrix` to convert `ARGB_8888` to `ALPHA_8`. It is mathematically flawed for our luminance mapping and invokes heavy UI-thread UI operations on background threads.
 - **The Correct Way (Manual Columnar):** Extract the ARGB pixels into an `IntArray`, bit-shift out the Red channel (which represents our grayscale luminance), and pack it into a `ByteArray` to feed the `copyPixelsFromBuffer` function.
