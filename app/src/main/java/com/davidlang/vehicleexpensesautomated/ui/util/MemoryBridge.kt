@@ -20,6 +20,7 @@ private external fun nativeGetMasterBuffer(handle: Long): ByteBuffer?
 class MemoryBridge(val width: Int, val height: Int) {
     private val masterBuffer: ByteBuffer
     private val masterBitmap: Bitmap
+    private val masterMat: Mat
     private var nativeHandle: Long = 0
 
     init {
@@ -33,10 +34,13 @@ class MemoryBridge(val width: Int, val height: Int) {
 
         // Normal size ALPHA_8 for refinement (copy path)
         masterBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
+
+        // Pre-allocate permanent Mat view (Zero-Allocation)
+        masterMat = Mat(nativeGetMatPtr(nativeHandle))
     }
 
     fun getBitmap(): Bitmap = masterBitmap
-    fun getMat(): Mat = Mat(nativeGetMatPtr(nativeHandle))
+    fun getMat(): Mat = masterMat
     fun getNv21(): ByteBuffer = masterBuffer
 
     fun syncToBitmap() {
@@ -59,7 +63,7 @@ class MemoryBridge(val width: Int, val height: Int) {
     }
 
     companion object {
-        var pool320x128: MemoryBridge? = null
+        var pool512x128: MemoryBridge? = null
             private set
         var pool320x48: MemoryBridge? = null
             private set
@@ -69,12 +73,12 @@ class MemoryBridge(val width: Int, val height: Int) {
          * Initialized EAGERLY on the main thread to avoid circular dependencies.
          */
         fun initializeGlobalPools() {
-            if (pool320x128 != null) return
+            if (pool512x128 != null) return
             
             android.util.Log.i("MemoryBridge", "Initializing global pools on thread: ${Thread.currentThread().name}")
             try {
                 System.loadLibrary("memory_bridge")
-                pool320x128 = MemoryBridge(320, 128)
+                pool512x128 = MemoryBridge(512, 128)
                 pool320x48 = MemoryBridge(320, 48)
                 android.util.Log.i("MemoryBridge", "Global pools initialized successfully.")
             } catch (e: Exception) {

@@ -146,11 +146,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
             _sharedBmp2048Mono = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048Mono = Canvas(_sharedBmp2048Mono!!)
 
-            _bufferSmall = FloatArray(3 * 320 * 128)
-            _sharedBmpSmall = Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888); _sharedCanvasSmall = Canvas(_sharedBmpSmall!!)
+            _bufferSmall = FloatArray(3 * 512 * 128)
+            _sharedBmpSmall = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasSmall = Canvas(_sharedBmpSmall!!)
             
             // Anchor Mono Bitmaps
-            _sharedBmpSmallMono = MemoryBridge.pool320x128!!.getBitmap()
+            _sharedBmpSmallMono = MemoryBridge.pool512x128!!.getBitmap()
             _sharedCanvasSmallMono = Canvas(_sharedBmpSmallMono!!)
 
             _bufferRec = FloatArray(3 * 320 * 48)
@@ -162,8 +162,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             
             _sharedNv21Buffer = ByteArray(4000 * 3000 * 3 / 2)
 
-            _sharedBmpOdoScratch = Bitmap.createBitmap(320, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
-            _sharedBmpOdoScratchMono = Bitmap.createBitmap(320, 128, Bitmap.Config.ALPHA_8); _sharedCanvasOdoScratchMono = Canvas(_sharedBmpOdoScratchMono!!)
+            _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
+            _sharedBmpOdoScratchMono = Bitmap.createBitmap(512, 128, Bitmap.Config.ALPHA_8); _sharedCanvasOdoScratchMono = Canvas(_sharedBmpOdoScratchMono!!)
 
             _sharedReportBitmap = Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888); _sharedReportCanvas = Canvas(_sharedReportBitmap!!)
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
@@ -180,8 +180,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
             }
 
-            _sharedMonoBuffer = java.nio.ByteBuffer.allocateDirect(320 * 128).order(java.nio.ByteOrder.nativeOrder())
-            _sharedMonoBytes = ByteArray(320 * 128)
+            _sharedMonoBuffer = java.nio.ByteBuffer.allocateDirect(512 * 128).order(java.nio.ByteOrder.nativeOrder())
+            _sharedMonoBytes = ByteArray(512 * 128)
 
             try {
                 System.loadLibrary("paddle_lite_jni")
@@ -194,9 +194,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val detPath = copy("paddle/det_v4_4000_$arch.nb"); val detPathMono = copy("paddle/det_v4_4000_mono_$arch.nb")
                 val config = MobileConfig()
                 config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
-                config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 320))
+                config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 512))
                 config.setModelFromFile(detPathMono); sharedDetectorLargeMono = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLargeMono!!.getInput(0).resize(longArrayOf(1, 1, 2048, 2048))
-                config.setModelFromFile(detPathMono); sharedDetectorSmallMono = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmallMono!!.getInput(0).resize(longArrayOf(1, 1, 128, 320))
+                config.setModelFromFile(detPathMono); sharedDetectorSmallMono = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmallMono!!.getInput(0).resize(longArrayOf(1, 1, 128, 512))
                 config.setModelFromFile(copy("paddle/rec_v3_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
                 config.setModelFromFile(copy("paddle/rec_v3_mono_$arch.nb")); sharedRecognizerV3Mono = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3Mono!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
                 config.setModelFromFile(copy("paddle/rec_numeric_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 3, 48, 320))
@@ -278,7 +278,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return PaddlePredictor.createPaddlePredictor(config)
     }
 
-    fun detect(bitmap: Bitmap, targetWidth: Int = 320, targetHeight: Int = 128): DetectionResult? {
+    fun detect(bitmap: Bitmap, targetWidth: Int = 512, targetHeight: Int = 128): DetectionResult? {
         val predictor = if (targetWidth >= 2048) detectorLarge else detectorSmall
         if (predictor == null) return null
 
@@ -298,9 +298,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         floatData.fill(0.0f)
 
-        if (useMono && targetWidth <= 320) {
+        if (useMono && targetWidth <= 512) {
             // High-Quality OpenCV Area Resize (Requested)
-            val bridge = if (targetWidth == 320) MemoryBridge.pool320x128!! else MemoryBridge.pool320x48!!
+            val bridge = if (targetWidth == 512) MemoryBridge.pool512x128!! else MemoryBridge.pool320x48!!
             performHighQualityResize(bitmap, bridge)
             // Buffer is shared with Mat, so it is already populated.
         } else {
