@@ -261,7 +261,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             
             try {
                 // Step 2 (Deskew): Draw a scaled version into 2048 buffer and calculate tilt
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp, NativePaddleEngine.sharedBmp2048, null)
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp, NativePaddleEngine.sharedBmp2048, paddleEngineV3)
                 val deskewResMono = deskewRes.copy() // Bypass mono deskew
                 
                 val tilt = deskewRes.angle
