@@ -29,6 +29,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     var isAvailable = false
         private set
 
+    // Phase 115: Anchored Instance Predictors (Ensures native handles are pinned to the instance object graph)
+    private var detectorLarge: PaddlePredictor? = null
+    private var detectorSmall: PaddlePredictor? = null
+    private var recognizer: PaddlePredictor? = null
+
     companion object {
         var isAvailableGlobally = false; private set
         private var sharedDetectorLarge: PaddlePredictor? = null
@@ -200,8 +205,18 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     
     init {
         try {
-            // Rigid Engine Wrapper: No Native logic in constructor
             if (isAvailableGlobally) {
+                // Anchor Predictors to this instance
+                if (useMono) {
+                    detectorLarge = sharedDetectorLargeMono
+                    detectorSmall = sharedDetectorSmallMono
+                    recognizer = if (variant == "V3") sharedRecognizerV3Mono else sharedRecognizerNumericMono
+                } else {
+                    detectorLarge = sharedDetectorLarge
+                    detectorSmall = sharedDetectorSmall
+                    recognizer = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
+                }
+                
                 isAvailable = true
                 loadDictionary("paddle/en_dict.txt")
             }
@@ -246,11 +261,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     fun detect(bitmap: Bitmap, targetWidth: Int = 320, targetHeight: Int = 128): DetectionResult? {
-        val predictor = if (targetWidth >= 2048) {
-            if (useMono) sharedDetectorLargeMono else sharedDetectorLarge
-        } else {
-            if (useMono) sharedDetectorSmallMono else sharedDetectorSmall
-        }
+        val predictor = if (targetWidth >= 2048) detectorLarge else detectorSmall
         if (predictor == null) return null
 
         val area = targetWidth * targetHeight
@@ -272,8 +283,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val scaleW = targetWidth.toFloat() / bitmap.width
         val scaleH = targetHeight.toFloat() / bitmap.height
         val scale = min(scaleW, scaleH)
-        val sw = (bitmap.width * scale).toInt()
-        val sh = (bitmap.height * scale).toInt()
 
         // Zero-Allocation Scaling via Canvas
         synchronized(targetBmp) {
@@ -322,17 +331,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     suspend fun runConstrainedStatic(bitmap: Bitmap, targetHeight: Int, dictionary: List<String>, isV3: Boolean): RecStageResult = withContext(Dispatchers.IO) {
-        val predictor = if (isV3) {
-            if (useMono) sharedRecognizerV3Mono else sharedRecognizerV3
-        } else {
-            if (useMono) sharedRecognizerNumericMono else sharedRecognizerNumeric
-        }
-        if (predictor == null) return@withContext RecStageResult("", 0, 0f, null)
+        if (recognizer == null) return@withContext RecStageResult("", 0, 0f, null)
         
         if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) {
             return@withContext RecStageResult("(Skipped: Memory)", 0, 0f, null)
         }
-        runRecognitionStageStatic(bitmap, targetHeight, dictionary, predictor)
+        runRecognitionStageStatic(bitmap, targetHeight, dictionary, recognizer!!)
     }
 
     private fun runRecognitionStageStatic(bitmap: Bitmap, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
@@ -472,7 +476,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available: $initError", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
-        val predictor = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
+        val predictor = recognizer
         if (predictor == null) return@withContext OcrResult(engineName = name, debugText = "Predictor null", imageWidth = bitmap.width, imageHeight = bitmap.height)
         
         val finalResult = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
