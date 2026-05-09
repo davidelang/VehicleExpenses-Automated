@@ -211,9 +211,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
          * Bypasses background-thread Canvas/Paint JNI locks.
          */
         fun performHighQualityResize(sourceBmp: Bitmap, targetBridge: MemoryBridge) {
-            val tempMat = Mat()
+            val buffer = java.nio.ByteBuffer.allocateDirect(sourceBmp.byteCount)
+            sourceBmp.copyPixelsToBuffer(buffer)
+            buffer.rewind()
+            
+            // Bypass Utils.bitmapToMat, wrap ALPHA_8 directly into a 1-channel Mat
+            val tempMat = Mat(sourceBmp.height, sourceBmp.width, org.opencv.core.CvType.CV_8UC1, buffer)
             try {
-                Utils.bitmapToMat(sourceBmp, tempMat)
                 Imgproc.resize(tempMat, targetBridge.getMat(), Size(targetBridge.width.toDouble(), targetBridge.height.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
             } finally {
                 tempMat.release()
