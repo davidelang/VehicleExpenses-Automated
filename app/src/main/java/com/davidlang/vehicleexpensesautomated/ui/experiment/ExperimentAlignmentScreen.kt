@@ -257,7 +257,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             // Apply global filters to established baseline
             OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
-            OdometerOcrUtils.applyBilateralInPlace(masterBmp, scratchBmp)
+            // OdometerOcrUtils.applyBilateralInPlace(masterBmp, scratchBmp)
             
             try {
                 // Step 2 (Deskew): Draw a scaled version into 2048 buffer and calculate tilt
