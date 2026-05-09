@@ -353,14 +353,19 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val width = exactCrop.width
                                         val height = exactCrop.height
                                         val monoBmp = bridge.getBitmap()
+                                        val targetW = monoBmp.width
+                                        val targetH = monoBmp.height
                                         
                                         val pixels = IntArray(width * height)
                                         exactCrop.getPixels(pixels, 0, width, 0, 0, width, height)
                                         
-                                        val alphaBytes = ByteArray(width * height)
-                                        for (i in pixels.indices) {
-                                            // Red channel (bits 16-23) mapped to target Alpha channel
-                                            alphaBytes[i] = (pixels[i] shr 16 and 0xFF).toByte()
+                                        // Padded buffer matching MemoryBridge dimensions
+                                        val alphaBytes = ByteArray(targetW * targetH)
+                                        for (y in 0 until height) {
+                                            for (x in 0 until width) {
+                                                // Map to upper-left corner of the padded target buffer
+                                                alphaBytes[y * targetW + x] = (pixels[y * width + x] shr 16 and 0xFF).toByte()
+                                            }
                                         }
                                         val wrapped = java.nio.ByteBuffer.wrap(alphaBytes)
                                         monoBmp.copyPixelsFromBuffer(wrapped)
