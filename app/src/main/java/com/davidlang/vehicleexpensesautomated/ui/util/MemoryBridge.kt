@@ -13,6 +13,9 @@ private external fun nativeGetMasterBuffer(handle: Long): ByteBuffer?
  * MemoryBridge for refinement stage (320x128 / 320x48).
  * - Mat + NV21: zero-copy shared (native allocation)
  * - ALPHA_8: explicit fast copy via syncToBitmap / syncFromBitmap
+ * 
+ * Surgical stabilization: All pools are initialized eagerly on the main thread
+ * to avoid the background JNI synchronization lock crashes (0x4).
  */
 class MemoryBridge(val width: Int, val height: Int) {
     private val masterBuffer: ByteBuffer
@@ -20,12 +23,6 @@ class MemoryBridge(val width: Int, val height: Int) {
     private var nativeHandle: Long = 0
 
     init {
-        try {
-            System.loadLibrary("memory_bridge")
-        } catch (e: Exception) {
-            android.util.Log.e("MemoryBridge", "Failed to load memory_bridge library", e)
-        }
-
         nativeHandle = nativeSetup(width, height)
         if (nativeHandle == 0L) {
             throw IllegalStateException("Failed to setup MemoryBridge native handles")
@@ -58,6 +55,31 @@ class MemoryBridge(val width: Int, val height: Int) {
         if (nativeHandle != 0L) {
             nativeRelease(nativeHandle)
             nativeHandle = 0
+        }
+    }
+
+    companion object {
+        var pool320x128: MemoryBridge? = null
+            private set
+        var pool320x48: MemoryBridge? = null
+            private set
+
+        /**
+         * Global shared pools for refinement. 
+         * Initialized EAGERLY on the main thread to avoid circular dependencies.
+         */
+        fun initializeGlobalPools() {
+            if (pool320x128 != null) return
+            
+            android.util.Log.i("MemoryBridge", "Initializing global pools on thread: ${Thread.currentThread().name}")
+            try {
+                System.loadLibrary("memory_bridge")
+                pool320x128 = MemoryBridge(320, 128)
+                pool320x48 = MemoryBridge(320, 48)
+                android.util.Log.i("MemoryBridge", "Global pools initialized successfully.")
+            } catch (e: Exception) {
+                android.util.Log.e("MemoryBridge", "Failed to initialize global pools", e)
+            }
         }
     }
 }

@@ -18,16 +18,21 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     override val workManagerConfiguration: Configuration
         get() {
-            android.util.Log.i("VehicleExpensesApp", "workManagerConfiguration requested. workerFactory initialized: ${::workerFactory.isInitialized}")
             return Configuration.Builder()
                 .setWorkerFactory(workerFactory)
                 .build()
         }
 
     override fun onCreate() {
+        // Phase 115: Total Eager Initialization (Synchronized Order)
+        // 1. Initialize stable JNI bridges first on Main thread
+        if (!org.opencv.android.OpenCVLoader.initLocal()) {
+            android.util.Log.e("VehicleExpensesApp", "OpenCV initialization failed!")
+        }
+        com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.initializeGlobalPools()
+        
         android.util.Log.i("VehicleExpensesApp", "onCreate started")
         super.onCreate()
-        android.util.Log.i("VehicleExpensesApp", "super.onCreate completed. workerFactory initialized: ${::workerFactory.isInitialized}")
         
         copyTessdataOnce(this)
         try {
