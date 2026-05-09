@@ -324,6 +324,42 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                             try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
+                            // Phase 115: Single-Pass Anchored Extraction (ARGB master -> Mono Pool)
+                            val bridge = vehicleMonoBridges[winnerRef.vehicle.id]
+                            if (bridge != null) {
+                                try {
+                                    Log.d("OCR_DEBUG", "TRANSITION: Populating vehicle Mono pool via OpenCV ROI Scale-to-Fit")
+                                    val argbMat = org.opencv.core.Mat()
+                                    org.opencv.android.Utils.bitmapToMat(masterBmp!!, argbMat)
+                                    
+                                    // Define ROI for the odometer based on vehicle coordinates
+                                    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+                                    val t = winnerRef.vehicle.odometerCropTop ?: 0f
+                                    val r = winnerRef.vehicle.odometerCropRight ?: 1f
+                                    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+                                    
+                                    val roiRect = org.opencv.core.Rect(
+                                        (l * masterBmp.width).toInt().coerceIn(0, masterBmp.width - 1),
+                                        (t * masterBmp.height).toInt().coerceIn(0, masterBmp.height - 1),
+                                        ((r - l) * masterBmp.width).toInt().coerceAtMost(masterBmp.width),
+                                        ((b - t) * masterBmp.height).toInt().coerceAtMost(masterBmp.height)
+                                    )
+                                    
+                                    val roiMat = org.opencv.core.Mat(argbMat, roiRect)
+                                    val redMat = org.opencv.core.Mat()
+                                    org.opencv.core.Core.extractChannel(roiMat, redMat, 0) // Extract Red/Luminance
+                                    
+                                    // High-Quality Resize into the anchored vehicle pool
+                                    val interp = if (roiRect.width > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                    org.opencv.imgproc.Imgproc.resize(redMat, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
+                                    
+                                    bridge.syncToBitmap() // Sync to Java Bitmap
+                                    argbMat.release(); roiMat.release(); redMat.release()
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to populate Mono pool", e)
+                                }
+                            }
+
                             for (strat in strategies) {
                                 Log.d("OCR_DEBUG", "TRANSITION: Starting strategy '$strat'")
                                 try {
@@ -347,42 +383,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
-                                    val bridge = vehicleMonoBridges[winnerRef.vehicle.id]
-                                    val ocrInput = if (strat.contains("Mono") && bridge != null) {
-                                        Log.d("OCR_DEBUG", "TRANSITION: Converting ARGB to ALPHA_8 via OpenCV Scale-to-Fit")
-                                        val targetW = bridge.width
-                                        val targetH = bridge.height
-                                        
-                                        // Stage 1: Load dynamic ARGB crop into native Mat
-                                        val argbMat = org.opencv.core.Mat()
-                                        org.opencv.android.Utils.bitmapToMat(exactCrop, argbMat)
-                                        
-                                        // Stage 2: Extract Red (Luminance) channel directly to 1-channel Mat
-                                        val redMat = org.opencv.core.Mat()
-                                        org.opencv.core.Core.extractChannel(argbMat, redMat, 0) // 0=Red channel
-                                        
-                                        // Stage 3: High-Quality Resize into the anchored vehicle pool
-                                        // If shrinking, use INTER_AREA; if enlarging, use INTER_CUBIC
-                                        val interp = if (exactCrop.width > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                        org.opencv.imgproc.Imgproc.resize(redMat, bridge.getMat(), org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                                        
-                                        // Stage 4: Sync and Clean up
-                                        bridge.syncToBitmap() // Force Java Bitmap view to update
-                                        argbMat.release()
-                                        redMat.release()
-                                        
-                                        // Safe Copy Isolation (Protects pool from legacy recycling)
-                                        bridge.getBitmap().copy(Bitmap.Config.ALPHA_8, false)
+                                    val ocrInput = if (strat.contains("Mono")) {
+                                        bridge?.getBitmap() ?: exactCrop // Use warm pool directly
                                     } else exactCrop
 
                                     Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
                                     val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
                                     refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
-                                    
-                                    if (ocrInput !== exactCrop) {
-                                        // Safe to recycle the temporary copy
-                                        ocrInput.recycle()
-                                    }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Strategy $strat failed for ${file.name}", e)
                                 }
