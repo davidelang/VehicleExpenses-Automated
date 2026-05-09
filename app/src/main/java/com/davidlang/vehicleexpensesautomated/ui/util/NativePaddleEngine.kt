@@ -208,6 +208,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     
     init {
         try {
+            // Rigid Engine Wrapper: No Native logic in constructor
             if (isAvailableGlobally) {
                 isAvailable = true
                 loadDictionary("paddle/en_dict.txt")
