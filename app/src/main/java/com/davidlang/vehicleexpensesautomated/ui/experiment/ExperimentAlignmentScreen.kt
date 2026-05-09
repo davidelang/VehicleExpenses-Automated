@@ -198,6 +198,24 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         ReferenceCache(v, refBase64, curated, bmp, bmp.width, bmp.height)
     }
     
+    // Phase 115: Vehicle-Specific MemoryBridge Pools (Zero-Allocation Anchor)
+    val vehicleMonoBridges = mutableMapOf<Int, com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge>()
+    withContext(Dispatchers.Main) {
+        cachedRefs.forEach { ref ->
+            val l = ref.vehicle.odometerCropLeft
+            if (l != null) {
+                val srcW = (((ref.vehicle.odometerCropRight ?: 1f) - l) * ref.bmp.width).toInt()
+                val srcH = (((ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f)) * ref.bmp.height).toInt()
+                val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
+                val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
+                
+                if (targetW > 0 && targetH > 0) {
+                    vehicleMonoBridges[ref.vehicle.id] = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(targetW, targetH)
+                }
+            }
+        }
+    }
+    
     val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
     
@@ -329,11 +347,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
-                                    val ocrInput = if (strat.contains("Mono")) {
-                                        Log.d("OCR_DEBUG", "TRANSITION: Converting ARGB to ALPHA_8 via manual Red-channel copy")
+                                    val bridge = vehicleMonoBridges[winnerRef.vehicle.id]
+                                    val ocrInput = if (strat.contains("Mono") && bridge != null) {
+                                        Log.d("OCR_DEBUG", "TRANSITION: Converting ARGB to ALPHA_8 via MemoryBridge pool")
                                         val width = exactCrop.width
                                         val height = exactCrop.height
-                                        val monoBmp = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
+                                        val monoBmp = bridge.getBitmap()
                                         
                                         val pixels = IntArray(width * height)
                                         exactCrop.getPixels(pixels, 0, width, 0, 0, width, height)
@@ -343,18 +362,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             // Red channel (bits 16-23) mapped to target Alpha channel
                                             alphaBytes[i] = (pixels[i] shr 16 and 0xFF).toByte()
                                         }
-                                        monoBmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(alphaBytes))
+                                        val wrapped = java.nio.ByteBuffer.wrap(alphaBytes)
+                                        monoBmp.copyPixelsFromBuffer(wrapped)
+                                        bridge.syncFromBitmap() // Commit to Native Mat
                                         monoBmp
                                     } else exactCrop
 
                                     Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
                                     val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
                                     refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
-                                    
-                                    if (ocrInput !== exactCrop) {
-                                        Log.d("OCR_DEBUG", "TRANSITION: Recycling dynamic Mono buffer")
-                                        ocrInput.recycle()
-                                    }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Strategy $strat failed for ${file.name}", e)
                                 }
@@ -416,6 +432,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     currentFile.appendText(footer)
     jsonFile.appendText("\n  ]\n}")
     cachedRefs.forEach { it.bmp.recycle() }
+    
+    // Phase 115: Release native handles for vehicle pools
+    vehicleMonoBridges.values.forEach { it.release() }
 }
 
 private fun serializePhotoResultToJson(
@@ -672,9 +691,9 @@ private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
     val srcW = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt()
     val srcH = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
     
-    // Phase 115: 32x2 Alignment Mandate
-    val targetW = (srcW / 32) * 32
-    val targetH = (srcH / 2) * 2
+    // Phase 115: 32x2 Alignment Mandate (Rounded UP)
+    val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
+    val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
     if (targetW <= 0 || targetH <= 0) return null
     
     return Bitmap.createBitmap(bmp, left, top, targetW.coerceAtMost(bmp.width - left), targetH.coerceAtMost(bmp.height - top))
