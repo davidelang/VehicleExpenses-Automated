@@ -118,6 +118,7 @@ object DiscoveryOcrUtils {
 
                 val recognitionCrop = Bitmap.createBitmap(bmp, consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
                 val ocrResult = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
+                recognitionCrop.recycle()
                 val recognizedText = ocrResult.text
                 lastOcrInputB64 = ocrResult.ocrInputB64
                 
