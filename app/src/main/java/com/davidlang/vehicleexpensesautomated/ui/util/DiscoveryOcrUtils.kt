@@ -116,9 +116,29 @@ object DiscoveryOcrUtils {
 
                 Log.d("DISCOVERY_DEBUG", "  Consolidated Row $i: [L=${consolidatedBox.left}, T=${consolidatedBox.top}, R=${consolidatedBox.right}, B=${consolidatedBox.bottom}]")
 
-                val recognitionCrop = Bitmap.createBitmap(bmp, consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
-                val ocrResult = paddleEngine.runConstrainedStatic(recognitionCrop, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
-                recognitionCrop.recycle()
+                val targetBmp = if (paddleEngine.useMono) MemoryBridge.pool320x48!!.getBitmap() else NativePaddleEngine.sharedBmpRec
+                val targetSize = org.opencv.core.Size(320.0, 48.0)
+                
+                val argbMat = org.opencv.core.Mat()
+                org.opencv.android.Utils.bitmapToMat(bmp, argbMat)
+                val roiRect = org.opencv.core.Rect(consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
+                val roiMat = org.opencv.core.Mat(argbMat, roiRect)
+                
+                if (paddleEngine.useMono) {
+                    val redMat = org.opencv.core.Mat()
+                    org.opencv.core.Core.extractChannel(roiMat, redMat, 0)
+                    org.opencv.imgproc.Imgproc.resize(redMat, MemoryBridge.pool320x48!!.getMat(), targetSize, 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                    MemoryBridge.pool320x48!!.syncToBitmap()
+                    redMat.release()
+                } else {
+                    val resizedMat = org.opencv.core.Mat()
+                    org.opencv.imgproc.Imgproc.resize(roiMat, resizedMat, targetSize, 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                    org.opencv.android.Utils.matToBitmap(resizedMat, targetBmp)
+                    resizedMat.release()
+                }
+                argbMat.release(); roiMat.release()
+
+                val ocrResult = paddleEngine.runConstrainedStatic(targetBmp, targetHeight ?: 48, paddleEngine.getDictionary(), paddleEngine.isV3())
                 val recognizedText = ocrResult.text
                 lastOcrInputB64 = ocrResult.ocrInputB64
                 
