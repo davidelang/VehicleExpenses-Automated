@@ -12,6 +12,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
