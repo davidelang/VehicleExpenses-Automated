@@ -218,7 +218,7 @@ object OdometerOcrUtils {
     fun matToBase64(mat: Mat, quality: Int = 80): String {
         val bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
         org.opencv.android.Utils.matToBitmap(mat, bitmap)
-        return OcrUtils.bitmapToBase64(bitmap, quality).also { bitmap.recycle() }
+        return OcrUtils.bitmapToBase64(bitmap, quality)
     }
 
     fun cleanLandmarkString(text: String): String {
@@ -566,7 +566,6 @@ object OdometerOcrUtils {
                                 }
                             }
                         }
-                        if (resized != bmp) resized.recycle()
                         Triple(if (resStr.isNotBlank()) resStr else null, detBoxes, resMetadata)
                     } catch (e: Exception) { Triple(null, emptyList(), resMetadata) }
                 }
@@ -836,8 +835,7 @@ object OdometerOcrUtils {
             if (right > left && bottom > top) bitmap = Bitmap.createBitmap(processed, left, top, right - left, bottom - top)
         }
         val res = extractFromPhotoBitmap(bitmap)
-        if (bitmap != processed) bitmap.recycle()
-        processed.recycle(); rotated.recycle(); res.copy(originalPhotoPath = photoPath)
+        res.copy(originalPhotoPath = photoPath)
     }
 
     suspend fun discoverLandmarks(photoPath: String, odometerCrop: RectF? = null, otherTextCrop: RectF? = null): List<TextBlock> = withContext(Dispatchers.IO) {
@@ -846,6 +844,6 @@ object OdometerOcrUtils {
         val processed = applyBilateral(rotated)
         val ocrResult = extractFromPhotoBitmap(processed)
         val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
-        processed.recycle(); if (rotated != rawBitmap) rotated.recycle(); rawBitmap.recycle(); landmarks
+        landmarks
     }
 }
