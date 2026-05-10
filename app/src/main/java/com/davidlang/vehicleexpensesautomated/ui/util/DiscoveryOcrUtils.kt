@@ -172,24 +172,17 @@ object DiscoveryOcrUtils {
         // 2. 80% Stretch Only
         val s80Only = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
         steps.add(exec(s80Only, "80% Stretch Only"))
-        if (s80Only != bitmap) s80Only.recycle()
 
         // 3. Bile -> 80% Stretch
         val bileBase = OdometerOcrUtils.applyBilateral(bitmap)
         val bileThen80 = OdometerOcrUtils.applyContrastStretch(bileBase, 80)
         steps.add(exec(bileThen80, "Bile -> 80% Stretch"))
-        if (bileThen80 != bileBase && bileThen80 != bitmap) bileThen80.recycle()
 
         // 4. 80% Stretch -> Bile
         // We reuse s80Only logic here, but need a new bitmap since we recycled it
         val stretchBase = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
         val stretchThenBile = OdometerOcrUtils.applyBilateral(stretchBase)
         steps.add(exec(stretchThenBile, "80% Stretch -> Bile"))
-
-        // Cleanup intermediate bases
-        if (stretchThenBile != stretchBase && stretchThenBile != bitmap) stretchThenBile.recycle()
-        if (stretchBase != bitmap) stretchBase.recycle()
-        if (bileBase != bitmap) bileBase.recycle()
 
         return steps
     }
