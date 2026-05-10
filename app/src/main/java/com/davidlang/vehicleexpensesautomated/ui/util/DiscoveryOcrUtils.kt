@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
 import android.util.Log
+import org.opencv.android.Utils
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.max
@@ -38,26 +39,27 @@ object DiscoveryOcrUtils {
             val sb = StringBuilder()
             val finalStepBlocks = mutableListOf<TextBlock>()
             
-            // 1. Detection at 512x128 (Explicit scaling into provided bridge)
+            // 1. Detection Stage (Explicit scaling into provided bridge)
             if (detBridge == null) return OcrStepResult(stageName, "", null, "Bridge Null", emptyList(), emptyList(), Rect(0,0,1,1), Rect(0,0,1,1), emptyMap())
             
             val detBmp = detBridge.getBitmap()
-            val detCanvas = Canvas(detBmp)
-            detCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-            
             val detScale = min(512f / bmp.width.toFloat(), 128f / bmp.height.toFloat())
-            val detMatrix = android.graphics.Matrix()
-            detMatrix.postScale(detScale, detScale)
             
-            // Phase 115: Format-Safe Bridge Populating
-            if (bmp.config == Bitmap.Config.ALPHA_8) {
-                // If source is Mono, we use alphaToGrayPaint to draw into the detection bridge (which may be ARGB or A8)
-                detCanvas.drawBitmap(bmp, detMatrix, NativePaddleEngine.alphaToGrayPaint)
+            // Phase 115: Dual-Path Detection Populating
+            if (bmp.config == Bitmap.Config.ALPHA_8 && monoScratch != null) {
+                // Mono Path: Use OpenCV resize for Mat-to-Mat transfer (Native Resolution)
+                val targetSize = org.opencv.core.Size(512.0, 128.0)
+                Imgproc.resize(monoScratch.getMat(), detBridge.getMat(), targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
+                detBridge.syncToBitmap() // Sync for engine tensor population
             } else {
+                // Standard Path: Use Canvas draw into ARGB detection bridge
+                val detCanvas = Canvas(detBmp)
+                detCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                val detMatrix = android.graphics.Matrix()
+                detMatrix.postScale(detScale, detScale)
                 detCanvas.drawBitmap(bmp, detMatrix, null)
             }
 
-            // Passive Engine Call
             val det = paddleEngine.detect(detBmp, 512, 128) ?: return OcrStepResult(stageName, "", null, "Det Failed", emptyList(), emptyList(), Rect(0,0,1,1), Rect(0,0,1,1), emptyMap())
             
             // Process heatmap blocks mapped directly to crop resolution
@@ -101,33 +103,34 @@ object DiscoveryOcrUtils {
                 Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom })
             }
 
+            // Final Recognition Pass on stable boxes (sorted by top for reading order)
             var lastOcrInputB64: String? = null
             for ((i, consolidatedBox) in consolidatedBoxes.sortedBy { it.top }.withIndex()) {
                 if (i == 0) primaryRefinedBox = consolidatedBox
                 if (recBridge == null) continue
                 
+                val targetBmp = recBridge.getBitmap()
                 val targetSize = org.opencv.core.Size(320.0, 48.0)
                 val roiRect = org.opencv.core.Rect(consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
                 
                 // Phase 115: Dual-Path Recognition Dispatch
-                if (paddleEngine.useMono && monoScratch != null) {
+                if (bmp.config == Bitmap.Config.ALPHA_8 && monoScratch != null) {
                     // Native Path: Source from MemoryBridge Mat version
                     val roiMat = Mat(monoScratch.getMat(), roiRect)
                     Imgproc.resize(roiMat, recBridge.getMat(), targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
-                    recBridge.syncToBitmap() // Sync for snapshotting/diagnostics
+                    recBridge.syncToBitmap() // Sync for engine tensor population
                     roiMat.release()
                     
                     val ocrResult = paddleEngine.runConstrainedStatic(recBridge, 48, paddleEngine.getDictionary(), paddleEngine.isV3())
                     if (ocrResult.text.isNotBlank()) sb.append("${ocrResult.text} ")
                     lastOcrInputB64 = ocrResult.ocrInputB64
                 } else {
-                    // Standard Path: Source from Bitmap
-                    val targetBmp = recBridge.getBitmap()
-                    val argbMat = Mat(); org.opencv.android.Utils.bitmapToMat(bmp, argbMat)
+                    // Standard Path: Source from ARGB Bitmap
+                    val argbMat = Mat(); Utils.bitmapToMat(bmp, argbMat)
                     val roiMat = Mat(argbMat, roiRect)
                     val resizedMat = Mat()
                     Imgproc.resize(roiMat, resizedMat, targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
-                    org.opencv.android.Utils.matToBitmap(resizedMat, targetBmp)
+                    Utils.matToBitmap(resizedMat, targetBmp)
                     resizedMat.release(); argbMat.release(); roiMat.release()
                     
                     val ocrResult = paddleEngine.runConstrainedStatic(targetBmp, 48, paddleEngine.getDictionary(), paddleEngine.isV3())
@@ -151,13 +154,18 @@ object DiscoveryOcrUtils {
         suspend fun process(name: String, block: () -> Unit) {
             scratchCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
             
-            // Phase 115: Software Bridge for ALPHA_8 scratch populating
-            val paint = if (bitmap.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
-            scratchCanvas.drawBitmap(bitmap, 0f, 0f, paint)
+            // Phase 115: Safe population of scratch buffer
+            if (bitmap.config == Bitmap.Config.ALPHA_8) {
+                // If source is Mono, we use alphaToGrayPaint to draw into the ARGB report-safe scratch
+                scratchCanvas.drawBitmap(bitmap, 0f, 0f, NativePaddleEngine.alphaToGrayPaint)
+                monoScratch?.syncFromBitmap() // Sync Mat for in-place filters
+            } else {
+                scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+            }
             
-            if (bitmap.config == Bitmap.Config.ALPHA_8) monoScratch?.syncFromBitmap() // Sync Mat for in-place filters
             block()
-            if (bitmap.config == Bitmap.Config.ALPHA_8) monoScratch?.syncToBitmap() // Sync Bitmap back for engine/snapshot
+            
+            if (bitmap.config == Bitmap.Config.ALPHA_8) monoScratch?.syncToBitmap() // Sync Bitmap back for snapshot/diagnostics
             
             steps.add(exec(scratch, name))
         }
