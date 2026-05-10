@@ -184,6 +184,12 @@ object OdometerOcrUtils {
         return bestBucket?.key ?: 0f
     }
 
+    fun matToBase64(mat: Mat, quality: Int = 80): String {
+        val bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(mat, bitmap)
+        return OcrUtils.bitmapToBase64(bitmap, quality).also { bitmap.recycle() }
+    }
+
     fun cleanLandmarkString(text: String): String {
         val filtered = text.filter { it.code in 32..126 }
         val charsToTrim = charArrayOf(' ', '-', '.', '_', ',', '*')
