@@ -49,7 +49,7 @@ object OdometerOcrUtils {
         }
     }
 
-    data class DeskewResult(val angle: Float, val mlAngle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
+    data class DeskewResult(val angle: Float, val mlAngle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList(), val engineAngles: Map<String, Float> = emptyMap())
 
     suspend fun calculateAverageTextAngle(sourceBitmap: Bitmap, targetBitmap: Bitmap): DeskewResult {
         val t0 = System.currentTimeMillis()
@@ -96,7 +96,7 @@ object OdometerOcrUtils {
         }
         
         val finalAngle = results["ML Kit Standard"] ?: 0.0f
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), finalAngle, System.currentTimeMillis() - t0, 0L)
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), finalAngle, System.currentTimeMillis() - t0, 0L, engineAngles = results)
     }
 
     private suspend fun deskewMlKitStandard(bitmap: Bitmap, imgHeight: Int): Float {
