@@ -59,7 +59,8 @@
 - [ ] **Refactor `TfLiteOcrUtils.kt`:** Extract DBNet post-processing logic into a standalone `DbNetMath` object to separate algorithms from Android framework dependencies.
 
 ## Engineering Mandates (New)
-- [ ] **Memory Safety:** Every intermediate bitmap must be recycled immediately after use.
+- [ ] **Architecture:** Phase out `ALPHA_8` Bitmaps in favor of `NV21` (YUV) or `CV_8UC1` (Grayscale) native buffers. Use `MemoryBridge` raw memory access instead of hardware-mapped `ALPHA_8` to avoid HWUI/Skia stability issues (like the `makeImage` SIGSEGV). Avoid `ALPHA_8` for new features.
+- [ ] **OCR:** Refactor `OdometerOcrUtils` and `DiscoveryOcrUtils` to source directly from native grayscale/YUV buffers for all engines.
 
 ## Completed / Historical
 - [x] **Hierarchical Tiered Logic:** Move `performTier1Veto` to be the mandatory first step. If one vehicle survives, stop and declare winner.
