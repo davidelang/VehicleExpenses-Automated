@@ -200,7 +200,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 115: Vehicle-Specific MemoryBridge Pools (Zero-Allocation Anchor)
     val vehicleMonoBridges = mutableMapOf<Int, com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge>()
+    val vehicleMonoScratches = mutableMapOf<Int, com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge>()
     val vehicleArgbCrops = mutableMapOf<Int, Bitmap>()
+    val vehicleArgbScratches = mutableMapOf<Int, Bitmap>()
     withContext(Dispatchers.Main) {
         cachedRefs.forEach { ref ->
             val l = ref.vehicle.odometerCropLeft
@@ -212,7 +214,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 if (targetW > 0 && targetH > 0) {
                     vehicleMonoBridges[ref.vehicle.id] = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(targetW, targetH)
+                    vehicleMonoScratches[ref.vehicle.id] = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(targetW, targetH)
                     vehicleArgbCrops[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+                    vehicleArgbScratches[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
                 }
             }
         }
@@ -474,8 +478,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 115: Release native handles for vehicle pools
     vehicleMonoBridges.values.forEach { it.release() }
+    vehicleMonoScratches.values.forEach { it.release() }
     vehicleArgbCrops.values.forEach { it.recycle() }
+    vehicleArgbScratches.values.forEach { it.recycle() }
     vehicleArgbCrops.clear()
+    vehicleArgbScratches.clear()
 }
 
 private fun serializePhotoResultToJson(
