@@ -410,4 +410,3 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = res.text, textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))), imageWidth = bitmap.width, imageHeight = bitmap.height)
     }
 }
-}
