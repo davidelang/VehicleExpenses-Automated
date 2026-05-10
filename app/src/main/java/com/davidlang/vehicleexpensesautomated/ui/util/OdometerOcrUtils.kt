@@ -469,98 +469,54 @@ object OdometerOcrUtils {
         suspend fun exec(bmp: Bitmap, stageName: String, boxes: List<Rect> = emptyList()): OcrStepResult {
             val res = when (engineName) {
                 "ML Kit", "ML Kit Mono" -> {
-                    val scale = if (targetHeight != null) targetHeight.toFloat() / bmp.height.toFloat() else 1.0f
-                    val resized = if (targetHeight != null) {
-                        // Phase 115: Preserve ALPHA_8 format during scaling to avoid luminance loss
-                        val scaleW = (bmp.width * scale).toInt().coerceAtLeast(1)
-                        // Ensure NV21 compliance: Width multiple of 4, Height multiple of 2
-                        val targetW = ((scaleW + 3) / 4) * 4
-                        val targetH = (targetHeight / 2) * 2
-                        val r = Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
-                        val canvas = Canvas(r)
-                        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-                        val matrix = Matrix()
-                        matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
-                        canvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
-                        r
-                    } else bmp
-                    
+                    val targetW = 320; val targetH = 48
+                    // Phase 115: Use provided recBridge for explicit scaling, avoiding per-image allocation
+                    val recBmp = recBridge?.getBitmap() ?: Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
+                    val recCanvas = Canvas(recBmp)
+                    recCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                    val matrix = android.graphics.Matrix()
+                    matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
+                    recCanvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
+
                     val (inputImage, resMetadata) = if (engineName == "ML Kit Mono") {
-                        val w = resized.width
-                        val h = resized.height
-                        val frameSize = w * h
-                        val nv21Size = frameSize * 3 / 2
-                        
-                        if (sharedPixelsBuffer == null || sharedPixelsBuffer!!.size < frameSize) {
-                            sharedPixelsBuffer = IntArray(frameSize)
-                        }
-                        if (sharedNv21Buffer == null || sharedNv21Buffer!!.size < nv21Size) {
-                            sharedNv21Buffer = ByteArray(nv21Size)
-                        }
+                        val w = recBmp.width; val h = recBmp.height; val frameSize = w * h; val nv21Size = frameSize * 3 / 2
+                        if (sharedPixelsBuffer == null || sharedPixelsBuffer!!.size < frameSize) sharedPixelsBuffer = IntArray(frameSize)
+                        if (sharedNv21Buffer == null || sharedNv21Buffer!!.size < nv21Size) sharedNv21Buffer = ByteArray(nv21Size)
                         val nv21 = sharedNv21Buffer!!
                         
-                        if (resized.config == Bitmap.Config.ALPHA_8) {
-                            // Robust NV21 Construction: Use the provided per-vehicle scratch MemoryBridge
-                            val buffer = monoScratch?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(resized.byteCount).order(java.nio.ByteOrder.nativeOrder())
-                            resized.copyPixelsToBuffer(buffer)
-                            buffer.rewind()
-                            buffer.get(nv21, 0, frameSize.coerceAtMost(resized.byteCount))
+                        if (recBmp.config == Bitmap.Config.ALPHA_8) {
+                            val buffer = monoScratch?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(recBmp.byteCount).order(java.nio.ByteOrder.nativeOrder())
+                            recBmp.copyPixelsToBuffer(buffer); buffer.rewind(); buffer.get(nv21, 0, frameSize.coerceAtMost(recBmp.byteCount))
                         } else {
                             val pixels = sharedPixelsBuffer!!
-                            resized.getPixels(pixels, 0, w, 0, 0, w, h)
-                            for (i in 0 until frameSize) {
-                                nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
-                            }
+                            recBmp.getPixels(pixels, 0, w, 0, 0, w, h)
+                            for (i in 0 until frameSize) nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
                         }
-                        
-                        // Fill U/V channels with neutral chroma (128)
-                        for (i in frameSize until nv21Size) {
-                            nv21[i] = 128.toByte()
-                        }
-                        // Use fromByteArray to ensure ML Kit parses the contiguous memory exactly as provided
+                        for (i in frameSize until nv21Size) nv21[i] = 128.toByte()
                         val img = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)
-                        
-                        // Phase 115: Forensic Audit - capture basic info for diagnostics
-                        val forensicMap = mutableMapOf<String, Any?>()
-                        forensicMap["bitmap_width"] = w.toString()
-                        forensicMap["bitmap_height"] = h.toString()
-                        
-                        Pair(img, forensicMap)
+                        Pair(img, mutableMapOf<String, Any?>())
                     } else {
-                        val meta = mutableMapOf<String, Any?>()
-                        Pair(InputImage.fromBitmap(resized, 0), meta)
+                        Pair(InputImage.fromBitmap(recBmp, 0), mutableMapOf<String, Any?>())
                     }
                     
                     try {
                         val visionText = mlKitClient!!.process(inputImage).await()
-                        
-                        val resBuilder = java.lang.StringBuilder()
-                        val verbatimBuilder = java.lang.StringBuilder()
+                        val resBuilder = java.lang.StringBuilder(); val verbatimBuilder = java.lang.StringBuilder()
                         for (block in visionText.textBlocks) {
                             for (line in block.lines) {
-                                val isFlipped = Math.abs(line.angle) > 135f
                                 verbatimBuilder.append(line.text).append(" ")
-                                val cleanedText = clean7SegmentDigits(line.text, isFlipped).filter { it.isDigit() }
-                                if (cleanedText.isNotBlank()) {
-                                    resBuilder.append(cleanedText)
-                                }
+                                val cleanedText = clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
+                                if (cleanedText.isNotBlank()) resBuilder.append(cleanedText)
                             }
                         }
                         val resStr = resBuilder.toString()
-                        // Persistence: Only populate raw_text if it hasn't been set by a previous (Raw) stage
-                        if (resMetadata["raw_text"] == null) {
-                            resMetadata["raw_text"] = verbatimBuilder.toString().trim()
-                        }
-                        resMetadata["bitmap_width"] = resized.width.toString()
-                        resMetadata["bitmap_height"] = resized.height.toString()
-                        
                         val detBoxes = visionText.textBlocks.flatMap { block ->
                             block.lines.flatMap { line ->
                                 line.elements.mapNotNull { element ->
                                     element.boundingBox?.let { b ->
-                                        if (targetHeight != null) {
-                                            Rect((b.left / scale).toInt(), (b.top / scale).toInt(), (b.right / scale).toInt(), (b.bottom / scale).toInt())
-                                        } else b
+                                        val scaleX = bmp.width.toFloat() / targetW.toFloat()
+                                        val scaleY = bmp.height.toFloat() / targetH.toFloat()
+                                        Rect((b.left * scaleX).toInt(), (b.top * scaleY).toInt(), (b.right * scaleX).toInt(), (b.bottom * scaleY).toInt())
                                     }
                                 }
                             }
@@ -570,10 +526,18 @@ object OdometerOcrUtils {
                 }
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
-                        val ocrRes = paddleEngine.recognize(bmp)
+                        val targetW = 320; val targetH = 48
+                        val recBmp = recBridge?.getBitmap() ?: Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
+                        val recCanvas = Canvas(recBmp)
+                        recCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                        val matrix = android.graphics.Matrix()
+                        matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
+                        recCanvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
+
+                        val ocrRes = paddleEngine.runConstrainedStatic(recBmp, targetH, paddleEngine.getDictionary(), paddleEngine.isV3())
                         val meta = mutableMapOf<String, Any?>()
-                        meta["ocrInput"] = ocrRes.metadata["ocrInput"]
-                        Triple(ocrRes.debugText, emptyList<Rect>(), meta)
+                        meta["ocrInput"] = ocrRes.ocrInputB64
+                        Triple(ocrRes.text, emptyList<Rect>(), meta)
                     } ?: Triple(null, emptyList<Rect>(), mutableMapOf<String, Any?>())
                 }
                 else -> Triple(null, emptyList<Rect>(), mutableMapOf<String, Any?>())
