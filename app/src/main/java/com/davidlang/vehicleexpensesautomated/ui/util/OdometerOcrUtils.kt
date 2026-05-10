@@ -97,7 +97,7 @@ object OdometerOcrUtils {
 
         val paddleAngle = 0.0f
         val paddleTimeMs = 0L
-        return computeFinalDeskewAngle(pdCandidates, calculateWeightedAverage(mlCandidates, pHeight), targetBitmap, pHeight, mlResult.executionTimeMs)
+        return computeFinalDeskewAngle(mlCandidates, calculateWeightedAverage(mlCandidates, pHeight), targetBitmap, pHeight, mlResult.executionTimeMs)
     }
 
     suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
