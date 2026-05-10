@@ -50,11 +50,7 @@ object OdometerOcrUtils {
 
     data class DeskewResult(val angle: Float, val mlAngle: Float, val mlTimeMs: Long, val paddleTimeMs: Long, val mlBlocks: List<TextBlock> = emptyList(), val paddleBlocks: List<TextBlock> = emptyList())
 
-    suspend fun calculateAverageTextAngle(
-        sourceBitmap: Bitmap,
-        targetBitmap: Bitmap,
-        paddleEngine: NativePaddleEngine? = null
-    ): DeskewResult {
+    suspend fun calculateAverageTextAngle(sourceBitmap: Bitmap, targetBitmap: Bitmap): DeskewResult {
         val t0 = System.currentTimeMillis()
         val pTargetSize = 2048
         val pScale = pTargetSize.toFloat() / sourceBitmap.width
@@ -63,7 +59,6 @@ object OdometerOcrUtils {
         val isMono = (targetBitmap.config == Bitmap.Config.ALPHA_8)
         
         // Phase 115 Redesign: Pure OpenCV Pipeline (Zero-Canvas)
-        // Bypasses SkCanvas/drawColor to avoid fatal libhwui.so Hardware UI conflicts on shared bitmaps.
         val argbMat = Mat()
         org.opencv.android.Utils.bitmapToMat(sourceBitmap, argbMat)
         val grayMat = Mat()
@@ -89,15 +84,29 @@ object OdometerOcrUtils {
         }
         argbMat.release(); grayMat.release()
         
-        // val paddleResult = paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize)
-        // ML Kit Fallback Deskew
-        val mlResult = extractFromPhotoBitmapRaw(targetBitmap)
-        val mlCandidates = mlResult.textBlocks
-        Log.i("MLKIT_DESKEW_DEBUG", "ML Kit detected ${mlCandidates.size} blocks. Rotation angles: " + mlCandidates.joinToString { "${it.angle}°" })
+        val enabledEngines = mapOf(
+            "ML Kit Standard" to ::deskewMlKitStandard
+            // "Paddle V3 Standard" to ::deskewPaddleStandard
+        )
+        
+        val results = mutableMapOf<String, Float>()
+        enabledEngines.forEach { (name, func) ->
+            results[name] = func(targetBitmap, pHeight)
+        }
+        
+        val finalAngle = results["ML Kit Standard"] ?: 0.0f
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), finalAngle, System.currentTimeMillis() - t0, 0L)
+    }
 
-        val paddleAngle = 0.0f
-        val paddleTimeMs = 0L
-        return computeFinalDeskewAngle(mlCandidates, calculateWeightedAverage(mlCandidates, pHeight), targetBitmap, pHeight, mlResult.executionTimeMs)
+    private suspend fun deskewMlKitStandard(bitmap: Bitmap, imgHeight: Int): Float {
+        val res = extractFromPhotoBitmapRaw(bitmap)
+        Log.i("MLKIT_DESKEW_DEBUG", "ML Kit detected ${res.textBlocks.size} blocks. Rotation angles: " + res.textBlocks.joinToString { "${it.angle}°" })
+        return calculateWeightedAverage(res.textBlocks, imgHeight)
+    }
+
+    private suspend fun deskewPaddleStandard(bitmap: Bitmap, imgHeight: Int): Float {
+        // Dormant Paddle
+        return 0f
     }
 
     suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
