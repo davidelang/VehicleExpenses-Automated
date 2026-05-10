@@ -200,6 +200,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 115: Vehicle-Specific MemoryBridge Pools (Zero-Allocation Anchor)
     val vehicleMonoBridges = mutableMapOf<Int, com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge>()
+    val vehicleArgbCrops = mutableMapOf<Int, Bitmap>()
     withContext(Dispatchers.Main) {
         cachedRefs.forEach { ref ->
             val l = ref.vehicle.odometerCropLeft
@@ -211,6 +212,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 if (targetW > 0 && targetH > 0) {
                     vehicleMonoBridges[ref.vehicle.id] = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(targetW, targetH)
+                    vehicleArgbCrops[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
                 }
             }
         }
@@ -318,8 +320,26 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         val refinementTraces = mutableMapOf<String, RefinementTrace>()
                         
                         // Phase 58: Refinement Loop (Only executed on successful alignment)
-                        val exactCrop = manualCropOdometer(masterBmp, winnerRef.vehicle)
+                        val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
                         if (exactCrop != null) {
+                            // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
+                            val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+                            val t = winnerRef.vehicle.odometerCropTop ?: 0f
+                            val r = winnerRef.vehicle.odometerCropRight ?: 1f
+                            val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+                            
+                            val srcW = (r - l) * masterBmp!!.width
+                            val srcH = (b - t) * masterBmp.height
+                            val scaleX = exactCrop.width.toFloat() / srcW
+                            val scaleY = exactCrop.height.toFloat() / srcH
+                            
+                            val cropCanvas = android.graphics.Canvas(exactCrop)
+                            cropCanvas.drawColor(android.graphics.Color.BLACK)
+                            val matrix = android.graphics.Matrix()
+                            matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
+                            matrix.postScale(scaleX, scaleY)
+                            cropCanvas.drawBitmap(masterBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                             try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
@@ -453,6 +473,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 115: Release native handles for vehicle pools
     vehicleMonoBridges.values.forEach { it.release() }
+    vehicleArgbCrops.values.forEach { it.recycle() }
+    vehicleArgbCrops.clear()
 }
 
 private fun serializePhotoResultToJson(
@@ -705,23 +727,7 @@ private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
     return annotated
 }
 
-private fun manualCropOdometer(bmp: Bitmap, vehicle: Vehicle): Bitmap? {
-    val l = vehicle.odometerCropLeft ?: return null
-    val left = (l * bmp.width).toInt().coerceIn(0, bmp.width - 1)
-    val top = ((vehicle.odometerCropTop ?: 0f) * bmp.height).toInt().coerceIn(0, bmp.height - 1)
-    val srcW = (((vehicle.odometerCropRight ?: 1f) - l) * bmp.width).toInt()
-    val srcH = (((vehicle.odometerCropBottom ?: 1f) - (vehicle.odometerCropTop ?: 0f)) * bmp.height).toInt()
-    
-    // Phase 115: 32x2 Alignment Mandate (Rounded UP)
-    val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
-    val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
-    if (targetW <= 0 || targetH <= 0) return null
-    
-    return Bitmap.createBitmap(bmp, left, top, targetW.coerceAtMost(bmp.width - left), targetH.coerceAtMost(bmp.height - top))
-}
-
-private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
-    if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
+private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {    if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
     try {
         val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else { val keys = root.keys(); if (keys.hasNext()) root.getJSONArray(keys.next()) else null } ?: return emptyList()
         for (i in 0 until array.length()) {
