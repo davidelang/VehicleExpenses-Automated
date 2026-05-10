@@ -152,33 +152,45 @@ object OcrUtils {
         return android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.NO_WRAP)
     }
 
-    /**
-     * Captures a 48px high thumbnail into the shared reporting buffer and returns its Base64 representation.
-     * This is used to implement zero-allocation late-stage annotation.
-     */
     fun takeSnapshot(
         source: Bitmap, 
         rawFragments: List<Rect> = emptyList(), 
-        consolidatedRows: List<Rect> = emptyList()
+        consolidatedRows: List<Rect> = emptyList(),
+        argbScratch: Bitmap? = null
     ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
-        // Phase 115: Proportional fit-within scaling
+        if (source.isRecycled) return ""
+        val thumb = NativePaddleEngine.sharedReportBitmap
+        if (thumb.isRecycled) return ""
+
+        // Phase 115: Proportional fit-within scaling for the final report thumbnail
         val scale = kotlin.math.min(320f / source.width.toFloat(), 48f / source.height.toFloat())
         val targetWidth = (source.width * scale).toInt().coerceIn(1, 320)
         val targetHeight = (source.height * scale).toInt().coerceIn(1, 48)
         
         val canvas = NativePaddleEngine.sharedReportCanvas
-        val thumb = NativePaddleEngine.sharedReportBitmap
         
-        // 1. Clear and Draw thumbnail
+        // 1. Clear Report Buffer
         canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-        val destRect = Rect(0, 0, targetWidth, targetHeight)
         
-        // Phase 115: Monochrome-to-RGB Bridging for Diagnostics
-        // If source is ALPHA_8, we use a filter to map Alpha -> RGB grayscale
-        val paint = if (source.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
-        canvas.drawBitmap(source, null, destRect, paint)
+        // 2. Safe Bridge: Draw source into ARGB scratch first to avoid ALPHA_8 HWUI crashes
+        val drawingSource: Bitmap
+        if (argbScratch != null && !argbScratch.isRecycled && (source.config == Bitmap.Config.ALPHA_8 || source.config == null)) {
+            val scratchCanvas = android.graphics.Canvas(argbScratch)
+            scratchCanvas.drawColor(android.graphics.Color.BLACK)
+            val paint = if (source.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
+            scratchCanvas.drawBitmap(source, 0f, 0f, paint)
+            drawingSource = argbScratch
+        } else {
+            drawingSource = source
+        }
+
+        // 3. Draw to Report Buffer (Dimension-safe scaling)
+        val matrix = NativePaddleEngine.sharedMatrix
+        matrix.reset()
+        matrix.postScale(scale, scale)
+        canvas.drawBitmap(drawingSource, matrix, NativePaddleEngine.srcPaint)
         
-        // 2. Apply Annotations (Now always visible on color-mapped grayscale)
+        // 4. Apply Annotations (Scaled)
         rawFragments.forEach { r -> 
             canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint)
         }
@@ -186,7 +198,7 @@ object OcrUtils {
             canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint)
         }
         
-        // 3. Create Subset View for Base64 (No allocation)
+        // 5. Create Subset View for Base64 (No allocation)
         val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, targetHeight)
         bitmapToBase64(view, 60)
     }

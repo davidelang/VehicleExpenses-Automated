@@ -284,8 +284,8 @@ object OdometerOcrUtils {
         mat.release(); gray.release(); return out
     }
 
-    fun applyBilateral(bitmap: Bitmap): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+    fun applyBilateral(bitmap: Bitmap, argbScratch: Bitmap? = null, monoScratch: MemoryBridge? = null): Bitmap {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap, monoScratch) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
@@ -293,18 +293,18 @@ object OdometerOcrUtils {
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
 
-        // Phase 115: In-place update using shared scratch intermediate
+        // Phase 115: In-place update using provided per-vehicle scratch intermediate
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmapMono(filtered, bitmap)
+            matToBitmapMono(filtered, bitmap, monoScratch)
         } else {
-            val scratch = NativePaddleEngine.sharedBmpOdoScratch
+            val scratch = argbScratch ?: NativePaddleEngine.sharedBmpOdoScratch
             org.opencv.android.Utils.matToBitmap(filtered, scratch)
             Canvas(bitmap).drawBitmap(scratch, 0f, 0f, null)
         }
         src.release(); gray.release(); filtered.release(); return bitmap
     }
-    fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+    fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int, monoScratch: MemoryBridge? = null): Bitmap {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap, monoScratch) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
@@ -321,18 +321,18 @@ object OdometerOcrUtils {
 
         // Phase 115: In-place update to long-lived buffer
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmapMono(dst, bitmap)
+            matToBitmapMono(dst, bitmap, monoScratch)
         } else {
             org.opencv.android.Utils.matToBitmap(dst, bitmap)
         }
         src.release(); gray.release(); hist.release(); dst.release(); return bitmap
     }
-    // Phase 115: CV_8UC1 Monochrome Bridge (Dynamic Allocation)
-    fun bitmapToMatMono(bitmap: Bitmap): Mat {
+    // Phase 115: CV_8UC1 Monochrome Bridge (Zero-Allocation)
+    fun bitmapToMatMono(bitmap: Bitmap, bridge: MemoryBridge? = null): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
         val capacity = bitmap.width * bitmap.height
-        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
-        val bytes = ByteArray(capacity)
+        val buffer = bridge?.getDirectBuffer() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val bytes = if (bridge != null) NativePaddleEngine.sharedMonoBytes else ByteArray(capacity)
         buffer.rewind()
         bitmap.copyPixelsToBuffer(buffer)
         buffer.rewind()
@@ -341,11 +341,11 @@ object OdometerOcrUtils {
         return mat
     }
 
-    fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
+    fun matToBitmapMono(mat: Mat, bitmap: Bitmap, bridge: MemoryBridge? = null) {
         val capacity = bitmap.width * bitmap.height
-        val bytes = ByteArray(capacity)
+        val bytes = if (bridge != null) NativePaddleEngine.sharedMonoBytes else ByteArray(capacity)
         mat.get(0, 0, bytes)
-        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val buffer = bridge?.getDirectBuffer() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
         buffer.rewind()
         buffer.put(bytes, 0, capacity)
         buffer.rewind()
