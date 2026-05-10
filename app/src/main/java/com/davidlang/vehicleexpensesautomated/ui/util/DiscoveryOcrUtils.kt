@@ -26,7 +26,9 @@ object DiscoveryOcrUtils {
         engineName: String,
         targetHeight: Int? = null,
         paddleEngine: NativePaddleEngine? = null,
-        expansion: DiscoveryExpansion = DiscoveryExpansion.UNCLIP
+        expansion: DiscoveryExpansion = DiscoveryExpansion.UNCLIP,
+        argbScratch: Bitmap? = null,
+        monoScratch: MemoryBridge? = null
     ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
         if (paddleEngine == null) return emptyList()

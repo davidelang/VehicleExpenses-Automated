@@ -499,8 +499,8 @@ object OdometerOcrUtils {
                         val nv21 = sharedNv21Buffer!!
                         
                         if (resized.config == Bitmap.Config.ALPHA_8) {
-                            // Robust NV21 Construction: Allocate a perfectly sized buffer for the dynamic crop
-                            val buffer = java.nio.ByteBuffer.allocateDirect(resized.byteCount).order(java.nio.ByteOrder.nativeOrder())
+                            // Robust NV21 Construction: Use the provided per-vehicle scratch MemoryBridge
+                            val buffer = monoScratch?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(resized.byteCount).order(java.nio.ByteOrder.nativeOrder())
                             resized.copyPixelsToBuffer(buffer)
                             buffer.rewind()
                             buffer.get(nv21, 0, frameSize.coerceAtMost(resized.byteCount))
@@ -579,7 +579,8 @@ object OdometerOcrUtils {
             }
             
             // Capture snapshot using ALL row boxes (Orange) and ALL fragments (Red)
-            val b64 = OcrUtils.takeSnapshot(bmp, emptyList(), consolidatedRows = res.second)
+            // Phase 115: Safe-Bridge Snapshotting via per-vehicle scratch
+            val b64 = OcrUtils.takeSnapshot(bmp, emptyList(), consolidatedRows = res.second, argbScratch = argbScratch)
             val box = res.second.firstOrNull() ?: Rect(0,0,bmp.width,bmp.height)
             
             val forensicMetadata = (res.third as? MutableMap<String, Any?>) ?: mutableMapOf()
@@ -599,24 +600,35 @@ object OdometerOcrUtils {
             )
         }
 
-        // Preprocessing Overhaul: Test filter combinations on Monochrome Baseline
-        
+        // Phase 115: Zero-Allocation Refinement Loop
+        // We use the provided per-vehicle scratch buffers as the workspace for each stage.
+
         // 1. Raw (Monochrome Baseline)
         steps.add(exec(bitmap, "Raw"))
         
         // 2. 80% Stretch Only
-        val s80Only = applyContrastStretch(bitmap, 80)
-        steps.add(exec(s80Only, "80% Stretch Only"))
+        // Important: We MUST NOT modify the original bitmap for the "Raw" stage report,
+        // so we use our scratch buffer as the base for all refinements.
+        val scratch = argbScratch ?: NativePaddleEngine.sharedBmpOdoScratch
+        val scratchCanvas = Canvas(scratch)
+        scratchCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+        scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+        applyContrastStretch(scratch, 80, monoScratch)
+        steps.add(exec(scratch, "80% Stretch Only"))
         
         // 3. Bile -> 80% Stretch
-        val bileBase = applyBilateral(bitmap)
-        val bileThen80 = applyContrastStretch(bileBase, 80)
-        steps.add(exec(bileThen80, "Bile -> 80% Stretch"))
+        scratchCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+        scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+        applyBilateral(scratch, argbScratch, monoScratch)
+        applyContrastStretch(scratch, 80, monoScratch)
+        steps.add(exec(scratch, "Bile -> 80% Stretch"))
         
         // 4. 80% Stretch -> Bile
-        val stretchBase = applyContrastStretch(bitmap, 80)
-        val stretchThenBile = applyBilateral(stretchBase)
-        steps.add(exec(stretchThenBile, "80% Stretch -> Bile"))
+        scratchCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+        scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+        applyContrastStretch(scratch, 80, monoScratch)
+        applyBilateral(scratch, argbScratch, monoScratch)
+        steps.add(exec(scratch, "80% Stretch -> Bile"))
         
         if (mlKitClient != null) mlKitClient.close()
         return steps
