@@ -118,7 +118,7 @@ fun ManageVehiclesScreen(
                 withContext(Dispatchers.Main) { isLoadingDiscovery = true }
                 val rawBmp = OdometerOcrUtils.decodeBitmapSafely(context, url) ?: return@launch
                 val rotatedBmp = OdometerOcrUtils.rotateImageIfRequired(rawBmp, url)
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(rotatedBmp, NativePaddleEngine.sharedBmp2048)
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(rotatedBmp)
                 val leveledBmp = if (Math.abs(deskewRes.angle) > 0.2f) {
                     OdometerOcrUtils.rotateBitmap(rotatedBmp, -deskewRes.angle)
                 } else rotatedBmp
