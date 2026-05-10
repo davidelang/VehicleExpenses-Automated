@@ -356,33 +356,25 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val floatData: FloatArray = if (useMono) bufferRecMono else bufferRec
         floatData.fill(0.0f)
 
+        // Phase 115: Sized-Input Mandate. Assume bitmap is already 320x48.
         if (useMono) {
-            val targetBmp = sharedBmpRecMono
-            performHighQualityResize(bitmap, MemoryBridge.pool320x48!!)
-            
             // Post-resize data population for Mono tensor (1 channel)
             val mean = 0.5f 
             val std = 0.5f
             for (y in 0 until targetHeight) {
                 for (x in 0 until targetWidth) {
-                    val px = targetBmp.getPixel(x, y)
+                    val px = bitmap.getPixel(x, y)
                     floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
                 }
             }
         } else {
-            val targetBmp = sharedBmpRec; val targetCanvas = sharedCanvasRec
-            val scale = 40f / bitmap.height.toFloat(); val padding = 4
-            synchronized(targetBmp) {
-                targetCanvas.drawColor(Color.BLACK); sharedMatrix.reset(); sharedMatrix.postScale(scale, scale); sharedMatrix.postTranslate(padding.toFloat(), padding.toFloat())
-                targetCanvas.drawBitmap(bitmap, sharedMatrix, null)
-                val mean = 0.5f; val std = 0.5f
-                for (y in 0 until targetHeight) {
-                    for (x in 0 until targetWidth) {
-                        val px = targetBmp.getPixel(x, y)
-                        floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
-                        floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
-                        floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
-                    }
+            val mean = 0.5f; val std = 0.5f
+            for (y in 0 until targetHeight) {
+                for (x in 0 until targetWidth) {
+                    val px = bitmap.getPixel(x, y)
+                    floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                    floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
+                    floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - mean) / std
                 }
             }
         }
@@ -417,39 +409,5 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val res = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
         OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = res.text, textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))), imageWidth = bitmap.width, imageHeight = bitmap.height)
     }
-
-    suspend fun runDetectionOnly(bitmap: Bitmap, targetWidth: Int = 1280, targetHeight: Int = 1280): OcrResult = withContext(Dispatchers.IO) {
-        val t0 = System.currentTimeMillis()
-        
-        val targetBmp: Bitmap
-        val targetCanvas: Canvas
-        if (targetWidth >= 2048) {
-            targetBmp = if (useMono) sharedBmp2048Mono else sharedBmp2048
-            targetCanvas = if (useMono) sharedCanvas2048Mono else sharedCanvas2048
-        } else {
-            targetBmp = if (useMono) sharedBmpSmallMono else sharedBmpSmall
-            targetCanvas = if (useMono) sharedCanvasSmallMono else sharedCanvasSmall
-        }
-        
-        var scale = 1.0f
-        if (useMono && targetWidth <= 512) {
-            val bridge = if (targetWidth == 512) MemoryBridge.pool512x128!! else MemoryBridge.pool320x48!!
-            performHighQualityResize(bitmap, bridge)
-            scale = Math.min(targetWidth.toFloat() / bitmap.width, targetHeight.toFloat() / bitmap.height)
-        } else {
-            val scaleW = targetWidth.toFloat() / bitmap.width
-            val scaleH = targetHeight.toFloat() / bitmap.height
-            scale = Math.min(scaleW, scaleH)
-            synchronized(targetBmp) {
-                targetCanvas.drawColor(if (useMono) android.graphics.Color.TRANSPARENT else android.graphics.Color.BLACK, if (useMono) android.graphics.PorterDuff.Mode.CLEAR else android.graphics.PorterDuff.Mode.SRC)
-                sharedMatrix.reset()
-                sharedMatrix.postScale(scale, scale)
-                targetCanvas.drawBitmap(bitmap, sharedMatrix, if (useMono) srcPaint else null)
-            }
-        }
-        
-        val det = detect(targetBmp, targetWidth, targetHeight) ?: return@withContext OcrResult(engineName = name, debugText = "Detection failed")
-        val blocks = OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, scale, targetBmp, "Native")
-        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = "(Detection Only)", textBlocks = blocks, rawHeatmap = det.heatmap, heatmapWidth = det.width, heatmapHeight = det.height, scaleFactor = scale, imageWidth = bitmap.width, imageHeight = bitmap.height)
-    }
+}
 }
