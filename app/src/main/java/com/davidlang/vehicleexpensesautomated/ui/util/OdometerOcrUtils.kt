@@ -57,7 +57,7 @@ object OdometerOcrUtils {
         val paddleTimeMs: Long, 
         val mlBlocks: List<TextBlock> = emptyList(), 
         val paddleBlocks: List<TextBlock> = emptyList(), 
-        val engineAngles: Map<String, Float> = emptyMap(),
+        
         val engines: Map<String, EngineResult> = emptyMap()
     )
 
@@ -84,7 +84,7 @@ object OdometerOcrUtils {
             mlAngle = finalAngle,
             mlTimeMs = mlRes?.timesMs?.sum() ?: 0L,
             paddleTimeMs = pdRes?.timesMs?.sum() ?: 0L,
-            engineAngles = results.mapValues { it.value.angle },
+            
             engines = results
         )
     }
@@ -179,17 +179,7 @@ object OdometerOcrUtils {
         }
     }
 
-    private suspend fun computeFinalDeskewAngle(
-        pdCandidates: List<TextBlock>,
-        mlAngle: Float,
-        targetBitmap: Bitmap,
-        pHeight: Int,
-        mlTimeMs: Long
-    ): DeskewResult {
-        // Fallback to ML Kit if Paddle is unavailable or empty
-        val finalAngle = if (pdCandidates.isNotEmpty()) 0.0f else mlAngle
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, 0L, emptyList(), emptyList())
-    }
+    
 
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
         val validCandidates = candidates.filter { it.boundingBox.height() > 0 }
