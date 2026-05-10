@@ -90,18 +90,14 @@ object OdometerOcrUtils {
         argbMat.release(); grayMat.release()
         
         // val paddleResult = paddleEngine?.runDetectionOnly(targetBitmap, pTargetSize, pTargetSize)
-        val pdCandidates = mutableListOf<TextBlock>()
-        /*
-        paddleResult?.textBlocks?.forEach { block ->
-            var a = block.angle
-            if (Math.abs(a - 90f) < 45f) a -= 90f else if (Math.abs(a + 90f) < 45f) a += 90f else if (Math.abs(a - 180f) < 45f) a -= 180f else if (Math.abs(a + 180f) < 45f) a += 180f
-            pdCandidates.add(block.copy(angle = a))
-        }
-        */
+        // ML Kit Fallback Deskew
+        val mlResult = extractFromPhotoBitmapRaw(targetBitmap)
+        val mlCandidates = mlResult.textBlocks
+        Log.i("MLKIT_DESKEW_DEBUG", "ML Kit detected ${mlCandidates.size} blocks. Rotation angles: " + mlCandidates.joinToString { "${it.angle}°" })
 
-        val paddleAngle = 0.0f // calculateWeightedAverage(pdCandidates, pHeight)
-        val paddleTimeMs = 0L // System.currentTimeMillis() - t0
-        return computeFinalDeskewAngle(pdCandidates, paddleAngle, targetBitmap, pHeight, paddleTimeMs)
+        val paddleAngle = 0.0f
+        val paddleTimeMs = 0L
+        return computeFinalDeskewAngle(mlCandidates, paddleAngle, targetBitmap, pHeight, paddleTimeMs)
     }
 
     suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
