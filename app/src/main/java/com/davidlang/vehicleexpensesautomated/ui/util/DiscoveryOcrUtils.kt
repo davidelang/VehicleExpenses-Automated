@@ -51,7 +51,7 @@ object DiscoveryOcrUtils {
 
             val det = paddleEngine.detect(detBmp, 512, 128) ?: return OcrStepResult(stageName, "", null, "Det Failed", emptyList(), emptyList(), Rect(0,0,1,1), Rect(0,0,1,1), emptyMap())
             
-            // Phase 115: Use existing heatmap processor to get blocks mapped directly to crop resolution
+            // Process heatmap blocks mapped directly to crop resolution
             val sortedBlocks = OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, bmp, "Paddle").sortedBy { it.boundingBox.left }
             Log.d("DISCOVERY_DEBUG", "[$stageName] Found ${sortedBlocks.size} fragments")
             
@@ -92,7 +92,6 @@ object DiscoveryOcrUtils {
                 Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom })
             }
 
-            // Final Recognition Pass on stable boxes (sorted by top for reading order)
             var lastOcrInputB64: String? = null
             for ((i, consolidatedBox) in consolidatedBoxes.sortedBy { it.top }.withIndex()) {
                 if (i == 0) primaryRefinedBox = consolidatedBox
@@ -100,19 +99,22 @@ object DiscoveryOcrUtils {
                 
                 val targetBmp = recBridge.getBitmap()
                 val targetSize = org.opencv.core.Size(320.0, 48.0)
-                val argbMat = org.opencv.core.Mat(); org.opencv.android.Utils.bitmapToMat(bmp, argbMat)
-                val roiRect = org.opencv.core.Rect(consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
-                val roiMat = org.opencv.core.Mat(argbMat, roiRect)
                 
-                if (paddleEngine.useMono) {
-                    val redMat = org.opencv.core.Mat(); org.opencv.core.Core.extractChannel(roiMat, redMat, 0)
-                    org.opencv.imgproc.Imgproc.resize(redMat, recBridge.getMat(), targetSize, 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                    recBridge.syncToBitmap(); redMat.release()
+                // Phase 115: Use MemoryBridge direct access to avoid unsafe ALPHA_8 bitmapToMat calls
+                val roiRect = org.opencv.core.Rect(consolidatedBox.left, consolidatedBox.top, consolidatedBox.width(), consolidatedBox.height())
+                
+                if (paddleEngine.useMono && monoScratch != null) {
+                    val roiMat = Mat(monoScratch.getMat(), roiRect)
+                    Imgproc.resize(roiMat, recBridge.getMat(), targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
+                    recBridge.syncToBitmap(); roiMat.release()
                 } else {
-                    val resizedMat = org.opencv.core.Mat(); org.opencv.imgproc.Imgproc.resize(roiMat, resizedMat, targetSize, 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                    org.opencv.android.Utils.matToBitmap(resizedMat, targetBmp); resizedMat.release()
+                    val argbMat = Mat(); org.opencv.android.Utils.bitmapToMat(bmp, argbMat)
+                    val roiMat = Mat(argbMat, roiRect)
+                    val resizedMat = Mat()
+                    Imgproc.resize(roiMat, resizedMat, targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
+                    org.opencv.android.Utils.matToBitmap(resizedMat, targetBmp)
+                    resizedMat.release(); argbMat.release(); roiMat.release()
                 }
-                argbMat.release(); roiMat.release()
 
                 val ocrResult = paddleEngine.runConstrainedStatic(targetBmp, 48, paddleEngine.getDictionary(), paddleEngine.isV3())
                 if (ocrResult.text.isNotBlank()) sb.append("${ocrResult.text} ")
@@ -125,29 +127,27 @@ object DiscoveryOcrUtils {
             return OcrStepResult(stageName, b64, lastOcrInputB64, sb.toString().trim(), consolidatedBoxes, finalStepBlocks, box, box, emptyMap())
         }
 
-        val scratch = if (bitmap.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.sharedBmpOdoScratchMono else NativePaddleEngine.sharedBmpOdoScratch
+        // Phase 115: Safe Workspace Selection. Use provided per-vehicle scratch buffers.
+        val scratch = (if (bitmap.config == Bitmap.Config.ALPHA_8) monoScratch?.getBitmap() else argbScratch) ?: bitmap
         val scratchCanvas = Canvas(scratch)
         steps.add(exec(bitmap, "Raw"))
         
-        // Refinement stages
-        fun populateScratch() {
+        suspend fun process(name: String, block: () -> Unit) {
             scratchCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
             scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+            block()
+            steps.add(exec(scratch, name))
         }
 
-        populateScratch()
-        OdometerOcrUtils.applyContrastStretch(scratch, 80, monoScratch)
-        steps.add(exec(scratch, "80% Stretch Only"))
-
-        populateScratch()
-        OdometerOcrUtils.applyBilateral(scratch, argbScratch, monoScratch)
-        OdometerOcrUtils.applyContrastStretch(scratch, 80, monoScratch)
-        steps.add(exec(scratch, "Bile -> 80% Stretch"))
-
-        populateScratch()
-        OdometerOcrUtils.applyContrastStretch(scratch, 80, monoScratch)
-        OdometerOcrUtils.applyBilateral(scratch, argbScratch, monoScratch)
-        steps.add(exec(scratch, "80% Stretch -> Bile"))
+        process("80% Stretch Only") { OdometerOcrUtils.applyContrastStretch(scratch, 80, monoScratch) }
+        process("Bile -> 80% Stretch") { 
+            OdometerOcrUtils.applyBilateral(scratch, argbScratch, monoScratch)
+            OdometerOcrUtils.applyContrastStretch(scratch, 80, monoScratch) 
+        }
+        process("80% Stretch -> Bile") { 
+            OdometerOcrUtils.applyContrastStretch(scratch, 80, monoScratch)
+            OdometerOcrUtils.applyBilateral(scratch, argbScratch, monoScratch) 
+        }
 
         return steps
     }
