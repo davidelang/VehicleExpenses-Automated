@@ -389,9 +389,8 @@ object OdometerOcrUtils {
     }
 
     suspend fun extractFromPhotoBitmap(bitmap: Bitmap): OcrResult {
-        val processed = applyBilateral(bitmap)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val image = InputImage.fromBitmap(processed, 0)
+        val image = InputImage.fromBitmap(bitmap, 0)
         return try {
             val visionText = recognizer.process(image).await()
             val blocks = mutableListOf<TextBlock>()
