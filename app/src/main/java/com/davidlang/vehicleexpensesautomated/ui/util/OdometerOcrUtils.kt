@@ -470,13 +470,31 @@ object OdometerOcrUtils {
             val res = when (engineName) {
                 "ML Kit", "ML Kit Mono" -> {
                     val targetW = 320; val targetH = 48
-                    // Phase 115: Use provided recBridge for explicit scaling, avoiding per-image allocation
-                    val recBmp = recBridge?.getBitmap() ?: Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
-                    val recCanvas = Canvas(recBmp)
-                    recCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-                    val matrix = android.graphics.Matrix()
-                    matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
-                    recCanvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
+                    // Phase 115: Safe Sized-Input Orchestration
+                    val recBmp: Bitmap; val isNative = engineName == "ML Kit Mono" && recBridge != null
+                    
+                    if (isNative) {
+                        // Native Path: Use provided MemoryBridge for recognition tensor
+                        val targetSize = org.opencv.core.Size(targetW.toDouble(), targetH.toDouble())
+                        val srcMat = if (bmp.config == Bitmap.Config.ALPHA_8) monoScratch?.getMat() else {
+                            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bmp, m); m
+                        }
+                        if (srcMat != null) {
+                            Imgproc.resize(srcMat, recBridge!!.getMat(), targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
+                            recBridge.syncToBitmap()
+                            if (bmp.config != Bitmap.Config.ALPHA_8) srcMat.release()
+                        }
+                        recBmp = recBridge!!.getBitmap()
+                    } else {
+                        // Standard Path: Explicit scaling into ARGB recBmp
+                        recBmp = recBridge?.getBitmap() ?: Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
+                        val recCanvas = Canvas(recBmp)
+                        recCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                        val matrix = android.graphics.Matrix()
+                        matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
+                        val paint = if (bmp.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
+                        recCanvas.drawBitmap(bmp, matrix, paint)
+                    }
 
                     val (inputImage, resMetadata) = if (engineName == "ML Kit Mono") {
                         val w = recBmp.width; val h = recBmp.height; val frameSize = w * h; val nv21Size = frameSize * 3 / 2
@@ -485,7 +503,8 @@ object OdometerOcrUtils {
                         val nv21 = sharedNv21Buffer!!
                         
                         if (recBmp.config == Bitmap.Config.ALPHA_8) {
-                            val buffer = monoScratch?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(recBmp.byteCount).order(java.nio.ByteOrder.nativeOrder())
+                            // Stable NV21: Source from MemoryBridge provided to call
+                            val buffer = if (isNative) recBridge!!.getNv21() else (monoScratch?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(recBmp.byteCount).order(java.nio.ByteOrder.nativeOrder()))
                             recBmp.copyPixelsToBuffer(buffer); buffer.rewind(); buffer.get(nv21, 0, frameSize.coerceAtMost(recBmp.byteCount))
                         } else {
                             val pixels = sharedPixelsBuffer!!
@@ -527,14 +546,31 @@ object OdometerOcrUtils {
                 "Paddle-Lite", "Paddle V2 Greedy", "Paddle V3 Greedy" -> {
                     paddleEngine?.let {
                         val targetW = 320; val targetH = 48
-                        val recBmp = recBridge?.getBitmap() ?: Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
-                        val recCanvas = Canvas(recBmp)
-                        recCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-                        val matrix = android.graphics.Matrix()
-                        matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
-                        recCanvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
+                        val recInput: Any; val isNative = engineName.contains("Mono") && recBridge != null
+                        
+                        if (isNative) {
+                            val targetSize = org.opencv.core.Size(targetW.toDouble(), targetH.toDouble())
+                            val srcMat = if (bmp.config == Bitmap.Config.ALPHA_8) monoScratch?.getMat() else {
+                                val m = Mat(); org.opencv.android.Utils.bitmapToMat(bmp, m); m
+                            }
+                            if (srcMat != null) {
+                                Imgproc.resize(srcMat, recBridge!!.getMat(), targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
+                                recBridge.syncToBitmap()
+                                if (bmp.config != Bitmap.Config.ALPHA_8) srcMat.release()
+                            }
+                            recInput = recBridge!!
+                        } else {
+                            val recBmp = recBridge?.getBitmap() ?: Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
+                            val recCanvas = Canvas(recBmp)
+                            recCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                            val matrix = android.graphics.Matrix()
+                            matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
+                            val paint = if (bmp.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
+                            recCanvas.drawBitmap(bmp, matrix, paint)
+                            recInput = recBmp
+                        }
 
-                        val ocrRes = paddleEngine.runConstrainedStatic(recBmp, targetH, paddleEngine.getDictionary(), paddleEngine.isV3())
+                        val ocrRes = paddleEngine.runConstrainedStatic(recInput, targetH, paddleEngine.getDictionary(), paddleEngine.isV3())
                         val meta = mutableMapOf<String, Any?>()
                         meta["ocrInput"] = ocrRes.ocrInputB64
                         Triple(ocrRes.text, emptyList<Rect>(), meta)
