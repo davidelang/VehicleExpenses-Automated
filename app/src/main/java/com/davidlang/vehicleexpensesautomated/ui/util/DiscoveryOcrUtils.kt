@@ -164,25 +164,33 @@ object DiscoveryOcrUtils {
             )
         }
 
-        // Preprocessing Overhaul: Test filter combinations on Monochrome Baseline
+        // Phase 115: Zero-Allocation Refinement Loop
+        // We use shared scratch buffers as the baseline for each stage to avoid thrashing the heap.
+        val scratch = if (bitmap.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.sharedBmpOdoScratchMono else NativePaddleEngine.sharedBmpOdoScratch
+        val scratchCanvas = Canvas(scratch)
 
         // 1. Raw (Monochrome Baseline)
         steps.add(exec(bitmap, "Raw"))
 
         // 2. 80% Stretch Only
-        val s80Only = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
-        steps.add(exec(s80Only, "80% Stretch Only"))
+        scratchCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+        scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+        OdometerOcrUtils.applyContrastStretch(scratch, 80)
+        steps.add(exec(scratch, "80% Stretch Only"))
 
         // 3. Bile -> 80% Stretch
-        val bileBase = OdometerOcrUtils.applyBilateral(bitmap)
-        val bileThen80 = OdometerOcrUtils.applyContrastStretch(bileBase, 80)
-        steps.add(exec(bileThen80, "Bile -> 80% Stretch"))
+        scratchCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+        scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+        OdometerOcrUtils.applyBilateral(scratch)
+        OdometerOcrUtils.applyContrastStretch(scratch, 80)
+        steps.add(exec(scratch, "Bile -> 80% Stretch"))
 
         // 4. 80% Stretch -> Bile
-        // We reuse s80Only logic here, but need a new bitmap since we recycled it
-        val stretchBase = OdometerOcrUtils.applyContrastStretch(bitmap, 80)
-        val stretchThenBile = OdometerOcrUtils.applyBilateral(stretchBase)
-        steps.add(exec(stretchThenBile, "80% Stretch -> Bile"))
+        scratchCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+        scratchCanvas.drawBitmap(bitmap, 0f, 0f, null)
+        OdometerOcrUtils.applyContrastStretch(scratch, 80)
+        OdometerOcrUtils.applyBilateral(scratch)
+        steps.add(exec(scratch, "80% Stretch -> Bile"))
 
         return steps
     }
