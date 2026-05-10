@@ -412,7 +412,22 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     } else exactCrop
 
                                     Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
-                                    val steps = if (isDisc) DiscoveryOcrUtils.runDiscoveryMultiStepOcr(ocrInput, context, engine, h, activePaddle, expansionMode) else OdometerOcrUtils.runMultiStepOcr(ocrInput, context, engine, h, activePaddle)
+                                    val steps = if (isDisc) {
+                                        DiscoveryOcrUtils.runDiscoveryMultiStepOcr(
+                                            ocrInput, context, engine, h, activePaddle, expansionMode,
+                                            argbScratch = vehicleArgbScratches[winnerRef.vehicle.id],
+                                            monoScratch = vehicleMonoScratches[winnerRef.vehicle.id],
+                                            detBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool512x128,
+                                            recBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool320x48
+                                        )
+                                    } else {
+                                        OdometerOcrUtils.runMultiStepOcr(
+                                            ocrInput, context, engine, h, activePaddle,
+                                            argbScratch = vehicleArgbScratches[winnerRef.vehicle.id],
+                                            monoScratch = vehicleMonoScratches[winnerRef.vehicle.id],
+                                            recBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool320x48
+                                        )
+                                    }
                                     refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Strategy $strat failed for ${file.name}", e)

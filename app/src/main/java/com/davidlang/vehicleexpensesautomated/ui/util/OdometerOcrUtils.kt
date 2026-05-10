@@ -460,7 +460,8 @@ object OdometerOcrUtils {
         targetHeight: Int? = null,
         paddleEngine: NativePaddleEngine? = null,
         argbScratch: Bitmap? = null,
-        monoScratch: MemoryBridge? = null
+        monoScratch: MemoryBridge? = null,
+        recBridge: MemoryBridge? = null
     ): List<OcrStepResult> {
         val steps = mutableListOf<OcrStepResult>()
         val mlKitClient = if (engineName.startsWith("ML Kit")) TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
