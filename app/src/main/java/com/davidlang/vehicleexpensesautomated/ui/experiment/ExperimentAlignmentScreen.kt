@@ -251,7 +251,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
             
             // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
-            val originalBase64 = createScaledBase64(masterBmp!!, 150, 50, scratchBmp)
+            val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, scratchBmp)
 
             rawBitmap.recycle()
 
@@ -309,13 +309,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                     
                     // Capture ALIGNED Thumbnail for Report
-                    alignedBase64 = createScaledBase64(masterBmp!!, 150, 50, scratchBmp)
-                    
+                    alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, scratchBmp)
+
                     // 2. Mono Alignment (Bypassed)
                     val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap())
 
                     if (alignRes.success) {
-                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 400, 70, scratchBmp), alignRes.metadata)
+                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, scratchBmp), alignRes.metadata)
                         val refinementTraces = mutableMapOf<String, RefinementTrace>()
                         
                         // Phase 58: Refinement Loop (Only executed on successful alignment)
@@ -598,7 +598,7 @@ private fun serializePhotoResultToJson(
 private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
-    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:250px;'># & Original</th><th style='width:250px;'>Aligned & Stats</th>")
+    appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:650px;'>Aligned & Stats</th>")
     strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
     appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
 }
