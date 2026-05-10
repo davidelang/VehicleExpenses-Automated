@@ -139,42 +139,19 @@ object OdometerOcrUtils {
     }
 
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
-        if (candidates.isEmpty()) return 0f
-        
-        val heights = candidates.map { it.boundingBox.height().toFloat() / imgHeight.toFloat() }
-        val roundedHeights = heights.map { Math.round(it / 0.005f) * 0.005f }
-        val counts = roundedHeights.groupingBy { it }.eachCount()
-        val threshold = Math.max(2, (candidates.size * 0.15).toInt())
-        val peaks = counts.filter { it.value >= threshold }.keys
-        
-        val floor = if (peaks.isNotEmpty()) {
-            peaks.minOrNull()!! / 2.0f
-        } else {
-            val sortedH = heights.sorted()
-            sortedH[sortedH.size / 2] / 2.0f
-        }
+        // Filter out candidates with near-zero angle noise if possible, but keep all for RANSAC
+        val validCandidates = candidates.filter { it.boundingBox.height() > 0 }
+        if (validCandidates.isEmpty()) return 0f
 
-        val heightFiltered = candidates.filter { 
-            (it.boundingBox.height().toFloat() / imgHeight.toFloat()) >= floor 
-        }
-
-        if (heightFiltered.isEmpty()) return 0f
-
-        val angles = heightFiltered.map { it.angle }.sorted()
-        val medianAngle = angles[angles.size / 2]
+        // RANSAC: Pick the most frequent angle (the consensus)
+        // Group angles by +/- 0.5 degree bucket
+        val buckets = validCandidates.groupBy { Math.round(it.angle * 2) / 2.0f }
         
-        val outlierFiltered = heightFiltered.filter { Math.abs(it.angle - medianAngle) <= 5.0f }
+        // Find bucket with the most support
+        val bestBucket = buckets.maxByOrNull { it.value.size }
         
-        if (outlierFiltered.isEmpty()) return medianAngle
-
-        var sumAW = 0.0
-        var sumW = 0.0
-        for (b in outlierFiltered) {
-            val w = b.boundingBox.width().toDouble()
-            sumAW += b.angle * w
-            sumW += w
-        }
-        return if (sumW > 0) (sumAW / sumW).toFloat() else medianAngle
+        // Return consensus angle from largest bucket
+        return bestBucket?.key ?: 0f
     }
 
     fun cleanLandmarkString(text: String): String {
