@@ -292,45 +292,41 @@ object OdometerOcrUtils {
         if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-        
-        val outBmp: Bitmap
-        if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ALPHA_8)
-            matToBitmapMono(filtered, outBmp)
-        } else {
-            outBmp = Bitmap.createBitmap(filtered.cols(), filtered.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(filtered, outBmp)
-        }
-        src.release(); gray.release(); filtered.release(); return outBmp
-    }
 
+        // Phase 115: In-place update using shared scratch intermediate
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            matToBitmapMono(filtered, bitmap)
+        } else {
+            val scratch = NativePaddleEngine.sharedBmpOdoScratch
+            org.opencv.android.Utils.matToBitmap(filtered, scratch)
+            Canvas(bitmap).drawBitmap(scratch, 0f, 0f, null)
+        }
+        src.release(); gray.release(); filtered.release(); return bitmap
+    }
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
         val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
         if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY) else src.copyTo(gray)
-        
+
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(gray), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
         val totalPixels = gray.rows() * gray.cols(); var floorBin = 0; var ceilingBin = 255; var sum = 0.0
         for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * (floorPercentile / 100.0)) { floorBin = i; break } }
         sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
-        
+
         val dst = Mat(); val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
         gray.convertTo(dst, CvType.CV_8U, alpha, beta)
-        
-        val outBmp: Bitmap
-        if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ALPHA_8)
-            matToBitmapMono(dst, outBmp)
-        } else {
-            outBmp = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(dst, outBmp)
-        }
-        src.release(); gray.release(); hist.release(); dst.release(); return outBmp
-    }
 
+        // Phase 115: In-place update to long-lived buffer
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            matToBitmapMono(dst, bitmap)
+        } else {
+            org.opencv.android.Utils.matToBitmap(dst, bitmap)
+        }
+        src.release(); gray.release(); hist.release(); dst.release(); return bitmap
+    }
     // Phase 115: CV_8UC1 Monochrome Bridge (Dynamic Allocation)
     fun bitmapToMatMono(bitmap: Bitmap): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
