@@ -85,8 +85,8 @@ object OdometerOcrUtils {
         argbMat.release(); grayMat.release()
         
         val enabledEngines = mapOf(
-            "ML Kit Standard" to ::deskewMlKitStandard
-            // "Paddle V3 Standard" to ::deskewPaddleStandard
+            "ML Kit Standard" to ::deskewMlKitStandard,
+            "Paddle V3 Standard" to ::deskewPaddleStandard
         )
         
         val results = mutableMapOf<String, Float>()
@@ -105,8 +105,10 @@ object OdometerOcrUtils {
     }
 
     private suspend fun deskewPaddleStandard(bitmap: Bitmap, imgHeight: Int): Float {
-        // Dormant Paddle
-        return 0f
+        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return 0f
+        val det = paddleEngine.detect(bitmap, 2048, 2048) ?: return 0f
+        val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, det.scale, bitmap, "Paddle")
+        return calculateWeightedAverage(blocks, imgHeight)
     }
 
     suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
