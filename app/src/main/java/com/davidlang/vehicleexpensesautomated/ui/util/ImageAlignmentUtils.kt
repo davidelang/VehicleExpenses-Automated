@@ -81,10 +81,12 @@ object ImageAlignmentUtils {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
         
         /**
-         * Phase 109 Architecture: Manual Landmarks (instanceId == -2)
-         * 1. Uniqueness: Presence of a manual landmark makes other visible instances of the same word non-unique.
-         * 2. Veto system: Manual landmarks like "FORD" are used by performTier1Veto to disqualify incorrect vehicles.
-         * 3. Alignment: Manual landmarks are filtered out here because they lack coordinates for geometric math.
+         * 3-Pass Architecture for Landmark Disambiguation:
+         * Instance ID Documentation:
+         * -2: Manual/Invalid (Do not use for geometric math)
+         * -1: Unmapped/Potential (Needs triangulation resolution)
+         *  0: Globally Unique Anchor (Appears exactly once in vehicle manifest)
+         * 1+: Duplicate Instance (One of several detected occurrences)
          */
         val refValid = refLandmarks.filter { it.boundingBox.width() > 0 && it.instanceId != -2 }
         if (dashValid.isEmpty() || refValid.isEmpty()) return dashLandmarks
@@ -92,24 +94,17 @@ object ImageAlignmentUtils {
         val refTexts = refValid.map { it.text }.toSet()
         val refUniqueMap = refValid.filter { it.instanceId == 0 }.associateBy { it.text }
         
-        Log.d("DISAMB_TRACE", "Ref Landmarks with instanceId=0: ${refUniqueMap.keys}")
-        
-        // Step 1: Initialization & Unique Match
+        // Pass 1: Classification
         val results = dashValid.map { dashMark ->
             val isPotential = dashMark.text in refTexts
-            val uniqueRef = refUniqueMap[dashMark.text]
-            Log.d("DISAMB_TRACE", "  Init DashMark: '${dashMark.text}' | isPotential=$isPotential, uniqueRefInstance=${uniqueRef?.instanceId ?: "null"}")
-            
-            if (!isPotential) {
-                dashMark.copy(instanceId = -2)
-            } else if (uniqueRef != null) {
-                dashMark.copy(instanceId = 0)
-            } else {
-                dashMark.copy(instanceId = -1)
+            when {
+                !isPotential -> dashMark.copy(instanceId = -2)
+                refUniqueMap.containsKey(dashMark.text) -> dashMark.copy(instanceId = 0)
+                else -> dashMark.copy(instanceId = -1)
             }
         }.toMutableList()
 
-        // Step 2: Unique Sanity Check (Only invalidate if multiple dash marks claim to be unique instance 0)
+        // Pass 2: Veto/Collision Check (Unique landmarks that collide are vetoed)
         val uniqueCounts = results.filter { it.instanceId == 0 }.groupBy { it.text }.mapValues { it.value.size }
         for (i in results.indices) {
             val text = results[i].text
@@ -117,12 +112,10 @@ object ImageAlignmentUtils {
                 results[i] = results[i].copy(instanceId = -2)
             }
         }
+        
+        Log.d("DISAMB_TRACE", "START (3-Pass): Dash=${dashValid.size}, Ref=${refValid.size} | Unique=${results.count { it.instanceId == 0 }}, Potential=${results.count { it.instanceId == -1 }}")
 
-        val potentialCount = results.count { it.instanceId == -1 }
-        val commonUniqueCount = results.count { it.instanceId == 0 }
-        Log.d("DISAMB_TRACE", "START: Dash=${dashValid.size}, Ref=${refValid.size}, RefUnique= ${refUniqueMap.size} | CommonUnique=$commonUniqueCount, DashPotential=$potentialCount")
-
-        // Pass 2: If < 2 anchors, find seed triangle
+        // Pass 3: Triangulation Resolution
         if (results.count { it.instanceId >= 0 } < 2) {
             Log.d("DISAMB_TRACE", "  Pass 2: Insufficient anchors (${results.count { it.instanceId >= 0 }}). Searching for seed triangle...")
             val dashCounts = dashValid.groupBy { it.text }.mapValues { it.value.size }
