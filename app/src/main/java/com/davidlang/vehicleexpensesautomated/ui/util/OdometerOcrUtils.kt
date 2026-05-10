@@ -97,7 +97,7 @@ object OdometerOcrUtils {
 
         val paddleAngle = 0.0f
         val paddleTimeMs = 0L
-        return computeFinalDeskewAngle(mlCandidates, paddleAngle, targetBitmap, pHeight, paddleTimeMs)
+        return computeFinalDeskewAngle(pdCandidates, calculateWeightedAverage(mlCandidates, pHeight), targetBitmap, pHeight, mlResult.executionTimeMs)
     }
 
     suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
@@ -128,14 +128,14 @@ object OdometerOcrUtils {
 
     private suspend fun computeFinalDeskewAngle(
         pdCandidates: List<TextBlock>,
-        paddleAngle: Float,
-        bitmap: Bitmap,
+        mlAngle: Float,
+        targetBitmap: Bitmap,
         pHeight: Int,
-        paddleTimeMs: Long
+        mlTimeMs: Long
     ): DeskewResult {
-        // Fallback to ML Kit removed as requested (Test 2: Paddle-Only Rotation source)
-        val finalAngle = if (pdCandidates.isNotEmpty()) paddleAngle else 0.0f
-        return DeskewResult(finalAngle.coerceIn(-20f, 20f), 0.0f, 0L, paddleTimeMs, emptyList(), pdCandidates)
+        // Fallback to ML Kit if Paddle is unavailable or empty
+        val finalAngle = if (pdCandidates.isNotEmpty()) 0.0f else mlAngle
+        return DeskewResult(finalAngle.coerceIn(-20f, 20f), mlAngle, mlTimeMs, 0L, emptyList(), emptyList())
     }
 
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {

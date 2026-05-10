@@ -414,10 +414,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     }
                 }
 
-                // Capture deskew buffer thumbnail
-                val deskewBufferBase64 = createScaledBase64(NativePaddleEngine.sharedBmp2048, 400, 50, scratchBmp)
-                
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, 0f, deskewRes.mlAngle, deskewBufferBase64)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, 0f, deskewRes.mlAngle)
 
                 val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
@@ -621,10 +618,9 @@ private fun buildHtmlRowDynamic(
     tDiscovery: Long,
     tilt: Float,
     pAngle: Float,
-    mAngle: Float,
-    deskewBufferBase64: String
+    mAngle: Float
 ): String = buildString {
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>Res: ${imgW}x${imgH}</small><br><b>Deskew Buffer:</b><br><img src='data:image/jpeg;base64,$deskewBufferBase64'><br><b>Original:</b><br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>Res: ${imgW}x${imgH}</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     
