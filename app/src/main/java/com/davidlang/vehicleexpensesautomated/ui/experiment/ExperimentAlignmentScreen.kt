@@ -322,28 +322,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         // Phase 58: Refinement Loop (Only executed on successful alignment)
                         val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
                         if (exactCrop != null) {
-                            // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
-                            val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-                            val t = winnerRef.vehicle.odometerCropTop ?: 0f
-                            val r = winnerRef.vehicle.odometerCropRight ?: 1f
-                            val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-                            
-                            val srcW = (r - l) * masterBmp!!.width
-                            val srcH = (b - t) * masterBmp.height
-                            val scaleX = exactCrop.width.toFloat() / srcW
-                            val scaleY = exactCrop.height.toFloat() / srcH
-                            
-                            val cropCanvas = android.graphics.Canvas(exactCrop)
-                            cropCanvas.drawColor(android.graphics.Color.BLACK)
-                            val matrix = android.graphics.Matrix()
-                            matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
-                            matrix.postScale(scaleX, scaleY)
-                            cropCanvas.drawBitmap(masterBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-
-                            val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
-                            try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
-
-                            // Phase 115: Single-Pass Anchored Extraction (ARGB master -> Mono Pool)
+            // Phase 115: Single-Pass Anchored Extraction (ARGB master -> Mono Pool)
                             val bridge = vehicleMonoBridges[winnerRef.vehicle.id]
                             if (bridge != null) {
                                 try {
@@ -378,6 +357,28 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     Log.e(TAG, "Failed to populate Mono pool", e)
                                 }
                             }
+
+                            // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
+                            val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+                            val t = winnerRef.vehicle.odometerCropTop ?: 0f
+                            val r = winnerRef.vehicle.odometerCropRight ?: 1f
+                            val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+                            
+                            val srcW = (r - l) * masterBmp!!.width
+                            val srcH = (b - t) * masterBmp.height
+                            val scaleX = exactCrop.width.toFloat() / srcW
+                            val scaleY = exactCrop.height.toFloat() / srcH
+                            
+                            val cropCanvas = android.graphics.Canvas(exactCrop)
+                            cropCanvas.drawColor(android.graphics.Color.BLACK)
+                            val matrix = NativePaddleEngine.sharedMatrix
+                            matrix.reset()
+                            matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
+                            matrix.postScale(scaleX, scaleY)
+                            cropCanvas.drawBitmap(masterBmp, matrix, NativePaddleEngine.srcPaint)
+
+                            val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
+                            try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
                             for (strat in strategies) {
                                 Log.d("OCR_DEBUG", "TRANSITION: Starting strategy '$strat'")
