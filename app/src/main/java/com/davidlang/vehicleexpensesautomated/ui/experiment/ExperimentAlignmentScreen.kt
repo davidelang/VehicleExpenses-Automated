@@ -414,7 +414,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes.engineAngles)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
                 val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
@@ -617,7 +617,7 @@ private fun buildHtmlRowDynamic(
     tDeskew: Long, 
     tDiscovery: Long,
     tilt: Float,
-    engineAngles: Map<String, Float>
+    deskewRes: OdometerOcrUtils.DeskewResult
 ): String = buildString {
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>Res: ${imgW}x${imgH}</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
@@ -631,7 +631,7 @@ private fun buildHtmlRowDynamic(
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
-            val enginesHtml = engineAngles.entries.joinToString(" | ") { "${it.key}: %.3f°".format(it.value) }
+            val enginesHtml = deskewRes.engines.entries.joinToString(" | ") { "${it.key}: %.3f° (%sms)".format(it.value.angle, it.value.timesMs.joinToString(",")) }
             appendLine("<small>Applied: %.3f°<br>$enginesHtml<br>Scale: %.3f<br>TX: %.1f, TY: %.1f</small>".format(tilt, s, tx, ty))
         }
     } else {
