@@ -331,7 +331,7 @@ object OdometerOcrUtils {
     fun bitmapToMatMono(bitmap: Bitmap, bridge: MemoryBridge? = null): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
         val capacity = bitmap.width * bitmap.height
-        val buffer = bridge?.getDirectBuffer() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val buffer = bridge?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
         val bytes = if (bridge != null) NativePaddleEngine.sharedMonoBytes else ByteArray(capacity)
         buffer.rewind()
         bitmap.copyPixelsToBuffer(buffer)
@@ -345,7 +345,7 @@ object OdometerOcrUtils {
         val capacity = bitmap.width * bitmap.height
         val bytes = if (bridge != null) NativePaddleEngine.sharedMonoBytes else ByteArray(capacity)
         mat.get(0, 0, bytes)
-        val buffer = bridge?.getDirectBuffer() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val buffer = bridge?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
         buffer.rewind()
         buffer.put(bytes, 0, capacity)
         buffer.rewind()
