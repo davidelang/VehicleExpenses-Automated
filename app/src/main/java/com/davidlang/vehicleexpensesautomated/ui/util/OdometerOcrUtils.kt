@@ -473,7 +473,7 @@ object OdometerOcrUtils {
                     // Phase 115: Use provided recBridge for explicit scaling, avoiding per-image allocation
                     val recBmp = recBridge?.getBitmap() ?: Bitmap.createBitmap(targetW, targetH, bmp.config ?: Bitmap.Config.ARGB_8888)
                     val recCanvas = Canvas(recBmp)
-                    recCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                    recCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
                     val matrix = android.graphics.Matrix()
                     matrix.postScale(targetW.toFloat() / bmp.width.toFloat(), targetH.toFloat() / bmp.height.toFloat())
                     recCanvas.drawBitmap(bmp, matrix, NativePaddleEngine.srcPaint)
