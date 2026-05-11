@@ -453,6 +453,10 @@ object OdometerOcrUtils {
     /**
      * Phase 58: Multi-Column OCR Refinement.
      */
+    private suspend fun runMlKitMonoNew(bmp: Bitmap, recBridge: MemoryBridge?, monoScratch: MemoryBridge?, stageName: String): OcrStepResult {
+        return OcrStepResult(stageName, "", null, "Placeholder", emptyList(), emptyList(), Rect(0,0,bmp.width,bmp.height), Rect(0,0,bmp.width,bmp.height), emptyMap())
+    }
+
     suspend fun runMultiStepOcr(
         bitmap: Bitmap,
         context: Context,
@@ -468,6 +472,11 @@ object OdometerOcrUtils {
 
         suspend fun exec(bmp: Bitmap, stageName: String, boxes: List<Rect> = emptyList()): OcrStepResult {
             val res = when (engineName) {
+                "ML Kit Mono New" -> {
+                    // Diagnostic-only pathway
+                    val result = runMlKitMonoNew(bmp, recBridge, monoScratch, stageName)
+                    Triple(result.text, result.boxes, mutableMapOf("ocrInput" to result.ocrInputB64))
+                }
                 "ML Kit", "ML Kit Mono" -> {
                     val targetW = 320; val targetH = 48
                     // Phase 115: Safe Sized-Input Orchestration
