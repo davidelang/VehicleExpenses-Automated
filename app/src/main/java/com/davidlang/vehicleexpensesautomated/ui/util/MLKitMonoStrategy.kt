@@ -15,6 +15,8 @@ class MLKitMonoStrategy(
     private val recBridge: MemoryBridge
 ) : OcrEngineStrategy {
 
+    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
     override suspend fun execute(
         master: MasterBufferPointer,
         report: ReportCollector
@@ -22,7 +24,6 @@ class MLKitMonoStrategy(
         val targetW = 320; val targetH = 48
         
         // 1. Format-Agnostic Extraction
-        // The strategy determines the source format and converts to a stable Bitmap
         val sourceBmp = extractToBitmap(master)
         
         // 2. Force-scale to recognition dimensions
@@ -39,7 +40,11 @@ class MLKitMonoStrategy(
         }
         for (i in frameSize until nv21.size) nv21[i] = 128.toByte()
         
-        // 4. Diagnostic Metadata
+        // 4. ML Kit Execution
+        val img = InputImage.fromByteArray(nv21, targetW, targetH, 0, InputImage.IMAGE_FORMAT_NV21)
+        val visionText = recognizer.process(img).await()
+        
+        // 5. Diagnostic Metadata
         val meta = JsonObject()
         meta.addProperty("inputW", master.width)
         meta.addProperty("inputH", master.height)
@@ -47,9 +52,9 @@ class MLKitMonoStrategy(
         
         val result = OcrHarnessResult(
             htmlHeader = "<th>$displayName</th>",
-            htmlCell = "<td>Diagnostic</td>",
+            htmlCell = "<td>${visionText.text.take(10)}</td>",
             jsonSection = meta,
-            odometerValue = "DIAGNOSTIC"
+            odometerValue = visionText.text.filter { it.isDigit() }
         )
         
         report.add(displayName, result)
