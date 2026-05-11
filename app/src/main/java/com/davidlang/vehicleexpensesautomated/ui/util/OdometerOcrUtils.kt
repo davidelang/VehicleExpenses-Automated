@@ -454,7 +454,46 @@ object OdometerOcrUtils {
      * Phase 58: Multi-Column OCR Refinement.
      */
     private suspend fun runMlKitMonoNew(bmp: Bitmap, recBridge: MemoryBridge?, monoScratch: MemoryBridge?, stageName: String): OcrStepResult {
-        return OcrStepResult(stageName, "", null, "Placeholder", emptyList(), emptyList(), Rect(0,0,bmp.width,bmp.height), Rect(0,0,bmp.width,bmp.height), emptyMap())
+        val targetW = 320; val targetH = 48
+        val meta = mutableMapOf<String, String>()
+        meta["inputW"] = bmp.width.toString()
+        meta["inputH"] = bmp.height.toString()
+        meta["targetW"] = targetW.toString()
+        meta["targetH"] = targetH.toString()
+        meta["isNative"] = (monoScratch != null).toString()
+
+        requireNotNull(recBridge) { "ML Kit Mono New requires recBridge" }
+        
+        // 1. Prepare 320x48 target
+        val recBmp = recBridge.getBitmap()
+        val scaledBmp = Bitmap.createScaledBitmap(bmp, targetW, targetH, true)
+        
+        // 2. NV21 Construction
+        val frameSize = targetW * targetH
+        val nv21 = ByteArray(frameSize * 3 / 2)
+        val pixels = IntArray(frameSize)
+        scaledBmp.getPixels(pixels, 0, targetW, 0, 0, targetW, targetH)
+        
+        for (i in 0 until frameSize) {
+            nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
+        }
+        for (i in frameSize until nv21.size) nv21[i] = 128.toByte()
+        
+        // 3. Diagnostic: Capture base64 of NV21 buffer
+        meta["rawBufferBase64"] = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
+        
+        // 4. ML Kit Processing (stubbed text for now, focusing on stability)
+        return OcrStepResult(
+            stageName = stageName,
+            thumbB64 = OcrUtils.bitmapToBase64(scaledBmp),
+            ocrInputB64 = meta["rawBufferBase64"],
+            text = "DIAGNOSTIC",
+            boxes = emptyList(),
+            normalizedBoxes = emptyList(),
+            rawBox = Rect(0,0,targetW,targetH),
+            refinedBox = Rect(0,0,targetW,targetH),
+            metadata = meta
+        )
     }
 
     suspend fun runMultiStepOcr(
