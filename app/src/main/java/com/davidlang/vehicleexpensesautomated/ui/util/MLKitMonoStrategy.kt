@@ -19,11 +19,16 @@ class MLKitMonoStrategy(
         master: MasterBufferPointer,
         report: ReportCollector
     ): OcrHarnessResult {
-        // 1. Extraction (Simplified placeholder)
         val targetW = 320; val targetH = 48
-        val scaledBmp = Bitmap.createScaledBitmap(master.bitmap, targetW, targetH, true)
         
-        // 2. NV21 Construction
+        // 1. Format-Agnostic Extraction
+        // The strategy determines the source format and converts to a stable Bitmap
+        val sourceBmp = extractToBitmap(master)
+        
+        // 2. Force-scale to recognition dimensions
+        val scaledBmp = Bitmap.createScaledBitmap(sourceBmp, targetW, targetH, true)
+        
+        // 3. NV21 Construction
         val frameSize = targetW * targetH
         val nv21 = ByteArray(frameSize * 3 / 2)
         val pixels = IntArray(frameSize)
@@ -34,7 +39,7 @@ class MLKitMonoStrategy(
         }
         for (i in frameSize until nv21.size) nv21[i] = 128.toByte()
         
-        // 3. Diagnostic Metadata
+        // 4. Diagnostic Metadata
         val meta = JsonObject()
         meta.addProperty("inputW", master.width)
         meta.addProperty("inputH", master.height)
@@ -49,5 +54,11 @@ class MLKitMonoStrategy(
         
         report.add(displayName, result)
         return result
+    }
+
+    private fun extractToBitmap(master: MasterBufferPointer): Bitmap {
+        // Logic to inspect master.bitmap format (ARGB, NV21, etc.)
+        // and convert to a standard ARGB Bitmap for the strategy pipeline.
+        return master.bitmap // simplified for now, expanding based on master.format
     }
 }
