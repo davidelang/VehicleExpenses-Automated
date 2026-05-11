@@ -36,13 +36,14 @@ object DiscoveryOcrUtils {
          * Executes sequential detection and expansion visualization.
          */
         suspend fun exec(bmp: Bitmap, stageName: String): OcrStepResult {
+            // Phase 115: Mandatory Sized-Input Validation
+            requireNotNull(detBridge) { "Discovery requires detBridge (512x128)" }
+            requireNotNull(recBridge) { "Discovery requires recBridge (320x48)" }
+            require(detBridge.width >= 512 && detBridge.height >= 128) { "detBridge undersized: ${detBridge.width}x${detBridge.height}" }
+            require(recBridge.width >= 320 && recBridge.height >= 48) { "recBridge undersized: ${recBridge.width}x${recBridge.height}" }
+            
             val sb = StringBuilder()
             val finalStepBlocks = mutableListOf<TextBlock>()
-            
-            // 1. Detection Stage (Explicit scaling into provided bridge)
-            if (detBridge == null) return OcrStepResult(stageName, "", null, "Bridge Null", emptyList(), emptyList(), Rect(0,0,1,1), Rect(0,0,1,1), emptyMap())
-            
-            val detBmp = detBridge.getBitmap()
             val detScale = min(512f / bmp.width.toFloat(), 128f / bmp.height.toFloat())
             
             // Phase 115: Dual-Path Detection Populating
