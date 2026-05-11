@@ -327,13 +327,17 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
                         if (exactCrop != null) {
                             // --- Diagnostic Harness Injection ---
-                            val harness = MLKitMonoStrategy("ML Kit Mono Diagnostic")
+                            val harness1 = MLKitMonoStrategy("ML Kit Mono Diagnostic")
+                            val harness2 = MLKitMonoStrategy("ML Kit Mono Clone")
                             val master = MasterBufferPointer(masterBmp!!, masterBmp.width, masterBmp.height)
-                            harness.execute(master, object : ReportCollector {
-                                override fun add(engineName: String, result: OcrHarnessResult) {
-                                    Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
-                                }
-                            })
+                            
+                            listOf(harness1, harness2).forEach { harness ->
+                                harness.execute(master, object : ReportCollector {
+                                    override fun add(engineName: String, result: OcrHarnessResult) {
+                                        Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
+                                    }
+                                })
+                            }
 
             // Phase 115: Single-Pass Anchored Extraction (ARGB master -> Mono Pool)
                             val bridge = vehicleMonoBridges[winnerRef.vehicle.id]
