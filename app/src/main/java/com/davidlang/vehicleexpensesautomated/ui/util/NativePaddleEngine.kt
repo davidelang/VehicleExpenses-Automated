@@ -141,10 +141,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             if (isAvailableGlobally) return
             Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
 
-            _sharedBmpFull = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ARGB_8888); _sharedCanvasFull = Canvas(_sharedBmpFull!!)
-            _sharedBmpFullMono = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ALPHA_8); _sharedCanvasFullMono = Canvas(_sharedBmpFullMono!!)
-            _sharedBmpScratch = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ARGB_8888); _sharedCanvasScratch = Canvas(_sharedBmpScratch!!)
-            _sharedBmpScratchMono = Bitmap.createBitmap(4000, 3000, Bitmap.Config.ALPHA_8); _sharedCanvasScratchMono = Canvas(_sharedBmpScratchMono!!)
+            _sharedBmpFull = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasFull = Canvas(_sharedBmpFull!!)
+            _sharedBmpFullMono = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ALPHA_8); _sharedCanvasFullMono = Canvas(_sharedBmpFullMono!!)
+            _sharedBmpScratch = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasScratch = Canvas(_sharedBmpScratch!!)
+            _sharedBmpScratchMono = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ALPHA_8); _sharedCanvasScratchMono = Canvas(_sharedBmpScratchMono!!)
 
             _bufferLarge = FloatArray(3 * 2048 * 2048); _bufferLargeMono = FloatArray(1 * 2048 * 2048)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
