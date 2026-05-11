@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import com.google.gson.JsonObject
 
 /**
  * Orchestrates ML Kit discovery pass.
@@ -9,11 +10,8 @@ import android.graphics.Bitmap
 object OcrHarness {
 
     suspend fun runDiscovery(bitmap: Bitmap, context: Context): OcrResult {
-        // Phase 115: Use the already-filtered sharedBmpFull directly. 
-        // No redundant applyBilateral() call here.
         val rawResult = MlKitEngine().recognize(bitmap)
         
-        // Phase 32: MANDATORY Discovery-Stage Sanitization
         val cleanedBlocks = rawResult.textBlocks.map { block ->
             block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
         }.filter { it.text.length > 1 }
@@ -27,19 +25,31 @@ object OcrHarness {
     }
 
     suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-            // Phase 115: Refinement uses the provided cropped bitmap (already filtered or raw depending on strategy)
-            // No redundant bilateral filter here.
             val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
-
-            // Add Paddle-Lite for refinement if available
             val paddle = NativePaddleEngine(context, variant = "V3")
             if (paddle.isAvailable) enginesList.add(paddle)
-
             val results = enginesList.associate { engine ->
-            engine.name to engine.recognize(bitmap)
+                engine.name to engine.recognize(bitmap)
             }
-
             return results
-            }
+    }
 
+}
+
+data class MasterBufferPointer(val bitmap: Bitmap, val width: Int, val height: Int)
+
+data class OcrHarnessResult(
+    val htmlHeader: String,
+    val htmlCell: String,
+    val jsonSection: JsonObject,
+    val odometerValue: String?
+)
+
+interface OcrEngineStrategy {
+    val displayName: String
+    suspend fun execute(master: MasterBufferPointer, report: ReportCollector): OcrHarnessResult
+}
+
+interface ReportCollector {
+    fun add(engineName: String, result: OcrHarnessResult)
 }
