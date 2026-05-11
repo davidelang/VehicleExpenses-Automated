@@ -507,11 +507,6 @@ object OdometerOcrUtils {
 
         suspend fun exec(bmp: Bitmap, stageName: String, boxes: List<Rect> = emptyList()): OcrStepResult {
             val res = when (engineName) {
-                "ML Kit Mono New" -> {
-                    // Diagnostic-only pathway
-                    val result = runMlKitMonoNew(bmp, recBridge, monoScratch, stageName)
-                    Triple(result.text, result.boxes, mutableMapOf("ocrInput" to result.ocrInputB64))
-                }
                 "ML Kit", "ML Kit Mono" -> {
                     val targetW = 320; val targetH = 48
                     // Phase 115: Safe Sized-Input Orchestration
