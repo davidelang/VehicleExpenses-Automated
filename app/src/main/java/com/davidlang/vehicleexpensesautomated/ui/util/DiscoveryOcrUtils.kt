@@ -44,20 +44,21 @@ object DiscoveryOcrUtils {
             
             val sb = StringBuilder()
             val finalStepBlocks = mutableListOf<TextBlock>()
+            val detBmp = detBridge.getBitmap()
+            val detCanvas = Canvas(detBmp)
+            detCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
             val detScale = min(512f / bmp.width.toFloat(), 128f / bmp.height.toFloat())
+            val detMatrix = android.graphics.Matrix()
+            detMatrix.postScale(detScale, detScale)
             
             // Phase 115: Dual-Path Detection Populating
             if (bmp.config == Bitmap.Config.ALPHA_8 && monoScratch != null) {
-                // Mono Path: Use OpenCV resize for Mat-to-Mat transfer (Native Resolution)
+                // Mono Path: Use OpenCV resize for Mat-to-Mat transfer
                 val targetSize = org.opencv.core.Size(512.0, 128.0)
                 Imgproc.resize(monoScratch.getMat(), detBridge.getMat(), targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
-                detBridge.syncToBitmap() // Sync for engine tensor population
+                detBridge.syncToBitmap()
             } else {
                 // Standard Path: Use Canvas draw into ARGB detection bridge
-                val detCanvas = Canvas(detBmp)
-                detCanvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-                val detMatrix = android.graphics.Matrix()
-                detMatrix.postScale(detScale, detScale)
                 detCanvas.drawBitmap(bmp, detMatrix, null)
             }
 
