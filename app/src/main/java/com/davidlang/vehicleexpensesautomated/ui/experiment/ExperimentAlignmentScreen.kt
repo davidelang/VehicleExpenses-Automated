@@ -231,7 +231,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 58 Strategies
     val strategies = listOf(
         "Paddle V3 Valley", "Paddle V3 Valley Mono",
-        "ML Kit", "ML Kit Mono"
+        "ML Kit", "ML Kit Mono", "ML Kit Mono New"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
