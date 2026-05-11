@@ -60,8 +60,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedCanvasFullMono: Canvas? = null
         private var _sharedBmpScratch: Bitmap? = null
         private var _sharedCanvasScratch: Canvas? = null
-        private var _sharedBmpScratchMono: Bitmap? = null
-        private var _sharedCanvasScratchMono: Canvas? = null
+        private var _sharedScratchBridgeMono: MemoryBridge? = null
         private var _bufferLarge: FloatArray? = null
         private var _bufferLargeMono: FloatArray? = null
         private var _sharedBmp2048: Bitmap? = null
@@ -101,8 +100,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedCanvasFullMono: Canvas get() = _sharedCanvasFullMono!!
         val sharedBmpScratch: Bitmap get() = _sharedBmpScratch!!
         val sharedCanvasScratch: Canvas get() = _sharedCanvasScratch!!
-        val sharedBmpScratchMono: Bitmap get() = _sharedBmpScratchMono!!
-        val sharedCanvasScratchMono: Canvas get() = _sharedCanvasScratchMono!!
+        val sharedScratchBridgeMono: MemoryBridge get() = _sharedScratchBridgeMono!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         private val bufferLargeMono: FloatArray get() = _bufferLargeMono!!
         val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
@@ -144,7 +142,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _sharedBmpFull = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasFull = Canvas(_sharedBmpFull!!)
             _sharedBmpFullMono = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ALPHA_8); _sharedCanvasFullMono = Canvas(_sharedBmpFullMono!!)
             _sharedBmpScratch = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasScratch = Canvas(_sharedBmpScratch!!)
-            _sharedBmpScratchMono = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ALPHA_8); _sharedCanvasScratchMono = Canvas(_sharedBmpScratchMono!!)
+            _sharedScratchBridgeMono = MemoryBridge(4000, 3072)
 
             _bufferLarge = FloatArray(3 * 2048 * 2048); _bufferLargeMono = FloatArray(1 * 2048 * 2048)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
