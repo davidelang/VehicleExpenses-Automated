@@ -56,8 +56,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         // Phase 115: Safe Rigid Backing Fields (Eliminates background JNI locks)
         private var _sharedBmpFull: Bitmap? = null
         private var _sharedCanvasFull: Canvas? = null
-        private var _sharedBmpFullMono: Bitmap? = null
-        private var _sharedCanvasFullMono: Canvas? = null
+        private var _sharedFullBridgeMono: MemoryBridge? = null
         private var _sharedBmpScratch: Bitmap? = null
         private var _sharedCanvasScratch: Canvas? = null
         private var _sharedScratchBridgeMono: MemoryBridge? = null
@@ -96,8 +95,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         // Public Non-Null Accessors (API Stability)
         val sharedBmpFull: Bitmap get() = _sharedBmpFull!!
         val sharedCanvasFull: Canvas get() = _sharedCanvasFull!!
-        val sharedBmpFullMono: Bitmap get() = _sharedBmpFullMono!!
-        val sharedCanvasFullMono: Canvas get() = _sharedCanvasFullMono!!
+        val sharedFullBridgeMono: MemoryBridge get() = _sharedFullBridgeMono!!
         val sharedBmpScratch: Bitmap get() = _sharedBmpScratch!!
         val sharedCanvasScratch: Canvas get() = _sharedCanvasScratch!!
         val sharedScratchBridgeMono: MemoryBridge get() = _sharedScratchBridgeMono!!
@@ -140,7 +138,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
 
             _sharedBmpFull = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasFull = Canvas(_sharedBmpFull!!)
-            _sharedBmpFullMono = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ALPHA_8); _sharedCanvasFullMono = Canvas(_sharedBmpFullMono!!)
+            _sharedFullBridgeMono = MemoryBridge(4000, 3072)
             _sharedBmpScratch = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasScratch = Canvas(_sharedBmpScratch!!)
             _sharedScratchBridgeMono = MemoryBridge(4000, 3072)
 
