@@ -474,9 +474,9 @@ object OdometerOcrUtils {
                     val recBmp: Bitmap; val isNative = engineName == "ML Kit Mono" && recBridge != null
                     
                     if (isNative) {
-                        // Native Path: Use provided MemoryBridge for recognition tensor
+                        // Native Path: Explicit resize into recBridge Mat
                         val targetSize = org.opencv.core.Size(targetW.toDouble(), targetH.toDouble())
-                        val srcMat = if (bmp.config == Bitmap.Config.ALPHA_8) monoScratch?.getMat() else {
+                        val srcMat = if (bmp.config == Bitmap.Config.ALPHA_8 && monoScratch != null) monoScratch.getMat() else {
                             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bmp, m); m
                         }
                         if (srcMat != null) {
@@ -503,7 +503,6 @@ object OdometerOcrUtils {
                         val nv21 = sharedNv21Buffer!!
                         
                         if (recBmp.config == Bitmap.Config.ALPHA_8) {
-                            // Stable NV21: Source from MemoryBridge provided to call
                             val buffer = if (isNative) recBridge!!.getNv21() else (monoScratch?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(recBmp.byteCount).order(java.nio.ByteOrder.nativeOrder()))
                             recBmp.copyPixelsToBuffer(buffer); buffer.rewind(); buffer.get(nv21, 0, frameSize.coerceAtMost(recBmp.byteCount))
                         } else {
@@ -520,10 +519,9 @@ object OdometerOcrUtils {
                     
                     try {
                         val visionText = mlKitClient!!.process(inputImage).await()
-                        val resBuilder = java.lang.StringBuilder(); val verbatimBuilder = java.lang.StringBuilder()
+                        val resBuilder = java.lang.StringBuilder()
                         for (block in visionText.textBlocks) {
                             for (line in block.lines) {
-                                verbatimBuilder.append(line.text).append(" ")
                                 val cleanedText = clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
                                 if (cleanedText.isNotBlank()) resBuilder.append(cleanedText)
                             }
@@ -550,7 +548,7 @@ object OdometerOcrUtils {
                         
                         if (isNative) {
                             val targetSize = org.opencv.core.Size(targetW.toDouble(), targetH.toDouble())
-                            val srcMat = if (bmp.config == Bitmap.Config.ALPHA_8) monoScratch?.getMat() else {
+                            val srcMat = if (bmp.config == Bitmap.Config.ALPHA_8 && monoScratch != null) monoScratch.getMat() else {
                                 val m = Mat(); org.opencv.android.Utils.bitmapToMat(bmp, m); m
                             }
                             if (srcMat != null) {
