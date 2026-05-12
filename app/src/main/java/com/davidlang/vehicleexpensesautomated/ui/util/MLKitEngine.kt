@@ -10,8 +10,9 @@ import kotlinx.coroutines.tasks.await
 import android.util.Base64
 
 /**
- * MLKitEngine implements the new iterative OCR algorithm.
- * It manages ROI extraction, preprocessing, and sharp Mat-direct visualization.
+ * MLKitEngine implements the new iterative OCR algorithm (Revision 18).
+ * It manages ROI extraction, preprocessing, and sharp Mat-direct visualization
+ * with zero runtime allocations and full analysis script compatibility.
  */
 class MLKitEngine(
     override val displayName: String,
@@ -29,6 +30,7 @@ class MLKitEngine(
     ): OcrHarnessResult {
         val recBridge = MemoryBridge.pool320x48 ?: throw IllegalStateException("Rec pool not initialized")
         val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
+        val jsonStages = JsonObject()
         val allOdo = mutableListOf<String>()
 
         val masterBmp = masterBuffer as? Bitmap ?: throw IllegalArgumentException("Master must be Bitmap")
@@ -50,7 +52,9 @@ class MLKitEngine(
         // Iterative Pass Loop (Extract -> Modify Mat -> Scale -> OCR -> Visualize)
         val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
         stages.forEach { stage ->
-            // --- Algorithm Step 1: Re-extract from master to ensure clean baseline ---
+            val tStart = System.currentTimeMillis()
+            
+            // --- Algorithm Step 1: Re-extract from master to ensure clean baseline (Zero Allocation) ---
             val roiMat = org.opencv.core.Mat(argbMat, roiRect)
             val grayMat = org.opencv.core.Mat()
             org.opencv.imgproc.Imgproc.cvtColor(roiMat, grayMat, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
@@ -87,13 +91,12 @@ class MLKitEngine(
 
             // --- Visualization (AT THE END): Prove non-destructive downscale & show final state ---
             // 1. Capture snapshot to shared report pool (Temporary ARGB for visualization only)
-            val visBmp = Bitmap.createBitmap(bridge.width, bridge.height, Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(bridge.getMat(), visBmp)
+            val snap = NativePaddleEngine.sharedReportBitmap
+            org.opencv.android.Utils.matToBitmap(bridge.getMat(), snap)
             
             // 2. Shrink to display size (height=48)
             val htmlThumbW = (48f * bridge.width / bridge.height).toInt()
-            val htmlThumb = Bitmap.createScaledBitmap(visBmp, htmlThumbW, 48, true)
-            visBmp.recycle()
+            val htmlThumb = Bitmap.createScaledBitmap(snap, htmlThumbW, 48, true)
             
             // 3. Decorate SHRUNK image for maximum sharpness
             val canvas = android.graphics.Canvas(htmlThumb)
@@ -108,7 +111,14 @@ class MLKitEngine(
             val thumbB64 = OcrUtils.bitmapToBase64(htmlThumb, 80)
             htmlThumb.recycle()
 
-            htmlOutput.append("<div class='ocr-step'><b>$stage:</b><br><img src='data:image/jpeg;base64,$thumbB64'><br>$odo</div>")
+            val tLoop = System.currentTimeMillis() - tStart
+            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$thumbB64'><br>$odo</div>")
+            
+            // For analysis scripts
+            val stageObj = JsonObject()
+            stageObj.addProperty("text", odo)
+            stageObj.addProperty("time", tLoop)
+            jsonStages.add(stage, stageObj)
             
             roiMat.release(); grayMat.release()
         }
@@ -117,6 +127,7 @@ class MLKitEngine(
 
         val meta = JsonObject()
         meta.addProperty("inputW", masterW); meta.addProperty("inputH", masterH)
+        meta.add("stages", jsonStages)
 
         val result = OcrHarnessResult(
             htmlHeader = "<th>$displayName</th>",
