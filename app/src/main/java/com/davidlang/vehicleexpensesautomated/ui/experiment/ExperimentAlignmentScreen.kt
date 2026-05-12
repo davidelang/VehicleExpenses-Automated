@@ -158,7 +158,8 @@ data class SingleVehicleResult(
     val vetoQueryWords: List<String>,
     val vetoMyManifest: List<String>,
     val vetoPool: List<String>,
-    val isWinner: Boolean
+    val isWinner: Boolean,
+    val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
 )
 
 data class AlignmentTraceResult(
@@ -180,7 +181,8 @@ data class ProcessedPhotoResult(
     val primaryVetoResults: Map<Int, VetoResult>,
     val vehicleResultsMap: Map<Int, SingleVehicleResult>,
     val hardcodedWinner: String?,
-    val annotatedCrops: Map<String, String>
+    val annotatedCrops: Map<String, String>,
+    val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
 )
 
 private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
@@ -233,9 +235,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         "Paddle V3 Valley", "Paddle V3 Valley Mono",
         "ML Kit", "ML Kit Mono", "ML Kit Mono Diagnostic"
     )
+    val harnessEngineNames = mutableListOf<String>()
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
-        writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, strategies)) 
+        writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, strategies, harnessEngineNames)) 
     }
     var currentFile = startNewFile()
     
@@ -322,25 +325,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     if (alignRes.success) {
                         val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, scratchBmp), alignRes.metadata)
                         val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                        val harnessResultsMap = mutableMapOf<String, OcrHarnessResult>()
                         
                         // Phase 58: Refinement Loop (Only executed on successful alignment)
                         val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
                         if (exactCrop != null) {
-                            // --- Diagnostic Harness Injection ---
-                            val master = MasterBufferPointer(masterBmp!!, masterBmp.width, masterBmp.height)
-                            val pipeline = listOf(
-                                Pair(MLKitMonoStrategy("ML Kit Mono Diagnostic"), master),
-                                Pair(MLKitMonoStrategy("ML Kit Mono Clone"), master)
-                            )
-                            
-                            pipeline.forEach { (harness, masterPtr) ->
-                                harness.execute(masterPtr, object : ReportCollector {
-                                    override fun add(engineName: String, result: OcrHarnessResult) {
-                                        Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
-                                    }
-                                })
-                            }
-
             // Phase 115: Single-Pass Anchored Extraction (ARGB master -> Mono Pool)
                             val bridge = vehicleMonoBridges[winnerRef.vehicle.id]
                             if (bridge != null) {
@@ -399,6 +388,23 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                             try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
+                            // --- Diagnostic Harness Injection ---
+                            // Note: Iterative OCR passes managed internally by the strategy on its ROI buffer.
+                            val pipeline = listOf(
+                                MLKitMonoStrategy("ML Kit Mono Diagnostic", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!),
+                                MLKitMonoStrategy("ML Kit Mono Clone", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!)
+                            )
+                            
+                            pipeline.forEach { harness ->
+                                if (!harnessEngineNames.contains(harness.displayName)) harnessEngineNames.add(harness.displayName)
+                                harness.execute(masterBmp!!, masterBmp.width, masterBmp.height, object : ReportCollector {
+                                    override fun add(engineName: String, result: OcrHarnessResult) {
+                                        harnessResultsMap[engineName] = result
+                                        Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
+                                    }
+                                })
+                            }
+
                             for (strat in strategies) {
                                 Log.d("OCR_DEBUG", "TRANSITION: Starting strategy '$strat'")
                                 try {
@@ -454,10 +460,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
 
                         // Reporting Pass: Store result for winner
-                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true)
+                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true, harnessResultsMap)
                     } else { 
                         Log.d(TAG, "Vehicle identified as ${winnerRef.vehicle.name}, but alignment failed: ${alignRes.message}")
-                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata), alignmentTraceMono, emptyMap(), emptyList(), emptyList(), emptyList(), true)
+                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata), alignmentTraceMono, emptyMap(), emptyList(), emptyList(), emptyList(), true, emptyMap())
                     }
                 }
 
@@ -465,11 +471,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 cachedRefs.forEach { ref ->
                     if (ref.vehicle.id != winnerId) {
                         val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
-                        vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, 0L, null, null, emptyMap(), veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), false)
+                        vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, 0L, null, null, emptyMap(), veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), false, emptyMap())
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
                 val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
                 val comma = if (index < total - 1) "," else ""
@@ -479,7 +485,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
                 
                 val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
-                currentResult = ProcessedPhotoResult(finalWinnerName, bestOdometer, bestOdometer, (tMl + tPd + tRotate), tDiscoveryTotal, originalBase64, queryOcrDiscovery.debugText, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, null, emptyMap())
+                val winnerHarnessResults = winnerRef?.let { vehicleResultsMap[it.vehicle.id]?.harnessResults } ?: emptyMap()
+                currentResult = ProcessedPhotoResult(finalWinnerName, bestOdometer, bestOdometer, (tMl + tPd + tRotate), tDiscoveryTotal, originalBase64, queryOcrDiscovery.debugText, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, null, emptyMap(), winnerHarnessResults)
 
                 // Ensure UI update is dispatched BEFORE we move to cleanup
                 withContext(Dispatchers.Main) { 
@@ -649,16 +656,27 @@ private fun serializePhotoResultToJson(
                     stratObj.put("steps", stepsArr); refDetails.put(strat, stratObj)
                 }
                 put("refinement_details", refDetails)
+
+                val harnessObj = JSONObject()
+                vr.harnessResults.forEach { (engine, res) ->
+                    val engineObj = JSONObject()
+                    engineObj.put("odometer", res.odometerValue)
+                    // Convert GSON JsonObject to org.json.JSONObject via string
+                    engineObj.put("metadata", JSONObject(res.jsonSection.toString()))
+                    harnessObj.put(engine, engineObj)
+                }
+                put("harness_diagnostics", harnessObj)
             }) 
         }; put("vehicles", vehicleResults)
     }
 }
 
-private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>): String = buildString {
+private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>, harnessEngines: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
     appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:650px;'>Aligned & Stats</th>")
     strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
+    harnessEngines.forEach { appendLine("<th style='width:300px;'>$it</th>") }
     appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
 }
 
@@ -674,6 +692,7 @@ private fun buildHtmlRowDynamic(
     cachedRefs: List<ReferenceCache>, 
     winnerName: String, 
     strategies: List<String>, 
+    harnessEngines: List<String>,
     tDeskew: Long, 
     tDiscovery: Long,
     tilt: Float,
@@ -715,10 +734,20 @@ private fun buildHtmlRowDynamic(
                     }
 
                     appendLine("${step.text ?: "---"}</div>") 
-                    }
-                    appendLine("</td>")
-                    }
-                    } else appendLine("<i>No refinement data</i>")
+                }
+            } else appendLine("<i>No refinement data</i>")
+        } else appendLine("<i>No refinement data</i>")
+        appendLine("</td>")
+    }
+
+    harnessEngines.forEach { engine ->
+        appendLine("<td>")
+        val hRes = vRes?.harnessResults?.get(engine)
+        if (hRes != null) {
+            appendLine(hRes.htmlCell)
+        } else {
+            appendLine("<i>No harness data</i>")
+        }
         appendLine("</td>")
     }
     

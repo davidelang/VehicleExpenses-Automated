@@ -36,18 +36,29 @@ object OcrHarness {
 
 }
 
-data class MasterBufferPointer(val bitmap: Bitmap, val width: Int, val height: Int)
-
 data class OcrHarnessResult(
     val htmlHeader: String,
     val htmlCell: String,
     val jsonSection: JsonObject,
-    val odometerValue: String?
+    val odometerValue: String?,
+    val thumbB64: String? = null
+)
+
+data class HarnessRunDef(
+    val strategy: OcrEngineStrategy,
+    val buffer: Any,
+    val width: Int,
+    val height: Int
 )
 
 interface OcrEngineStrategy {
     val displayName: String
-    suspend fun execute(master: MasterBufferPointer, report: ReportCollector): OcrHarnessResult
+    suspend fun execute(
+        masterBuffer: Any,
+        masterW: Int,
+        masterH: Int,
+        report: ReportCollector
+    ): OcrHarnessResult
 }
 
 interface ReportCollector {
