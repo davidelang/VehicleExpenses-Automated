@@ -671,8 +671,8 @@ private fun buildHtmlHeader(time: String, total: Int, version: String, strategie
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
     appendLine("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:650px;'>Aligned & Stats</th>")
-    strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
     harnessEngines.forEach { appendLine("<th style='width:300px;'>$it</th>") }
+    strategies.forEach { appendLine("<th style='width:300px;'>$it</th>") }
     appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
 }
 
@@ -715,6 +715,17 @@ private fun buildHtmlRowDynamic(
     appendLine("</td>")
     
     val allReadings = mutableListOf<String>()
+    harnessEngines.forEach { engine ->
+        appendLine("<td>")
+        val hRes = vRes?.harnessResults?.get(engine)
+        if (hRes != null) {
+            appendLine(hRes.htmlCell)
+        } else {
+            appendLine("<i>No harness data</i>")
+        }
+        appendLine("</td>")
+    }
+
     strategies.forEach { strat ->
         appendLine("<td>")
         if (vRes != null) {
@@ -733,17 +744,6 @@ private fun buildHtmlRowDynamic(
                 }
             } else appendLine("<i>No refinement data</i>")
         } else appendLine("<i>No refinement data</i>")
-        appendLine("</td>")
-    }
-
-    harnessEngines.forEach { engine ->
-        appendLine("<td>")
-        val hRes = vRes?.harnessResults?.get(engine)
-        if (hRes != null) {
-            appendLine(hRes.htmlCell)
-        } else {
-            appendLine("<i>No harness data</i>")
-        }
         appendLine("</td>")
     }
     
