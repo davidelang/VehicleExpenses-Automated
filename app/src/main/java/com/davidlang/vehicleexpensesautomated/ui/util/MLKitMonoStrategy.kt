@@ -15,17 +15,15 @@ class MLKitMonoStrategy(
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     override suspend fun execute(
-        master: MasterBufferPointer,
+        masterBuffer: Any,
+        masterW: Int,
+        masterH: Int,
         report: ReportCollector
     ): OcrHarnessResult {
         val targetW = 320; val targetH = 48
 
-        // Harness pulls buffers from the engine's long-lived pools
-        val monoScratch = NativePaddleEngine.sharedBmpOdoScratchMono
-        val recBridge = NativePaddleEngine.sharedBmpRecMono
-
-        // 1. Format-Agnostic Extraction
-        val sourceBmp = extractToBitmap(master)
+        // 1. Simple Extraction (Assuming Bitmap for legacy compatibility)
+        val sourceBmp = if (masterBuffer is Bitmap) masterBuffer else throw IllegalArgumentException("Legacy MLKitMonoStrategy expects Bitmap")
 
         // 2. Force-scale to recognition dimensions
         val scaledBmp = Bitmap.createScaledBitmap(sourceBmp, targetW, targetH, true)
@@ -47,8 +45,8 @@ class MLKitMonoStrategy(
 
         // 5. Diagnostic Metadata
         val meta = JsonObject()
-        meta.addProperty("inputW", master.width)
-        meta.addProperty("inputH", master.height)
+        meta.addProperty("inputW", masterW)
+        meta.addProperty("inputH", masterH)
         meta.addProperty("rawBufferBase64", Base64.encodeToString(nv21, Base64.NO_WRAP))
 
         val result = OcrHarnessResult(
@@ -61,10 +59,3 @@ class MLKitMonoStrategy(
         report.add(displayName, result)
         return result
     }
-
-    private fun extractToBitmap(master: MasterBufferPointer): Bitmap {
-        // Logic to inspect master.bitmap format (ARGB, NV21, etc.)
-        // and convert to a standard ARGB Bitmap for the strategy pipeline.
-        return master.bitmap // simplified for now, expanding based on master.format
-    }
-}
