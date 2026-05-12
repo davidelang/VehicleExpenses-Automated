@@ -764,7 +764,7 @@ object OdometerOcrUtils {
         return result.copy(textBlocks = refinedBlocks, debugText = refinedBlocks.joinToString(" ") { it.text })
     }
 
-    private fun clean7SegmentDigits(text: String, isFlipped: Boolean): String {
+    fun clean7SegmentDigits(text: String, isFlipped: Boolean): String {
         val standardMap = mapOf('O' to '0', 'D' to '0', 'Q' to '0', 'U' to '0', 'Z' to '2', 'S' to '5', 'G' to '6', 'B' to '8', '!' to '1', 'I' to '1', 'l' to '1', '|' to '1')
         val flipMap = mapOf('O' to '0', 'D' to '0', 'L' to '7', 'V' to '7', 'h' to '4', 'H' to '4', 'E' to '3', 'G' to '9', 'B' to '8', 'S' to '5', '!' to '1', 'I' to '1', 'l' to '1', '|' to '1', 'A' to 'V')
         val workingText = if (isFlipped) text.reversed() else text
