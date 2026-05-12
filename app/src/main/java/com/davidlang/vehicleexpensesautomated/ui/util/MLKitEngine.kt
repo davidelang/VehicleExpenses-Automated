@@ -12,7 +12,7 @@ import android.util.Base64
 /**
  * MLKitEngine implements the new iterative OCR algorithm (Revision 18).
  * It manages ROI extraction, preprocessing, and sharp Mat-direct visualization
- * with zero runtime allocations and full analysis script compatibility.
+ * with zero runtime allocations and strict aspect-ratio preservation.
  */
 class MLKitEngine(
     override val displayName: String,
@@ -49,12 +49,23 @@ class MLKitEngine(
             ((b - t) * masterH).toInt().coerceAtMost(masterH)
         )
 
+        // Aspect Ratio Calculation
+        val aspect = roiRect.width.toFloat() / roiRect.height.toFloat()
+        val fitW: Int; val fitH: Int
+        if (aspect > (320f / 48f)) {
+            fitW = 320
+            fitH = (320f / aspect).toInt().coerceAtLeast(1)
+        } else {
+            fitH = 48
+            fitW = (48f * aspect).toInt().coerceAtLeast(1)
+        }
+
         // Iterative Pass Loop (Extract -> Modify Mat -> Scale -> OCR -> Visualize)
         val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
         stages.forEach { stage ->
             val tStart = System.currentTimeMillis()
             
-            // --- Algorithm Step 1: Re-extract from master to ensure clean baseline (Zero Allocation) ---
+            // --- Algorithm Step 1: Re-extract from master to ensure clean baseline ---
             val roiMat = org.opencv.core.Mat(argbMat, roiRect)
             val grayMat = org.opencv.core.Mat()
             org.opencv.imgproc.Imgproc.cvtColor(roiMat, grayMat, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
@@ -70,16 +81,19 @@ class MLKitEngine(
                 org.opencv.imgproc.Imgproc.threshold(bridge.getMat(), bridge.getMat(), 0.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY or org.opencv.imgproc.Imgproc.THRESH_OTSU)
             }
 
-            // --- Algorithm Step 3: Resize current state to recognition dimensions (NON-DESTRUCTIVE read) ---
-            org.opencv.imgproc.Imgproc.resize(bridge.getMat(), recBridge.getMat(), org.opencv.core.Size(320.0, 48.0), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            recBridge.syncToBitmap()
-            val recBmp = recBridge.getBitmap()
+            // --- Algorithm Step 3: Aspect-Ratio Preserving Resize (NON-DESTRUCTIVE) ---
+            val dstMat = recBridge.getMat()
+            dstMat.setTo(org.opencv.core.Scalar(0.0)) // Clear to black
+            val subDst = org.opencv.core.Mat(dstMat, org.opencv.core.Rect(0, 0, fitW, fitH))
+            org.opencv.imgproc.Imgproc.resize(bridge.getMat(), subDst, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
 
             // --- Algorithm Step 4: Recognition ---
             val targetW = 320; val targetH = 48
             val frameSize = targetW * targetH
             val nv21 = ByteArray(frameSize * 3 / 2)
             val pixels = IntArray(frameSize)
+            recBridge.syncToBitmap()
+            val recBmp = recBridge.getBitmap()
             recBmp.getPixels(pixels, 0, targetW, 0, 0, targetW, targetH)
             for (i in 0 until frameSize) nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
             for (i in frameSize until nv21.size) nv21[i] = 128.toByte()
@@ -94,14 +108,17 @@ class MLKitEngine(
             val snap = NativePaddleEngine.sharedReportBitmap
             org.opencv.android.Utils.matToBitmap(recBridge.getMat(), snap)
             
-            // 2. Decorate for maximum sharpness
-            val canvas = android.graphics.Canvas(snap)
+            // 2. Create zero-allocation Subset View for Base64 (preserving aspect ratio in HTML)
+            val view = Bitmap.createBitmap(snap, 0, 0, fitW, fitH)
+            
+            // 3. Decorate for maximum sharpness
+            val canvas = android.graphics.Canvas(view)
             val paint = android.graphics.Paint().apply { color = android.graphics.Color.RED; style = android.graphics.Paint.Style.STROKE; strokeWidth = 2f }
             visionText.textBlocks.forEach { block ->
                 canvas.drawRect(block.boundingBox!!, paint)
             }
 
-            val thumbB64 = OcrUtils.bitmapToBase64(snap, 80)
+            val thumbB64 = OcrUtils.bitmapToBase64(view, 80)
 
             val tLoop = System.currentTimeMillis() - tStart
             htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$thumbB64'><br>$odo</div>")
@@ -112,7 +129,7 @@ class MLKitEngine(
             stageObj.addProperty("time", tLoop)
             jsonStages.add(stage, stageObj)
             
-            roiMat.release(); grayMat.release()
+            roiMat.release(); grayMat.release(); subDst.release()
         }
 
         argbMat.release()
