@@ -355,44 +355,41 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private fun runRecognitionStageStatic(input: Any, ignoredHeight: Int, dictionary: List<String>, predictor: PaddlePredictor): RecStageResult {
         val tStart = System.currentTimeMillis()
         
-        // Rigid recognition dimensions (320x48)
-        val targetW = 320; val targetH = 48; val area = targetW * targetH
+        // Phase 115: Size-Agnostic Pathway Split
+        val w: Int; val h: Int
         val floatData: FloatArray = if (useMono) bufferRecMono else bufferRec
         floatData.fill(0.0f)
 
         when (input) {
             is Bitmap -> {
-                val scaled = if (input.width != targetW || input.height != targetH) {
-                    Bitmap.createScaledBitmap(input, targetW, targetH, true)
-                } else input
-                
-                Log.d("OCR_DEBUG", "START RECOGNITION (Bitmap): engine=$name, dims=${targetW}x${targetH}")
+                w = input.width; h = input.height; val area = w * h
+                Log.d("OCR_DEBUG", "START RECOGNITION (Bitmap): engine=$name, dims=${w}x${h}")
                 if (useMono) {
                     val mean = 0.5f; val std = 0.5f
-                    for (y in 0 until targetH) {
-                        for (x in 0 until targetW) {
-                            val px = scaled.getPixel(x, y)
-                            floatData[y * targetW + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
+                    for (y in 0 until h) {
+                        for (x in 0 until w) {
+                            val px = input.getPixel(x, y)
+                            floatData[y * w + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
                         }
                     }
                 } else {
                     val mean = 0.5f; val std = 0.5f
-                    for (y in 0 until targetH) {
-                        for (x in 0 until targetW) {
-                            val px = scaled.getPixel(x, y)
-                            floatData[0 * area + y * targetW + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
-                            floatData[1 * area + y * targetW + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
-                            floatData[2 * area + y * targetW + x] = ((px and 0xFF) / 255.0f - mean) / std
+                    for (y in 0 until h) {
+                        for (x in 0 until w) {
+                            val px = input.getPixel(x, y)
+                            floatData[0 * area + y * w + x] = ((px shr 16 and 0xFF) / 255.0f - mean) / std
+                            floatData[1 * area + y * w + x] = ((px shr 8 and 0xFF) / 255.0f - mean) / std
+                            floatData[2 * area + y * w + x] = ((px and 0xFF) / 255.0f - mean) / std
                         }
                     }
                 }
             }
             is MemoryBridge -> {
-                Log.d("OCR_DEBUG", "START RECOGNITION (MemoryBridge): engine=$name, dims=${input.width}x${input.height}")
+                w = input.width; h = input.height
+                Log.d("OCR_DEBUG", "START RECOGNITION (MemoryBridge): engine=$name, dims=${w}x${h}")
                 val buffer = input.getNv21(); buffer.rewind()
                 val mean = 0.5f; val std = 0.5f
-                // Assuming MemoryBridge is already 320x48 for recognition
-                for (i in 0 until area.coerceAtMost(input.width * input.height)) {
+                for (i in 0 until (w * h)) {
                     floatData[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
                 }
             }
