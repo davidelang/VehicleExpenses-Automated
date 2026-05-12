@@ -391,8 +391,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             // --- Diagnostic Harness Injection ---
                             // Note: Iterative OCR passes managed internally by the strategy on its ROI buffer.
                             val pipeline = listOf(
-                                MLKitMonoStrategy("ML Kit Mono Diagnostic", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!),
-                                MLKitMonoStrategy("ML Kit Mono Clone", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!)
+                                MLKitEngine("ML Kit Mono Diagnostic", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!),
+                                MLKitEngine("ML Kit Mono Clone", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!)
                             )
                             
                             pipeline.forEach { harness ->
@@ -428,14 +428,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
                                     
-                                    val ocrInput = if (strat.contains("Mono")) {
-                                        bridge?.getBitmap() ?: exactCrop // Use warm pool directly
-                                    } else exactCrop
-
                                     Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
                                     val steps = if (isDisc) {
                                         DiscoveryOcrUtils.runDiscoveryMultiStepOcr(
-                                            ocrInput, context, engine, h, activePaddle, expansionMode,
+                                            exactCrop, context, engine, h, activePaddle, expansionMode,
                                             argbScratch = vehicleArgbScratches[winnerRef.vehicle.id],
                                             monoScratch = vehicleMonoScratches[winnerRef.vehicle.id],
                                             detBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool512x128,
@@ -443,7 +439,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         )
                                     } else {
                                         OdometerOcrUtils.runMultiStepOcr(
-                                            ocrInput, context, engine, h, activePaddle,
+                                            exactCrop, context, engine, h, activePaddle,
                                             argbScratch = vehicleArgbScratches[winnerRef.vehicle.id],
                                             monoScratch = vehicleMonoScratches[winnerRef.vehicle.id],
                                             recBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool320x48
