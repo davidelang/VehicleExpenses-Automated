@@ -428,6 +428,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     val roiPixels = IntArray(roiW * roiH)
                                     val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
+                                    var lastThumbB64 = ""
                                     
                                     stages.forEach { stage ->
                                         val tStart = System.currentTimeMillis()
@@ -493,15 +494,17 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             val b = blocks[j].boundingBox
                                             if (b != null) boxes.add(b)
                                         }
-                                        val thumbB64 = OcrUtils.takeSnapshot(
+                                        lastThumbB64 = OcrUtils.takeSnapshot(
                                             source = recBmp,
                                             rawFragments = emptyList(),
                                             consolidatedRows = boxes,
-                                            argbScratch = NativePaddleEngine.sharedBmpOdoScratch
+                                            argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
+                                            subsetW = fitW,
+                                            subsetH = fitH
                                         )
 
                                         val tLoop = System.currentTimeMillis() - tStart
-                                        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$thumbB64'><br>$odo</div>")
+                                        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
                                         
                                         // 4.7 Data Aggregation
                                         val stageObj = com.google.gson.JsonObject()
@@ -510,6 +513,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         jsonStages.add(stage, stageObj)
                                         
                                         rawMat.release()
+                                        subDst.release()
                                     }
 
                                     val meta = com.google.gson.JsonObject()
@@ -520,7 +524,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         htmlHeader = "<th>$displayName</th>",
                                         htmlCell = htmlOutput.toString(),
                                         jsonSection = meta,
-                                        odometerValue = allOdo.firstOrNull { it.isNotBlank() }
+                                        odometerValue = allOdo.firstOrNull { it.isNotBlank() },
+                                        thumbB64 = lastThumbB64
                                     )
                                     report.add(displayName, result)
                                     return result
