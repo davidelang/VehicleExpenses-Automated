@@ -156,7 +156,9 @@ object OcrUtils {
         source: Bitmap, 
         rawFragments: List<Rect> = emptyList(), 
         consolidatedRows: List<Rect> = emptyList(),
-        argbScratch: Bitmap? = null
+        argbScratch: Bitmap? = null,
+        subsetW: Int? = null,
+        subsetH: Int? = null
     ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
         if (source.isRecycled) return ""
         val thumb = NativePaddleEngine.sharedReportBitmap
@@ -199,7 +201,7 @@ object OcrUtils {
         }
         
         // 5. Create Subset View for Base64 (No allocation)
-        val view = Bitmap.createBitmap(thumb, 0, 0, targetWidth, targetHeight)
+        val view = Bitmap.createBitmap(thumb, 0, 0, subsetW ?: targetWidth, subsetH ?: targetHeight)
         bitmapToBase64(view, 60)
     }
 }
