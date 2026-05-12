@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -390,14 +391,151 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                             // --- Diagnostic Harness Injection ---
                             // Note: Iterative OCR passes managed internally by the strategy on its ROI buffer.
+                            class MLKitEngine(
+                                override val displayName: String
+                            ) : OcrEngineStrategy {
+                                private val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                                
+                                override suspend fun execute(masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector): OcrHarnessResult {
+                                    val bridge = vehicleMonoBridges[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
+                                    val scratchBridge = vehicleMonoScratches[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle scratch pool not initialized")
+                                    val recBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool320x48 ?: throw IllegalStateException("Rec pool not initialized")
+                                    
+                                    val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
+                                    val jsonStages = com.google.gson.JsonObject()
+                                    val allOdo = mutableListOf<String>()
+                                    val masterBmp = masterBuffer as? Bitmap ?: throw IllegalArgumentException("Master must be Bitmap")
+
+                                    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+                                    val t = winnerRef.vehicle.odometerCropTop ?: 0f
+                                    val r = winnerRef.vehicle.odometerCropRight ?: 1f
+                                    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+                                    
+                                    val roiW = ((r - l) * masterW).toInt().coerceAtMost(masterW)
+                                    val roiH = ((b - t) * masterH).toInt().coerceAtMost(masterH)
+                                    val startX = (l * masterW).toInt().coerceIn(0, masterW - 1)
+                                    val startY = (t * masterH).toInt().coerceIn(0, masterH - 1)
+
+                                    val aspect = roiW.toFloat() / roiH.toFloat()
+                                    val fitW: Int; val fitH: Int
+                                    if (aspect > (320f / 48f)) {
+                                        fitW = 320
+                                        fitH = (320f / aspect).toInt().coerceAtLeast(1)
+                                    } else {
+                                        fitH = 48
+                                        fitW = (48f * aspect).toInt().coerceAtLeast(1)
+                                    }
+
+                                    val roiPixels = IntArray(roiW * roiH)
+                                    val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
+                                    
+                                    stages.forEach { stage ->
+                                        val tStart = System.currentTimeMillis()
+                                        
+                                        // 4.1 Pristine Refresh
+                                        masterBmp.getPixels(roiPixels, 0, roiW, startX, startY, roiW, roiH)
+                                        val rawBuffer = scratchBridge.getNv21()
+                                        rawBuffer.rewind()
+                                        for (i in roiPixels.indices) {
+                                            rawBuffer.put(((roiPixels[i] shr 16) and 0xFF).toByte())
+                                        }
+                                        val rawMat = org.opencv.core.Mat(roiH, roiW, org.opencv.core.CvType.CV_8UC1, rawBuffer)
+                                        val interp = if (roiW > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                        org.opencv.imgproc.Imgproc.resize(rawMat, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
+
+                                        // 4.2 Preprocessing Application
+                                        if (stage.contains("Stretch")) {
+                                            org.opencv.core.Core.normalize(bridge.getMat(), bridge.getMat(), 0.0, 255.0, org.opencv.core.Core.NORM_MINMAX)
+                                        }
+                                        if (stage.contains("Bilevel")) {
+                                            org.opencv.imgproc.Imgproc.threshold(bridge.getMat(), bridge.getMat(), 0.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY or org.opencv.imgproc.Imgproc.THRESH_OTSU)
+                                        }
+
+                                        // 4.3 Scale-to-Fit (Recognition)
+                                        val dstMat = recBridge.getMat()
+                                        dstMat.setTo(org.opencv.core.Scalar(0.0))
+                                        val subDst = dstMat.submat(0, fitH, 0, fitW)
+                                        org.opencv.imgproc.Imgproc.resize(bridge.getMat(), subDst, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+
+                                        // 4.4 ML Kit Recognition
+                                        val targetW = 320; val targetH = 48
+                                        val frameSize = targetW * targetH
+                                        val nv21 = ByteArray(frameSize * 3 / 2)
+                                        recBridge.syncToBitmap()
+                                        val recBmp = recBridge.getBitmap()
+                                        val recPixels = IntArray(frameSize)
+                                        recBmp.getPixels(recPixels, 0, targetW, 0, 0, targetW, targetH)
+                                        for (i in 0 until frameSize) nv21[i] = ((recPixels[i] shr 16) and 0xFF).toByte()
+                                        for (i in frameSize until nv21.size) nv21[i] = 128.toByte()
+
+                                        val img = com.google.mlkit.vision.common.InputImage.fromByteArray(nv21, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+                                        val visionText = recognizer.process(img).await()
+                                        
+                                        // 4.5 Text Sanitization
+                                        val odoBuilder = StringBuilder()
+                                        val blocks = visionText.textBlocks
+                                        for (j in 0 until blocks.size) {
+                                            val block = blocks[j]
+                                            val lines = block.lines
+                                            for (k in 0 until lines.size) {
+                                                val line = lines[k]
+                                                val isUpsideDown = Math.abs(line.angle) > 135f
+                                                val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, isUpsideDown).filter { it.isDigit() }
+                                                if (cleaned.isNotBlank()) odoBuilder.append(cleaned)
+                                            }
+                                        }
+                                        val odo = odoBuilder.toString()
+                                        allOdo.add(odo)
+
+                                        // 4.6 Diagnostic Snapshot
+                                        val boxes = mutableListOf<android.graphics.Rect>()
+                                        for (j in 0 until blocks.size) {
+                                            val b = blocks[j].boundingBox
+                                            if (b != null) boxes.add(b)
+                                        }
+                                        val thumbB64 = OcrUtils.takeSnapshot(
+                                            source = recBmp,
+                                            rawFragments = emptyList(),
+                                            consolidatedRows = boxes,
+                                            argbScratch = NativePaddleEngine.sharedBmpOdoScratch
+                                        )
+
+                                        val tLoop = System.currentTimeMillis() - tStart
+                                        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$thumbB64'><br>$odo</div>")
+                                        
+                                        // 4.7 Data Aggregation
+                                        val stageObj = com.google.gson.JsonObject()
+                                        stageObj.addProperty("text", odo)
+                                        stageObj.addProperty("time", tLoop)
+                                        jsonStages.add(stage, stageObj)
+                                        
+                                        rawMat.release()
+                                    }
+
+                                    val meta = com.google.gson.JsonObject()
+                                    meta.addProperty("inputW", masterW); meta.addProperty("inputH", masterH)
+                                    meta.add("stages", jsonStages)
+
+                                    val result = OcrHarnessResult(
+                                        htmlHeader = "<th>$displayName</th>",
+                                        htmlCell = htmlOutput.toString(),
+                                        jsonSection = meta,
+                                        odometerValue = allOdo.firstOrNull { it.isNotBlank() }
+                                    )
+                                    report.add(displayName, result)
+                                    return result
+                                }
+                            }
+
                             val pipeline = listOf(
-                                MLKitEngine("ML Kit Mono Diagnostic", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!),
-                                MLKitEngine("ML Kit Mono Clone", winnerRef, vehicleMonoBridges[winnerRef.vehicle.id]!!)
+                                com.davidlang.vehicleexpensesautomated.ui.util.HarnessRunDef(MLKitEngine("ML Kit Mono Diagnostic"), masterBmp!!, masterBmp.width, masterBmp.height),
+                                com.davidlang.vehicleexpensesautomated.ui.util.HarnessRunDef(MLKitEngine("ML Kit Mono Clone"), masterBmp, masterBmp.width, masterBmp.height)
                             )
                             
-                            pipeline.forEach { harness ->
+                            pipeline.forEach { def ->
+                                val harness = def.strategy
                                 if (!harnessEngineNames.contains(harness.displayName)) harnessEngineNames.add(harness.displayName)
-                                harness.execute(masterBmp!!, masterBmp.width, masterBmp.height, object : ReportCollector {
+                                harness.execute(def.buffer, def.width, def.height, object : ReportCollector {
                                     override fun add(engineName: String, result: OcrHarnessResult) {
                                         harnessResultsMap[engineName] = result
                                         
