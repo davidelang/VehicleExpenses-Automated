@@ -90,26 +90,18 @@ class MLKitEngine(
             allOdo.add(odo)
 
             // --- Visualization (AT THE END): Prove non-destructive downscale & show final state ---
-            // 1. Capture snapshot to shared report pool (Temporary ARGB for visualization only)
+            // 1. Capture snapshot to shared report pool (320x48 match)
             val snap = NativePaddleEngine.sharedReportBitmap
-            org.opencv.android.Utils.matToBitmap(bridge.getMat(), snap)
+            org.opencv.android.Utils.matToBitmap(recBridge.getMat(), snap)
             
-            // 2. Shrink to display size (height=48)
-            val htmlThumbW = (48f * bridge.width / bridge.height).toInt()
-            val htmlThumb = Bitmap.createScaledBitmap(snap, htmlThumbW, 48, true)
-            
-            // 3. Decorate SHRUNK image for maximum sharpness
-            val canvas = android.graphics.Canvas(htmlThumb)
+            // 2. Decorate for maximum sharpness
+            val canvas = android.graphics.Canvas(snap)
             val paint = android.graphics.Paint().apply { color = android.graphics.Color.RED; style = android.graphics.Paint.Style.STROKE; strokeWidth = 2f }
             visionText.textBlocks.forEach { block ->
-                val bb = block.boundingBox!!
-                val sx = htmlThumbW.toFloat() / 320f; val sy = 48f / 48f
-                val scaledRect = android.graphics.Rect((bb.left * sx).toInt(), (bb.top * sy).toInt(), (bb.right * sx).toInt(), (bb.bottom * sy).toInt())
-                canvas.drawRect(scaledRect, paint)
+                canvas.drawRect(block.boundingBox!!, paint)
             }
 
-            val thumbB64 = OcrUtils.bitmapToBase64(htmlThumb, 80)
-            htmlThumb.recycle()
+            val thumbB64 = OcrUtils.bitmapToBase64(snap, 80)
 
             val tLoop = System.currentTimeMillis() - tStart
             htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$thumbB64'><br>$odo</div>")
