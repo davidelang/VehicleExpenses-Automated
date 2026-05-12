@@ -400,6 +400,19 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 harness.execute(masterBmp!!, masterBmp.width, masterBmp.height, object : ReportCollector {
                                     override fun add(engineName: String, result: OcrHarnessResult) {
                                         harnessResultsMap[engineName] = result
+                                        
+                                        // Compatibility: Mirror harness result into refinement_details
+                                        val steps = result.jsonSection.getAsJsonObject("stages")?.entrySet()?.map { (stage, data) ->
+                                            val obj = data.asJsonObject
+                                            OcrStepResult(
+                                                stageName = stage,
+                                                thumbB64 = result.thumbB64 ?: "", 
+                                                text = obj.get("text")?.asString,
+                                                metadata = mapOf("loop_time" to obj.get("time")?.asString.toString())
+                                            )
+                                        } ?: emptyList()
+                                        refinementTraces[engineName] = RefinementTrace(engineName, 0L, steps)
+                                        
                                         Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
                                     }
                                 })
