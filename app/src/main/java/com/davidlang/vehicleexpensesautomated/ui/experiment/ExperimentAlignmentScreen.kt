@@ -404,13 +404,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
                                     val jsonStages = com.google.gson.JsonObject()
                                     val allOdo = mutableListOf<String>()
-                                    val masterBmp = masterBuffer as? Bitmap ?: throw IllegalArgumentException("Master must be Bitmap")
+                                    val inputBmp = masterBuffer as? Bitmap ?: throw IllegalArgumentException("Master must be Bitmap")
 
                                     val l = winnerRef.vehicle.odometerCropLeft ?: 0f
                                     val t = winnerRef.vehicle.odometerCropTop ?: 0f
                                     val r = winnerRef.vehicle.odometerCropRight ?: 1f
                                     val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-                                    
+
                                     val roiW = ((r - l) * masterW).toInt().coerceAtMost(masterW)
                                     val roiH = ((b - t) * masterH).toInt().coerceAtMost(masterH)
                                     val startX = (l * masterW).toInt().coerceIn(0, masterW - 1)
@@ -427,20 +427,25 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     val roiPixels = IntArray(roiW * roiH)
+                                    val roiBytes = ByteArray(roiW * roiH)
                                     val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
                                     var lastThumbB64 = ""
-                                    
+
                                     stages.forEach { stage ->
                                         val tStart = System.currentTimeMillis()
-                                        
+
                                         // 4.1 Pristine Refresh
-                                        masterBmp.getPixels(roiPixels, 0, roiW, startX, startY, roiW, roiH)
-                                        val rawBuffer = scratchBridge.getNv21()
-                                        rawBuffer.rewind()
+                                        inputBmp.getPixels(roiPixels, 0, roiW, startX, startY, roiW, roiH)
                                         for (i in roiPixels.indices) {
-                                            rawBuffer.put(((roiPixels[i] shr 16) and 0xFF).toByte())
+                                            roiBytes[i] = ((roiPixels[i] shr 16) and 0xFF).toByte()
                                         }
-                                        val rawMat = org.opencv.core.Mat(roiH, roiW, org.opencv.core.CvType.CV_8UC1, rawBuffer)
+
+                                        val rawMat = org.opencv.core.Mat(roiH, roiW, org.opencv.core.CvType.CV_8UC1)
+                                        rawMat.put(0, 0, roiBytes)
+
+                                        // Zero out the target bridge to prevent cumulative filter artifacts
+                                        bridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+
                                         val interp = if (roiW > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
                                         org.opencv.imgproc.Imgproc.resize(rawMat, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
 
@@ -471,7 +476,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                         val img = com.google.mlkit.vision.common.InputImage.fromByteArray(nv21, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
                                         val visionText = recognizer.process(img).await()
-                                        
+
                                         // 4.5 Text Sanitization
                                         val odoBuilder = StringBuilder()
                                         val blocks = visionText.textBlocks
@@ -505,13 +510,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                         val tLoop = System.currentTimeMillis() - tStart
                                         htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
-                                        
+
                                         // 4.7 Data Aggregation
                                         val stageObj = com.google.gson.JsonObject()
                                         stageObj.addProperty("text", odo)
                                         stageObj.addProperty("time", tLoop)
                                         jsonStages.add(stage, stageObj)
-                                        
+
                                         rawMat.release()
                                         subDst.release()
                                     }
