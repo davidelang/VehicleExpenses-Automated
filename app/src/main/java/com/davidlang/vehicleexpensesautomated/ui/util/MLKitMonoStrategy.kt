@@ -8,6 +8,7 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.tasks.await
 import android.util.Base64
+
 class MLKitMonoStrategy(
     override val displayName: String
 ) : OcrEngineStrategy {
@@ -59,3 +60,4 @@ class MLKitMonoStrategy(
         report.add(displayName, result)
         return result
     }
+}
