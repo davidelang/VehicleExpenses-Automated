@@ -437,34 +437,38 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
                                 var lastThumbB64 = ""
                                 
-                                stages.forEach { stage ->
-                                    val tStart = System.currentTimeMillis()
-                                    
-                                    // 4.1 Pristine Refresh (Two-Step: Scale then Convert)
-                                    val canvas = android.graphics.Canvas(argbCrop)
-                                    canvas.drawColor(android.graphics.Color.BLACK)
-                                    val matrix = android.graphics.Matrix()
-                                    val scaleX = argbCrop.width.toFloat() / roiW.toFloat()
-                                    val scaleY = argbCrop.height.toFloat() / roiH.toFloat()
-                                    matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
-                                    matrix.postScale(scaleX, scaleY)
-                                    canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-                                    
-                                    argbCrop.getPixels(OdometerOcrUtils.reusablePixelArray, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
-                                    val monoBuffer = bridge.getNv21()
-                                    monoBuffer.rewind()
-                                    for (i in 0 until (argbCrop.width * argbCrop.height)) {
-                                        monoBuffer.put(((OdometerOcrUtils.reusablePixelArray[i] shr 16) and 0xFF).toByte())
-                                    }
-                                    bridge.getMat().put(0, 0, monoBuffer.array())
-                                    
-                                    // 4.2 Preprocessing Application
-                                    if (stage.contains("Stretch")) {
-                                        org.opencv.core.Core.normalize(bridge.getMat(), bridge.getMat(), 0.0, 255.0, org.opencv.core.Core.NORM_MINMAX)
-                                    }
-                                    if (stage.contains("Bilevel")) {
-                                        org.opencv.imgproc.Imgproc.threshold(bridge.getMat(), bridge.getMat(), 0.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY or org.opencv.imgproc.Imgproc.THRESH_OTSU)
-                                    }
+                                    stages.forEach { stage ->
+                                        val tStart = System.currentTimeMillis()
+                                        
+                                        // 4.1 Pristine Refresh (Two-Step: Scale then Convert)
+                                        val canvas = android.graphics.Canvas(argbCrop)
+                                        canvas.drawColor(android.graphics.Color.BLACK)
+                                        val matrix = android.graphics.Matrix()
+                                        val scaleX = argbCrop.width.toFloat() / roiW.toFloat()
+                                        val scaleY = argbCrop.height.toFloat() / roiH.toFloat()
+                                        matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
+                                        matrix.postScale(scaleX, scaleY)
+                                        canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+                                        
+                                        argbCrop.getPixels(OdometerOcrUtils.reusablePixelArray, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
+                                        val monoBuffer = bridge.getNv21()
+                                        monoBuffer.rewind()
+                                        val size = argbCrop.width * argbCrop.height
+                                        for (i in 0 until size) {
+                                            OdometerOcrUtils.reusableByteStaging[i] = ((OdometerOcrUtils.reusablePixelArray[i] shr 16) and 0xFF).toByte()
+                                        }
+                                        monoBuffer.put(OdometerOcrUtils.reusableByteStaging, 0, size)
+                                        
+                                        // Sync the Mat with the new bytes directly from the staging array (Safe for Direct Buffers)
+                                        bridge.getMat().put(0, 0, OdometerOcrUtils.reusableByteStaging)
+                                        
+                                        // 4.2 Preprocessing Application
+                                        if (stage.contains("Stretch")) {
+                                            org.opencv.core.Core.normalize(bridge.getMat(), bridge.getMat(), 0.0, 255.0, org.opencv.core.Core.NORM_MINMAX)
+                                        }
+                                        if (stage.contains("Bilevel")) {
+                                            org.opencv.imgproc.Imgproc.threshold(bridge.getMat(), bridge.getMat(), 0.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY or org.opencv.imgproc.Imgproc.THRESH_OTSU)
+                                        }
 
                                     // 4.3 Scale-to-Fit (Recognition)
                                     val dstMat = experimentRecBridge320x48.getMat()
@@ -636,7 +640,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 scratchBmp?.recycle()
             }
         } catch (e: Exception) { 
-            Log.e(TAG, "Failed ${file.name}", e) 
+            Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
         } finally {
             // DEFENSIVE CLEANUP: Bitmaps are now recycled immediately in the OCR loop.
             currentResult = null // Explicitly nullify to prevent re-access
