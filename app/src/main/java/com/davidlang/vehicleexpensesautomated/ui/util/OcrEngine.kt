@@ -153,6 +153,42 @@ object OcrUtils {
     }
 
     fun takeSnapshot(
+        sourceMat: org.opencv.core.Mat,
+        rawFragments: List<Rect> = emptyList(),
+        consolidatedRows: List<Rect> = emptyList(),
+        argbScratch: Bitmap? = null,
+        subsetW: Int? = null,
+        subsetH: Int? = null
+    ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
+        val thumb = NativePaddleEngine.sharedReportBitmap
+        if (thumb.isRecycled) return ""
+        val scale = kotlin.math.min(320f / sourceMat.cols().toFloat(), 48f / sourceMat.rows().toFloat())
+        val targetWidth = (sourceMat.cols() * scale).toInt().coerceIn(1, 320)
+        val targetHeight = (sourceMat.rows() * scale).toInt().coerceIn(1, 48)
+        val canvas = NativePaddleEngine.sharedReportCanvas
+        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+
+        // Draw Mat to an exactly-sized temporary ARGB Bitmap to satisfy OpenCV constraints
+        val matARGB = org.opencv.core.Mat()
+        org.opencv.imgproc.Imgproc.cvtColor(sourceMat, matARGB, org.opencv.imgproc.Imgproc.COLOR_GRAY2RGBA)
+        val tempBmp = Bitmap.createBitmap(sourceMat.cols(), sourceMat.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(matARGB, tempBmp)
+        matARGB.release()
+
+        val matrix = NativePaddleEngine.sharedMatrix
+        matrix.reset()
+        matrix.postScale(scale, scale)
+        canvas.drawBitmap(tempBmp, matrix, NativePaddleEngine.srcPaint)
+        tempBmp.recycle()
+        
+        rawFragments.forEach { r -> canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint) }
+        consolidatedRows.forEach { r -> canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint) }
+        
+        val view = Bitmap.createBitmap(thumb, 0, 0, subsetW ?: targetWidth, subsetH ?: targetHeight)
+        bitmapToBase64(view, 60)
+    }
+
+    fun takeSnapshot(
         source: Bitmap, 
         rawFragments: List<Rect> = emptyList(), 
         consolidatedRows: List<Rect> = emptyList(),
