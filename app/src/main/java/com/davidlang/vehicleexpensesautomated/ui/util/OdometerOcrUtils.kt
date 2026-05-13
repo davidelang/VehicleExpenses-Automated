@@ -294,13 +294,11 @@ object OdometerOcrUtils {
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
 
-        // Phase 115: In-place update using provided per-vehicle scratch intermediate
+        // Phase 115: In-place update
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
             matToBitmapMono(filtered, bitmap, monoScratch)
         } else {
-            val scratch = argbScratch ?: NativePaddleEngine.sharedBmpOdoScratch
-            org.opencv.android.Utils.matToBitmap(filtered, scratch)
-            Canvas(bitmap).drawBitmap(scratch, 0f, 0f, null)
+            org.opencv.android.Utils.matToBitmap(filtered, bitmap)
         }
         src.release(); gray.release(); filtered.release(); return bitmap
     }
