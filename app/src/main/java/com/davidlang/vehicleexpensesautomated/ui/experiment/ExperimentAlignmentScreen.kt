@@ -407,6 +407,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
                                 val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
                                 val bridge = vehicleMonoBridges[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
+                                val scratchBridge = vehicleMonoScratches[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle scratch pool not initialized")
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
                                 
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
@@ -440,7 +441,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 stages.forEach { stage ->
                                     val tStart = System.currentTimeMillis()
                                     
-                                    // 4.1 Pristine Refresh (Scale ARGB)
+                                    // 4.1 Pristine Refresh (Scale ARGB & Sync to Mat)
                                     val canvas = android.graphics.Canvas(argbCrop)
                                     canvas.drawColor(android.graphics.Color.BLACK)
                                     val matrix = android.graphics.Matrix()
@@ -450,22 +451,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     matrix.postScale(scaleX, scaleY)
                                     canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                     
-                                    // 4.2 Preprocessing Application (Legacy Ordered Alignment)
-                                    when (stage) {
-                                        "80% Stretch Only" -> {
-                                            OdometerOcrUtils.applyContrastStretch(argbCrop, 80, bridge)
-                                        }
-                                        "Bilateral -> 80% Stretch" -> {
-                                            OdometerOcrUtils.applyBilateral(argbCrop, argbScratch = null, monoScratch = bridge)
-                                            OdometerOcrUtils.applyContrastStretch(argbCrop, 80, bridge)
-                                        }
-                                        "80% Stretch -> Bilateral" -> {
-                                            OdometerOcrUtils.applyContrastStretch(argbCrop, 80, bridge)
-                                            OdometerOcrUtils.applyBilateral(argbCrop, argbScratch = null, monoScratch = bridge)
-                                        }
-                                    }
-
-                                    // 4.3 Mat Synchronization (Filtered ARGB -> Mono Mat)
                                     argbCrop.getPixels(OdometerOcrUtils.reusablePixelArray, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
                                     val monoBuffer = bridge.getNv21()
                                     monoBuffer.rewind()
@@ -475,6 +460,35 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
                                     monoBuffer.put(OdometerOcrUtils.reusableByteStaging, 0, size)
                                     bridge.getMat().put(0, 0, OdometerOcrUtils.reusableByteStaging)
+
+                                    fun apply80Stretch(mat: org.opencv.core.Mat, scratch: org.opencv.core.Mat) {
+                                        val hist = org.opencv.core.Mat()
+                                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+                                        var floorBin = 0; var ceilingBin = 255; var sum = 0.0
+                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= size * 0.80) { floorBin = i; break } }
+                                        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= size * 0.98) { ceilingBin = i; break } }
+                                        val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
+                                        mat.convertTo(scratch, org.opencv.core.CvType.CV_8U, alpha, beta)
+                                        scratch.copyTo(mat)
+                                        hist.release()
+                                    }
+                                    
+                                    // 4.2 Preprocessing Application (Native OpenCV Mat Logic)
+                                    when (stage) {
+                                        "80% Stretch Only" -> {
+                                            apply80Stretch(bridge.getMat(), scratchBridge.getMat())
+                                        }
+                                        "Bilateral -> 80% Stretch" -> {
+                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
+                                            scratchBridge.getMat().copyTo(bridge.getMat())
+                                            apply80Stretch(bridge.getMat(), scratchBridge.getMat())
+                                        }
+                                        "80% Stretch -> Bilateral" -> {
+                                            apply80Stretch(bridge.getMat(), scratchBridge.getMat())
+                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
+                                            scratchBridge.getMat().copyTo(bridge.getMat())
+                                        }
+                                    }
 
                                     // 4.4 Scale-to-Fit (Recognition)
                                     val dstMat = experimentRecBridge320x48.getMat()
