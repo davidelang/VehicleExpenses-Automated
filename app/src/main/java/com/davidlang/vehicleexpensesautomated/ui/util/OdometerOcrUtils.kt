@@ -38,8 +38,9 @@ import java.util.Collections
 
 object OdometerOcrUtils {
     // Zero-Allocation Buffers for ML Kit Mono (NV21) Conversion
-    private var sharedPixelsBuffer: IntArray? = null
-    private var sharedNv21Buffer: ByteArray? = null
+    val reusablePixelArray = IntArray(4000 * 3072)
+    val reusableByteStaging = ByteArray(4000 * 3072)
+
 
     init {
         if (!OpenCVLoader.initLocal()) {
@@ -537,17 +538,15 @@ object OdometerOcrUtils {
 
                     val (inputImage, resMetadata) = if (engineName == "ML Kit Mono") {
                         val w = recBmp.width; val h = recBmp.height; val frameSize = w * h; val nv21Size = frameSize * 3 / 2
-                        if (sharedPixelsBuffer == null || sharedPixelsBuffer!!.size < frameSize) sharedPixelsBuffer = IntArray(frameSize)
-                        if (sharedNv21Buffer == null || sharedNv21Buffer!!.size < nv21Size) sharedNv21Buffer = ByteArray(nv21Size)
-                        val nv21 = sharedNv21Buffer!!
+                        val nv21 = reusableByteStaging
                         
                         if (recBmp.config == Bitmap.Config.ALPHA_8) {
                             val buffer = if (isNative) recBridge!!.getNv21() else (monoScratch?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(recBmp.byteCount).order(java.nio.ByteOrder.nativeOrder()))
                             recBmp.copyPixelsToBuffer(buffer); buffer.rewind(); buffer.get(nv21, 0, frameSize.coerceAtMost(recBmp.byteCount))
                         } else {
-                            val pixels = sharedPixelsBuffer!!
+                            val pixels = reusablePixelArray
                             recBmp.getPixels(pixels, 0, w, 0, 0, w, h)
-                            for (i in 0 until frameSize) nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
+                            for (i in 0 until frameSize) nv21[i] = ((pixels[i].toLong() shr 16) and 0xFFL).toByte()
                         }
                         for (i in frameSize until nv21Size) nv21[i] = 128.toByte()
                         val img = InputImage.fromByteArray(nv21, w, h, 0, InputImage.IMAGE_FORMAT_NV21)

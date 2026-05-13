@@ -231,11 +231,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     var partCount = 1; val maxSizeBytes = 2 * 1024 * 1024; var currentSize = 0
     val footer = "</table></body></html>"
     
-    // Phase 58 Strategies
+    // Phase 115: Global Experiment-Level Buffers (Zero-Allocation Anchor)
+    val experimentRecBridge320x48 = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(320, 48)
+
     val strategies = listOf(
         "Paddle V3 Valley", "Paddle V3 Valley Mono",
         "ML Kit", "ML Kit Mono"
     )
+    // Pre-populate with iterative engines to fix HTML header alignment
     val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone")
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -405,14 +408,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
                                 val bridge = vehicleMonoBridges[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
-                                val recBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool320x48 ?: throw IllegalStateException("Rec pool not initialized")
                                 
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
                                 val jsonStages = com.google.gson.JsonObject()
                                 val allOdo = mutableListOf<String>()
                                 val inputBmp = masterBuffer as? Bitmap ?: throw IllegalArgumentException("Master must be Bitmap")
-                                val masterHash = System.identityHashCode(inputBmp)
-                                
+
                                 val l = winnerRef.vehicle.odometerCropLeft ?: 0f
                                 val t = winnerRef.vehicle.odometerCropTop ?: 0f
                                 val r = winnerRef.vehicle.odometerCropRight ?: 1f
@@ -433,16 +434,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     fitW = (48f * aspect).toInt().coerceAtLeast(1)
                                 }
 
-                                val roiPixels = IntArray(argbCrop.width * argbCrop.height)
                                 val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
                                 var lastThumbB64 = ""
                                 
-                                Log.d("DIAG_TRACE", "[${displayName}] Image Index: $index, File: ${file.name}, Vehicle: ${winnerRef.vehicle.name} (ID: ${winnerRef.vehicle.id})")
-                                Log.d("DIAG_TRACE", "[${displayName}] masterBuffer: ${masterW}x${masterH} (Hash: $masterHash)")
-                                Log.d("DIAG_TRACE", "[${displayName}] ROI: ${roiW}x${roiH} at (${startX},${startY}), Aspect: ${aspect}")
-                                Log.d("DIAG_TRACE", "[${displayName}] bridge: ${bridge.width}x${bridge.height} (Hash: ${System.identityHashCode(bridge)})")
-                                Log.d("DIAG_TRACE", "[${displayName}] argbCrop: ${argbCrop.width}x${argbCrop.height} (Hash: ${System.identityHashCode(argbCrop)})")
-
                                 stages.forEach { stage ->
                                     val tStart = System.currentTimeMillis()
                                     
@@ -456,20 +450,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     matrix.postScale(scaleX, scaleY)
                                     canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                     
-                                    argbCrop.getPixels(roiPixels, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
-                                    
-                                    // Simple Checksum (XOR of first 1000 pixels)
-                                    var checksum = 0; for (i in 0 until 1000.coerceAtMost(roiPixels.size)) checksum = checksum xor roiPixels[i]
-                                    Log.d("DIAG_TRACE", "[${displayName}] Stage: $stage, Scaled Checksum: $checksum, Fit: ${fitW}x${fitH}")
-
+                                    argbCrop.getPixels(OdometerOcrUtils.reusablePixelArray, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
                                     val monoBuffer = bridge.getNv21()
                                     monoBuffer.rewind()
-                                    val monoBytes = ByteArray(roiPixels.size)
-                                    for (i in roiPixels.indices) {
-                                        monoBytes[i] = ((roiPixels[i] shr 16) and 0xFF).toByte()
+                                    for (i in 0 until (argbCrop.width * argbCrop.height)) {
+                                        monoBuffer.put(((OdometerOcrUtils.reusablePixelArray[i] shr 16) and 0xFF).toByte())
                                     }
-                                    // CRITICAL FIX: Put into Mat directly for OpenCV recognition
-                                    bridge.getMat().put(0, 0, monoBytes)
+                                    bridge.getMat().put(0, 0, monoBuffer.array())
                                     
                                     // 4.2 Preprocessing Application
                                     if (stage.contains("Stretch")) {
@@ -480,7 +467,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     // 4.3 Scale-to-Fit (Recognition)
-                                    val dstMat = recBridge.getMat()
+                                    val dstMat = experimentRecBridge320x48.getMat()
                                     dstMat.setTo(org.opencv.core.Scalar(0.0))
                                     val subDst = dstMat.submat(0, fitH, 0, fitW)
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), subDst, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
@@ -488,15 +475,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     // 4.4 ML Kit Recognition
                                     val targetW = 320; val targetH = 48
                                     val frameSize = targetW * targetH
-                                    val nv21 = ByteArray(frameSize * 3 / 2)
-                                    recBridge.syncToBitmap()
-                                    val recBmp = recBridge.getBitmap()
-                                    val recPixels = IntArray(frameSize)
-                                    recBmp.getPixels(recPixels, 0, targetW, 0, 0, targetW, targetH)
-                                    for (i in 0 until frameSize) nv21[i] = ((recPixels[i] shr 16) and 0xFF).toByte()
-                                    for (i in frameSize until nv21.size) nv21[i] = 128.toByte()
+                                    experimentRecBridge320x48.syncToBitmap()
+                                    val recBmp = experimentRecBridge320x48.getBitmap()
+                                    recBmp.getPixels(OdometerOcrUtils.reusablePixelArray, 0, targetW, 0, 0, targetW, targetH)
+                                    for (i in 0 until frameSize) OdometerOcrUtils.reusableByteStaging[i] = ((OdometerOcrUtils.reusablePixelArray[i] shr 16) and 0xFF).toByte()
+                                    for (i in frameSize until (frameSize * 3 / 2)) OdometerOcrUtils.reusableByteStaging[i] = 128.toByte()
 
-                                    val img = com.google.mlkit.vision.common.InputImage.fromByteArray(nv21, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+                                    val img = com.google.mlkit.vision.common.InputImage.fromByteArray(OdometerOcrUtils.reusableByteStaging, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
                                     val visionText = recognizer.process(img).await()
                                     
                                     // 4.5 Text Sanitization
@@ -555,8 +540,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             }
 
                             // --- Sequential Execution ---
-                            runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterBmp.width, masterBmp.height, report)
-                            runMLKitIterative("ML Kit Mono Clone", masterBmp, masterBmp.width, masterBmp.height, report)
+                            runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runMLKitIterative("ML Kit Mono Clone", masterBmp, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
 
                             for (strat in strategies) {
                                 Log.d("OCR_DEBUG", "TRANSITION: Starting strategy '$strat'")
