@@ -411,7 +411,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val jsonStages = com.google.gson.JsonObject()
                                 val allOdo = mutableListOf<String>()
                                 val inputBmp = masterBuffer as? Bitmap ?: throw IllegalArgumentException("Master must be Bitmap")
-
+                                val masterHash = System.identityHashCode(inputBmp)
+                                
                                 val l = winnerRef.vehicle.odometerCropLeft ?: 0f
                                 val t = winnerRef.vehicle.odometerCropTop ?: 0f
                                 val r = winnerRef.vehicle.odometerCropRight ?: 1f
@@ -436,6 +437,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val stages = listOf("Standard", "80% Stretch", "Bilevel", "Stretch -> Bilevel")
                                 var lastThumbB64 = ""
                                 
+                                Log.d("DIAG_TRACE", "[${displayName}] Image Index: $index, File: ${file.name}, Vehicle: ${winnerRef.vehicle.name} (ID: ${winnerRef.vehicle.id})")
+                                Log.d("DIAG_TRACE", "[${displayName}] masterBuffer: ${masterW}x${masterH} (Hash: $masterHash)")
+                                Log.d("DIAG_TRACE", "[${displayName}] ROI: ${roiW}x${roiH} at (${startX},${startY}), Aspect: ${aspect}")
+                                Log.d("DIAG_TRACE", "[${displayName}] bridge: ${bridge.width}x${bridge.height} (Hash: ${System.identityHashCode(bridge)})")
+                                Log.d("DIAG_TRACE", "[${displayName}] argbCrop: ${argbCrop.width}x${argbCrop.height} (Hash: ${System.identityHashCode(argbCrop)})")
+
                                 stages.forEach { stage ->
                                     val tStart = System.currentTimeMillis()
                                     
@@ -450,11 +457,19 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                     
                                     argbCrop.getPixels(roiPixels, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
+                                    
+                                    // Simple Checksum (XOR of first 1000 pixels)
+                                    var checksum = 0; for (i in 0 until 1000.coerceAtMost(roiPixels.size)) checksum = checksum xor roiPixels[i]
+                                    Log.d("DIAG_TRACE", "[${displayName}] Stage: $stage, Scaled Checksum: $checksum, Fit: ${fitW}x${fitH}")
+
                                     val monoBuffer = bridge.getNv21()
                                     monoBuffer.rewind()
-                                    for (i in 0 until (argbCrop.width * argbCrop.height)) {
-                                        monoBuffer.put(((roiPixels[i] shr 16) and 0xFF).toByte())
+                                    val monoBytes = ByteArray(roiPixels.size)
+                                    for (i in roiPixels.indices) {
+                                        monoBytes[i] = ((roiPixels[i] shr 16) and 0xFF).toByte()
                                     }
+                                    // CRITICAL FIX: Put into Mat directly for OpenCV recognition
+                                    bridge.getMat().put(0, 0, monoBytes)
                                     
                                     // 4.2 Preprocessing Application
                                     if (stage.contains("Stretch")) {
