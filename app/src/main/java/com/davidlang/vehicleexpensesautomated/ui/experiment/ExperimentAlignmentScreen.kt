@@ -440,7 +440,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 stages.forEach { stage ->
                                     val tStart = System.currentTimeMillis()
                                     
-                                    // 4.1 Pristine Refresh (Two-Step: Scale then Convert)
+                                    // 4.1 Pristine Refresh (Scale ARGB)
                                     val canvas = android.graphics.Canvas(argbCrop)
                                     canvas.drawColor(android.graphics.Color.BLACK)
                                     val matrix = android.graphics.Matrix()
@@ -449,16 +449,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
                                     matrix.postScale(scaleX, scaleY)
                                     canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-                                    
-                                    argbCrop.getPixels(OdometerOcrUtils.reusablePixelArray, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
-                                    val monoBuffer = bridge.getNv21()
-                                    monoBuffer.rewind()
-                                    val size = argbCrop.width * argbCrop.height
-                                    for (i in 0 until size) {
-                                        OdometerOcrUtils.reusableByteStaging[i] = ((OdometerOcrUtils.reusablePixelArray[i] shr 16) and 0xFF).toByte()
-                                    }
-                                    monoBuffer.put(OdometerOcrUtils.reusableByteStaging, 0, size)
-                                    bridge.getMat().put(0, 0, OdometerOcrUtils.reusableByteStaging)
                                     
                                     // 4.2 Preprocessing Application (Legacy Ordered Alignment)
                                     when (stage) {
@@ -475,7 +465,18 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         }
                                     }
 
-                                    // 4.3 Scale-to-Fit (Recognition)
+                                    // 4.3 Mat Synchronization (Filtered ARGB -> Mono Mat)
+                                    argbCrop.getPixels(OdometerOcrUtils.reusablePixelArray, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
+                                    val monoBuffer = bridge.getNv21()
+                                    monoBuffer.rewind()
+                                    val size = argbCrop.width * argbCrop.height
+                                    for (i in 0 until size) {
+                                        OdometerOcrUtils.reusableByteStaging[i] = ((OdometerOcrUtils.reusablePixelArray[i] shr 16) and 0xFF).toByte()
+                                    }
+                                    monoBuffer.put(OdometerOcrUtils.reusableByteStaging, 0, size)
+                                    bridge.getMat().put(0, 0, OdometerOcrUtils.reusableByteStaging)
+
+                                    // 4.4 Scale-to-Fit (Recognition)
                                     val dstMat = experimentRecBridge320x48.getMat()
                                     dstMat.setTo(org.opencv.core.Scalar(0.0))
                                     val subDst = dstMat.submat(0, fitH, 0, fitW)
