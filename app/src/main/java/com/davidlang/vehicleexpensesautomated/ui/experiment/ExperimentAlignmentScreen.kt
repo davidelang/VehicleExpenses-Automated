@@ -405,6 +405,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             }
 
                             suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
+                                val tHarnessStart = System.currentTimeMillis()
                                 val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
                                 val bridge = vehicleMonoBridges[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
                                 val scratchBridge = vehicleMonoScratches[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle scratch pool not initialized")
@@ -551,11 +552,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 meta.add("stages", jsonStages)
 
                                 val result = OcrHarnessResult(
-                                    htmlHeader = "<th>$displayName</th>",
+                                    htmlHeader = displayName,
                                     htmlCell = htmlOutput.toString(),
-                                    jsonSection = meta,
+                                    jsonSection = com.google.gson.JsonObject().apply { add("stages", jsonStages) },
                                     odometerValue = allOdo.firstOrNull { it.isNotBlank() },
-                                    thumbB64 = lastThumbB64
+                                    thumbB64 = lastThumbB64,
+                                    totalTimeMs = System.currentTimeMillis() - tHarnessStart
                                 )
                                 report.add(displayName, result)
                             }
@@ -816,6 +818,7 @@ private fun serializePhotoResultToJson(
                 vr.harnessResults.forEach { (engine, res) ->
                     val engineObj = JSONObject()
                     engineObj.put("odometer", res.odometerValue)
+                    engineObj.put("time_ms", res.totalTimeMs)
                     // Convert GSON JsonObject to org.json.JSONObject via string
                     engineObj.put("metadata", JSONObject(res.jsonSection.toString()))
                     harnessObj.put(engine, engineObj)
@@ -878,6 +881,7 @@ private fun buildHtmlRowDynamic(
         appendLine("<td>")
         val hRes = vRes?.harnessResults?.get(engine)
         if (hRes != null) {
+            appendLine("<b>Time:</b> ${hRes.totalTimeMs}ms<br>")
             appendLine(hRes.htmlCell)
         } else {
             appendLine("<i>No harness data</i>")
