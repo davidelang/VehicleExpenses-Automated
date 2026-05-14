@@ -41,7 +41,8 @@ data class OcrHarnessResult(
     val htmlCell: String,
     val jsonSection: JsonObject,
     val odometerValue: String?,
-    val thumbB64: String? = null
+    val thumbB64: String? = null,
+    val totalTimeMs: Long = 0
 )
 
 data class HarnessRunDef(
