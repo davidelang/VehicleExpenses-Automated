@@ -8,6 +8,8 @@ private external fun nativeSetup(width: Int, height: Int): Long
 private external fun nativeRelease(handle: Long)
 private external fun nativeGetMatPtr(handle: Long): Long
 private external fun nativeGetMasterBuffer(handle: Long): ByteBuffer?
+private external fun nativeSyncMatFromArgb(src: java.nio.ByteBuffer, matPtr: Long, width: Int, height: Int)
+private external fun nativeSyncMatToArgb(matPtr: Long, dst: java.nio.ByteBuffer, width: Int, height: Int)
 
 /**
  * MemoryBridge for refinement stage (320x128 / 320x48).
@@ -55,6 +57,20 @@ class MemoryBridge(val width: Int, val height: Int) {
         masterBuffer.rewind()
     }
 
+    /**
+     * Fast JNI linear copy from ARGB Bitmap to this Mono bridge.
+     */
+    fun syncFromArgb(bitmap: Bitmap) {
+        syncMatFromArgb(bitmap, masterMat)
+    }
+
+    /**
+     * Fast JNI linear copy from this Mono bridge to ARGB Bitmap.
+     */
+    fun syncToArgb(bitmap: Bitmap) {
+        syncMatToArgb(masterMat, bitmap)
+    }
+
     fun release() {
         if (nativeHandle != 0L) {
             nativeRelease(nativeHandle)
@@ -63,6 +79,37 @@ class MemoryBridge(val width: Int, val height: Int) {
     }
 
     companion object {
+        // Shared scratchpad for ARGB conversions (Max resolution 4000x3072)
+        private val staticArgbBuffer: ByteBuffer by lazy {
+            ByteBuffer.allocateDirect(4000 * 3072 * 4).order(java.nio.ByteOrder.nativeOrder())
+        }
+
+        /**
+         * Fast JNI linear copy from ARGB Bitmap to any 1-channel Mat of matching size.
+         */
+        fun syncMatFromArgb(src: Bitmap, dstMat: Mat) {
+            if (src.width != dstMat.cols() || src.height != dstMat.rows()) {
+                throw IllegalArgumentException("Dimension mismatch: Bitmap=${src.width}x${src.height}, Mat=${dstMat.cols()}x${dstMat.rows()}")
+            }
+            staticArgbBuffer.rewind()
+            src.copyPixelsToBuffer(staticArgbBuffer)
+            staticArgbBuffer.rewind()
+            nativeSyncMatFromArgb(staticArgbBuffer, dstMat.nativeObj, src.width, src.height)
+        }
+
+        /**
+         * Fast JNI linear copy from any 1-channel Mat to ARGB Bitmap of matching size.
+         */
+        fun syncMatToArgb(srcMat: Mat, dst: Bitmap) {
+            if (dst.width != srcMat.cols() || dst.height != srcMat.rows()) {
+                throw IllegalArgumentException("Dimension mismatch: Mat=${srcMat.cols()}x${srcMat.rows()}, Bitmap=${dst.width}x${dst.height}")
+            }
+            staticArgbBuffer.rewind()
+            nativeSyncMatToArgb(srcMat.nativeObj, staticArgbBuffer, dst.width, dst.height)
+            staticArgbBuffer.rewind()
+            dst.copyPixelsFromBuffer(staticArgbBuffer)
+        }
+
         var pool512x128: MemoryBridge? = null
             private set
         var pool320x48: MemoryBridge? = null
