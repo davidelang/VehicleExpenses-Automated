@@ -242,9 +242,9 @@ object ImageAlignmentUtils {
         queryLandmarks: List<TextBlock>,
         vehicle: Vehicle,
         refW: Int = 4000,
-        refH: Int = 3000,
+        refH: Int = 3072,
         queW: Int = 4000,
-        queH: Int = 3000
+        queH: Int = 3072
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()

@@ -162,7 +162,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _sharedBmpRecMono = MemoryBridge.pool320x48!!.getBitmap()
             _sharedCanvasRecMono = Canvas(_sharedBmpRecMono!!)
             
-            _sharedNv21Buffer = ByteArray(4000 * 3000 * 3 / 2)
+            _sharedNv21Buffer = ByteArray(4000 * 3072 * 3 / 2)
 
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
             _sharedBmpOdoScratchMono = Bitmap.createBitmap(512, 128, Bitmap.Config.ALPHA_8); _sharedCanvasOdoScratchMono = Canvas(_sharedBmpOdoScratchMono!!)
