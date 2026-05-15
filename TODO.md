@@ -18,6 +18,7 @@
     - [ ] Include landmark `angle` in discovery results.
     - [ ] Synchronize Python scripts for `.strip()` consistency.
 - **Identity & Matching:**
+  - [ ] **Multi-Scale Discovery:** Implement a multi-resolution discovery pipeline (e.g., full-res + 2048x2048) to resolve "landmark blindness" where ML Kit fails to detect small dashboard digits in high-resolution photos.
   - [ ] **Conflict Resolution Integration:** Connect the existing `ConflictResolutionScreen` to the identification flow for ambiguous results.
 
 ## Application Engineering

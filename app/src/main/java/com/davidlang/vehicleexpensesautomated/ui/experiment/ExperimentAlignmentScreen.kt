@@ -234,9 +234,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 115: Global Experiment-Level Buffers (Zero-Allocation Anchor)
     val experimentRecBridge320x48 = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(320, 48)
 
-    val strategies = listOf(
-        "Paddle V3 Valley", "Paddle V3 Valley Mono",
-        "ML Kit", "ML Kit Mono"
+    val strategies = listOf<String>(
+        // "Paddle V3 Valley", "Paddle V3 Valley Mono",
+        // "ML Kit", "ML Kit Mono"
     )
     // Pre-populate with iterative engines to fix HTML header alignment
     val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone", "Paddle V3 Valley Mono Diagnostic")
