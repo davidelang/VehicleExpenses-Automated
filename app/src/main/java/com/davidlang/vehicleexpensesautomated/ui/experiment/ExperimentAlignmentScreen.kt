@@ -541,13 +541,37 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         
                                         val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
                                         val hL = (maxX - minX) * 12.0; val vL = (maxY - minY) * 1.0
+                                        val lookAhead = (maxY - minY) * 4.0
                                         
                                         fun isValley(avg: Double): Boolean = avg < 15.0 || avg < valleyThreshold
                                         
+                                        // Vertical Expansion (Simple Stop)
                                         while (minY > 0 && (sY - minY) < vL) { if (isValley(getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true))) break; minY -= 1.0 }
                                         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isValley(getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true))) break; maxY += 1.0 }
-                                        while (minX > 0 && (sX - minX) < hL) { if (isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false))) break; minX -= 1.0 }
-                                        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false))) break; maxX += 1.0 }
+                                        
+                                        // Horizontal Expansion (Jump and Collapse)
+                                        var walkL = minX
+                                        var lastGoodL = minX
+                                        while (walkL > 0 && (sX - walkL) < hL) {
+                                            walkL -= 1.0
+                                            if (!isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), walkL.toInt(), false))) {
+                                                minX = walkL; lastGoodL = walkL
+                                            } else {
+                                                if ((lastGoodL - walkL) > lookAhead) break
+                                            }
+                                        }
+
+                                        var walkR = maxX
+                                        var lastGoodR = maxX
+                                        while (walkR < maxW - 1 && (walkR - sXX) < hL) {
+                                            walkR += 1.0
+                                            if (!isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), walkR.toInt(), false))) {
+                                                maxX = walkR; lastGoodR = walkR
+                                            } else {
+                                                if ((walkR - lastGoodR) > lookAhead) break
+                                            }
+                                        }
+                                        
                                         return android.graphics.Rect(kotlin.math.max(0, minX.toInt()), kotlin.math.max(0, minY.toInt()), kotlin.math.min(maxW, maxX.toInt()), kotlin.math.min(maxH, maxY.toInt()))
                                     }
 
