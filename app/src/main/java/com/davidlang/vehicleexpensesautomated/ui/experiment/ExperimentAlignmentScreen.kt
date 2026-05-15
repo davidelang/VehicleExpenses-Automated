@@ -592,13 +592,39 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val odo = odoBuilder.toString().trim()
                                     allOdo.add(odo)
                                     
+                                    // 4.6 Snapshot Scaling (Scale to 320x48 for scratch bitmap)
+                                    val aspect = bridge.width.toFloat() / bridge.height.toFloat()
+                                    val fitW: Int; val fitH: Int
+                                    if (aspect > (320f / 48f)) {
+                                        fitW = 320
+                                        fitH = (320f / aspect).toInt().coerceAtLeast(1)
+                                    } else {
+                                        fitH = 48
+                                        fitW = (48f * aspect).toInt().coerceAtLeast(1)
+                                    }
+                                    
+                                    recBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                    val snapSub = recBridge.getMat().submat(0, fitH, 0, fitW)
+                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), snapSub, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    snapSub.release()
+                                    
+                                    val scaleSnapX = fitW.toFloat() / bridge.width.toFloat()
+                                    val scaleSnapY = fitH.toFloat() / bridge.height.toFloat()
+                                    
+                                    val scaledRaw = rawBlocks.map { b ->
+                                        android.graphics.Rect((b.boundingBox.left * scaleSnapX).toInt(), (b.boundingBox.top * scaleSnapY).toInt(), (b.boundingBox.right * scaleSnapX).toInt(), (b.boundingBox.bottom * scaleSnapY).toInt())
+                                    }
+                                    val scaledConsolidated = finalBoxes.map { b ->
+                                        android.graphics.Rect((b.left * scaleSnapX).toInt(), (b.top * scaleSnapY).toInt(), (b.right * scaleSnapX).toInt(), (b.bottom * scaleSnapY).toInt())
+                                    }
+
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = bridge.getMat(),
-                                        rawFragments = rawBlocks.map { it.boundingBox },
-                                        consolidatedRows = finalBoxes,
+                                        sourceMat = recBridge.getMat(),
+                                        rawFragments = scaledRaw,
+                                        consolidatedRows = scaledConsolidated,
                                         argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
-                                        subsetW = bridge.width,
-                                        subsetH = bridge.height
+                                        subsetW = fitW,
+                                        subsetH = fitH
                                     )
 
                                     htmlOutput.append("<b>$stage:</b> $odo<br>")
