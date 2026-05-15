@@ -399,7 +399,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val obj = data.asJsonObject
                                         OcrStepResult(stageName = stage, thumbB64 = result.thumbB64 ?: "", text = obj.get("text")?.asString, metadata = mapOf("loop_time" to obj.get("time")?.asString.toString()))
                                     } ?: emptyList()
-                                    refinementTraces[engineName] = RefinementTrace(engineName, 0L, steps)
+                                    refinementTraces[engineName] = RefinementTrace(engineName, result.totalTimeMs, steps)
                                     Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
                                 }
                             }
