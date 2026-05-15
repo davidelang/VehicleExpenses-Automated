@@ -540,12 +540,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
                                         
                                         val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-                                        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0
+                                        val hL = (maxX - minX) * 12.0; val vL = (maxY - minY) * 1.0
                                         
-                                        while (minY > 0 && (sY - minY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
-                                        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
-                                        while (minX > 0 && (sX - minX) < hL) { if (getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
-                                        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+                                        fun isValley(avg: Double): Boolean = avg < 15.0 || avg < valleyThreshold
+                                        
+                                        while (minY > 0 && (sY - minY) < vL) { if (isValley(getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true))) break; minY -= 1.0 }
+                                        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isValley(getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true))) break; maxY += 1.0 }
+                                        while (minX > 0 && (sX - minX) < hL) { if (isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false))) break; minX -= 1.0 }
+                                        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false))) break; maxX += 1.0 }
                                         return android.graphics.Rect(kotlin.math.max(0, minX.toInt()), kotlin.math.max(0, minY.toInt()), kotlin.math.min(maxW, maxX.toInt()), kotlin.math.min(maxH, maxY.toInt()))
                                     }
 
@@ -597,8 +599,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         org.opencv.imgproc.Imgproc.resize(roiMat, subDst, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                         roiMat.release(); subDst.release()
                                         
-                                        recBridge.getMat().get(0, 0, OdometerOcrUtils.reusableByteStaging)
-                                        val ocrResult = paddleEngineV3Mono.runConstrainedStatic(OdometerOcrUtils.reusableByteStaging, 48, paddleEngineV3Mono.getDictionary(), true)
+                                        val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(recBridge, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
                                             odoBuilder.append(ocrResult.text).append(" ")
                                             finalBoxes.add(box)
@@ -643,7 +644,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     )
 
                                     val tLoop = System.currentTimeMillis() - tStart
-                                    htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br>DBNet Input:<br><img src='data:image/jpeg;base64,$detThumbB64'><br>Result:<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
+                                    htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
                                     
                                     val stageObj = com.google.gson.JsonObject()
                                     stageObj.addProperty("text", odo)
