@@ -239,7 +239,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         "ML Kit", "ML Kit Mono"
     )
     // Pre-populate with iterative engines to fix HTML header alignment
-    val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone")
+    val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone", "Paddle V3 Valley Mono Diagnostic")
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, strategies, harnessEngineNames)) 
@@ -402,6 +402,199 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     refinementTraces[engineName] = RefinementTrace(engineName, 0L, steps)
                                     Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
                                 }
+                            }
+
+                            suspend fun runPaddleValleyMonoIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
+                                val tHarnessStart = System.currentTimeMillis()
+                                val bridge = vehicleMonoBridges[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
+                                val scratchBridge = vehicleMonoScratches[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle scratch pool not initialized")
+                                val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
+                                
+                                // Discovery & Recognition Pools (Zero-Allocation)
+                                val detBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool512x128 ?: throw IllegalStateException("Discovery pool not initialized")
+                                val recBridge = experimentRecBridge320x48
+
+                                val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
+                                val jsonStages = com.google.gson.JsonObject()
+                                val allOdo = mutableListOf<String>()
+
+                                val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+                                val t = winnerRef.vehicle.odometerCropTop ?: 0f
+                                val r = winnerRef.vehicle.odometerCropRight ?: 1f
+                                val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+
+                                val roiW = ((r - l) * masterW).toInt().coerceAtMost(masterW)
+                                val roiH = ((b - t) * masterH).toInt().coerceAtMost(masterH)
+                                val startX = (l * masterW).toInt().coerceIn(0, masterW - 1)
+                                val startY = (t * masterH).toInt().coerceIn(0, masterH - 1)
+
+                                val stages = listOf("Raw", "80% Stretch Only", "Bilateral -> 80% Stretch", "80% Stretch -> Bilateral")
+                                var lastThumbB64 = ""
+
+                                stages.forEach { stage ->
+                                    val tStart = System.currentTimeMillis()
+
+                                    // 4.1 Pristine Refresh (Explicit Type Handling)
+                                    when (masterBuffer) {
+                                        is Bitmap -> {
+                                            val canvas = android.graphics.Canvas(argbCrop)
+                                            canvas.drawColor(android.graphics.Color.BLACK)
+                                            val matrix = android.graphics.Matrix()
+                                            val scaleX = argbCrop.width.toFloat() / roiW.toFloat()
+                                            val scaleY = argbCrop.height.toFloat() / roiH.toFloat()
+                                            matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
+                                            matrix.postScale(scaleX, scaleY)
+                                            canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+                                            bridge.syncFromArgb(argbCrop)
+                                        }
+                                        is org.opencv.core.Mat -> {
+                                            bridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                            val sourceRoi = masterBuffer.submat(startY, startY + roiH, startX, startX + roiW)
+                                            val interp = if (roiW > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
+                                            sourceRoi.release()
+                                        }
+                                        is java.nio.ByteBuffer -> {
+                                            bridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                            masterBuffer.rewind()
+                                            val nv21Mat = org.opencv.core.Mat(masterH, masterW, org.opencv.core.CvType.CV_8UC1, masterBuffer, 4000L)
+                                            val sourceRoi = nv21Mat.submat(startY, startY + roiH, startX, startX + roiW)
+                                            val interp = if (roiW > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
+                                            sourceRoi.release()
+                                            nv21Mat.release()
+                                        }
+                                    }
+
+                                    fun apply80Stretch(mat: org.opencv.core.Mat) {
+                                        val totalPixels = mat.cols() * mat.rows()
+                                        val hist = NativePaddleEngine.histResult
+                                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), NativePaddleEngine.histChannels, NativePaddleEngine.histMask, hist, NativePaddleEngine.histSize, NativePaddleEngine.histRanges)
+                                        var floorBin = 0; var ceilingBin = 255; var sum = 0.0
+                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.80) { floorBin = i; break } }
+                                        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
+                                        val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
+                                        mat.convertTo(mat, org.opencv.core.CvType.CV_8U, alpha, beta)
+                                    }
+                                    
+                                    when (stage) {
+                                        "80% Stretch Only" -> apply80Stretch(bridge.getMat())
+                                        "Bilateral -> 80% Stretch" -> {
+                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
+                                            scratchBridge.getMat().copyTo(bridge.getMat())
+                                            apply80Stretch(bridge.getMat())
+                                        }
+                                        "80% Stretch -> Bilateral" -> {
+                                            apply80Stretch(bridge.getMat())
+                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
+                                            scratchBridge.getMat().copyTo(bridge.getMat())
+                                        }
+                                    }
+
+                                    // --- 2-STAGE PADDLE V3 MONO ---
+                                    
+                                    // 1. Discovery Stage (Scale to 512x128)
+                                    detBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                    val detScale = kotlin.math.min(512f / bridge.width.toFloat(), 128f / bridge.height.toFloat())
+                                    val fitDetW = (bridge.width * detScale).toInt().coerceAtMost(512)
+                                    val fitDetH = (bridge.height * detScale).toInt().coerceAtMost(128)
+                                    val detSub = detBridge.getMat().submat(0, fitDetH, 0, fitDetW)
+                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), detSub, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    detSub.release()
+                                    
+                                    val det = paddleEngineV3Mono.detect(detBridge.getBitmap(), 512, 128)
+                                    val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, bridge.getBitmap(), "Paddle") else emptyList()
+                                    
+                                    // 2. Valley Expansion (Pixel Walking)
+                                    fun getLineAverage(mat: org.opencv.core.Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
+                                        var sum = 0.0; var count = 0; val maxD = if (horizontal) mat.cols() else mat.rows()
+                                        if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0.0
+                                        for (i in start until end) { if (i < 0 || i >= maxD) continue; sum += if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]; count++ }
+                                        return if (count > 0) sum / count else 0.0
+                                    }
+                                    
+                                    fun expandByValleyStop(redFloor: android.graphics.Rect, gray: org.opencv.core.Mat): android.graphics.Rect {
+                                        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
+                                        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
+                                        val hillSub = gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)
+                                        val hillBrightness = org.opencv.core.Core.mean(hillSub).`val`[0]
+                                        hillSub.release()
+                                        val valleyThreshold = hillBrightness * 0.40 
+                                        val maxH = gray.rows(); val maxW = gray.cols()
+                                        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+                                        while (minY > 0 && (sY - minY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
+                                        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
+                                        while (minX > 0 && (sX - minX) < hL) { if (getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
+                                        while (maxX < maxW - 1 && (maxX - sXX) < hL) { if (getLineAverage(gray, minY.toInt(), maxY.toInt(), (maxX + 1).toInt(), false) < valleyThreshold) break; maxX += 1.0 }
+                                        return android.graphics.Rect(kotlin.math.max(0, minX.toInt()), kotlin.math.max(0, minY.toInt()), kotlin.math.min(maxW, maxX.toInt()), kotlin.math.min(maxH, maxY.toInt()))
+                                    }
+
+                                    val orangeFragments = rawBlocks.map { expandByValleyStop(it.boundingBox, bridge.getMat()) }
+                                    
+                                    // 3. Clustering
+                                    val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
+                                    for (frag in orangeFragments) {
+                                        val matchingClusters = mutableListOf<Int>()
+                                        for ((idx, cluster) in clusters.withIndex()) {
+                                            if (cluster.any { c ->
+                                                val overlapTop = kotlin.math.max(frag.top, c.top); val overlapBottom = kotlin.math.min(frag.bottom, c.bottom)
+                                                val overlapHeight = overlapBottom - overlapTop
+                                                overlapHeight > 0 && overlapHeight >= kotlin.math.min(frag.height(), c.height()) * 0.20
+                                            }) matchingClusters.add(idx)
+                                        }
+                                        if (matchingClusters.isEmpty()) clusters.add(mutableListOf(frag))
+                                        else {
+                                            val firstIdx = matchingClusters[0]; clusters[firstIdx].add(frag)
+                                            for (k in matchingClusters.size - 1 downTo 1) { clusters[firstIdx].addAll(clusters[matchingClusters[k]]); clusters.removeAt(matchingClusters[k]) }
+                                        }
+                                    }
+                                    val consolidatedBoxes = clusters.map { cluster -> android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) }.sortedBy { it.top }
+                                    
+                                    // 4. Recognition Stage (4-Pixel Padding)
+                                    val odoBuilder = StringBuilder()
+                                    val finalBoxes = mutableListOf<android.graphics.Rect>()
+                                    consolidatedBoxes.forEach { box ->
+                                        val safeRect = org.opencv.core.Rect(box.left, box.top, box.width(), box.height())
+                                        val roiMat = org.opencv.core.Mat(bridge.getMat(), safeRect)
+                                        
+                                        recBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                        // Padding Math: 320x48 target, 312x40 content (4px border)
+                                        val subDst = recBridge.getMat().submat(4, 44, 4, 316)
+                                        org.opencv.imgproc.Imgproc.resize(roiMat, subDst, org.opencv.core.Size(312.0, 40.0), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                        roiMat.release(); subDst.release()
+                                        
+                                        recBridge.getMat().get(0, 0, OdometerOcrUtils.reusableByteStaging)
+                                        val ocrResult = paddleEngineV3Mono.runConstrainedStatic(OdometerOcrUtils.reusableByteStaging, 48, paddleEngineV3Mono.getDictionary(), true)
+                                        if (ocrResult.text.isNotBlank()) {
+                                            odoBuilder.append(ocrResult.text).append(" ")
+                                            finalBoxes.add(box)
+                                        }
+                                    }
+                                    val odo = odoBuilder.toString().trim()
+                                    allOdo.add(odo)
+                                    
+                                    lastThumbB64 = OcrUtils.takeSnapshot(
+                                        sourceMat = bridge.getMat(),
+                                        rawFragments = rawBlocks.map { it.boundingBox },
+                                        consolidatedRows = finalBoxes,
+                                        argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
+                                        subsetW = bridge.width,
+                                        subsetH = bridge.height
+                                    )
+
+                                    htmlOutput.append("<b>$stage:</b> $odo<br>")
+                                    jsonStages.addProperty(stage, odo)
+                                }
+
+                                val result = OcrHarnessResult(
+                                    htmlHeader = displayName,
+                                    htmlCell = htmlOutput.toString(),
+                                    jsonSection = jsonStages,
+                                    odometerValue = allOdo.groupBy { it }.maxByOrNull { it.value.size }?.key,
+                                    thumbB64 = lastThumbB64,
+                                    totalTimeMs = System.currentTimeMillis() - tHarnessStart
+                                )
+                                harnessResultsMap[displayName] = result
                             }
 
                             suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
@@ -585,6 +778,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             // --- Sequential Execution ---
                             runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
                             runMLKitIterative("ML Kit Mono Clone", masterBmp, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Diagnostic", masterBmp, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
 
                             for (strat in strategies) {
                                 Log.d("OCR_DEBUG", "TRANSITION: Starting strategy '$strat'")
