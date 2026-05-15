@@ -688,7 +688,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     thumbB64 = lastThumbB64,
                                     totalTimeMs = System.currentTimeMillis() - tHarnessStart
                                 )
-                                harnessResultsMap[displayName] = result
+                                report.add(displayName, result)
                             }
 
                             suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
