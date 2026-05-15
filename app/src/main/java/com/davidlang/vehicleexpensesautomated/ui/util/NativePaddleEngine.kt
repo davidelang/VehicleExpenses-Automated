@@ -133,6 +133,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedMonoBytes: ByteArray get() = _sharedMonoBytes!!
         val sharedMatrix = android.graphics.Matrix()
 
+        // Static Histogram Parameters (Zero-Allocation)
+        private val _histChannels = org.opencv.core.MatOfInt(0)
+        private val _histSize = org.opencv.core.MatOfInt(256)
+        private val _histRanges = org.opencv.core.MatOfFloat(0f, 256f)
+        private val _histMask = org.opencv.core.Mat()
+        private val _histResult = org.opencv.core.Mat()
+
+        val histChannels: org.opencv.core.MatOfInt get() = _histChannels
+        val histSize: org.opencv.core.MatOfInt get() = _histSize
+        val histRanges: org.opencv.core.MatOfFloat get() = _histRanges
+        val histMask: org.opencv.core.Mat get() = _histMask
+        val histResult: org.opencv.core.Mat get() = _histResult
+
         fun initializeGlobalBuffers(context: Context) {
             if (isAvailableGlobally) return
             Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
