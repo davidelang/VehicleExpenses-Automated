@@ -627,14 +627,23 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         subsetH = fitH
                                     )
 
-                                    htmlOutput.append("<b>$stage:</b> $odo<br>")
-                                    jsonStages.addProperty(stage, odo)
+                                    val tLoop = System.currentTimeMillis() - tStart
+                                    htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
+                                    
+                                    val stageObj = com.google.gson.JsonObject()
+                                    stageObj.addProperty("text", odo)
+                                    stageObj.addProperty("time", tLoop)
+                                    jsonStages.add(stage, stageObj)
                                 }
+
+                                val meta = com.google.gson.JsonObject()
+                                meta.addProperty("inputW", masterW); meta.addProperty("inputH", masterH)
+                                meta.add("stages", jsonStages)
 
                                 val result = OcrHarnessResult(
                                     htmlHeader = displayName,
                                     htmlCell = htmlOutput.toString(),
-                                    jsonSection = jsonStages,
+                                    jsonSection = meta,
                                     odometerValue = allOdo.groupBy { it }.maxByOrNull { it.value.size }?.key,
                                     thumbB64 = lastThumbB64,
                                     totalTimeMs = System.currentTimeMillis() - tHarnessStart
