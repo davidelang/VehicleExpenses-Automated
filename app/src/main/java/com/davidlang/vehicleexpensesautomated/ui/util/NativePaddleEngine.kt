@@ -465,12 +465,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 } else break
             }
             lastIdx = maxIdx
+        }
         val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
         Log.d("OCR_DEBUG", "END: text='$finalStr', avgConf=$finalConf")
         return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null)
-        }
+    }
 
-        suspend fun runConstrainedStaticMono(bridge: MemoryBridge, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
+    suspend fun runConstrainedStaticMono(bridge: MemoryBridge, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (recognizer == null || !useMono) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
 
@@ -508,8 +509,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         } catch (t: Throwable) { 
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }
-        }
-        }
+    }
     data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
     override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
