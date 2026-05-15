@@ -6,6 +6,8 @@
 - [ ] **PLAN:** Phase 3 - ImageNet (Norm B) vs Standard (Norm A) Normalization Sweep (linked to `dev-ai-interaction/plans/normalization-sweep.md`)
 
 ## Core Logic & Recovery
+- **NativePaddleEngine Refactoring:**
+  - [ ] Extract hardcoded buffer/tensor dimensions (512x128, 2048x2048) into a unified configuration registry or array to ensure consistent initialization across pre-allocated buffers, PaddlePredictor input resizes, and runtime dimension checks, eliminating brittle `if/else` logic.
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
     - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.

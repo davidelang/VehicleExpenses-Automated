@@ -359,6 +359,47 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         } catch (t: Throwable) { Log.e("PaddleDetect", "Detection failed", t); return null }
     }
 
+    fun detectMono(bridge: MemoryBridge): DetectionResult? {
+        val w = bridge.width
+        val h = bridge.height
+        val area = w * h
+
+        val predictor = if (w >= 2048) detectorLarge else detectorSmall
+        if (predictor == null) return null
+
+        val floatData = if (w >= 2048) bufferLargeMono else bufferSmallMono
+        
+        // Ensure the bridge dimensions don't exceed our pre-allocated tensors
+        val maxArea = if (w >= 2048) 2048 * 2048 else 512 * 128
+        if (area > maxArea) {
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated mono tensor capacity.")
+            return null
+        }
+        
+        // Warn if the buffer size does not match the exact expected tensor sizes
+        if (!((w == 512 && h == 128) || (w == 2048 && h == 2048))) {
+            Log.w("PaddleDetect", "Warning: Bridge dimensions (${w}x${h}) do not exactly match expected tensor sizes (512x128 or 2048x2048).")
+        }
+
+        floatData.fill(0.0f)
+        val buffer = bridge.getNv21()
+        buffer.rewind()
+        
+        val mean = 0.485f; val std = 0.229f
+        for (i in 0 until area) {
+            floatData[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
+        }
+
+        try {
+            val inputTensor = predictor.getInput(0); inputTensor.setData(floatData); predictor.run()
+            val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
+            return DetectionResult(outputTensor.floatData, dims[3].toInt(), dims[2].toInt())
+        } catch (t: Throwable) { 
+            Log.e("PaddleDetect", "Mono detection failed", t)
+            return null 
+        }
+    }
+
     suspend fun runConstrainedStatic(input: Any, targetHeight: Int, dictionary: List<String>, isV3: Boolean): RecStageResult = withContext(Dispatchers.IO) {
         if (recognizer == null) return@withContext RecStageResult("", 0, 0f, null)
         if (android.os.Debug.getNativeHeapAllocatedSize() > 2.4 * 1024 * 1024 * 1024) return@withContext RecStageResult("(Skipped: Memory)", 0, 0f, null)
