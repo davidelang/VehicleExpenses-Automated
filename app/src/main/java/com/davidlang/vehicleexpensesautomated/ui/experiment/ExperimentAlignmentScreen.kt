@@ -511,7 +511,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         subsetH = 48
                                     )
 
-                                    val det = paddleEngineV3Mono.detect(detBridge.getBitmap(), 512, 128)
+                                    val det = paddleEngineV3Mono.detectMono(detBridge)
                                     val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, bridge.getBitmap(), "Paddle") else emptyList()
                                     
                                     // 2. Valley Expansion (Pixel Walking)
