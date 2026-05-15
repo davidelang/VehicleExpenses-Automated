@@ -514,14 +514,25 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
                                     
                                     fun expandByValleyStop(redFloor: android.graphics.Rect, gray: org.opencv.core.Mat): android.graphics.Rect {
-                                        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
-                                        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-                                        val hillSub = gray.submat(redFloor.top, redFloor.bottom, redFloor.left, redFloor.right)
+                                        val maxH = gray.rows(); val maxW = gray.cols()
+                                        
+                                        // 1. Clamp redFloor to 1px from the edge before submat
+                                        val safeL = redFloor.left.coerceIn(0, maxW - 1)
+                                        val safeT = redFloor.top.coerceIn(0, maxH - 1)
+                                        val safeR = redFloor.right.coerceIn(safeL + 1, maxW)
+                                        val safeB = redFloor.bottom.coerceIn(safeT + 1, maxH)
+                                        
+                                        val hillSub = gray.submat(safeT, safeB, safeL, safeR)
                                         val hillBrightness = org.opencv.core.Core.mean(hillSub).`val`[0]
                                         hillSub.release()
+                                        
                                         val valleyThreshold = hillBrightness * 0.40 
-                                        val maxH = gray.rows(); val maxW = gray.cols()
-                                        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0; val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+                                        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
+                                        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
+                                        
+                                        val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
+                                        val hL = (maxX - minX) * 4.0; val vL = (maxY - minY) * 1.0
+                                        
                                         while (minY > 0 && (sY - minY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true) < valleyThreshold) break; minY -= 1.0 }
                                         while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true) < valleyThreshold) break; maxY += 1.0 }
                                         while (minX > 0 && (sX - minX) < hL) { if (getLineAverage(gray, minY.toInt(), maxY.toInt(), (minX - 1).toInt(), false) < valleyThreshold) break; minX -= 1.0 }
@@ -548,13 +559,21 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             for (k in matchingClusters.size - 1 downTo 1) { clusters[firstIdx].addAll(clusters[matchingClusters[k]]); clusters.removeAt(matchingClusters[k]) }
                                         }
                                     }
-                                    val consolidatedBoxes = clusters.map { cluster -> android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) }.sortedBy { it.top }
+                                    val consolidatedBoxes = clusters.map { cluster -> 
+                                        android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) 
+                                    }.sortedBy { it.top }
                                     
                                     // 4. Recognition Stage (4-Pixel Padding)
                                     val odoBuilder = StringBuilder()
                                     val finalBoxes = mutableListOf<android.graphics.Rect>()
                                     consolidatedBoxes.forEach { box ->
-                                        val safeRect = org.opencv.core.Rect(box.left, box.top, box.width(), box.height())
+                                        // 2. Clamp final box to matrix edges
+                                        val safeL = box.left.coerceIn(0, bridge.width - 1)
+                                        val safeT = box.top.coerceIn(0, bridge.height - 1)
+                                        val safeR = box.right.coerceIn(safeL + 1, bridge.width)
+                                        val safeB = box.bottom.coerceIn(safeT + 1, bridge.height)
+                                        
+                                        val safeRect = org.opencv.core.Rect(safeL, safeT, safeR - safeL, safeB - safeT)
                                         val roiMat = org.opencv.core.Mat(bridge.getMat(), safeRect)
                                         
                                         recBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
