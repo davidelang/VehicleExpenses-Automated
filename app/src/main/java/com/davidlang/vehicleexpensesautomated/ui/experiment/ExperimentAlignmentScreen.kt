@@ -452,40 +452,39 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     matrix.postScale(scaleX, scaleY)
                                     canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                     
-                                    argbCrop.getPixels(OdometerOcrUtils.reusablePixelArray, 0, argbCrop.width, 0, 0, argbCrop.width, argbCrop.height)
-                                    val monoBuffer = bridge.getNv21()
-                                    monoBuffer.rewind()
-                                    val size = argbCrop.width * argbCrop.height
-                                    for (i in 0 until size) {
-                                        OdometerOcrUtils.reusableByteStaging[i] = ((OdometerOcrUtils.reusablePixelArray[i] shr 16) and 0xFF).toByte()
-                                    }
-                                    monoBuffer.put(OdometerOcrUtils.reusableByteStaging, 0, size)
-                                    bridge.getMat().put(0, 0, OdometerOcrUtils.reusableByteStaging)
+                                    // Use new JNI fast sync to populate the iterative bridge
+                                    bridge.syncFromArgb(argbCrop)
 
-                                    fun apply80Stretch(mat: org.opencv.core.Mat, scratch: org.opencv.core.Mat) {
-                                        val hist = org.opencv.core.Mat()
-                                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+                                    fun apply80Stretch(mat: org.opencv.core.Mat) {
+                                        val totalPixels = mat.cols() * mat.rows()
+                                        val hist = NativePaddleEngine.histResult
+                                        org.opencv.imgproc.Imgproc.calcHist(
+                                            java.util.Collections.singletonList(mat), 
+                                            NativePaddleEngine.histChannels, 
+                                            NativePaddleEngine.histMask, 
+                                            hist, 
+                                            NativePaddleEngine.histSize, 
+                                            NativePaddleEngine.histRanges
+                                        )
                                         var floorBin = 0; var ceilingBin = 255; var sum = 0.0
-                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= size * 0.80) { floorBin = i; break } }
-                                        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= size * 0.98) { ceilingBin = i; break } }
+                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.80) { floorBin = i; break } }
+                                        sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
                                         val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
-                                        mat.convertTo(scratch, org.opencv.core.CvType.CV_8U, alpha, beta)
-                                        scratch.copyTo(mat)
-                                        hist.release()
+                                        mat.convertTo(mat, org.opencv.core.CvType.CV_8U, alpha, beta)
                                     }
                                     
                                     // 4.2 Preprocessing Application (Native OpenCV Mat Logic)
                                     when (stage) {
                                         "80% Stretch Only" -> {
-                                            apply80Stretch(bridge.getMat(), scratchBridge.getMat())
+                                            apply80Stretch(bridge.getMat())
                                         }
                                         "Bilateral -> 80% Stretch" -> {
                                             org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
                                             scratchBridge.getMat().copyTo(bridge.getMat())
-                                            apply80Stretch(bridge.getMat(), scratchBridge.getMat())
+                                            apply80Stretch(bridge.getMat())
                                         }
                                         "80% Stretch -> Bilateral" -> {
-                                            apply80Stretch(bridge.getMat(), scratchBridge.getMat())
+                                            apply80Stretch(bridge.getMat())
                                             org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
                                             scratchBridge.getMat().copyTo(bridge.getMat())
                                         }
