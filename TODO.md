@@ -28,6 +28,12 @@
   - [ ] **Final Validation (Phase 4):**
     - [ ] Benchmark accuracy vs. ML Kit using the 12-image test set.
     - [ ] Compare "Veto" accuracy between ML Kit and Paddle-Lite discovery.
+  - [x] **Paddle Valley Mono Iterative Implementation:**
+    - [x] Implement `runPaddleValleyMonoIterative` mirroring `runMLKitIterative` architecture.
+    - [x] Use global `MemoryBridge` pools (`pool512x128`, `experimentRecBridge320x48`) for zero-allocation processing.
+    - [x] Implement sophisticated pixel-walking `expandByValleyStop` logic.
+    - [x] Add mandatory 4-pixel padding to recognition stage.
+    - [x] Integrate into experiment alignment screen and reports.
   - [x] Strip debug information and excessive logging from the Paddle Lite `x86_64` Android build to reduce binary size (currently ~9.6MB).
 
 - **Alignment & Processing:**
