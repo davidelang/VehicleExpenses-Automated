@@ -754,7 +754,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         }
                                     }
 
-                                    fun apply80Stretch(mat: org.opencv.core.Mat) {
+                                    fun applyStretch(mat: org.opencv.core.Mat, threshold: Double) {
                                         val totalPixels = mat.cols() * mat.rows()
                                         val hist = NativePaddleEngine.histResult
                                         org.opencv.imgproc.Imgproc.calcHist(
@@ -766,7 +766,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             NativePaddleEngine.histRanges
                                         )
                                         var floorBin = 0; var ceilingBin = 255; var sum = 0.0
-                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.80) { floorBin = i; break } }
+                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * threshold) { floorBin = i; break } }
                                         sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
                                         val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
                                         mat.convertTo(mat, org.opencv.core.CvType.CV_8U, alpha, beta)
