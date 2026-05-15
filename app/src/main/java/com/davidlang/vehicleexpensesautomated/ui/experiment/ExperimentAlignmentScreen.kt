@@ -502,6 +502,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), detSub, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     detSub.release()
                                     
+                                    val detThumbB64 = OcrUtils.takeSnapshot(
+                                        sourceMat = detBridge.getMat(),
+                                        rawFragments = emptyList(),
+                                        consolidatedRows = emptyList(),
+                                        argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
+                                        subsetW = 320,
+                                        subsetH = 48
+                                    )
+
                                     val det = paddleEngineV3Mono.detect(detBridge.getBitmap(), 512, 128)
                                     val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, bridge.getBitmap(), "Paddle") else emptyList()
                                     
@@ -577,9 +586,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val roiMat = org.opencv.core.Mat(bridge.getMat(), safeRect)
                                         
                                         recBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
-                                        // Padding Math: 320x48 target, 312x40 content (4px border)
-                                        val subDst = recBridge.getMat().submat(4, 44, 4, 316)
-                                        org.opencv.imgproc.Imgproc.resize(roiMat, subDst, org.opencv.core.Size(312.0, 40.0), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                        
+                                        // Aspect-ratio scaling to fit within 312x40, anchored at (4,4)
+                                        val recScale = kotlin.math.min(312f / safeRect.width.toFloat(), 40f / safeRect.height.toFloat())
+                                        val fitRecW = (safeRect.width * recScale).toInt().coerceAtMost(312)
+                                        val fitRecH = (safeRect.height * recScale).toInt().coerceAtMost(40)
+                                        
+                                        val offX = 4; val offY = 4
+                                        val subDst = recBridge.getMat().submat(offY, offY + fitRecH, offX, offX + fitRecW)
+                                        org.opencv.imgproc.Imgproc.resize(roiMat, subDst, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                         roiMat.release(); subDst.release()
                                         
                                         recBridge.getMat().get(0, 0, OdometerOcrUtils.reusableByteStaging)
@@ -628,7 +643,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     )
 
                                     val tLoop = System.currentTimeMillis() - tStart
-                                    htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
+                                    htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br>DBNet Input:<br><img src='data:image/jpeg;base64,$detThumbB64'><br>Result:<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
                                     
                                     val stageObj = com.google.gson.JsonObject()
                                     stageObj.addProperty("text", odo)
