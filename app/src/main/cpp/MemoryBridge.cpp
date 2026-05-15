@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include <android/bitmap.h>
 #include <opencv2/core.hpp>
 #include <cstring>
 
@@ -89,41 +90,54 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeGetMast
 
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeSyncMatFromArgb(
-    JNIEnv* env, jclass clazz, jobject srcBuffer, jlong dstMatPtr, jint width, jint height) {
+    JNIEnv* env, jclass clazz, jobject bitmap, jlong dstMatPtr) {
+    
+    AndroidBitmapInfo info;
+    void* pixels;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) < 0) return;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0) return;
     
     auto* dstMat = reinterpret_cast<cv::Mat*>(dstMatPtr);
-    uint8_t* src = (uint8_t*)env->GetDirectBufferAddress(srcBuffer);
+    uint8_t* src = (uint8_t*)pixels;
     uint8_t* dst = dstMat->data;
     
-    if (src == nullptr || dst == nullptr) return;
-    if (dstMat->cols != width || dstMat->rows != height) return;
-
-    size_t count = (size_t)width * (size_t)height;
-    for (size_t i = 0; i < count; ++i) {
-        dst[i] = src[i * 4]; // Extract R-channel
+    // We maintain linear copy logic (stride=width*4) per mandate for multiple-of-32 compatibility
+    if (src != nullptr && dst != nullptr && dstMat->cols == (int)info.width && dstMat->rows == (int)info.height) {
+        size_t count = (size_t)info.width * info.height;
+        for (size_t i = 0; i < count; ++i) {
+            dst[i] = src[i * 4]; // Linear extract Red
+        }
     }
+    
+    AndroidBitmap_unlockPixels(env, bitmap);
 }
 
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_MemoryBridgeKt_nativeSyncMatToArgb(
-    JNIEnv* env, jclass clazz, jlong srcMatPtr, jobject dstBuffer, jint width, jint height) {
+    JNIEnv* env, jclass clazz, jlong srcMatPtr, jobject bitmap) {
+    
+    AndroidBitmapInfo info;
+    void* pixels;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) < 0) return;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0) return;
     
     auto* srcMat = reinterpret_cast<cv::Mat*>(srcMatPtr);
     uint8_t* src = srcMat->data;
-    uint8_t* dst = (uint8_t*)env->GetDirectBufferAddress(dstBuffer);
+    uint8_t* dst = (uint8_t*)pixels;
     
-    if (src == nullptr || dst == nullptr) return;
-    if (srcMat->cols != width || srcMat->rows != height) return;
-
-    size_t count = (size_t)width * (size_t)height;
-    for (size_t i = 0; i < count; ++i) {
-        uint8_t v = src[i];
-        size_t base = i * 4;
-        dst[base]     = v; // R
-        dst[base + 1] = v; // G
-        dst[base + 2] = v; // B
-        dst[base + 3] = 0xFF; // A
+    if (src != nullptr && dst != nullptr && srcMat->cols == (int)info.width && srcMat->rows == (int)info.height) {
+        size_t count = (size_t)info.width * info.height;
+        for (size_t i = 0; i < count; ++i) {
+            uint8_t v = src[i];
+            size_t base = i * 4;
+            dst[base]     = v;
+            dst[base + 1] = v;
+            dst[base + 2] = v;
+            dst[base + 3] = 0xFF;
+        }
     }
+    
+    AndroidBitmap_unlockPixels(env, bitmap);
 }
 
 }

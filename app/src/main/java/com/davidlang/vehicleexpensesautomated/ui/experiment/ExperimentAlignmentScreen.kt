@@ -414,13 +414,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
                                 val jsonStages = com.google.gson.JsonObject()
                                 val allOdo = mutableListOf<String>()
-                                val inputBmp = masterBuffer as? Bitmap ?: throw IllegalArgumentException("Master must be Bitmap")
 
                                 val l = winnerRef.vehicle.odometerCropLeft ?: 0f
                                 val t = winnerRef.vehicle.odometerCropTop ?: 0f
                                 val r = winnerRef.vehicle.odometerCropRight ?: 1f
                                 val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-                                
+
                                 val roiW = ((r - l) * masterW).toInt().coerceAtMost(masterW)
                                 val roiH = ((b - t) * masterH).toInt().coerceAtMost(masterH)
                                 val startX = (l * masterW).toInt().coerceIn(0, masterW - 1)
@@ -438,22 +437,44 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                 val stages = listOf("Raw", "80% Stretch Only", "Bilateral -> 80% Stretch", "80% Stretch -> Bilateral")
                                 var lastThumbB64 = ""
-                                
+
                                 stages.forEach { stage ->
                                     val tStart = System.currentTimeMillis()
-                                    
-                                    // 4.1 Pristine Refresh (Scale ARGB & Sync to Mat)
-                                    val canvas = android.graphics.Canvas(argbCrop)
-                                    canvas.drawColor(android.graphics.Color.BLACK)
-                                    val matrix = android.graphics.Matrix()
-                                    val scaleX = argbCrop.width.toFloat() / roiW.toFloat()
-                                    val scaleY = argbCrop.height.toFloat() / roiH.toFloat()
-                                    matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
-                                    matrix.postScale(scaleX, scaleY)
-                                    canvas.drawBitmap(inputBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-                                    
-                                    // Use new JNI fast sync to populate the iterative bridge
-                                    bridge.syncFromArgb(argbCrop)
+
+                                    // 4.1 Pristine Refresh (Explicit Type Handling)
+                                    when (masterBuffer) {
+                                        is Bitmap -> {
+                                            val canvas = android.graphics.Canvas(argbCrop)
+                                            canvas.drawColor(android.graphics.Color.BLACK)
+                                            val matrix = android.graphics.Matrix()
+                                            val scaleX = argbCrop.width.toFloat() / roiW.toFloat()
+                                            val scaleY = argbCrop.height.toFloat() / roiH.toFloat()
+                                            matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
+                                            matrix.postScale(scaleX, scaleY)
+                                            canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+
+                                            // Use new zero-buffer JNI fast sync to populate the iterative bridge
+                                            bridge.syncFromArgb(argbCrop)
+                                        }
+                                        is org.opencv.core.Mat -> {
+                                            bridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                            val sourceRoi = masterBuffer.submat(startY, startY + roiH, startX, startX + roiW)
+                                            val interp = if (roiW > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
+                                            sourceRoi.release()
+                                        }
+                                        is java.nio.ByteBuffer -> {
+                                            bridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                            masterBuffer.rewind()
+                                            // Directly use fixed step for dashboard bridge
+                                            val nv21Mat = org.opencv.core.Mat(masterH, masterW, org.opencv.core.CvType.CV_8UC1, masterBuffer, 4000L)
+                                            val sourceRoi = nv21Mat.submat(startY, startY + roiH, startX, startX + roiW)
+                                            val interp = if (roiW > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
+                                            sourceRoi.release()
+                                            nv21Mat.release()
+                                        }
+                                    }
 
                                     fun apply80Stretch(mat: org.opencv.core.Mat) {
                                         val totalPixels = mat.cols() * mat.rows()
