@@ -428,7 +428,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val startX = (l * masterW).toInt().coerceIn(0, masterW - 1)
                                 val startY = (t * masterH).toInt().coerceIn(0, masterH - 1)
 
-                                val stages = listOf("Raw", "80% Stretch Only", "Bilateral -> 80% Stretch", "80% Stretch -> Bilateral")
+                                val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
                                 var lastThumbB64 = ""
 
                                 stages.forEach { stage ->
@@ -466,29 +466,20 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         }
                                     }
 
-                                    fun apply80Stretch(mat: org.opencv.core.Mat) {
+                                    fun applyStretch(mat: org.opencv.core.Mat, threshold: Double) {
                                         val totalPixels = mat.cols() * mat.rows()
                                         val hist = NativePaddleEngine.histResult
                                         org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), NativePaddleEngine.histChannels, NativePaddleEngine.histMask, hist, NativePaddleEngine.histSize, NativePaddleEngine.histRanges)
                                         var floorBin = 0; var ceilingBin = 255; var sum = 0.0
-                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.80) { floorBin = i; break } }
+                                        for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * threshold) { floorBin = i; break } }
                                         sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
                                         val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
                                         mat.convertTo(mat, org.opencv.core.CvType.CV_8U, alpha, beta)
                                     }
                                     
                                     when (stage) {
-                                        "80% Stretch Only" -> apply80Stretch(bridge.getMat())
-                                        "Bilateral -> 80% Stretch" -> {
-                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
-                                            scratchBridge.getMat().copyTo(bridge.getMat())
-                                            apply80Stretch(bridge.getMat())
-                                        }
-                                        "80% Stretch -> Bilateral" -> {
-                                            apply80Stretch(bridge.getMat())
-                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
-                                            scratchBridge.getMat().copyTo(bridge.getMat())
-                                        }
+                                        "80% Stretch Only" -> applyStretch(bridge.getMat(), 0.80)
+                                        "78% Stretch" -> applyStretch(bridge.getMat(), 0.78)
                                     }
 
                                     // --- 2-STAGE PADDLE V3 MONO ---
@@ -722,7 +713,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     fitW = (48f * aspect).toInt().coerceAtLeast(1)
                                 }
 
-                                val stages = listOf("Raw", "80% Stretch Only", "Bilateral -> 80% Stretch", "80% Stretch -> Bilateral")
+                                val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
                                 var lastThumbB64 = ""
 
                                 stages.forEach { stage ->
@@ -783,19 +774,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     // 4.2 Preprocessing Application (Native OpenCV Mat Logic)
                                     when (stage) {
-                                        "80% Stretch Only" -> {
-                                            apply80Stretch(bridge.getMat())
-                                        }
-                                        "Bilateral -> 80% Stretch" -> {
-                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
-                                            scratchBridge.getMat().copyTo(bridge.getMat())
-                                            apply80Stretch(bridge.getMat())
-                                        }
-                                        "80% Stretch -> Bilateral" -> {
-                                            apply80Stretch(bridge.getMat())
-                                            org.opencv.imgproc.Imgproc.bilateralFilter(bridge.getMat(), scratchBridge.getMat(), 5, 75.0, 75.0)
-                                            scratchBridge.getMat().copyTo(bridge.getMat())
-                                        }
+                                        "80% Stretch Only" -> applyStretch(bridge.getMat(), 0.80)
+                                        "78% Stretch" -> applyStretch(bridge.getMat(), 0.78)
                                     }
 
                                     // 4.4 Scale-to-Fit (Recognition)
