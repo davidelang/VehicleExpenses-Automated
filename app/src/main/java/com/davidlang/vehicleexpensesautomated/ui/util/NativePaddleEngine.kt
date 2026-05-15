@@ -465,12 +465,51 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 } else break
             }
             lastIdx = maxIdx
-        }
         val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
         Log.d("OCR_DEBUG", "END: text='$finalStr', avgConf=$finalConf")
         return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null)
-    }
+        }
 
+        suspend fun runConstrainedStaticMono(bridge: MemoryBridge, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
+        val tStart = System.currentTimeMillis()
+        if (recognizer == null || !useMono) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
+
+        val w = bridge.width; val h = bridge.height; val area = w * h
+        if (area > 320 * 48) {
+             Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated mono rec tensor capacity.")
+             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
+        }
+
+        bufferRecMono.fill(0.0f)
+        val buffer = bridge.getNv21(); buffer.rewind()
+        val mean = 0.5f; val std = 0.5f
+        for (i in 0 until area) {
+            bufferRecMono[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
+        }
+
+        try {
+            recognizer!!.getInput(0).setData(bufferRecMono); recognizer!!.run()
+            val outputTensor = recognizer!!.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder()
+            var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
+
+            for (i in 0 until seqLen) {
+                var maxIdx = 0; var maxVal = -1f; val searchLimit = 11.coerceAtMost(dictSize)
+                for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
+                if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
+                    if (result.length < 4 || maxVal >= (0.60f * lastConf)) {
+                        result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++; lastConf = maxVal
+                    } else break
+                }
+                lastIdx = maxIdx
+            }
+            val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null)
+        } catch (t: Throwable) { 
+            return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
+        }
+        }
+        }
     data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
     override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
