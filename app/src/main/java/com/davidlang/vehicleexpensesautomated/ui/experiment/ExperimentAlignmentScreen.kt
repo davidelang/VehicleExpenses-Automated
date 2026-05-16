@@ -447,7 +447,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
                                             matrix.postScale(scaleX, scaleY)
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-                                            com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
+                                            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
                                         }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.primary.clear()
@@ -744,7 +744,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
 
                                             // Use new zero-buffer JNI fast sync to populate the iterative bridge
-                                            com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
+                                            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
                                         }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.primary.clear()
