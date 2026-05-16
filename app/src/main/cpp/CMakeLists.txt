@@ -7,7 +7,10 @@ add_library(opencv_java4 SHARED IMPORTED)
 set_target_properties(opencv_java4 PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libopencv_java4.so)
 
 # Create the Memory Bridge library
-add_library(memory_bridge SHARED MemoryBridge.cpp)
+add_library(memory_bridge SHARED 
+    MemoryBridge.cpp
+    BufferSet.cpp
+)
 
 # Include OpenCV headers from the broken-dev-2 branch sync or standard locations
 # Note: For now we assume they are in include/
