@@ -3,12 +3,12 @@
 ## 1. Overview
 `BufferSet` is the single authority for managing high-performance native image buffers. It is designed to solve memory fragmentation and race conditions by replacing loose, independently allocated native objects (Mat, NV21, YUV handles) with a single, atomic container. 
 
-The core philosophy is **zero-allocation iterative processing**. Instead of allocating buffers for every image, a `BufferSet` holds two internal "Hunks" (Primary and Scratch). Processing routines can read from Primary and write to Scratch, then call `flip()` to atomically swap roles.
+The core philosophy is **zero-allocation iterative processing**. Instead of allocating buffers for every image, a `BufferSet` holds two internal "Instances" (Primary and Scratch). Processing routines can read from Primary and write to Scratch, then call `flip()` to atomically swap roles.
 
 Crucially, **all buffer types (YUV, NV21, Mat) share the same underlying RAM**. A `BufferSet` allows you to access this memory as a raw YUV stream, an NV21 byte array, or an OpenCV Grayscale Mat simultaneously without any data movement or duplication. This unified memory model ensures that conversion between these types is a **zero-copy operation**—simply interpreting the same memory address through a different handle—while keeping the primary/scratch memory stable.
 
 ## 2. Interface Specification (User Manual)
-The `BufferSet` object exposes handles to access the underlying Hunks.
+The `BufferSet` object exposes handles to access the underlying Instances.
 
 ### Handle Access Pattern
 Each hunk (primary/scratch/crop) provides direct access to its views via properties:
@@ -93,7 +93,7 @@ Imgproc.GaussianBlur(myMat, myMat, ...) // FATAL: myMat was disarmed by resize!
 ```
 
 **GOOD (Safe):**
-Always query the view on-demand from the Hunk.
+Always query the view on-demand from the Instance.
 ```kotlin
 bufferSet.resize(newW, newH)
 Imgproc.GaussianBlur(bufferSet.primary.mat, bufferSet.primary.mat, ...)

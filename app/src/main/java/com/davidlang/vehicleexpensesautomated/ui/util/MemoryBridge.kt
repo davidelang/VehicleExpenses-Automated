@@ -82,8 +82,6 @@ class MemoryBridge(val width: Int, val height: Int) {
             nativeSyncMatToArgb(srcMat.nativeObj, dst)
         }
 
-        var pool512x128: MemoryBridge? = null
-            private set
         var pool320x48: MemoryBridge? = null
             private set
 
@@ -92,12 +90,11 @@ class MemoryBridge(val width: Int, val height: Int) {
          * Initialized EAGERLY on the main thread to avoid circular dependencies.
          */
         fun initializeGlobalPools() {
-            if (pool512x128 != null) return
+            if (pool320x48 != null) return
             
             android.util.Log.i("MemoryBridge", "Initializing global pools on thread: ${Thread.currentThread().name}")
             try {
                 System.loadLibrary("memory_bridge")
-                pool512x128 = MemoryBridge(512, 128)
                 pool320x48 = MemoryBridge(320, 48)
                 android.util.Log.i("MemoryBridge", "Global pools initialized successfully.")
             } catch (e: Exception) {
