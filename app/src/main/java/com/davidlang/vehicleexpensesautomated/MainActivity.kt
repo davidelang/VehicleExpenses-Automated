@@ -77,20 +77,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // BufferSet Stability Verification (Phase 2)
-        try {
-            val testSet = com.davidlang.vehicleexpensesautomated.ui.util.BufferSet(100, 100)
-            Log.i("BufferSetTest", "Initialized 100x100")
-            kotlinx.coroutines.MainScope().launch {
-                testSet.resize(200, 200)
-                Log.i("BufferSetTest", "Resized to 200x200 successfully")
-                testSet.release()
-                Log.i("BufferSetTest", "Released successfully")
-            }
-        } catch (e: Exception) {
-            Log.e("BufferSetTest", "Verification failed", e)
-        }
-
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
 
         setContent {
