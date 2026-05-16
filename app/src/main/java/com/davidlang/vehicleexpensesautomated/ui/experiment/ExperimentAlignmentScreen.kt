@@ -594,6 +594,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val safeR = box.right.coerceIn(safeL + 1, bridge.width)
                                         val safeB = box.bottom.coerceIn(safeT + 1, bridge.height)
                                         
+                                        val safeRect = org.opencv.core.Rect(safeL, safeT, safeR - safeL, safeB - safeT)
                                         val roiMat = org.opencv.core.Mat(bridge.getMat(), safeRect)
                                         
                                         experimentRecSet320x48.primary.clear()
@@ -824,8 +825,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     stageObj.addProperty("text", odo)
                                     stageObj.addProperty("time", tLoop)
                                     jsonStages.add(stage, stageObj)
-                                    
-                                    subDst.release()
                                 }
 
                                 val meta = com.google.gson.JsonObject()
