@@ -218,6 +218,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
                     vehicleArgbCrops[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
                     vehicleArgbScratches[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+
+                    // Register long-term odometer ROI on the full-res dashboard set
+                    NativePaddleEngine.fullBufferSet.createCropNormalizedWithId(
+                        ref.vehicle.id,
+                        ref.vehicle.odometerCropLeft ?: 0f,
+                        ref.vehicle.odometerCropTop ?: 0f,
+                        (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
+                        (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f)
+                    )
                 }
             }
         }

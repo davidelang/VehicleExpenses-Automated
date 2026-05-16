@@ -14,7 +14,8 @@
     - [x] **Phase 3: Recognition Pool Migration (320x48)**
     - [x] **Phase 4: Discovery Pool Migration (512x128)**
     - [x] **Phase 5: Vehicle-Specific Pool Swap**
-    - [ ] **Phase 6: Managed Sub-Crops & Flip Optimization (Active)**
+    - [x] **Phase 6: Managed Sub-Crops & Flip Optimization**
+    - [x] **Phase 7: Final Migration & Decommissioning**
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
     - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.

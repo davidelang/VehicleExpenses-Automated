@@ -340,11 +340,11 @@ object OdometerOcrUtils {
         return mat
     }
 
-    fun matToBitmapMono(mat: Mat, bitmap: Bitmap, bridge: MemoryBridge? = null) {
+    fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
         val capacity = bitmap.width * bitmap.height
-        val bytes = if (bridge != null) NativePaddleEngine.sharedMonoBytes else ByteArray(capacity)
+        val bytes = ByteArray(capacity)
         mat.get(0, 0, bytes)
-        val buffer = bridge?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
         buffer.rewind()
         buffer.put(bytes, 0, capacity)
         buffer.rewind()
@@ -452,7 +452,7 @@ object OdometerOcrUtils {
     /**
      * Phase 58: Multi-Column OCR Refinement.
      */
-    private suspend fun runMlKitMonoNew(bmp: Bitmap, recBridge: MemoryBridge?, monoScratch: MemoryBridge?, stageName: String): OcrStepResult {
+    private suspend fun runMlKitMonoNew(bmp: Bitmap, stageName: String): OcrStepResult {
         val targetW = 320; val targetH = 48
         
         // 1. Force-scale input to recognition dimensions
@@ -707,6 +707,10 @@ object OdometerOcrUtils {
         val processed = applyBilateral(rotated)
         val ocrResult = extractFromPhotoBitmap(processed)
         val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
+        landmarks
+    }
+}
+idth, processed.height)
         landmarks
     }
 }

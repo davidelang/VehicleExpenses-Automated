@@ -8,7 +8,7 @@ set_target_properties(opencv_java4 PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_D
 
 # Create the Memory Bridge library
 add_library(memory_bridge SHARED 
-    MemoryBridge.cpp
+    NativeImageUtils.cpp
     BufferSet.cpp
 )
 

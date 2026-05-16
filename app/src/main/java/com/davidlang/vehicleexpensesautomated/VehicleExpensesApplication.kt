@@ -35,7 +35,6 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         if (!org.opencv.android.OpenCVLoader.initLocal()) {
             android.util.Log.e("VehicleExpensesApp", "OpenCV initialization failed!")
         }
-        com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.initializeGlobalPools()
         
         // 2. Initialize Paddle static predictors
         com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine.initializeGlobalBuffers(this)
