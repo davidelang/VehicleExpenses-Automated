@@ -168,18 +168,29 @@ object OcrUtils {
         val canvas = NativePaddleEngine.sharedReportCanvas
         canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
 
-        // Draw Mat to an exactly-sized temporary ARGB Bitmap to satisfy OpenCV constraints
-        val matARGB = org.opencv.core.Mat()
-        org.opencv.imgproc.Imgproc.cvtColor(sourceMat, matARGB, org.opencv.imgproc.Imgproc.COLOR_GRAY2RGBA)
-        val tempBmp = Bitmap.createBitmap(sourceMat.cols(), sourceMat.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(matARGB, tempBmp)
-        matARGB.release()
+        // Phase 115: Zero-Allocation Mat-to-ARGB Snapshotting
+        val scratch = NativePaddleEngine.sharedBmpOdoScratch
+        if (sourceMat.cols() == scratch.width && sourceMat.rows() == scratch.height) {
+            // High-Speed JNI Pathway
+            MemoryBridge.syncMatToArgb(sourceMat, scratch)
+            val matrix = NativePaddleEngine.sharedMatrix
+            matrix.reset()
+            matrix.postScale(scale, scale)
+            canvas.drawBitmap(scratch, matrix, NativePaddleEngine.srcPaint)
+        } else {
+            // Fallback Pathway (Slower, handles arbitrary Mat sizes like large bridges)
+            val matARGB = org.opencv.core.Mat()
+            org.opencv.imgproc.Imgproc.cvtColor(sourceMat, matARGB, org.opencv.imgproc.Imgproc.COLOR_GRAY2RGBA)
+            val tempBmp = Bitmap.createBitmap(sourceMat.cols(), sourceMat.rows(), Bitmap.Config.ARGB_8888)
+            org.opencv.android.Utils.matToBitmap(matARGB, tempBmp)
+            matARGB.release()
 
-        val matrix = NativePaddleEngine.sharedMatrix
-        matrix.reset()
-        matrix.postScale(scale, scale)
-        canvas.drawBitmap(tempBmp, matrix, NativePaddleEngine.srcPaint)
-        tempBmp.recycle()
+            val matrix = NativePaddleEngine.sharedMatrix
+            matrix.reset()
+            matrix.postScale(scale, scale)
+            canvas.drawBitmap(tempBmp, matrix, NativePaddleEngine.srcPaint)
+            tempBmp.recycle()
+        }
         
         rawFragments.forEach { r -> canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint) }
         consolidatedRows.forEach { r -> canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint) }

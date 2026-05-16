@@ -359,7 +359,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val interp = if (roiRect.width > bridge.width) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
                                     org.opencv.imgproc.Imgproc.resize(redMat, bridge.getMat(), org.opencv.core.Size(bridge.width.toDouble(), bridge.height.toDouble()), 0.0, 0.0, interp)
                                     
-                                    bridge.syncToBitmap() // Sync to Java Bitmap
                                     argbMat.release(); roiMat.release(); redMat.release()
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Failed to populate Mono pool", e)
