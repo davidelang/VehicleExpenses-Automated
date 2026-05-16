@@ -285,8 +285,8 @@ object OdometerOcrUtils {
         mat.release(); gray.release(); return out
     }
 
-    fun applyBilateral(bitmap: Bitmap, argbScratch: Bitmap? = null, monoScratch: MemoryBridge? = null): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap, monoScratch) else {
+    fun applyBilateral(bitmap: Bitmap, argbScratch: Bitmap? = null): Bitmap {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
@@ -296,14 +296,14 @@ object OdometerOcrUtils {
 
         // Phase 115: In-place update
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmapMono(filtered, bitmap, monoScratch)
+            matToBitmapMono(filtered, bitmap)
         } else {
             org.opencv.android.Utils.matToBitmap(filtered, bitmap)
         }
         src.release(); gray.release(); filtered.release(); return bitmap
     }
-    fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int, monoScratch: MemoryBridge? = null): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap, monoScratch) else {
+    fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
@@ -320,18 +320,18 @@ object OdometerOcrUtils {
 
         // Phase 115: In-place update to long-lived buffer
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmapMono(dst, bitmap, monoScratch)
+            matToBitmapMono(dst, bitmap)
         } else {
             org.opencv.android.Utils.matToBitmap(dst, bitmap)
         }
         src.release(); gray.release(); hist.release(); dst.release(); return bitmap
     }
     // Phase 115: CV_8UC1 Monochrome Bridge (Zero-Allocation)
-    fun bitmapToMatMono(bitmap: Bitmap, bridge: MemoryBridge? = null): Mat {
+    fun bitmapToMatMono(bitmap: Bitmap): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
         val capacity = bitmap.width * bitmap.height
-        val buffer = bridge?.getNv21() ?: java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
-        val bytes = if (bridge != null) NativePaddleEngine.sharedMonoBytes else ByteArray(capacity)
+        val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
+        val bytes = ByteArray(capacity)
         buffer.rewind()
         bitmap.copyPixelsToBuffer(buffer)
         buffer.rewind()
@@ -489,10 +489,9 @@ object OdometerOcrUtils {
             refinedBox = Rect(0,0,targetW,targetH),
             metadata = meta
         )
-        }
+    }
 
-        fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {
-
+    fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {
         val out = Bitmap.createBitmap(bitmap.width + 2 * padding, bitmap.height + 2 * padding, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         canvas.drawColor(color)
@@ -675,7 +674,7 @@ object OdometerOcrUtils {
                         val bottom = ((cy + h / 2.0) * imgH).toInt()
                         blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
                     } catch (e: Exception) {
-                        Log.w("OdometerOcr", "Skipping malformed landmark entry in JSON: ${e.message}")
+                        Log.w("OdometerOcr", "Skipping malformed landmark entry in JSON: ${it.message}")
                     }
                 }
                 results[name] = OcrResult(engineName = name, textBlocks = blocks, imageWidth = imgW, imageHeight = imgH, debugText = blocks.joinToString(" ") { it.text })
@@ -707,10 +706,6 @@ object OdometerOcrUtils {
         val processed = applyBilateral(rotated)
         val ocrResult = extractFromPhotoBitmap(processed)
         val landmarks = processRawLandmarks(ocrResult.textBlocks, odometerCrop, otherTextCrop, processed.width, processed.height)
-        landmarks
-    }
-}
-idth, processed.height)
         landmarks
     }
 }
