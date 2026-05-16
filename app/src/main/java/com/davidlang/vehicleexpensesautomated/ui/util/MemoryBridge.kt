@@ -21,7 +21,6 @@ private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
  */
 class MemoryBridge(val width: Int, val height: Int) {
     private val masterBuffer: ByteBuffer
-    private val masterBitmap: Bitmap
     private val masterMat: Mat
     private var nativeHandle: Long = 0
 
@@ -34,28 +33,12 @@ class MemoryBridge(val width: Int, val height: Int) {
         masterBuffer = nativeGetMasterBuffer(nativeHandle)
             ?: throw IllegalStateException("Failed to get master DirectByteBuffer")
 
-        // Normal size ALPHA_8 for refinement (copy path)
-        masterBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
-
         // Pre-allocate permanent Mat view (Zero-Allocation)
         masterMat = Mat(nativeGetMatPtr(nativeHandle))
     }
 
-    fun getBitmap(): Bitmap = masterBitmap
     fun getMat(): Mat = masterMat
     fun getNv21(): ByteBuffer = masterBuffer
-
-    fun syncToBitmap() {
-        masterBuffer.rewind()
-        masterBitmap.copyPixelsFromBuffer(masterBuffer)
-        masterBuffer.rewind()
-    }
-
-    fun syncFromBitmap() {
-        masterBuffer.rewind()
-        masterBitmap.copyPixelsToBuffer(masterBuffer)
-        masterBuffer.rewind()
-    }
 
     /**
      * Fast JNI linear copy from ARGB Bitmap to this Mono bridge.
