@@ -70,7 +70,37 @@ bufferSet.createCropNormalized(0.1f, 0.2f, 0.5f, 0.2f)
 OdometerOcrUtils.runDetection(bufferSet.crop[0].mat)
 ```
 
-## 4. Implementation Details (Developer/Maintainer Manual)
+## 4. Kotlin Integration (`BufferSet.kt`)
+The Kotlin API provides a safe, idiomatic wrapper around the C++ lifecycle.
+
+### 4.1 The Proxy Disarm Architecture
+To maintain the "Single Authority" mandate without crashing the JVM, `BufferSet` uses a **Proxy Disarm** strategy for its OpenCV `Mat` views.
+1. When Kotlin requests `hunk.mat`, a lightweight Java `Mat` proxy object is created, pointing to the C++ memory.
+2. Because OpenCV's Java finalizer automatically calls `delete` on its pointers during Garbage Collection, `BufferSet` must prevent this to avoid double-free crashes.
+3. When `BufferSet.release()` or `BufferSet.resize()` is called, a JNI reflection function (`nativeDisarmMat`) forcefully overwrites the Java `Mat` object's internal `nativeObj` pointer to `0`.
+4. When the GC eventually runs, the OpenCV finalizer safely ignores the `0` pointer, leaving the C++ explicit `delete` as the sole authority over memory destruction.
+
+### 4.2 Usage Anti-Pattern: Caching Proxies
+Because `BufferSet` can dynamically mutate the underlying C++ pointer (via `resize`), any Kotlin variable holding a `Mat` proxy is inherently volatile. 
+
+**MANDATE:** You MUST NOT cache `Mat` objects returned by `BufferSet` in long-lived variables or class properties. 
+
+**BAD (Volatile):**
+```kotlin
+val myMat = bufferSet.primary.mat
+bufferSet.resize(newW, newH)
+Imgproc.GaussianBlur(myMat, myMat, ...) // FATAL: myMat was disarmed by resize!
+```
+
+**GOOD (Safe):**
+Always query the view on-demand from the Hunk.
+```kotlin
+bufferSet.resize(newW, newH)
+Imgproc.GaussianBlur(bufferSet.primary.mat, bufferSet.primary.mat, ...)
+```
+*Note: Storing the `Mat` in a local `val` within a single function scope is acceptable, provided no `resize()` or `flip()` operations occur within that scope.*
+
+## 5. Implementation Details (Developer/Maintainer Manual)
 ### Architecture
 - **UnifiedHandle (C++):** A POD struct wrapping the raw `uint8_t*` buffer and the `cv::Mat`. The C++ handle address is stable for the life of the `BufferSet`.
 - **Safety Registry:** Uses a `std::set<UnifiedHandle*>` in C++ to track allocations. Any JNI call for a handle not in the registry is rejected, preventing "Zombie Pointer" double-frees.

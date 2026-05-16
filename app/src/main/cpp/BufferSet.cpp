@@ -82,16 +82,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
         validHandles.erase(handle);
     }
 
-    // Forcefully detach the Java Mat object to prevent GC double-free
-    if (matObj != nullptr) {
-        jclass matClass = env->GetObjectClass(matObj);
-        jfieldID nativeObjField = env->GetFieldID(matClass, "nativeObj", "J");
-        if (nativeObjField != nullptr) {
-            env->SetLongField(matObj, nativeObjField, 0);
-            LOGI("nativeRelease: Severed Java Mat link to %p", handle->yMat);
-        }
-    }
-
     if (handle != nullptr) {
         if (handle->globalBuffer != nullptr) {
             env->DeleteGlobalRef(handle->globalBuffer);
@@ -99,6 +89,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
         delete handle;
     }
     LOGI("nativeRelease: Handle freed");
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_00024Companion_nativeDisarmMat(
+    JNIEnv* env, jclass clazz, jobject matObj) {
+    
+    if (matObj == nullptr) return;
+    
+    jclass matClass = env->GetObjectClass(matObj);
+    jfieldID nativeObjField = env->GetFieldID(matClass, "nativeObj", "J");
+    if (nativeObjField != nullptr) {
+        env->SetLongField(matObj, nativeObjField, 0);
+        LOGI("nativeDisarmMat: Mat successfully disarmed from GC");
+    }
 }
 
 JNIEXPORT jboolean JNICALL
