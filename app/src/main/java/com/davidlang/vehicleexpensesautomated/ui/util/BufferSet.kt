@@ -161,6 +161,12 @@ class BufferSet(private var width: Int, private var height: Int) {
         return id
     }
 
+    fun createCropNormalizedWithId(id: Int, x: Float, y: Float, w: Float, h: Float) {
+        val crop = ManagedCrop(CropDefinition(x, y, w, h, true))
+        crop.refresh(primary.yMat, width, height)
+        managedCrops[id] = crop
+    }
+
     fun getCropMat(id: Int): Mat {
         return managedCrops[id]?.proxyMat ?: throw IllegalArgumentException("Invalid or released crop ID: $id")
     }

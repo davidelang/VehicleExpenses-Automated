@@ -139,9 +139,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
 
             _sharedBmpFull = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasFull = Canvas(_sharedBmpFull!!)
-            _sharedFullBridgeMono = MemoryBridge(4000, 3072)
+            _fullBufferSet = BufferSet(4000, 3072)
+
             _sharedBmpScratch = Bitmap.createBitmap(4000, 3072, Bitmap.Config.ARGB_8888); _sharedCanvasScratch = Canvas(_sharedBmpScratch!!)
-            _sharedScratchBridgeMono = MemoryBridge(4000, 3072)
 
             _bufferLarge = FloatArray(3 * 2048 * 2048); _bufferLargeMono = FloatArray(1 * 2048 * 2048)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
@@ -204,7 +204,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
          * Implementation of high-quality Area-Averaging resize using OpenCV.
          * Bypasses background-thread Canvas/Paint JNI locks.
          */
-        fun performHighQualityResize(sourceBmp: Bitmap, targetBridge: MemoryBridge) {
+        fun performHighQualityResize(sourceBmp: Bitmap, targetInstance: BufferSet.Instance) {
             val buffer = java.nio.ByteBuffer.allocateDirect(sourceBmp.byteCount)
             sourceBmp.copyPixelsToBuffer(buffer)
             buffer.rewind()
@@ -212,7 +212,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Bypass Utils.bitmapToMat, wrap ALPHA_8 directly into a 1-channel Mat
             val tempMat = Mat(sourceBmp.height, sourceBmp.width, org.opencv.core.CvType.CV_8UC1, buffer)
             try {
-                Imgproc.resize(tempMat, targetBridge.getMat(), Size(targetBridge.width.toDouble(), targetBridge.height.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                val targetMat = targetInstance.yMat
+                Imgproc.resize(tempMat, targetMat, Size(targetMat.cols().toDouble(), targetMat.rows().toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
             } finally {
                 tempMat.release()
             }
@@ -496,5 +497,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = recognizer ?: return@withContext OcrResult(engineName = name, debugText = "Predictor null")
         val res = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
         OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = res.text, textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))), imageWidth = bitmap.width, imageHeight = bitmap.height)
+    }
+}
+  }
+}
+dth = bitmap.width, imageHeight = bitmap.height)
     }
 }

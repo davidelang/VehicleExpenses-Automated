@@ -172,7 +172,7 @@ object OcrUtils {
         val scratch = NativePaddleEngine.sharedBmpOdoScratch
         if (sourceMat.cols() == scratch.width && sourceMat.rows() == scratch.height) {
             // High-Speed JNI Pathway
-            MemoryBridge.syncMatToArgb(sourceMat, scratch)
+            NativeImageUtils.syncMatToArgb(sourceMat, scratch)
             val matrix = NativePaddleEngine.sharedMatrix
             matrix.reset()
             matrix.postScale(scale, scale)
