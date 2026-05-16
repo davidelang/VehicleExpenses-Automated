@@ -92,7 +92,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_00024Companion_nativeDisarmMat(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeDisarmMat(
     JNIEnv* env, jclass clazz, jobject matObj) {
     
     if (matObj == nullptr) return;
