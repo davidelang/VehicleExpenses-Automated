@@ -232,7 +232,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val footer = "</table></body></html>"
     
     // Phase 115: Global Experiment-Level Buffers (Zero-Allocation Anchor)
-    val experimentRecBridge320x48 = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(320, 48)
+    val experimentRecSet320x48 = BufferSet(320, 48)
 
     // Pre-populate with iterative engines to fix HTML header alignment
     val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone", "Paddle V3 Valley Mono Diagnostic")
@@ -407,7 +407,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 
                                 // Discovery & Recognition Pools (Zero-Allocation)
                                 val detBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool512x128 ?: throw IllegalStateException("Discovery pool not initialized")
-                                val recBridge = experimentRecBridge320x48
+                                val recHunk = experimentRecSet320x48.primary
 
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
                                 val jsonStages = com.google.gson.JsonObject()
@@ -597,7 +597,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val safeRect = org.opencv.core.Rect(safeL, safeT, safeR - safeL, safeB - safeT)
                                         val roiMat = org.opencv.core.Mat(bridge.getMat(), safeRect)
                                         
-                                        recBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                        recHunk.yMat.setTo(org.opencv.core.Scalar(0.0))
                                         
                                         // Aspect-ratio scaling to fit within 312x40, anchored at (4,4)
                                         val recScale = kotlin.math.min(312f / safeRect.width.toFloat(), 40f / safeRect.height.toFloat())
@@ -605,11 +605,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val fitRecH = (safeRect.height * recScale).toInt().coerceAtMost(40)
                                         
                                         val offX = 4; val offY = 4
-                                        val subDst = recBridge.getMat().submat(offY, offY + fitRecH, offX, offX + fitRecW)
+                                        val subDst = recHunk.yMat.submat(offY, offY + fitRecH, offX, offX + fitRecW)
                                         org.opencv.imgproc.Imgproc.resize(roiMat, subDst, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                         roiMat.release(); subDst.release()
                                         
-                                        val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(recBridge, paddleEngineV3Mono.getDictionary())
+                                        val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(recHunk, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
                                             odoBuilder.append(ocrResult.text).append(" ")
                                             finalBoxes.add(box)
@@ -629,8 +629,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         fitW = (48f * aspect).toInt().coerceAtLeast(1)
                                     }
                                     
-                                    recBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
-                                    val snapSub = recBridge.getMat().submat(0, fitH, 0, fitW)
+                                    recHunk.yMat.setTo(org.opencv.core.Scalar(0.0))
+                                    val snapSub = recHunk.yMat.submat(0, fitH, 0, fitW)
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), snapSub, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     snapSub.release()
                                     
@@ -645,7 +645,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = recBridge.getMat(),
+                                        sourceMat = recHunk.yMat,
                                         rawFragments = scaledRaw,
                                         consolidatedRows = scaledConsolidated,
                                         argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
@@ -774,11 +774,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     // 4.4 Scale-to-Fit (Recognition)
-                                    val dstMat = experimentRecBridge320x48.getMat()
+                                    val dstMat = experimentRecSet320x48.primary.yMat
                                     dstMat.setTo(org.opencv.core.Scalar(0.0))
                                     val subDst = dstMat.submat(0, fitH, 0, fitW)
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), subDst, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-
                                     // 4.4 ML Kit Recognition (Mat-Direct Sync)
                                     val targetW = 320; val targetH = 48
                                     val frameSize = targetW * targetH
@@ -909,6 +908,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     cachedRefs.forEach { it.bmp.recycle() }
     
     // Phase 115: Release native handles for vehicle pools
+    experimentRecSet320x48.release()
     vehicleMonoBridges.values.forEach { it.release() }
     vehicleMonoScratches.values.forEach { it.release() }
     vehicleArgbCrops.values.forEach { it.recycle() }
