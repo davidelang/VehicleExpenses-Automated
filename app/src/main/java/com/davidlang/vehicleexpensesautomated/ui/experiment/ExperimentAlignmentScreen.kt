@@ -463,20 +463,26 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         }
                                     }
 
-                                    fun applyStretch(mat: org.opencv.core.Mat, threshold: Double) {
-                                        val totalPixels = mat.cols() * mat.rows()
+                                    fun applyStretch(src: org.opencv.core.Mat, dst: org.opencv.core.Mat, threshold: Double) {
+                                        val totalPixels = src.cols() * src.rows()
                                         val hist = NativePaddleEngine.histResult
-                                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), NativePaddleEngine.histChannels, NativePaddleEngine.histMask, hist, NativePaddleEngine.histSize, NativePaddleEngine.histRanges)
+                                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(src), NativePaddleEngine.histChannels, NativePaddleEngine.histMask, hist, NativePaddleEngine.histSize, NativePaddleEngine.histRanges)
                                         var floorBin = 0; var ceilingBin = 255; var sum = 0.0
                                         for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * threshold) { floorBin = i; break } }
                                         sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
                                         val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
-                                        mat.convertTo(mat, org.opencv.core.CvType.CV_8U, alpha, beta)
+                                        src.convertTo(dst, org.opencv.core.CvType.CV_8U, alpha, beta)
                                     }
                                     
                                     when (stage) {
-                                        "80% Stretch Only" -> applyStretch(odoBuffer.primary.yMat, 0.80)
-                                        "78% Stretch" -> applyStretch(odoBuffer.primary.yMat, 0.78)
+                                        "80% Stretch Only" -> { 
+                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.80)
+                                            odoBuffer.flip()
+                                        }
+                                        "78% Stretch" -> {
+                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.78)
+                                            odoBuffer.flip()
+                                        }
                                     }
 
                                     // --- 2-STAGE PADDLE V3 MONO ---
@@ -511,7 +517,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         return if (count > 0) sum / count else 0.0
                                     }
                                     
-                                    fun expandByValleyStop(redFloor: android.graphics.Rect, gray: org.opencv.core.Mat): android.graphics.Rect {
+                                    fun expandByValleyStop(redFloor: android.graphics.Rect, bufferSet: com.davidlang.vehicleexpensesautomated.ui.util.BufferSet): android.graphics.Rect {
+                                        val gray = bufferSet.primary.yMat
                                         val maxH = gray.rows(); val maxW = gray.cols()
                                         
                                         // 1. Clamp redFloor to 1px from the edge before submat
@@ -520,9 +527,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val safeR = redFloor.right.coerceIn(safeL + 1, maxW)
                                         val safeB = redFloor.bottom.coerceIn(safeT + 1, maxH)
                                         
-                                        val hillSub = gray.submat(safeT, safeB, safeL, safeR)
-                                        val hillBrightness = org.opencv.core.Core.mean(hillSub).`val`[0]
-                                        hillSub.release()
+                                        val sampleId = bufferSet.createCrop(safeL, safeT, safeR - safeL, safeB - safeT)
+                                        val hillBrightness = org.opencv.core.Core.mean(bufferSet.getCropMat(sampleId)).`val`[0]
+                                        bufferSet.releaseCrop(sampleId)
                                         
                                         val valleyThreshold = hillBrightness * 0.40 
                                         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
@@ -564,7 +571,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         return android.graphics.Rect(kotlin.math.max(0, minX.toInt()), kotlin.math.max(0, minY.toInt()), kotlin.math.min(maxW, maxX.toInt()), kotlin.math.min(maxH, maxY.toInt()))
                                     }
 
-                                    val orangeFragments = rawBlocks.map { expandByValleyStop(it.boundingBox, odoBuffer.primary.yMat) }
+                                    val orangeFragments = rawBlocks.map { expandByValleyStop(it.boundingBox, odoBuffer) }
                                     
                                     // 3. Clustering
                                     val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
@@ -597,20 +604,19 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val safeR = box.right.coerceIn(safeL + 1, odoBuffer.primary.yMat.cols())
                                         val safeB = box.bottom.coerceIn(safeT + 1, odoBuffer.primary.yMat.rows())
                                         
-                                        val safeRect = org.opencv.core.Rect(safeL, safeT, safeR - safeL, safeB - safeT)
-                                        val roiMat = org.opencv.core.Mat(odoBuffer.primary.yMat, safeRect)
+                                        val recSrcId = odoBuffer.createCrop(safeL, safeT, safeR - safeL, safeB - safeT)
                                         
                                         experimentRecSet320x48.primary.clear()
                                         
                                         // Aspect-ratio scaling to fit within 312x40, anchored at (4,4)
-                                        val recScale = kotlin.math.min(312f / safeRect.width.toFloat(), 40f / safeRect.height.toFloat())
-                                        val fitRecW = (safeRect.width * recScale).toInt().coerceAtMost(312)
-                                        val fitRecH = (safeRect.height * recScale).toInt().coerceAtMost(40)
+                                        val recScale = kotlin.math.min(312f / (safeR - safeL).toFloat(), 40f / (safeB - safeT).toFloat())
+                                        val fitRecW = ((safeR - safeL) * recScale).toInt().coerceAtMost(312)
+                                        val fitRecH = ((safeB - safeT) * recScale).toInt().coerceAtMost(40)
                                         
                                         val offX = 4; val offY = 4
                                         val recCropId = experimentRecSet320x48.createCrop(offX, offY, fitRecW, fitRecH)
-                                        org.opencv.imgproc.Imgproc.resize(roiMat, experimentRecSet320x48.getCropMat(recCropId), org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                                        roiMat.release(); experimentRecSet320x48.releaseCrop(recCropId)
+                                        org.opencv.imgproc.Imgproc.resize(odoBuffer.getCropMat(recSrcId), experimentRecSet320x48.getCropMat(recCropId), org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                        odoBuffer.releaseCrop(recSrcId); experimentRecSet320x48.releaseCrop(recCropId)
                                         
                                         val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.primary, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
@@ -755,11 +761,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         }
                                     }
 
-                                    fun applyStretch(mat: org.opencv.core.Mat, threshold: Double) {
-                                        val totalPixels = mat.cols() * mat.rows()
+                                    fun applyStretch(src: org.opencv.core.Mat, dst: org.opencv.core.Mat, threshold: Double) {
+                                        val totalPixels = src.cols() * src.rows()
                                         val hist = NativePaddleEngine.histResult
                                         org.opencv.imgproc.Imgproc.calcHist(
-                                            java.util.Collections.singletonList(mat), 
+                                            java.util.Collections.singletonList(src), 
                                             NativePaddleEngine.histChannels, 
                                             NativePaddleEngine.histMask, 
                                             hist, 
@@ -770,13 +776,19 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * threshold) { floorBin = i; break } }
                                         sum = 0.0; for (i in 0..255) { sum += hist.get(i, 0)[0]; if (sum >= totalPixels * 0.98) { ceilingBin = i; break } }
                                         val alpha = if (ceilingBin > floorBin) 255.0 / (ceilingBin - floorBin) else 1.0; val beta = -floorBin * alpha
-                                        mat.convertTo(mat, org.opencv.core.CvType.CV_8U, alpha, beta)
+                                        src.convertTo(dst, org.opencv.core.CvType.CV_8U, alpha, beta)
                                     }
                                     
                                     // 4.2 Preprocessing Application (Native OpenCV Mat Logic)
                                     when (stage) {
-                                        "80% Stretch Only" -> applyStretch(odoBuffer.primary.yMat, 0.80)
-                                        "78% Stretch" -> applyStretch(odoBuffer.primary.yMat, 0.78)
+                                        "80% Stretch Only" -> {
+                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.80)
+                                            odoBuffer.flip()
+                                        }
+                                        "78% Stretch" -> {
+                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.78)
+                                            odoBuffer.flip()
+                                        }
                                     }
 
                                     // 4.4 Scale-to-Fit (Recognition)
