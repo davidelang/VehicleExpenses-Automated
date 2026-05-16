@@ -407,7 +407,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 
                                 // Discovery & Recognition Pools (Zero-Allocation)
                                 val detBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool512x128 ?: throw IllegalStateException("Discovery pool not initialized")
-                                val recHunk = experimentRecSet320x48.primary
 
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
                                 val jsonStages = com.google.gson.JsonObject()
@@ -597,7 +596,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val safeRect = org.opencv.core.Rect(safeL, safeT, safeR - safeL, safeB - safeT)
                                         val roiMat = org.opencv.core.Mat(bridge.getMat(), safeRect)
                                         
-                                        recHunk.yMat.setTo(org.opencv.core.Scalar(0.0))
+                                        experimentRecSet320x48.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
                                         
                                         // Aspect-ratio scaling to fit within 312x40, anchored at (4,4)
                                         val recScale = kotlin.math.min(312f / safeRect.width.toFloat(), 40f / safeRect.height.toFloat())
@@ -605,11 +604,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val fitRecH = (safeRect.height * recScale).toInt().coerceAtMost(40)
                                         
                                         val offX = 4; val offY = 4
-                                        val subDst = recHunk.yMat.submat(offY, offY + fitRecH, offX, offX + fitRecW)
+                                        val subDst = experimentRecSet320x48.primary.yMat.submat(offY, offY + fitRecH, offX, offX + fitRecW)
                                         org.opencv.imgproc.Imgproc.resize(roiMat, subDst, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                         roiMat.release(); subDst.release()
                                         
-                                        val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(recHunk, paddleEngineV3Mono.getDictionary())
+                                        val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.primary, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
                                             odoBuilder.append(ocrResult.text).append(" ")
                                             finalBoxes.add(box)
@@ -629,8 +628,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         fitW = (48f * aspect).toInt().coerceAtLeast(1)
                                     }
                                     
-                                    recHunk.yMat.setTo(org.opencv.core.Scalar(0.0))
-                                    val snapSub = recHunk.yMat.submat(0, fitH, 0, fitW)
+                                    experimentRecSet320x48.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
+                                    val snapSub = experimentRecSet320x48.primary.yMat.submat(0, fitH, 0, fitW)
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), snapSub, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     snapSub.release()
                                     
@@ -645,7 +644,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = recHunk.yMat,
+                                        sourceMat = experimentRecSet320x48.primary.yMat,
                                         rawFragments = scaledRaw,
                                         consolidatedRows = scaledConsolidated,
                                         argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
@@ -774,14 +773,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     // 4.4 Scale-to-Fit (Recognition)
-                                    val dstMat = experimentRecSet320x48.primary.yMat
-                                    dstMat.setTo(org.opencv.core.Scalar(0.0))
-                                    val subDst = dstMat.submat(0, fitH, 0, fitW)
+                                    experimentRecSet320x48.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
+                                    val subDst = experimentRecSet320x48.primary.yMat.submat(0, fitH, 0, fitW)
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), subDst, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     // 4.4 ML Kit Recognition (Mat-Direct Sync)
                                     val targetW = 320; val targetH = 48
                                     val frameSize = targetW * targetH
-                                    dstMat.get(0, 0, OdometerOcrUtils.reusableByteStaging)
+                                    experimentRecSet320x48.primary.yMat.get(0, 0, OdometerOcrUtils.reusableByteStaging)
                                     for (i in frameSize until (frameSize * 3 / 2)) OdometerOcrUtils.reusableByteStaging[i] = 128.toByte()
 
                                     val img = com.google.mlkit.vision.common.InputImage.fromByteArray(OdometerOcrUtils.reusableByteStaging, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
@@ -809,7 +807,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         if (b != null) boxes.add(b)
                                     }
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = dstMat,
+                                        sourceMat = experimentRecSet320x48.primary.yMat,
                                         rawFragments = emptyList(),
                                         consolidatedRows = boxes,
                                         argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
