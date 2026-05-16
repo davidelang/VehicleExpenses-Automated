@@ -12,7 +12,9 @@
     - [x] **Phase 1: Native Core Infrastructure**
     - [x] **Phase 2: Kotlin API & Structural Verification**
     - [x] **Phase 3: Recognition Pool Migration (320x48)**
-    - [ ] **Phase 4: Discovery Pool Migration (512x128)**
+    - [x] **Phase 4: Discovery Pool Migration (512x128)**
+    - [x] **Phase 5: Vehicle-Specific Pool Swap**
+    - [ ] **Phase 6: Managed Sub-Crops & Flip Optimization (Active)**
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
     - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
