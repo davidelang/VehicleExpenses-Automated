@@ -483,9 +483,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val detScale = kotlin.math.min(512f / bridge.width.toFloat(), 128f / bridge.height.toFloat())
                                     val fitDetW = (bridge.width * detScale).toInt().coerceAtMost(512)
                                     val fitDetH = (bridge.height * detScale).toInt().coerceAtMost(128)
-                                    val detSub = experimentDetSet512x128.primary.yMat.submat(0, fitDetH, 0, fitDetW)
-                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), detSub, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                                    detSub.release()
+                                    
+                                    val detCropId = experimentDetSet512x128.createCrop(0, 0, fitDetW, fitDetH)
+                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), experimentDetSet512x128.getCropMat(detCropId), org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    experimentDetSet512x128.releaseCrop(detCropId)
                                     
                                     val detThumbB64 = OcrUtils.takeSnapshot(
                                         sourceMat = experimentDetSet512x128.primary.yMat,
@@ -604,9 +605,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val fitRecH = (safeRect.height * recScale).toInt().coerceAtMost(40)
                                         
                                         val offX = 4; val offY = 4
-                                        val subDst = experimentRecSet320x48.primary.yMat.submat(offY, offY + fitRecH, offX, offX + fitRecW)
-                                        org.opencv.imgproc.Imgproc.resize(roiMat, subDst, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                                        roiMat.release(); subDst.release()
+                                        val recCropId = experimentRecSet320x48.createCrop(offX, offY, fitRecW, fitRecH)
+                                        org.opencv.imgproc.Imgproc.resize(roiMat, experimentRecSet320x48.getCropMat(recCropId), org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                        roiMat.release(); experimentRecSet320x48.releaseCrop(recCropId)
                                         
                                         val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.primary, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
@@ -629,9 +630,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
                                     
                                     experimentRecSet320x48.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
-                                    val snapSub = experimentRecSet320x48.primary.yMat.submat(0, fitH, 0, fitW)
-                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), snapSub, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                                    snapSub.release()
+                                    val snapCropId = experimentRecSet320x48.createCrop(0, 0, fitW, fitH)
+                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), experimentRecSet320x48.getCropMat(snapCropId), org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    experimentRecSet320x48.releaseCrop(snapCropId)
                                     
                                     val scaleSnapX = fitW.toFloat() / bridge.width.toFloat()
                                     val scaleSnapY = fitH.toFloat() / bridge.height.toFloat()

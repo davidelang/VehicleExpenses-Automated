@@ -38,36 +38,38 @@ A `YUVHandle` provides the metadata necessary for hardware-level ingestion:
 - `flip()`: Atomically swaps the active index.
 - `normalizeYUV(handle: YUVHandle)`: Compacts raw hardware YUV data from the handle into standard NV21/CV_8 layout.
 - `clear()`: Zeroes all pixels.
-- `createCrop(x: Int, y: Int, w: Int, h: Int)`: Registers a persistent indexed sub-view (top-left x, y, width, height).
-- `createCropNormalized(x: Float, y: Float, w: Float, h: Float)`: Registers a persistent indexed sub-view (normalized 0.0-1.0 top-left x, y, width, height).
+- `createCrop(x: Int, y: Int, w: Int, h: Int): Int`: Registers a persistent indexed sub-view (absolute pixels). Returns the Crop ID.
+- `createCropNormalized(x: Float, y: Float, w: Float, h: Float): Int`: Registers a persistent indexed sub-view (normalized 0.0-1.0). Returns the Crop ID.
+- `getCropMat(id: Int): Mat`: Retrieves the current `Mat` proxy for a managed crop.
+- `releaseCrop(id: Int)`: Forcefully disarms and removes a managed crop.
+
+### Managed Crop Lifecycle
+`BufferSet` managed crops are pinned to the **Primary Instance**. 
+1. When `flip()` is called, all crops are automatically re-projected onto the new Primary memory.
+2. When `resize()` is called, all crops (especially Normalized ones) are re-calculated to match the new parent dimensions.
+3. Managed crops MUST NOT be cached. Always query `getCropMat(id)` immediately before use.
 
 ## 3. Examples of Use
-### Zero-Copy Ingestion
+### Short-Term Pixel Crop (Discovery Stage)
 ```kotlin
-val bufferSet = BufferSet(w, h)
-// Write hardware data directly to a hunk
-bufferSet.scratch.populateFromHardware(...) 
+// Create a crop for a specific detected box
+val id = bufferSet.createCrop(detectedL, detectedT, detectedW, detectedH)
 
-// Manually normalize to standard layout
-bufferSet.normalizeYUV(bufferSet.scratch.yuv)
+// Process the crop
+Imgproc.GaussianBlur(bufferSet.getCropMat(id), bufferSet.getCropMat(id), Size(3.0, 3.0), 0.0)
+
+// Explicitly clean up when finished
+bufferSet.releaseCrop(id)
 ```
 
-### Processing Pipeline with Flip
+### Long-Term Normalized Crop (Odometer Stage)
 ```kotlin
-// Direct access to handles without intermediate variables
-OdometerOcrUtils.applyFilters(bufferSet.primary.mat, bufferSet.scratch.mat)
+// Create once at start of experiment (based on vehicle metadata)
+val odoId = bufferSet.createCropNormalized(0.1f, 0.4f, 0.8f, 0.2f) 
 
-// Atomic flip
-bufferSet.flip() 
-```
-
-### Creating and Using a Persistent Crop
-```kotlin
-// Defined once
-bufferSet.createCropNormalized(0.1f, 0.2f, 0.5f, 0.2f) 
-
-// OCR reads directly from crop handle
-OdometerOcrUtils.runDetection(bufferSet.crop[0].mat)
+// In the iterative loop...
+// The crop automatically stays pinned to the odometer region even if the parent flips or resizes.
+OdometerOcrUtils.runDetection(bufferSet.getCropMat(odoId))
 ```
 
 ## 4. Kotlin Integration (`BufferSet.kt`)
