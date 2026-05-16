@@ -681,7 +681,7 @@ object OdometerOcrUtils {
      */
     fun processPaddleHeatmap(
         heatmap: FloatArray, w: Int, h: Int, scale: Float, 
-        sourceBitmap: Bitmap, algorithm: String = "Native"
+        sourceBuffer: Any, algorithm: String = "Native"
     ): List<TextBlock> {
         val invScale = 1.0 / scale.toDouble()
 
@@ -699,16 +699,10 @@ object OdometerOcrUtils {
 
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()
         val hierarchy = Mat()
-        val sourceMat = Mat()
         val results = mutableListOf<TextBlock>()
 
         try {
             Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-            
-            // Phase 115: ALPHA_8 Safety for Heatmap processing
-            if (sourceBitmap.config != Bitmap.Config.ALPHA_8) {
-                org.opencv.android.Utils.bitmapToMat(sourceBitmap, sourceMat)
-            }
 
             for (contour in contours) {
                 if (Imgproc.contourArea(contour) < 10) continue
@@ -731,7 +725,6 @@ object OdometerOcrUtils {
         } finally {
             mask.release()
             hierarchy.release()
-            sourceMat.release()
             contours.forEach { it.release() }
         }
         return results
