@@ -24,16 +24,6 @@ object OcrHarness {
         return sanitizedResult
     }
 
-    suspend fun runRefinement(bitmap: Bitmap, context: Context): Map<String, OcrResult> {
-            val enginesList = mutableListOf<OcrEngine>(MlKitEngine())
-            val paddle = NativePaddleEngine(context, variant = "V3")
-            if (paddle.isAvailable) enginesList.add(paddle)
-            val results = enginesList.associate { engine ->
-                engine.name to engine.recognize(bitmap)
-            }
-            return results
-    }
-
 }
 
 data class OcrHarnessResult(

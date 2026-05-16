@@ -234,15 +234,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 115: Global Experiment-Level Buffers (Zero-Allocation Anchor)
     val experimentRecBridge320x48 = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge(320, 48)
 
-    val strategies = listOf<String>(
-        // "Paddle V3 Valley", "Paddle V3 Valley Mono",
-        // "ML Kit", "ML Kit Mono"
-    )
     // Pre-populate with iterative engines to fix HTML header alignment
     val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone", "Paddle V3 Valley Mono Diagnostic")
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
-        writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, strategies, harnessEngineNames)) 
+        writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, emptyList(), harnessEngineNames)) 
     }
     var currentFile = startNewFile()
     
@@ -854,51 +850,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             runMLKitIterative("ML Kit Mono Clone", masterBmp, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
                             runPaddleValleyMonoIterative("Paddle V3 Valley Mono Diagnostic", masterBmp, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
 
-                            for (strat in strategies) {
-                                Log.d("OCR_DEBUG", "TRANSITION: Starting strategy '$strat'")
-                                try {
-                                    val tRef0 = System.currentTimeMillis()
-                                    val isDisc = strat.contains("Unclip") || strat.contains("Valley")
-                                    val engine = when {
-                                        strat.contains("ML Kit Mono") -> "ML Kit Mono"
-                                        strat.contains("ML Kit") -> "ML Kit"
-                                        isDisc -> if (strat.contains("V3")) "Paddle V3 ${if (strat.contains("Valley")) "Valley" else "Unclip"}" else "Paddle V2 ${if (strat.contains("Valley")) "Valley" else "Unclip"}"
-                                        strat.contains("V2") -> "Paddle V2 Greedy"
-                                        else -> "Paddle V3 Greedy"
-                                    }
-                                    val h = if (strat.contains("48px")) 48 else if (strat.contains("32px")) 32 else null
-                                    
-                                    val app = context.applicationContext as VehicleExpensesApplication
-                                    val activePaddle = if (strat.contains("Mono")) {
-                                        VehicleExpensesApplication.anchoredEngineV3Mono!!
-                                    } else if (strat.contains("V3")) {
-                                        VehicleExpensesApplication.anchoredEngineV3!!
-                                    } else paddleEngineV2
-
-                                    val expansionMode = if (strat.contains("Valley")) DiscoveryExpansion.VALLEY else DiscoveryExpansion.UNCLIP
-                                    
-                                    Log.d("OCR_DEBUG", "TRANSITION: Executing OCR stage for $strat")
-                                    val steps = if (isDisc) {
-                                        DiscoveryOcrUtils.runDiscoveryMultiStepOcr(
-                                            exactCrop, context, engine, h, activePaddle, expansionMode,
-                                            argbScratch = vehicleArgbScratches[winnerRef.vehicle.id],
-                                            monoScratch = vehicleMonoScratches[winnerRef.vehicle.id],
-                                            detBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool512x128,
-                                            recBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool320x48
-                                        )
-                                    } else {
-                                        OdometerOcrUtils.runMultiStepOcr(
-                                            exactCrop, context, engine, h, activePaddle,
-                                            argbScratch = vehicleArgbScratches[winnerRef.vehicle.id],
-                                            monoScratch = vehicleMonoScratches[winnerRef.vehicle.id],
-                                            recBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool320x48
-                                        )
-                                    }
-                                    refinementTraces[strat] = RefinementTrace(strat, System.currentTimeMillis() - tRef0, steps)
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Strategy $strat failed for ${file.name}", e)
-                                }
-                            }
                         }
                         
                         val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
@@ -920,9 +871,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, strategies, harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, strategies, deskewRes)
+                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes)
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
