@@ -13,7 +13,7 @@ import kotlinx.coroutines.sync.withLock
 class BufferSet(private var width: Int, private var height: Int) {
     private val mutex = Mutex()
     private var primaryIdx = 0
-    private val hunks = arrayOf(Instance(), Instance())
+    private val instances = arrayOf(Instance(), Instance())
 
     inner class Instance {
         private var nativeHandle: Long = 0
@@ -53,7 +53,7 @@ class BufferSet(private var width: Int, private var height: Int) {
 
         val yMat: Mat get() = proxyMat ?: throw IllegalStateException("Instance not initialized")
         val nv21: ByteBuffer get() = buffer ?: throw IllegalStateException("Instance not initialized")
-    private val instances = arrayOf(Instance(), Instance())
+    }
 
     init {
         instances[0].setup(width, height)
@@ -79,7 +79,6 @@ class BufferSet(private var width: Int, private var height: Int) {
         instances[0].release()
         instances[1].release()
     }
-
 
     // JNI Bindings
     private external fun nativeSetup(w: Int, h: Int): Long
