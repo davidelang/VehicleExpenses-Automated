@@ -233,6 +233,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 115: Global Experiment-Level Buffers (Zero-Allocation Anchor)
     val experimentRecSet320x48 = BufferSet(320, 48)
+    val experimentDetSet512x128 = BufferSet(512, 128)
 
     // Pre-populate with iterative engines to fix HTML header alignment
     val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone", "Paddle V3 Valley Mono Diagnostic")
@@ -406,7 +407,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
                                 
                                 // Discovery & Recognition Pools (Zero-Allocation)
-                                val detBridge = com.davidlang.vehicleexpensesautomated.ui.util.MemoryBridge.pool512x128 ?: throw IllegalStateException("Discovery pool not initialized")
 
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
                                 val jsonStages = com.google.gson.JsonObject()
@@ -479,16 +479,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     // --- 2-STAGE PADDLE V3 MONO ---
                                     
                                     // 1. Discovery Stage (Scale to 512x128)
-                                    detBridge.getMat().setTo(org.opencv.core.Scalar(0.0))
+                                    experimentDetSet512x128.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
                                     val detScale = kotlin.math.min(512f / bridge.width.toFloat(), 128f / bridge.height.toFloat())
                                     val fitDetW = (bridge.width * detScale).toInt().coerceAtMost(512)
                                     val fitDetH = (bridge.height * detScale).toInt().coerceAtMost(128)
-                                    val detSub = detBridge.getMat().submat(0, fitDetH, 0, fitDetW)
+                                    val detSub = experimentDetSet512x128.primary.yMat.submat(0, fitDetH, 0, fitDetW)
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), detSub, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     detSub.release()
                                     
                                     val detThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = detBridge.getMat(),
+                                        sourceMat = experimentDetSet512x128.primary.yMat,
                                         rawFragments = emptyList(),
                                         consolidatedRows = emptyList(),
                                         argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
@@ -496,7 +496,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         subsetH = 48
                                     )
 
-                                    val det = paddleEngineV3Mono.detectMono(detBridge)
+                                    val det = paddleEngineV3Mono.detectMono(experimentDetSet512x128.primary)
                                     val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, bridge.getMat(), "Paddle") else emptyList()
                                     
                                     // 2. Valley Expansion (Pixel Walking)
@@ -907,6 +907,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     
     // Phase 115: Release native handles for vehicle pools
     experimentRecSet320x48.release()
+    experimentDetSet512x128.release()
     vehicleMonoBridges.values.forEach { it.release() }
     vehicleMonoScratches.values.forEach { it.release() }
     vehicleArgbCrops.values.forEach { it.recycle() }
