@@ -674,7 +674,7 @@ object OdometerOcrUtils {
                         val bottom = ((cy + h / 2.0) * imgH).toInt()
                         blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
                     } catch (e: Exception) {
-                        Log.w("OdometerOcr", "Skipping malformed landmark entry in JSON: ${it.message}")
+                        Log.w("OdometerOcr", "Skipping malformed landmark entry in JSON: ${e.message}")
                     }
                 }
                 results[name] = OcrResult(engineName = name, textBlocks = blocks, imageWidth = imgW, imageHeight = imgH, debugText = blocks.joinToString(" ") { it.text })
