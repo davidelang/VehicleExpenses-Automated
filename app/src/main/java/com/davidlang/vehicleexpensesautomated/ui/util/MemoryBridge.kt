@@ -82,20 +82,14 @@ class MemoryBridge(val width: Int, val height: Int) {
             nativeSyncMatToArgb(srcMat.nativeObj, dst)
         }
 
-        var pool320x48: MemoryBridge? = null
-            private set
-
         /**
          * Global shared pools for refinement. 
          * Initialized EAGERLY on the main thread to avoid circular dependencies.
          */
         fun initializeGlobalPools() {
-            if (pool320x48 != null) return
-            
             android.util.Log.i("MemoryBridge", "Initializing global pools on thread: ${Thread.currentThread().name}")
             try {
                 System.loadLibrary("memory_bridge")
-                pool320x48 = MemoryBridge(320, 48)
                 android.util.Log.i("MemoryBridge", "Global pools initialized successfully.")
             } catch (e: Exception) {
                 android.util.Log.e("MemoryBridge", "Failed to initialize global pools", e)
