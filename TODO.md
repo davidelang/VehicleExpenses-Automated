@@ -9,11 +9,10 @@
 - **NativePaddleEngine Refactoring:**
   - [ ] Extract hardcoded buffer/tensor dimensions (512x128, 2048x2048) into a unified configuration registry or array to ensure consistent initialization across pre-allocated buffers, PaddlePredictor input resizes, and runtime dimension checks, eliminating brittle `if/else` logic.
 - [ ] **Phase 115: BufferSet Architectural Migration (Active)**
-    - [ ] **Phase 1: Native Core Infrastructure**
-      - [ ] Implement `BufferSet.cpp` (Handle registry, JNI setup/release/resize).
-      - [ ] Register in `CMakeLists.txt`.
-    - [ ] **Phase 2: Kotlin API & Structural Verification**
-    - [ ] **Phase 3: Recognition Pool Migration (320x48)**
+    - [x] **Phase 1: Native Core Infrastructure**
+    - [x] **Phase 2: Kotlin API & Structural Verification**
+    - [x] **Phase 3: Recognition Pool Migration (320x48)**
+    - [ ] **Phase 4: Discovery Pool Migration (512x128)**
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
     - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
