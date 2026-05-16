@@ -17,7 +17,7 @@ class BufferSet(private var width: Int, private var height: Int) {
 
     inner class Hunk {
         private var nativeHandle: Long = 0
-        private var mat: Mat? = null
+        private var proxyMat: Mat? = null
         private var buffer: ByteBuffer? = null
 
         fun setup(w: Int, h: Int) {
@@ -28,14 +28,18 @@ class BufferSet(private var width: Int, private var height: Int) {
 
         fun release() {
             if (nativeHandle != 0L) {
-                nativeRelease(nativeHandle, mat)
+                proxyMat?.let { nativeDisarmMat(it) }
+                nativeRelease(nativeHandle, null)
                 nativeHandle = 0L
-                mat = null
+                proxyMat = null
                 buffer = null
             }
         }
 
         fun resize(w: Int, h: Int) {
+            if (nativeHandle != 0L) {
+                proxyMat?.let { nativeDisarmMat(it) }
+            }
             if (!nativeResize(nativeHandle, w, h)) {
                 throw IllegalStateException("Native resize failed for Hunk")
             }
@@ -43,11 +47,11 @@ class BufferSet(private var width: Int, private var height: Int) {
         }
 
         private fun refreshViews() {
-            mat = Mat(nativeGetMatPtr(nativeHandle))
+            proxyMat = Mat(nativeGetMatPtr(nativeHandle))
             buffer = nativeGetBuffer(nativeHandle)
         }
 
-        val yMat: Mat get() = mat ?: throw IllegalStateException("Hunk not initialized")
+        val yMat: Mat get() = proxyMat ?: throw IllegalStateException("Hunk not initialized")
         val nv21: ByteBuffer get() = buffer ?: throw IllegalStateException("Hunk not initialized")
     }
 
@@ -87,5 +91,8 @@ class BufferSet(private var width: Int, private var height: Int) {
         init {
             System.loadLibrary("memory_bridge")
         }
+
+        @JvmStatic
+        private external fun nativeDisarmMat(matObj: Mat)
     }
 }
