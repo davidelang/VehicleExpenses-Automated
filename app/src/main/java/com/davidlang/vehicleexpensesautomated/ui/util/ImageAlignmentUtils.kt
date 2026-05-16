@@ -412,10 +412,9 @@ object ImageAlignmentUtils {
             } else if (json.startsWith("[")) {
                 JSONArray(json) // Legacy support
             } else {
-                // Fallback to first available if specific engine not found
-                val keys = root.keys()
-                if (keys.hasNext()) root.getJSONArray(keys.next()) else null
-            } ?: return emptySet()
+                Log.e("ImageAlignment", "Manifest missing data for engine: $engineName")
+                return emptySet()
+            }
 
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
