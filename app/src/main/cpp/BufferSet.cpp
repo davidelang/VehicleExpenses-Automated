@@ -70,7 +70,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
 
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
-    JNIEnv* env, jobject thiz, jlong handlePtr) {
+    JNIEnv* env, jobject thiz, jlong handlePtr, jobject matObj) {
     
     auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
     {
@@ -80,6 +80,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
             return;
         }
         validHandles.erase(handle);
+    }
+
+    // Forcefully detach the Java Mat object to prevent GC double-free
+    if (matObj != nullptr) {
+        jclass matClass = env->GetObjectClass(matObj);
+        jfieldID nativeObjField = env->GetFieldID(matClass, "nativeObj", "J");
+        if (nativeObjField != nullptr) {
+            env->SetLongField(matObj, nativeObjField, 0);
+            LOGI("nativeRelease: Severed Java Mat link to %p", handle->yMat);
+        }
     }
 
     if (handle != nullptr) {
