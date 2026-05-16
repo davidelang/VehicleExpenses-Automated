@@ -608,6 +608,7 @@ object OdometerOcrUtils {
         val t0 = System.currentTimeMillis()
         val root = JSONObject()
         results.forEach { (engineName, res) ->
+            Log.e("LandmarkSerialization", "Serializing landmarks for engine: $engineName")
             val array = JSONArray()
             
             // Pass 1: Count total occurrences for detectable landmarks ONLY (Phase 109 Refined)

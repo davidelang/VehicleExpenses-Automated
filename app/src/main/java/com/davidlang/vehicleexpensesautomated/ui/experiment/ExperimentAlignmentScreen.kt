@@ -1193,7 +1193,7 @@ private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {    if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
     try {
-        val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else { val keys = root.keys(); if (keys.hasNext()) root.getJSONArray(keys.next()) else null } ?: return emptyList()
+        val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else { Log.e("ExperimentAlignment", "Manifest missing data for engine: $engineName"); return emptyList() }
         for (i in 0 until array.length()) {
             try {
                 val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
