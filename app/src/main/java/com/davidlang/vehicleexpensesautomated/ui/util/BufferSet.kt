@@ -28,7 +28,7 @@ class BufferSet(private var width: Int, private var height: Int) {
 
         fun release() {
             if (nativeHandle != 0L) {
-                nativeRelease(nativeHandle)
+                nativeRelease(nativeHandle, mat)
                 nativeHandle = 0L
                 mat = null
                 buffer = null
