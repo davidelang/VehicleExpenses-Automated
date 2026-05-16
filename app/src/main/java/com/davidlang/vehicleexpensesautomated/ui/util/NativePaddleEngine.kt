@@ -70,19 +70,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _bufferSmallMono: FloatArray? = null
         private var _sharedBmpSmall: Bitmap? = null
         private var _sharedCanvasSmall: Canvas? = null
-        private var _sharedBmpSmallMono: Bitmap? = null
-        private var _sharedCanvasSmallMono: Canvas? = null
         private var _bufferRec: FloatArray? = null
         private var _bufferRecMono: FloatArray? = null
         private var _sharedBmpRec: Bitmap? = null
         private var _sharedCanvasRec: Canvas? = null
-        private var _sharedBmpRecMono: Bitmap? = null
-        private var _sharedCanvasRecMono: Canvas? = null
         private var _sharedNv21Buffer: ByteArray? = null
         private var _sharedBmpOdoScratch: Bitmap? = null
         private var _sharedCanvasOdoScratch: Canvas? = null
-        private var _sharedBmpOdoScratchMono: Bitmap? = null
-        private var _sharedCanvasOdoScratchMono: Canvas? = null
         private var _sharedReportBitmap: Bitmap? = null
         private var _sharedReportCanvas: Canvas? = null
         private var _redPaint: Paint? = null
@@ -109,19 +103,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private val bufferSmallMono: FloatArray get() = _bufferSmallMono!!
         val sharedBmpSmall: Bitmap get() = _sharedBmpSmall!!
         val sharedCanvasSmall: Canvas get() = _sharedCanvasSmall!!
-        val sharedBmpSmallMono: Bitmap get() = _sharedBmpSmallMono!!
-        val sharedCanvasSmallMono: Canvas get() = _sharedCanvasSmallMono!!
         private val bufferRec: FloatArray get() = _bufferRec!!
         private val bufferRecMono: FloatArray get() = _bufferRecMono!!
         val sharedBmpRec: Bitmap get() = _sharedBmpRec!!
         val sharedCanvasRec: Canvas get() = _sharedCanvasRec!!
-        val sharedBmpRecMono: Bitmap get() = _sharedBmpRecMono!!
-        val sharedCanvasRecMono: Canvas get() = _sharedCanvasRecMono!!
         val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
         val sharedBmpOdoScratch: Bitmap get() = _sharedBmpOdoScratch!!
         val sharedCanvasOdoScratch: Canvas get() = _sharedCanvasOdoScratch!!
-        val sharedBmpOdoScratchMono: Bitmap get() = _sharedBmpOdoScratchMono!!
-        val sharedCanvasOdoScratchMono: Canvas get() = _sharedCanvasOdoScratchMono!!
         val sharedReportBitmap: Bitmap get() = _sharedReportBitmap!!
         val sharedReportCanvas: Canvas get() = _sharedReportCanvas!!
         val redPaint: Paint get() = _redPaint!!
@@ -162,23 +150,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _bufferSmall = FloatArray(3 * 512 * 128)
             _bufferSmallMono = FloatArray(1 * 512 * 128)
             _sharedBmpSmall = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasSmall = Canvas(_sharedBmpSmall!!)
-            
-            // Anchor Mono Bitmaps
-            _sharedBmpSmallMono = MemoryBridge.pool512x128!!.getBitmap()
-            _sharedCanvasSmallMono = Canvas(_sharedBmpSmallMono!!)
 
             _bufferRec = FloatArray(3 * 320 * 48)
             _bufferRecMono = FloatArray(1 * 320 * 48)
             _sharedBmpRec = Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888); _sharedCanvasRec = Canvas(_sharedBmpRec!!)
             
-            // Anchor Mono Bitmaps
-            _sharedBmpRecMono = MemoryBridge.pool320x48!!.getBitmap()
-            _sharedCanvasRecMono = Canvas(_sharedBmpRecMono!!)
-            
             _sharedNv21Buffer = ByteArray(4000 * 3072 * 3 / 2)
 
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
-            _sharedBmpOdoScratchMono = Bitmap.createBitmap(512, 128, Bitmap.Config.ALPHA_8); _sharedCanvasOdoScratchMono = Canvas(_sharedBmpOdoScratchMono!!)
 
             _sharedReportBitmap = Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888); _sharedReportCanvas = Canvas(_sharedReportBitmap!!)
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
@@ -234,7 +213,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tempMat = Mat(sourceBmp.height, sourceBmp.width, org.opencv.core.CvType.CV_8UC1, buffer)
             try {
                 Imgproc.resize(tempMat, targetBridge.getMat(), Size(targetBridge.width.toDouble(), targetBridge.height.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-                targetBridge.syncToBitmap() // <--- Forces Java Bitmap to reflect Native Mat changes
             } finally {
                 tempMat.release()
             }
