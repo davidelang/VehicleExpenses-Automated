@@ -479,7 +479,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     // --- 2-STAGE PADDLE V3 MONO ---
                                     
                                     // 1. Discovery Stage (Scale to 512x128)
-                                    experimentDetSet512x128.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
+                                    experimentDetSet512x128.primary.clear()
                                     val detScale = kotlin.math.min(512f / bridge.width.toFloat(), 128f / bridge.height.toFloat())
                                     val fitDetW = (bridge.width * detScale).toInt().coerceAtMost(512)
                                     val fitDetH = (bridge.height * detScale).toInt().coerceAtMost(128)
@@ -594,10 +594,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val safeR = box.right.coerceIn(safeL + 1, bridge.width)
                                         val safeB = box.bottom.coerceIn(safeT + 1, bridge.height)
                                         
-                                        val safeRect = org.opencv.core.Rect(safeL, safeT, safeR - safeL, safeB - safeT)
                                         val roiMat = org.opencv.core.Mat(bridge.getMat(), safeRect)
                                         
-                                        experimentRecSet320x48.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
+                                        experimentRecSet320x48.primary.clear()
                                         
                                         // Aspect-ratio scaling to fit within 312x40, anchored at (4,4)
                                         val recScale = kotlin.math.min(312f / safeRect.width.toFloat(), 40f / safeRect.height.toFloat())
@@ -629,7 +628,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         fitW = (48f * aspect).toInt().coerceAtLeast(1)
                                     }
                                     
-                                    experimentRecSet320x48.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
+                                    experimentRecSet320x48.primary.clear()
                                     val snapCropId = experimentRecSet320x48.createCrop(0, 0, fitW, fitH)
                                     org.opencv.imgproc.Imgproc.resize(bridge.getMat(), experimentRecSet320x48.getCropMat(snapCropId), org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     experimentRecSet320x48.releaseCrop(snapCropId)
@@ -774,17 +773,17 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     // 4.4 Scale-to-Fit (Recognition)
-                                    experimentRecSet320x48.primary.yMat.setTo(org.opencv.core.Scalar(0.0))
-                                    val subDst = experimentRecSet320x48.primary.yMat.submat(0, fitH, 0, fitW)
-                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), subDst, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                                    // 4.4 ML Kit Recognition (Mat-Direct Sync)
-                                    val targetW = 320; val targetH = 48
-                                    val frameSize = targetW * targetH
-                                    experimentRecSet320x48.primary.yMat.get(0, 0, OdometerOcrUtils.reusableByteStaging)
-                                    for (i in frameSize until (frameSize * 3 / 2)) OdometerOcrUtils.reusableByteStaging[i] = 128.toByte()
-
-                                    val img = com.google.mlkit.vision.common.InputImage.fromByteArray(OdometerOcrUtils.reusableByteStaging, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+                                    experimentRecSet320x48.primary.clear()
+                                    val mlRecCropId = experimentRecSet320x48.createCrop(0, 0, fitW, fitH)
+                                    org.opencv.imgproc.Imgproc.resize(bridge.getMat(), experimentRecSet320x48.getCropMat(mlRecCropId), org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    // 4.4 ML Kit Recognition (Zero-Copy ByteBuffer)
+                                    val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                                        experimentRecSet320x48.primary.nv21,
+                                        320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                                    )
                                     val visionText = recognizer.process(img).await()
+                                    
+                                    experimentRecSet320x48.releaseCrop(mlRecCropId)
                                     
                                     // 4.5 Text Sanitization
                                     val odoBuilder = StringBuilder()
@@ -815,6 +814,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         subsetW = fitW,
                                         subsetH = fitH
                                     )
+
+                                    experimentRecSet320x48.primary.clear()
 
                                     val tLoop = System.currentTimeMillis() - tStart
                                     htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")

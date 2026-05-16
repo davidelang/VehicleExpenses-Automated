@@ -105,6 +105,27 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeDisarmMat(
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeClear(
+    JNIEnv* env, jobject thiz, jlong handlePtr) {
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        if (validHandles.find(handle) == validHandles.end()) {
+            LOGE("nativeClear: Invalid handle pointer %p", handle);
+            return;
+        }
+    }
+
+    if (handle != nullptr && handle->data != nullptr) {
+        size_t frameSize = handle->width * handle->height;
+        std::memset(handle->data, 0, frameSize);
+        std::memset(handle->data + frameSize, 128, handle->actualByteCount - frameSize);
+        LOGI("nativeClear: Buffer cleared (W=%zu, H=%zu)", handle->width, handle->height);
+    }
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
     JNIEnv* env, jobject thiz, jlong handlePtr, jint width, jint height) {

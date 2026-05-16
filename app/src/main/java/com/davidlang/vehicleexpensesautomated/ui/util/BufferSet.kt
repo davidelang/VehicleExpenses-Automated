@@ -101,6 +101,12 @@ class BufferSet(private var width: Int, private var height: Int) {
             buffer = nativeGetBuffer(nativeHandle)
         }
 
+        fun clear() {
+            if (nativeHandle != 0L) {
+                nativeClear(nativeHandle)
+            }
+        }
+
         val yMat: Mat get() = proxyMat ?: throw IllegalStateException("Instance not initialized")
         val nv21: ByteBuffer get() = buffer ?: throw IllegalStateException("Instance not initialized")
     }
@@ -170,6 +176,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     // JNI Bindings
     private external fun nativeSetup(w: Int, h: Int): Long
     private external fun nativeRelease(handle: Long, matObj: Mat?)
+    private external fun nativeClear(handle: Long)
     private external fun nativeResize(handle: Long, w: Int, h: Int): Boolean
     private external fun nativeGetMatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
