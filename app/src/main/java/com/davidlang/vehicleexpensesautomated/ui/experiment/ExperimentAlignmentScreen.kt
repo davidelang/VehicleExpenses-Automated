@@ -201,7 +201,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         ReferenceCache(v, refBase64, curated, bmp, bmp.width, bmp.height)
     }
     
-    // Phase 115: Vehicle-Specific MemoryBridge Pools (Zero-Allocation Anchor)
+    // Phase 115: Vehicle-Specific BufferSet Pools (Zero-Allocation Anchor)
     val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
     val vehicleArgbCrops = mutableMapOf<Int, Bitmap>()
     val vehicleArgbScratches = mutableMapOf<Int, Bitmap>()
@@ -1262,4 +1262,5 @@ private suspend fun performLandmarkDiscovery(
         queryOcrDiscovery.imageHeight
     )
     return Pair(queryOcrDiscovery, landmarks)
+}andmarks)
 }

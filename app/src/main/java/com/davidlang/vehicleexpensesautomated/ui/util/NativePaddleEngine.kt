@@ -56,10 +56,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         // Phase 115: Safe Rigid Backing Fields (Eliminates background JNI locks)
         private var _sharedBmpFull: Bitmap? = null
         private var _sharedCanvasFull: Canvas? = null
-        private var _sharedFullBridgeMono: MemoryBridge? = null
+        private var _fullBufferSet: BufferSet? = null
         private var _sharedBmpScratch: Bitmap? = null
         private var _sharedCanvasScratch: Canvas? = null
-        private var _sharedScratchBridgeMono: MemoryBridge? = null
         private var _bufferLarge: FloatArray? = null
         private var _bufferLargeMono: FloatArray? = null
         private var _sharedBmp2048: Bitmap? = null
@@ -89,10 +88,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         // Public Non-Null Accessors (API Stability)
         val sharedBmpFull: Bitmap get() = _sharedBmpFull!!
         val sharedCanvasFull: Canvas get() = _sharedCanvasFull!!
-        val sharedFullBridgeMono: MemoryBridge get() = _sharedFullBridgeMono!!
+        val fullBufferSet: BufferSet get() = _fullBufferSet!!
         val sharedBmpScratch: Bitmap get() = _sharedBmpScratch!!
         val sharedCanvasScratch: Canvas get() = _sharedCanvasScratch!!
-        val sharedScratchBridgeMono: MemoryBridge get() = _sharedScratchBridgeMono!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         private val bufferLargeMono: FloatArray get() = _bufferLargeMono!!
         val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
@@ -417,10 +415,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     }
                 }
             }
-            is MemoryBridge -> {
-                w = input.width; h = input.height
-                Log.d("OCR_DEBUG", "START RECOGNITION (MemoryBridge): engine=$name, dims=${w}x${h}")
-                val buffer = input.getNv21(); buffer.rewind()
+            is BufferSet.Instance -> {
+                w = input.yMat.cols(); h = input.yMat.rows()
+                Log.d("OCR_DEBUG", "START RECOGNITION (BufferSet.Instance): engine=$name, dims=${w}x${h}")
+                val buffer = input.nv21; buffer.rewind()
                 val mean = 0.5f; val std = 0.5f
                 for (i in 0 until (w * h)) {
                     floatData[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
@@ -497,10 +495,5 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = recognizer ?: return@withContext OcrResult(engineName = name, debugText = "Predictor null")
         val res = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
         OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = res.text, textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))), imageWidth = bitmap.width, imageHeight = bitmap.height)
-    }
-}
-  }
-}
-dth = bitmap.width, imageHeight = bitmap.height)
     }
 }
