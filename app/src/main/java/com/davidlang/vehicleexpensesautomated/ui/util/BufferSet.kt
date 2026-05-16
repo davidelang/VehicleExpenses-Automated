@@ -78,7 +78,7 @@ class BufferSet(private var width: Int, private var height: Int) {
 
     // JNI Bindings
     private external fun nativeSetup(w: Int, h: Int): Long
-    private external fun nativeRelease(handle: Long)
+    private external fun nativeRelease(handle: Long, matObj: Mat?)
     private external fun nativeResize(handle: Long, w: Int, h: Int): Boolean
     private external fun nativeGetMatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
