@@ -503,7 +503,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     )
 
                                     val det = paddleEngineV3Mono.detectMono(detBridge)
-                                    val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, bridge.getBitmap(), "Paddle") else emptyList()
+                                    val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, bridge.getMat(), "Paddle") else emptyList()
                                     
                                     // 2. Valley Expansion (Pixel Walking)
                                     fun getLineAverage(mat: org.opencv.core.Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
