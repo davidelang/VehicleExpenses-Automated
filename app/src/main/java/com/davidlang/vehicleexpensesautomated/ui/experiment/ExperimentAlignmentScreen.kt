@@ -1262,5 +1262,4 @@ private suspend fun performLandmarkDiscovery(
         queryOcrDiscovery.imageHeight
     )
     return Pair(queryOcrDiscovery, landmarks)
-}andmarks)
 }
