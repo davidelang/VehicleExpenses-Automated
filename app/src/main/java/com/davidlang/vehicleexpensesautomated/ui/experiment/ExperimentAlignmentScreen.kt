@@ -307,9 +307,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 
+                // Phase 115: Synchronize the unaligned raw masterBmp into the global Dashboard set before discovery/alignment
+                com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.primary.yMat)
+
                 val tDiscoveryStart = System.currentTimeMillis()
                 val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(masterBmp, context)
                 val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
+                
+                // Duplicate landmarks for independent native pipeline
+                val queryLandmarksMonoRaw = queryLandmarksRaw.map { it.copy() }
+                
                 val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksRaw, cachedRefs.map { it.vehicle }, "ML Kit")
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
 
@@ -324,12 +331,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     finalWinnerName = winnerRef.vehicle.name
                     Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
                     
-                    // Phase 108: Disambiguate exactly once for the correct vehicle
+                    // Phase 108: Independent Disambiguation
                     val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
+                    val queryLandmarksMonoPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksMonoRaw, winnerRef.curatedLandmarks)
                     
-                    // Phase 115: Synchronize the unaligned masterBmp into the global Dashboard set before alignment
-                    com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.primary.yMat)
-
                     // 1. Standard Alignment (In-place on masterBmp)
                     val t0 = System.currentTimeMillis()
                     val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH, scratchBmp)
@@ -339,7 +344,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
                         NativePaddleEngine.fullBufferSet, 
                         winnerRef.curatedLandmarks, 
-                        queryLandmarksPrimary, 
+                        queryLandmarksMonoPrimary, 
                         winnerRef.vehicle, 
                         winnerRef.width, 
                         winnerRef.height, 
