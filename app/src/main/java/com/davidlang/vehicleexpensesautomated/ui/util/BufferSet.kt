@@ -127,14 +127,23 @@ class BufferSet(private var width: Int, private var height: Int) {
     suspend fun resize(w: Int, h: Int) = mutex.withLock {
         if (w == width && h == height) return
         
-        // Kill all crops before resize to prevent dangling sub-views
-        managedCrops.values.forEach { it.release() }
-        managedCrops.clear()
+        // Preserve normalized crops, kill absolute ones
+        val normalizedCrops = managedCrops.filter { it.value.definition.isNormalized }
+        val absoluteCrops = managedCrops.filter { !it.value.definition.isNormalized }
+        
+        absoluteCrops.values.forEach { it.release() }
+        managedCrops.keys.removeAll(absoluteCrops.keys)
+        
+        // Disarm normalized proxies before memory reallocation
+        normalizedCrops.values.forEach { it.release() }
 
         instances[0].resize(w, h)
         instances[1].resize(w, h)
         width = w
         height = h
+
+        // Re-project normalized crops onto the new dimensions
+        normalizedCrops.values.forEach { it.refresh(primary.yMat, width, height) }
     }
 
     fun release() {
