@@ -105,8 +105,6 @@ class BufferSet(private var width: Int, private var height: Int) {
         private var proxyY: Mat? = null
         private var proxyUV: Mat? = null
         private var buffer: ByteBuffer? = null
-        var yuv: YuvHandle? = null
-            private set
 
         fun setup(w: Int, h: Int) {
             nativeHandle = nativeSetup(w, h)
@@ -121,7 +119,7 @@ class BufferSet(private var width: Int, private var height: Int) {
                 nativeRelease(nativeHandle, null)
                 nativeHandle = 0L
                 proxyY = null; proxyUV = null
-                buffer = null; yuv = null
+                buffer = null
             }
         }
 
@@ -140,18 +138,6 @@ class BufferSet(private var width: Int, private var height: Int) {
             proxyY = Mat(nativeGetMatPtr(nativeHandle))
             proxyUV = Mat(nativeGetUVMatPtr(nativeHandle))
             buffer = nativeGetBuffer(nativeHandle)
-            
-            val buf = buffer!!
-            val w = width
-            val h = height
-            yuv = YuvHandle(
-                width = w, height = h,
-                planes = arrayOf(
-                    YuvHandle.Plane(buf.duplicate().position(0).slice() as ByteBuffer, w, 1),
-                    YuvHandle.Plane(buf.duplicate().position(w * h + 1).slice() as ByteBuffer, w, 2),
-                    YuvHandle.Plane(buf.duplicate().position(w * h).slice() as ByteBuffer, w, 2)
-                )
-            )
         }
 
         fun clear() {
