@@ -20,7 +20,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     private val managedCrops = mutableMapOf<Int, ManagedCrop>()
     private var nextCropId = 1000
 
-    private data class CropDefinition(
+    internal data class CropDefinition(
         val x: Float, val y: Float, val w: Float, val h: Float, 
         val isNormalized: Boolean
     )
@@ -29,7 +29,7 @@ class BufferSet(private var width: Int, private var height: Int) {
 
     data class YuvHandle(val yMat: Mat, val uvMat: Mat)
 
-    inner class ManagedCrop(val definition: CropDefinition) {
+    inner class ManagedCrop(internal val definition: CropDefinition) {
         var yMat: Mat? = null
             private set
         var uvMat: Mat? = null
@@ -180,7 +180,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         height = h
 
         // Re-project normalized crops onto the new dimensions
-        normalizedCrops.values.forEach { it.refresh(primary.yMat, width, height) }
+        normalizedCrops.values.forEach { it.refresh(primary.yMat, primary.uvMat, width, height) }
     }
 
     fun release() {
@@ -194,7 +194,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     fun createCrop(x: Int, y: Int, w: Int, h: Int): Int {
         val id = nextCropId++
         val crop = ManagedCrop(CropDefinition(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), false))
-        crop.refresh(primary.yMat, width, height)
+        crop.refresh(primary.yMat, primary.uvMat, width, height)
         managedCrops[id] = crop
         return id
     }
@@ -202,19 +202,23 @@ class BufferSet(private var width: Int, private var height: Int) {
     fun createCropNormalized(x: Float, y: Float, w: Float, h: Float): Int {
         val id = nextCropId++
         val crop = ManagedCrop(CropDefinition(x, y, w, h, true))
-        crop.refresh(primary.yMat, width, height)
+        crop.refresh(primary.yMat, primary.uvMat, width, height)
         managedCrops[id] = crop
         return id
     }
 
     fun createCropNormalizedWithId(id: Int, x: Float, y: Float, w: Float, h: Float) {
         val crop = ManagedCrop(CropDefinition(x, y, w, h, true))
-        crop.refresh(primary.yMat, width, height)
+        crop.refresh(primary.yMat, primary.uvMat, width, height)
         managedCrops[id] = crop
     }
 
     fun getCropMat(id: Int): Mat {
-        return managedCrops[id]?.proxyMat ?: throw IllegalArgumentException("Invalid or released crop ID: $id")
+        return managedCrops[id]?.yMat ?: throw IllegalArgumentException("Invalid or released crop ID: $id")
+    }
+
+    fun getCrop(id: Int): ManagedCrop {
+        return managedCrops[id] ?: throw IllegalArgumentException("Invalid or released crop ID: $id")
     }
 
     fun releaseCrop(id: Int) {

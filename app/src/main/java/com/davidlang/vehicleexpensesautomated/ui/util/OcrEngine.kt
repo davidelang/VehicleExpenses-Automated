@@ -245,13 +245,13 @@ object OcrUtils {
                 NativeImageUtils.syncMatFromArgb(scratchBmp, workspace.yMat)
             }
             is org.opencv.core.Mat -> {
-                val subY = source.submat(roi.top, roi.bottom, roi.left, roi.right)
+                val subY = source.submat(roi)
                 Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 subY.release()
             }
             is BufferSet.Instance -> {
                 // Luma Resize
-                val subY = source.yMat.submat(roi.top, roi.bottom, roi.left, roi.right)
+                val subY = source.yMat.submat(roi)
                 Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 
                 // Chroma Resize (8UC2 interleaved)
