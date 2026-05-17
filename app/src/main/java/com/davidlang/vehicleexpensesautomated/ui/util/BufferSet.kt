@@ -18,7 +18,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     
     // Managed Crops
     private val managedCrops = mutableMapOf<Int, ManagedCrop>()
-    private var nextCropId = 0
+    private var nextCropId = 1000
 
     private data class CropDefinition(
         val x: Float, val y: Float, val w: Float, val h: Float, 
