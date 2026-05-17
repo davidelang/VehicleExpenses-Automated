@@ -362,42 +362,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         // Phase 58: Refinement Loop (Only executed on successful alignment)
                         val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
                         if (exactCrop != null) {
-            // Phase 115: Single-Pass Anchored Extraction (ARGB master -> Mono Pool)
-                            val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id]
-                            if (odoBuffer != null) {
-                                try {
-                                    Log.d("OCR_DEBUG", "TRANSITION: Populating vehicle Mono pool via OpenCV ROI Scale-to-Fit")
-                                    val argbMat = org.opencv.core.Mat()
-                                    org.opencv.android.Utils.bitmapToMat(masterBmp!!, argbMat)
-                                    
-                                    // Define ROI for the odometer based on vehicle coordinates
-                                    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-                                    val t = winnerRef.vehicle.odometerCropTop ?: 0f
-                                    val r = winnerRef.vehicle.odometerCropRight ?: 1f
-                                    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-                                    
-                                    val roiRect = org.opencv.core.Rect(
-                                        (l * masterBmp.width).toInt().coerceIn(0, masterBmp.width - 1),
-                                        (t * masterBmp.height).toInt().coerceIn(0, masterBmp.height - 1),
-                                        ((r - l) * masterBmp.width).toInt().coerceAtMost(masterBmp.width),
-                                        ((b - t) * masterBmp.height).toInt().coerceAtMost(masterBmp.height)
-                                    )
-                                    
-                                    val roiMat = org.opencv.core.Mat(argbMat, roiRect)
-                                    val redMat = org.opencv.core.Mat()
-                                    org.opencv.core.Core.extractChannel(roiMat, redMat, 0) // Extract Red/Luminance
-                                    
-                                    // High-Quality Resize into the anchored vehicle pool
-                                    val bridgeW = odoBuffer.primary.yMat.cols()
-                                    val bridgeH = odoBuffer.primary.yMat.rows()
-                                    val interp = if (roiRect.width > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                    org.opencv.imgproc.Imgproc.resize(redMat, odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
-                                    
-                                    argbMat.release(); roiMat.release(); redMat.release()
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Failed to populate Mono pool", e)
-                                }
-                            }
 
                             // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
                             val l = winnerRef.vehicle.odometerCropLeft ?: 0f
@@ -1043,6 +1007,23 @@ private fun serializePhotoResultToJson(
         
         put("discovery_time_ms", tDiscovery)
         put("discovery_time_mono_ms", winnerRes?.discoveryTimeMonoMs ?: 0L)
+        
+        if (winnerRes?.alignmentTrace != null) {
+            put("alignment_time_std_ms", winnerRes.alignmentTrace.timeMs)
+            put("alignment_time_mono_ms", winnerRes.alignmentTraceMono?.timeMs ?: 0L)
+            
+            val stdS = winnerRes.alignmentTrace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
+            val stdTx = winnerRes.alignmentTrace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
+            val stdTy = winnerRes.alignmentTrace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
+            
+            val monoS = winnerRes.alignmentTraceMono?.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
+            val monoTx = winnerRes.alignmentTraceMono?.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
+            val monoTy = winnerRes.alignmentTraceMono?.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
+            
+            put("alignment_delta_scale", monoS - stdS)
+            put("alignment_delta_tx", monoTx - stdTx)
+            put("alignment_delta_ty", monoTy - stdTy)
+        }
         
         val mlArray = JSONArray()
         deskewRes.mlBlocks.forEach { block ->
