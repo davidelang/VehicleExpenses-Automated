@@ -1,6 +1,7 @@
 # Vehicle Expenses Automated — TODO Updated
 
 ## Infrastructure & Protocol
+- [x] **DONE:** Phase 9 - Stateless Native Snapshot Utility.
 - [ ] **BUG:** Investigate/Fix inability to write to `dev-ai-interaction/plans` during plan mode.
 - [ ] **PLAN:** Phase 2 - Paddle V3 General Model Integration & Greedy Numeric Decoding (linked to `dev-ai-interaction/plans/paddle-v3-greedy.md`)
 - [ ] **PLAN:** Phase 3 - ImageNet (Norm B) vs Standard (Norm A) Normalization Sweep (linked to `dev-ai-interaction/plans/normalization-sweep.md`)

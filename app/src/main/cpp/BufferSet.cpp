@@ -13,6 +13,7 @@
 struct BufferSetHandle {
     uint8_t* data;
     cv::Mat* yMat;
+    cv::Mat* uvMat;
     size_t width;
     size_t height;
     size_t actualByteCount;
@@ -21,11 +22,13 @@ struct BufferSetHandle {
     BufferSetHandle(uint8_t* p, size_t w, size_t h, size_t total, jobject buf) 
         : data(p), width(w), height(h), actualByteCount(total), globalBuffer(buf) {
         yMat = new cv::Mat((int)h, (int)w, CV_8UC1, p, w);
+        uvMat = new cv::Mat((int)h / 2, (int)w / 2, CV_8UC2, p + (w * h), w);
     }
 
     ~BufferSetHandle() {
         delete[] data;
         delete yMat;
+        delete uvMat;
     }
 };
 
@@ -164,6 +167,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
     // Placement-assignment: *handle->yMat = cv::Mat(...)
     // This keeps the handle->yMat object instance address stable.
     *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, newData, (size_t)width);
+    *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, newData + (width * height), (size_t)width);
 
     // Update DirectByteBuffer
     if (handle->globalBuffer != nullptr) {
@@ -186,6 +190,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetMatPtr(
         if (validHandles.find(handle) == validHandles.end()) return 0;
     }
     return (jlong)handle->yMat;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetUVMatPtr(
+    JNIEnv* env, jobject thiz, jlong handlePtr) {
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        if (validHandles.find(handle) == validHandles.end()) return 0;
+    }
+    return (jlong)handle->uvMat;
 }
 
 JNIEXPORT jobject JNICALL

@@ -208,6 +208,8 @@ object OcrUtils {
         val roiH = roi.height().coerceAtLeast(1)
         val sourceAspect = roiW.toFloat() / roiH.toFloat()
         
+        val toEven = { v: Float -> ((v + 1).toInt() / 2) * 2 }
+
         var finalW: Int
         var finalH: Int
         
@@ -225,9 +227,9 @@ object OcrUtils {
             finalW = roiW; finalH = roiH
         }
         
-        // Cap to scratch buffer dimensions
-        finalW = finalW.coerceIn(1, workspace.yMat.cols())
-        finalH = finalH.coerceIn(1, workspace.yMat.rows())
+        // Cap to scratch buffer dimensions and ensure 2-pixel alignment
+        finalW = toEven(finalW.toFloat().coerceIn(2f, workspace.yMat.cols().toFloat()))
+        finalH = toEven(finalH.toFloat().coerceIn(2f, workspace.yMat.rows().toFloat()))
 
         // Step 2: Normalization & Resize-First
         workspace.clear()
@@ -239,23 +241,30 @@ object OcrUtils {
                 canvas.drawColor(Color.BLACK, PorterDuff.Mode.CLEAR)
                 canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
                 
-                // Sync to scratch.yuv
+                // Sync to workspace.yuv (Uses YUV normalization)
                 NativeImageUtils.syncMatFromArgb(scratchBmp, workspace.yMat)
             }
             is org.opencv.core.Mat -> {
-                val sub = source.submat(roi.top, roi.bottom, roi.left, roi.right)
-                Imgproc.resize(sub, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-                sub.release()
+                val subY = source.submat(roi.top, roi.bottom, roi.left, roi.right)
+                Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                subY.release()
             }
             is BufferSet.Instance -> {
-                val sub = source.yMat.submat(roi.top, roi.bottom, roi.left, roi.right)
-                Imgproc.resize(sub, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-                sub.release()
+                // Luma Resize
+                val subY = source.yMat.submat(roi.top, roi.bottom, roi.left, roi.right)
+                Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                
+                // Chroma Resize (8UC2 interleaved)
+                val roiUV = Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
+                val subUV = source.uvMat.submat(roiUV)
+                Imgproc.resize(subUV, workspace.uvMat, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, Imgproc.INTER_AREA)
+                
+                subY.release(); subUV.release()
             }
         }
 
-        // Step 3: Native Annotation
-        rowBuffer.annotate(annotations, finalW, finalH, roiW, roiH)
+        // Step 3: Native Annotation (Explicitly target the scratch instance)
+        workspace.annotate(annotations, finalW, finalH, roiW, roiH)
 
         // Step 4: Direct Encoding
         val yuvMat = workspace.getYuvMat()
