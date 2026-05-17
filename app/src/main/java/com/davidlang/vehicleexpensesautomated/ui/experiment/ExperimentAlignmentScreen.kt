@@ -283,12 +283,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
             // Apply global filters to established baseline
             OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
-            // OdometerOcrUtils.applyBilateralInPlace(masterBmp, scratchBmp)
+            
+            // Phase 115: Synchronize the unaligned raw masterBmp into the global Dashboard set before deskew/discovery
+            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.primary.yMat)
             
             try {
-                // Step 2 (Deskew): Draw a scaled version into 2048 buffer and calculate tilt
+                // Step 2 (Deskew): Calculate tilt independently for both pipelines
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp)
-                
+                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.fullBufferSet.primary)
+
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
                 val tPd = deskewRes.paddleTimeMs
@@ -296,19 +299,20 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 var tRotate = 0L
                 if (Math.abs(tilt) > 0.2f) { 
                     val tRot0 = System.currentTimeMillis()
-                    // Rotate masterBmp in-place using scratch buffer
+                    // ARGB: Rotate masterBmp in-place using scratch buffer
                     val scratchCanvas = android.graphics.Canvas(scratchBmp)
                     scratchCanvas.drawColor(android.graphics.Color.BLACK)
                     val matrix = android.graphics.Matrix()
                     matrix.postRotate(-tilt, masterBmp.width / 2f, masterBmp.height / 2f)
                     scratchCanvas.drawBitmap(masterBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-                    
                     masterCanvas.drawBitmap(scratchBmp, 0f, 0f, null)
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 
-                // Phase 115: Synchronize the unaligned raw masterBmp into the global Dashboard set before discovery/alignment
-                com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.primary.yMat)
+                // Native: Independent High-Quality Rotation (Cubic)
+                val tRotMono0 = System.currentTimeMillis()
+                NativePaddleEngine.fullBufferSet.rotate(-deskewResMono.angle)
+                val tRotateMono = System.currentTimeMillis() - tRotMono0
 
                 val tDiscoveryStart = System.currentTimeMillis()
                 val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(masterBmp, context)
@@ -915,9 +919,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
                 val photoJson = serializePhotoResultToJson(
-                    index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, 
+                    index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
                     queryOcrDiscovery, queryOcrDiscoveryMono, 
-                    primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes
+                    primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes, deskewResMono
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -965,7 +969,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 }
 
 private fun serializePhotoResultToJson(
-    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, deskewAngle: Float, tDiscovery: Long,
+    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, discoveryMono: OcrResult?, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
 ): JSONObject {
@@ -997,6 +1001,8 @@ private fun serializePhotoResultToJson(
 
         
         put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_rotation_ms", tRotate)
+        put("deskew_time_mono_ms", (deskewResMono?.mlTimeMs ?: 0L) + (deskewResMono?.paddleTimeMs ?: 0L) + tRotateMono)
+        put("deskew_time_rotation_mono_ms", tRotateMono)
         
         val timingsObj = JSONObject().apply {
             put("paddle", JSONObject().apply { 
