@@ -326,17 +326,29 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     // Phase 108: Disambiguate exactly once for the correct vehicle
                     val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
                     
+                    // Phase 115: Synchronize the unaligned masterBmp into the global Dashboard set before alignment
+                    com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.primary.yMat)
+
                     // 1. Standard Alignment (In-place on masterBmp)
                     val t0 = System.currentTimeMillis()
                     val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH, scratchBmp)
                     val elapsedAlign = System.currentTimeMillis() - t0
 
+                    // 1.2 Native Alignment (In-place on fullBufferSet)
+                    val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
+                        NativePaddleEngine.fullBufferSet, 
+                        winnerRef.curatedLandmarks, 
+                        queryLandmarksPrimary, 
+                        winnerRef.vehicle, 
+                        winnerRef.width, 
+                        winnerRef.height, 
+                        imgW, 
+                        imgH, 
+                        scratchBmp
+                    )
                     
                     // Capture ALIGNED Thumbnail for Report
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, scratchBmp)
-
-                    // Phase 115: Synchronize the aligned masterBmp into the global Dashboard set
-                    com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.primary.yMat)
 
                     // 2. Mono Alignment (Bypassed)
                     val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap())

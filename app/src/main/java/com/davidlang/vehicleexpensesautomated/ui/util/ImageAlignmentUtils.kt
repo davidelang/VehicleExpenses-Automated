@@ -507,4 +507,130 @@ object ImageAlignmentUtils {
         val sorted = sorted()
         return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2f else sorted[size / 2]
     }
+
+    /**
+     * Phase 115: Native Alignment Flow for BufferSet.
+     * Geometrically equivalent to anchorAlign but executes natively via OpenCV warpAffine.
+     */
+    suspend fun anchorAlignNative(
+        bufferSet: BufferSet,
+        refLandmarks: List<TextBlock>,
+        queryLandmarks: List<TextBlock>,
+        vehicle: Vehicle,
+        refW: Int = 4000,
+        refH: Int = 3072,
+        queW: Int = 4000,
+        queH: Int = 3072,
+        scratchBmp: Bitmap
+    ): AnchorResult {
+        val t0 = System.currentTimeMillis()
+        val allCandidates = mutableListOf<AnchorCandidate>()
+        val targetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
+            (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
+        } else 0.5f
+        
+        // 1. Filter and Match Confirmed Landmarks
+        val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
+            .mapNotNull { queMark ->
+                val refMark = refLandmarks.find { it.text == queMark.text && it.instanceId == queMark.instanceId && it.boundingBox.width() > 0 }
+                if (refMark != null) refMark to queMark else null
+            }
+
+        // 2. Generate Alignment Candidates from Pairs of Confirmed Anchors
+        if (confirmedPairs.size >= 2) {
+            for (i in confirmedPairs.indices) {
+                for (j in i + 1 until confirmedPairs.size) {
+                    val r1 = confirmedPairs[i].first
+                    val r2 = confirmedPairs[j].first
+                    val q1 = confirmedPairs[i].second
+                    val q2 = confirmedPairs[j].second
+                    
+                    val r1nx = if (r1.boundingBox.width() > 1) r1.boundingBox.centerX().toFloat() / refW else r1.boundingBox.centerX().toFloat()
+                    val r1ny = if (r1.boundingBox.width() > 1) r1.boundingBox.centerY().toFloat() / refH else r1.boundingBox.centerY().toFloat()
+                    val r2nx = if (r2.boundingBox.width() > 1) r2.boundingBox.centerX().toFloat() / refW else r2.boundingBox.centerX().toFloat()
+                    val r2ny = if (r2.boundingBox.width() > 1) r2.boundingBox.centerY().toFloat() / refH else r2.boundingBox.centerY().toFloat()
+                    
+                    val q1nx = if (q1.boundingBox.width() > 1) q1.boundingBox.centerX().toFloat() / queW else q1.boundingBox.centerX().toFloat()
+                    val q1ny = if (q1.boundingBox.width() > 1) q1.boundingBox.centerY().toFloat() / queH else q1.boundingBox.centerY().toFloat()
+                    val q2nx = if (q2.boundingBox.width() > 1) q2.boundingBox.centerX().toFloat() / queW else q2.boundingBox.centerX().toFloat()
+                    val q2ny = if (q2.boundingBox.width() > 1) q2.boundingBox.centerY().toFloat() / queH else q2.boundingBox.centerY().toFloat()
+                    
+                    val refDist = Math.sqrt((r1nx - r2nx).toDouble().pow(2.0) + (r1ny - r2ny).toDouble().pow(2.0))
+                    val queDist = Math.sqrt((q1nx - q2nx).toDouble().pow(2.0) + (q1ny - q2ny).toDouble().pow(2.0))
+                    
+                    if (queDist > 0) {
+                        val s = (refDist / queDist).toFloat()
+                        val rAngle = Math.atan2((r2ny - r1ny).toDouble(), (r2nx - r1nx).toDouble())
+                        val qAngle = Math.atan2((q2ny - q1ny).toDouble(), (q2nx - q1nx).toDouble())
+                        val rot = Math.toDegrees(rAngle - qAngle).toFloat()
+                        
+                        if (kotlin.math.abs(rot) > 4.0f) continue
+                        val tx = r1nx - (s * q1nx)
+                        val ty = r1ny - (s * q1ny)
+                        val cyRef = (r1ny + r2ny) / 2.0f
+
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.3f, ty=%.3f".format(s, rot, tx, ty), cyRef, r1ny, r2ny))
+                    }
+                }
+            }
+        } 
+
+        if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchors.", timeMs = System.currentTimeMillis() - t0)
+
+        // Consensus math (Identical to ARGB flow)
+        var bestGroup = mutableListOf<AnchorCandidate>()
+        var maxSupport = -1
+        for (c1 in allCandidates) {
+            val supportGroup = mutableListOf<AnchorCandidate>()
+            for (c2 in allCandidates) {
+                val ds = kotlin.math.abs(c1.scale - c2.scale) / c1.scale
+                val dtx = kotlin.math.abs(c1.tx - c2.tx)
+                val dty = kotlin.math.abs(c1.ty - c2.ty)
+                if (ds < 0.05f && dtx < 0.05f && dty < 0.05f) supportGroup.add(c2)
+            }
+            if (supportGroup.size > maxSupport) { maxSupport = supportGroup.size; bestGroup = supportGroup }
+        }
+
+        val finalScale: Float; val finalTx: Float; val finalTy: Float; var bracketedCount = 0
+        if (bestGroup.isNotEmpty()) {
+            var sumScale = 0.0; var sumTx = 0.0; var sumTy = 0.0; var totalW = 0.0
+            for (c in bestGroup) {
+                val isBracketed = (c.y1Ref - targetY) * (c.y2Ref - targetY) < 0
+                val bracketBonus = if (isBracketed) { bracketedCount++; 5.0 } else 1.0
+                val vDist = kotlin.math.abs(c.cyRef - targetY)
+                val w = (c.distance * bracketBonus) / (vDist + 0.05)
+                sumScale += c.scale * w; sumTx += c.tx * w; sumTy += c.ty * w; totalW += w
+            }
+            finalScale = if (totalW > 0) (sumScale / totalW).toFloat() else allCandidates.map { it.scale }.median()
+            finalTx = if (totalW > 0) (sumTx / totalW).toFloat() else allCandidates.map { it.tx }.median()
+            finalTy = if (totalW > 0) (sumTy / totalW).toFloat() else allCandidates.map { it.ty }.median()
+        } else {
+            finalScale = allCandidates.map { it.scale }.median(); finalTx = allCandidates.map { it.tx }.median(); finalTy = allCandidates.map { it.ty }.median()
+        }
+
+        val metadata = mapOf(
+            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d)".format(finalScale, finalTx * queW, finalTy * queH, bestGroup.size, allCandidates.size),
+            "raw_scale" to finalScale.toString(), "raw_tx" to (finalTx * queW).toString(), "raw_ty" to (finalTy * queH).toString()
+        )
+
+        return try {
+            // Phase 115: Native Morphing using Imgproc.warpAffine
+            val src = bufferSet.primary.yMat
+            val dst = bufferSet.scratch.yMat
+            val warpMat = Mat(2, 3, CvType.CV_64F)
+            warpMat.put(0, 0, finalScale.toDouble(), 0.0, (finalTx * src.cols()).toDouble())
+            warpMat.put(1, 0, 0.0, finalScale.toDouble(), (finalTy * src.rows()).toDouble())
+            
+            Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_LINEAR, Core.BORDER_CONSTANT, Scalar(0.0))
+            bufferSet.flip()
+            warpMat.release()
+            
+            // Sync to scratchBmp for report visualization
+            NativeImageUtils.syncMatToArgb(bufferSet.primary.yMat, scratchBmp)
+            
+            AnchorResult(true, scratchBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Native Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
+        } catch (e: Exception) {
+            AnchorResult(false, message = "Native warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
+        }
+    }
 }
