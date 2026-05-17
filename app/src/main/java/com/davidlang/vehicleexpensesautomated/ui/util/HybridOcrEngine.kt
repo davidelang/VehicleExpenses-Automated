@@ -22,7 +22,8 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
     private val paddleDiscovery = NativePaddleEngine(context, variant = "V3")
     private val mlKitRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+    override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
+        val bitmap = input as Bitmap
         val t0 = System.currentTimeMillis()
         
         // 1. DISCOVERY: Run primary Paddle pass (recursive disabled)
