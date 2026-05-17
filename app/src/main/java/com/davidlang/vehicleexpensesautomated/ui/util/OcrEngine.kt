@@ -234,9 +234,9 @@ object OcrUtils {
 
         // Step 2: Normalization & Resize-First
         workspace.clear()
-        val snapRect = Rect(0, 0, finalW, finalH)
+        val snapRect = org.opencv.core.Rect(0, 0, finalW, finalH)
         val snapRoiY = workspace.yMat.submat(snapRect)
-        val snapRoiUV = workspace.uvMat.submat(Rect(0, 0, finalW / 2, finalH / 2))
+        val snapRoiUV = workspace.uvMat.submat(org.opencv.core.Rect(0, 0, finalW / 2, finalH / 2))
 
         when (source) {
             is Bitmap -> {
