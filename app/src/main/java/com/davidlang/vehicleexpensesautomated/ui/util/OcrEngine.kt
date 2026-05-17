@@ -167,6 +167,12 @@ class MlKitEngine : OcrEngine {
 }
 
 object OcrUtils {
+    fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
+        val outputStream = java.io.ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+        return android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.NO_WRAP)
+    }
+
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
         if (crop == null || w == 0 || h == 0) return false
         val cx = block.boundingBox.centerX().toFloat() / w; val cy = block.boundingBox.centerY().toFloat() / h
