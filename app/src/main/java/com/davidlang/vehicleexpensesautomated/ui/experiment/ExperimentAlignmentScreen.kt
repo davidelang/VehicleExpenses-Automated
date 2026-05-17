@@ -916,7 +916,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, alignedNativeBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
                 val photoJson = serializePhotoResultToJson(
                     index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
@@ -1177,6 +1177,7 @@ private fun buildHtmlRowDynamic(
     imgH: Int,
     originalBase64: String, 
     alignedBase64: String,
+    alignedNativeBase64: String,
     discovery: String, 
     vehicleResults: Map<Int, SingleVehicleResult>, 
     cachedRefs: List<ReferenceCache>, 
