@@ -243,7 +243,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val experimentDetSet512x128 = BufferSet(512, 128)
 
     // Pre-populate with iterative engines to fix HTML header alignment
-    val harnessEngineNames = mutableListOf("ML Kit Mono Diagnostic", "ML Kit Mono Clone", "Paddle V3 Valley Mono Diagnostic")
+    val harnessEngineNames = mutableListOf(
+        "ML Kit Mono Diagnostic (ARGB)", 
+        "ML Kit Mono Clone (BufferSet)", 
+        "Paddle V3 Valley Mono (ARGB)", 
+        "Paddle V3 Valley Mono (BufferSet)"
+    )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
         writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, emptyList(), harnessEngineNames)) 
