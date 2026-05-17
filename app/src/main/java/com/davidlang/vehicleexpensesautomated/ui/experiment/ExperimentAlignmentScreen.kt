@@ -522,12 +522,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     experimentDetSet512x128.releaseCrop(detCropId)
                                     
                                     val detThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = experimentDetSet512x128.primary.yMat,
-                                        rawFragments = emptyList(),
-                                        consolidatedRows = emptyList(),
-                                        argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
-                                        subsetW = 320,
-                                        subsetH = 48
+                                        source = experimentDetSet512x128.primary,
+                                        sourceRect = null,
+                                        targetW = 320,
+                                        targetH = 48,
+                                        annotations = emptyList()
                                     )
 
                                     val det = paddleEngineV3Mono.detectMono(experimentDetSet512x128.primary)
@@ -670,20 +669,20 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val scaleSnapX = fitW.toFloat() / odoBuffer.primary.yMat.cols().toFloat()
                                     val scaleSnapY = fitH.toFloat() / odoBuffer.primary.yMat.rows().toFloat()
                                     
-                                    val scaledRaw = rawBlocks.map { b ->
-                                        android.graphics.Rect((b.boundingBox.left * scaleSnapX).toInt(), (b.boundingBox.top * scaleSnapY).toInt(), (b.boundingBox.right * scaleSnapX).toInt(), (b.boundingBox.bottom * scaleSnapY).toInt())
+                                    val annotations = mutableListOf<Annotation>()
+                                    rawBlocks.forEach { b -> 
+                                        annotations.add(Annotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2))
                                     }
-                                    val scaledConsolidated = finalBoxes.map { b ->
-                                        android.graphics.Rect((b.left * scaleSnapX).toInt(), (b.top * scaleSnapY).toInt(), (b.right * scaleSnapX).toInt(), (b.bottom * scaleSnapY).toInt())
+                                    finalBoxes.forEach { b ->
+                                        annotations.add(Annotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                     }
 
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = experimentRecSet320x48.primary.yMat,
-                                        rawFragments = scaledRaw,
-                                        consolidatedRows = scaledConsolidated,
-                                        argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
-                                        subsetW = fitW,
-                                        subsetH = fitH
+                                        source = experimentRecSet320x48.primary,
+                                        sourceRect = null,
+                                        targetW = fitW,
+                                        targetH = fitH,
+                                        annotations = annotations
                                     )
 
                                     val tLoop = System.currentTimeMillis() - tStart
@@ -853,18 +852,19 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     allOdo.add(odo)
 
                                     // 4.6 Diagnostic Snapshot (Mat-Direct Visualization)
-                                    val boxes = mutableListOf<android.graphics.Rect>()
+                                    val annotations = mutableListOf<Annotation>()
                                     for (j in 0 until visionBlocks.size) {
                                         val b = visionBlocks[j].boundingBox
-                                        if (b != null) boxes.add(b)
+                                        if (b != null) {
+                                            annotations.add(Annotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                                        }
                                     }
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        sourceMat = experimentRecSet320x48.primary.yMat,
-                                        rawFragments = emptyList(),
-                                        consolidatedRows = boxes,
-                                        argbScratch = NativePaddleEngine.sharedBmpOdoScratch,
-                                        subsetW = fitW,
-                                        subsetH = fitH
+                                        source = experimentRecSet320x48.primary,
+                                        sourceRect = null,
+                                        targetW = fitW,
+                                        targetH = fitH,
+                                        annotations = annotations
                                     )
 
                                     experimentRecSet320x48.primary.clear()
