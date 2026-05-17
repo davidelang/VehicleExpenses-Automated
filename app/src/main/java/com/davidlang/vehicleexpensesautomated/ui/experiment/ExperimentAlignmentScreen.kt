@@ -314,8 +314,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(masterBmp, context)
                 val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
                 
-                // Duplicate landmarks for independent native pipeline
-                val queryLandmarksMonoRaw = queryLandmarksRaw.map { it.copy() }
+                var queryOcrDiscoveryMono: OcrResult? = null
+                var tDiscoveryMonoTotal = 0L
                 
                 val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksRaw, cachedRefs.map { it.vehicle }, "ML Kit")
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
@@ -331,6 +331,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     finalWinnerName = winnerRef.vehicle.name
                     Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
                     
+                    // Phase 115: Actual Native Discovery Pass
+                    val tDiscMono0 = System.currentTimeMillis()
+                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSet.primary, context)
+                    queryOcrDiscoveryMono = ocrMono
+                    tDiscoveryMonoTotal = System.currentTimeMillis() - tDiscMono0
+
                     // Phase 108: Independent Disambiguation
                     val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
                     val queryLandmarksMonoPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksMonoRaw, winnerRef.curatedLandmarks)
@@ -891,7 +897,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
 
                         // Reporting Pass: Store result for winner
-                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, 0L, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true, harnessResultsMap)
+                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, tDiscoveryMonoTotal, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true, harnessResultsMap)
                     } else { 
                         Log.d(TAG, "Vehicle identified as ${winnerRef.vehicle.name}, but alignment failed: ${alignRes.message}")
                         vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, 0L, AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata), alignmentTraceMono, emptyMap(), emptyList(), emptyList(), emptyList(), true, emptyMap())
@@ -908,7 +914,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
-                val photoJson = serializePhotoResultToJson(index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, queryOcrDiscovery, primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes)
+                val photoJson = serializePhotoResultToJson(
+                    index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tilt, tDiscoveryTotal, 
+                    queryOcrDiscovery, queryOcrDiscoveryMono, 
+                    primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes
+                )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
@@ -956,7 +966,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
 private fun serializePhotoResultToJson(
     lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, deskewAngle: Float, tDiscovery: Long,
-    discovery: OcrResult, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
+    discovery: OcrResult, discoveryMono: OcrResult?, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
 ): JSONObject {
     return JSONObject().apply {
@@ -1063,8 +1073,11 @@ private fun serializePhotoResultToJson(
         put("has_heatmap", discovery.rawHeatmap != null); put("full_image_ocr_timings", fullImageOcrTimings)
         val vSweepJson = JSONObject(); val safeVehicles = vetoSweep.filter { !it.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }
         vSweepJson.put("ML Kit", JSONObject().apply { put("safe_count", safeVehicles.size); put("safe_vehicles", JSONArray(safeVehicles)) }); put("veto_accuracy_sweep", vSweepJson)
-        val dResults = JSONObject(); val landmarksArray = JSONArray(); discovery.textBlocks.forEach { block -> 
-            val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text); if (cleanedText.length > 1) {
+        val dResults = JSONObject()
+        val landmarksArray = JSONArray()
+        discovery.textBlocks.forEach { block -> 
+            val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
+            if (cleanedText.length > 1) {
                 landmarksArray.put(JSONObject().apply { 
                     put("text", cleanedText); put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble()); put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
                     put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble()); put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
@@ -1072,7 +1085,25 @@ private fun serializePhotoResultToJson(
                     put("instance", block.instanceId)
                 })
             }
-        }; dResults.put("ML Kit", landmarksArray); put("discovery_landmarks", dResults)
+        }
+        dResults.put("ML Kit", landmarksArray)
+
+        if (discoveryMono != null) {
+            val monoArray = JSONArray()
+            discoveryMono.textBlocks.forEach { block -> 
+                val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
+                if (cleanedText.length > 1) {
+                    monoArray.put(JSONObject().apply { 
+                        put("text", cleanedText); put("cx", block.boundingBox.centerX().toDouble() / discoveryMono.imageWidth.toDouble()); put("cy", block.boundingBox.centerY().toDouble() / discoveryMono.imageHeight.toDouble())
+                        put("w", block.boundingBox.width().toDouble() / discoveryMono.imageWidth.toDouble()); put("h", block.boundingBox.height().toDouble() / discoveryMono.imageHeight.toDouble())
+                        put("angle", block.angle)
+                        put("instance", block.instanceId)
+                    })
+                }
+            }
+            dResults.put("ML Kit Mono", monoArray)
+        }
+        put("discovery_landmarks", dResults)
         
         val vehicleResults = JSONArray(); vResults.values.forEach { vr -> 
             vehicleResults.put(JSONObject().apply { 
@@ -1280,10 +1311,10 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
 }
 
 private suspend fun performLandmarkDiscovery(
-    bitmap: Bitmap,
+    input: Any,
     context: Context
 ): Pair<OcrResult, List<TextBlock>> {
-    val queryOcrDiscovery = OcrHarness.runDiscovery(bitmap, context)
+    val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)
     val landmarks = OdometerOcrUtils.processRawLandmarks(
         queryOcrDiscovery.textBlocks, 
         null, 

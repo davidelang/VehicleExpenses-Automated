@@ -477,7 +477,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
     data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
-    override suspend fun recognize(bitmap: Bitmap): OcrResult = recognize(bitmap, false)
+    override suspend fun recognize(input: Any): OcrResult = recognize(input as Bitmap, false)
     suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = bitmap.width, imageHeight = bitmap.height)
         val t0 = System.currentTimeMillis()
