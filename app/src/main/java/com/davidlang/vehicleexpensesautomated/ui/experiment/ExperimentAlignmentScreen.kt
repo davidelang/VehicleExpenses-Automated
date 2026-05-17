@@ -365,9 +365,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     
                     // Capture ALIGNED Thumbnail for Report
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, scratchBmp)
+                    
+                    // Capture Native ALIGNED Thumbnail (already synced to scratchBmp by anchorAlignNative)
+                    alignedNativeBase64 = createScaledBase64(scratchBmp, 600, 50, null)
 
                     // 2. Mono Alignment (Native OpenCV)
-                    val alignmentTraceMono = AlignmentTraceResult(nativeAlignRes.success, nativeAlignRes.timeMs, "", nativeAlignRes.metadata)
+                    val alignmentTraceMono = AlignmentTraceResult(nativeAlignRes.success, nativeAlignRes.timeMs, alignedNativeBase64, nativeAlignRes.metadata)
 
                     if (alignRes.success) {
                         val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, scratchBmp), alignRes.metadata)
