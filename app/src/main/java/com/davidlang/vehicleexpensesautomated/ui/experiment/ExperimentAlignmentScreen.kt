@@ -309,9 +309,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 
-                // Native: Independent High-Quality Rotation (Cubic)
+                // Native: Independent High-Quality Rotation (Cubic) using standard angle
                 val tRotMono0 = System.currentTimeMillis()
-                NativePaddleEngine.fullBufferSet.rotate(-deskewResMono.angle)
+                NativePaddleEngine.fullBufferSet.rotate(-tilt)
                 val tRotateMono = System.currentTimeMillis() - tRotMono0
 
                 val tDiscoveryStart = System.currentTimeMillis()
@@ -1018,12 +1018,12 @@ private fun serializePhotoResultToJson(
         
         val anglesObj = JSONObject().apply {
             put("paddle", JSONObject().apply { 
-                put("standard", deskewAngle)
-                put("mono", deskewResMono?.angle ?: 0f)
+                put("standard", deskewRes.engines["Paddle V3"]?.angle ?: 0f)
+                put("mono", deskewResMono?.engines?.get("Paddle V3")?.angle ?: 0f)
             })
             put("mlkit", JSONObject().apply {
-                put("standard", deskewRes.mlAngle)
-                put("mono", deskewResMono?.mlAngle ?: 0f)
+                put("standard", deskewRes.engines["ML Kit"]?.angle ?: 0f)
+                put("mono", deskewResMono?.engines?.get("ML Kit")?.angle ?: 0f)
             })
         }
         put("deskew_angles", anglesObj)
