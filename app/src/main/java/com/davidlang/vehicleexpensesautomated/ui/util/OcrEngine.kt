@@ -130,7 +130,7 @@ data class OcrStepResult(
 
 enum class Shape { LINE, RECTANGLE }
 
-data class Annotation(
+data class SnapshotAnnotation(
     val x1: Int, val y1: Int, val x2: Int, val y2: Int,
     val shape: Shape,
     val color: Int, // ARGB color
@@ -178,7 +178,7 @@ object OcrUtils {
         sourceRect: Rect?,
         targetW: Int,
         targetH: Int,
-        annotations: List<Annotation>
+        annotations: List<SnapshotAnnotation>
     ): String = withContext(Dispatchers.IO) {
         val rowBuffer = NativePaddleEngine.fullBufferSet
         val workspace = rowBuffer.scratch

@@ -206,7 +206,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         refreshCrops()
     }
 
-    suspend fun annotate(annotations: List<Annotation>, targetW: Int, targetH: Int, sourceW: Int, sourceH: Int) = mutex.withLock {
+    suspend fun annotate(annotations: List<SnapshotAnnotation>, targetW: Int, targetH: Int, sourceW: Int, sourceH: Int) = mutex.withLock {
         val flat = IntArray(annotations.size * 7)
         annotations.forEachIndexed { i, ann ->
             val scaleX = targetW.toFloat() / sourceW.toFloat()

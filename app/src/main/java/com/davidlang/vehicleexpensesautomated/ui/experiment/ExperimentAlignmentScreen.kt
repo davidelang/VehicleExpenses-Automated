@@ -669,12 +669,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val scaleSnapX = fitW.toFloat() / odoBuffer.primary.yMat.cols().toFloat()
                                     val scaleSnapY = fitH.toFloat() / odoBuffer.primary.yMat.rows().toFloat()
                                     
-                                    val annotations = mutableListOf<Annotation>()
+                                    val annotations = mutableListOf<SnapshotAnnotation>()
                                     rawBlocks.forEach { b -> 
-                                        annotations.add(Annotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2))
+                                        annotations.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2))
                                     }
                                     finalBoxes.forEach { b ->
-                                        annotations.add(Annotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                                        annotations.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                     }
 
                                     lastThumbB64 = OcrUtils.takeSnapshot(
@@ -852,11 +852,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     allOdo.add(odo)
 
                                     // 4.6 Diagnostic Snapshot (Mat-Direct Visualization)
-                                    val annotations = mutableListOf<Annotation>()
+                                    val annotations = mutableListOf<SnapshotAnnotation>()
                                     for (j in 0 until visionBlocks.size) {
                                         val b = visionBlocks[j].boundingBox
                                         if (b != null) {
-                                            annotations.add(Annotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                                            annotations.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                         }
                                     }
                                     lastThumbB64 = OcrUtils.takeSnapshot(
