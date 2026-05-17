@@ -260,6 +260,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val imgW = rawBitmap.width
             val imgH = rawBitmap.height
 
+            // Phase 115: Safe Dynamic Resizing for Dashboard set
+            NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
+
             // Phase 115: Per-Row Master Buffers (Native Resolution)
             val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
