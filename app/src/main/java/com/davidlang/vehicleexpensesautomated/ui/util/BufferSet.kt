@@ -27,19 +27,28 @@ class BufferSet(private var width: Int, private var height: Int) {
 
     private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
-    data class YuvHandle(val yMat: Mat, val uvMat: Mat)
+    data class YuvHandle(
+        val width: Int,
+        val height: Int,
+        val format: Int = 35, // ImageFormat.YUV_420_888
+        val planes: Array<Plane>
+    ) {
+        data class Plane(
+            val buffer: ByteBuffer,
+            val rowStride: Int,
+            val pixelStride: Int
+        )
+    }
 
     inner class ManagedCrop internal constructor(internal val definition: CropDefinition) {
         var yMat: Mat? = null
             private set
         var uvMat: Mat? = null
             private set
-        val yuv: YuvHandle? get() {
-            val y = yMat; val uv = uvMat
-            return if (y != null && uv != null) YuvHandle(y, uv) else null
-        }
+        var yuv: YuvHandle? = null
+            private set
 
-        fun refresh(parentY: Mat, parentUV: Mat, parentW: Int, parentH: Int) {
+        fun refresh(parentY: Mat, parentUV: Mat, parentW: Int, parentH: Int, parentNv21: ByteBuffer) {
             // Disarm old proxies to prevent GC crash
             yMat?.let { nativeDisarmMat(it) }
             uvMat?.let { nativeDisarmMat(it) }
@@ -59,21 +68,34 @@ class BufferSet(private var width: Int, private var height: Int) {
             }
             
             if (rect.width <= 0 || rect.height <= 0) {
-                yMat = null; uvMat = null
+                yMat = null; uvMat = null; yuv = null
                 return
             }
 
             yMat = parentY.submat(rect)
-            
-            // Chroma ROI is half resolution but interleaved (8UC2)
             val uvRect = Rect(rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2)
             uvMat = parentUV.submat(uvRect)
+
+            // Multi-Plane ROI Calculation
+            val stride = parentW
+            val yOffset = rect.y * stride + rect.x
+            val uvOffset = (parentW * parentH) + (rect.y / 2 * stride) + rect.x
+            
+            yuv = YuvHandle(
+                width = rect.width,
+                height = rect.height,
+                planes = arrayOf(
+                    YuvHandle.Plane(parentNv21.duplicate().position(yOffset).slice(), stride, 1),
+                    YuvHandle.Plane(parentNv21.duplicate().position(uvOffset + 1).slice(), stride, 2),
+                    YuvHandle.Plane(parentNv21.duplicate().position(uvOffset).slice(), stride, 2)
+                )
+            )
         }
 
         fun release() {
             yMat?.let { nativeDisarmMat(it) }
             uvMat?.let { nativeDisarmMat(it) }
-            yMat = null; uvMat = null
+            yMat = null; uvMat = null; yuv = null
         }
     }
 
@@ -83,6 +105,8 @@ class BufferSet(private var width: Int, private var height: Int) {
         private var proxyY: Mat? = null
         private var proxyUV: Mat? = null
         private var buffer: ByteBuffer? = null
+        var yuv: YuvHandle? = null
+            private set
 
         fun setup(w: Int, h: Int) {
             nativeHandle = nativeSetup(w, h)
@@ -97,7 +121,7 @@ class BufferSet(private var width: Int, private var height: Int) {
                 nativeRelease(nativeHandle, null)
                 nativeHandle = 0L
                 proxyY = null; proxyUV = null
-                buffer = null
+                buffer = null; yuv = null
             }
         }
 
@@ -116,6 +140,18 @@ class BufferSet(private var width: Int, private var height: Int) {
             proxyY = Mat(nativeGetMatPtr(nativeHandle))
             proxyUV = Mat(nativeGetUVMatPtr(nativeHandle))
             buffer = nativeGetBuffer(nativeHandle)
+            
+            val buf = buffer!!
+            val w = width
+            val h = height
+            yuv = YuvHandle(
+                width = w, height = h,
+                planes = arrayOf(
+                    YuvHandle.Plane(buf.duplicate().position(0).slice(), w, 1),
+                    YuvHandle.Plane(buf.duplicate().position(w * h + 1).slice(), w, 2),
+                    YuvHandle.Plane(buf.duplicate().position(w * h).slice(), w, 2)
+                )
+            )
         }
 
         fun clear() {
@@ -142,7 +178,19 @@ class BufferSet(private var width: Int, private var height: Int) {
 
         val yMat: Mat get() = proxyY ?: throw IllegalStateException("Instance not initialized")
         val uvMat: Mat get() = proxyUV ?: throw IllegalStateException("Instance not initialized")
-        val yuv: YuvHandle get() = YuvHandle(yMat, uvMat)
+        val yuv: YuvHandle get() {
+            val buf = buffer!!
+            val w = width
+            val h = height
+            return YuvHandle(
+                width = w, height = h,
+                planes = arrayOf(
+                    YuvHandle.Plane(buf.duplicate().position(0).slice(), w, 1),
+                    YuvHandle.Plane(buf.duplicate().position(w * h + 1).slice(), w, 2),
+                    YuvHandle.Plane(buf.duplicate().position(w * h).slice(), w, 2)
+                )
+            )
+        }
         val nv21: ByteBuffer get() = buffer ?: throw IllegalStateException("Instance not initialized")
         
         fun getYuvMat(): Mat = Mat(height * 3 / 2, width, org.opencv.core.CvType.CV_8UC1, nv21)
@@ -180,7 +228,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         height = h
 
         // Re-project normalized crops onto the new dimensions
-        normalizedCrops.values.forEach { it.refresh(primary.yMat, primary.uvMat, width, height) }
+        normalizedCrops.values.forEach { it.refresh(primary.yMat, primary.uvMat, width, height, primary.nv21) }
     }
 
     fun release() {
@@ -194,7 +242,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     fun createCrop(x: Int, y: Int, w: Int, h: Int): Int {
         val id = nextCropId++
         val crop = ManagedCrop(CropDefinition(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), false))
-        crop.refresh(primary.yMat, primary.uvMat, width, height)
+        crop.refresh(primary.yMat, primary.uvMat, width, height, primary.nv21)
         managedCrops[id] = crop
         return id
     }
@@ -202,14 +250,14 @@ class BufferSet(private var width: Int, private var height: Int) {
     fun createCropNormalized(x: Float, y: Float, w: Float, h: Float): Int {
         val id = nextCropId++
         val crop = ManagedCrop(CropDefinition(x, y, w, h, true))
-        crop.refresh(primary.yMat, primary.uvMat, width, height)
+        crop.refresh(primary.yMat, primary.uvMat, width, height, primary.nv21)
         managedCrops[id] = crop
         return id
     }
 
     fun createCropNormalizedWithId(id: Int, x: Float, y: Float, w: Float, h: Float) {
         val crop = ManagedCrop(CropDefinition(x, y, w, h, true))
-        crop.refresh(primary.yMat, primary.uvMat, width, height)
+        crop.refresh(primary.yMat, primary.uvMat, width, height, primary.nv21)
         managedCrops[id] = crop
     }
 
@@ -226,7 +274,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     }
 
     private fun refreshCrops() {
-        managedCrops.values.forEach { it.refresh(primary.yMat, primary.uvMat, width, height) }
+        managedCrops.values.forEach { it.refresh(primary.yMat, primary.uvMat, width, height, primary.nv21) }
     }
 
     // JNI Bindings
@@ -244,24 +292,13 @@ class BufferSet(private var width: Int, private var height: Int) {
         refreshCrops()
     }
 
-    suspend fun annotate(annotations: List<SnapshotAnnotation>, targetW: Int, targetH: Int, sourceW: Int, sourceH: Int) = mutex.withLock {
-        val flat = IntArray(annotations.size * 7)
-        annotations.forEachIndexed { i, ann ->
-            val scaleX = targetW.toFloat() / sourceW.toFloat()
-            val scaleY = targetH.toFloat() / sourceH.toFloat()
-            flat[i * 7] = (ann.x1 * scaleX).toInt()
-            flat[i * 7 + 1] = (ann.y1 * scaleY).toInt()
-            flat[i * 7 + 2] = (ann.x2 * scaleX).toInt()
-            flat[i * 7 + 3] = (ann.y2 * scaleY).toInt()
-            flat[i * 7 + 4] = if (ann.shape == Shape.RECTANGLE) 1 else 0
-            flat[i * 7 + 5] = ann.color
-            flat[i * 7 + 6] = ann.strokeWidth
-        }
-        nativeAnnotate(primary.nativeHandleInternal, flat)
+    suspend fun compressYuvToBase64(handle: YuvHandle, quality: Int): String = mutex.withLock {
+        nativeCompressYuvToBase64(handle.planes[0].buffer, handle.planes[1].buffer, handle.planes[2].buffer, handle.width, handle.height, handle.planes[0].rowStride, quality)
     }
     private external fun nativeGetMatPtr(handle: Long): Long
     private external fun nativeGetUVMatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
+    private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
 
     companion object {
         init {

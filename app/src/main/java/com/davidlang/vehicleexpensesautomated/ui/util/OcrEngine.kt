@@ -267,18 +267,10 @@ object OcrUtils {
         // Step 3: Native Annotation (Explicitly target the scratch instance)
         workspace.annotate(annotations, finalW, finalH, roiW, roiH)
 
-        // Step 4: Direct Encoding
-        val yuvMat = workspace.getYuvMat()
-        val roiYuv = yuvMat.submat(0, finalH * 3 / 2, 0, finalW)
-        val bgrMat = org.opencv.core.Mat()
-        Imgproc.cvtColor(roiYuv, bgrMat, Imgproc.COLOR_YUV2BGR_NV21)
+        // Step 4: Direct Encoding (Native Split-Plane)
+        val handle = workspace.yuv!!
+        val b64 = rowBuffer.compressYuvToBase64(handle, 80)
         
-        val matOfByte = MatOfByte()
-        Imgcodecs.imencode(".jpg", bgrMat, matOfByte)
-        val jpegBytes = matOfByte.toArray()
-        
-        bgrMat.release(); roiYuv.release(); yuvMat.release()
-        
-        android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
+        b64
     }
 }
