@@ -67,6 +67,7 @@ class BufferSet(private var width: Int, private var height: Int) {
 
     inner class Instance {
         private var nativeHandle: Long = 0
+        internal val nativeHandleInternal: Long get() = nativeHandle
         private var proxyMat: Mat? = null
         private var buffer: ByteBuffer? = null
 
@@ -193,6 +194,14 @@ class BufferSet(private var width: Int, private var height: Int) {
     private external fun nativeRelease(handle: Long, matObj: Mat?)
     private external fun nativeClear(handle: Long)
     private external fun nativeResize(handle: Long, w: Int, h: Int): Boolean
+    private external fun nativeRotate(src: Long, dst: Long, angle: Float)
+
+    suspend fun rotate(angle: Float) = mutex.withLock {
+        if (kotlin.math.abs(angle) < 0.01f) return
+        nativeRotate(primary.nativeHandleInternal, scratch.nativeHandleInternal, angle)
+        primaryIdx = 1 - primaryIdx
+        refreshCrops()
+    }
     private external fun nativeGetMatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
 
