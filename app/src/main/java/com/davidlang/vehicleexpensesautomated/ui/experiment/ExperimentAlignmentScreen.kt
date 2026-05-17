@@ -153,6 +153,7 @@ data class SingleVehicleResult(
     val vehicleName: String,
     val vetoReason: String,
     val tMatchMs: Long,
+    val discoveryTimeMonoMs: Long = 0,
     val alignmentTrace: AlignmentTraceResult?,
     val alignmentTraceMono: AlignmentTraceResult?,
     val refinementTraces: Map<String, RefinementTrace>,
@@ -350,8 +351,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     // Capture ALIGNED Thumbnail for Report
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, scratchBmp)
 
-                    // 2. Mono Alignment (Bypassed)
-                    val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap())
+                    // 2. Mono Alignment (Native OpenCV)
+                    val alignmentTraceMono = AlignmentTraceResult(nativeAlignRes.success, nativeAlignRes.timeMs, "", nativeAlignRes.metadata)
 
                     if (alignRes.success) {
                         val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, scratchBmp), alignRes.metadata)
@@ -921,10 +922,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                         if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
 
                         // Reporting Pass: Store result for winner
-                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true, harnessResultsMap)
+                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, 0L, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true, harnessResultsMap)
                     } else { 
                         Log.d(TAG, "Vehicle identified as ${winnerRef.vehicle.name}, but alignment failed: ${alignRes.message}")
-                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata), alignmentTraceMono, emptyMap(), emptyList(), emptyList(), emptyList(), true, emptyMap())
+                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, 0L, AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata), alignmentTraceMono, emptyMap(), emptyList(), emptyList(), emptyList(), true, emptyMap())
                     }
                 }
 
@@ -932,7 +933,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 cachedRefs.forEach { ref ->
                     if (ref.vehicle.id != winnerId) {
                         val veto = primaryVetoResults[ref.vehicle.id] ?: VetoResult(false)
-                        vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, 0L, null, null, emptyMap(), veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), false, emptyMap())
+                        vehicleResultsMap[ref.vehicle.id] = SingleVehicleResult(ref.vehicle.name, veto.reasonWord, 0L, 0L, null, null, emptyMap(), veto.queryWords, veto.myManifest.toList(), veto.vetoPool.toList(), false, emptyMap())
                     }
                 }
 
@@ -1041,6 +1042,7 @@ private fun serializePhotoResultToJson(
         put("deskew_angles", anglesObj)
         
         put("discovery_time_ms", tDiscovery)
+        put("discovery_time_mono_ms", winnerRes?.discoveryTimeMonoMs ?: 0L)
         
         val mlArray = JSONArray()
         deskewRes.mlBlocks.forEach { block ->
