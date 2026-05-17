@@ -234,6 +234,10 @@ object OcrUtils {
 
         // Step 2: Normalization & Resize-First
         workspace.clear()
+        val snapRect = Rect(0, 0, finalW, finalH)
+        val snapRoiY = workspace.yMat.submat(snapRect)
+        val snapRoiUV = workspace.uvMat.submat(Rect(0, 0, finalW / 2, finalH / 2))
+
         when (source) {
             is Bitmap -> {
                 // Resize ROI directly into row-level scratchBmp
@@ -243,32 +247,35 @@ object OcrUtils {
                 canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
                 
                 // Sync to workspace.yuv (Uses YUV normalization)
-                NativeImageUtils.syncMatFromArgb(scratchBmp, workspace.yMat)
+                NativeImageUtils.syncMatFromArgb(scratchBmp, snapRoiY)
             }
             is org.opencv.core.Mat -> {
                 val subY = source.submat(cvRoi)
-                Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 subY.release()
             }
             is BufferSet.Instance -> {
                 // Luma Resize
                 val subY = source.yMat.submat(cvRoi)
-                Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 
                 // Chroma Resize (8UC2 interleaved)
                 val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
                 val subUV = source.uvMat.submat(roiUV)
-                Imgproc.resize(subUV, workspace.uvMat, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, Imgproc.INTER_AREA)
+                Imgproc.resize(subUV, snapRoiUV, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, Imgproc.INTER_AREA)
                 
                 subY.release(); subUV.release()
             }
         }
+        
+        snapRoiY.release()
+        snapRoiUV.release()
 
         // Step 3: Native Annotation (Explicitly target the scratch instance)
         workspace.annotate(annotations, finalW, finalH, roiW, roiH)
 
         // Step 4: Direct Encoding (Native Split-Plane)
-        val handle = workspace.yuv!!
+        val handle = workspace.getRoiHandle(snapRect)
         val b64 = rowBuffer.compressYuvToBase64(handle, 80)
         
         b64
