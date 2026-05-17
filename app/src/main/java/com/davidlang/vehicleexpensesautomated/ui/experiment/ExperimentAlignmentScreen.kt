@@ -244,10 +244,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
     // Pre-populate with iterative engines to fix HTML header alignment
     val harnessEngineNames = mutableListOf(
-        "ML Kit Mono Diagnostic (ARGB)", 
-        "ML Kit Mono Clone (BufferSet)", 
-        "Paddle V3 Valley Mono (ARGB)", 
-        "Paddle V3 Valley Mono (BufferSet)"
+        "ML Kit Mono Diagnostic", 
+        "ML Kit Mono Native", 
+        "Paddle V3 Valley Mono", 
+        "Paddle V3 Valley Mono Native"
     )
 
     fun startNewFile() = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html").apply { 
@@ -910,10 +910,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             }
 
                             // --- Sequential Execution ---
-                            runMLKitIterative("ML Kit Mono Diagnostic (ARGB)", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runMLKitIterative("ML Kit Mono Clone (BufferSet)", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono (ARGB)", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono (BufferSet)", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runMLKitIterative("ML Kit Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
 
                         }
                         
