@@ -330,6 +330,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     // Capture ALIGNED Thumbnail for Report
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, scratchBmp)
 
+                    // Phase 115: Synchronize the aligned masterBmp into the global Dashboard set
+                    com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.primary.yMat)
+
                     // 2. Mono Alignment (Bypassed)
                     val alignmentTraceMono = AlignmentTraceResult(false, 0L, "", emptyMap())
 
@@ -451,6 +454,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             matrix.postScale(scaleX, scaleY)
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                             com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
+                                        }
+                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSet -> {
+                                            odoBuffer.primary.clear()
+                                            val bridgeW = odoBuffer.primary.yMat.cols()
+                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            // Direct query of managed crop (Anti-Pattern safe)
+                                            val interp = if (masterBuffer.getCropMat(winnerRef.vehicle.id).cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                         }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.primary.clear()
@@ -749,6 +760,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             // Use new zero-buffer JNI fast sync to populate the iterative bridge
                                             com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
                                         }
+                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSet -> {
+                                            odoBuffer.primary.clear()
+                                            val bridgeW = odoBuffer.primary.yMat.cols()
+                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            // Direct query of managed crop (Anti-Pattern safe)
+                                            val interp = if (masterBuffer.getCropMat(winnerRef.vehicle.id).cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                        }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.primary.clear()
                                             val sourceRoi = masterBuffer.submat(startY, startY + roiH, startX, startX + roiW)
@@ -874,9 +893,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             }
 
                             // --- Sequential Execution ---
-                            runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runMLKitIterative("ML Kit Mono Clone", masterBmp, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Diagnostic", masterBmp, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runMLKitIterative("ML Kit Mono Diagnostic (ARGB)", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runMLKitIterative("ML Kit Mono Clone (BufferSet)", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono (ARGB)", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono (BufferSet)", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
 
                         }
                         
