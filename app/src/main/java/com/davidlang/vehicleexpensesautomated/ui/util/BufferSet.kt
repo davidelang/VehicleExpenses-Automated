@@ -178,6 +178,33 @@ class BufferSet(private var width: Int, private var height: Int) {
 
         val yMat: Mat get() = proxyY ?: throw IllegalStateException("Instance not initialized")
         val uvMat: Mat get() = proxyUV ?: throw IllegalStateException("Instance not initialized")
+        val yuv: YuvHandle get() {
+            val buf = buffer!!
+            val w = width
+            val h = height
+            return YuvHandle(
+                width = w, height = h,
+                planes = arrayOf(
+                    YuvHandle.Plane(buf.duplicate().position(0).slice() as ByteBuffer, w, 1),
+                    YuvHandle.Plane(buf.duplicate().position(w * h + 1).slice() as ByteBuffer, w, 2),
+                    YuvHandle.Plane(buf.duplicate().position(w * h).slice() as ByteBuffer, w, 2)
+                )
+            )
+        }
+        fun getRoiHandle(rect: Rect): YuvHandle {
+            val buf = buffer!!
+            val stride = width
+            val yOffset = rect.y * stride + rect.x
+            val uvOffset = (width * height) + (rect.y / 2 * stride) + rect.x
+            return YuvHandle(
+                width = rect.width, height = rect.height,
+                planes = arrayOf(
+                    YuvHandle.Plane(buf.duplicate().position(yOffset).slice() as ByteBuffer, stride, 1),
+                    YuvHandle.Plane(buf.duplicate().position(uvOffset + 1).slice() as ByteBuffer, stride, 2),
+                    YuvHandle.Plane(buf.duplicate().position(uvOffset).slice() as ByteBuffer, stride, 2)
+                )
+            )
+        }
         val nv21: ByteBuffer get() = buffer ?: throw IllegalStateException("Instance not initialized")
         
         fun getYuvMat(): Mat = Mat(height * 3 / 2, width, org.opencv.core.CvType.CV_8UC1, nv21)
