@@ -204,6 +204,7 @@ object OcrUtils {
         }
         
         val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
+        val cvRoi = org.opencv.core.Rect(roi.left, roi.top, roi.width(), roi.height())
         val roiW = roi.width().coerceAtLeast(1)
         val roiH = roi.height().coerceAtLeast(1)
         val sourceAspect = roiW.toFloat() / roiH.toFloat()
@@ -245,17 +246,17 @@ object OcrUtils {
                 NativeImageUtils.syncMatFromArgb(scratchBmp, workspace.yMat)
             }
             is org.opencv.core.Mat -> {
-                val subY = source.submat(roi)
+                val subY = source.submat(cvRoi)
                 Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 subY.release()
             }
             is BufferSet.Instance -> {
                 // Luma Resize
-                val subY = source.yMat.submat(roi)
+                val subY = source.yMat.submat(cvRoi)
                 Imgproc.resize(subY, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 
                 // Chroma Resize (8UC2 interleaved)
-                val roiUV = Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
+                val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
                 val subUV = source.uvMat.submat(roiUV)
                 Imgproc.resize(subUV, workspace.uvMat, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, Imgproc.INTER_AREA)
                 
