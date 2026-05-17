@@ -75,7 +75,7 @@ std::string base64_encode(unsigned char const* bytes_to_encode, unsigned int in_
 }
 
 extern "C" {
-...
+
 JNIEXPORT jstring JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeCompressYuvToBase64(
     JNIEnv* env, jobject thiz, jobject yBuf, jobject uBuf, jobject vBuf, jint w, jint h, jint stride, jint quality) {
