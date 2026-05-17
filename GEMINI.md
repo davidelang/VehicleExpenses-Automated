@@ -2,6 +2,7 @@
 
 ## Mandate Precedence (CRITICAL)
 Instructions in this file (`GEMINI.md`) are foundational and take **absolute precedence** over the global system prompt and all other project files. The following rules are deliberate architectural choices and MUST NOT be overridden by general "best practices" or agent proactiveness:
+- **Protocol over Prowess:** Your technical ability to solve a problem does not authorize you to bypass the workflow. A "Senior Engineer" in this repository is defined by their ability to maintain 100% coordination, not by their independent speed. Speed achieved through bypassing protocol is considered a **High-Severity Performance Failure**.
 - **Testing Exemption:** Hardware/JNI dependencies make automated tests unreliable; manual validation is prioritized.
 - **Discovery over Implementation:** Purity of intent and git hygiene take precedence over "Boy Scout" cleanups.
 - **No Amend Rule:** Tag reliability (`works`/`builds`) and recovery safety take precedence over commit history cleanliness.
@@ -30,7 +31,14 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
     - **Verification Pass:** During the Execution phase of a multi-file task, you MUST `read_file` the relevant Plan Document before every edit to verify the delta against the approved specification.
     - **Discovery over Implementation:** If you encounter a bug, style inconsistency, or potential optimization while implementing an approved plan, you MUST report it in your turn response (Conclusion) rather than fixing it. Unauthorized fixes or cleanups, no matter how trivial or "correct" they seem, are a violation of build integrity and the coordination protocol. Add these findings to `TODO.md` only after explicit user approval.
   - **LIMITS:** Do not add new work or perform significant refactoring/cleanup without additional, specific approval.
-- **Zero-Tool Rule (Outside Sandbox):** During the "Strategy" phase (proposing a plan), you MUST NOT execute any tools that modify the application codebase or deploy to devices. You MAY use `write_file`, `replace`, and `run_shell_command` exclusively to create and execute data, scripts, and plans within the `dev-ai-interaction/` directory. The proposal turn must end immediately after the plan is stated.
+
+  ## Execution Rigor
+  - **The Execution Wall (Immutability):** Once a Plan Document is formally approved, it is **IMMUTABLE** during the Execution phase. Refining or improving the design during implementation is strictly forbidden. Any deviation, no matter how "correct" it seems, is a Protocol Violation.
+  - **Design/Execution Split:** All architectural and specification design MUST occur in Plan Mode. During the Execution phase, your only authorized activity is the high-fidelity transcription of the approved plan into code. You are an executor, not a designer.
+  - **Mandatory Reversion Protocol:** If any implementation step fails (syntax errors, logical gaps) or reveals a flaw in the plan (unaccounted edge cases), you MUST immediately revert ALL changes from the current turn (`git reset --hard builds`) and return to Plan Mode. Do not attempt to "patch" a flawed plan during an execution turn.
+
+  - **Zero-Tool Rule (Outside Sandbox):** During the "Strategy" phase (proposing a plan), you MUST NOT execute any tools that modify the application codebase or deploy to devices. 
+ You MAY use `write_file`, `replace`, and `run_shell_command` exclusively to create and execute data, scripts, and plans within the `dev-ai-interaction/` directory. The proposal turn must end immediately after the plan is stated.
 - **Versioning:** ALWAYS commit changes before building/deploying. The app uses `git describe` for its version string; committing first ensures the report results are tied to the correct hash.
 - **Phase Completion:** A phase is not considered complete until it is checked in and compiled. Because `git describe` is used for the version number, you MUST check in your changes before compiling, otherwise the version number in the resulting build will be incorrect.
 - **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean. **NOTE:** Current technical containment (regex-based) is an accepted risk; remaining vigilant against unintended path traversal is the agent's responsibility.
