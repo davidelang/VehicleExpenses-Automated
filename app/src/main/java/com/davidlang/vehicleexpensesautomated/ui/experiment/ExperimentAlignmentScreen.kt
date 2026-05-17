@@ -1336,6 +1336,8 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
     } catch (e: Exception) { false }
 }
 
+private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
+
 private suspend fun performLandmarkDiscovery(
     input: Any,
     context: Context

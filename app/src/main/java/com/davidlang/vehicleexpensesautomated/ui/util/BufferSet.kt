@@ -25,50 +25,63 @@ class BufferSet(private var width: Int, private var height: Int) {
         val isNormalized: Boolean
     )
 
-    private inner class ManagedCrop(val definition: CropDefinition) {
-        var proxyMat: Mat? = null
+    private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
-        fun refresh(parentMat: Mat, parentW: Int, parentH: Int) {
-            // Disarm old proxy to prevent GC crash
-            proxyMat?.let { nativeDisarmMat(it) }
+    data class YuvHandle(val yMat: Mat, val uvMat: Mat)
+
+    inner class ManagedCrop(val definition: CropDefinition) {
+        var yMat: Mat? = null
+            private set
+        var uvMat: Mat? = null
+            private set
+        val yuv: YuvHandle? get() {
+            val y = yMat; val uv = uvMat
+            return if (y != null && uv != null) YuvHandle(y, uv) else null
+        }
+
+        fun refresh(parentY: Mat, parentUV: Mat, parentW: Int, parentH: Int) {
+            // Disarm old proxies to prevent GC crash
+            yMat?.let { nativeDisarmMat(it) }
+            uvMat?.let { nativeDisarmMat(it) }
             
             val rect = if (definition.isNormalized) {
-                Rect(
-                    (definition.x * parentW).toInt().coerceIn(0, parentW - 1),
-                    (definition.y * parentH).toInt().coerceIn(0, parentH - 1),
-                    (definition.w * parentW).toInt().coerceAtMost(parentW),
-                    (definition.h * parentH).toInt().coerceAtMost(parentH)
-                )
+                val rx = toEvenInt(definition.x * parentW).coerceIn(0, parentW - 2)
+                val ry = toEvenInt(definition.y * parentH).coerceIn(0, parentH - 2)
+                val rw = toEvenInt(definition.w * parentW).coerceIn(2, parentW - rx)
+                val rh = toEvenInt(definition.h * parentH).coerceIn(2, parentH - ry)
+                Rect(rx, ry, rw, rh)
             } else {
-                Rect(
-                    definition.x.toInt().coerceIn(0, parentW - 1),
-                    definition.y.toInt().coerceIn(0, parentH - 1),
-                    definition.w.toInt().coerceAtMost(parentW),
-                    definition.h.toInt().coerceAtMost(parentH)
-                )
+                val rx = toEvenInt(definition.x).coerceIn(0, parentW - 2)
+                val ry = toEvenInt(definition.y).coerceIn(0, parentH - 2)
+                val rw = toEvenInt(definition.w).coerceIn(2, parentW - rx)
+                val rh = toEvenInt(definition.h).coerceIn(2, parentH - ry)
+                Rect(rx, ry, rw, rh)
             }
             
-            // Boundary safety check for OpenCV submat
-            val safeW = rect.width.coerceAtMost(parentW - rect.x)
-            val safeH = rect.height.coerceAtMost(parentH - rect.y)
-            if (safeW <= 0 || safeH <= 0) {
-                proxyMat = null
+            if (rect.width <= 0 || rect.height <= 0) {
+                yMat = null; uvMat = null
                 return
             }
 
-            proxyMat = parentMat.submat(Rect(rect.x, rect.y, safeW, safeH))
+            yMat = parentY.submat(rect)
+            
+            // Chroma ROI is half resolution but interleaved (8UC2)
+            val uvRect = Rect(rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2)
+            uvMat = parentUV.submat(uvRect)
         }
 
         fun release() {
-            proxyMat?.let { nativeDisarmMat(it) }
-            proxyMat = null
+            yMat?.let { nativeDisarmMat(it) }
+            uvMat?.let { nativeDisarmMat(it) }
+            yMat = null; uvMat = null
         }
     }
 
     inner class Instance {
         private var nativeHandle: Long = 0
         internal val nativeHandleInternal: Long get() = nativeHandle
-        private var proxyMat: Mat? = null
+        private var proxyY: Mat? = null
+        private var proxyUV: Mat? = null
         private var buffer: ByteBuffer? = null
 
         fun setup(w: Int, h: Int) {
@@ -79,17 +92,19 @@ class BufferSet(private var width: Int, private var height: Int) {
 
         fun release() {
             if (nativeHandle != 0L) {
-                proxyMat?.let { nativeDisarmMat(it) }
+                proxyY?.let { nativeDisarmMat(it) }
+                proxyUV?.let { nativeDisarmMat(it) }
                 nativeRelease(nativeHandle, null)
                 nativeHandle = 0L
-                proxyMat = null
+                proxyY = null; proxyUV = null
                 buffer = null
             }
         }
 
         fun resize(w: Int, h: Int) {
             if (nativeHandle != 0L) {
-                proxyMat?.let { nativeDisarmMat(it) }
+                proxyY?.let { nativeDisarmMat(it) }
+                proxyUV?.let { nativeDisarmMat(it) }
             }
             if (!nativeResize(nativeHandle, w, h)) {
                 throw IllegalStateException("Native resize failed for Instance")
@@ -98,7 +113,8 @@ class BufferSet(private var width: Int, private var height: Int) {
         }
 
         private fun refreshViews() {
-            proxyMat = Mat(nativeGetMatPtr(nativeHandle))
+            proxyY = Mat(nativeGetMatPtr(nativeHandle))
+            proxyUV = Mat(nativeGetUVMatPtr(nativeHandle))
             buffer = nativeGetBuffer(nativeHandle)
         }
 
@@ -108,7 +124,25 @@ class BufferSet(private var width: Int, private var height: Int) {
             }
         }
 
-        val yMat: Mat get() = proxyMat ?: throw IllegalStateException("Instance not initialized")
+        suspend fun annotate(annotations: List<SnapshotAnnotation>, targetW: Int, targetH: Int, sourceW: Int, sourceH: Int) {
+            val flat = IntArray(annotations.size * 7)
+            annotations.forEachIndexed { i, ann ->
+                val scaleX = targetW.toFloat() / sourceW.toFloat()
+                val scaleY = targetH.toFloat() / sourceH.toFloat()
+                flat[i * 7] = toEvenInt(ann.x1 * scaleX)
+                flat[i * 7 + 1] = toEvenInt(ann.y1 * scaleY)
+                flat[i * 7 + 2] = toEvenInt(ann.x2 * scaleX)
+                flat[i * 7 + 3] = toEvenInt(ann.y2 * scaleY)
+                flat[i * 7 + 4] = if (ann.shape == Shape.RECTANGLE) 1 else 0
+                flat[i * 7 + 5] = ann.color
+                flat[i * 7 + 6] = toEvenInt(ann.strokeWidth.toFloat()).coerceAtLeast(2)
+            }
+            nativeAnnotate(nativeHandle, flat)
+        }
+
+        val yMat: Mat get() = proxyY ?: throw IllegalStateException("Instance not initialized")
+        val uvMat: Mat get() = proxyUV ?: throw IllegalStateException("Instance not initialized")
+        val yuv: YuvHandle get() = YuvHandle(yMat, uvMat)
         val nv21: ByteBuffer get() = buffer ?: throw IllegalStateException("Instance not initialized")
         
         fun getYuvMat(): Mat = Mat(height * 3 / 2, width, org.opencv.core.CvType.CV_8UC1, nv21)
@@ -188,7 +222,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     }
 
     private fun refreshCrops() {
-        managedCrops.values.forEach { it.refresh(primary.yMat, width, height) }
+        managedCrops.values.forEach { it.refresh(primary.yMat, primary.uvMat, width, height) }
     }
 
     // JNI Bindings
@@ -222,6 +256,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         nativeAnnotate(primary.nativeHandleInternal, flat)
     }
     private external fun nativeGetMatPtr(handle: Long): Long
+    private external fun nativeGetUVMatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
 
     companion object {
