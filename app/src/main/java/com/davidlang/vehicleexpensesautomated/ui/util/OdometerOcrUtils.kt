@@ -93,7 +93,7 @@ object OdometerOcrUtils {
         val tStart = System.currentTimeMillis()
         val targetBitmap = NativePaddleEngine.sharedBmp2048
         
-        val (pWidth, pHeight) = prepDeskewBuffer(input, targetBitmap)
+        val (pWidth, pHeight, _) = prepDeskewBuffer(input, targetBitmap)
         val tPrep = System.currentTimeMillis() - tStart
 
         val t1 = System.currentTimeMillis()
@@ -109,7 +109,7 @@ object OdometerOcrUtils {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, listOf(0L))
         val targetBitmap = NativePaddleEngine.sharedBmp2048
 
-        val (pWidth, pHeight) = prepDeskewBuffer(input, targetBitmap)
+        val (pWidth, pHeight, pScale) = prepDeskewBuffer(input, targetBitmap)
         val tPrep = System.currentTimeMillis() - tStart
 
         val t1 = System.currentTimeMillis()
@@ -117,13 +117,13 @@ object OdometerOcrUtils {
         val tDetect = System.currentTimeMillis() - t1
         
         val angle = if (det != null) {
-            val resDeskew = extractFromPhotoBitmapRaw(com.google.mlkit.vision.common.InputImage.fromBitmap(targetBitmap, 0))
-            calculateWeightedAverage(resDeskew.textBlocks, pHeight)
+            val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, targetBitmap, "Paddle")
+            calculateWeightedAverage(blocks, pHeight)
         } else 0f
         return EngineResult(angle, listOf(tPrep, tDetect))
     }
 
-    private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Pair<Int, Int> {
+    private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
         val pTargetSize = 2048
         val (srcW, srcH) = when (input) {
             is Bitmap -> input.width to input.height
@@ -161,7 +161,7 @@ object OdometerOcrUtils {
         resizedGray.release(); resizedArgb.release(); roiMat.release()
         if (input is Bitmap) grayMat.release()
         
-        return Pair(pWidth, pHeight)
+        return Triple(pWidth, pHeight, pScale)
     }
 
     suspend fun extractFromPhotoBitmapRaw(image: com.google.mlkit.vision.common.InputImage): OcrResult {
