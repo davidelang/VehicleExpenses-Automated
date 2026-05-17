@@ -110,6 +110,8 @@ class BufferSet(private var width: Int, private var height: Int) {
 
         val yMat: Mat get() = proxyMat ?: throw IllegalStateException("Instance not initialized")
         val nv21: ByteBuffer get() = buffer ?: throw IllegalStateException("Instance not initialized")
+        
+        fun getYuvMat(): Mat = Mat(height * 3 / 2, width, org.opencv.core.CvType.CV_8UC1, nv21)
     }
 
     init {
@@ -195,12 +197,29 @@ class BufferSet(private var width: Int, private var height: Int) {
     private external fun nativeClear(handle: Long)
     private external fun nativeResize(handle: Long, w: Int, h: Int): Boolean
     private external fun nativeRotate(src: Long, dst: Long, angle: Float)
+    private external fun nativeAnnotate(handle: Long, annotations: IntArray)
 
     suspend fun rotate(angle: Float) = mutex.withLock {
         if (kotlin.math.abs(angle) < 0.01f) return
         nativeRotate(primary.nativeHandleInternal, scratch.nativeHandleInternal, angle)
         primaryIdx = 1 - primaryIdx
         refreshCrops()
+    }
+
+    suspend fun annotate(annotations: List<Annotation>, targetW: Int, targetH: Int, sourceW: Int, sourceH: Int) = mutex.withLock {
+        val flat = IntArray(annotations.size * 7)
+        annotations.forEachIndexed { i, ann ->
+            val scaleX = targetW.toFloat() / sourceW.toFloat()
+            val scaleY = targetH.toFloat() / sourceH.toFloat()
+            flat[i * 7] = (ann.x1 * scaleX).toInt()
+            flat[i * 7 + 1] = (ann.y1 * scaleY).toInt()
+            flat[i * 7 + 2] = (ann.x2 * scaleX).toInt()
+            flat[i * 7 + 3] = (ann.y2 * scaleY).toInt()
+            flat[i * 7 + 4] = if (ann.shape == Shape.RECTANGLE) 1 else 0
+            flat[i * 7 + 5] = ann.color
+            flat[i * 7 + 6] = ann.strokeWidth
+        }
+        nativeAnnotate(primary.nativeHandleInternal, flat)
     }
     private external fun nativeGetMatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?

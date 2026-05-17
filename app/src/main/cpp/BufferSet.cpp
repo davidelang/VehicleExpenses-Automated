@@ -227,4 +227,93 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRotate(
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeAnnotate(
+    JNIEnv* env, jobject thiz, jlong handlePtr, jintArray annotationsArr) {
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        if (validHandles.find(handle) == validHandles.end()) return;
+    }
+
+    jsize len = env->GetArrayLength(annotationsArr);
+    if (len % 7 != 0) return; // (x1, y1, x2, y2, shape, color, width)
+    
+    jint* elements = env->GetIntArrayElements(annotationsArr, nullptr);
+    uint8_t* data = handle->data;
+    int w = (int)handle->width;
+    int h = (int)handle->height;
+    size_t frameSize = handle->width * handle->height;
+
+    for (int i = 0; i < len; i += 7) {
+        int x1 = elements[i];
+        int y1 = elements[i+1];
+        int x2 = elements[i+2];
+        int y2 = elements[i+3];
+        int shape = elements[i+4];
+        int color = elements[i+5];
+        int stroke = elements[i+6];
+
+        // Round to 2-pixel grid
+        x1 = (x1 + 1) / 2 * 2; y1 = (y1 + 1) / 2 * 2;
+        x2 = (x2 + 1) / 2 * 2; y2 = (y2 + 1) / 2 * 2;
+        stroke = (stroke + 1) / 2 * 2;
+
+        // Map ARGB color to YUV (Red/Orange/Blue simplified)
+        uint8_t Y = 255, U = 128, V = 128;
+        if ((color & 0x00FFFFFF) == 0xFF0000) { // Red
+            Y = 76; U = 84; V = 255;
+        } else if ((color & 0x00FFFFFF) == 0xFFA500) { // Orange
+            Y = 173; U = 42; V = 191;
+        } else if ((color & 0x00FFFFFF) == 0x0000FF) { // Blue
+            Y = 29; U = 255; V = 107;
+        }
+
+        if (shape == 1) { // RECTANGLE
+            // Implement a simple thick rectangle draw
+            for (int s = 0; s < stroke; ++s) {
+                // Top/Bottom
+                for (int x = x1; x <= x2; ++x) {
+                    if (x < 0 || x >= w) continue;
+                    if (y1+s >= 0 && y1+s < h) data[(y1+s)*w + x] = Y;
+                    if (y2-s >= 0 && y2-s < h) data[(y2-s)*w + x] = Y;
+                }
+                // Left/Right
+                for (int y = y1; y <= y2; ++y) {
+                    if (y < 0 || y >= h) continue;
+                    if (x1+s >= 0 && x1+s < w) data[y*w + (x1+s)] = Y;
+                    if (x2-s >= 0 && x2-s < w) data[y*w + (x2-s)] = Y;
+                }
+            }
+            // Update UV for entire rect perimeter (simplified)
+            for (int y = y1; y <= y2; y += 2) {
+                for (int x = x1; x <= x2; x += 2) {
+                    bool edge = (y < y1+stroke || y > y2-stroke || x < x1+stroke || x > x2-stroke);
+                    if (!edge) continue;
+                    if (x >= 0 && x < w && y >= 0 && y < h) {
+                        size_t uvIdx = frameSize + (y/2)*w + (x/2)*2;
+                        data[uvIdx] = V; data[uvIdx+1] = U;
+                    }
+                }
+            }
+        } else { // LINE
+            // Simple horizontal/vertical line support for now
+            if (y1 == y2) { // Horizontal
+                for (int x = x1; x <= x2; ++x) {
+                    for (int s = 0; s < stroke; ++s) {
+                        if (x >= 0 && x < w && y1+s >= 0 && y1+s < h) {
+                            data[(y1+s)*w + x] = Y;
+                            size_t uvIdx = frameSize + ((y1+s)/2)*w + (x/2)*2;
+                            data[uvIdx] = V; data[uvIdx+1] = U;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    env->ReleaseIntArrayElements(annotationsArr, elements, JNI_ABORT);
+}
+
 }

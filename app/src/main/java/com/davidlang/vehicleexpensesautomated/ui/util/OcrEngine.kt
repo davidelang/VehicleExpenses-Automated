@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +17,9 @@ import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
 import org.opencv.core.Point
+import org.opencv.core.MatOfByte
+import org.opencv.imgcodecs.Imgcodecs
+import org.opencv.imgproc.Imgproc
 
 /**
  * Simple Rect implementation for Float normalized coordinates.
@@ -123,6 +128,15 @@ data class OcrStepResult(
     val metadata: Map<String, String> = emptyMap()
 )
 
+enum class Shape { LINE, RECTANGLE }
+
+data class Annotation(
+    val x1: Int, val y1: Int, val x2: Int, val y2: Int,
+    val shape: Shape,
+    val color: Int, // ARGB color
+    val strokeWidth: Int
+)
+
 enum class DiscoveryExpansion { UNCLIP, VALLEY }
 
 interface OcrEngine {
@@ -159,109 +173,96 @@ object OcrUtils {
         return cx >= crop.left && cx <= crop.right && cy >= crop.top && cy <= crop.bottom
     }
 
-    fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
-        val outputStream = java.io.ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-        return android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.NO_WRAP)
-    }
-
-    fun takeSnapshot(
-        sourceMat: org.opencv.core.Mat,
-        rawFragments: List<Rect> = emptyList(),
-        consolidatedRows: List<Rect> = emptyList(),
-        argbScratch: Bitmap? = null,
-        subsetW: Int? = null,
-        subsetH: Int? = null
-    ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
-        val thumb = NativePaddleEngine.sharedReportBitmap
-        if (thumb.isRecycled) return ""
-        val scale = kotlin.math.min(320f / sourceMat.cols().toFloat(), 48f / sourceMat.rows().toFloat())
-        val targetWidth = (sourceMat.cols() * scale).toInt().coerceIn(1, 320)
-        val targetHeight = (sourceMat.rows() * scale).toInt().coerceIn(1, 48)
-        val canvas = NativePaddleEngine.sharedReportCanvas
-        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-
-        // Phase 115: Zero-Allocation Mat-to-ARGB Snapshotting
-        val scratch = NativePaddleEngine.sharedBmpOdoScratch
-        if (sourceMat.cols() == scratch.width && sourceMat.rows() == scratch.height) {
-            // High-Speed JNI Pathway
-            NativeImageUtils.syncMatToArgb(sourceMat, scratch)
-            val matrix = NativePaddleEngine.sharedMatrix
-            matrix.reset()
-            matrix.postScale(scale, scale)
-            canvas.drawBitmap(scratch, matrix, NativePaddleEngine.srcPaint)
+    suspend fun takeSnapshot(
+        source: Any,
+        sourceRect: Rect?,
+        targetW: Int,
+        targetH: Int,
+        annotations: List<Annotation>
+    ): String = withContext(Dispatchers.IO) {
+        val rowBuffer = NativePaddleEngine.fullBufferSet
+        val workspace = rowBuffer.scratch
+        
+        // Step 1: Geometry Normalization
+        val srcW = when (source) {
+            is Bitmap -> source.width
+            is org.opencv.core.Mat -> source.cols()
+            is BufferSet.Instance -> source.yMat.cols()
+            else -> 0
+        }
+        val srcH = when (source) {
+            is Bitmap -> source.height
+            is org.opencv.core.Mat -> source.rows()
+            is BufferSet.Instance -> source.yMat.rows()
+            else -> 0
+        }
+        
+        val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
+        val roiW = roi.width().coerceAtLeast(1)
+        val roiH = roi.height().coerceAtLeast(1)
+        val sourceAspect = roiW.toFloat() / roiH.toFloat()
+        
+        var finalW: Int
+        var finalH: Int
+        
+        if (targetW > 0 && targetH > 0) {
+            if (targetW.toFloat() / targetH > sourceAspect) {
+                finalH = targetH; finalW = (targetH * sourceAspect).toInt()
+            } else {
+                finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+            }
+        } else if (targetW > 0) {
+            finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+        } else if (targetH > 0) {
+            finalH = targetH; finalW = (targetH * sourceAspect).toInt()
         } else {
-            // Fallback Pathway (Slower, handles arbitrary Mat sizes like large bridges)
-            val matARGB = org.opencv.core.Mat()
-            org.opencv.imgproc.Imgproc.cvtColor(sourceMat, matARGB, org.opencv.imgproc.Imgproc.COLOR_GRAY2RGBA)
-            val tempBmp = Bitmap.createBitmap(sourceMat.cols(), sourceMat.rows(), Bitmap.Config.ARGB_8888)
-            org.opencv.android.Utils.matToBitmap(matARGB, tempBmp)
-            matARGB.release()
-
-            val matrix = NativePaddleEngine.sharedMatrix
-            matrix.reset()
-            matrix.postScale(scale, scale)
-            canvas.drawBitmap(tempBmp, matrix, NativePaddleEngine.srcPaint)
-            tempBmp.recycle()
+            finalW = roiW; finalH = roiH
         }
         
-        rawFragments.forEach { r -> canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint) }
-        consolidatedRows.forEach { r -> canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint) }
-        
-        val view = Bitmap.createBitmap(thumb, 0, 0, subsetW ?: targetWidth, subsetH ?: targetHeight)
-        bitmapToBase64(view, 60)
-    }
+        // Cap to scratch buffer dimensions
+        finalW = finalW.coerceIn(1, workspace.yMat.cols())
+        finalH = finalH.coerceIn(1, workspace.yMat.rows())
 
-    fun takeSnapshot(
-        source: Bitmap, 
-        rawFragments: List<Rect> = emptyList(), 
-        consolidatedRows: List<Rect> = emptyList(),
-        argbScratch: Bitmap? = null,
-        subsetW: Int? = null,
-        subsetH: Int? = null
-    ): String = synchronized(NativePaddleEngine.sharedReportBitmap) {
-        if (source.isRecycled) return ""
-        val thumb = NativePaddleEngine.sharedReportBitmap
-        if (thumb.isRecycled) return ""
-
-        // Phase 115: Proportional fit-within scaling for the final report thumbnail
-        val scale = kotlin.math.min(320f / source.width.toFloat(), 48f / source.height.toFloat())
-        val targetWidth = (source.width * scale).toInt().coerceIn(1, 320)
-        val targetHeight = (source.height * scale).toInt().coerceIn(1, 48)
-        
-        val canvas = NativePaddleEngine.sharedReportCanvas
-        
-        // 1. Clear Report Buffer
-        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-        
-        // 2. Safe Bridge: Draw source into ARGB scratch first to avoid ALPHA_8 HWUI crashes
-        val drawingSource: Bitmap
-        if (argbScratch != null && !argbScratch.isRecycled && (source.config == Bitmap.Config.ALPHA_8 || source.config == null)) {
-            val scratchCanvas = android.graphics.Canvas(argbScratch)
-            scratchCanvas.drawColor(android.graphics.Color.BLACK)
-            val paint = if (source.config == Bitmap.Config.ALPHA_8) NativePaddleEngine.alphaToGrayPaint else null
-            scratchCanvas.drawBitmap(source, 0f, 0f, paint)
-            drawingSource = argbScratch
-        } else {
-            drawingSource = source
+        // Step 2: Normalization & Resize-First
+        workspace.clear()
+        when (source) {
+            is Bitmap -> {
+                // Resize ROI directly into row-level scratchBmp
+                val scratchBmp = NativePaddleEngine.sharedBmpOdoScratch
+                val canvas = Canvas(scratchBmp)
+                canvas.drawColor(Color.BLACK, PorterDuff.Mode.CLEAR)
+                canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
+                
+                // Sync to scratch.yuv
+                NativeImageUtils.syncMatFromArgb(scratchBmp, workspace.yMat)
+            }
+            is org.opencv.core.Mat -> {
+                val sub = source.submat(roi.top, roi.bottom, roi.left, roi.right)
+                Imgproc.resize(sub, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                sub.release()
+            }
+            is BufferSet.Instance -> {
+                val sub = source.yMat.submat(roi.top, roi.bottom, roi.left, roi.right)
+                Imgproc.resize(sub, workspace.yMat, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                sub.release()
+            }
         }
 
-        // 3. Draw to Report Buffer (Dimension-safe scaling)
-        val matrix = NativePaddleEngine.sharedMatrix
-        matrix.reset()
-        matrix.postScale(scale, scale)
-        canvas.drawBitmap(drawingSource, matrix, NativePaddleEngine.srcPaint)
+        // Step 3: Native Annotation
+        rowBuffer.annotate(annotations, finalW, finalH, roiW, roiH)
+
+        // Step 4: Direct Encoding
+        val yuvMat = workspace.getYuvMat()
+        val roiYuv = yuvMat.submat(0, finalH * 3 / 2, 0, finalW)
+        val bgrMat = org.opencv.core.Mat()
+        Imgproc.cvtColor(roiYuv, bgrMat, Imgproc.COLOR_YUV2BGR_NV21)
         
-        // 4. Apply Annotations (Scaled)
-        rawFragments.forEach { r -> 
-            canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.redPaint)
-        }
-        consolidatedRows.forEach { r ->
-            canvas.drawRect(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale, NativePaddleEngine.orangePaint)
-        }
+        val matOfByte = MatOfByte()
+        Imgcodecs.imencode(".jpg", bgrMat, matOfByte)
+        val jpegBytes = matOfByte.toArray()
         
-        // 5. Create Subset View for Base64 (No allocation)
-        val view = Bitmap.createBitmap(thumb, 0, 0, subsetW ?: targetWidth, subsetH ?: targetHeight)
-        bitmapToBase64(view, 60)
+        bgrMat.release(); roiYuv.release(); yuvMat.release()
+        
+        android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
     }
 }

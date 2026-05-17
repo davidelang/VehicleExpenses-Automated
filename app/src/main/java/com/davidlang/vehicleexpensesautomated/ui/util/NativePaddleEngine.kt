@@ -72,8 +72,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedNv21Buffer: ByteArray? = null
         private var _sharedBmpOdoScratch: Bitmap? = null
         private var _sharedCanvasOdoScratch: Canvas? = null
-        private var _sharedReportBitmap: Bitmap? = null
-        private var _sharedReportCanvas: Canvas? = null
         private var _redPaint: Paint? = null
         private var _orangePaint: Paint? = null
         private var _grayToAlphaPaint: Paint? = null
@@ -100,8 +98,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
         val sharedBmpOdoScratch: Bitmap get() = _sharedBmpOdoScratch!!
         val sharedCanvasOdoScratch: Canvas get() = _sharedCanvasOdoScratch!!
-        val sharedReportBitmap: Bitmap get() = _sharedReportBitmap!!
-        val sharedReportCanvas: Canvas get() = _sharedReportCanvas!!
         val redPaint: Paint get() = _redPaint!!
         val orangePaint: Paint get() = _orangePaint!!
         val grayToAlphaPaint: Paint get() = _grayToAlphaPaint!!
@@ -146,7 +142,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
 
-            _sharedReportBitmap = Bitmap.createBitmap(320, 48, Bitmap.Config.ARGB_8888); _sharedReportCanvas = Canvas(_sharedReportBitmap!!)
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
             _orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
 
