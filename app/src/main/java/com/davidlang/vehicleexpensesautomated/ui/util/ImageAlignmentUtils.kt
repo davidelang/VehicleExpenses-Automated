@@ -244,9 +244,14 @@ object ImageAlignmentUtils {
         refW: Int = 4000,
         refH: Int = 3072,
         queW: Int = 4000,
-        queH: Int = 3072
+        queH: Int = 3072,
+        scratchBmp: Bitmap
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
+
+        if (bmp.width != scratchBmp.width || bmp.height != scratchBmp.height) {
+            throw IllegalArgumentException("Dimension mismatch: bmp=${bmp.width}x${bmp.height}, scratch=${scratchBmp.width}x${scratchBmp.height}")
+        }
         val allCandidates = mutableListOf<AnchorCandidate>()
         val targetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
             (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
@@ -380,15 +385,14 @@ object ImageAlignmentUtils {
         )
 
         return try {
-            // Phase 115: In-Place Morphing using shared scratch buffer.
-            val scratch = NativePaddleEngine.sharedBmpScratch
-            val canvas = android.graphics.Canvas(scratch)
+            // Phase 115: In-Place Morphing using passed scratch buffer.
+            val canvas = android.graphics.Canvas(scratchBmp)
             canvas.drawColor(android.graphics.Color.BLACK)
             canvas.drawBitmap(bmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
             
             // Draw scratch back to the original passed buffer (bmp)
             val originalCanvas = android.graphics.Canvas(bmp)
-            originalCanvas.drawBitmap(scratch, 0f, 0f, null)
+            originalCanvas.drawBitmap(scratchBmp, 0f, 0f, null)
             
             AnchorResult(true, bmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d) [B:%d]: S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, bracketedCount, finalScale, finalTx, finalTy))
         } catch (e: Exception) {
