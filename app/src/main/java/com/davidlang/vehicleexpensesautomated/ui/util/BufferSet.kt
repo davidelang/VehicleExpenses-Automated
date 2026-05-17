@@ -29,7 +29,7 @@ class BufferSet(private var width: Int, private var height: Int) {
 
     data class YuvHandle(val yMat: Mat, val uvMat: Mat)
 
-    inner class ManagedCrop(internal val definition: CropDefinition) {
+    inner class ManagedCrop internal constructor(internal val definition: CropDefinition) {
         var yMat: Mat? = null
             private set
         var uvMat: Mat? = null
