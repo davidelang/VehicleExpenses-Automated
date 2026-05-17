@@ -329,6 +329,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val winnerRef = cachedRefs.find { it.vehicle.id == winnerId }
                 
                 var alignedBase64 = ""
+                var alignedNativeBase64 = ""
 
                 // Winner-Only Processing block
                 if (winnerRef != null) {
