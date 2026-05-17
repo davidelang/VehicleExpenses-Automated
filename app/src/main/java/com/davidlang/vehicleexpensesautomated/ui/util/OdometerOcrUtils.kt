@@ -113,7 +113,7 @@ object OdometerOcrUtils {
         val tPrep = System.currentTimeMillis() - tStart
 
         val t1 = System.currentTimeMillis()
-        val res = extractFromPhotoBitmapRaw(targetBitmap)
+        val res = extractFromPhotoBitmapRaw(com.google.mlkit.vision.common.InputImage.fromBitmap(targetBitmap, 0))
         val tDetect = System.currentTimeMillis() - t1
         
         val angle = calculateWeightedAverage(res.textBlocks, pHeight)
@@ -148,15 +148,14 @@ object OdometerOcrUtils {
         val tDetect = System.currentTimeMillis() - t1
         
         val angle = if (det != null) {
-            val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, targetBitmap, "Paddle")
-            calculateWeightedAverage(blocks, pHeight)
+            val resDeskew = extractFromPhotoBitmapRaw(com.google.mlkit.vision.common.InputImage.fromBitmap(targetBitmap, 0))
+            calculateWeightedAverage(resDeskew.textBlocks, pHeight)
         } else 0f
         return EngineResult(angle, listOf(tPrep, tDetect))
     }
 
-    suspend fun extractFromPhotoBitmapRaw(bitmap: Bitmap): OcrResult {
+    suspend fun extractFromPhotoBitmapRaw(image: com.google.mlkit.vision.common.InputImage): OcrResult {
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val image = InputImage.fromBitmap(bitmap, 0)
         return try {
             val visionText = recognizer.process(image).await()
             val blocks = mutableListOf<TextBlock>()
