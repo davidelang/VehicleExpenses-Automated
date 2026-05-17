@@ -62,21 +62,21 @@ object OdometerOcrUtils {
         val engines: Map<String, EngineResult> = emptyMap()
     )
 
-    suspend fun calculateAverageTextAngle(sourceBitmap: Bitmap): DeskewResult {
+    suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
         val t0 = System.currentTimeMillis()
         
         val enabledEngines = mapOf(
-            "ML Kit Standard" to ::deskewMlKitStandard,
-            "Paddle V3 Standard" to ::deskewPaddleStandard
+            "ML Kit" to ::deskewMlKit,
+            "Paddle V3" to ::deskewPaddle
         )
         
         val results = mutableMapOf<String, EngineResult>()
         enabledEngines.forEach { (name, func) ->
-            results[name] = func(sourceBitmap)
+            results[name] = func(input)
         }
         
-        val mlRes = results["ML Kit Standard"]
-        val pdRes = results["Paddle V3 Standard"]
+        val mlRes = results["ML Kit"]
+        val pdRes = results["Paddle V3"]
         
         val finalAngle = mlRes?.angle ?: 0.0f
         
@@ -85,31 +85,15 @@ object OdometerOcrUtils {
             mlAngle = finalAngle,
             mlTimeMs = mlRes?.timesMs?.sum() ?: 0L,
             paddleTimeMs = pdRes?.timesMs?.sum() ?: 0L,
-            
             engines = results
         )
     }
 
-    private suspend fun deskewMlKitStandard(sourceBitmap: Bitmap): EngineResult {
+    private suspend fun deskewMlKit(input: Any): EngineResult {
         val tStart = System.currentTimeMillis()
-        val pTargetSize = 2048
-        val pScale = Math.min(pTargetSize.toFloat() / sourceBitmap.width, pTargetSize.toFloat() / sourceBitmap.height)
-        val pWidth = (sourceBitmap.width * pScale).toInt()
-        val pHeight = (sourceBitmap.height * pScale).toInt()
         val targetBitmap = NativePaddleEngine.sharedBmp2048
-
-        val argbMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(sourceBitmap, argbMat)
-        val grayMat = Mat()
-        Imgproc.cvtColor(argbMat, grayMat, Imgproc.COLOR_RGBA2GRAY)
-        val targetSize = org.opencv.core.Size(pWidth.toDouble(), pHeight.toDouble())
-        val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
-        val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pWidth, pHeight))
-        Imgproc.resize(grayMat, roiMat, targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
-        val resizedArgb = Mat()
-        Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
-        org.opencv.android.Utils.matToBitmap(resizedArgb, targetBitmap)
-        resizedGray.release(); resizedArgb.release(); roiMat.release(); argbMat.release(); grayMat.release()
+        
+        val (pWidth, pHeight) = prepDeskewBuffer(input, targetBitmap)
         val tPrep = System.currentTimeMillis() - tStart
 
         val t1 = System.currentTimeMillis()
@@ -120,27 +104,12 @@ object OdometerOcrUtils {
         return EngineResult(angle, listOf(tPrep, tDetect))
     }
 
-    private suspend fun deskewPaddleStandard(sourceBitmap: Bitmap): EngineResult {
+    private suspend fun deskewPaddle(input: Any): EngineResult {
         val tStart = System.currentTimeMillis()
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, listOf(0L))
-        val pTargetSize = 2048
-        val pScale = Math.min(pTargetSize.toFloat() / sourceBitmap.width, pTargetSize.toFloat() / sourceBitmap.height)
-        val pWidth = (sourceBitmap.width * pScale).toInt()
-        val pHeight = (sourceBitmap.height * pScale).toInt()
         val targetBitmap = NativePaddleEngine.sharedBmp2048
 
-        val argbMat = Mat()
-        org.opencv.android.Utils.bitmapToMat(sourceBitmap, argbMat)
-        val grayMat = Mat()
-        Imgproc.cvtColor(argbMat, grayMat, Imgproc.COLOR_RGBA2GRAY)
-        val targetSize = org.opencv.core.Size(pWidth.toDouble(), pHeight.toDouble())
-        val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
-        val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pWidth, pHeight))
-        Imgproc.resize(grayMat, roiMat, targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
-        val resizedArgb = Mat()
-        Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
-        org.opencv.android.Utils.matToBitmap(resizedArgb, targetBitmap)
-        resizedGray.release(); resizedArgb.release(); roiMat.release(); argbMat.release(); grayMat.release()
+        val (pWidth, pHeight) = prepDeskewBuffer(input, targetBitmap)
         val tPrep = System.currentTimeMillis() - tStart
 
         val t1 = System.currentTimeMillis()
@@ -152,6 +121,47 @@ object OdometerOcrUtils {
             calculateWeightedAverage(resDeskew.textBlocks, pHeight)
         } else 0f
         return EngineResult(angle, listOf(tPrep, tDetect))
+    }
+
+    private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Pair<Int, Int> {
+        val pTargetSize = 2048
+        val (srcW, srcH) = when (input) {
+            is Bitmap -> input.width to input.height
+            is BufferSet.Instance -> input.yMat.cols() to input.yMat.rows()
+            else -> throw IllegalArgumentException("Unsupported input type for deskew: ${input.javaClass.name}")
+        }
+        
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val pWidth = (srcW * pScale).toInt()
+        val pHeight = (srcH * pScale).toInt()
+        
+        val grayMat = when (input) {
+            is Bitmap -> {
+                val argbMat = Mat()
+                org.opencv.android.Utils.bitmapToMat(input, argbMat)
+                val g = Mat()
+                Imgproc.cvtColor(argbMat, g, Imgproc.COLOR_RGBA2GRAY)
+                argbMat.release()
+                g
+            }
+            is BufferSet.Instance -> input.yMat
+            else -> throw IllegalStateException()
+        }
+
+        val targetSize = org.opencv.core.Size(pWidth.toDouble(), pHeight.toDouble())
+        val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
+        val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pWidth, pHeight))
+        
+        Imgproc.resize(grayMat, roiMat, targetSize, 0.0, 0.0, Imgproc.INTER_AREA)
+        
+        val resizedArgb = Mat()
+        Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
+        org.opencv.android.Utils.matToBitmap(resizedArgb, targetBitmap)
+        
+        resizedGray.release(); resizedArgb.release(); roiMat.release()
+        if (input is Bitmap) grayMat.release()
+        
+        return Pair(pWidth, pHeight)
     }
 
     suspend fun extractFromPhotoBitmapRaw(image: com.google.mlkit.vision.common.InputImage): OcrResult {
