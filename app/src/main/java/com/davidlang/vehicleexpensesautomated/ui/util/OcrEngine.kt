@@ -127,14 +127,27 @@ enum class DiscoveryExpansion { UNCLIP, VALLEY }
 
 interface OcrEngine {
     val name: String
-    suspend fun recognize(bitmap: Bitmap): OcrResult
+    suspend fun recognize(input: Any): OcrResult
 }
 
 class MlKitEngine : OcrEngine {
     override val name = "ML Kit"
-    override suspend fun recognize(bitmap: Bitmap): OcrResult = withContext(Dispatchers.IO) {
+    override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
-        val res = OdometerOcrUtils.extractFromPhotoBitmapRaw(bitmap)
+        
+        val image = when (input) {
+            is Bitmap -> com.google.mlkit.vision.common.InputImage.fromBitmap(input, 0)
+            is BufferSet.Instance -> com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                input.nv21,
+                input.yMat.cols(),
+                input.yMat.rows(),
+                0,
+                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+            )
+            else -> throw IllegalArgumentException("Unsupported input type for MlKitEngine: ${input.javaClass.name}")
+        }
+
+        val res = OdometerOcrUtils.extractFromPhotoBitmapRaw(image)
         res.copy(engineName = name, executionTimeMs = System.currentTimeMillis() - t0)
     }
 }

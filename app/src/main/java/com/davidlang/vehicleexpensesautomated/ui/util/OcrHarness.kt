@@ -9,8 +9,8 @@ import com.google.gson.JsonObject
  */
 object OcrHarness {
 
-    suspend fun runDiscovery(bitmap: Bitmap, context: Context): OcrResult {
-        val rawResult = MlKitEngine().recognize(bitmap)
+    suspend fun runDiscovery(input: Any, context: Context): OcrResult {
+        val rawResult = MlKitEngine().recognize(input)
         
         val cleanedBlocks = rawResult.textBlocks.map { block ->
             block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
