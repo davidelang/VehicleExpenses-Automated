@@ -621,7 +621,7 @@ object ImageAlignmentUtils {
             warpMat.put(0, 0, finalScale.toDouble(), 0.0, (finalTx * src.cols()).toDouble())
             warpMat.put(1, 0, 0.0, finalScale.toDouble(), (finalTy * src.rows()).toDouble())
             
-            Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_LINEAR, Core.BORDER_CONSTANT, Scalar(0.0))
+            Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0))
             bufferSet.flip()
             warpMat.release()
             

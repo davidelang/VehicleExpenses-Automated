@@ -981,8 +981,10 @@ private fun serializePhotoResultToJson(
             put("alignment_delta_tx", monoTx - stdTx)
             put("alignment_delta_ty", monoTy - stdTy)
             put("alignment_consensus_std", winnerRes.alignmentTrace.metadata["Consensus"] ?: "")
-            put("alignment_consensus_mono", winnerRes.alignmentTraceMono.metadata["Consensus"] ?: "")
-        }
+            put("alignment_consensus_mono", winnerRes.alignmentTraceMono?.metadata["Consensus"] ?: "")
+            put("aligned_image_native_b64", winnerRes.alignmentTraceMono?.alignedImageBase64 ?: "")
+            }
+
         
         put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_rotation_ms", tRotate)
         
