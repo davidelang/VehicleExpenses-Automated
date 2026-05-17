@@ -1212,6 +1212,21 @@ private fun buildHtmlRowDynamic(
         appendLine("<i>Not Aligned</i>")
     }
     appendLine("</td>")
+
+    // Native Aligned Column
+    appendLine("<td>")
+    vRes?.alignmentTraceMono?.let { trace ->
+        if (trace.alignedImageBase64.isNotEmpty()) {
+            appendLine("<img src='data:image/jpeg;base64,${trace.alignedImageBase64}'><br>")
+            val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
+            val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
+            val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
+            appendLine("<small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small>".format(s, tx, ty))
+        } else {
+            appendLine("<i>No native trace</i>")
+        }
+    } ?: appendLine("<i>Not Aligned</i>")
+    appendLine("</td>")
     
     val allReadings = mutableListOf<String>()
     harnessEngines.forEach { engine ->
