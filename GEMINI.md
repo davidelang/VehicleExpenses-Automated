@@ -9,7 +9,7 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
 
 ## Workflow & Safety
 - **Deployment:** NEVER run `./deploy` or `./gradlew installdebug` while an experiment report is running on the device. It will reset the app and lose the progress.
-- **Deployment:** the version is defined as 'git describe', so before you build and deploy, all program files should be comitted to the repo so that the version of the app matches the state of the repo at the same commit
+- **Deployment:** the version is defined as 'git describe', so before you build or deploy, all program files should be comitted to the repo so that the version of the app matches the state of the repo at the same commit
 - **Workflow:** Operate in a **STRICT report/propose mode**.
   - **The Enforced Barrier:** You MUST operate in `mode = plan` during all Research and Strategy phases. This is a technical permission barrier that physically prevents modification of application source code or build assets, reinforcing the Zero-Tool rule. **NOTE: A custom workspace policy (`.gemini/policies/plans.toml`) is active. It explicitly overrides default Plan Mode restrictions, granting you full write and execute permissions (`write_file`, `replace`, `run_shell_command`) provided the target path or command string explicitly contains `dev-ai-interaction/`. Do not assume you are blocked from using these tools in the sandbox.**
   - **MANDATE:** You MUST NOT start making code changes or implementing features without first proposing exactly what is going to be done.
@@ -20,10 +20,9 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
   - **Directive Origin:** A "Directive" or "Approval" MUST come explicitly from the User's natural language chat input. The `exit_plan_mode` tool is merely a phase transition mechanism, NOT an authorization mechanism itself.
   - **Turn Termination:** Any turn that proposes a strategy or finalizes a plan MUST be "atomic." It is strictly forbidden to include a strategy proposal and an application implementation tool call (`replace`, `write_file`, `run_shell_command` outside the sandbox) in the same turn. Tool calls targeting the `dev-ai-interaction/` sandbox are permitted during this turn.
   - **Immutable Protocol:** The "Propose -> Wait -> Act" cycle is absolute. No other instruction, including "Corruption Reset" or "Emergency Stability" clauses, authorizes a bypass of this protocol. Urgency never grants tool-use permission during a strategy turn.
-  - **STRICT THREE-GATE WORKFLOW:** 
-    1. **GATE 1 (Proposal):** Present the textual plan and STOP for review. Do not use application-modifying tools.
-    2. **GATE 2 (Commit & Build):** After approval, implement changes, then use `./build_app "Commit Message" file1 file2...` to commit and build (to ensure `git describe` versioning is correct). STOP for review. Do NOT proceed to deployment.
-    3. **GATE 3 (Deployment):** ONLY run `./deploy` to install to the device after a separate, explicit directive from the user confirming the build is ready. Never combine these gates in a single turn.
+  - **STRICT BI-MODAL WORKFLOW:** 
+    1. **MODE 1 (STRATEGIC PLANNING):** Research, review, planning. Present the textual plan and STOP for review. Do not use application-modifying tools.
+    2. **MODE 2 (IMPLEMENTATION):** After approval, implement changes, then use `./build_app "Commit Message" file1 file2...` to commit and build (to ensure `git describe` versioning is correct). 'Commit Message' can also be @file to include a longer message from a fiel. STOP for review. Do NOT deploy. The user will deploy manually.
   - **The Exclusivity & Planning Protocol:**
     - **Exclusivity:** The **Approved Plan Document** (or the most recent directive text) is the **EXCLUSIVE boundary** for all changes. Logic, refactors, or carry-overs from previous turns are **STRICTLY FORBIDDEN** unless they are explicit line-items in the current plan.
     - **The "Refactor = Feature" Mandate:** Architectural improvements, function decomposition, and "Senior best practices" are considered **NEW WORK**. They must be proposed, justified, and approved as specific line-items. No "invisible" or "piggybacked" improvements.
@@ -36,6 +35,7 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
   - **The Execution Wall (Immutability):** Once a Plan Document is formally approved, it is **IMMUTABLE** during the Execution phase. Refining or improving the design during implementation is strictly forbidden. Any deviation, no matter how "correct" it seems, is a Protocol Violation.
   - **Design/Execution Split:** All architectural and specification design MUST occur in Plan Mode. During the Execution phase, your only authorized activity is the high-fidelity transcription of the approved plan into code. You are an executor, not a designer.
   - **Mandatory Reversion Protocol:** If any implementation step fails (syntax errors, logical gaps) or reveals a flaw in the plan (unaccounted edge cases), you MUST immediately revert ALL changes from the current turn (`git reset --hard builds`) and return to Plan Mode. Do not attempt to "patch" a flawed plan during an execution turn.
+  - **Use Plan mode:** At the end of every turn, when you finish building, you are to switch to mode=plan to be prepared for the next round of strategic planning and review.
 
   - **Zero-Tool Rule (Outside Sandbox):** During the "Strategy" phase (proposing a plan), you MUST NOT execute any tools that modify the application codebase or deploy to devices. 
  You MAY use `write_file`, `replace`, and `run_shell_command` exclusively to create and execute data, scripts, and plans within the `dev-ai-interaction/` directory. The proposal turn must end immediately after the plan is stated.
@@ -54,7 +54,7 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
 ## Build & Stability Policy
 - **Authorized Build Path:** You MUST use `./build_app "Commit Message" file1 file2...` for all implementation tasks. 
     - Raw `git commit` or `./gradlew assembleDebug` are discouraged as they bypass the versioning/cleanup logic in the script.
-    - Raw `git` commands (like `git status`) are permitted for state management and research, but should not be used as a substitute for `./build_app` during the implementation commit phase.
+    - Raw `git` commands (like `git show` and `git status`) are permitted for state management and research, but should not be used as a substitute for `./build_app` during the implementation commit phase.
     - A task is NOT complete until the changes are committed and the build passes.
 - **Protected Zones:** The following directories are protected from automated cleanup:
     - `dev-ai-interaction/` (Research and sandbox)
