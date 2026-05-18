@@ -146,22 +146,6 @@ class BufferSet(private var width: Int, private var height: Int) {
             }
         }
 
-        suspend fun annotate(annotations: List<SnapshotAnnotation>, targetW: Int, targetH: Int, sourceW: Int, sourceH: Int) {
-            val flat = IntArray(annotations.size * 7)
-            annotations.forEachIndexed { i, ann ->
-                val scaleX = targetW.toFloat() / sourceW.toFloat()
-                val scaleY = targetH.toFloat() / sourceH.toFloat()
-                flat[i * 7] = toEvenInt(ann.x1 * scaleX)
-                flat[i * 7 + 1] = toEvenInt(ann.y1 * scaleY)
-                flat[i * 7 + 2] = toEvenInt(ann.x2 * scaleX)
-                flat[i * 7 + 3] = toEvenInt(ann.y2 * scaleY)
-                flat[i * 7 + 4] = if (ann.shape == Shape.RECTANGLE) 1 else 0
-                flat[i * 7 + 5] = ann.color
-                flat[i * 7 + 6] = toEvenInt(ann.strokeWidth.toFloat()).coerceAtLeast(2)
-            }
-            nativeAnnotate(nativeHandle, flat)
-        }
-
         val yMat: Mat get() = proxyY ?: throw IllegalStateException("Instance not initialized")
         val uvMat: Mat get() = proxyUV ?: throw IllegalStateException("Instance not initialized")
         val yuv: YuvHandle get() {
@@ -282,15 +266,10 @@ class BufferSet(private var width: Int, private var height: Int) {
     private external fun nativeRelease(handle: Long, matObj: Mat?)
     private external fun nativeClear(handle: Long)
     private external fun nativeResize(handle: Long, w: Int, h: Int): Boolean
-    private external fun nativeAnnotate(handle: Long, annotations: IntArray)
 
-    suspend fun compressYuvToBase64(handle: YuvHandle, quality: Int): String = mutex.withLock {
-        nativeCompressYuvToBase64(handle.planes[0].buffer, handle.planes[1].buffer, handle.planes[2].buffer, handle.width, handle.height, handle.planes[0].rowStride, quality)
-    }
     private external fun nativeGetMatPtr(handle: Long): Long
     private external fun nativeGetUVMatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
-    private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
 
     companion object {
         init {

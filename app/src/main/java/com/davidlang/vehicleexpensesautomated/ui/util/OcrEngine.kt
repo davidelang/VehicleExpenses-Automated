@@ -272,11 +272,11 @@ object OcrUtils {
         snapRoiUV.release()
 
         // Step 3: Native Annotation (Explicitly target the scratch instance)
-        workspace.annotate(annotations, finalW, finalH, roiW, roiH)
+        val handle = workspace.getRoiHandle(snapRect)
+        NativeImageUtils.drawYuvAnnotations(handle, annotations)
 
         // Step 4: Direct Encoding (Native Split-Plane)
-        val handle = workspace.getRoiHandle(snapRect)
-        val b64 = rowBuffer.compressYuvToBase64(handle, 80)
+        val b64 = NativeImageUtils.compressYuvToBase64(handle, 80)
         
         b64
     }
