@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.withLock
  * Holds two Instances (Primary and Scratch) that can be atomically flipped.
  * All views (Mat, ByteBuffer) share the same underlying memory.
  */
-class BufferSetLegacyLegacy(private var width: Int, private var height: Int) {
+class BufferSetLegacy(private var width: Int, private var height: Int) {
     private val mutex = Mutex()
     private var primaryIdx = 0
     private val instances = arrayOf(Instance(), Instance())
