@@ -159,7 +159,7 @@ class MlKitEngine : OcrEngine {
                 com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
             )
             is BufferSet.Slice -> com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                input.nv21Buffer,
+                input.nv21,
                 input.width,
                 input.height,
                 0,
