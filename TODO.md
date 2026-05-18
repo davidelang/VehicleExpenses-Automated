@@ -1,6 +1,7 @@
 # Vehicle Expenses Automated — TODO Updated
 
 ## Infrastructure & Protocol
+- [ ] **ACTIVE:** Phase 25.0 - Short-Run Rotation Refactor (Recovery).
 - [ ] **ACTIVE:** Phase 23 - Foundational YUV Handle Infrastructure (Standard Multi-Plane Descriptor).
 - [x] **DONE:** Phase 11.5 - Protocol Hardening (Execution Rigor Mandates).
 - [x] **DONE:** Phase 9 - Stateless Native Snapshot Utility.

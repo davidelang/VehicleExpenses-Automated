@@ -311,7 +311,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 // Native: Independent High-Quality Rotation (Cubic) using standard angle
                 val tRotMono0 = System.currentTimeMillis()
-                NativePaddleEngine.fullBufferSet.rotate(-tilt)
+                val srcMat = NativePaddleEngine.fullBufferSet.primary.yMat
+                val dstMat = NativePaddleEngine.fullBufferSet.scratch.yMat
+                val center = org.opencv.core.Point(srcMat.cols() / 2.0, srcMat.rows() / 2.0)
+                val rotMat = org.opencv.imgproc.Imgproc.getRotationMatrix2D(center, (-tilt).toDouble(), 1.0)
+                org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, srcMat.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+                NativePaddleEngine.fullBufferSet.flip()
                 val tRotateMono = System.currentTimeMillis() - tRotMono0
 
                 val tDiscoveryStart = System.currentTimeMillis()

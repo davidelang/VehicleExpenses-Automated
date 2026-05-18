@@ -299,33 +299,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetBuffer(
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRotate(
-    JNIEnv* env, jobject thiz, jlong srcPtr, jlong dstPtr, jfloat angle) {
-    
-    auto* srcHandle = reinterpret_cast<BufferSetHandle*>(srcPtr);
-    auto* dstHandle = reinterpret_cast<BufferSetHandle*>(dstPtr);
-    
-    {
-        std::lock_guard<std::mutex> lock(registryMutex);
-        if (validHandles.find(srcHandle) == validHandles.end() || 
-            validHandles.find(dstHandle) == validHandles.end()) {
-            LOGE("nativeRotate: Invalid handle pointer(s)");
-            return;
-        }
-    }
-
-    if (srcHandle != nullptr && dstHandle != nullptr) {
-        cv::Point2f center(srcHandle->width / 2.0f, srcHandle->height / 2.0f);
-        cv::Mat rotMat = cv::getRotationMatrix2D(center, (double)angle, 1.0);
-        
-        cv::warpAffine(*(srcHandle->yMat), *(dstHandle->yMat), rotMat, srcHandle->yMat->size(), 
-                       cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(0));
-        
-        LOGI("nativeRotate: Successfully rotated %.2f degrees (Cubic)", angle);
-    }
-}
-
-JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeAnnotate(
     JNIEnv* env, jobject thiz, jlong handlePtr, jintArray annotationsArr) {
     
