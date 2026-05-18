@@ -320,9 +320,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         } catch (t: Throwable) { Log.e("PaddleDetect", "Detection failed", t); return null }
     }
 
-    fun detectMono(instance: BufferSetLegacy.Instance): DetectionResult? {
-        val w = instance.yMat.cols()
-        val h = instance.yMat.rows()
+    fun detectMono(input: Any): DetectionResult? {
+        val (mat, buffer) = when (input) {
+            is BufferSetLegacy.Instance -> input.yMat to input.nv21
+            is BufferSet.Slice -> input.mat to input.raw
+            else -> throw IllegalArgumentException("Unsupported input type for detectMono")
+        }
+        val w = mat.cols()
+        val h = mat.rows()
         val area = w * h
 
         val predictor = if (w >= 2048) detectorLarge else detectorSmall
@@ -343,7 +348,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         floatData.fill(0.0f)
-        val buffer = instance.nv21
         buffer.rewind()
         
         val mean = 0.485f; val std = 0.229f
@@ -432,18 +436,24 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null)
     }
 
-    suspend fun runConstrainedStaticMono(instance: BufferSetLegacy.Instance, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
+    suspend fun runConstrainedStaticMono(input: Any, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (recognizer == null || !useMono) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
 
-        val w = instance.yMat.cols(); val h = instance.yMat.rows(); val area = w * h
+        val (w, h, buffer) = when (input) {
+            is BufferSetLegacy.Instance -> Triple(input.yMat.cols(), input.yMat.rows(), input.nv21)
+            is BufferSet.Slice -> Triple(input.width, input.height, input.raw)
+            else -> throw IllegalArgumentException("Unsupported input type for runConstrainedStaticMono")
+        }
+
+        val area = w * h
         if (area > 320 * 48) {
              Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated mono rec tensor capacity.")
              return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
 
         bufferRecMono.fill(0.0f)
-        val buffer = instance.nv21; buffer.rewind()
+        buffer.rewind()
         val mean = 0.5f; val std = 0.5f
         for (i in 0 until area) {
             bufferRecMono[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
