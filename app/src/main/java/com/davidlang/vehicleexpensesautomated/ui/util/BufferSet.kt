@@ -102,6 +102,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     }
 
     fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
+    fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
 
     fun release() {
         managedCrops.values.forEach { it.disarm() }
@@ -222,9 +223,11 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
+            Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
             return registerCrop(ManagedCrop(false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat()), id)
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
+            Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
             return registerCrop(ManagedCrop(false, absX + (x * absW), absY + (y * absH), w * absW, h * absH), id)
         }
         override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }

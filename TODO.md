@@ -4,7 +4,8 @@
 - [x] **DONE:** Phase 25.0 - Short-Run Rotation Refactor (Recovery).
 - [x] **DONE:** Phase 25.1 - Extract Annotate & Compress Utilities.
 - [x] **DONE:** Phase 25.2 - BufferSet Incremental Migration (Step 1: Legacy Quarantine).
-- [ ] **ACTIVE:** Phase 25.2 - BufferSet Incremental Migration (Step 2: New Architecture Implementation).
+- [x] **DONE:** Phase 25.2 - BufferSet Incremental Migration (Step 2: New Architecture Implementation).
+- [ ] **ACTIVE:** Phase 25.2 - BufferSet Incremental Migration (Step 3: Spec Hardening).
 - [ ] **ACTIVE:** Phase 23 - Foundational YUV Handle Infrastructure (Standard Multi-Plane Descriptor).
 - [x] **DONE:** Phase 11.5 - Protocol Hardening (Execution Rigor Mandates).
 - [x] **DONE:** Phase 9 - Stateless Native Snapshot Utility.
