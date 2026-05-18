@@ -64,7 +64,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         override val mat: Mat get() = _mat ?: throw IllegalStateException("Not initialized")
         override val uvMat: Mat get() = _uvMat ?: throw IllegalStateException("Not initialized")
         override val nv21: Mat get() = _nv21 ?: throw IllegalStateException("Not initialized")
-        override val raw: ByteBuffer get() = fullBuffer.duplicate().position(0).limit(width * height).slice()
+        override val raw: ByteBuffer get() = (fullBuffer.duplicate().position(0).limit(width * height) as ByteBuffer).slice()
         override val width: Int get() = this@BufferSet.width
         override val height: Int get() = this@BufferSet.height
 
@@ -75,9 +75,9 @@ class BufferSet(private var width: Int, private var height: Int) {
             return YuvHandle(
                 width = w, height = h,
                 planes = arrayOf(
-                    YuvHandle.Plane(buf.duplicate().position(0).slice(), w, 1),
-                    YuvHandle.Plane(buf.duplicate().position(w * h + 1).slice(), w, 2),
-                    YuvHandle.Plane(buf.duplicate().position(w * h).slice(), w, 2)
+                    YuvHandle.Plane((buf.duplicate().position(0) as ByteBuffer).slice(), w, 1),
+                    YuvHandle.Plane((buf.duplicate().position(w * h + 1) as ByteBuffer).slice(), w, 2),
+                    YuvHandle.Plane((buf.duplicate().position(w * h) as ByteBuffer).slice(), w, 2)
                 )
             )
         }
@@ -130,7 +130,7 @@ class BufferSet(private var width: Int, private var height: Int) {
             val stride = this@BufferSet.width
             val offset = y * stride + x
             // Note: This ByteBuffer is non-contiguous if width < stride, but provides correct start
-            return parentBuf.duplicate().position(offset).slice()
+            return (parentBuf.duplicate().position(offset) as ByteBuffer).slice()
         }
 
         override val yuv: YuvHandle get() {
@@ -142,9 +142,9 @@ class BufferSet(private var width: Int, private var height: Int) {
             return YuvHandle(
                 width = width, height = height,
                 planes = arrayOf(
-                    YuvHandle.Plane(fullBuf.duplicate().position(yOffset).slice(), stride, 1),
-                    YuvHandle.Plane(fullBuf.duplicate().position(uvOffset + 1).slice(), stride, 2),
-                    YuvHandle.Plane(fullBuf.duplicate().position(uvOffset).slice(), stride, 2)
+                    YuvHandle.Plane((fullBuf.duplicate().position(yOffset) as ByteBuffer).slice(), stride, 1),
+                    YuvHandle.Plane((fullBuf.duplicate().position(uvOffset + 1) as ByteBuffer).slice(), stride, 2),
+                    YuvHandle.Plane((fullBuf.duplicate().position(uvOffset) as ByteBuffer).slice(), stride, 2)
                 )
             )
         }
