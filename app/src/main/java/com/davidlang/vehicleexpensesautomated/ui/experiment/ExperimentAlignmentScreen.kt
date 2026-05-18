@@ -556,8 +556,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val safeB = redFloor.bottom.coerceIn(safeT + 1, maxH)
                                         
                                         val sampleId = bufferSet.createCrop(safeL, safeT, safeR - safeL, safeB - safeT)
-                                        val hillBrightness = org.opencv.core.Core.mean(bufferSet.getCropMat(sampleId)).`val`[0]
-                                        bufferSet.releaseCrop(sampleId)
+                                        val hillBrightness = org.opencv.core.Core.mean(bufferSet.c[sampleId].mat).`val`[0]
+                                        bufferSet.c[sampleId].release()
                                         
                                         val valleyThreshold = hillBrightness * 0.40 
                                         var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
