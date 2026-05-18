@@ -35,6 +35,8 @@ struct BufferSetHandle {
 static std::set<BufferSetHandle*> validHandles;
 static std::mutex registryMutex;
 
+extern "C" {
+
 JNIEXPORT jlong JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
     JNIEnv* env, jobject thiz, jint width, jint height) {
