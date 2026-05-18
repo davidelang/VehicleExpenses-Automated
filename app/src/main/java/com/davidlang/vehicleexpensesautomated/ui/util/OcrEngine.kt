@@ -151,7 +151,7 @@ class MlKitEngine : OcrEngine {
         
         val image = when (input) {
             is Bitmap -> com.google.mlkit.vision.common.InputImage.fromBitmap(input, 0)
-            is BufferSet.Instance -> com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+            is BufferSetLegacy.Instance -> com.google.mlkit.vision.common.InputImage.fromByteBuffer(
                 input.nv21,
                 input.yMat.cols(),
                 input.yMat.rows(),
@@ -186,20 +186,20 @@ object OcrUtils {
         targetH: Int,
         annotations: List<SnapshotAnnotation>
     ): String = withContext(Dispatchers.IO) {
-        val rowBuffer = NativePaddleEngine.fullBufferSet
+        val rowBuffer = NativePaddleEngine.fullBufferSetLegacy
         val workspace = rowBuffer.scratch
         
         // Step 1: Geometry Normalization
         val srcW = when (source) {
             is Bitmap -> source.width
             is org.opencv.core.Mat -> source.cols()
-            is BufferSet.Instance -> source.yMat.cols()
+            is BufferSetLegacy.Instance -> source.yMat.cols()
             else -> 0
         }
         val srcH = when (source) {
             is Bitmap -> source.height
             is org.opencv.core.Mat -> source.rows()
-            is BufferSet.Instance -> source.yMat.rows()
+            is BufferSetLegacy.Instance -> source.yMat.rows()
             else -> 0
         }
         
@@ -254,7 +254,7 @@ object OcrUtils {
                 Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 subY.release()
             }
-            is BufferSet.Instance -> {
+            is BufferSetLegacy.Instance -> {
                 // Luma Resize
                 val subY = source.yMat.submat(cvRoi)
                 Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)

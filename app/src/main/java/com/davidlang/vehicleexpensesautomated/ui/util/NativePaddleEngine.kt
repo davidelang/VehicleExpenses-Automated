@@ -54,7 +54,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var isNativeLibLoaded = false
 
         // Phase 115: Safe Rigid Backing Fields (Eliminates background JNI locks)
-        private var _fullBufferSet: BufferSet? = null
+        private var _fullBufferSetLegacy: BufferSetLegacy? = null
         private var _bufferLarge: FloatArray? = null
         private var _bufferLargeMono: FloatArray? = null
         private var _sharedBmp2048: Bitmap? = null
@@ -80,7 +80,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedMonoBytes: ByteArray? = null
 
         // Public Non-Null Accessors (API Stability)
-        val fullBufferSet: BufferSet get() = _fullBufferSet!!
+        val fullBufferSetLegacy: BufferSetLegacy get() = _fullBufferSetLegacy!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         private val bufferLargeMono: FloatArray get() = _bufferLargeMono!!
         val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
@@ -124,7 +124,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             if (isAvailableGlobally) return
             Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
 
-            _fullBufferSet = BufferSet(4000, 3072)
+            _fullBufferSetLegacy = BufferSetLegacy(4000, 3072)
 
             _bufferLarge = FloatArray(3 * 2048 * 2048); _bufferLargeMono = FloatArray(1 * 2048 * 2048)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
@@ -186,7 +186,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
          * Implementation of high-quality Area-Averaging resize using OpenCV.
          * Bypasses background-thread Canvas/Paint JNI locks.
          */
-        fun performHighQualityResize(sourceBmp: Bitmap, targetInstance: BufferSet.Instance) {
+        fun performHighQualityResize(sourceBmp: Bitmap, targetInstance: BufferSetLegacy.Instance) {
             val buffer = java.nio.ByteBuffer.allocateDirect(sourceBmp.byteCount)
             sourceBmp.copyPixelsToBuffer(buffer)
             buffer.rewind()
@@ -320,7 +320,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         } catch (t: Throwable) { Log.e("PaddleDetect", "Detection failed", t); return null }
     }
 
-    fun detectMono(instance: BufferSet.Instance): DetectionResult? {
+    fun detectMono(instance: BufferSetLegacy.Instance): DetectionResult? {
         val w = instance.yMat.cols()
         val h = instance.yMat.rows()
         val area = w * h
@@ -399,9 +399,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     }
                 }
             }
-            is BufferSet.Instance -> {
+            is BufferSetLegacy.Instance -> {
                 w = input.yMat.cols(); h = input.yMat.rows()
-                Log.d("OCR_DEBUG", "START RECOGNITION (BufferSet.Instance): engine=$name, dims=${w}x${h}")
+                Log.d("OCR_DEBUG", "START RECOGNITION (BufferSetLegacy.Instance): engine=$name, dims=${w}x${h}")
                 val buffer = input.nv21; buffer.rewind()
                 val mean = 0.5f; val std = 0.5f
                 for (i in 0 until (w * h)) {
@@ -432,7 +432,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null)
     }
 
-    suspend fun runConstrainedStaticMono(instance: BufferSet.Instance, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
+    suspend fun runConstrainedStaticMono(instance: BufferSetLegacy.Instance, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (recognizer == null || !useMono) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
 
