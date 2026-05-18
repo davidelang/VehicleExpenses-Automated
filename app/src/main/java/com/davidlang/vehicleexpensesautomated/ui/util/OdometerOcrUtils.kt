@@ -127,7 +127,7 @@ object OdometerOcrUtils {
         val pTargetSize = 2048
         val (srcW, srcH) = when (input) {
             is Bitmap -> input.width to input.height
-            is BufferSet.Instance -> input.yMat.cols() to input.yMat.rows()
+            is BufferSetLegacy.Instance -> input.yMat.cols() to input.yMat.rows()
             else -> throw IllegalArgumentException("Unsupported input type for deskew: ${input.javaClass.name}")
         }
         
@@ -144,7 +144,7 @@ object OdometerOcrUtils {
                 argbMat.release()
                 g
             }
-            is BufferSet.Instance -> input.yMat
+            is BufferSetLegacy.Instance -> input.yMat
             else -> throw IllegalStateException()
         }
 

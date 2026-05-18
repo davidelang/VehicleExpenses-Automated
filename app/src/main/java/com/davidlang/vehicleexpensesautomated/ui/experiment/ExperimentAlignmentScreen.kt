@@ -202,8 +202,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         ReferenceCache(v, refBase64, curated, bmp, bmp.width, bmp.height)
     }
     
-    // Phase 115: Vehicle-Specific BufferSet Pools (Zero-Allocation Anchor)
-    val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
+    // Phase 115: Vehicle-Specific BufferSetLegacy Pools (Zero-Allocation Anchor)
+    val vehicleBufferSetLegacys = mutableMapOf<Int, BufferSetLegacy>()
     val vehicleArgbCrops = mutableMapOf<Int, Bitmap>()
     val vehicleArgbScratches = mutableMapOf<Int, Bitmap>()
     withContext(Dispatchers.Main) {
@@ -216,12 +216,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
                 
                 if (targetW > 0 && targetH > 0) {
-                    vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
+                    vehicleBufferSetLegacys[ref.vehicle.id] = BufferSetLegacy(targetW, targetH)
                     vehicleArgbCrops[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
                     vehicleArgbScratches[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
 
                     // Register long-term odometer ROI on the full-res dashboard set
-                    NativePaddleEngine.fullBufferSet.createCropNormalizedWithId(
+                    NativePaddleEngine.fullBufferSetLegacy.createCropNormalizedWithId(
                         ref.vehicle.id,
                         ref.vehicle.odometerCropLeft ?: 0f,
                         ref.vehicle.odometerCropTop ?: 0f,
@@ -240,8 +240,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     val footer = "</table></body></html>"
     
     // Phase 115: Global Experiment-Level Buffers (Zero-Allocation Anchor)
-    val experimentRecSet320x48 = BufferSet(320, 48)
-    val experimentDetSet512x128 = BufferSet(512, 128)
+    val experimentRecSet320x48 = BufferSetLegacy(320, 48)
+    val experimentDetSet512x128 = BufferSetLegacy(512, 128)
 
     // Pre-populate with iterative engines to fix HTML header alignment
     val harnessEngineNames = mutableListOf(
@@ -267,7 +267,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val imgH = rawBitmap.height
 
             // Phase 115: Safe Dynamic Resizing for Dashboard set
-            NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
+            NativePaddleEngine.fullBufferSetLegacy.resize(imgW, imgH)
 
             // Phase 115: Per-Row Master Buffers (Native Resolution)
             val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
@@ -285,12 +285,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
             
             // Phase 115: Synchronize the unaligned raw masterBmp into the global Dashboard set before deskew/discovery
-            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.primary.yMat)
+            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSetLegacy.primary.yMat)
             
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp)
-                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.fullBufferSet.primary)
+                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.fullBufferSetLegacy.primary)
 
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
@@ -311,12 +311,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 // Native: Independent High-Quality Rotation (Cubic) using standard angle
                 val tRotMono0 = System.currentTimeMillis()
-                val srcMat = NativePaddleEngine.fullBufferSet.primary.yMat
-                val dstMat = NativePaddleEngine.fullBufferSet.scratch.yMat
+                val srcMat = NativePaddleEngine.fullBufferSetLegacy.primary.yMat
+                val dstMat = NativePaddleEngine.fullBufferSetLegacy.scratch.yMat
                 val center = org.opencv.core.Point(srcMat.cols() / 2.0, srcMat.rows() / 2.0)
                 val rotMat = org.opencv.imgproc.Imgproc.getRotationMatrix2D(center, (-tilt).toDouble(), 1.0)
                 org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, srcMat.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-                NativePaddleEngine.fullBufferSet.flip()
+                NativePaddleEngine.fullBufferSetLegacy.flip()
                 val tRotateMono = System.currentTimeMillis() - tRotMono0
 
                 val tDiscoveryStart = System.currentTimeMillis()
@@ -343,7 +343,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     
                     // Phase 115: Actual Native Discovery Pass
                     val tDiscMono0 = System.currentTimeMillis()
-                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSet.primary, context)
+                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSetLegacy.primary, context)
                     queryOcrDiscoveryMono = ocrMono
                     tDiscoveryMonoTotal = System.currentTimeMillis() - tDiscMono0
 
@@ -356,9 +356,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH, scratchBmp)
                     val elapsedAlign = System.currentTimeMillis() - t0
 
-                    // 1.2 Native Alignment (In-place on fullBufferSet)
+                    // 1.2 Native Alignment (In-place on fullBufferSetLegacy)
                     val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
-                        NativePaddleEngine.fullBufferSet, 
+                        NativePaddleEngine.fullBufferSetLegacy, 
                         winnerRef.curatedLandmarks, 
                         queryLandmarksMonoPrimary, 
                         winnerRef.vehicle, 
@@ -423,7 +423,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                             suspend fun runPaddleValleyMonoIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
                                 val tHarnessStart = System.currentTimeMillis()
-                                val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
+                                val odoBuffer = vehicleBufferSetLegacys[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
                                 
                                 // Discovery & Recognition Pools (Zero-Allocation)
@@ -461,7 +461,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                             com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
                                         }
-                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSet -> {
+                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy -> {
                                             odoBuffer.primary.clear()
                                             val bridgeW = odoBuffer.primary.yMat.cols()
                                             val bridgeH = odoBuffer.primary.yMat.rows()
@@ -545,7 +545,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         return if (count > 0) sum / count else 0.0
                                     }
                                     
-                                    fun expandByValleyStop(redFloor: android.graphics.Rect, bufferSet: com.davidlang.vehicleexpensesautomated.ui.util.BufferSet): android.graphics.Rect {
+                                    fun expandByValleyStop(redFloor: android.graphics.Rect, bufferSet: com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy): android.graphics.Rect {
                                         val gray = bufferSet.primary.yMat
                                         val maxH = gray.rows(); val maxW = gray.cols()
                                         
@@ -717,7 +717,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
                                 val tHarnessStart = System.currentTimeMillis()
                                 val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
-                                val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
+                                val odoBuffer = vehicleBufferSetLegacys[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
                                 
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
@@ -765,7 +765,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             // Use new zero-buffer JNI fast sync to populate the iterative bridge
                                             com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
                                         }
-                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSet -> {
+                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy -> {
                                             odoBuffer.primary.clear()
                                             val bridgeW = odoBuffer.primary.yMat.cols()
                                             val bridgeH = odoBuffer.primary.yMat.rows()
@@ -900,9 +900,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                             // --- Sequential Execution ---
                             runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runMLKitIterative("ML Kit Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runMLKitIterative("ML Kit Mono Native", NativePaddleEngine.fullBufferSetLegacy, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
                             runPaddleValleyMonoIterative("Paddle V3 Valley Mono", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Native", NativePaddleEngine.fullBufferSetLegacy, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
 
                         }
                         
@@ -970,7 +970,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 115: Release native handles for vehicle pools
     experimentRecSet320x48.release()
     experimentDetSet512x128.release()
-    vehicleBufferSets.values.forEach { it.release() }
+    vehicleBufferSetLegacys.values.forEach { it.release() }
     vehicleArgbCrops.values.forEach { it.recycle() }
     vehicleArgbScratches.values.forEach { it.recycle() }
     vehicleArgbCrops.clear()

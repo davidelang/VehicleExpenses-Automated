@@ -7,7 +7,7 @@ import java.nio.ByteBuffer
 
 /**
  * Standalone high-performance image synchronization and processing utilities.
- * Decoupled from BufferSet/MemoryBridge life-cycles.
+ * Decoupled from BufferSetLegacy/MemoryBridge life-cycles.
  */
 object NativeImageUtils {
     init {
@@ -40,7 +40,7 @@ object NativeImageUtils {
      * High-performance YUV annotation utility using standard OpenCV drawing.
      * Operates directly on the Luma (8UC1) and interleaved Chroma (8UC2) planes.
      */
-    fun drawYuvAnnotations(handle: BufferSet.YuvHandle, annotations: List<SnapshotAnnotation>) {
+    fun drawYuvAnnotations(handle: BufferSetLegacy.YuvHandle, annotations: List<SnapshotAnnotation>) {
         if (annotations.isEmpty()) return
 
         // Create temporary Mat wrappers around the raw buffers
@@ -85,7 +85,7 @@ object NativeImageUtils {
     /**
      * Encodes a YuvHandle directly to a Base64 JPEG string using high-performance JNI merge.
      */
-    fun compressYuvToBase64(handle: BufferSet.YuvHandle, quality: Int): String {
+    fun compressYuvToBase64(handle: BufferSetLegacy.YuvHandle, quality: Int): String {
         return nativeCompressYuvToBase64(
             handle.planes[0].buffer,
             handle.planes[1].buffer,

@@ -509,11 +509,11 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Phase 115: Native Alignment Flow for BufferSet.
+     * Phase 115: Native Alignment Flow for BufferSetLegacy.
      * Geometrically equivalent to anchorAlign but executes natively via OpenCV warpAffine.
      */
     suspend fun anchorAlignNative(
-        bufferSet: BufferSet,
+        bufferSet: BufferSetLegacy,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
         vehicle: Vehicle,

@@ -6,11 +6,11 @@
 #include <mutex>
 #include <cstring>
 
-#define LOG_TAG "BufferSet"
+#define LOG_TAG "BufferSetLegacy"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-struct BufferSetHandle {
+struct BufferSetLegacyHandle {
     uint8_t* data;
     cv::Mat* yMat;
     cv::Mat* uvMat;
@@ -19,26 +19,26 @@ struct BufferSetHandle {
     size_t actualByteCount;
     jobject globalBuffer;
 
-    BufferSetHandle(uint8_t* p, size_t w, size_t h, size_t total, jobject buf) 
+    BufferSetLegacyHandle(uint8_t* p, size_t w, size_t h, size_t total, jobject buf) 
         : data(p), width(w), height(h), actualByteCount(total), globalBuffer(buf) {
         yMat = new cv::Mat((int)h, (int)w, CV_8UC1, p, w);
         uvMat = new cv::Mat((int)h / 2, (int)w / 2, CV_8UC2, p + (w * h), w);
     }
 
-    ~BufferSetHandle() {
+    ~BufferSetLegacyHandle() {
         delete[] data;
         delete yMat;
         delete uvMat;
     }
 };
 
-static std::set<BufferSetHandle*> validHandles;
+static std::set<BufferSetLegacyHandle*> validHandles;
 static std::mutex registryMutex;
 
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeSetup(
     JNIEnv* env, jobject thiz, jint width, jint height) {
     
     size_t frameSize = (size_t)width * (size_t)height;
@@ -61,7 +61,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
     }
     jobject globalBuffer = env->NewGlobalRef(localBuffer);
 
-    auto* handle = new BufferSetHandle(data, (size_t)width, (size_t)height, totalSize, globalBuffer);
+    auto* handle = new BufferSetLegacyHandle(data, (size_t)width, (size_t)height, totalSize, globalBuffer);
     
     {
         std::lock_guard<std::mutex> lock(registryMutex);
@@ -73,10 +73,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeRelease(
     JNIEnv* env, jobject thiz, jlong handlePtr, jobject matObj) {
     
-    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    auto* handle = reinterpret_cast<BufferSetLegacyHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         if (validHandles.find(handle) == validHandles.end()) {
@@ -96,7 +96,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeDisarmMat(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeDisarmMat(
     JNIEnv* env, jclass clazz, jobject matObj) {
     
     if (matObj == nullptr) return;
@@ -110,10 +110,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeDisarmMat(
 }
 
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeClear(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeClear(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
     
-    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    auto* handle = reinterpret_cast<BufferSetLegacyHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         if (validHandles.find(handle) == validHandles.end()) {
@@ -131,10 +131,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeClear(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeResize(
     JNIEnv* env, jobject thiz, jlong handlePtr, jint width, jint height) {
     
-    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    auto* handle = reinterpret_cast<BufferSetLegacyHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         if (validHandles.find(handle) == validHandles.end()) {
@@ -156,7 +156,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
     std::memset(newData, 0, frameSize);
     std::memset(newData + frameSize, 128, totalSize - frameSize);
 
-    // Update BufferSetHandle
+    // Update BufferSetLegacyHandle
     delete[] handle->data;
     handle->data = newData;
     handle->width = width;
@@ -181,10 +181,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetMatPtr(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeGetMatPtr(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
     
-    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    auto* handle = reinterpret_cast<BufferSetLegacyHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         if (validHandles.find(handle) == validHandles.end()) return 0;
@@ -193,10 +193,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetMatPtr(
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetUVMatPtr(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeGetUVMatPtr(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
     
-    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    auto* handle = reinterpret_cast<BufferSetLegacyHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         if (validHandles.find(handle) == validHandles.end()) return 0;
@@ -205,10 +205,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetUVMatPtr(
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetBuffer(
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSetLegacy_nativeGetBuffer(
     JNIEnv* env, jobject thiz, jlong handlePtr) {
     
-    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    auto* handle = reinterpret_cast<BufferSetLegacyHandle*>(handlePtr);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         if (validHandles.find(handle) == validHandles.end()) return nullptr;
