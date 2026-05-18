@@ -1,66 +1,72 @@
-# BufferSet Architectural Specification
+# BufferSet Architectural Specification (Phase 25)
 
 ## 1. Overview
-`BufferSet` is the single authority for managing high-performance native image buffers. It is designed to solve memory fragmentation and race conditions by replacing loose, independently allocated native objects (Mat, NV21, YUV handles) with a single, atomic container. 
+`BufferSet` is the single authority for managing high-performance native image buffers. It is designed to solve memory fragmentation and race conditions by replacing loose, independently allocated native objects with a single, atomic container. 
 
-The core philosophy is **zero-allocation iterative processing**. Instead of allocating buffers for every image, a `BufferSet` holds two internal "Instances" (Primary and Scratch). Processing routines can read from Primary and write to Scratch, then call `flip()` to atomically swap roles.
+The core philosophy is **zero-allocation iterative processing**. Processing routines read from the Primary instance and write to the Scratch instance, then call `flip()` to atomically swap roles.
 
-Crucially, **all buffer types (YUV, NV21, Mat) share the same underlying RAM**. A `BufferSet` allows you to access this memory as a raw YUV stream, an NV21 byte array, or an OpenCV Grayscale Mat simultaneously without any data movement or duplication. This unified memory model ensures that conversion between these types is a **zero-copy operation**—simply interpreting the same memory address through a different handle—while keeping the primary/scratch memory stable.
+## 2. Terminology
+- **Manager (`BufferSet`)**: The root object that owns physical RAM allocations.
+- **Instance**: The full-size physical memory block (Primary or Scratch). Contiguous.
+- **ROI (Region of Interest)**: A specific sub-section of an image buffer, also known as a **Crop**. ROIs are non-contiguous views with a stride.
+- **Slice**: The unified interface representing either an Instance or an ROI. Any function taking a `Slice` can be passed the full buffer or a specific crop.
 
-## 2. Interface Specification (User Manual)
-The `BufferSet` object exposes handles to access the underlying Instances.
+## 3. Syntax Structure
 
-### Handle Access Pattern
-Each hunk (primary/scratch/crop) provides direct access to its views via properties:
-- `handle.yMat`: Returns `org.opencv.core.Mat` (Y-plane view, `8UC1`).
-- `handle.uvMat`: Returns `org.opencv.core.Mat` (Interleaved UV-plane view, `8UC2`).
-- `handle.yuv`: Returns a unified YUV handle encapsulating both `yMat` and `uvMat`.
-- `handle.nv21`: Returns `java.nio.ByteBuffer` (Full NV21 view).
+### Level 1: Manager Properties (`foo`)
+| Syntax | Type | Description |
+| :--- | :--- | :--- |
+| `foo.p` / `foo.primary` | `Slice` | Current logical Primary Instance. |
+| `foo.s` / `foo.scratch` / `foo.secondary` | `Slice` | Current logical Scratch/Secondary Instance. |
+| `foo.crop[id]` / `foo.c[id]` | `Slice` | Keyed access to a persistent managed ROI. |
+| `foo.width` / `foo.height` | `Int` | Physical dashboard buffer dimensions. |
 
-**Example Usage:**
-```kotlin
-// Direct access
-val srcY = bufferSet.primary.yMat
-val dstY = bufferSet.scratch.yMat
+### Level 2: Manager Functions
+| Syntax | Description |
+| :--- | :--- |
+| `foo.flip()` | Atomically swaps P/S roles. All ROIs mathematically re-project onto the new Primary RAM. |
+| `foo.resize(w, h)` | Reallocates P/S RAM. **Normalized ROIs are preserved**; Pixel ROIs are released. |
+| `foo.normalizeYUV()` | Packs `p.yuv` into `s` (standard NV21 layout), then automatically calls `flip()`. |
+| `foo.createCrop(...)` | Convenience alias for `foo.p.createCrop(...)`. |
+| `foo.release()` | Destroys all RAM and clears the ROI registry. |
 
-// Scaling color data (8UC2 allows standard resize to work for both U and V)
-Imgproc.resize(srcUV, dstUV, Size(targetW/2, targetH/2), 0.0, 0.0, INTER_AREA)
-```
+### Level 3: Slice Properties (`slice`)
+*(Applies to `foo.p`, `foo.s`, and `foo.c[id]`)*
+| Syntax | Type | Description |
+| :--- | :--- | :--- |
+| `slice.mat` / `slice.yMat` | `Mat` | Luma (Y) view (`8UC1`). |
+| `slice.uvMat` | `Mat` | Chroma (UV) view (`8UC2` Interleaved). |
+| `slice.nv21` | `ByteBuffer` | Contiguous 1.5x Byte hunk **(Instances only)**. |
+| `slice.raw` | `ByteBuffer` | Luma-only 1.0x Byte hunk. |
+| `slice.nv21Mat` | `Mat` | Single Mat view of 1.5x RAM **(Instances only)**. |
+| `slice.yuv` | `YuvHandle`| Industry-standard multi-plane descriptor. |
+| `slice.width` / `slice.height` | `Int` | Dimensions of this specific Slice. |
 
-### The Unified .yuv Handle
-The `.yuv` handle is designed for external utilities (like `bitmapToYUV`) that need to operate on the full image state without knowing the internal BufferSet details.
-- **Contract:** It provides both Luma (`8UC1`) and Chroma (`8UC2`) views.
-- **Resizing:** When using `cv::resize` on the `.yuv` handle, the logic must independently scale the Y and UV planes to maintain the 4:2:0 subsampling geometry.
+### Level 4: Slice Functions
+| Syntax | Description |
+| :--- | :--- |
+| `slice.createCrop(x,y,w,h,id?)` | Overloaded (Int/Float). Registers an ROI relative to this slice. Overwrites if `id` exists. |
+| `slice.resize(x,y,w,h)` | Overloaded (Int/Float). Updates coordinates/size of this ROI. |
+| `slice.release()` | Removes this ROI from the registry (No-op on `p`/`s`). |
+| `slice.clear()` | Zeroes Luma AND resets Chroma to 128. |
+| `slice.clearChroma()` | Resets only the Chroma (UV) to 128. |
 
-### Functions
-- `resize(w, h)`: Dynamically reallocates underlying memory.
-- `flip()`: Atomically swaps the active index.
-- `clear()`: Zeroes Luma (`0`) and resets Chroma (`128`).
-- `createCrop(x: Int, y: Int, w: Int, h: Int): Int`: Registers a persistent indexed sub-view (absolute pixels). Returns the Crop ID.
-- `createCropNormalized(x: Float, y: Float, w: Float, h: Float): Int`: Registers a persistent indexed sub-view (normalized 0.0-1.0). Returns the Crop ID.
-- `getCropMat(id: Int): Mat`: Retrieves the current `yMat` proxy for a managed crop.
-- `getCrop(id: Int): ManagedCrop`: Retrieves the full crop object, providing access to `.yMat`, `.uvMat`, and `.yuv`.
-- `releaseCrop(id: Int)`: Forcefully disarms and removes a managed crop.
+## 4. Behavioral Rules
 
-### Managed Crop Lifecycle
-`BufferSet` managed crops are pinned to the **Primary Instance**. 
-1. When `flip()` is called, all crops are automatically re-projected onto the new Primary memory.
-2. When `resize()` is called, all crops (especially Normalized ones) are re-calculated to match the new parent dimensions.
-3. **2-Pixel Alignment Rule:** All crops are automatically aligned to the nearest even pixel boundary to satisfy NV21 chroma requirements.
+### A. Coordinate Overloading
+Kotlin supports full parameter-type overloading. `createCrop` and `resize` natively support both absolute pixel offsets (`Int`) and normalized offsets (`Float` from 0.0 to 1.0). 
 
-## 3. Implementation Details (Developer/Maintainer Manual)
-### Architecture
-- **UnifiedHandle (C++):** A struct wrapping the raw `uint8_t*` buffer and the `cv::Mat` headers.
-- **Safety Registry:** Uses a `std::set<BufferSetHandle*>` in C++ to track allocations.
-- **Placement-Assignment:** When `resize` is called, we delete the old `data` and allocate new memory. We then update the `cv::Mat` headers in-place.
-- **Chroma Handling:** The `uvMat` is initialized as an `8UC2` matrix pointing to the start of the chroma plane. This allows OpenCV's standard processing tools to treat the interleaved `V,U,V,U` data as a single 2-channel image.
+### B. Nested Crop Flattening
+If you call `foo.c[1].createCrop(...)` to create `foo.c[2]`, the API performs **Coordinate Flattening**. `c[2]` is stored in the registry as an absolute offset from the *root buffer origin*, not as a child. Releasing `c[1]` has zero effect on `c[2]`. 
+*Note: This feature can be dangerous and lead to confusing state management where a "child" outlives its "parent". It is supported for strict math isolation, but generally discouraged. Use at your own risk.*
 
-### Internal Operational Logic: Stride-Aware Normalization
-When `syncMatFromArgb` is called:
-1. **Source Layout:** The hardware writes a width of `W` but a stride of `S`.
-2. **The Compaction Loop:** The native code performs a row-by-row `memcpy` of length `W`, skipping padding.
-3. **Final Result:** After this compaction, the `yMat` and `uvMat` handles point to perfectly aligned, contiguous data.
+### C. Boundary Enforcement & YUV Alignment
+- **Clamping:** ROI creation/resizing is safely clamped to the boundaries of the parent slice.
+- **Round Out:** To satisfy YUV 4:2:0 subsampling geometry, all ROI boundaries are rounded **outward** to a multiple of 2:
+    - **Left and Top:** Rounded **DOWN** to nearest even number.
+    - **Right and Bottom:** Rounded **UP** to nearest even number.
 
-### Troubleshooting
-- **Green/Pink Snapshots:** This usually indicates a YUV plane mismatch. Verify that the UV offset is correctly calculated as `width * height`.
-- **Jagged Edges on Annotations:** Ensure the 2-pixel alignment rule is enforced for all drawing coordinates.
+### D. Resize Lifecycle
+When `foo.resize()` changes the physical dimensions of the buffer:
+- **Normalized ROIs:** Automatically recalculated to stretch with the new physical dimensions.
+- **Pixel ROIs:** Automatically released. Their absolute offsets are no longer valid, preventing memory corruption.
