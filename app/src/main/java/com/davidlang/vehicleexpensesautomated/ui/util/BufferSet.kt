@@ -282,15 +282,7 @@ class BufferSet(private var width: Int, private var height: Int) {
     private external fun nativeRelease(handle: Long, matObj: Mat?)
     private external fun nativeClear(handle: Long)
     private external fun nativeResize(handle: Long, w: Int, h: Int): Boolean
-    private external fun nativeRotate(src: Long, dst: Long, angle: Float)
     private external fun nativeAnnotate(handle: Long, annotations: IntArray)
-
-    suspend fun rotate(angle: Float) = mutex.withLock {
-        if (kotlin.math.abs(angle) < 0.01f) return
-        nativeRotate(primary.nativeHandleInternal, scratch.nativeHandleInternal, angle)
-        primaryIdx = 1 - primaryIdx
-        refreshCrops()
-    }
 
     suspend fun compressYuvToBase64(handle: YuvHandle, quality: Int): String = mutex.withLock {
         nativeCompressYuvToBase64(handle.planes[0].buffer, handle.planes[1].buffer, handle.planes[2].buffer, handle.width, handle.height, handle.planes[0].rowStride, quality)
