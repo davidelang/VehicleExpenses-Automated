@@ -25,6 +25,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         val uvMat: Mat    // Chroma (8UC2 interleaved)
         val nv21: Mat     // Full 1.5x Mat (Instance only)
         val raw: ByteBuffer // Luma-only raw buffer
+        val nv21Buffer: ByteBuffer // Full 1.5x raw buffer
         val yuv: YuvHandle  // Standard multi-plane descriptor
         val width: Int
         val height: Int
@@ -65,6 +66,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         override val uvMat: Mat get() = _uvMat ?: throw IllegalStateException("Not initialized")
         override val nv21: Mat get() = _nv21 ?: throw IllegalStateException("Not initialized")
         override val raw: ByteBuffer get() = (fullBuffer.duplicate().position(0).limit(width * height) as ByteBuffer).slice()
+        override val nv21Buffer: ByteBuffer get() = fullBuffer.duplicate().position(0) as ByteBuffer
         override val width: Int get() = this@BufferSet.width
         override val height: Int get() = this@BufferSet.height
 
@@ -124,6 +126,7 @@ class BufferSet(private var width: Int, private var height: Int) {
         override val mat: Mat get() = _mat ?: throw IllegalStateException("Disarmed")
         override val uvMat: Mat get() = _uvMat ?: throw IllegalStateException("Disarmed")
         override val nv21: Mat get() = throw UnsupportedOperationException("NV21 Mat view not supported for non-contiguous crops")
+        override val nv21Buffer: ByteBuffer get() = throw UnsupportedOperationException("NV21 Buffer view not supported for non-contiguous crops")
         
         override val raw: ByteBuffer get() {
             val parentBuf = (instances[primaryIdx] as Instance).fullBuffer

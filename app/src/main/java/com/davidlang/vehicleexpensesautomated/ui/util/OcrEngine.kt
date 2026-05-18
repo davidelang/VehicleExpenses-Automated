@@ -158,6 +158,13 @@ class MlKitEngine : OcrEngine {
                 0,
                 com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
             )
+            is BufferSet.Slice -> com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                input.nv21Buffer,
+                input.width,
+                input.height,
+                0,
+                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+            )
             else -> throw IllegalArgumentException("Unsupported input type for MlKitEngine: ${input.javaClass.name}")
         }
 
@@ -194,12 +201,14 @@ object OcrUtils {
             is Bitmap -> source.width
             is org.opencv.core.Mat -> source.cols()
             is BufferSetLegacy.Instance -> source.yMat.cols()
+            is BufferSet.Slice -> source.width
             else -> 0
         }
         val srcH = when (source) {
             is Bitmap -> source.height
             is org.opencv.core.Mat -> source.rows()
             is BufferSetLegacy.Instance -> source.yMat.rows()
+            is BufferSet.Slice -> source.height
             else -> 0
         }
         
@@ -257,6 +266,18 @@ object OcrUtils {
             is BufferSetLegacy.Instance -> {
                 // Luma Resize
                 val subY = source.yMat.submat(cvRoi)
+                Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                
+                // Chroma Resize (8UC2 interleaved)
+                val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
+                val subUV = source.uvMat.submat(roiUV)
+                Imgproc.resize(subUV, snapRoiUV, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, Imgproc.INTER_AREA)
+                
+                subY.release(); subUV.release()
+            }
+            is BufferSet.Slice -> {
+                // Luma Resize
+                val subY = source.mat.submat(cvRoi)
                 Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 
                 // Chroma Resize (8UC2 interleaved)
