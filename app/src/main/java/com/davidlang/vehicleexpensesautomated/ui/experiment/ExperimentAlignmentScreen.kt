@@ -203,7 +203,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     }
     
     // Phase 115: Vehicle-Specific BufferSetLegacy Pools (Zero-Allocation Anchor)
-    val vehicleBufferSetLegacys = mutableMapOf<Int, BufferSetLegacy>()
+    val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
     val vehicleArgbCrops = mutableMapOf<Int, Bitmap>()
     val vehicleArgbScratches = mutableMapOf<Int, Bitmap>()
     withContext(Dispatchers.Main) {
@@ -216,7 +216,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
                 
                 if (targetW > 0 && targetH > 0) {
-                    vehicleBufferSetLegacys[ref.vehicle.id] = BufferSetLegacy(targetW, targetH)
+                    vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
                     vehicleArgbCrops[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
                     vehicleArgbScratches[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
 
@@ -423,7 +423,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                             suspend fun runPaddleValleyMonoIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
                                 val tHarnessStart = System.currentTimeMillis()
-                                val odoBuffer = vehicleBufferSetLegacys[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
+                                val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
                                 
                                 // Discovery & Recognition Pools (Zero-Allocation)
@@ -459,34 +459,34 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
                                             matrix.postScale(scaleX, scaleY)
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-                                            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
+                                            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.p.mat)
                                         }
                                         is com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy -> {
-                                            odoBuffer.primary.clear()
-                                            val bridgeW = odoBuffer.primary.yMat.cols()
-                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            odoBuffer.p.clear()
+                                            val bridgeW = odoBuffer.p.mat.cols()
+                                            val bridgeH = odoBuffer.p.mat.rows()
                                             // Direct query of managed crop (Anti-Pattern safe)
                                             val interp = if (masterBuffer.getCropMat(winnerRef.vehicle.id).cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                         }
                                         is org.opencv.core.Mat -> {
-                                            odoBuffer.primary.clear()
+                                            odoBuffer.p.clear()
                                             val sourceRoi = masterBuffer.submat(startY, startY + roiH, startX, startX + roiW)
-                                            val bridgeW = odoBuffer.primary.yMat.cols()
-                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            val bridgeW = odoBuffer.p.mat.cols()
+                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                         }
                                         is java.nio.ByteBuffer -> {
-                                            odoBuffer.primary.clear()
+                                            odoBuffer.p.clear()
                                             masterBuffer.rewind()
                                             val nv21Mat = org.opencv.core.Mat(masterH, masterW, org.opencv.core.CvType.CV_8UC1, masterBuffer, 4000L)
                                             val sourceRoi = nv21Mat.submat(startY, startY + roiH, startX, startX + roiW)
-                                            val bridgeW = odoBuffer.primary.yMat.cols()
-                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            val bridgeW = odoBuffer.p.mat.cols()
+                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                             nv21Mat.release()
                                         }
@@ -505,11 +505,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     when (stage) {
                                         "80% Stretch Only" -> { 
-                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.80)
+                                            applyStretch(odoBuffer.p.mat, odoBuffer.s.mat, 0.80)
                                             odoBuffer.flip()
                                         }
                                         "78% Stretch" -> {
-                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.78)
+                                            applyStretch(odoBuffer.p.mat, odoBuffer.s.mat, 0.78)
                                             odoBuffer.flip()
                                         }
                                     }
@@ -518,12 +518,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     // 1. Discovery Stage (Scale to 512x128)
                                     experimentDetSet512x128.p.clear()
-                                    val detScale = kotlin.math.min(512f / odoBuffer.primary.yMat.cols().toFloat(), 128f / odoBuffer.primary.yMat.rows().toFloat())
-                                    val fitDetW = (odoBuffer.primary.yMat.cols() * detScale).toInt().coerceAtMost(512)
-                                    val fitDetH = (odoBuffer.primary.yMat.rows() * detScale).toInt().coerceAtMost(128)
+                                    val detScale = kotlin.math.min(512f / odoBuffer.p.mat.cols().toFloat(), 128f / odoBuffer.p.mat.rows().toFloat())
+                                    val fitDetW = (odoBuffer.p.mat.cols() * detScale).toInt().coerceAtMost(512)
+                                    val fitDetH = (odoBuffer.p.mat.rows() * detScale).toInt().coerceAtMost(128)
 
                                     val detCropId = experimentDetSet512x128.createCrop(0, 0, fitDetW, fitDetH)
-                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.primary.yMat, experimentDetSet512x128.c[detCropId].mat, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     experimentDetSet512x128.c[detCropId].release()
 
                                     val detThumbB64 = OcrUtils.takeSnapshot(
@@ -535,7 +535,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     )
 
                                     val det = paddleEngineV3Mono.detectMono(experimentDetSet512x128.p)
-                                    val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, odoBuffer.primary.yMat, "Paddle") else emptyList()
+                                    val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, odoBuffer.p.mat, "Paddle") else emptyList()
                                     
                                     // 2. Valley Expansion (Pixel Walking)
                                     fun getLineAverage(mat: org.opencv.core.Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
@@ -545,8 +545,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         return if (count > 0) sum / count else 0.0
                                     }
                                     
-                                    fun expandByValleyStop(redFloor: android.graphics.Rect, bufferSet: com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy): android.graphics.Rect {
-                                        val gray = bufferSet.primary.yMat
+                                    fun expandByValleyStop(redFloor: android.graphics.Rect, bufferSet: BufferSet): android.graphics.Rect {
+                                        val gray = bufferSet.p.mat
                                         val maxH = gray.rows(); val maxW = gray.cols()
                                         
                                         // 1. Clamp redFloor to 1px from the edge before submat
@@ -627,10 +627,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val finalBoxes = mutableListOf<android.graphics.Rect>()
                                     consolidatedBoxes.forEach { box ->
                                         // 2. Clamp final box to matrix edges
-                                        val safeL = box.left.coerceIn(0, odoBuffer.primary.yMat.cols() - 1)
-                                        val safeT = box.top.coerceIn(0, odoBuffer.primary.yMat.rows() - 1)
-                                        val safeR = box.right.coerceIn(safeL + 1, odoBuffer.primary.yMat.cols())
-                                        val safeB = box.bottom.coerceIn(safeT + 1, odoBuffer.primary.yMat.rows())
+                                        val safeL = box.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
+                                        val safeT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
+                                        val safeR = box.right.coerceIn(safeL + 1, odoBuffer.p.mat.cols())
+                                        val safeB = box.bottom.coerceIn(safeT + 1, odoBuffer.p.mat.rows())
                                         
                                         val recSrcId = odoBuffer.createCrop(safeL, safeT, safeR - safeL, safeB - safeT)
                                         
@@ -643,8 +643,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         
                                         val offX = 4; val offY = 4
                                         val recCropId = experimentRecSet320x48.createCrop(offX, offY, fitRecW, fitRecH)
-                                        org.opencv.imgproc.Imgproc.resize(odoBuffer.getCropMat(recSrcId), experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                                        odoBuffer.releaseCrop(recSrcId); experimentRecSet320x48.c[recCropId].release()
+                                        org.opencv.imgproc.Imgproc.resize(odoBuffer.c[recSrcId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                        odoBuffer.c[recSrcId].release(); experimentRecSet320x48.c[recCropId].release()
                                         
                                         val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.p, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
@@ -656,7 +656,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     allOdo.add(odo)
                                     
                                     // 4.6 Snapshot Scaling (Scale to 320x48 for scratch bitmap)
-                                    val aspect = odoBuffer.primary.yMat.cols().toFloat() / odoBuffer.primary.yMat.rows().toFloat()
+                                    val aspect = odoBuffer.p.mat.cols().toFloat() / odoBuffer.p.mat.rows().toFloat()
                                     val fitW: Int; val fitH: Int
                                     if (aspect > (320f / 48f)) {
                                         fitW = 320
@@ -668,11 +668,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     experimentRecSet320x48.p.clear()
                                     val snapCropId = experimentRecSet320x48.createCrop(0, 0, fitW, fitH)
-                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.primary.yMat, experimentRecSet320x48.c[snapCropId].mat, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[snapCropId].mat, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     experimentRecSet320x48.c[snapCropId].release()
                                     
-                                    val scaleSnapX = fitW.toFloat() / odoBuffer.primary.yMat.cols().toFloat()
-                                    val scaleSnapY = fitH.toFloat() / odoBuffer.primary.yMat.rows().toFloat()
+                                    val scaleSnapX = fitW.toFloat() / odoBuffer.p.mat.cols().toFloat()
+                                    val scaleSnapY = fitH.toFloat() / odoBuffer.p.mat.rows().toFloat()
                                     
                                     val annotations = mutableListOf<SnapshotAnnotation>()
                                     rawBlocks.forEach { b -> 
@@ -717,7 +717,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
                                 val tHarnessStart = System.currentTimeMillis()
                                 val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
-                                val odoBuffer = vehicleBufferSetLegacys[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
+                                val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
                                 
                                 val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
@@ -763,35 +763,35 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
 
                                             // Use new zero-buffer JNI fast sync to populate the iterative bridge
-                                            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.primary.yMat)
+                                            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.p.mat)
                                         }
                                         is com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy -> {
-                                            odoBuffer.primary.clear()
-                                            val bridgeW = odoBuffer.primary.yMat.cols()
-                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            odoBuffer.p.clear()
+                                            val bridgeW = odoBuffer.p.mat.cols()
+                                            val bridgeH = odoBuffer.p.mat.rows()
                                             // Direct query of managed crop (Anti-Pattern safe)
                                             val interp = if (masterBuffer.getCropMat(winnerRef.vehicle.id).cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                         }
                                         is org.opencv.core.Mat -> {
-                                            odoBuffer.primary.clear()
+                                            odoBuffer.p.clear()
                                             val sourceRoi = masterBuffer.submat(startY, startY + roiH, startX, startX + roiW)
-                                            val bridgeW = odoBuffer.primary.yMat.cols()
-                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            val bridgeW = odoBuffer.p.mat.cols()
+                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                         }
                                         is java.nio.ByteBuffer -> {
-                                            odoBuffer.primary.clear()
+                                            odoBuffer.p.clear()
                                             masterBuffer.rewind()
                                             // Directly use fixed step for dashboard bridge
                                             val nv21Mat = org.opencv.core.Mat(masterH, masterW, org.opencv.core.CvType.CV_8UC1, masterBuffer, 4000L)
                                             val sourceRoi = nv21Mat.submat(startY, startY + roiH, startX, startX + roiW)
-                                            val bridgeW = odoBuffer.primary.yMat.cols()
-                                            val bridgeH = odoBuffer.primary.yMat.rows()
+                                            val bridgeW = odoBuffer.p.mat.cols()
+                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.primary.yMat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                             nv21Mat.release()
                                         }
@@ -818,11 +818,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     // 4.2 Preprocessing Application (Native OpenCV Mat Logic)
                                     when (stage) {
                                         "80% Stretch Only" -> {
-                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.80)
+                                            applyStretch(odoBuffer.p.mat, odoBuffer.s.mat, 0.80)
                                             odoBuffer.flip()
                                         }
                                         "78% Stretch" -> {
-                                            applyStretch(odoBuffer.primary.yMat, odoBuffer.scratch.yMat, 0.78)
+                                            applyStretch(odoBuffer.p.mat, odoBuffer.s.mat, 0.78)
                                             odoBuffer.flip()
                                         }
                                     }
@@ -830,7 +830,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     // 4.4 Scale-to-Fit (Recognition)
                                     experimentRecSet320x48.p.clear()
                                     val mlRecCropId = experimentRecSet320x48.createCrop(0, 0, fitW, fitH)
-                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.primary.yMat, experimentRecSet320x48.c[mlRecCropId].mat, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[mlRecCropId].mat, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     
                                     // 4.4 ML Kit Recognition (Zero-Copy ByteBuffer)
                                     val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
@@ -970,7 +970,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     // Phase 115: Release native handles for vehicle pools
     experimentRecSet320x48.release()
     experimentDetSet512x128.release()
-    vehicleBufferSetLegacys.values.forEach { it.release() }
+    vehicleBufferSets.values.forEach { it.release() }
     vehicleArgbCrops.values.forEach { it.recycle() }
     vehicleArgbScratches.values.forEach { it.recycle() }
     vehicleArgbCrops.clear()
