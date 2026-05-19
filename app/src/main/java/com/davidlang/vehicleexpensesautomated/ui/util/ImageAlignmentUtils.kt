@@ -513,7 +513,7 @@ object ImageAlignmentUtils {
      * Geometrically equivalent to anchorAlign but executes natively via OpenCV warpAffine.
      */
     suspend fun anchorAlignNative(
-        bufferSet: BufferSetLegacy,
+        bufferSet: BufferSet,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
         vehicle: Vehicle,
@@ -615,8 +615,8 @@ object ImageAlignmentUtils {
 
         return try {
             // Phase 115: Native Morphing using Imgproc.warpAffine
-            val src = bufferSet.primary.yMat
-            val dst = bufferSet.scratch.yMat
+            val src = bufferSet.p.mat
+            val dst = bufferSet.s.mat
             val warpMat = Mat(2, 3, CvType.CV_64F)
             warpMat.put(0, 0, finalScale.toDouble(), 0.0, (finalTx * src.cols()).toDouble())
             warpMat.put(1, 0, 0.0, finalScale.toDouble(), (finalTy * src.rows()).toDouble())
@@ -626,7 +626,7 @@ object ImageAlignmentUtils {
             warpMat.release()
             
             // Sync to scratchBmp for report visualization
-            NativeImageUtils.syncMatToArgb(bufferSet.primary.yMat, scratchBmp)
+            NativeImageUtils.syncMatToArgb(bufferSet.p.mat, scratchBmp)
             
             AnchorResult(true, scratchBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Native Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
         } catch (e: Exception) {

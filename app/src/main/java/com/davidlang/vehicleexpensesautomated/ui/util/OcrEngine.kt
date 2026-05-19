@@ -201,23 +201,18 @@ object OcrUtils {
         targetH: Int,
         annotations: List<SnapshotAnnotation>
     ): String = withContext(Dispatchers.IO) {
-        val rowBuffer = NativePaddleEngine.fullBufferSetLegacy
-        val workspace = rowBuffer.scratch
+        val manager = NativePaddleEngine.fullBufferSet
+        val workspace = manager.s
         
         // Step 1: Geometry Normalization
-        val srcW = when (source) {
-            is Bitmap -> source.width
-            is org.opencv.core.Mat -> source.cols()
-            is BufferSetLegacy.Instance -> source.yMat.cols()
-            is BufferSet.Slice -> source.width
-            else -> 0
-        }
-        val srcH = when (source) {
-            is Bitmap -> source.height
-            is org.opencv.core.Mat -> source.rows()
-            is BufferSetLegacy.Instance -> source.yMat.rows()
-            is BufferSet.Slice -> source.height
-            else -> 0
+        val srcW: Int
+        val srcH: Int
+        when (source) {
+            is Bitmap -> { srcW = source.width; srcH = source.height }
+            is org.opencv.core.Mat -> { srcW = source.cols(); srcH = source.rows() }
+            is BufferSetLegacy.Instance -> { srcW = source.yMat.cols(); srcH = source.yMat.rows() }
+            is BufferSet.Slice -> { srcW = source.width; srcH = source.height }
+            else -> { srcW = 0; srcH = 0 }
         }
         
         val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
@@ -246,14 +241,19 @@ object OcrUtils {
         }
         
         // Cap to scratch buffer dimensions and ensure 2-pixel alignment
-        finalW = toEven(finalW.toFloat().coerceIn(2f, workspace.yMat.cols().toFloat()))
-        finalH = toEven(finalH.toFloat().coerceIn(2f, workspace.yMat.rows().toFloat()))
+        finalW = toEven(finalW.toFloat().coerceIn(2f, 4000f))
+        finalH = toEven(finalH.toFloat().coerceIn(2f, 3072f))
 
         // Step 2: Normalization & Resize-First
+        manager.resize(finalW, finalH)
         workspace.clear()
-        val snapRect = org.opencv.core.Rect(0, 0, finalW, finalH)
-        val snapRoiY = workspace.yMat.submat(snapRect)
-        val snapRoiUV = workspace.uvMat.submat(org.opencv.core.Rect(0, 0, finalW / 2, finalH / 2))
+        
+        // Register a transient crop for the snapshot area
+        val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
+        val snapSlice = manager.c[snapCropId]
+        
+        val snapRoiY = snapSlice.mat
+        val snapRoiUV = snapSlice.uvMat
 
         when (source) {
             is Bitmap -> {
@@ -297,15 +297,14 @@ object OcrUtils {
             }
         }
         
-        snapRoiY.release()
-        snapRoiUV.release()
-
-        // Step 3: Native Annotation (Explicitly target the scratch instance)
-        val handle = workspace.getRoiHandle(snapRect)
+        // Step 3: Native Annotation
+        val handle = snapSlice.yuv
         NativeImageUtils.drawYuvAnnotations(handle, annotations)
 
         // Step 4: Direct Encoding (Native Split-Plane)
         val b64 = NativeImageUtils.compressYuvToBase64(handle, 80)
+        
+        snapSlice.release()
         
         b64
     }

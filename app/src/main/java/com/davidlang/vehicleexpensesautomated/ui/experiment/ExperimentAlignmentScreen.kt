@@ -221,12 +221,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     vehicleArgbScratches[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
 
                     // Register long-term odometer ROI on the full-res dashboard set
-                    NativePaddleEngine.fullBufferSetLegacy.createCropNormalizedWithId(
-                        ref.vehicle.id,
+                    NativePaddleEngine.fullBufferSet.p.createCrop(
                         ref.vehicle.odometerCropLeft ?: 0f,
                         ref.vehicle.odometerCropTop ?: 0f,
                         (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
-                        (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f)
+                        (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f),
+                        id = ref.vehicle.id
                     )
                 }
             }
@@ -267,7 +267,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             val imgH = rawBitmap.height
 
             // Phase 115: Safe Dynamic Resizing for Dashboard set
-            NativePaddleEngine.fullBufferSetLegacy.resize(imgW, imgH)
+            NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
 
             // Phase 115: Per-Row Master Buffers (Native Resolution)
             val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
@@ -285,12 +285,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
             
             // Phase 115: Synchronize the unaligned raw masterBmp into the global Dashboard set before deskew/discovery
-            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSetLegacy.primary.yMat)
+            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.p.mat)
             
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp)
-                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.fullBufferSetLegacy.primary)
+                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.fullBufferSet.p)
 
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
@@ -311,12 +311,12 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 
                 // Native: Independent High-Quality Rotation (Cubic) using standard angle
                 val tRotMono0 = System.currentTimeMillis()
-                val srcMat = NativePaddleEngine.fullBufferSetLegacy.primary.yMat
-                val dstMat = NativePaddleEngine.fullBufferSetLegacy.scratch.yMat
+                val srcMat = NativePaddleEngine.fullBufferSet.p.mat
+                val dstMat = NativePaddleEngine.fullBufferSet.s.mat
                 val center = org.opencv.core.Point(srcMat.cols() / 2.0, srcMat.rows() / 2.0)
                 val rotMat = org.opencv.imgproc.Imgproc.getRotationMatrix2D(center, (-tilt).toDouble(), 1.0)
                 org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, srcMat.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-                NativePaddleEngine.fullBufferSetLegacy.flip()
+                NativePaddleEngine.fullBufferSet.flip()
                 val tRotateMono = System.currentTimeMillis() - tRotMono0
 
                 val tDiscoveryStart = System.currentTimeMillis()
@@ -343,7 +343,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     
                     // Phase 115: Actual Native Discovery Pass
                     val tDiscMono0 = System.currentTimeMillis()
-                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSetLegacy.primary, context)
+                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSet.p, context)
                     queryOcrDiscoveryMono = ocrMono
                     tDiscoveryMonoTotal = System.currentTimeMillis() - tDiscMono0
 
@@ -358,7 +358,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                     // 1.2 Native Alignment (In-place on fullBufferSetLegacy)
                     val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
-                        NativePaddleEngine.fullBufferSetLegacy, 
+                        NativePaddleEngine.fullBufferSet, 
                         winnerRef.curatedLandmarks, 
                         queryLandmarksMonoPrimary, 
                         winnerRef.vehicle, 
@@ -461,13 +461,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                             com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.p.mat)
                                         }
-                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy -> {
+                                        is BufferSet -> {
                                             odoBuffer.p.clear()
                                             val bridgeW = odoBuffer.p.mat.cols()
                                             val bridgeH = odoBuffer.p.mat.rows()
                                             // Direct query of managed crop (Anti-Pattern safe)
-                                            val interp = if (masterBuffer.getCropMat(winnerRef.vehicle.id).cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                         }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.p.clear()
@@ -765,13 +765,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             // Use new zero-buffer JNI fast sync to populate the iterative bridge
                                             com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.p.mat)
                                         }
-                                        is com.davidlang.vehicleexpensesautomated.ui.util.BufferSetLegacy -> {
+                                        is BufferSet -> {
                                             odoBuffer.p.clear()
                                             val bridgeW = odoBuffer.p.mat.cols()
                                             val bridgeH = odoBuffer.p.mat.rows()
                                             // Direct query of managed crop (Anti-Pattern safe)
-                                            val interp = if (masterBuffer.getCropMat(winnerRef.vehicle.id).cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.getCropMat(winnerRef.vehicle.id), odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
                                         }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.p.clear()
@@ -900,9 +900,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                             // --- Sequential Execution ---
                             runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runMLKitIterative("ML Kit Mono Native", NativePaddleEngine.fullBufferSetLegacy, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runMLKitIterative("ML Kit Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
                             runPaddleValleyMonoIterative("Paddle V3 Valley Mono", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Native", NativePaddleEngine.fullBufferSetLegacy, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
 
                         }
                         
