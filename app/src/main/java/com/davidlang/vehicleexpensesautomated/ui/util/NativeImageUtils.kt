@@ -41,15 +41,23 @@ object NativeImageUtils {
      * Operates directly on the Luma (8UC1) and interleaved Chroma (8UC2) planes.
      */
     fun drawYuvAnnotations(handle: BufferSetLegacy.YuvHandle, annotations: List<SnapshotAnnotation>) {
+        drawYuvInternal(handle.width, handle.height, handle.planes[0].buffer, handle.planes[2].buffer, annotations)
+    }
+
+    fun drawYuvAnnotations(handle: BufferSet.YuvHandle, annotations: List<SnapshotAnnotation>) {
+        drawYuvInternal(handle.width, handle.height, handle.planes[0].buffer, handle.planes[2].buffer, annotations)
+    }
+
+    private fun drawYuvInternal(hW: Int, hH: Int, yBuf: ByteBuffer, uvBuf: ByteBuffer, annotations: List<SnapshotAnnotation>) {
         if (annotations.isEmpty()) return
 
         // Create temporary Mat wrappers around the raw buffers
         // Luma plane is 8UC1
-        val yMat = Mat(handle.height, handle.width, CvType.CV_8UC1, handle.planes[0].buffer)
+        val yMat = Mat(hH, hW, CvType.CV_8UC1, yBuf)
         
         // Chroma plane (interleaved VU for NV21) is 8UC2 at half resolution
         // We use plane[2] (V) as the base since it's the start of the interleaved UV hunk in NV21
-        val uvMat = Mat(handle.height / 2, handle.width / 2, CvType.CV_8UC2, handle.planes[2].buffer)
+        val uvMat = Mat(hH / 2, hW / 2, CvType.CV_8UC2, uvBuf)
 
         annotations.forEach { ann ->
             // Map ARGB colors to YUV scalars
@@ -86,6 +94,18 @@ object NativeImageUtils {
      * Encodes a YuvHandle directly to a Base64 JPEG string using high-performance JNI merge.
      */
     fun compressYuvToBase64(handle: BufferSetLegacy.YuvHandle, quality: Int): String {
+        return nativeCompressYuvToBase64(
+            handle.planes[0].buffer,
+            handle.planes[1].buffer,
+            handle.planes[2].buffer,
+            handle.width,
+            handle.height,
+            handle.planes[0].rowStride,
+            quality
+        )
+    }
+
+    fun compressYuvToBase64(handle: BufferSet.YuvHandle, quality: Int): String {
         return nativeCompressYuvToBase64(
             handle.planes[0].buffer,
             handle.planes[1].buffer,
