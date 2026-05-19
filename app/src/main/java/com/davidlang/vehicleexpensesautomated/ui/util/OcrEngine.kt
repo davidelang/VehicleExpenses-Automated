@@ -151,20 +151,28 @@ class MlKitEngine : OcrEngine {
         
         val image = when (input) {
             is Bitmap -> com.google.mlkit.vision.common.InputImage.fromBitmap(input, 0)
-            is BufferSetLegacy.Instance -> com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                input.nv21,
-                input.yMat.cols(),
-                input.yMat.rows(),
-                0,
-                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-            )
-            is BufferSet.Slice -> com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                input.nv21,
-                input.width,
-                input.height,
-                0,
-                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-            )
+            is BufferSetLegacy.Instance -> {
+                val w = input.yMat.cols()
+                val h = input.yMat.rows()
+                com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                    input.nv21,
+                    w,
+                    h,
+                    0,
+                    com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                )
+            }
+            is BufferSet.Slice -> {
+                val w = input.width
+                val h = input.height
+                com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                    input.nv21,
+                    w,
+                    h,
+                    0,
+                    com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                )
+            }
             else -> throw IllegalArgumentException("Unsupported input type for MlKitEngine: ${input.javaClass.name}")
         }
 

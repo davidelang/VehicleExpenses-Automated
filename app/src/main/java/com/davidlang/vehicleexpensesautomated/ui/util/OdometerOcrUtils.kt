@@ -125,9 +125,21 @@ object OdometerOcrUtils {
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
         val pTargetSize = 2048
-        val (srcW, srcH) = when (input) {
-            is Bitmap -> input.width to input.height
-            is BufferSetLegacy.Instance -> input.yMat.cols() to input.yMat.rows()
+        val srcW: Int
+        val srcH: Int
+        when (input) {
+            is Bitmap -> {
+                srcW = input.width
+                srcH = input.height
+            }
+            is BufferSetLegacy.Instance -> {
+                srcW = input.yMat.cols()
+                srcH = input.yMat.rows()
+            }
+            is BufferSet.Slice -> {
+                srcW = input.width
+                srcH = input.height
+            }
             else -> throw IllegalArgumentException("Unsupported input type for deskew: ${input.javaClass.name}")
         }
         
@@ -145,6 +157,7 @@ object OdometerOcrUtils {
                 g
             }
             is BufferSetLegacy.Instance -> input.yMat
+            is BufferSet.Slice -> input.mat
             else -> throw IllegalStateException()
         }
 
