@@ -7,17 +7,17 @@ The core philosophy is **zero-allocation iterative processing**. Processing rout
 
 ## 2. Terminology
 - **Manager (`BufferSet`)**: The root object that owns physical RAM allocations.
-- **Instance**: The full-size physical memory block (Primary or Scratch). Contiguous.
+- **Primary/Scratch Buffer**: The full-size physical memory blocks. Contiguous.
 - **ROI (Region of Interest)**: A specific sub-section of an image buffer, also known as a **Crop**. ROIs are non-contiguous views with a stride.
-- **Slice**: The unified interface representing either an Instance or an ROI. Any function taking a `Slice` can be passed the full buffer or a specific crop.
+- **Slice**: The unified interface representing either a Primary/Scratch Buffer or a Crop. Any function taking a `Slice` can be passed the full buffer or a specific crop.
 
 ## 3. Syntax Structure
 
 ### Level 1: Manager Properties (`foo`)
 | Syntax | Type | Description |
 | :--- | :--- | :--- |
-| `foo.p` / `foo.primary` | `Slice` | Current logical Primary Instance. |
-| `foo.s` / `foo.scratch` / `foo.secondary` | `Slice` | Current logical Scratch/Secondary Instance. |
+| `foo.p` / `foo.primary` | `Slice` | Current logical Primary Buffer. |
+| `foo.s` / `foo.scratch` / `foo.secondary` | `Slice` | Current logical Scratch/Secondary Buffer. |
 | `foo.crop[id]` / `foo.c[id]` | `Slice` | Keyed access to a persistent managed ROI. |
 | `foo.width` / `foo.height` | `Int` | Physical dashboard buffer dimensions. |
 
@@ -36,9 +36,9 @@ The core philosophy is **zero-allocation iterative processing**. Processing rout
 | :--- | :--- | :--- |
 | `slice.mat` / `slice.yMat` | `Mat` | Luma (Y) view (`8UC1`). |
 | `slice.uvMat` | `Mat` | Chroma (UV) view (`8UC2` Interleaved). |
-| `slice.nv21` | `ByteBuffer` | Contiguous 1.5x Byte hunk **(Instances only)**. |
+| `slice.nv21` | `ByteBuffer` | Contiguous 1.5x Byte hunk **(Primary/Scratch Buffers only)**. |
 | `slice.raw` | `ByteBuffer` | Luma-only 1.0x Byte hunk. |
-| `slice.nv21Mat` | `Mat` | Single Mat view of 1.5x RAM **(Instances only)**. |
+| `slice.nv21Mat` | `Mat` | Single Mat view of 1.5x RAM **(Primary/Scratch Buffers only)**. |
 | `slice.yuv` | `YuvHandle`| Industry-standard multi-plane descriptor. |
 | `slice.width` / `slice.height` | `Int` | Dimensions of this specific Slice. |
 
@@ -46,8 +46,8 @@ The core philosophy is **zero-allocation iterative processing**. Processing rout
 | Syntax | Description |
 | :--- | :--- |
 | `slice.createCrop(x,y,w,h,id?)` | Overloaded (Int/Float). Registers an ROI relative to this slice. Overwrites if `id` exists. |
-| `slice.resize(x,y,w,h)` | Overloaded (Int/Float). Updates coordinates/size of this ROI. |
-| `slice.release()` | Removes this ROI from the registry (No-op on `p`/`s`). |
+| `slice.resize(x,y,w,h)` | Overloaded (Int/Float). Updates coordinates/size of this ROI. **(Crops only)**. |
+| `slice.release()` | Removes this ROI from the registry. **(Crops only)**. |
 | `slice.clear()` | Zeroes Luma AND resets Chroma to 128. |
 | `slice.clearChroma()` | Resets only the Chroma (UV) to 128. |
 
