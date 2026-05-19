@@ -3,16 +3,14 @@
 ## Infrastructure & Protocol
 - [x] **DONE:** Phase 25.0 - Short-Run Rotation Refactor (Recovery).
 - [x] **DONE:** Phase 25.1 - Extract Annotate & Compress Utilities.
-- [x] **DONE:** Phase 25.2 - BufferSet Incremental Migration (Step 1: Legacy Quarantine).
-- [x] **DONE:** Phase 25.2 - BufferSet Incremental Migration (Step 2: New Architecture Implementation).
-- [x] **DONE:** Phase 25.2 - BufferSet Incremental Migration (Step 3: Spec Hardening).
-- [ ] **ACTIVE:** Phase 25.2 - BufferSet Incremental Migration (Step 4: Vehicle Bridge Migration).
+- [x] **DONE:** Phase 25.2 - BufferSet Incremental Migration (Complete).
+    - [x] Step 4: Vehicle Bridge Migration.
+    - [x] Step 5: Dashboard Migration & Decommissioning.
 - [ ] **ACTIVE:** Phase 23 - Foundational YUV Handle Infrastructure (Standard Multi-Plane Descriptor).
 - [x] **DONE:** Phase 11.5 - Protocol Hardening (Execution Rigor Mandates).
 - [x] **DONE:** Phase 9 - Stateless Native Snapshot Utility.
 - [ ] **BUG:** Investigate/Fix inability to write to `dev-ai-interaction/plans` during plan mode.
 - [ ] **PLAN:** Phase 2 - Paddle V3 General Model Integration & Greedy Numeric Decoding (linked to `dev-ai-interaction/plans/paddle-v3-greedy.md`)
-- [ ] **PLAN:** Phase 3 - ImageNet (Norm B) vs Standard (Norm A) Normalization Sweep (linked to `dev-ai-interaction/plans/normalization-sweep.md`)
 
 ## Core Logic & Recovery
 - **NativePaddleEngine Refactoring:**
@@ -22,9 +20,9 @@
     - [x] **Phase 2: Kotlin API & Structural Verification**
     - [x] **Phase 3: Recognition Pool Migration (320x48)**
     - [x] **Phase 4: Discovery Pool Migration (512x128)**
-    - [x] **Phase 5: Vehicle-Specific Pool Swap**
-    - [x] **Phase 6: Managed Sub-Crops & Flip Optimization**
-    - [x] **Phase 7: Final Migration & Decommissioning**
+    - [x] **Phase 5: Vehicle-Specific Pool Swap (Complete)**
+    - [ ] Phase 6: Managed Sub-Crops & Flip Optimization
+    - [ ] Phase 7: Final Migration & Decommissioning
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
     - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
