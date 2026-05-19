@@ -509,7 +509,7 @@ object ImageAlignmentUtils {
     }
 
     /**
-     * Phase 115: Native Alignment Flow for BufferSetLegacy.
+     * Phase 115: Native Alignment Flow for BufferSet.
      * Geometrically equivalent to anchorAlign but executes natively via OpenCV warpAffine.
      */
     suspend fun anchorAlignNative(

@@ -151,17 +151,6 @@ class MlKitEngine : OcrEngine {
         
         val image = when (input) {
             is Bitmap -> com.google.mlkit.vision.common.InputImage.fromBitmap(input, 0)
-            is BufferSetLegacy.Instance -> {
-                val w = input.yMat.cols()
-                val h = input.yMat.rows()
-                com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                    input.nv21,
-                    w,
-                    h,
-                    0,
-                    com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-                )
-            }
             is BufferSet.Slice -> {
                 val w = input.width
                 val h = input.height
@@ -210,7 +199,6 @@ object OcrUtils {
         when (source) {
             is Bitmap -> { srcW = source.width; srcH = source.height }
             is org.opencv.core.Mat -> { srcW = source.cols(); srcH = source.rows() }
-            is BufferSetLegacy.Instance -> { srcW = source.yMat.cols(); srcH = source.yMat.rows() }
             is BufferSet.Slice -> { srcW = source.width; srcH = source.height }
             else -> { srcW = 0; srcH = 0 }
         }
@@ -270,18 +258,6 @@ object OcrUtils {
                 val subY = source.submat(cvRoi)
                 Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
                 subY.release()
-            }
-            is BufferSetLegacy.Instance -> {
-                // Luma Resize
-                val subY = source.yMat.submat(cvRoi)
-                Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-                
-                // Chroma Resize (8UC2 interleaved)
-                val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
-                val subUV = source.uvMat.submat(roiUV)
-                Imgproc.resize(subUV, snapRoiUV, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, Imgproc.INTER_AREA)
-                
-                subY.release(); subUV.release()
             }
             is BufferSet.Slice -> {
                 // Luma Resize

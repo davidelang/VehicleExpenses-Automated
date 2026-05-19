@@ -195,7 +195,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tempMat = Mat(sourceBmp.height, sourceBmp.width, org.opencv.core.CvType.CV_8UC1, buffer)
             try {
                 val targetMat = when (target) {
-                    is BufferSetLegacy.Instance -> target.yMat
                     is BufferSet.Slice -> target.mat
                     else -> throw IllegalArgumentException("Unsupported target type")
                 }
@@ -329,11 +328,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val h: Int
         val buffer: java.nio.ByteBuffer
         when (input) {
-            is BufferSetLegacy.Instance -> {
-                w = input.yMat.cols()
-                h = input.yMat.rows()
-                buffer = input.nv21
-            }
             is BufferSet.Slice -> {
                 w = input.width
                 h = input.height
@@ -416,15 +410,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     }
                 }
             }
-            is BufferSetLegacy.Instance -> {
-                w = input.yMat.cols(); h = input.yMat.rows()
-                Log.d("OCR_DEBUG", "START RECOGNITION (BufferSetLegacy.Instance): engine=$name, dims=${w}x${h}")
-                val buffer = input.nv21; buffer.rewind()
-                val mean = 0.5f; val std = 0.5f
-                for (i in 0 until (w * h)) {
-                    floatData[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
-                }
-            }
             else -> return RecStageResult("(Unsupported Input)", 0, 0f, null)
         }
         
@@ -457,11 +442,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val h: Int
         val buffer: java.nio.ByteBuffer
         when (input) {
-            is BufferSetLegacy.Instance -> {
-                w = input.yMat.cols()
-                h = input.yMat.rows()
-                buffer = input.nv21
-            }
             is BufferSet.Slice -> {
                 w = input.width
                 h = input.height

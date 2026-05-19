@@ -132,10 +132,6 @@ object OdometerOcrUtils {
                 srcW = input.width
                 srcH = input.height
             }
-            is BufferSetLegacy.Instance -> {
-                srcW = input.yMat.cols()
-                srcH = input.yMat.rows()
-            }
             is BufferSet.Slice -> {
                 srcW = input.width
                 srcH = input.height
@@ -156,7 +152,6 @@ object OdometerOcrUtils {
                 argbMat.release()
                 g
             }
-            is BufferSetLegacy.Instance -> input.yMat
             is BufferSet.Slice -> input.mat
             else -> throw IllegalStateException()
         }
