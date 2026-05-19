@@ -195,9 +195,6 @@ data class ProcessedPhotoResult(
 private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
     val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.sortedBy { it.name } ?: return@withContext
     
-    // Phase 115: Run Warp Parity Diagnostic at Startup
-    runDiagnosticWarpTest(context, photos, reportDir, onLog)
-    
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val paddleEngineV2 = NativePaddleEngine(context, variant = "V2")
@@ -324,10 +321,20 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val tRotMono0 = System.currentTimeMillis()
                 val srcMat = NativePaddleEngine.fullBufferSet.p.mat
                 val dstMat = NativePaddleEngine.fullBufferSet.s.mat
-                val center = org.opencv.core.Point(srcMat.cols() / 2.0, srcMat.rows() / 2.0)
-                val rotMat = org.opencv.imgproc.Imgproc.getRotationMatrix2D(center, (-tilt).toDouble(), 1.0)
+
+                val m = android.graphics.Matrix()
+                m.postRotate(-tilt, srcMat.cols() / 2f, srcMat.rows() / 2f)
+                m.invert(m)
+                val values = FloatArray(9)
+                m.getValues(values)
+
+                val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
+                rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
+                rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
+
                 org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, srcMat.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
                 NativePaddleEngine.fullBufferSet.flip()
+                rotMat.release()
                 val tRotateMono = System.currentTimeMillis() - tRotMono0
 
                 val tDiscoveryStart = System.currentTimeMillis()
@@ -1485,103 +1492,4 @@ private suspend fun takeSnapshot(
     b64
 }
 
-private suspend fun runDiagnosticWarpTest(context: Context, photos: List<File>, reportDir: File, onLog: (String) -> Unit) {
-    onLog("Starting Diagnostic Warp Test...")
-    val photo = photos.firstOrNull() ?: return
-    val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, photo.absolutePath) ?: return
-    
-    val imgW = rawBitmap.width; val imgH = rawBitmap.height
-    NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
-    
-    // Initialize Globals for takeSnapshot
-    masterBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-    scratchBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-    
-    val masterBmp = masterBmpGlobal!!
-    val scratchBmp = scratchBmpGlobal!!
-    Canvas(masterBmp).drawBitmap(rawBitmap, 0f, 0f, null)
-    OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
-    NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.p.mat)
 
-    data class TestParams(val name: String, val s: Float, val r: Float, val tx: Float, val ty: Float)
-    val cases = listOf(
-        TestParams("0. Identity", 1.0f, 0.0f, 0.0f, 0.0f),
-        TestParams("1. Zoom In (2.0x)", 2.0f, 0.0f, 0.0f, 0.0f),
-        TestParams("2. Zoom Out (0.5x)", 0.5f, 0.0f, 0.0f, 0.0f),
-        TestParams("3. Rotate 30°", 1.0f, 30.0f, 0.0f, 0.0f),
-        TestParams("4. Shift X Only (+300)", 1.0f, 0.0f, 300f, 0.0f),
-        TestParams("5. Shift Y Only (+300)", 1.0f, 0.0f, 0.0f, 300f),
-        TestParams("6. Full Warp (1.5x, 15°, 150, 150)", 1.5f, 15.0f, 150f, 150f)
-    )
-
-    val html = StringBuilder("<html><head><style>img { border: 1px solid white; max-width: 400px; } table { border-collapse: collapse; } td, th { border: 1px solid gray; padding: 10px; }</style></head><body>")
-    html.append("<h1>Warp Parity Diagnostic</h1>")
-    html.append("<table><tr><th>Scenario</th><th>Android Matrix</th><th>BS Normal</th><th>BS Inverse</th><th>Mat Normal</th><th>Mat Inverse</th></tr>")
-
-    cases.forEach { p ->
-        onLog("Testing: ${p.name}")
-        
-        // 1. Android Matrix Baseline
-        val matrix = android.graphics.Matrix()
-        matrix.postScale(p.s, p.s)
-        matrix.postRotate(p.r, imgW / 2f, imgH / 2f)
-        matrix.postTranslate(p.tx, p.ty)
-        
-        val baselineBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(baselineBmp)
-        canvas.drawColor(Color.BLACK)
-        canvas.drawBitmap(masterBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-        val base64Baseline = takeSnapshot(baselineBmp, null, 400, 300, emptyList())
-        baselineBmp.recycle()
-
-        // OpenCV Matrix setup
-        val center = org.opencv.core.Point(imgW / 2.0, imgH / 2.0)
-        val rotMat = org.opencv.imgproc.Imgproc.getRotationMatrix2D(center, (-p.r).toDouble(), p.s.toDouble())
-        rotMat.put(0, 2, rotMat.get(0, 2)[0] + p.tx)
-        rotMat.put(1, 2, rotMat.get(1, 2)[0] + p.ty)
-        val cvSize = org.opencv.core.Size(imgW.toDouble(), imgH.toDouble())
-
-        // 2. BufferSet Normal
-        NativePaddleEngine.fullBufferSet.p.clear()
-        NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.p.mat)
-        org.opencv.imgproc.Imgproc.warpAffine(NativePaddleEngine.fullBufferSet.p.mat, NativePaddleEngine.fullBufferSet.s.mat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-        NativePaddleEngine.fullBufferSet.flip()
-        val base64BSNormal = takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 400, 300, emptyList())
-
-        // 3. BufferSet Inverse (WARP_INVERSE_MAP)
-        NativePaddleEngine.fullBufferSet.p.clear()
-        NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.p.mat)
-        org.opencv.imgproc.Imgproc.warpAffine(NativePaddleEngine.fullBufferSet.p.mat, NativePaddleEngine.fullBufferSet.s.mat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC or org.opencv.imgproc.Imgproc.WARP_INVERSE_MAP, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-        NativePaddleEngine.fullBufferSet.flip()
-        val base64BSInverse = takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 400, 300, emptyList())
-
-        // 4. Isolated Mat Normal
-        val srcMat = org.opencv.core.Mat()
-        org.opencv.android.Utils.bitmapToMat(masterBmp, srcMat)
-        val dstMat = org.opencv.core.Mat(cvSize, srcMat.type())
-        org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-        val base64MatNormal = takeSnapshot(dstMat, null, 400, 300, emptyList())
-
-        // 5. Isolated Mat Inverse
-        dstMat.setTo(org.opencv.core.Scalar(0.0))
-        org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC or org.opencv.imgproc.Imgproc.WARP_INVERSE_MAP, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-        val base64MatInverse = takeSnapshot(dstMat, null, 400, 300, emptyList())
-        
-        srcMat.release(); dstMat.release(); rotMat.release()
-
-        html.append("<tr><td><b>${p.name}</b></td>")
-        html.append("<td><img src='data:image/jpeg;base64,$base64Baseline'></td>")
-        html.append("<td><img src='data:image/jpeg;base64,$base64BSNormal'></td>")
-        html.append("<td><img src='data:image/jpeg;base64,$base64BSInverse'></td>")
-        html.append("<td><img src='data:image/jpeg;base64,$base64MatNormal'></td>")
-        html.append("<td><img src='data:image/jpeg;base64,$base64MatInverse'></td></tr>")
-    }
-
-    html.append("</table></body></html>")
-    File(reportDir, "warp_parity_diagnostic.html").writeText(html.toString())
-    onLog("Diagnostic Warp Test Complete. Saved to report directory.")
-    
-    // Proper Cleanup
-    masterBmp.recycle(); scratchBmp.recycle(); rawBitmap.recycle()
-    masterBmpGlobal = null; scratchBmpGlobal = null
-}
