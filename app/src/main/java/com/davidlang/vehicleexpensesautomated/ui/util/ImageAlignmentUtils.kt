@@ -618,8 +618,9 @@ object ImageAlignmentUtils {
             val src = bufferSet.p.mat
             val dst = bufferSet.s.mat
             val warpMat = Mat(2, 3, CvType.CV_64F)
-            warpMat.put(0, 0, finalScale.toDouble(), 0.0, (finalTx * src.cols()).toDouble())
-            warpMat.put(1, 0, 0.0, finalScale.toDouble(), (finalTy * src.rows()).toDouble())
+            val invScale = 1.0 / finalScale.toDouble()
+            warpMat.put(0, 0, invScale, 0.0, -(finalTx * src.cols()).toDouble() * invScale)
+            warpMat.put(1, 0, 0.0, invScale, -(finalTy * src.rows()).toDouble() * invScale)
             
             Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0))
             bufferSet.flip()
