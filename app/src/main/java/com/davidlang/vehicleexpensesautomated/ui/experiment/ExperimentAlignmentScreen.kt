@@ -471,18 +471,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         is BufferSet -> {
                                             odoBuffer.p.clear()
                                             val bridgeW = odoBuffer.p.mat.cols()
-                                            val bridgeH = odoBuffer.p.mat.rows()
-                                            // Direct query of managed crop (Anti-Pattern safe)
                                             val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
                                         }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.p.clear()
                                             val sourceRoi = masterBuffer.submat(startY, startY + roiH, startX, startX + roiW)
                                             val bridgeW = odoBuffer.p.mat.cols()
-                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                         }
                                         is java.nio.ByteBuffer -> {
@@ -491,9 +488,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             val nv21Mat = org.opencv.core.Mat(masterH, masterW, org.opencv.core.CvType.CV_8UC1, masterBuffer, 4000L)
                                             val sourceRoi = nv21Mat.submat(startY, startY + roiH, startX, startX + roiW)
                                             val bridgeW = odoBuffer.p.mat.cols()
-                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                             nv21Mat.release()
                                         }
@@ -769,18 +765,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         is BufferSet -> {
                                             odoBuffer.p.clear()
                                             val bridgeW = odoBuffer.p.mat.cols()
-                                            val bridgeH = odoBuffer.p.mat.rows()
-                                            // Direct query of managed crop (Anti-Pattern safe)
                                             val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
                                         }
                                         is org.opencv.core.Mat -> {
                                             odoBuffer.p.clear()
                                             val sourceRoi = masterBuffer.submat(startY, startY + roiH, startX, startX + roiW)
                                             val bridgeW = odoBuffer.p.mat.cols()
-                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                         }
                                         is java.nio.ByteBuffer -> {
@@ -790,9 +783,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             val nv21Mat = org.opencv.core.Mat(masterH, masterW, org.opencv.core.CvType.CV_8UC1, masterBuffer, 4000L)
                                             val sourceRoi = nv21Mat.submat(startY, startY + roiH, startX, startX + roiW)
                                             val bridgeW = odoBuffer.p.mat.cols()
-                                            val bridgeH = odoBuffer.p.mat.rows()
                                             val interp = if (roiW > bridgeW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, org.opencv.core.Size(bridgeW.toDouble(), bridgeH.toDouble()), 0.0, 0.0, interp)
+                                            org.opencv.imgproc.Imgproc.resize(sourceRoi, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
                                             sourceRoi.release()
                                             nv21Mat.release()
                                         }
@@ -1457,18 +1449,18 @@ private suspend fun takeSnapshot(
         }
         is org.opencv.core.Mat -> {
             val subY = source.submat(cvRoi)
-            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             subY.release()
         }
         is BufferSet.Slice -> {
             // Luma Resize
             val subY = source.mat.submat(cvRoi)
-            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             
             // Chroma Resize (8UC2 interleaved)
             val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
             val subUV = source.uvMat.submat(roiUV)
-            org.opencv.imgproc.Imgproc.resize(subUV, snapRoiUV, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            org.opencv.imgproc.Imgproc.resize(subUV, snapRoiUV, snapRoiUV.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             
             subY.release(); subUV.release()
         }
