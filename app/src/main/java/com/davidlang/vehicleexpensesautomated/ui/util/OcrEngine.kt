@@ -183,6 +183,12 @@ object OcrUtils {
         return cx >= crop.left && cx <= crop.right && cy >= crop.top && cy <= crop.bottom
     }
 
+    /**
+     * Captures a high-performance diagnostic snapshot of a source buffer.
+     * Coordinate Mapping: 'annotations' MUST be provided in the coordinate system of 'source'.
+     * If 'sourceRect' is provided (zoom), annotations will be automatically translated and scaled.
+     * 'strokeWidth' is defined in final thumbnail pixels.
+     */
     suspend fun takeSnapshot(
         source: Any,
         sourceRect: Rect?,
@@ -215,7 +221,8 @@ object OcrUtils {
         var finalH: Int
         
         if (targetW > 0 && targetH > 0) {
-            if (targetW.toFloat() / targetH > sourceAspect) {
+            val targetAspect = targetW.toFloat() / targetH
+            if (targetAspect > sourceAspect) {
                 finalH = targetH; finalW = (targetH * sourceAspect).toInt()
             } else {
                 finalW = targetW; finalH = (targetW / sourceAspect).toInt()
@@ -231,6 +238,18 @@ object OcrUtils {
         // Cap to scratch buffer dimensions and ensure 2-pixel alignment
         finalW = toEven(finalW.toFloat().coerceIn(2f, 4000f))
         finalH = toEven(finalH.toFloat().coerceIn(2f, 3072f))
+
+        // Calculate scaling factors for annotations (Source ROI -> Final Thumbnail)
+        val sX = finalW.toFloat() / roiW.toFloat()
+        val sY = finalH.toFloat() / roiH.toFloat()
+        val scaledAnnotations = annotations.map { ann ->
+            ann.copy(
+                x1 = ((ann.x1 - roi.left) * sX).toInt(),
+                y1 = ((ann.y1 - roi.top) * sY).toInt(),
+                x2 = ((ann.x2 - roi.left) * sX).toInt(),
+                y2 = ((ann.y2 - roi.top) * sY).toInt()
+            )
+        }
 
         // Step 2: Normalization & Resize-First
         manager.resize(finalW, finalH)
@@ -275,7 +294,7 @@ object OcrUtils {
         
         // Step 3: Native Annotation
         val handle = snapSlice.yuv
-        NativeImageUtils.drawYuvAnnotations(handle, annotations)
+        NativeImageUtils.drawYuvAnnotations(handle, scaledAnnotations)
 
         // Step 4: Direct Encoding (Native Split-Plane)
         val b64 = NativeImageUtils.compressYuvToBase64(handle, 80)
