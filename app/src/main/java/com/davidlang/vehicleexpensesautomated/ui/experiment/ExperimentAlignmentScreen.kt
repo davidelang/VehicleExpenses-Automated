@@ -1489,8 +1489,12 @@ private suspend fun runDiagnosticWarpTest(context: Context, photos: List<File>, 
     val imgW = rawBitmap.width; val imgH = rawBitmap.height
     NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
     
-    val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-    val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+    // Initialize Globals for takeSnapshot
+    masterBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+    scratchBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+    
+    val masterBmp = masterBmpGlobal!!
+    val scratchBmp = scratchBmpGlobal!!
     Canvas(masterBmp).drawBitmap(rawBitmap, 0f, 0f, null)
     NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.p.mat)
 
@@ -1530,31 +1534,32 @@ private suspend fun runDiagnosticWarpTest(context: Context, photos: List<File>, 
         val rotMat = org.opencv.imgproc.Imgproc.getRotationMatrix2D(center, (-p.r).toDouble(), p.s.toDouble())
         rotMat.put(0, 2, rotMat.get(0, 2)[0] + p.tx)
         rotMat.put(1, 2, rotMat.get(1, 2)[0] + p.ty)
+        val cvSize = org.opencv.core.Size(imgW.toDouble(), imgH.toDouble())
 
         // 2. BufferSet Normal
         NativePaddleEngine.fullBufferSet.p.clear()
         NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.p.mat)
-        org.opencv.imgproc.Imgproc.warpAffine(NativePaddleEngine.fullBufferSet.p.mat, NativePaddleEngine.fullBufferSet.s.mat, rotMat, org.opencv.core.Size(imgW.toDouble(), imgH.toDouble()), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+        org.opencv.imgproc.Imgproc.warpAffine(NativePaddleEngine.fullBufferSet.p.mat, NativePaddleEngine.fullBufferSet.s.mat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
         NativePaddleEngine.fullBufferSet.flip()
         val base64BSNormal = takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 400, 300, emptyList())
 
         // 3. BufferSet Inverse (WARP_INVERSE_MAP)
         NativePaddleEngine.fullBufferSet.p.clear()
         NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.p.mat)
-        org.opencv.imgproc.Imgproc.warpAffine(NativePaddleEngine.fullBufferSet.p.mat, NativePaddleEngine.fullBufferSet.s.mat, rotMat, org.opencv.core.Size(imgW.toDouble(), imgH.toDouble()), org.opencv.imgproc.Imgproc.INTER_CUBIC or org.opencv.imgproc.Imgproc.WARP_INVERSE_MAP, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+        org.opencv.imgproc.Imgproc.warpAffine(NativePaddleEngine.fullBufferSet.p.mat, NativePaddleEngine.fullBufferSet.s.mat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC or org.opencv.imgproc.Imgproc.WARP_INVERSE_MAP, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
         NativePaddleEngine.fullBufferSet.flip()
         val base64BSInverse = takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 400, 300, emptyList())
 
         // 4. Isolated Mat Normal
         val srcMat = org.opencv.core.Mat()
         org.opencv.android.Utils.bitmapToMat(masterBmp, srcMat)
-        val dstMat = org.opencv.core.Mat(org.opencv.core.Size(imgW.toDouble(), imgH.toDouble()), srcMat.type())
-        org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, org.opencv.core.Size(imgW.toDouble(), imgH.toDouble()), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+        val dstMat = org.opencv.core.Mat(cvSize, srcMat.type())
+        org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
         val base64MatNormal = takeSnapshot(dstMat, null, 400, 300, emptyList())
 
         // 5. Isolated Mat Inverse
         dstMat.setTo(org.opencv.core.Scalar(0.0))
-        org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, org.opencv.core.Size(imgW.toDouble(), imgH.toDouble()), org.opencv.imgproc.Imgproc.INTER_CUBIC or org.opencv.imgproc.Imgproc.WARP_INVERSE_MAP, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+        org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, cvSize, org.opencv.imgproc.Imgproc.INTER_CUBIC or org.opencv.imgproc.Imgproc.WARP_INVERSE_MAP, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
         val base64MatInverse = takeSnapshot(dstMat, null, 400, 300, emptyList())
         
         srcMat.release(); dstMat.release(); rotMat.release()
@@ -1570,5 +1575,8 @@ private suspend fun runDiagnosticWarpTest(context: Context, photos: List<File>, 
     html.append("</table></body></html>")
     File(reportDir, "warp_parity_diagnostic.html").writeText(html.toString())
     onLog("Diagnostic Warp Test Complete. Saved to report directory.")
+    
+    // Proper Cleanup
     masterBmp.recycle(); scratchBmp.recycle(); rawBitmap.recycle()
+    masterBmpGlobal = null; scratchBmpGlobal = null
 }
