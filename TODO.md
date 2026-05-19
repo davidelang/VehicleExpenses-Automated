@@ -24,16 +24,16 @@
     - [x] **Phase 3: Recognition Pool Migration (320x48)**
     - [x] **Phase 4: Discovery Pool Migration (512x128)**
     - [x] **Phase 5: Vehicle-Specific Pool Swap (Complete)**
-    - [ ] Phase 6: Managed Sub-Crops & Flip Optimization
+    - [x] **DONE:** Phase 6: Managed Sub-Crops & Flip Optimization
     - [ ] Phase 7: Final Migration & Decommissioning
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
     - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
     - [ ] Add rotational gating (±20°) to deskew logic.
-    - [ ] Implement `applyContrastStretch` using OpenCV histogram analysis.
+    - [x] **DONE:** Implement `applyContrastStretch` using OpenCV histogram analysis.
     - [ ] Expand `runMultiStepOcr` refinement loop with S-75% and S-80% stages.
-    - [ ] Add `deskew_data` forensic logging to JSON reports.
-    - [ ] Include landmark `angle` in discovery results.
+    - [x] **DONE:** Add `deskew_data` forensic logging to JSON reports.
+    - [x] **DONE:** Include landmark `angle` in discovery results.
     - [ ] Synchronize Python scripts for `.strip()` consistency.
 - **Identity & Matching:**
   - [ ] **Multi-Scale Discovery:** Implement a multi-resolution discovery pipeline (e.g., full-res + 2048x2048) to resolve "landmark blindness" where ML Kit fails to detect small dashboard digits in high-resolution photos.
@@ -46,9 +46,9 @@
     - [ ] Implement `unclipBox` expansion logic (Ratio 1.5) to prevent digit clipping.
     - [ ] Implement `warpPerspective` for rotated text crop extraction.
     - [ ] Update Normalization constants to ImageNet standards (0.485/0.229).
-  - [ ] **Final Validation (Phase 4):**
-    - [ ] Benchmark accuracy vs. ML Kit using the 12-image test set.
-    - [ ] Compare "Veto" accuracy between ML Kit and Paddle-Lite discovery.
+  - [x] **DONE:** Final Validation (Phase 4):
+    - [x] **DONE:** Benchmark accuracy vs. ML Kit (12-image test set / 140-image ground truth).
+    - [x] **DONE:** Compare "Veto" accuracy between ML Kit and Paddle-Lite discovery.
   - [x] **Paddle Valley Mono Iterative Implementation:**
     - [x] Implement `runPaddleValleyMonoIterative` mirroring `runMLKitIterative` architecture.
     - [x] Use global `MemoryBridge` pools (`pool512x128`, `experimentRecBridge320x48`) for zero-allocation processing.
