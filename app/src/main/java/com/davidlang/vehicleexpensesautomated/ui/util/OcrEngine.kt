@@ -265,7 +265,6 @@ object OcrUtils {
         when (source) {
             is Bitmap -> {
                 // Resize ROI directly into row-level scratchBmp
-                val scratchBmp = NativePaddleEngine.sharedBmpOdoScratch
                 val canvas = Canvas(scratchBmp)
                 canvas.drawColor(Color.BLACK, PorterDuff.Mode.CLEAR)
                 canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
