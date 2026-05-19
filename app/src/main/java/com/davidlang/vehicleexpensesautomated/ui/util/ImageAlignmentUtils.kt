@@ -617,10 +617,18 @@ object ImageAlignmentUtils {
             // Phase 115: Native Morphing using Imgproc.warpAffine
             val src = bufferSet.p.mat
             val dst = bufferSet.s.mat
+
+            // Use Android Matrix as mathematical calculator for 100% parity
+            val m = android.graphics.Matrix()
+            m.postScale(finalScale, finalScale)
+            m.postTranslate(finalTx * queW, finalTy * queH)
+            m.invert(m)
+            val values = FloatArray(9)
+            m.getValues(values)
+
             val warpMat = Mat(2, 3, CvType.CV_64F)
-            val s = finalScale.toDouble()
-            warpMat.put(0, 0, s, 0.0, (finalTx * src.cols()).toDouble())
-            warpMat.put(1, 0, 0.0, s, (finalTy * src.rows()).toDouble())
+            warpMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
+            warpMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
             
             Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0))
             bufferSet.flip()
