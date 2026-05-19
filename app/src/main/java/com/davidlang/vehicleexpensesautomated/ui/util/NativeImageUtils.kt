@@ -40,10 +40,6 @@ object NativeImageUtils {
      * High-performance YUV annotation utility using standard OpenCV drawing.
      * Operates directly on the Luma (8UC1) and interleaved Chroma (8UC2) planes.
      */
-    fun drawYuvAnnotations(handle: BufferSetLegacy.YuvHandle, annotations: List<SnapshotAnnotation>) {
-        drawYuvInternal(handle.width, handle.height, handle.planes[0].buffer, handle.planes[2].buffer, annotations)
-    }
-
     fun drawYuvAnnotations(handle: BufferSet.YuvHandle, annotations: List<SnapshotAnnotation>) {
         drawYuvInternal(handle.width, handle.height, handle.planes[0].buffer, handle.planes[2].buffer, annotations)
     }
@@ -93,18 +89,6 @@ object NativeImageUtils {
     /**
      * Encodes a YuvHandle directly to a Base64 JPEG string using high-performance JNI merge.
      */
-    fun compressYuvToBase64(handle: BufferSetLegacy.YuvHandle, quality: Int): String {
-        return nativeCompressYuvToBase64(
-            handle.planes[0].buffer,
-            handle.planes[1].buffer,
-            handle.planes[2].buffer,
-            handle.width,
-            handle.height,
-            handle.planes[0].rowStride,
-            quality
-        )
-    }
-
     fun compressYuvToBase64(handle: BufferSet.YuvHandle, quality: Int): String {
         return nativeCompressYuvToBase64(
             handle.planes[0].buffer,

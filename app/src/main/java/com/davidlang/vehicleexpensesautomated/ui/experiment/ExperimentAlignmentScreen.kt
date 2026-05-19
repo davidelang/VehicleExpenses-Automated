@@ -202,7 +202,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         ReferenceCache(v, refBase64, curated, bmp, bmp.width, bmp.height)
     }
     
-    // Phase 115: Vehicle-Specific BufferSetLegacy Pools (Zero-Allocation Anchor)
+    // Phase 115: Vehicle-Specific BufferSet Pools (Zero-Allocation Anchor)
     val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
     val vehicleArgbCrops = mutableMapOf<Int, Bitmap>()
     val vehicleArgbScratches = mutableMapOf<Int, Bitmap>()
@@ -356,7 +356,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH, scratchBmp)
                     val elapsedAlign = System.currentTimeMillis() - t0
 
-                    // 1.2 Native Alignment (In-place on fullBufferSetLegacy)
+                    // 1.2 Native Alignment (In-place on fullBufferSet)
                     val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
                         NativePaddleEngine.fullBufferSet, 
                         winnerRef.curatedLandmarks, 
