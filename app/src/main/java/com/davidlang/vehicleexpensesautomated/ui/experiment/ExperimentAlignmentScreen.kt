@@ -1441,20 +1441,24 @@ private suspend fun takeSnapshot(
 
     when (source) {
         is Bitmap -> {
-            // Resize ROI directly into row-level scratchBmp (large)
-            val canvas = Canvas(scratchBmp)
-            canvas.drawColor(Color.BLACK, android.graphics.PorterDuff.Mode.CLEAR)
-            canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
-            
-            // Create a subset view of the large scratch bitmap to sync with the small Mat
-            val subset = Bitmap.createBitmap(scratchBmp, 0, 0, finalW, finalH)
-            NativeImageUtils.syncMatFromArgb(subset, snapRoiY)
-            subset.recycle()
+            val fullMat = org.opencv.core.Mat()
+            org.opencv.android.Utils.bitmapToMat(source, fullMat)
+            val sub = fullMat.submat(cvRoi)
+            val graySub = org.opencv.core.Mat()
+            org.opencv.imgproc.Imgproc.cvtColor(sub, graySub, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
+            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            fullMat.release(); sub.release(); graySub.release()
         }
         is org.opencv.core.Mat -> {
-            val subY = source.submat(cvRoi)
-            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            subY.release()
+            val sub = source.submat(cvRoi)
+            val graySub = if (sub.channels() == 4) {
+                val g = org.opencv.core.Mat()
+                org.opencv.imgproc.Imgproc.cvtColor(sub, g, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
+                g
+            } else sub
+            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            if (graySub !== sub) graySub.release()
+            sub.release()
         }
         is BufferSet.Slice -> {
             // Luma Resize
@@ -1496,6 +1500,7 @@ private suspend fun runDiagnosticWarpTest(context: Context, photos: List<File>, 
     val masterBmp = masterBmpGlobal!!
     val scratchBmp = scratchBmpGlobal!!
     Canvas(masterBmp).drawBitmap(rawBitmap, 0f, 0f, null)
+    OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
     NativeImageUtils.syncMatFromArgb(masterBmp, NativePaddleEngine.fullBufferSet.p.mat)
 
     data class TestParams(val name: String, val s: Float, val r: Float, val tx: Float, val ty: Float)
