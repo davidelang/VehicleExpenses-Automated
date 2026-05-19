@@ -53,6 +53,10 @@ import kotlin.math.min
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 
+// Phase 115: Row-Level Global Scratch Buffers
+private var masterBmpGlobal: Bitmap? = null
+private var scratchBmpGlobal: Bitmap? = null
+
 @Immutable
 data class PhotoResultSummary(
     val photoName: String,
@@ -270,8 +274,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
 
             // Phase 115: Per-Row Master Buffers (Native Resolution)
-            val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-            val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+            masterBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+            scratchBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+            val masterBmp = masterBmpGlobal!!
+            val scratchBmp = scratchBmpGlobal!!
             val masterCanvas = android.graphics.Canvas(masterBmp)
             masterCanvas.drawColor(android.graphics.Color.BLACK)
             masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
@@ -526,7 +532,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     experimentDetSet512x128.c[detCropId].release()
 
-                                    val detThumbB64 = OcrUtils.takeSnapshot(
+                                    val detThumbB64 = takeSnapshot(
                                         source = experimentDetSet512x128.p,
                                         sourceRect = null,
                                         targetW = 512,
@@ -666,7 +672,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     // Source from high-res odoBuffer.p directly
-                                    lastThumbB64 = OcrUtils.takeSnapshot(
+                                    lastThumbB64 = takeSnapshot(
                                         source = odoBuffer.p,
                                         sourceRect = null,
                                         targetW = 320,
@@ -850,7 +856,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     }
 
                                     // Source from high-res odoBuffer.p directly
-                                    lastThumbB64 = OcrUtils.takeSnapshot(
+                                    lastThumbB64 = takeSnapshot(
                                         source = odoBuffer.p,
                                         sourceRect = null, // Full Odometer Area
                                         targetW = 320,
@@ -938,6 +944,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             } finally {
                 masterBmp?.recycle()
                 scratchBmp?.recycle()
+                masterBmpGlobal = null
+                scratchBmpGlobal = null
             }
         } catch (e: Exception) { 
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
@@ -1340,4 +1348,126 @@ private suspend fun performLandmarkDiscovery(
         queryOcrDiscovery.imageHeight
     )
     return Pair(queryOcrDiscovery, landmarks)
+}
+
+/**
+ * Captures a high-performance diagnostic snapshot of a source buffer.
+ * Coordinate Mapping: 'annotations' MUST be provided in the coordinate system of 'source'.
+ * If 'sourceRect' is provided (zoom), annotations will be automatically translated and scaled.
+ * 'strokeWidth' is defined in final thumbnail pixels.
+ */
+private suspend fun takeSnapshot(
+    source: Any,
+    sourceRect: Rect?,
+    targetW: Int,
+    targetH: Int,
+    annotations: List<SnapshotAnnotation>
+): String = withContext(Dispatchers.IO) {
+    val manager = NativePaddleEngine.fullBufferSet
+    val workspace = manager.s
+    val scratchBmp = scratchBmpGlobal!!
+    
+    // Step 1: Geometry Normalization
+    val srcW: Int
+    val srcH: Int
+    when (source) {
+        is Bitmap -> { srcW = source.width; srcH = source.height }
+        is org.opencv.core.Mat -> { srcW = source.cols(); srcH = source.rows() }
+        is BufferSet.Slice -> { srcW = source.width; srcH = source.height }
+        else -> { srcW = 0; srcH = 0 }
+    }
+    
+    val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
+    val cvRoi = org.opencv.core.Rect(roi.left, roi.top, roi.width(), roi.height())
+    val roiW = roi.width().coerceAtLeast(1)
+    val roiH = roi.height().coerceAtLeast(1)
+    val sourceAspect = roiW.toFloat() / roiH.toFloat()
+    
+    val toEven = { v: Float -> ((v + 1).toInt() / 2) * 2 }
+
+    var finalW: Int
+    var finalH: Int
+    
+    if (targetW > 0 && targetH > 0) {
+        val targetAspect = targetW.toFloat() / targetH
+        if (targetAspect > sourceAspect) {
+            finalH = targetH; finalW = (targetH * sourceAspect).toInt()
+        } else {
+            finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+        }
+    } else if (targetW > 0) {
+        finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+    } else if (targetH > 0) {
+        finalH = targetH; finalW = (targetH * sourceAspect).toInt()
+    } else {
+        finalW = roiW; finalH = roiH
+    }
+    
+    // Cap to scratch buffer dimensions and ensure 2-pixel alignment
+    finalW = toEven(finalW.toFloat().coerceIn(2f, 4000f))
+    finalH = toEven(finalH.toFloat().coerceIn(2f, 3072f))
+
+    // Calculate scaling factors for annotations (Source ROI -> Final Thumbnail)
+    val sX = finalW.toFloat() / roiW.toFloat()
+    val sY = finalH.toFloat() / roiH.toFloat()
+    val scaledAnnotations = annotations.map { ann ->
+        ann.copy(
+            x1 = ((ann.x1 - roi.left) * sX).toInt(),
+            y1 = ((ann.y1 - roi.top) * sY).toInt(),
+            x2 = ((ann.x2 - roi.left) * sX).toInt(),
+            y2 = ((ann.y2 - roi.top) * sY).toInt()
+        )
+    }
+
+    // Step 2: Prepare the logical snapshot area
+    workspace.clear()
+    
+    // Register a transient crop for the snapshot area
+    val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
+    val snapSlice = manager.c[snapCropId]
+    
+    val snapRoiY = snapSlice.mat
+    val snapRoiUV = snapSlice.uvMat
+
+    when (source) {
+        is Bitmap -> {
+            // Resize ROI directly into row-level scratchBmp (large)
+            val canvas = Canvas(scratchBmp)
+            canvas.drawColor(Color.BLACK, android.graphics.PorterDuff.Mode.CLEAR)
+            canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
+            
+            // Create a subset view of the large scratch bitmap to sync with the small Mat
+            val subset = Bitmap.createBitmap(scratchBmp, 0, 0, finalW, finalH)
+            NativeImageUtils.syncMatFromArgb(subset, snapRoiY)
+            subset.recycle()
+        }
+        is org.opencv.core.Mat -> {
+            val subY = source.submat(cvRoi)
+            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            subY.release()
+        }
+        is BufferSet.Slice -> {
+            // Luma Resize
+            val subY = source.mat.submat(cvRoi)
+            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, org.opencv.core.Size(finalW.toDouble(), finalH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            
+            // Chroma Resize (8UC2 interleaved)
+            val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
+            val subUV = source.uvMat.submat(roiUV)
+            org.opencv.imgproc.Imgproc.resize(subUV, snapRoiUV, org.opencv.core.Size(finalW / 2.0, finalH / 2.0), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            
+            subY.release(); subUV.release()
+        }
+    }
+    
+    // Step 3: Native Annotation
+    val handle = snapSlice.yuv
+    NativeImageUtils.drawYuvAnnotations(handle, scaledAnnotations)
+
+    // Step 4: Direct Encoding (Native Split-Plane)
+    val b64 = NativeImageUtils.compressYuvToBase64(handle, 80)
+    
+    snapSlice.release()
+    
+    b64
 }
