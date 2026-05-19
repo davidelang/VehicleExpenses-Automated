@@ -529,10 +529,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val detThumbB64 = OcrUtils.takeSnapshot(
                                         source = experimentDetSet512x128.p,
                                         sourceRect = null,
-                                        targetW = 320,
-                                        targetH = 48,
+                                        targetW = 512,
+                                        targetH = 128,
                                         annotations = emptyList()
                                     )
+                                    htmlOutput.append("<div class='ocr-step'><b>Discovery Stage ($stage):</b><br><img src='data:image/jpeg;base64,$detThumbB64'></div>")
 
                                     val det = paddleEngineV3Mono.detectMono(experimentDetSet512x128.p)
                                     val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, odoBuffer.p.mat, "Paddle") else emptyList()
@@ -655,25 +656,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val odo = odoBuilder.toString().trim()
                                     allOdo.add(odo)
                                     
-                                    // 4.6 Snapshot Scaling (Scale to 320x48 for scratch bitmap)
-                                    val aspect = odoBuffer.p.mat.cols().toFloat() / odoBuffer.p.mat.rows().toFloat()
-                                    val fitW: Int; val fitH: Int
-                                    if (aspect > (320f / 48f)) {
-                                        fitW = 320
-                                        fitH = (320f / aspect).toInt().coerceAtLeast(1)
-                                    } else {
-                                        fitH = 48
-                                        fitW = (48f * aspect).toInt().coerceAtLeast(1)
-                                    }
-                                    
-                                    experimentRecSet320x48.p.clear()
-                                    val snapCropId = experimentRecSet320x48.createCrop(0, 0, fitW, fitH)
-                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[snapCropId].mat, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                                    experimentRecSet320x48.c[snapCropId].release()
-                                    
-                                    val scaleSnapX = fitW.toFloat() / odoBuffer.p.mat.cols().toFloat()
-                                    val scaleSnapY = fitH.toFloat() / odoBuffer.p.mat.rows().toFloat()
-                                    
+                                    // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
                                     rawBlocks.forEach { b -> 
                                         annotations.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2))
@@ -682,16 +665,17 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         annotations.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                     }
 
+                                    // Source from high-res odoBuffer.p directly
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        source = experimentRecSet320x48.p,
+                                        source = odoBuffer.p,
                                         sourceRect = null,
-                                        targetW = fitW,
-                                        targetH = fitH,
+                                        targetW = 320,
+                                        targetH = 48,
                                         annotations = annotations
                                     )
 
                                     val tLoop = System.currentTimeMillis() - tStart
-                                    htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
+                                    htmlOutput.append("<div class='ocr-step'><b>Recognition ($stage):</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
                                     
                                     val stageObj = com.google.gson.JsonObject()
                                     stageObj.addProperty("text", odo)
@@ -856,7 +840,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val odo = odoBuilder.toString()
                                     allOdo.add(odo)
 
-                                    // 4.6 Diagnostic Snapshot (Mat-Direct Visualization)
+                                    // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
                                     for (j in 0 until visionBlocks.size) {
                                         val b = visionBlocks[j].boundingBox
@@ -864,18 +848,18 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             annotations.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                         }
                                     }
+
+                                    // Source from high-res odoBuffer.p directly
                                     lastThumbB64 = OcrUtils.takeSnapshot(
-                                        source = experimentRecSet320x48.p,
-                                        sourceRect = null,
-                                        targetW = fitW,
-                                        targetH = fitH,
+                                        source = odoBuffer.p,
+                                        sourceRect = null, // Full Odometer Area
+                                        targetW = 320,
+                                        targetH = 48,
                                         annotations = annotations
                                     )
 
-                                    experimentRecSet320x48.p.clear()
-
                                     val tLoop = System.currentTimeMillis() - tStart
-                                    htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
+                                    htmlOutput.append("<div class='ocr-step'><b>Recognition ($stage):</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
                                     
                                     val stageObj = com.google.gson.JsonObject()
                                     stageObj.addProperty("text", odo)
