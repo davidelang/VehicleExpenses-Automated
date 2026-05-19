@@ -6,6 +6,7 @@
 - [x] **DONE:** Phase 25.2 - BufferSet Incremental Migration (Complete).
     - [x] Step 4: Vehicle Bridge Migration.
     - [x] Step 5: Dashboard Migration & Decommissioning.
+    - [x] Step 5.4: Smart Snapshot API & Visualization Improvement.
 - [ ] **ACTIVE:** Phase 23 - Foundational YUV Handle Infrastructure (Standard Multi-Plane Descriptor).
 - [x] **DONE:** Phase 11.5 - Protocol Hardening (Execution Rigor Mandates).
 - [x] **DONE:** Phase 9 - Stateless Native Snapshot Utility.
