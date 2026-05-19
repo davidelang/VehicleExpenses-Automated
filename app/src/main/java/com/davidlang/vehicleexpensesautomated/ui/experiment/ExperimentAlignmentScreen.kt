@@ -529,8 +529,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     val fitDetW = (odoBuffer.p.mat.cols() * detScale).toInt().coerceAtMost(512)
                                     val fitDetH = (odoBuffer.p.mat.rows() * detScale).toInt().coerceAtMost(128)
 
-                                    val detCropId = experimentDetSet512x128.createCrop(0, 0, fitDetW, fitDetH)
-                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, org.opencv.core.Size(fitDetW.toDouble(), fitDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    val toEvenDet = { v: Int -> ((v + 1) / 2) * 2 }
+                                    val evenDetW = toEvenDet(fitDetW)
+                                    val evenDetH = toEvenDet(fitDetH)
+
+                                    val detCropId = experimentDetSet512x128.createCrop(0, 0, evenDetW, evenDetH)
+                                    val detTargetMat = experimentDetSet512x128.c[detCropId].mat
+                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, detTargetMat, org.opencv.core.Size(evenDetW.toDouble(), evenDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     experimentDetSet512x128.c[detCropId].release()
 
                                     val detThumbB64 = takeSnapshot(
@@ -650,8 +655,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val fitRecH = ((safeB - safeT) * recScale).toInt().coerceAtMost(40)
                                         
                                         val offX = 4; val offY = 4
-                                        val recCropId = experimentRecSet320x48.createCrop(offX, offY, fitRecW, fitRecH)
-                                        org.opencv.imgproc.Imgproc.resize(odoBuffer.c[recSrcId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(fitRecW.toDouble(), fitRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                        val toEvenRec = { v: Int -> ((v + 1) / 2) * 2 }
+                                        val evenRecW = toEvenRec(fitRecW)
+                                        val evenRecH = toEvenRec(fitRecH)
+                                        
+                                        val recCropId = experimentRecSet320x48.createCrop(offX, offY, evenRecW, evenRecH)
+                                        val recTargetMat = experimentRecSet320x48.c[recCropId].mat
+                                        org.opencv.imgproc.Imgproc.resize(odoBuffer.c[recSrcId].mat, recTargetMat, org.opencv.core.Size(evenRecW.toDouble(), evenRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                         odoBuffer.c[recSrcId].release(); experimentRecSet320x48.c[recCropId].release()
                                         
                                         val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.p, paddleEngineV3Mono.getDictionary())
@@ -820,8 +830,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     // 4.4 Scale-to-Fit (Recognition)
                                     experimentRecSet320x48.p.clear()
-                                    val mlRecCropId = experimentRecSet320x48.createCrop(0, 0, fitW, fitH)
-                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[mlRecCropId].mat, org.opencv.core.Size(fitW.toDouble(), fitH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                                    
+                                    val toEven = { v: Int -> ((v + 1) / 2) * 2 }
+                                    val evenW = toEven(fitW)
+                                    val evenH = toEven(fitH)
+                                    
+                                    val mlRecCropId = experimentRecSet320x48.createCrop(0, 0, evenW, evenH)
+                                    val targetMat = experimentRecSet320x48.c[mlRecCropId].mat
+                                    org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, targetMat, org.opencv.core.Size(evenW.toDouble(), evenH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     
                                     // 4.4 ML Kit Recognition (Zero-Copy ByteBuffer)
                                     val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
