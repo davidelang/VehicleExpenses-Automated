@@ -186,7 +186,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
          * Implementation of high-quality Area-Averaging resize using OpenCV.
          * Bypasses background-thread Canvas/Paint JNI locks.
          */
-        fun performHighQualityResize(sourceBmp: Bitmap, targetInstance: BufferSetLegacy.Instance) {
+        fun performHighQualityResize(sourceBmp: Bitmap, target: Any) {
             val buffer = java.nio.ByteBuffer.allocateDirect(sourceBmp.byteCount)
             sourceBmp.copyPixelsToBuffer(buffer)
             buffer.rewind()
@@ -194,7 +194,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Bypass Utils.bitmapToMat, wrap ALPHA_8 directly into a 1-channel Mat
             val tempMat = Mat(sourceBmp.height, sourceBmp.width, org.opencv.core.CvType.CV_8UC1, buffer)
             try {
-                val targetMat = targetInstance.yMat
+                val targetMat = when (target) {
+                    is BufferSetLegacy.Instance -> target.yMat
+                    is BufferSet.Slice -> target.mat
+                    else -> throw IllegalArgumentException("Unsupported target type")
+                }
                 Imgproc.resize(tempMat, targetMat, Size(targetMat.cols().toDouble(), targetMat.rows().toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
             } finally {
                 tempMat.release()
@@ -321,13 +325,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     fun detectMono(input: Any): DetectionResult? {
-        val (mat, buffer) = when (input) {
-            is BufferSetLegacy.Instance -> input.yMat to input.nv21
-            is BufferSet.Slice -> input.mat to input.raw
+        val w: Int
+        val h: Int
+        val buffer: java.nio.ByteBuffer
+        when (input) {
+            is BufferSetLegacy.Instance -> {
+                w = input.yMat.cols()
+                h = input.yMat.rows()
+                buffer = input.nv21
+            }
+            is BufferSet.Slice -> {
+                w = input.width
+                h = input.height
+                buffer = input.raw
+            }
             else -> throw IllegalArgumentException("Unsupported input type for detectMono")
         }
-        val w = mat.cols()
-        val h = mat.rows()
         val area = w * h
 
         val predictor = if (w >= 2048) detectorLarge else detectorSmall
@@ -440,9 +453,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val tStart = System.currentTimeMillis()
         if (recognizer == null || !useMono) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
 
-        val (w, h, buffer) = when (input) {
-            is BufferSetLegacy.Instance -> Triple(input.yMat.cols(), input.yMat.rows(), input.nv21)
-            is BufferSet.Slice -> Triple(input.width, input.height, input.raw)
+        val w: Int
+        val h: Int
+        val buffer: java.nio.ByteBuffer
+        when (input) {
+            is BufferSetLegacy.Instance -> {
+                w = input.yMat.cols()
+                h = input.yMat.rows()
+                buffer = input.nv21
+            }
+            is BufferSet.Slice -> {
+                w = input.width
+                h = input.height
+                buffer = input.raw
+            }
             else -> throw IllegalArgumentException("Unsupported input type for runConstrainedStaticMono")
         }
 
