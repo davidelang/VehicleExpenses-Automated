@@ -1364,8 +1364,6 @@ private suspend fun takeSnapshot(
     targetH: Int,
     annotations: List<SnapshotAnnotation>
 ): String = withContext(Dispatchers.IO) {
-    val manager = NativePaddleEngine.fullBufferSet
-    val workspace = manager.s
     val scratchBmp = scratchBmpGlobal!!
     
     // Step 1: Geometry Normalization
@@ -1421,14 +1419,13 @@ private suspend fun takeSnapshot(
     }
 
     // Step 2: Prepare the logical snapshot area
-    workspace.clear()
+    NativePaddleEngine.fullBufferSet.s.clear()
     
     // Register a transient crop for the snapshot area
-    val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
-    val snapSlice = manager.c[snapCropId]
+    val snapCropId = NativePaddleEngine.fullBufferSet.s.createCrop(0, 0, finalW, finalH)
     
-    val snapRoiY = snapSlice.mat
-    val snapRoiUV = snapSlice.uvMat
+    val snapRoiY = NativePaddleEngine.fullBufferSet.c[snapCropId].mat
+    val snapRoiUV = NativePaddleEngine.fullBufferSet.c[snapCropId].uvMat
 
     when (source) {
         is Bitmap -> {
@@ -1462,13 +1459,12 @@ private suspend fun takeSnapshot(
     }
     
     // Step 3: Native Annotation
-    val handle = snapSlice.yuv
-    NativeImageUtils.drawYuvAnnotations(handle, scaledAnnotations)
+    NativeImageUtils.drawYuvAnnotations(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, scaledAnnotations)
 
     // Step 4: Direct Encoding (Native Split-Plane)
-    val b64 = NativeImageUtils.compressYuvToBase64(handle, 80)
+    val b64 = NativeImageUtils.compressYuvToBase64(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, 80)
     
-    snapSlice.release()
+    NativePaddleEngine.fullBufferSet.c[snapCropId].release()
     
     b64
 }

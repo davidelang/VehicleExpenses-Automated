@@ -165,21 +165,22 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         fun physicalRelease() { disarm(); if (nativeHandle != 0L) { nativeRelease(nativeHandle); nativeHandle = 0 } }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
-            val crop = ManagedCrop(false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
+            val crop = ManagedCrop(this, false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
             crop.refresh(); return registerCrop(crop, id)
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            val crop = ManagedCrop(true, x, y, w, h)
+            val crop = ManagedCrop(this, true, x, y, w, h)
             crop.refresh(); return registerCrop(crop, id)
         }
-        override fun resize(x: Int, y: Int, w: Int, h: Int) = throw UnsupportedOperationException()
-        override fun resize(x: Float, y: Float, w: Float, h: Float) = throw UnsupportedOperationException()
-        override fun release() {}
+        override fun resize(x: Int, y: Int, w: Int, h: Int) = throw UnsupportedOperationException("Base Primary/Scratch buffers cannot be resized via Slice interface. Use BufferSet.resize().")
+        override fun resize(x: Float, y: Float, w: Float, h: Float) = throw UnsupportedOperationException("Base Primary/Scratch buffers cannot be resized via Slice interface. Use BufferSet.resize().")
+        override fun release() = throw UnsupportedOperationException("Base Primary/Scratch buffers cannot be released via Slice interface. Use BufferSet.release().")
         override fun clear() = nativeClear(nativeHandle)
         override fun clearChroma() = nativeClearChroma(nativeHandle)
     }
 
     inner class ManagedCrop(
+        private val owner: Instance,
         internal var isNormalized: Boolean,
         private var rawX: Float, private var rawY: Float, private var rawW: Float, private var rawH: Float
     ) : Slice {
@@ -189,17 +190,17 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
         override val mat: Mat get() = _mat ?: throw IllegalStateException("Disarmed")
         override val uvMat: Mat get() = _uvMat ?: throw IllegalStateException("Disarmed")
-        override val nv21: ByteBuffer get() = throw UnsupportedOperationException()
+        override val nv21: ByteBuffer get() = throw UnsupportedOperationException("nv21 contiguous access is not supported on Crops.")
         override val raw: ByteBuffer get() {
-            val parentBuf = instances[primaryIdx].raw
+            val parentBuf = owner.raw
             return (parentBuf.duplicate().position(absY * _width + absX) as ByteBuffer).slice()
         }
-        override val nv21Mat: Mat get() = throw UnsupportedOperationException()
+        override val nv21Mat: Mat get() = throw UnsupportedOperationException("nv21Mat access is not supported on Crops.")
         override val width: Int get() = absW
         override val height: Int get() = absH
 
         override val yuv: YuvHandle get() {
-            val fullBuf = (instances[primaryIdx] as Instance).nv21
+            val fullBuf = owner.nv21
             val uvOffset = (_width * _height) + (absY / 2 * _width) + absX
             return YuvHandle(width = absW, height = absH, planes = arrayOf(
                 YuvHandle.Plane((fullBuf.duplicate().position(absY * _width + absX) as ByteBuffer).slice(), _width, 1),
@@ -218,17 +219,17 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             absX = (px / 2) * 2; absY = (py / 2) * 2
             val x2 = ((px + pw + 1) / 2) * 2; val y2 = ((py + ph + 1) / 2) * 2
             absW = (x2 - absX).coerceIn(2, _width - absX); absH = (y2 - absY).coerceIn(2, _height - absY)
-            _mat = instances[primaryIdx].mat.submat(Rect(absX, absY, absW, absH))
-            _uvMat = instances[primaryIdx].uvMat.submat(Rect(absX / 2, absY / 2, absW / 2, absH / 2))
+            _mat = owner.mat.submat(Rect(absX, absY, absW, absH))
+            _uvMat = owner.uvMat.submat(Rect(absX / 2, absY / 2, absW / 2, absH / 2))
         }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
             Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            return registerCrop(ManagedCrop(false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat()), id)
+            return registerCrop(ManagedCrop(owner, false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat()), id)
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
             Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            return registerCrop(ManagedCrop(false, absX + (x * absW), absY + (y * absH), w * absW, h * absH), id)
+            return registerCrop(ManagedCrop(owner, false, absX + (x * absW), absY + (y * absH), w * absW, h * absH), id)
         }
         override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
         override fun resize(x: Float, y: Float, w: Float, h: Float) { isNormalized = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
