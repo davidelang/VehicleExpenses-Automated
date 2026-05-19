@@ -54,7 +54,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var isNativeLibLoaded = false
 
         // Phase 115: Safe Rigid Backing Fields (Eliminates background JNI locks)
-        private var _fullBufferSetLegacy: BufferSetLegacy? = null
+        private var _fullBufferSet: BufferSet? = null
         private var _bufferLarge: FloatArray? = null
         private var _bufferLargeMono: FloatArray? = null
         private var _sharedBmp2048: Bitmap? = null
@@ -80,7 +80,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedMonoBytes: ByteArray? = null
 
         // Public Non-Null Accessors (API Stability)
-        val fullBufferSetLegacy: BufferSetLegacy get() = _fullBufferSetLegacy!!
+        val fullBufferSet: BufferSet get() = _fullBufferSet!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         private val bufferLargeMono: FloatArray get() = _bufferLargeMono!!
         val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
@@ -124,7 +124,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             if (isAvailableGlobally) return
             Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
 
-            _fullBufferSetLegacy = BufferSetLegacy(4000, 3072)
+            _fullBufferSet = BufferSet(4000, 3072)
 
             _bufferLarge = FloatArray(3 * 2048 * 2048); _bufferLargeMono = FloatArray(1 * 2048 * 2048)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ARGB_8888); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
