@@ -1,6 +1,8 @@
 # Vehicle Expenses Automated — TODO Updated
 
 ## Infrastructure & Protocol
+- [ ] **Naming Cleanup:** Rename `NativePaddleEngine` to `NativeVisionSystem` and `fullBufferSet` to `dashboardPool` (or similar) to accurately reflect their purpose.
+- [ ] **Chain-of-Command Audit:** Repository-wide audit to eliminate variable-assignment anti-patterns (storing slices/handles in local vars) in the alignment experiment code.
 - [ ] **BufferSet Audit:** Perform a repository-wide audit to eliminate variable-assignment anti-patterns (e.g., storing `manager.s` or `slice.yuv` into local variables). Enforce direct chaining from the root `BufferSet` to ensure state is resolved at use-time and prevent stale-pointer/affinity errors.
 - [x] **DONE:** Phase 25.0 - Short-Run Rotation Refactor (Recovery).
 - [x] **DONE:** Phase 25.1 - Extract Annotate & Compress Utilities.

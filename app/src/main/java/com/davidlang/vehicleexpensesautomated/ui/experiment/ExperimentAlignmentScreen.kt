@@ -344,13 +344,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
     when (source) {
         is Bitmap -> {
-            val fullMat = org.opencv.core.Mat()
-            org.opencv.android.Utils.bitmapToMat(source, fullMat)
-            val sub = fullMat.submat(cvRoi)
-            val graySub = org.opencv.core.Mat()
-            org.opencv.imgproc.Imgproc.cvtColor(sub, graySub, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
-            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            fullMat.release(); sub.release(); graySub.release()
+            // Explicit Decision: Use row-local scratchBmp as ARGB workspace to avoid heap pixel allocation.
+            val canvas = Canvas(scratchBmp)
+            canvas.drawColor(Color.BLACK, android.graphics.PorterDuff.Mode.CLEAR)
+            canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
+            
+            // Sync result into Native workspace (Red channel extraction)
+            val subset = Bitmap.createBitmap(scratchBmp, 0, 0, finalW, finalH)
+            NativeImageUtils.syncMatFromArgb(subset, snapRoiY)
+            subset.recycle()
         }
         is org.opencv.core.Mat -> {
             val sub = source.submat(cvRoi)

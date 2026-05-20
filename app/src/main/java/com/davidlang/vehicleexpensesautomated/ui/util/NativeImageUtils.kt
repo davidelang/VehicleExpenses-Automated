@@ -40,8 +40,11 @@ object NativeImageUtils {
      * High-performance YUV annotation utility using standard OpenCV drawing.
      * Operates directly on the Luma (8UC1) and interleaved Chroma (8UC2) planes.
      */
-    fun drawYuvAnnotations(yMat: Mat, uvMat: Mat, annotations: List<SnapshotAnnotation>) {
+    fun drawYuvAnnotations(slice: BufferSet.Slice, annotations: List<SnapshotAnnotation>) {
         if (annotations.isEmpty()) return
+
+        val yMat = slice.mat
+        val uvMat = slice.uvMat
 
         annotations.forEach { ann ->
             // Map ARGB colors to YUV scalars
