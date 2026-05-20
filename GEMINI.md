@@ -43,6 +43,10 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
 - **Phase Completion:** A phase is not considered complete until it is checked in and compiled. Because `git describe` is used for the version number, you MUST check in your changes before compiling, otherwise the version number in the resulting build will be incorrect.
 - **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean. **NOTE:** Current technical containment (regex-based) is an accepted risk; remaining vigilant against unintended path traversal is the agent's responsibility.
 
+## Documentation Integrity Rules
+- **Intent Specs (`docs/specs/`):** These are UPSTREAM design documents. They are the immutable source of truth. You MUST NOT "improve," refactor, or update these files to match the current codebase. If you identify a discrepancy between a Spec and the code, report it. Modifying a Spec requires an explicit, dedicated turn and user authorization.
+- **Implementation Docs (`docs/reference/`):** These are DOWNSTREAM documents. They must accurately reflect the codebase. If you change an API, UI, or architecture, you MUST update the corresponding files in this directory during your Execution Phase.
+
 ## Protocol Resilience & Deadlock Prevention
 - **The "Now" Definition:** When a user requests action "NOW", "IMMEDIATE", or "JUST DO IT", this is strictly defined as: *The very first action in the first turn after the next Strategy proposal is approved.* For urgent/emergency actions (e.g., `git revert`), the Strategy proposal MAY be atomic (a single-line plan) to satisfy the documentation protocol while enabling rapid response.
 - **Forbidden Actions:** If a task requires a change that is currently forbidden (e.g., modifying source code during Research), you are NOT in a failure state. The restriction is an instruction to document the requirement and include it as a specific line-item in your next Strategy proposal.

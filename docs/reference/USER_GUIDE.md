@@ -1,3 +1,9 @@
+---
+type: implementation-reference
+status: dynamic
+ai_directive: "This is a downstream reference. It MUST be updated continuously to reflect the current state of the codebase. If you change a function or architecture described here, update this document in the same commit."
+---
+
 # Vehicle Expenses Automated — User Manual
 
 ## App Icon
@@ -12,7 +18,11 @@ Vehicle Expenses Automated is designed to track fuel entries and expenses with m
 - **Capture**: Tap **Take Photo** to aim at your dashboard (odometer) or fuel pump.
 - **Automatic Identity**: The app detects the vehicle based on the visual alignment of the dashboard using Veto algorithms.
 - **Extraction**: Reads the Odometer, Gallons, and Cost.
+- **Location**: If enabled, the app automatically tags the entry with your current GPS coordinates.
 - **Save**: Review the extracted data and tap **Save**. The entry is queued for background sync.
+
+### Dashboard & Recent Activity
+- The **Dashboard** provides a high-level summary of your most recent fill-ups, average fuel economy, and pending sync items.
 
 ## Managing Vehicles
 To achieve high OCR accuracy, the app uses **Reference Dash Photos**:
@@ -23,7 +33,8 @@ To achieve high OCR accuracy, the app uses **Reference Dash Photos**:
 
 ## Expenses & Reports
 - Use the **New Expense Entry** screen to record non-fuel costs.
-- Track fuel economy (MPG/L/100km) and spending over time using the built-in charts.
+- Track fuel economy (MPG/L/100km) and spending over time using the built-in charts in the **Reports** section.
 
-## Synchronization & Backup
-- **Google Sheets & Drive**: Optionally sync entries to a Google Sheet and back up photos to Google Drive. Everything operates Local-First and syncs quietly in the background.
+## Synchronization & Conflict Resolution
+- **Google Sheets & Drive**: Optionally sync entries to a Google Sheet and back up photos to Google Drive.
+- **Conflict Resolution**: If the app detects a mismatch between your local data and the remote Google Sheet, it will present the **Conflict Resolution** screen to let you choose which version to keep.
