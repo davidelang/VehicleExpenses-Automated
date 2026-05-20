@@ -11,12 +11,26 @@ To support the advanced features required by the Vehicle Expenses Automated app 
 ## 1. Source & Branches
 The custom modifications are tracked in a fork of the official Paddle-Lite repository.
 
-*   **Fork Repository:** (Reference the internal git fork for Paddle-Lite)
-*   **Branches:**
-    *   `feature/dynamic-shape-android`: Contains the logic for `NNADAPTER_DYNAMIC_SHAPE_INFO` on mobile.
-    *   `fix/amd64-android-parity`: Ensures mathematical consistency between host-side `opt` results and device-side inference.
+*   **Fork Repository:** (Internal git fork for Paddle-Lite)
+*   **Active Branches (Prepared locally for PR):**
+    *   `pr-upstream-cleanup`: **Foundational.** Essential bug fixes required to build Paddle-Lite for ANY platform (ARM or X86). Includes AVX-512 CRF decoding fixes and INT8 linker support.
+    *   `pr-x86-android-mobile-gap`: **Platform-Specific.** Additional patches required specifically for Android Emulator support (`x86_64`). Bridges the "Mobile Gap" and fixes AVX2 scoping.
 
-## 2. Build Configuration
+## 2. Technical Highlights from Custom Branches
+
+### Bridging the "Mobile Gap"
+Paddle-Lite traditionally assumed X86 meant Desktop (`LITE_ON_TINY_PUBLISH=OFF`). Our custom patches enable `LITE_ON_TINY_PUBLISH=ON` for X86, allowing it to compile as a lightweight mobile library for Android Emulators.
+
+### AVX2 Scoping Fix
+Fixed an architectural bug where `-mavx2` flags were lost when building the final `PADDLELITE_OBJS` library. Flags are now explicitly re-applied in the `lite/api/` scope to ensure performance on `x86_64` without triggering `SIGILL` crashes.
+
+### OpenBLAS Optimization
+Statically linked OpenBLAS is optimized for emulators by setting `DYNAMIC_ARCH=0` and `ONLY_CBLAS=1`, drastically reducing the binary size of the X86 Android library.
+
+### Protobuf & STL Isolation
+Wrapped `framework.pb.h` includes in `#ifndef LITE_ON_TINY_PUBLISH` and refined `DDimLite` stream operators to support both `std::ostream` (Desktop) and Paddle's lightweight `replace_stl::ostream` (Mobile).
+
+## 3. Build Configuration
 The following `build.sh` flags are critical for producing compatible binaries:
 
 ```bash
