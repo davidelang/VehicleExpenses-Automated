@@ -266,50 +266,55 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = if (targetWidth >= 2048) detectorLarge else detectorSmall
         if (predictor == null) return null
 
-        val area = targetWidth * targetHeight
-        val floatData: FloatArray
+        val tensorWidth = if (targetWidth >= 2048) 2048 else 512
+        val tensorHeight = if (targetWidth >= 2048) 2048 else 128
+        val planeStride = tensorWidth * tensorHeight
         
-        if (targetWidth >= 2048) {
-            floatData = if (useMono) bufferLargeMono else bufferLarge
+        val floatData = if (targetWidth >= 2048) {
+            if (useMono) bufferLargeMono else bufferLarge
         } else {
-            floatData = if (useMono) bufferSmallMono else bufferSmall
+            if (useMono) bufferSmallMono else bufferSmall
         }
         floatData.fill(0.0f)
 
         when (input) {
             is Bitmap -> {
                 // Use the passed targetWidth/targetHeight. DO NOT shadow or hardcode.
-                val scaled = if (input.width != targetWidth || input.height != targetHeight) {
-                    Bitmap.createScaledBitmap(input, targetWidth, targetHeight, true)
+                val fitW = targetWidth.coerceAtMost(tensorWidth)
+                val fitH = targetHeight.coerceAtMost(tensorHeight)
+
+                val scaled = if (input.width != fitW || input.height != fitH) {
+                    Bitmap.createScaledBitmap(input, fitW, fitH, true)
                 } else input
 
-                val planeStride = if (targetWidth >= 2048) 2048 * 2048 else 512 * 128
-
                 if (useMono) {
-                    for (y in 0 until targetHeight) {
-                        for (x in 0 until targetWidth) {
+                    for (y in 0 until fitH) {
+                        for (x in 0 until fitW) {
                             val px = scaled.getPixel(x, y)
-                            // Use Red channel (consistent with syncMatFromArgb) for grayscaled ARGB bitmaps
-                            floatData[y * targetWidth + x] = (((px shr 16) and 0xFF) / 255.0f - 0.485f) / 0.229f
+                            // Use Red channel for grayscaled ARGB bitmaps
+                            floatData[y * tensorWidth + x] = (((px shr 16) and 0xFF) / 255.0f - 0.485f) / 0.229f
                         }
                     }
                 } else {
-                    for (y in 0 until targetHeight) {
-                        for (x in 0 until targetWidth) {
+                    for (y in 0 until fitH) {
+                        for (x in 0 until fitW) {
                             val px = scaled.getPixel(x, y)
-                            floatData[0 * planeStride + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f
-                            floatData[1 * planeStride + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f
-                            floatData[2 * planeStride + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.406f) / 0.225f
+                            floatData[0 * planeStride + y * tensorWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f
+                            floatData[1 * planeStride + y * tensorWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f
+                            floatData[2 * planeStride + y * tensorWidth + x] = ((px and 0xFF) / 255.0f - 0.406f) / 0.225f
                         }
                     }
                 }
             }
             is java.nio.ByteBuffer -> {
-                // Direct NV21/CV_8UC1 to floatData parsing (Assuming already 320x128)
-                val targetWidth = 320; val targetHeight = 128; val area = targetWidth * targetHeight
+                // Direct NV21/CV_8UC1 to floatData parsing (Assumes input fits in tensor corner)
                 input.rewind()
-                for (i in 0 until area) {
-                    floatData[i] = ((input.get().toInt() and 0xFF) / 255.0f - 0.485f) / 0.229f
+                val fitW = targetWidth.coerceAtMost(tensorWidth)
+                val fitH = targetHeight.coerceAtMost(tensorHeight)
+                for (y in 0 until fitH) {
+                    for (x in 0 until fitW) {
+                        floatData[y * tensorWidth + x] = ((input.get().toInt() and 0xFF) / 255.0f - 0.485f) / 0.229f
+                    }
                 }
             }
             else -> {
@@ -326,42 +331,35 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     fun detectMono(input: Any): DetectionResult? {
-        val w: Int
-        val h: Int
-        val buffer: java.nio.ByteBuffer
+        val w: Int; val h: Int; val buffer: java.nio.ByteBuffer
         when (input) {
-            is BufferSet.Slice -> {
-                w = input.width
-                h = input.height
-                buffer = input.raw
-            }
+            is BufferSet.Slice -> { w = input.width; h = input.height; buffer = input.raw }
             else -> throw IllegalArgumentException("Unsupported input type for detectMono")
         }
-        val area = w * h
 
         val predictor = if (w >= 2048) detectorLarge else detectorSmall
         if (predictor == null) return null
 
+        val tensorWidth = if (w >= 2048) 2048 else 512
+        val tensorHeight = if (w >= 2048) 2048 else 128
         val floatData = if (w >= 2048) bufferLargeMono else bufferSmallMono
         
-        // Ensure the bridge dimensions don't exceed our pre-allocated tensors
-        val maxArea = if (w >= 2048) 2048 * 2048 else 512 * 128
-        if (area > maxArea) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated mono tensor capacity.")
-            return null
-        }
-        
-        // Warn if the buffer size does not match the exact expected tensor sizes
-        if (!((w == 512 && h == 128) || (w == 2048 && h == 2048))) {
-            Log.w("PaddleDetect", "Warning: Bridge dimensions (${w}x${h}) do not exactly match expected tensor sizes (512x128 or 2048x2048).")
-        }
-
         floatData.fill(0.0f)
         buffer.rewind()
         
+        val fitW = w.coerceAtMost(tensorWidth)
+        val fitH = h.coerceAtMost(tensorHeight)
+        
         val mean = 0.485f; val std = 0.229f
-        for (i in 0 until area) {
-            floatData[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
+        for (y in 0 until fitH) {
+            for (x in 0 until fitW) {
+                floatData[y * tensorWidth + x] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
+            }
+            // Skip the rest of the source row if it was wider than fitW
+            if (w > fitW) {
+                val skip = w - fitW
+                repeat(skip) { buffer.get() }
+            }
         }
 
         try {

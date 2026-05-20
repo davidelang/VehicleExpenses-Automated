@@ -40,16 +40,18 @@ object NativeImageUtils {
      * High-performance YUV annotation utility using standard OpenCV drawing.
      * Operates directly on the Luma (8UC1) and interleaved Chroma (8UC2) planes.
      */
-    fun drawYuvAnnotations(slice: BufferSet.Slice, annotations: List<SnapshotAnnotation>) {
+    fun drawYuvAnnotations(handle: BufferSet.YuvHandle, annotations: List<SnapshotAnnotation>) {
         if (annotations.isEmpty()) return
 
-        val yMat = slice.mat
-        val uvMat = slice.uvMat
+        // Create temporary Mat wrappers that respect the native memory stride
+        val yPlane = handle.planes[0]
+        val uvPlane = handle.planes[2] // V plane is start of interleaved UV in NV21
+        
+        val yMat = Mat(handle.height, handle.width, CvType.CV_8UC1, yPlane.buffer, yPlane.rowStride.toLong())
+        val uvMat = Mat(handle.height / 2, handle.width / 2, CvType.CV_8UC2, uvPlane.buffer, uvPlane.rowStride.toLong())
 
         annotations.forEach { ann ->
             // Map ARGB colors to YUV scalars
-            // (Standard ITU-R BT.601 conversion: Y=0.299R+0.587G+0.114B, U=-0.147R-0.289G+0.436B, V=0.615R-0.515G-0.100B)
-            // Values used here match existing legacy JNI implementation for consistency
             val (yVal, uVal, vVal) = when (ann.color and 0x00FFFFFF) {
                 0xFF0000 -> Triple(76.0, 84.0, 255.0)   // Red
                 0xFFA500 -> Triple(173.0, 42.0, 191.0)  // Orange
@@ -62,15 +64,16 @@ object NativeImageUtils {
             val thickness = ann.strokeWidth
             
             if (ann.shape == Shape.RECTANGLE) {
-                // Draw on Luma
                 Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), thickness)
-                // Draw on Chroma (Half coordinates)
                 Imgproc.rectangle(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
             } else {
                 Imgproc.line(yMat, p1, p2, Scalar(yVal), thickness)
                 Imgproc.line(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
             }
         }
+
+        yMat.release()
+        uvMat.release()
     }
 
     /**
