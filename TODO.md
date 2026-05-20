@@ -3,6 +3,20 @@
 ## Infrastructure & Protocol
 - [ ] **Naming Cleanup:** Rename `NativePaddleEngine` to `NativeVisionSystem` and `fullBufferSet` to `dashboardPool` (or similar) to accurately reflect their purpose.
 - [ ] **Chain-of-Command Audit:** Repository-wide audit to eliminate variable-assignment anti-patterns (storing slices/handles in local vars) in the alignment experiment code.
+- [ ] **Migrate NDK directory to Git Subproject (`ndk/`)**
+    - **Current State:** Using standalone `android-ndk-r20b/` directory.
+    - **Target State:** Use `ndk/` directory as a git subproject, locked to the `r20b` revision.
+    - **Implementation Details:**
+        - Add the NDK repository as a submodule/subproject at the root.
+        - Ensure the branch/tag checked out in `ndk/` matches the `r20b` version.
+        - Update `local.properties`, `build.gradle`, and any environment scripts (e.g., in `dev-ai-interaction/`) to point to the new `ndk/` path instead of `android-ndk-r20b/`.
+    - **Verification Checks:**
+        - **Directory Parity:** Confirm that `ndk/` contains the exact same toolchains, sysroots, and headers as the current `android-ndk-r20b/` (accounting for the single extra directory level).
+        - **JNI Build:** Run `./gradlew assembleDebug` to ensure the C++ components (`MemoryBridge.cpp`, etc.) compile without header or link errors.
+        - **Path Audit:** Search the entire project for hardcoded strings of `android-ndk-r20b` to ensure no build scripts are left pointing to the old path.
+        - **Git Hygiene:** Verify `.gitmodules` is correctly updated and the submodule is not "dirty."
+- [ ] **Naming Cleanup:** Rename `NativePaddleEngine` to `NativeVisionSystem` and `fullBufferSet` to `dashboardPool` (or similar) to accurately reflect their purpose.
+- [ ] **Chain-of-Command Audit:** Repository-wide audit to eliminate variable-assignment anti-patterns (storing slices/handles in local vars) in the alignment experiment code.
 - [ ] **BufferSet Audit:** Perform a repository-wide audit to eliminate variable-assignment anti-patterns (e.g., storing `manager.s` or `slice.yuv` into local variables). Enforce direct chaining from the root `BufferSet` to ensure state is resolved at use-time and prevent stale-pointer/affinity errors.
 - [x] **DONE:** Phase 25.0 - Short-Run Rotation Refactor (Recovery).
 - [x] **DONE:** Phase 25.1 - Extract Annotate & Compress Utilities.
