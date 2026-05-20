@@ -55,8 +55,6 @@ private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81x
 private const val TAG = "ExperimentAlignment"
 
 // Phase 115: Row-Level Global Scratch Buffers
-private var masterBmpGlobal: Bitmap? = null
-private var scratchBmpGlobal: Bitmap? = null
 
 @Immutable
 data class PhotoResultSummary(
@@ -276,16 +274,126 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
 
             // Phase 115: Per-Row Master Buffers (Native Resolution)
-            masterBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-            scratchBmpGlobal = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-            val masterBmp = masterBmpGlobal!!
-            val scratchBmp = scratchBmpGlobal!!
+            
+            val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+            val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+            
+            // Explicit Decision: takeSnapshot is a local function to capture row-local buffers without explicit parameter passing.
+            suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: Int, annotations: List<SnapshotAnnotation>): String = withContext(Dispatchers.IO) {
+                val scratchBmp = scratchBmp // Capture outer scope
+                // Step 1: Geometry Normalization
+    val srcW: Int
+    val srcH: Int
+    when (source) {
+        is Bitmap -> { srcW = source.width; srcH = source.height }
+        is org.opencv.core.Mat -> { srcW = source.cols(); srcH = source.rows() }
+        is BufferSet.Slice -> { srcW = source.width; srcH = source.height }
+        else -> { srcW = 0; srcH = 0 }
+    }
+    
+    val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
+    val cvRoi = org.opencv.core.Rect(roi.left, roi.top, roi.width(), roi.height())
+    val roiW = roi.width().coerceAtLeast(1)
+    val roiH = roi.height().coerceAtLeast(1)
+    val sourceAspect = roiW.toFloat() / roiH.toFloat()
+    
+    val toEven = { v: Float -> ((v + 1).toInt() / 2) * 2 }
+
+    var finalW: Int
+    var finalH: Int
+    
+    if (targetW > 0 && targetH > 0) {
+        val targetAspect = targetW.toFloat() / targetH
+        if (targetAspect > sourceAspect) {
+            finalH = targetH; finalW = (targetH * sourceAspect).toInt()
+        } else {
+            finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+        }
+    } else if (targetW > 0) {
+        finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+    } else if (targetH > 0) {
+        finalH = targetH; finalW = (targetH * sourceAspect).toInt()
+    } else {
+        finalW = roiW; finalH = roiH
+    }
+    
+    // Cap to scratch buffer dimensions and ensure 2-pixel alignment
+    finalW = toEven(finalW.toFloat().coerceIn(2f, 4000f))
+    finalH = toEven(finalH.toFloat().coerceIn(2f, 3072f))
+
+    // Calculate scaling factors for annotations (Source ROI -> Final Thumbnail)
+    val sX = finalW.toFloat() / roiW.toFloat()
+    val sY = finalH.toFloat() / roiH.toFloat()
+    val scaledAnnotations = annotations.map { ann ->
+        ann.copy(
+            x1 = ((ann.x1 - roi.left) * sX).toInt(),
+            y1 = ((ann.y1 - roi.top) * sY).toInt(),
+            x2 = ((ann.x2 - roi.left) * sX).toInt(),
+            y2 = ((ann.y2 - roi.top) * sY).toInt()
+        )
+    }
+
+    // Step 2: Prepare the logical snapshot area
+    NativePaddleEngine.fullBufferSet.s.clear()
+    
+    // Register a transient crop for the snapshot area
+    val snapCropId = NativePaddleEngine.fullBufferSet.s.createCrop(0, 0, finalW, finalH)
+    
+    val snapRoiY = NativePaddleEngine.fullBufferSet.c[snapCropId].mat
+    val snapRoiUV = NativePaddleEngine.fullBufferSet.c[snapCropId].uvMat
+
+    when (source) {
+        is Bitmap -> {
+            val fullMat = org.opencv.core.Mat()
+            org.opencv.android.Utils.bitmapToMat(source, fullMat)
+            val sub = fullMat.submat(cvRoi)
+            val graySub = org.opencv.core.Mat()
+            org.opencv.imgproc.Imgproc.cvtColor(sub, graySub, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
+            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            fullMat.release(); sub.release(); graySub.release()
+        }
+        is org.opencv.core.Mat -> {
+            val sub = source.submat(cvRoi)
+            val graySub = if (sub.channels() == 4) {
+                val g = org.opencv.core.Mat()
+                org.opencv.imgproc.Imgproc.cvtColor(sub, g, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
+                g
+            } else sub
+            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            if (graySub !== sub) graySub.release()
+            sub.release()
+        }
+        is BufferSet.Slice -> {
+            // Luma Resize
+            val subY = source.mat.submat(cvRoi)
+            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            
+            // Chroma Resize (8UC2 interleaved)
+            val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
+            val subUV = source.uvMat.submat(roiUV)
+            org.opencv.imgproc.Imgproc.resize(subUV, snapRoiUV, snapRoiUV.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            
+            subY.release(); subUV.release()
+        }
+    }
+    
+    // Step 3: Native Annotation
+    NativeImageUtils.drawYuvAnnotations(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, scaledAnnotations)
+
+    // Step 4: Direct Encoding (Native Split-Plane)
+    val b64 = NativeImageUtils.compressYuvToBase64(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, 80)
+    
+    NativePaddleEngine.fullBufferSet.c[snapCropId].release()
+    
+    b64
+            }
+
             val masterCanvas = android.graphics.Canvas(masterBmp)
             masterCanvas.drawColor(android.graphics.Color.BLACK)
             masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
             
             // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
-            val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, scratchBmp)
+            val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, null)
 
             rawBitmap.recycle()
 
@@ -354,91 +462,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 var alignedNativeBase64 = ""
 
                 // Winner-Only Processing block
+                
                 if (winnerRef != null) {
-                    finalWinnerName = winnerRef.vehicle.name
-                    Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
-                    
-                    // Phase 115: Actual Native Discovery Pass
-                    val tDiscMono0 = System.currentTimeMillis()
-                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSet.p, context)
-                    queryOcrDiscoveryMono = ocrMono
-                    tDiscoveryMonoTotal = System.currentTimeMillis() - tDiscMono0
-
-                    // Phase 108: Independent Disambiguation
-                    val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
-                    val queryLandmarksMonoPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksMonoRaw, winnerRef.curatedLandmarks)
-                    
-                    // 1. Standard Alignment (In-place on masterBmp)
-                    val t0 = System.currentTimeMillis()
-                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH, scratchBmp)
-                    val elapsedAlign = System.currentTimeMillis() - t0
-
-                    // 1.2 Native Alignment (In-place on fullBufferSet)
-                    val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
-                        NativePaddleEngine.fullBufferSet, 
-                        winnerRef.curatedLandmarks, 
-                        queryLandmarksMonoPrimary, 
-                        winnerRef.vehicle, 
-                        winnerRef.width, 
-                        winnerRef.height, 
-                        imgW, 
-                        imgH, 
-                        scratchBmp
-                    )
-                    
-                    // Capture ALIGNED Thumbnail for Report
-                    alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, scratchBmp)
-                    
-                    // Capture Native ALIGNED Thumbnail (already synced to scratchBmp by anchorAlignNative)
-                    alignedNativeBase64 = createScaledBase64(scratchBmp, 600, 50, null)
-
-                    // 2. Mono Alignment (Native OpenCV)
-                    val alignmentTraceMono = AlignmentTraceResult(nativeAlignRes.success, nativeAlignRes.timeMs, alignedNativeBase64, nativeAlignRes.metadata)
-
-                    if (alignRes.success) {
-                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, scratchBmp), alignRes.metadata)
-                        val refinementTraces = mutableMapOf<String, RefinementTrace>()
-                        val harnessResultsMap = mutableMapOf<String, OcrHarnessResult>()
-                        
-                        // Phase 58: Refinement Loop (Only executed on successful alignment)
-                        val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
-                        if (exactCrop != null) {
-
-                            // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
-                            val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-                            val t = winnerRef.vehicle.odometerCropTop ?: 0f
-                            val r = winnerRef.vehicle.odometerCropRight ?: 1f
-                            val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-                            
-                            val srcW = (r - l) * masterBmp!!.width
-                            val srcH = (b - t) * masterBmp.height
-                            val scaleX = exactCrop.width.toFloat() / srcW
-                            val scaleY = exactCrop.height.toFloat() / srcH
-                            
-                            val cropCanvas = android.graphics.Canvas(exactCrop)
-                            cropCanvas.drawColor(android.graphics.Color.BLACK)
-                            val matrix = NativePaddleEngine.sharedMatrix
-                            matrix.reset()
-                            matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
-                            matrix.postScale(scaleX, scaleY)
-                            cropCanvas.drawBitmap(masterBmp, matrix, NativePaddleEngine.srcPaint)
-
-                            val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
-                            try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
-
-                            val report = object : ReportCollector {
-                                override fun add(engineName: String, result: OcrHarnessResult) {
-                                    harnessResultsMap[engineName] = result
-                                    val steps = result.jsonSection.getAsJsonObject("stages")?.entrySet()?.map { (stage, data) ->
-                                        val obj = data.asJsonObject
-                                        OcrStepResult(stageName = stage, thumbB64 = result.thumbB64 ?: "", text = obj.get("text")?.asString, metadata = mapOf("loop_time" to obj.get("time")?.asString.toString()))
-                                    } ?: emptyList()
-                                    refinementTraces[engineName] = RefinementTrace(engineName, result.totalTimeMs, steps)
-                                    Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
-                                }
-                            }
-
-                            suspend fun runPaddleValleyMonoIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
+                    suspend fun runPaddleValleyMonoIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
                                 val tHarnessStart = System.currentTimeMillis()
                                 val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
                                 val argbCrop = vehicleArgbCrops[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle ARGB crop not initialized")
@@ -720,8 +746,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 )
                                 report.add(displayName, result)
                             }
-
-                            suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
+                    suspend fun runMLKitIterative(displayName: String, masterBuffer: Any, masterW: Int, masterH: Int, report: ReportCollector) {
                                 val tHarnessStart = System.currentTimeMillis()
                                 val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
                                 val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: throw IllegalStateException("Vehicle bridge not initialized")
@@ -906,6 +931,97 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                 )
                                 report.add(displayName, result)
                             }
+                    finalWinnerName = winnerRef.vehicle.name
+
+                    Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
+                    
+                    // Phase 115: Actual Native Discovery Pass
+                    val tDiscMono0 = System.currentTimeMillis()
+                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSet.p, context)
+                    queryOcrDiscoveryMono = ocrMono
+                    tDiscoveryMonoTotal = System.currentTimeMillis() - tDiscMono0
+
+                    // Phase 108: Independent Disambiguation
+                    val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
+                    val queryLandmarksMonoPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksMonoRaw, winnerRef.curatedLandmarks)
+                    
+                    // 1. Standard Alignment (In-place on masterBmp)
+                    val t0 = System.currentTimeMillis()
+                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH, scratchBmp)
+                    val elapsedAlign = System.currentTimeMillis() - t0
+
+                    
+                    // 1.2 Native Alignment (In-place on fullBufferSet)
+                    val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
+                        NativePaddleEngine.fullBufferSet, 
+                        winnerRef.curatedLandmarks, 
+                        queryLandmarksMonoPrimary, 
+                        winnerRef.vehicle, 
+                        winnerRef.width, 
+                        winnerRef.height, 
+                        imgW, 
+                        imgH, 
+                        scratchBmp
+                    )
+                    
+                    // FIX: Capture Native ALIGNED Thumbnail IMMEDIATELY before scratchBmp is reused
+                    alignedNativeBase64 = if (nativeAlignRes.success) {
+                        takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 600, 450, emptyList())
+                    } else 
+
+                    // Capture Standard ALIGNED Thumbnail for Report (Use null to prevent clobbering)
+                    alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, null)
+
+
+                    // 2. Mono Alignment (Native OpenCV)
+                    val alignmentTraceMono = AlignmentTraceResult(nativeAlignRes.success, nativeAlignRes.timeMs, alignedNativeBase64, nativeAlignRes.metadata)
+
+                    if (alignRes.success) {
+                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, null), alignRes.metadata)
+                        val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                        val harnessResultsMap = mutableMapOf<String, OcrHarnessResult>()
+                        
+                        // Phase 58: Refinement Loop (Only executed on successful alignment)
+                        val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
+                        if (exactCrop != null) {
+
+                            // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
+                            val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+                            val t = winnerRef.vehicle.odometerCropTop ?: 0f
+                            val r = winnerRef.vehicle.odometerCropRight ?: 1f
+                            val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+                            
+                            val srcW = (r - l) * masterBmp!!.width
+                            val srcH = (b - t) * masterBmp.height
+                            val scaleX = exactCrop.width.toFloat() / srcW
+                            val scaleY = exactCrop.height.toFloat() / srcH
+                            
+                            val cropCanvas = android.graphics.Canvas(exactCrop)
+                            cropCanvas.drawColor(android.graphics.Color.BLACK)
+                            val matrix = NativePaddleEngine.sharedMatrix
+                            matrix.reset()
+                            matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
+                            matrix.postScale(scaleX, scaleY)
+                            cropCanvas.drawBitmap(masterBmp, matrix, NativePaddleEngine.srcPaint)
+
+                            val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
+                            try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
+
+                            val report = object : ReportCollector {
+                                override fun add(engineName: String, result: OcrHarnessResult) {
+                                    harnessResultsMap[engineName] = result
+                                    val steps = result.jsonSection.getAsJsonObject("stages")?.entrySet()?.map { (stage, data) ->
+                                        val obj = data.asJsonObject
+                                        OcrStepResult(stageName = stage, thumbB64 = result.thumbB64 ?: "", text = obj.get("text")?.asString, metadata = mapOf("loop_time" to obj.get("time")?.asString.toString()))
+                                    } ?: emptyList()
+                                    refinementTraces[engineName] = RefinementTrace(engineName, result.totalTimeMs, steps)
+                                    Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
+                                }
+                            }
+
+                            
+
+                            
 
                             // --- Sequential Execution ---
                             runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
@@ -963,8 +1079,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
             } finally {
                 masterBmp?.recycle()
                 scratchBmp?.recycle()
-                masterBmpGlobal = null
-                scratchBmpGlobal = null
+                
             }
         } catch (e: Exception) { 
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
@@ -1369,126 +1484,6 @@ private suspend fun performLandmarkDiscovery(
     return Pair(queryOcrDiscovery, landmarks)
 }
 
-/**
- * Captures a high-performance diagnostic snapshot of a source buffer.
- * Coordinate Mapping: 'annotations' MUST be provided in the coordinate system of 'source'.
- * If 'sourceRect' is provided (zoom), annotations will be automatically translated and scaled.
- * 'strokeWidth' is defined in final thumbnail pixels.
- */
-private suspend fun takeSnapshot(
-    source: Any,
-    sourceRect: Rect?,
-    targetW: Int,
-    targetH: Int,
-    annotations: List<SnapshotAnnotation>
-): String = withContext(Dispatchers.IO) {
-    val scratchBmp = scratchBmpGlobal!!
-    
-    // Step 1: Geometry Normalization
-    val srcW: Int
-    val srcH: Int
-    when (source) {
-        is Bitmap -> { srcW = source.width; srcH = source.height }
-        is org.opencv.core.Mat -> { srcW = source.cols(); srcH = source.rows() }
-        is BufferSet.Slice -> { srcW = source.width; srcH = source.height }
-        else -> { srcW = 0; srcH = 0 }
-    }
-    
-    val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
-    val cvRoi = org.opencv.core.Rect(roi.left, roi.top, roi.width(), roi.height())
-    val roiW = roi.width().coerceAtLeast(1)
-    val roiH = roi.height().coerceAtLeast(1)
-    val sourceAspect = roiW.toFloat() / roiH.toFloat()
-    
-    val toEven = { v: Float -> ((v + 1).toInt() / 2) * 2 }
 
-    var finalW: Int
-    var finalH: Int
-    
-    if (targetW > 0 && targetH > 0) {
-        val targetAspect = targetW.toFloat() / targetH
-        if (targetAspect > sourceAspect) {
-            finalH = targetH; finalW = (targetH * sourceAspect).toInt()
-        } else {
-            finalW = targetW; finalH = (targetW / sourceAspect).toInt()
-        }
-    } else if (targetW > 0) {
-        finalW = targetW; finalH = (targetW / sourceAspect).toInt()
-    } else if (targetH > 0) {
-        finalH = targetH; finalW = (targetH * sourceAspect).toInt()
-    } else {
-        finalW = roiW; finalH = roiH
-    }
-    
-    // Cap to scratch buffer dimensions and ensure 2-pixel alignment
-    finalW = toEven(finalW.toFloat().coerceIn(2f, 4000f))
-    finalH = toEven(finalH.toFloat().coerceIn(2f, 3072f))
-
-    // Calculate scaling factors for annotations (Source ROI -> Final Thumbnail)
-    val sX = finalW.toFloat() / roiW.toFloat()
-    val sY = finalH.toFloat() / roiH.toFloat()
-    val scaledAnnotations = annotations.map { ann ->
-        ann.copy(
-            x1 = ((ann.x1 - roi.left) * sX).toInt(),
-            y1 = ((ann.y1 - roi.top) * sY).toInt(),
-            x2 = ((ann.x2 - roi.left) * sX).toInt(),
-            y2 = ((ann.y2 - roi.top) * sY).toInt()
-        )
-    }
-
-    // Step 2: Prepare the logical snapshot area
-    NativePaddleEngine.fullBufferSet.s.clear()
-    
-    // Register a transient crop for the snapshot area
-    val snapCropId = NativePaddleEngine.fullBufferSet.s.createCrop(0, 0, finalW, finalH)
-    
-    val snapRoiY = NativePaddleEngine.fullBufferSet.c[snapCropId].mat
-    val snapRoiUV = NativePaddleEngine.fullBufferSet.c[snapCropId].uvMat
-
-    when (source) {
-        is Bitmap -> {
-            val fullMat = org.opencv.core.Mat()
-            org.opencv.android.Utils.bitmapToMat(source, fullMat)
-            val sub = fullMat.submat(cvRoi)
-            val graySub = org.opencv.core.Mat()
-            org.opencv.imgproc.Imgproc.cvtColor(sub, graySub, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
-            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            fullMat.release(); sub.release(); graySub.release()
-        }
-        is org.opencv.core.Mat -> {
-            val sub = source.submat(cvRoi)
-            val graySub = if (sub.channels() == 4) {
-                val g = org.opencv.core.Mat()
-                org.opencv.imgproc.Imgproc.cvtColor(sub, g, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
-                g
-            } else sub
-            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            if (graySub !== sub) graySub.release()
-            sub.release()
-        }
-        is BufferSet.Slice -> {
-            // Luma Resize
-            val subY = source.mat.submat(cvRoi)
-            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            
-            // Chroma Resize (8UC2 interleaved)
-            val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
-            val subUV = source.uvMat.submat(roiUV)
-            org.opencv.imgproc.Imgproc.resize(subUV, snapRoiUV, snapRoiUV.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            
-            subY.release(); subUV.release()
-        }
-    }
-    
-    // Step 3: Native Annotation
-    NativeImageUtils.drawYuvAnnotations(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, scaledAnnotations)
-
-    // Step 4: Direct Encoding (Native Split-Plane)
-    val b64 = NativeImageUtils.compressYuvToBase64(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, 80)
-    
-    NativePaddleEngine.fullBufferSet.c[snapCropId].release()
-    
-    b64
-}
 
 
