@@ -377,8 +377,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         }
     }
     
-    // Step 3: Native Annotation
-    NativeImageUtils.drawYuvAnnotations(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, scaledAnnotations)
+    // Step 3: Native Annotation (Pass Mats directly to preserve stride)
+    NativeImageUtils.drawYuvAnnotations(snapRoiY, snapRoiUV, scaledAnnotations)
 
     // Step 4: Direct Encoding (Native Split-Plane)
     val b64 = NativeImageUtils.compressYuvToBase64(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, 80)
@@ -892,10 +892,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
+                                    val scaleX = roiW.toFloat() / evenW.toFloat()
+                                    val scaleY = roiH.toFloat() / evenH.toFloat()
                                     for (j in 0 until visionBlocks.size) {
                                         val b = visionBlocks[j].boundingBox
                                         if (b != null) {
-                                            annotations.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                                            annotations.add(SnapshotAnnotation(
+                                                (b.left * scaleX).toInt(), (b.top * scaleY).toInt(), 
+                                                (b.right * scaleX).toInt(), (b.bottom * scaleY).toInt(), 
+                                                Shape.RECTANGLE, Color.rgb(255, 165, 0), 2
+                                            ))
                                         }
                                     }
 

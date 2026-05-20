@@ -40,20 +40,8 @@ object NativeImageUtils {
      * High-performance YUV annotation utility using standard OpenCV drawing.
      * Operates directly on the Luma (8UC1) and interleaved Chroma (8UC2) planes.
      */
-    fun drawYuvAnnotations(handle: BufferSet.YuvHandle, annotations: List<SnapshotAnnotation>) {
-        drawYuvInternal(handle.width, handle.height, handle.planes[0].buffer, handle.planes[2].buffer, annotations)
-    }
-
-    private fun drawYuvInternal(hW: Int, hH: Int, yBuf: ByteBuffer, uvBuf: ByteBuffer, annotations: List<SnapshotAnnotation>) {
+    fun drawYuvAnnotations(yMat: Mat, uvMat: Mat, annotations: List<SnapshotAnnotation>) {
         if (annotations.isEmpty()) return
-
-        // Create temporary Mat wrappers around the raw buffers
-        // Luma plane is 8UC1
-        val yMat = Mat(hH, hW, CvType.CV_8UC1, yBuf)
-        
-        // Chroma plane (interleaved VU for NV21) is 8UC2 at half resolution
-        // We use plane[2] (V) as the base since it's the start of the interleaved UV hunk in NV21
-        val uvMat = Mat(hH / 2, hW / 2, CvType.CV_8UC2, uvBuf)
 
         annotations.forEach { ann ->
             // Map ARGB colors to YUV scalars
@@ -80,10 +68,6 @@ object NativeImageUtils {
                 Imgproc.line(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
             }
         }
-
-        // Release Mat headers (underlying ByteBuffer is owned by caller)
-        yMat.release()
-        uvMat.release()
     }
 
     /**
