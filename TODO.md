@@ -1,7 +1,7 @@
 # Vehicle Expenses Automated — TODO Updated
 
 ## Protocol & AI Alignment
-- [ ] **ACTIVE:** **Mandate Guardrail:** Explicitly anchor corrected mandates in TODO.md to prevent AI memory conflicts.
+- [x] **DONE:** **Mandate Guardrail:** Explicitly anchor corrected mandates in TODO.md to prevent AI memory conflicts.
     - **Rule 1:** Strict linear history (NO `git commit --amend`).
     - **Rule 2:** 3-3-3 Strike System for build failures.
     - **Rule 3:** Mandatory User Approval for resets past `builds`.
