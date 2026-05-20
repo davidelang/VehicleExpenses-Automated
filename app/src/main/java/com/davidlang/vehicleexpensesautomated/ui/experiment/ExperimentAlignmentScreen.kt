@@ -965,9 +965,7 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     )
                     
                     // FIX: Capture Native ALIGNED Thumbnail IMMEDIATELY before scratchBmp is reused
-                    alignedNativeBase64 = if (nativeAlignRes.success) {
-                        takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 600, 450, emptyList())
-                    } else 
+                    alignedNativeBase64 = if (nativeAlignRes.success) { takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 600, 450, emptyList()) } else ""
 
                     // Capture Standard ALIGNED Thumbnail for Report (Use null to prevent clobbering)
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, null)
