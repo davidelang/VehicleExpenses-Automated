@@ -709,13 +709,11 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
-                                    val scaleX = roiW.toFloat() / evenRecW.toFloat()
-                                    val scaleY = roiH.toFloat() / evenRecH.toFloat()
                                     rawBlocks.forEach { b -> 
-                                        annotations.add(SnapshotAnnotation((b.boundingBox.left * scaleX).toInt(), (b.boundingBox.top * scaleY).toInt(), (b.boundingBox.right * scaleX).toInt(), (b.boundingBox.bottom * scaleY).toInt(), Shape.RECTANGLE, Color.RED, 2))
+                                        annotations.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2))
                                     }
                                     finalBoxes.forEach { b ->
-                                        annotations.add(SnapshotAnnotation((b.left * scaleX).toInt(), (b.top * scaleY).toInt(), (b.right * scaleX).toInt(), (b.bottom * scaleY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                                        annotations.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                     }
 
                                     // Source from high-res odoBuffer.p directly
