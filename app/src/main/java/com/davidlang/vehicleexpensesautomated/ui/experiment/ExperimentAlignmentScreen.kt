@@ -379,8 +379,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
         }
     }
     
-    // Step 3: Native Annotation (Pass Mats directly to preserve stride)
-    NativeImageUtils.drawYuvAnnotations(snapRoiY, snapRoiUV, scaledAnnotations)
+    // Step 3: Native Annotation (Use slice directly for stride awareness)
+    NativeImageUtils.drawYuvAnnotations(NativePaddleEngine.fullBufferSet.c[snapCropId], scaledAnnotations)
 
     // Step 4: Direct Encoding (Native Split-Plane)
     val b64 = NativeImageUtils.compressYuvToBase64(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, 80)
