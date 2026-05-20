@@ -324,7 +324,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                 val m = android.graphics.Matrix()
                 m.postRotate(-tilt, srcMat.cols() / 2f, srcMat.rows() / 2f)
-                m.invert(m)
                 val values = FloatArray(9)
                 m.getValues(values)
 
