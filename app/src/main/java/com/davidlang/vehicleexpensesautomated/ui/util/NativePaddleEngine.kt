@@ -278,8 +278,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         when (input) {
             is Bitmap -> {
-                // Phase 115: Sized-Input Mandate. Loop over actual provided dimensions.
-                val targetWidth = 320; val targetHeight = 128; val area = targetWidth * targetHeight
+                // Use the passed targetWidth/targetHeight. DO NOT shadow or hardcode.
                 val scaled = if (input.width != targetWidth || input.height != targetHeight) {
                     Bitmap.createScaledBitmap(input, targetWidth, targetHeight, true)
                 } else input
@@ -288,7 +287,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     for (y in 0 until targetHeight) {
                         for (x in 0 until targetWidth) {
                             val px = scaled.getPixel(x, y)
-                            floatData[y * targetWidth + x] = (((px ushr 24) and 0xFF) / 255.0f - 0.485f) / 0.229f
+                            // Use Red channel (consistent with syncMatFromArgb) for grayscaled ARGB bitmaps
+                            floatData[y * targetWidth + x] = (((px shr 16) and 0xFF) / 255.0f - 0.485f) / 0.229f
                         }
                     }
                 } else {
