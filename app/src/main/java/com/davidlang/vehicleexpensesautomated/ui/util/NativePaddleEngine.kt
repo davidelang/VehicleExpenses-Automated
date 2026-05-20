@@ -283,6 +283,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     Bitmap.createScaledBitmap(input, targetWidth, targetHeight, true)
                 } else input
 
+                val planeStride = if (targetWidth >= 2048) 2048 * 2048 else 512 * 128
+
                 if (useMono) {
                     for (y in 0 until targetHeight) {
                         for (x in 0 until targetWidth) {
@@ -295,9 +297,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     for (y in 0 until targetHeight) {
                         for (x in 0 until targetWidth) {
                             val px = scaled.getPixel(x, y)
-                            floatData[0 * area + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f
-                            floatData[1 * area + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f
-                            floatData[2 * area + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.406f) / 0.225f
+                            floatData[0 * planeStride + y * targetWidth + x] = ((px shr 16 and 0xFF) / 255.0f - 0.485f) / 0.229f
+                            floatData[1 * planeStride + y * targetWidth + x] = ((px shr 8 and 0xFF) / 255.0f - 0.456f) / 0.224f
+                            floatData[2 * planeStride + y * targetWidth + x] = ((px and 0xFF) / 255.0f - 0.406f) / 0.225f
                         }
                     }
                 }

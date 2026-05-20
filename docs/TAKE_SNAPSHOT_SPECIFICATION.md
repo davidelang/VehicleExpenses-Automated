@@ -76,7 +76,14 @@ The pipeline eliminates the expensive ARGB `Bitmap` intermediate for output gene
 
 ---
 
-## 6. Red Team Rules (Verification)
-*   **Zero Ghosting**: The utility enforces an internal clear of the scratch workspace at the start of every call. A failed alignment row correctly results in a clean black snapshot.
-*   **Zero Stray Buffers**: No high-resolution ARGB or Mat copies are created. All operations occur within pre-allocated scratch handles.
-*   **Resolution Integrity**: By resizing before drawing, "thumbnail in the corner" artifacts are structurally prevented.
+---
+
+## 7. Hard Architectural Mandates (Stability Protection)
+
+To prevent the recurring "improvement corruption" of the snapshot pipeline, the following rules are absolute:
+
+*   **Rule 1: No Heap Pixel Allocation**: NO new pixel-data buffers (Bitmaps or Mats) may be allocated inside this utility. All conversions must use the pre-allocated row-local `scratchBmp` (ARGB scratchpad) or the `fullBufferSet.s` (Native scratchpad).
+*   **Rule 2: Native Drawing via Slice Properties**: All native annotations (boxes/lines) MUST be drawn using the pre-allocated Mat properties provided by a `BufferSet.Slice` (e.g. `slice.mat`, `slice.uvMat`). Creating new manual `Mat` wrappers from raw buffers is strictly forbidden as it bypasses stride/step logic.
+*   **Rule 3: Local Function Scoping (Capture)**: This function MUST be implemented as a local helper within the row processing loop to capture its required workspace buffers via closure. Global/Static access to high-res bitmaps is prohibited to prevent clobbering.
+*   **Rule 4: Zero-Clobbering for UI**: Any thumbnail generation intended only for the UI (600px) MUST NOT reuse the high-resolution Native scratchpads. UI thumbnails must use isolated temporary bitmaps (pass `null` as `targetBuffer` in `createScaledBase64`).
+*   **Rule 5: Fail-Fast Native Access**: If a `BufferSet` crop or handle cannot be resolved, the function MUST throw a fatal `IllegalStateException` immediately. Silently returning empty results is a protocol violation.
