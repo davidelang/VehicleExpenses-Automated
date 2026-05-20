@@ -1,3 +1,9 @@
+---
+type: intent-spec
+status: locked
+ai_directive: "This is an upstream specification. DO NOT modify this document to match the codebase. If the code deviates from this spec, the code is wrong. Modifications to this file require a dedicated 'Strategy' turn and explicit user approval."
+---
+
 # AI Developer Guide - Vehicle Expenses Automated
 
 ## Overview

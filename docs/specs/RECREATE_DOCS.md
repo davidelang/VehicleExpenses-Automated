@@ -1,3 +1,9 @@
+---
+type: intent-spec
+status: locked
+ai_directive: "This is an upstream specification. DO NOT modify this document to match the codebase. If the code deviates from this spec, the code is wrong. Modifications to this file require a dedicated 'Strategy' turn and explicit user approval."
+---
+
 # RECREATE_DOCS.md — Instructions for AI to recreate all files in the /docs directory
 
 When the user asks you to create, update, or recreate documentation, you MUST produce exactly these files with the following contents:
