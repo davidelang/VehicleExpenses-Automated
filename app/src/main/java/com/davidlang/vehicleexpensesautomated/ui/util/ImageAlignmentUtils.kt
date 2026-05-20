@@ -622,7 +622,6 @@ object ImageAlignmentUtils {
             val m = android.graphics.Matrix()
             m.postScale(finalScale, finalScale)
             m.postTranslate(finalTx * queW, finalTy * queH)
-            m.invert(m)
             val values = FloatArray(9)
             m.getValues(values)
 
