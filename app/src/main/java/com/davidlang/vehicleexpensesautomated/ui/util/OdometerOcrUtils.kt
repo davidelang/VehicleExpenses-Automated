@@ -241,8 +241,16 @@ object OdometerOcrUtils {
             sortedH[sortedH.size / 2] / 2.0f
         }
 
+        val ceiling = if (peaks.isNotEmpty()) {
+            peaks.maxOrNull()!! * 2.0f
+        } else {
+            val sortedH = heights.sorted()
+            sortedH[sortedH.size / 2] * 2.0f
+        }
+
         val heightFiltered = validCandidates.filter { 
-            (it.boundingBox.height().toFloat() / imgHeight.toFloat()) >= floor 
+            val h = it.boundingBox.height().toFloat() / imgHeight.toFloat()
+            h >= floor && h <= ceiling
         }
 
         if (heightFiltered.isEmpty()) return 0f
