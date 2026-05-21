@@ -41,6 +41,7 @@
     - [x] Step 5: Dashboard Migration & Decommissioning.
     - [x] Step 5.4: Smart Snapshot API & Visualization Improvement.
     - [x] Step 5.5: Fix takeSnapshot destructive resize.
+- [ ] **ACTIVE:** Phase 25.3 - BufferSet Pointer Invalidation Fix (JNI In-Place & Smart Proxy).
 - [ ] **ACTIVE:** Phase 3: Total Scope Sanitization & Annotation Fix (Shadowing & Offset Resolution).
 - [ ] **ACTIVE:** Phase 23 - Foundational YUV Handle Infrastructure (Standard Multi-Plane Descriptor).
 - [x] **DONE:** Phase 11.5 - Protocol Hardening (Execution Rigor Mandates).
