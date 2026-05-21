@@ -427,13 +427,16 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 
-                // Native: Independent High-Quality Rotation (Cubic) using standard angle
+                // Native: Independent High-Quality Rotation (Cubic) using Paddle Mono angle
                 val tRotMono0 = System.currentTimeMillis()
                 val srcMat = NativePaddleEngine.fullBufferSet.p.mat
                 val dstMat = NativePaddleEngine.fullBufferSet.s.mat
 
+                // Phase 115: Use Paddle Mono deskew for native rotation as it's more robust on these displays
+                val paddleTiltMono = deskewResMono.engines["Paddle V3"]?.angle ?: 0f
+                
                 val m = android.graphics.Matrix()
-                m.postRotate(-tilt, srcMat.cols() / 2f, srcMat.rows() / 2f)
+                m.postRotate(-paddleTiltMono, srcMat.cols() / 2f, srcMat.rows() / 2f)
                 val values = FloatArray(9)
                 m.getValues(values)
 

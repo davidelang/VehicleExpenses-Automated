@@ -9,8 +9,10 @@
 
 ## Infrastructure & Protocol
 - [x] **Documentation Restructuring & Policy Enforcement**
-- [ ] **Deskew Angle Normalization:** Implement normalization to [-45, 45] range in `OdometerOcrUtils` to unify ML Kit and Paddle outputs.
+- [x] **Deskew Angle Normalization:** Implement normalization to [-45, 45] range in `OdometerOcrUtils` to unify ML Kit and Paddle outputs.
+- [ ] **BufferSet Rotation Logic Switch:** Switch the BufferSet pipeline to use Paddle Mono deskew results for rotation in `ExperimentAlignmentScreen`.
 - [ ] **Technical Reference Backlog**
+
     - [ ] Create `docs/reference/DATABASE_SCHEMA.md`
     - [ ] Create `docs/reference/SYNC_PROTOCOL.md`
     - [ ] Create `docs/reference/OCR_ENGINE_STRATEGY.md`
