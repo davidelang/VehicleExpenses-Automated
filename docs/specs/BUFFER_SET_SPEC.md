@@ -76,3 +76,10 @@ If you call `foo.c[1].createCrop(...)` to create `foo.c[2]`, the API performs **
 When `foo.resize()` changes the physical dimensions of the buffer:
 - **Normalized ROIs:** Automatically recalculated to stretch with the new physical dimensions.
 - **Pixel ROIs:** Automatically released. Their absolute offsets are no longer valid, preventing memory corruption.
+
+### E. Handle Persistence & Smart Proxies
+To prevent JVM crashes and memory corruption during `flip()` or `resize()` operations, `BufferSet` implements a persistence layer for its handles:
+- **Mat Persistence:** OpenCV `Mat` objects (`mat`, `uvMat`) for both base buffers and crops are **persistent**. When a flip or resize occurs, the underlying C++ data pointers are updated in-place via JNI.
+- **YuvHandle Smart Proxy:** The `YuvHandle` is a **Smart Proxy**. While the `YuvHandle` object itself can be cached, its `planes` property dynamically generates fresh `ByteBuffer` slices at the moment of access. This ensures that even if a `YuvHandle` is cached across a `flip()`, accessing its data will always yield pointers to the correct, current Primary RAM.
+
+**MANDATE:** Despite these safety measures, caching handles in long-lived variables is considered a **Documentation Anti-Pattern**. For maximum readability and to ensure strict adherence to the pipeline state, always query handles on-demand (e.g., `process(bufferSet.p.mat)`) rather than storing them.
