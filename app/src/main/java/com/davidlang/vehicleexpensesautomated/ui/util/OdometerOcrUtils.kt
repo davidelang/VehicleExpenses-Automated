@@ -50,7 +50,7 @@ object OdometerOcrUtils {
         }
     }
 
-    data class EngineResult(val angle: Float, val timesMs: List<Long>)
+    data class EngineResult(val angle: Float, val timesMs: List<Long>, val blocks: List<TextBlock> = emptyList())
     data class DeskewResult(
         val angle: Float, 
         val mlAngle: Float, 
@@ -85,6 +85,8 @@ object OdometerOcrUtils {
             mlAngle = finalAngle,
             mlTimeMs = mlRes?.timesMs?.sum() ?: 0L,
             paddleTimeMs = pdRes?.timesMs?.sum() ?: 0L,
+            mlBlocks = mlRes?.blocks ?: emptyList(),
+            paddleBlocks = pdRes?.blocks ?: emptyList(),
             engines = results
         )
     }
@@ -93,15 +95,28 @@ object OdometerOcrUtils {
         val tStart = System.currentTimeMillis()
         val targetBitmap = NativePaddleEngine.sharedBmp2048
         
-        val (pWidth, pHeight, _) = prepDeskewBuffer(input, targetBitmap)
+        val (pWidth, pHeight, pScale) = prepDeskewBuffer(input, targetBitmap)
         val tPrep = System.currentTimeMillis() - tStart
 
         val t1 = System.currentTimeMillis()
         val res = extractFromPhotoBitmapRaw(com.google.mlkit.vision.common.InputImage.fromBitmap(targetBitmap, 0))
         val tDetect = System.currentTimeMillis() - t1
         
-        val angle = calculateWeightedAverage(res.textBlocks, pHeight)
-        return EngineResult(angle, listOf(tPrep, tDetect))
+        val invScale = 1.0f / pScale
+        val scaledBlocks = res.textBlocks.map { block ->
+            val b = block.boundingBox
+            val scaledRect = android.graphics.Rect(
+                (b.left * invScale).toInt(),
+                (b.top * invScale).toInt(),
+                (b.right * invScale).toInt(),
+                (b.bottom * invScale).toInt()
+            )
+            block.copy(boundingBox = scaledRect)
+        }
+
+        val srcH = (pHeight * invScale).toInt()
+        val angle = calculateWeightedAverage(scaledBlocks, srcH)
+        return EngineResult(angle, listOf(tPrep, tDetect), scaledBlocks)
     }
 
     private suspend fun deskewPaddle(input: Any): EngineResult {
@@ -116,11 +131,14 @@ object OdometerOcrUtils {
         val det = paddleEngine.detect(targetBitmap, pWidth, pHeight)
         val tDetect = System.currentTimeMillis() - t1
         
-        val angle = if (det != null) {
-            val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, targetBitmap, "Paddle")
-            calculateWeightedAverage(blocks, pHeight)
-        } else 0f
-        return EngineResult(angle, listOf(tPrep, tDetect))
+        var angle = 0f
+        var blocks = emptyList<TextBlock>()
+        if (det != null) {
+            blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, targetBitmap, "Paddle")
+            val srcH = (pHeight / pScale).toInt()
+            angle = calculateWeightedAverage(blocks, srcH)
+        }
+        return EngineResult(angle, listOf(tPrep, tDetect), blocks)
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
