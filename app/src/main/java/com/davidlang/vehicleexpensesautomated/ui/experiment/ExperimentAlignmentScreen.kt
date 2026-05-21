@@ -575,15 +575,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, detTargetMat, org.opencv.core.Size(evenDetW.toDouble(), evenDetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                     experimentDetSet512x128.c[detCropId].release()
 
-                                    val detThumbB64 = takeSnapshot(
-                                        source = experimentDetSet512x128.p,
-                                        sourceRect = null,
-                                        targetW = 512,
-                                        targetH = 128,
-                                        annotations = emptyList()
-                                    )
-                                    htmlOutput.append("<div class='ocr-step'><b>Discovery Stage ($stage):</b><br><img src='data:image/jpeg;base64,$detThumbB64'></div>")
-
                                     val det = paddleEngineV3Mono.detectMono(experimentDetSet512x128.p)
                                     val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, odoBuffer.p.mat, "Paddle") else emptyList()
                                     
@@ -700,15 +691,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         val recTargetMat = experimentRecSet320x48.c[recCropId].mat
                                         org.opencv.imgproc.Imgproc.resize(odoBuffer.c[recSrcId].mat, recTargetMat, org.opencv.core.Size(evenRecW.toDouble(), evenRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                         odoBuffer.c[recSrcId].release(); experimentRecSet320x48.c[recCropId].release()
-                                        
-                                        val preInferenceB64 = takeSnapshot(
-                                            source = experimentRecSet320x48.p,
-                                            sourceRect = null,
-                                            targetW = 320,
-                                            targetH = 48,
-                                            annotations = emptyList()
-                                        )
-                                        htmlOutput.append("<div class='ocr-step'><b>Pre-Inference Buffer:</b><br><img src='data:image/jpeg;base64,$preInferenceB64'></div>")
 
                                         val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.p, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
@@ -996,70 +978,61 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                     // 2. Mono Alignment (Native OpenCV)
                     val alignmentTraceMono = AlignmentTraceResult(nativeAlignRes.success, nativeAlignRes.timeMs, alignedNativeBase64, nativeAlignRes.metadata)
 
-                    if (alignRes.success) {
-                        val alignmentTrace = AlignmentTraceResult(true, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, null), alignRes.metadata)
-                        val refinementTraces = mutableMapOf<String, RefinementTrace>()
-                        val harnessResultsMap = mutableMapOf<String, OcrHarnessResult>()
+                    val alignmentTrace = AlignmentTraceResult(alignRes.success, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, null), alignRes.metadata)
+                    val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                    val harnessResultsMap = mutableMapOf<String, OcrHarnessResult>()
+                    
+                    // Phase 58: Refinement Loop (Always executed to provide diagnostic data)
+                    val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
+                    if (exactCrop != null) {
+
+                        // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
+                        val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+                        val t = winnerRef.vehicle.odometerCropTop ?: 0f
+                        val r = winnerRef.vehicle.odometerCropRight ?: 1f
+                        val b = winnerRef.vehicle.odometerCropBottom ?: 1f
                         
-                        // Phase 58: Refinement Loop (Only executed on successful alignment)
-                        val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
-                        if (exactCrop != null) {
+                        val srcW = (r - l) * masterBmp!!.width
+                        val srcH = (b - t) * masterBmp.height
+                        val globalCropScaleX = exactCrop.width.toFloat() / srcW
+                        val globalCropScaleY = exactCrop.height.toFloat() / srcH
+                        
+                        val cropCanvas = android.graphics.Canvas(exactCrop)
+                        cropCanvas.drawColor(android.graphics.Color.BLACK)
+                        val matrix = NativePaddleEngine.sharedMatrix
+                        matrix.reset()
+                        matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
+                        matrix.postScale(globalCropScaleX, globalCropScaleY)
+                        cropCanvas.drawBitmap(masterBmp, matrix, NativePaddleEngine.srcPaint)
 
-                            // High-Quality Extraction: Draw from masterBmp into pre-allocated exactCrop
-                            val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-                            val t = winnerRef.vehicle.odometerCropTop ?: 0f
-                            val r = winnerRef.vehicle.odometerCropRight ?: 1f
-                            val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-                            
-                            val srcW = (r - l) * masterBmp!!.width
-                            val srcH = (b - t) * masterBmp.height
-                            val globalCropScaleX = exactCrop.width.toFloat() / srcW
-                            val globalCropScaleY = exactCrop.height.toFloat() / srcH
-                            
-                            val cropCanvas = android.graphics.Canvas(exactCrop)
-                            cropCanvas.drawColor(android.graphics.Color.BLACK)
-                            val matrix = NativePaddleEngine.sharedMatrix
-                            matrix.reset()
-                            matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
-                            matrix.postScale(globalCropScaleX, globalCropScaleY)
-                            cropCanvas.drawBitmap(masterBmp, matrix, NativePaddleEngine.srcPaint)
+                        val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
+                        try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
-                            val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
-                            try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
-
-                            val report = object : ReportCollector {
-                                override fun add(engineName: String, result: OcrHarnessResult) {
-                                    harnessResultsMap[engineName] = result
-                                    val steps = result.jsonSection.getAsJsonObject("stages")?.entrySet()?.map { (stage, data) ->
-                                        val obj = data.asJsonObject
-                                        OcrStepResult(stageName = stage, thumbB64 = result.thumbB64 ?: "", text = obj.get("text")?.asString, metadata = mapOf("loop_time" to obj.get("time")?.asString.toString()))
-                                    } ?: emptyList()
-                                    refinementTraces[engineName] = RefinementTrace(engineName, result.totalTimeMs, steps)
-                                    Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
-                                }
+                        val report = object : ReportCollector {
+                            override fun add(engineName: String, result: OcrHarnessResult) {
+                                harnessResultsMap[engineName] = result
+                                val steps = result.jsonSection.getAsJsonObject("stages")?.entrySet()?.map { (stage, data) ->
+                                    val obj = data.asJsonObject
+                                    OcrStepResult(stageName = stage, thumbB64 = result.thumbB64 ?: "", text = obj.get("text")?.asString, metadata = mapOf("loop_time" to obj.get("time")?.asString.toString()))
+                                } ?: emptyList()
+                                refinementTraces[engineName] = RefinementTrace(engineName, result.totalTimeMs, steps)
+                                Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
                             }
-
-                            
-
-                            
-
-                            // --- Sequential Execution ---
-                            runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runMLKitIterative("ML Kit Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                            runPaddleValleyMonoIterative("Paddle V3 Valley Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-
                         }
-                        
-                        val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                        if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
 
-                        // Reporting Pass: Store result for winner
-                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, tDiscoveryMonoTotal, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true, harnessResultsMap)
-                    } else { 
-                        Log.d(TAG, "Vehicle identified as ${winnerRef.vehicle.name}, but alignment failed: ${alignRes.message}")
-                        vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, 0L, AlignmentTraceResult(false, elapsedAlign, "", alignRes.metadata), alignmentTraceMono, emptyMap(), emptyList(), emptyList(), emptyList(), true, emptyMap())
+                        // --- Sequential Execution ---
+                        runMLKitIterative("ML Kit Mono Diagnostic", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                        runMLKitIterative("ML Kit Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                        runPaddleValleyMonoIterative("Paddle V3 Valley Mono", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                        runPaddleValleyMonoIterative("Paddle V3 Valley Mono Native", NativePaddleEngine.fullBufferSet, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+
                     }
+                    
+                    val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
+                    if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
+
+                    // Reporting Pass: Store result for winner
+                    vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(winnerRef.vehicle.name, "", 0L, tDiscoveryMonoTotal, alignmentTrace, alignmentTraceMono, refinementTraces, emptyList(), emptyList(), emptyList(), true, harnessResultsMap)
                 }
 
                 // Reporting Pass: Populate status for all other vehicles (Veto results)
