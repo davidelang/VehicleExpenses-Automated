@@ -698,6 +698,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                         org.opencv.imgproc.Imgproc.resize(odoBuffer.c[recSrcId].mat, recTargetMat, org.opencv.core.Size(evenRecW.toDouble(), evenRecH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                                         odoBuffer.c[recSrcId].release(); experimentRecSet320x48.c[recCropId].release()
                                         
+                                        val preInferenceB64 = takeSnapshot(
+                                            source = experimentRecSet320x48.p,
+                                            sourceRect = null,
+                                            targetW = 320,
+                                            targetH = 48,
+                                            annotations = emptyList()
+                                        )
+                                        htmlOutput.append("<div class='ocr-step'><b>Pre-Inference Buffer:</b><br><img src='data:image/jpeg;base64,$preInferenceB64'></div>")
+
                                         val ocrResult = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.p, paddleEngineV3Mono.getDictionary())
                                         if (ocrResult.text.isNotBlank()) {
                                             odoBuilder.append(ocrResult.text).append(" ")
@@ -709,13 +718,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
-                                    val paddleSnapScaleX = 1.0f
-                                    val paddleSnapScaleY = 1.0f
+                                    val scaleX = odoBuffer.p.mat.cols().toFloat() / evenDetW.toFloat()
+                                    val scaleY = odoBuffer.p.mat.rows().toFloat() / evenDetH.toFloat()
                                     rawBlocks.forEach { b -> 
-                                        annotations.add(SnapshotAnnotation((b.boundingBox.left * paddleSnapScaleX).toInt(), (b.boundingBox.top * paddleSnapScaleY).toInt(), (b.boundingBox.right * paddleSnapScaleX).toInt(), (b.boundingBox.bottom * paddleSnapScaleY).toInt(), Shape.RECTANGLE, Color.RED, 2))
+                                        annotations.add(SnapshotAnnotation((b.boundingBox.left * scaleX).toInt(), (b.boundingBox.top * scaleY).toInt(), (b.boundingBox.right * scaleX).toInt(), (b.boundingBox.bottom * scaleY).toInt(), Shape.RECTANGLE, Color.RED, 2))
                                     }
                                     finalBoxes.forEach { b ->
-                                        annotations.add(SnapshotAnnotation((b.left * paddleSnapScaleX).toInt(), (b.top * paddleSnapScaleY).toInt(), (b.right * paddleSnapScaleX).toInt(), (b.bottom * paddleSnapScaleY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                                        annotations.add(SnapshotAnnotation((b.left * scaleX).toInt(), (b.top * scaleY).toInt(), (b.right * scaleX).toInt(), (b.bottom * scaleY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                     }
 
                                     // Source from high-res odoBuffer.p directly
@@ -896,14 +905,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
-                                    val mlKitSnapScaleX = 1.0f
-                                    val mlKitSnapScaleY = 1.0f
+                                    val scaleX = odoBuffer.p.mat.cols().toFloat() / evenW.toFloat()
+                                    val scaleY = odoBuffer.p.mat.rows().toFloat() / evenH.toFloat()
                                     for (j in 0 until visionBlocks.size) {
                                         val b = visionBlocks[j].boundingBox
                                         if (b != null) {
                                             annotations.add(SnapshotAnnotation(
-                                                (b.left * mlKitSnapScaleX).toInt(), (b.top * mlKitSnapScaleY).toInt(), 
-                                                (b.right * mlKitSnapScaleX).toInt(), (b.bottom * mlKitSnapScaleY).toInt(), 
+                                                (b.left * scaleX).toInt(), (b.top * scaleY).toInt(), 
+                                                (b.right * scaleX).toInt(), (b.bottom * scaleY).toInt(), 
                                                 Shape.RECTANGLE, Color.rgb(255, 165, 0), 2
                                             ))
                                         }

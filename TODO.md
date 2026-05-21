@@ -9,6 +9,7 @@
 
 ## Infrastructure & Protocol
 - [x] **Documentation Restructuring & Policy Enforcement**
+- [ ] **Deskew Angle Normalization:** Implement normalization to [-45, 45] range in `OdometerOcrUtils` to unify ML Kit and Paddle outputs.
 - [ ] **Technical Reference Backlog**
     - [ ] Create `docs/reference/DATABASE_SCHEMA.md`
     - [ ] Create `docs/reference/SYNC_PROTOCOL.md`
