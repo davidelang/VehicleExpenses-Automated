@@ -10,7 +10,8 @@
 ## Infrastructure & Protocol
 - [x] **Documentation Restructuring & Policy Enforcement**
 - [x] **Deskew Angle Normalization:** Implement normalization to [-45, 45] range in `OdometerOcrUtils` to unify ML Kit and Paddle outputs.
-- [ ] **BufferSet Rotation Logic Switch:** Switch the BufferSet pipeline to use Paddle Mono deskew results for rotation in `ExperimentAlignmentScreen`.
+- [x] **BufferSet Rotation Logic Switch:** Switch the BufferSet pipeline to use Paddle Mono deskew results for rotation in `ExperimentAlignmentScreen`.
+- [ ] **Deskew Forensic Logging:** Add text-block-level logging to the deskew stage and unify coordinate systems for forensic analysis.
 - [ ] **Technical Reference Backlog**
 
     - [ ] Create `docs/reference/DATABASE_SCHEMA.md`
