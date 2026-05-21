@@ -322,14 +322,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
     finalH = toEven(finalH.toFloat().coerceIn(2f, 3072f))
 
     // Calculate scaling factors for annotations (Source ROI -> Final Thumbnail)
-    val sX = finalW.toFloat() / roiW.toFloat()
-    val sY = finalH.toFloat() / roiH.toFloat()
+    val snapInternalScaleX = finalW.toFloat() / roiW.toFloat()
+    val snapInternalScaleY = finalH.toFloat() / roiH.toFloat()
     val scaledAnnotations = annotations.map { ann ->
         ann.copy(
-            x1 = ((ann.x1 - roi.left) * sX).toInt(),
-            y1 = ((ann.y1 - roi.top) * sY).toInt(),
-            x2 = ((ann.x2 - roi.left) * sX).toInt(),
-            y2 = ((ann.y2 - roi.top) * sY).toInt()
+            x1 = ((ann.x1 - roi.left) * snapInternalScaleX).toInt(),
+            y1 = ((ann.y1 - roi.top) * snapInternalScaleY).toInt(),
+            x2 = ((ann.x2 - roi.left) * snapInternalScaleX).toInt(),
+            y2 = ((ann.y2 - roi.top) * snapInternalScaleY).toInt()
         )
     }
 
@@ -499,10 +499,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             val canvas = android.graphics.Canvas(argbCrop)
                                             canvas.drawColor(android.graphics.Color.BLACK)
                                             val matrix = android.graphics.Matrix()
-                                            val scaleX = argbCrop.width.toFloat() / roiW.toFloat()
-                                            val scaleY = argbCrop.height.toFloat() / roiH.toFloat()
+                                            val ocrBitmapScaleX = argbCrop.width.toFloat() / roiW.toFloat()
+                                            val ocrBitmapScaleY = argbCrop.height.toFloat() / roiH.toFloat()
                                             matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
-                                            matrix.postScale(scaleX, scaleY)
+                                            matrix.postScale(ocrBitmapScaleX, ocrBitmapScaleY)
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                                             com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(argbCrop, odoBuffer.p.mat)
                                         }
@@ -718,13 +718,13 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                     
                                     // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
-                                    val scaleX = odoBuffer.p.mat.cols().toFloat() / evenDetW.toFloat()
-                                    val scaleY = odoBuffer.p.mat.rows().toFloat() / evenDetH.toFloat()
+                                    val annPaddleScaleX = 1.0f
+                                    val annPaddleScaleY = 1.0f
                                     rawBlocks.forEach { b -> 
-                                        annotations.add(SnapshotAnnotation((b.boundingBox.left * scaleX).toInt(), (b.boundingBox.top * scaleY).toInt(), (b.boundingBox.right * scaleX).toInt(), (b.boundingBox.bottom * scaleY).toInt(), Shape.RECTANGLE, Color.RED, 2))
+                                        annotations.add(SnapshotAnnotation((b.boundingBox.left * annPaddleScaleX).toInt(), (b.boundingBox.top * annPaddleScaleY).toInt(), (b.boundingBox.right * annPaddleScaleX).toInt(), (b.boundingBox.bottom * annPaddleScaleY).toInt(), Shape.RECTANGLE, Color.RED, 2))
                                     }
                                     finalBoxes.forEach { b ->
-                                        annotations.add(SnapshotAnnotation((b.left * scaleX).toInt(), (b.top * scaleY).toInt(), (b.right * scaleX).toInt(), (b.bottom * scaleY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                                        annotations.add(SnapshotAnnotation((b.left * annPaddleScaleX).toInt(), (b.top * annPaddleScaleY).toInt(), (b.right * annPaddleScaleX).toInt(), (b.bottom * annPaddleScaleY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                                     }
 
                                     // Source from high-res odoBuffer.p directly
@@ -801,10 +801,10 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                                             val canvas = android.graphics.Canvas(argbCrop)
                                             canvas.drawColor(android.graphics.Color.BLACK)
                                             val matrix = android.graphics.Matrix()
-                                            val scaleX = argbCrop.width.toFloat() / roiW.toFloat()
-                                            val scaleY = argbCrop.height.toFloat() / roiH.toFloat()
+                                            val ocrBitmapScaleX = argbCrop.width.toFloat() / roiW.toFloat()
+                                            val ocrBitmapScaleY = argbCrop.height.toFloat() / roiH.toFloat()
                                             matrix.postTranslate(-startX.toFloat(), -startY.toFloat())
-                                            matrix.postScale(scaleX, scaleY)
+                                            matrix.postScale(ocrBitmapScaleX, ocrBitmapScaleY)
                                             canvas.drawBitmap(masterBuffer, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
 
                                             // Use new zero-buffer JNI fast sync to populate the iterative bridge
@@ -905,14 +905,14 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                                     // 4.6 Recognition Snapshot (High-Res Visualization)
                                     val annotations = mutableListOf<SnapshotAnnotation>()
-                                    val scaleX = odoBuffer.p.mat.cols().toFloat() / evenW.toFloat()
-                                    val scaleY = odoBuffer.p.mat.rows().toFloat() / evenH.toFloat()
+                                    val annMlKitScaleX = odoBuffer.p.mat.cols().toFloat() / evenW.toFloat()
+                                    val annMlKitScaleY = odoBuffer.p.mat.rows().toFloat() / evenH.toFloat()
                                     for (j in 0 until visionBlocks.size) {
                                         val b = visionBlocks[j].boundingBox
                                         if (b != null) {
                                             annotations.add(SnapshotAnnotation(
-                                                (b.left * scaleX).toInt(), (b.top * scaleY).toInt(), 
-                                                (b.right * scaleX).toInt(), (b.bottom * scaleY).toInt(), 
+                                                (b.left * annMlKitScaleX).toInt(), (b.top * annMlKitScaleY).toInt(), 
+                                                (b.right * annMlKitScaleX).toInt(), (b.bottom * annMlKitScaleY).toInt(), 
                                                 Shape.RECTANGLE, Color.rgb(255, 165, 0), 2
                                             ))
                                         }
@@ -1010,15 +1010,15 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                             
                             val srcW = (r - l) * masterBmp!!.width
                             val srcH = (b - t) * masterBmp.height
-                            val scaleX = exactCrop.width.toFloat() / srcW
-                            val scaleY = exactCrop.height.toFloat() / srcH
+                            val globalCropScaleX = exactCrop.width.toFloat() / srcW
+                            val globalCropScaleY = exactCrop.height.toFloat() / srcH
                             
                             val cropCanvas = android.graphics.Canvas(exactCrop)
                             cropCanvas.drawColor(android.graphics.Color.BLACK)
                             val matrix = NativePaddleEngine.sharedMatrix
                             matrix.reset()
                             matrix.postTranslate(-l * masterBmp.width, -t * masterBmp.height)
-                            matrix.postScale(scaleX, scaleY)
+                            matrix.postScale(globalCropScaleX, globalCropScaleY)
                             cropCanvas.drawBitmap(masterBmp, matrix, NativePaddleEngine.srcPaint)
 
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
