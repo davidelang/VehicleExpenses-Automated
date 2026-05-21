@@ -66,7 +66,11 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     // Manager Functions
     suspend fun flip() = mutex.withLock {
         primaryIdx = 1 - primaryIdx
-        managedCrops.values.forEach { it.refresh() }
+        val newOwner = instances[primaryIdx] as Instance
+        managedCrops.values.forEach { 
+            it.owner = newOwner
+            it.rebindToOwner()
+        }
     }
 
     suspend fun resize(w: Int, h: Int) = mutex.withLock {
@@ -111,11 +115,11 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         instances[1].physicalRelease()
     }
 
-    data class YuvHandle(
-        val width: Int, val height: Int,
-        val format: Int = 35,
-        val planes: Array<Plane>
-    ) {
+    abstract class YuvHandle {
+        abstract val width: Int
+        abstract val height: Int
+        val format: Int = 35
+        abstract val planes: Array<Plane>
         data class Plane(val buffer: ByteBuffer, val rowStride: Int, val pixelStride: Int)
     }
 
@@ -141,17 +145,22 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         override val width: Int get() = _width
         override val height: Int get() = _height
 
-        override val yuv: YuvHandle get() {
-            val buf = _buffer!!
-            return YuvHandle(width = _width, height = _height, planes = arrayOf(
-                YuvHandle.Plane((buf.duplicate().position(0) as ByteBuffer).slice(), _width, 1),
-                YuvHandle.Plane((buf.duplicate().position(_width * _height + 1) as ByteBuffer).slice(), _width, 2),
-                YuvHandle.Plane((buf.duplicate().position(_width * _height) as ByteBuffer).slice(), _width, 2)
-            ))
+        private val _yuv = object : YuvHandle() {
+            override val width: Int get() = _width
+            override val height: Int get() = _height
+            override val planes: Array<Plane> get() {
+                val buf = _buffer ?: throw IllegalStateException("Not initialized")
+                return arrayOf(
+                    Plane((buf.duplicate().position(0) as ByteBuffer).slice(), _width, 1),
+                    Plane((buf.duplicate().position(_width * _height + 1) as ByteBuffer).slice(), _width, 2),
+                    Plane((buf.duplicate().position(_width * _height) as ByteBuffer).slice(), _width, 2)
+                )
+            }
         }
+        override val yuv: YuvHandle get() = _yuv
 
         fun setup(w: Int, h: Int) { nativeHandle = nativeSetup(w, h); refreshViews() }
-        fun physicalResize(w: Int, h: Int) { disarm(); nativeResize(nativeHandle, w, h); refreshViews() }
+        fun physicalResize(w: Int, h: Int) { nativeResize(nativeHandle, w, h); _buffer = nativeGetBuffer(nativeHandle) }
         private fun refreshViews() {
             _mat = Mat(nativeGetMatPtr(nativeHandle))
             _uvMat = Mat(nativeGetUVMatPtr(nativeHandle))
@@ -180,7 +189,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     }
 
     inner class ManagedCrop(
-        private val owner: Instance,
+        internal var owner: Instance,
         internal var isNormalized: Boolean,
         private var rawX: Float, private var rawY: Float, private var rawW: Float, private var rawH: Float
     ) : Slice {
@@ -199,18 +208,31 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         override val width: Int get() = absW
         override val height: Int get() = absH
 
-        override val yuv: YuvHandle get() {
-            val fullBuf = owner.nv21
-            val uvOffset = (_width * _height) + (absY / 2 * _width) + absX
-            return YuvHandle(width = absW, height = absH, planes = arrayOf(
-                YuvHandle.Plane((fullBuf.duplicate().position(absY * _width + absX) as ByteBuffer).slice(), _width, 1),
-                YuvHandle.Plane((fullBuf.duplicate().position(uvOffset + 1) as ByteBuffer).slice(), _width, 2),
-                YuvHandle.Plane((fullBuf.duplicate().position(uvOffset) as ByteBuffer).slice(), _width, 2)
-            ))
+        private val _yuv = object : YuvHandle() {
+            override val width: Int get() = absW
+            override val height: Int get() = absH
+            override val planes: Array<Plane> get() {
+                val fullBuf = owner.nv21
+                val uvOffset = (_width * _height) + (absY / 2 * _width) + absX
+                return arrayOf(
+                    Plane((fullBuf.duplicate().position(absY * _width + absX) as ByteBuffer).slice(), _width, 1),
+                    Plane((fullBuf.duplicate().position(uvOffset + 1) as ByteBuffer).slice(), _width, 2),
+                    Plane((fullBuf.duplicate().position(uvOffset) as ByteBuffer).slice(), _width, 2)
+                )
+            }
+        }
+        override val yuv: YuvHandle get() = _yuv
+
+        fun rebindToOwner() {
+            val matPtr = _mat?.nativeObj ?: return
+            val uvMatPtr = _uvMat?.nativeObj ?: return
+            val lumaOffset = absY * _width + absX
+            val chromaOffset = (_width * _height) + (absY / 2 * _width) + absX
+            nativeUpdateMatData(matPtr, owner.mat.nativeObj, lumaOffset)
+            nativeUpdateMatData(uvMatPtr, owner.uvMat.nativeObj, chromaOffset)
         }
 
         fun refresh() {
-            disarm()
             val (px, py, pw, ph) = if (isNormalized) {
                 listOf((rawX * _width).toInt(), (rawY * _height).toInt(), (rawW * _width).toInt(), (rawH * _height).toInt())
             } else {
@@ -219,8 +241,16 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             absX = (px / 2) * 2; absY = (py / 2) * 2
             val x2 = ((px + pw + 1) / 2) * 2; val y2 = ((py + ph + 1) / 2) * 2
             absW = (x2 - absX).coerceIn(2, _width - absX); absH = (y2 - absY).coerceIn(2, _height - absY)
-            _mat = owner.mat.submat(Rect(absX, absY, absW, absH))
-            _uvMat = owner.uvMat.submat(Rect(absX / 2, absY / 2, absW / 2, absH / 2))
+            
+            val curMat = _mat
+            val curUvMat = _uvMat
+            if (curMat == null || curUvMat == null) {
+                _mat = owner.mat.submat(Rect(absX, absY, absW, absH))
+                _uvMat = owner.uvMat.submat(Rect(absX / 2, absY / 2, absW / 2, absH / 2))
+            } else {
+                nativeUpdateCropMat(curMat.nativeObj, owner.mat.nativeObj, absX, absY, absW, absH)
+                nativeUpdateCropMat(curUvMat.nativeObj, owner.uvMat.nativeObj, absX / 2, absY / 2, absW / 2, absH / 2)
+            }
         }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
@@ -233,7 +263,13 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
         override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
         override fun resize(x: Float, y: Float, w: Float, h: Float) { isNormalized = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
-        override fun release() { managedCrops.values.remove(this); disarm() }
+        override fun release() { 
+            managedCrops.values.remove(this)
+            _mat?.release()
+            _uvMat?.release()
+            _mat = null
+            _uvMat = null
+        }
         internal fun disarm() { _mat?.let { nativeDisarmMat(it) }; _uvMat?.let { nativeDisarmMat(it) }; _mat = null; _uvMat = null }
         override fun clear() { mat.setTo(Scalar(0.0)); clearChroma() }
         override fun clearChroma() { uvMat.setTo(Scalar(128.0, 128.0)) }
@@ -249,6 +285,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     private external fun nativeGetUVMatPtr(handle: Long): Long
     private external fun nativeGetNv21MatPtr(handle: Long): Long
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
+    private external fun nativeUpdateMatData(matPtr: Long, parentMatPtr: Long, byteOffset: Int)
+    private external fun nativeUpdateCropMat(cropMatPtr: Long, parentMatPtr: Long, x: Int, y: Int, w: Int, h: Int)
     companion object {
         init { System.loadLibrary("memory_bridge") }
         @JvmStatic private external fun nativeDisarmMat(matObj: Mat)

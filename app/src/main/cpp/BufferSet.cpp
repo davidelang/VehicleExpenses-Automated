@@ -180,6 +180,26 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeGetBuffer(
 }
 
 JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeUpdateMatData(
+    JNIEnv* env, jobject thiz, jlong matPtr, jlong parentMatPtr, jint byteOffset) {
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    auto* parentMat = reinterpret_cast<cv::Mat*>(parentMatPtr);
+    if (mat != nullptr && parentMat != nullptr) {
+        mat->data = parentMat->data + byteOffset;
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeUpdateCropMat(
+    JNIEnv* env, jobject thiz, jlong cropMatPtr, jlong parentMatPtr, jint x, jint y, jint w, jint h) {
+    auto* cropMat = reinterpret_cast<cv::Mat*>(cropMatPtr);
+    auto* parentMat = reinterpret_cast<cv::Mat*>(parentMatPtr);
+    if (cropMat != nullptr && parentMat != nullptr) {
+        *cropMat = (*parentMat)(cv::Rect(x, y, w, h));
+    }
+}
+
+JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeDisarmMat(
     JNIEnv* env, jclass clazz, jobject matObj) {
     if (matObj == nullptr) return;
