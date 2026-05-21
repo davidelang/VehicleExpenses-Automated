@@ -199,6 +199,13 @@ object OdometerOcrUtils {
 
     
 
+    private fun normalizeAngle(angle: Float): Float {
+        // Maps angle to [-45, 45] range using 90-degree rotational symmetry
+        var a = (angle + 45f) % 90f
+        if (a < 0) a += 90f
+        return a - 45f
+    }
+
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
         val validCandidates = candidates.filter { it.boundingBox.height() > 0 }
         if (validCandidates.isEmpty()) return 0f
@@ -223,8 +230,8 @@ object OdometerOcrUtils {
         if (heightFiltered.isEmpty()) return 0f
 
         // RANSAC: Pick the most frequent angle (the consensus)
-        // Group angles by +/- 0.5 degree bucket
-        val buckets = heightFiltered.groupBy { Math.round(it.angle * 2) / 2.0f }
+        // Group angles by +/- 0.5 degree bucket, normalized to [-45, 45]
+        val buckets = heightFiltered.groupBy { Math.round(normalizeAngle(it.angle) * 2) / 2.0f }
         
         // Find bucket with the most support
         val bestBucket = buckets.maxByOrNull { it.value.size }
