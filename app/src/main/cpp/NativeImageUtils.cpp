@@ -123,6 +123,58 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeTestImread(
+    JNIEnv* env, jobject thiz, jstring path) {
+    const char* nativePath = env->GetStringUTFChars(path, nullptr);
+    cv::Mat m = cv::imread(nativePath, cv::IMREAD_UNCHANGED);
+    env->ReleaseStringUTFChars(path, nativePath);
+    
+    if (m.empty()) return env->NewStringUTF("FAILED_TO_LOAD");
+    
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%dx%d channels:%d", m.cols, m.rows, m.channels());
+    return env->NewStringUTF(buf);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeIngestJpegToYuv(
+    JNIEnv* env, jobject thiz, jstring path, jlong handlePtr) {
+    
+    const char* nativePath = env->GetStringUTFChars(path, nullptr);
+    cv::Mat bgr = cv::imread(nativePath, cv::IMREAD_COLOR);
+    env->ReleaseStringUTFChars(path, nativePath);
+    
+    if (bgr.empty()) return JNI_FALSE;
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    if (!handle) return JNI_FALSE;
+    
+    if (handle->width != (size_t)bgr.cols || handle->height != (size_t)bgr.rows) {
+        return JNI_FALSE;
+    }
+    
+    // 1. Convert to YUV I420 (YYYY U V) - Standard baseline for 4:2:0
+    cv::Mat i420;
+    cv::cvtColor(bgr, i420, cv::COLOR_BGR2YUV_I420);
+    
+    // 2. Copy Y plane (Direct to Luma)
+    std::memcpy(handle->data, i420.data, handle->width * handle->height);
+    
+    // 3. Interleave U and V into the UV plane (NV21 layout: VUVU...)
+    uint8_t* dst_uv = handle->data + (handle->width * handle->height);
+    uint8_t* src_u = i420.data + (handle->width * handle->height);
+    uint8_t* src_v = src_u + (handle->width * handle->height / 4);
+    
+    size_t chromaSize = (handle->width * handle->height) / 4;
+    for (size_t i = 0; i < chromaSize; ++i) {
+        dst_uv[i * 2] = src_v[i];
+        dst_uv[i * 2 + 1] = src_u[i];
+    }
+    
+    return JNI_TRUE;
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCompressYuvToBase64(
     JNIEnv* env, jobject thiz, jobject yBuf, jobject uBuf, jobject vBuf, jint w, jint h, jint stride, jint quality) {
     

@@ -1066,14 +1066,14 @@ private suspend fun runExperiment(
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, alignedBase64, alignedNativeBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, alignedBase64, alignedNativeBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes, meta.diagnostic)
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
                 val photoJson = serializePhotoResultToJson(
                     index + 1, file.name, meta.originalWidth, meta.originalHeight, meta.decodedWidth, meta.decodedHeight, meta.isDegraded, 
-                    finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
+                    meta.diagnostic, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
                     queryOcrDiscovery, queryOcrDiscoveryMono, 
                     primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes, deskewResMono
                 )
@@ -1122,7 +1122,7 @@ private suspend fun runExperiment(
 
 private fun serializePhotoResultToJson(
     lineNumber: Int, fileName: String, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
-    winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
+    nativeProbe: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, discoveryMono: OcrResult?, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
 ): JSONObject {
@@ -1132,6 +1132,7 @@ private fun serializePhotoResultToJson(
         put("probedWidth", probedW); put("probedHeight", probedH)
         put("imageWidth", decodedW); put("imageHeight", decodedH)
         put("isDegraded", isDegraded)
+        put("nativeProbe", nativeProbe)
         
         // Benchmarking: Alignment (Standard vs Mono)
         val winnerVehicle = vehicles.find { it.name == winner }
@@ -1359,10 +1360,12 @@ private fun buildHtmlRowDynamic(
     tDeskew: Long, 
     tDiscovery: Long,
     tilt: Float,
-    deskewRes: OdometerOcrUtils.DeskewResult
+    deskewRes: OdometerOcrUtils.DeskewResult,
+    diagnostic: String = ""
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     

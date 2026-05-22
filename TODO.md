@@ -78,12 +78,11 @@
 - [ ] **High-Resolution DNG & Zero-Copy Ingestion (Option B Migration):** 
     - **Context:** `BitmapFactory` currently extracts low-res (680px) thumbnails from DNG files. We need full 12MP+ sensor data for accurate OCR. Transitioning to a YUV-primary path reduces memory usage by 75% compared to ARGB intermediate buffers.
     - [x] **DONE:** Step 1: Create Golden Subset test harness and baseline resolution logging.
-    - [ ] **ACTIVE:** Step 2: Implement the YUV Bridge (ImageDecoder + JNI zero-copy ingestion).
-        - [x] **DONE:** Fix UnsatisfiedLinkError due to internal JNI name mangling.
-    - [ ] Replace `BitmapFactory` with `android.graphics.ImageDecoder` for high-res access.
-    - [ ] Redirect ingestion flow: File -> `scratchBmp` -> `BufferSet.primary` -> `masterBmp` (Inversion).
-    - [ ] Implement native JPEG ingestion using OpenCV `imread` (libjpeg-turbo) directly into `BufferSet`.
-    - [ ] Integrate native RAW decoder (e.g. `LibRaw`) for zero-copy DNG development.
+    - [x] **DONE:** Step 2: Implement the YUV Bridge (ImageDecoder + JNI zero-copy ingestion). (Confirmed framework limitations for DNG sensor access).
+    - [ ] **ACTIVE:** Step 3: Native Ingestion & OpenCV RAW Diagnostic.
+        - [ ] Implement `nativeIngestJpegToYuv` using OpenCV `imread` (libjpeg-turbo) for zero-copy JPEG ingestion.
+        - [ ] Implement `nativeTestImread` diagnostic to probe native DNG support.
+    - [ ] Step 4: Integrate native RAW decoder (e.g. `LibRaw`) for zero-copy DNG development to color YUV.
     - [ ] **Optimization (Camera2 Borrowing):** Implement "Buffer Borrowing" strategy. Temporarily point `BufferSet.primary` to the hardware Y-plane from `ImageReader`, then release the hardware lock immediately after the first `BufferSet.flip()` to achieve zero-copy ingestion of 12MP data.
     - [ ] **Optimization (Dual-Plane BufferSet):** Explore extending `BufferSet` to handle dual UV planes. A `.mono` accessor would return a static/virtual plane of 128s, while `.color` holds actual chroma. `clearColor()` would only affect the `.color` slice.
 - **Identity & Matching:**

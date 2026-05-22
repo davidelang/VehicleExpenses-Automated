@@ -15,7 +15,8 @@ data class IngestionMetadata(
     val decodedHeight: Int,
     val format: String,
     val timeMs: Long,
-    val isDegraded: Boolean = false
+    val isDegraded: Boolean = false,
+    val diagnostic: String = ""
 )
 
 object ImageIngestionProvider {
@@ -61,15 +62,52 @@ object ImageIngestionProvider {
         masterBmp: Bitmap
     ): IngestionMetadata {
         val t0 = System.currentTimeMillis()
-        val file = File(path)
+        val file = java.io.File(path)
         val ext = file.extension.lowercase()
         
         // --- TYPE-AWARE DISPATCHER ---
         return when (ext) {
-            "dng" -> ingestViaImageDecoder(context, path, target, masterBmp, t0)
-            "jpg", "jpeg", "png" -> ingestViaImageDecoder(context, path, target, masterBmp, t0) // Standard for now
-            else -> ingestViaImageDecoder(context, path, target, masterBmp, t0) // Fallback
+            "jpg", "jpeg" -> ingestViaNativeJpeg(path, target, masterBmp, t0)
+            "dng" -> {
+                // Diagnostic: Probe if native imread can see the high-res RAW
+                val diag = NativeImageUtils.testImread(path)
+                Log.i(TAG, "Native DNG Diagnostic for $path: $diag")
+                val meta = ingestViaImageDecoder(context, path, target, masterBmp, t0)
+                meta.copy(diagnostic = diag)
+            }
+            else -> ingestViaImageDecoder(context, path, target, masterBmp, t0) // Fallback for png etc
         }
+    }
+
+    private fun ingestViaNativeJpeg(
+        path: String,
+        target: BufferSet,
+        masterBmp: Bitmap,
+        startTime: Long
+    ): IngestionMetadata {
+        val diag = NativeImageUtils.testImread(path)
+        // Parse "WxH channels:C"
+        val parts = diag.split(" ")
+        val res = parts[0].split("x")
+        val w = res[0].toInt()
+        val h = res[1].toInt()
+
+        // Step 1: Native Ingestion (Direct imread -> YUV)
+        NativeImageUtils.ingestJpegToYuv(path, target.p)
+        
+        // Step 2: UI Sync (YUV -> ARGB)
+        if (masterBmp.width == w && masterBmp.height == h) {
+            NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
+        }
+
+        return IngestionMetadata(
+            w, h, 
+            w, h, 
+            "image/jpeg", 
+            System.currentTimeMillis() - startTime,
+            false,
+            diag
+        )
     }
 
     private fun ingestViaImageDecoder(
