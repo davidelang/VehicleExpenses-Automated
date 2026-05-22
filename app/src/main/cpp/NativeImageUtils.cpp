@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include "BufferSetHandle.h"
+#include "../libraw_config.h"
 #include <libraw/libraw.h>
 
 static const char base64_chars[] = 
