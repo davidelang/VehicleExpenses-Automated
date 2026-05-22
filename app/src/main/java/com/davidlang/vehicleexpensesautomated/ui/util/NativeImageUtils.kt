@@ -106,6 +106,6 @@ object NativeImageUtils {
 
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
-    internal external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
+    private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
 }
