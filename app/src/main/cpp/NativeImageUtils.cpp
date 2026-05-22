@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include "BufferSetHandle.h"
+#include <libraw/libraw.h>
 
 static const char base64_chars[] = 
              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -173,6 +174,73 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         dst_uv[i * 2] = src_v[i];
         dst_uv[i * 2 + 1] = src_u[i];
     }
+    
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeIngestDngToYuv(
+    JNIEnv* env, jobject thiz, jstring path, jlong handlePtr) {
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    if (!handle) return JNI_FALSE;
+    
+    const char* nativePath = env->GetStringUTFChars(path, nullptr);
+    
+    LibRaw RawProcessor;
+    int ret = RawProcessor.open_file(nativePath);
+    env->ReleaseStringUTFChars(path, nativePath);
+    
+    if (ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    
+    // Check if the sensor resolution matches our BufferSet
+    if (handle->width != (size_t)RawProcessor.imgdata.sizes.width || 
+        handle->height != (size_t)RawProcessor.imgdata.sizes.height) {
+        // If it doesn't match exactly, LibRaw allows half_size output
+        // but for now, we expect exact sizing based on our probe.
+        return JNI_FALSE;
+    }
+    
+    ret = RawProcessor.unpack();
+    if (ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    
+    // Configure development parameters
+    RawProcessor.imgdata.params.output_color = 1; // sRGB
+    RawProcessor.imgdata.params.use_camera_wb = 1; // Use camera white balance
+    RawProcessor.imgdata.params.half_size = 0; // Full resolution
+    
+    ret = RawProcessor.dcraw_process();
+    if (ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    
+    libraw_processed_image_t *image = RawProcessor.dcraw_make_mem_image(&ret);
+    if (!image || ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    
+    // We now have RGB bytes. Wrap them in a Mat.
+    cv::Mat rgb(image->height, image->width, CV_8UC3, image->data);
+    
+    // 1. Convert to YUV I420 (Planar 4:2:0)
+    cv::Mat i420;
+    cv::cvtColor(rgb, i420, cv::COLOR_RGB2YUV_I420);
+    
+    // 2. Perform in-place C++ Interleaving into NV21
+    size_t ySize = handle->width * handle->height;
+    size_t uvSize = ySize / 4;
+    
+    // Copy Y Plane directly
+    std::memcpy(handle->data, i420.data, ySize);
+    
+    // Interleave U and V planes into VUVU...
+    uint8_t* dst_uv = handle->data + ySize;
+    uint8_t* src_u = i420.data + ySize;
+    uint8_t* src_v = src_u + uvSize;
+    
+    for (size_t i = 0; i < uvSize; ++i) {
+        dst_uv[i * 2] = src_v[i];
+        dst_uv[i * 2 + 1] = src_u[i];
+    }
+    
+    LibRaw::dcraw_clear_mem(image);
+    RawProcessor.recycle();
     
     return JNI_TRUE;
 }
