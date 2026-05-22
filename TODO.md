@@ -44,6 +44,12 @@
     - [x] Step 5.5: Fix takeSnapshot destructive resize.
 - [x] **DONE:** Phase 25.3 - BufferSet Pointer Invalidation Fix (JNI In-Place & Smart Proxy).
 - [x] **DONE:** Remove OCR Gating and Unannotated Snapshots (Phase 25.4).
+- [ ] **ACTIVE:** Host-Side PaddleOCR Simulator (`dev-ai-interaction/host_paddle_simulator.py`)
+    - [x] **DONE:** Implement baseline pipeline (Deskew -> Align -> Crop -> OCR).
+    - [x] **DONE:** Replicate Android "Embedded Preview" resolution logic for DNG processing.
+    - [x] **DONE:** Identify and replicate "Hybrid Geometry Bug" (Axis-specific movement vs. Width-normalized crops).
+    - [ ] Complete full accuracy validation sweep across 141 ground-truth images.
+    - [ ] Sync simulator with proposed Android geometry fixes (Square-Normalization for all axes).
 - [ ] **BUG:** Normalization Discrepancy. Odometer crop coordinates (Y) in database appear to be normalized relative to Image Width rather than Height for some vehicles (e.g., Honda).
     - [ ] Audit `ManageVehiclesScreen.kt` and `OdometerOcrUtils.kt` to ensure axis-specific normalization is strictly enforced repository-wide.
     - [ ] If width-normalization for Y is intended (square coordinate system), provide technical justification and update `BUFFER_SET_SPEC.md` to document this non-standard behavior.
