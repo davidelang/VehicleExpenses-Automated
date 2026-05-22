@@ -7,6 +7,8 @@
 #include <vector>
 #include <algorithm>
 #include "BufferSetHandle.h"
+#include <android/log.h>
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
 #include "../libraw_config.h"
 #include <libraw/libraw.h>
 
@@ -192,18 +194,26 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
     int ret = RawProcessor.open_file(nativePath);
     env->ReleaseStringUTFChars(path, nativePath);
     
-    if (ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    if (ret != LIBRAW_SUCCESS) {
+        LOGE("LibRaw open_file failed: %s", libraw_strerror(ret));
+        return JNI_FALSE;
+    }
     
     // Check if the sensor resolution matches our BufferSet
     if (handle->width != (size_t)RawProcessor.imgdata.sizes.width || 
         handle->height != (size_t)RawProcessor.imgdata.sizes.height) {
-        // If it doesn't match exactly, LibRaw allows half_size output
-        // but for now, we expect exact sizing based on our probe.
+        LOGE("LibRaw size mismatch. Buffer: %dx%d, LibRaw: %dx%d (iwidth/iheight: %dx%d)", 
+             (int)handle->width, (int)handle->height, 
+             RawProcessor.imgdata.sizes.width, RawProcessor.imgdata.sizes.height,
+             RawProcessor.imgdata.sizes.iwidth, RawProcessor.imgdata.sizes.iheight);
         return JNI_FALSE;
     }
     
     ret = RawProcessor.unpack();
-    if (ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    if (ret != LIBRAW_SUCCESS) {
+        LOGE("LibRaw unpack failed: %s", libraw_strerror(ret));
+        return JNI_FALSE;
+    }
     
     // Configure development parameters
     RawProcessor.imgdata.params.output_color = 1; // sRGB
