@@ -161,4 +161,5 @@
 ## Explicitly Rejected Ideas
 - **Dynamic Veto Frequency Filter / Global IDF Word Filter:** A global registry complicates logic across multiple vehicles. Creating the list dynamically on-demand is cheap, and commonly duplicated high-value anchor words would be incorrectly subtracted.
 - **Needle-Based Correction:** The current anchor-triangle approach accomplishes the same goal more reliably, without failing when the needle is cropped by the frame edges.
+- **Unclip Box for Recognition:** Tried in Phase 2.1; found inferior to `expandByValleyStop` logic. Digit clipping was reduced but contrast-based expansion proved more robust across varying dashboard polarities.
 - [ ] Implement 'Skip-Deskew' discovery pipeline: Bypass engines, resolve deskew/zoom/pan geometrically from landmark mapping.
