@@ -94,14 +94,14 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     suspend fun normalizeYUV() = mutex.withLock {
         val src = p.yuv
-        val dst = s.nv21
-        dst.rewind()
-        val yBuf = src.planes[0].buffer; val yStride = src.planes[0].rowStride
-        val row = ByteArray(_width)
-        for (i in 0 until _height) { yBuf.position(i * yStride); yBuf.get(row); dst.put(row) }
-        val uvBuf = src.planes[2].buffer; val uvStride = src.planes[2].rowStride
-        val uvRow = ByteArray(_width)
-        for (i in 0 until _height / 2) { uvBuf.position(i * uvStride); uvBuf.get(uvRow); dst.put(uvRow) }
+        val dstHandle = (s as Instance).nativePtr
+        
+        nativeNormalizeYUV(
+            src.planes[0].buffer, src.planes[1].buffer, src.planes[2].buffer,
+            src.planes[0].rowStride, src.planes[1].rowStride, src.planes[2].rowStride,
+            src.planes[0].pixelStride, src.planes[1].pixelStride, src.planes[2].pixelStride,
+            _width, _height, dstHandle
+        )
         flip()
     }
 
@@ -288,6 +288,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     private external fun nativeGetBuffer(handle: Long): ByteBuffer?
     private external fun nativeUpdateMatData(matPtr: Long, parentMatPtr: Long, byteOffset: Int)
     private external fun nativeUpdateCropMat(cropMatPtr: Long, parentMatPtr: Long, x: Int, y: Int, w: Int, h: Int)
+    private external fun nativeNormalizeYUV(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, yRStride: Int, uRStride: Int, vRStride: Int, yPStride: Int, uPStride: Int, vPStride: Int, w: Int, h: Int, dstHandle: Long)
     companion object {
         init { System.loadLibrary("memory_bridge") }
         @JvmStatic private external fun nativeDisarmMat(matObj: Mat)

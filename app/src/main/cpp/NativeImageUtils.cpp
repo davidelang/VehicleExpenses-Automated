@@ -153,20 +153,23 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         return JNI_FALSE;
     }
     
-    // 1. Convert to YUV I420 (YYYY U V) - Standard baseline for 4:2:0
+    // 1. Convert to YUV I420 (YYYY U V)
     cv::Mat i420;
     cv::cvtColor(bgr, i420, cv::COLOR_BGR2YUV_I420);
     
-    // 2. Copy Y plane (Direct to Luma)
-    std::memcpy(handle->data, i420.data, handle->width * handle->height);
+    // 2. Perform in-place C++ Interleaving into NV21
+    size_t ySize = handle->width * handle->height;
+    size_t uvSize = ySize / 4;
     
-    // 3. Interleave U and V into the UV plane (NV21 layout: VUVU...)
-    uint8_t* dst_uv = handle->data + (handle->width * handle->height);
-    uint8_t* src_u = i420.data + (handle->width * handle->height);
-    uint8_t* src_v = src_u + (handle->width * handle->height / 4);
+    // Copy Y Plane directly
+    std::memcpy(handle->data, i420.data, ySize);
     
-    size_t chromaSize = (handle->width * handle->height) / 4;
-    for (size_t i = 0; i < chromaSize; ++i) {
+    // Interleave U and V planes into VUVU...
+    uint8_t* dst_uv = handle->data + ySize;
+    uint8_t* src_u = i420.data + ySize;
+    uint8_t* src_v = src_u + uvSize;
+    
+    for (size_t i = 0; i < uvSize; ++i) {
         dst_uv[i * 2] = src_v[i];
         dst_uv[i * 2 + 1] = src_u[i];
     }

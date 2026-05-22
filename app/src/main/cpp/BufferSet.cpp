@@ -181,4 +181,59 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeDisarmMat(
     if (nativeObjField != nullptr) env->SetLongField(matObj, nativeObjField, 0);
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeNormalizeYUV(
+    JNIEnv* env, jobject thiz, 
+    jobject yBuf, jobject uBuf, jobject vBuf,
+    jint yRStride, jint uRStride, jint vRStride,
+    jint yPStride, jint uPStride, jint vPStride,
+    jint w, jint h, jlong dstHandlePtr) {
+    
+    auto* dstHandle = reinterpret_cast<BufferSetHandle*>(dstHandlePtr);
+    if (!dstHandle || dstHandle->width != (size_t)w || dstHandle->height != (size_t)h) return;
+
+    uint8_t* yDataSrc = (uint8_t*)env->GetDirectBufferAddress(yBuf);
+    uint8_t* uDataSrc = (uint8_t*)env->GetDirectBufferAddress(uBuf);
+    uint8_t* vDataSrc = (uint8_t*)env->GetDirectBufferAddress(vBuf);
+
+    if (!yDataSrc || !uDataSrc || !vDataSrc) return;
+
+    uint8_t* dstData = dstHandle->data;
+    size_t ySize = (size_t)w * h;
+    
+    // Copy Y Plane (Removing padding/stride gaps)
+    for (int r = 0; r < h; ++r) {
+        // Fast path for contiguous Y
+        if (yRStride == w && yPStride == 1) {
+            std::memcpy(dstData + (r * w), yDataSrc + (r * yRStride), w);
+        } else {
+            for (int c = 0; c < w; ++c) {
+                dstData[(r * w) + c] = yDataSrc[(r * yRStride) + (c * yPStride)];
+            }
+        }
+    }
+
+    // Copy U/V Planes into NV21 (VUVU... interleaved)
+    uint8_t* uvDst = dstData + ySize;
+    int halfW = w / 2;
+    int halfH = h / 2;
+    
+    // Fast path for NV21 -> NV21 copy
+    if (uPStride == 2 && vPStride == 2 && (vDataSrc + 1) == uDataSrc && vRStride == w) {
+        for (int r = 0; r < halfH; ++r) {
+            std::memcpy(uvDst + (r * w), vDataSrc + (r * vRStride), w);
+        }
+    } else {
+        // Universal Planar/Semi-Planar to Interleaved Converter
+        for (int r = 0; r < halfH; ++r) {
+            for (int c = 0; c < halfW; ++c) {
+                uint8_t v = vDataSrc[(r * vRStride) + (c * vPStride)];
+                uint8_t u = uDataSrc[(r * uRStride) + (c * uPStride)];
+                uvDst[(r * w) + (c * 2)]     = v;
+                uvDst[(r * w) + (c * 2) + 1] = u;
+            }
+        }
+    }
+}
+
 }
