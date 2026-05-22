@@ -370,9 +370,14 @@ object ImageAlignmentUtils {
 
         val matrix = android.graphics.Matrix()
         matrix.postScale(finalScale, finalScale)
-        // Phase 53: Zero-Rotation Warp. Global deskew already handled rotation.
-        // Map normalized translation back to pixels based on the buffer resolution
-        matrix.postTranslate(finalTx * bmp.width, finalTy * bmp.height)
+        
+        // Corrected Origin: Convert ICRS translation to Pixel Space (Top-Left origin)
+        val pixelTranslation = IcrsMath.icrsToPixel(finalTx, finalTy, bmp.width, bmp.height)
+        val originOffset = IcrsMath.icrsToPixel(0f, 0f, bmp.width, bmp.height)
+        val pixTx = pixelTranslation.x - originOffset.x
+        val pixTy = pixelTranslation.y - originOffset.y
+        
+        matrix.postTranslate(pixTx, pixTy)
 
         val metadata = mapOf(
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
