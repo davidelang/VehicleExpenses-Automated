@@ -132,6 +132,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     inner class Instance : Slice {
         private var nativeHandle: Long = 0
+        val nativePtr: Long get() = nativeHandle
         private var _mat: Mat? = null
         private var _uvMat: Mat? = null
         private var _nv21Mat: Mat? = null
