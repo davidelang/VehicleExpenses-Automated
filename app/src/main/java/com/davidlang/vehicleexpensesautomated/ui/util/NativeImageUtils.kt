@@ -37,6 +37,19 @@ object NativeImageUtils {
     }
 
     /**
+     * High-performance ingestion from ARGB Bitmap to BufferSet primary Mat.
+     * Uses cv::cvtColor for optimized SIMD conversion.
+     */
+    fun ingestArgbToYuv(src: Bitmap, target: BufferSet.Slice) {
+        if (target is BufferSet.Instance) {
+            nativeIngestArgbToYuv(src, target.nativePtr)
+        } else {
+            // Fallback for crops if ever needed, but usually we ingest to full buffer
+            syncMatFromArgb(src, target.mat)
+        }
+    }
+
+    /**
      * High-performance YUV annotation utility using standard OpenCV drawing.
      * Operates directly on the Luma (8UC1) and interleaved Chroma (8UC2) planes.
      */
@@ -93,5 +106,6 @@ object NativeImageUtils {
 
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
+    internal external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
 }

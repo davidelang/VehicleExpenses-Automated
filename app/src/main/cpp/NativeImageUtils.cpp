@@ -1,10 +1,12 @@
 #include <jni.h>
 #include <android/bitmap.h>
 #include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "BufferSetHandle.h"
 
 static const char base64_chars[] = 
              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -89,6 +91,31 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSyncM
             dst[base + 1] = v;
             dst[base + 2] = v;
             dst[base + 3] = 0xFF;
+        }
+    }
+    
+    AndroidBitmap_unlockPixels(env, bitmap);
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeIngestArgbToYuv(
+    JNIEnv* env, jobject thiz, jobject bitmap, jlong handlePtr) {
+    
+    AndroidBitmapInfo info;
+    void* pixels;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) < 0) return;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0) return;
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    
+    if (pixels != nullptr && handle != nullptr && handle->yMat != nullptr) {
+        // Wrap the Bitmap pixels in a Mat header (Zero-Copy)
+        cv::Mat src(info.height, info.width, CV_8UC4, pixels);
+        
+        // Use OpenCV's optimized conversion directly into the BufferSet Mat
+        // handle->yMat is already allocated at the correct size
+        if (handle->yMat->cols == (int)info.width && handle->yMat->rows == (int)info.height) {
+            cv::cvtColor(src, *(handle->yMat), cv::COLOR_RGBA2GRAY);
         }
     }
     

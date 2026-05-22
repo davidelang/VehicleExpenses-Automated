@@ -298,18 +298,23 @@ private suspend fun runExperiment(
         var bestOdometer = "FAILED"
         try {
             withContext(Dispatchers.Main) { onLog("") }
-            val rawBitmap = OdometerOcrUtils.decodeBitmapSafely(context, file.absolutePath) ?: throw Exception("Bitmap decode failed")
-            val imgW = rawBitmap.width
-            val imgH = rawBitmap.height
+            
+            // Phase 115: Probe Natural Resolution to bypass thumbnails
+            val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
 
             // Phase 115: Safe Dynamic Resizing for Dashboard set
             NativePaddleEngine.fullBufferSet.resize(imgW, imgH)
 
             // Phase 115: Per-Row Master Buffers (Native Resolution)
-            
             val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             
+            // Ingest at full fidelity
+            val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.fullBufferSet, scratchBmp, masterBmp)
+            
+            // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
+            val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, null)
+
             // Explicit Decision: takeSnapshot is a local function to capture row-local buffers without explicit parameter passing.
             suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: Int, annotations: List<SnapshotAnnotation>): String = withContext(Dispatchers.IO) {
                 val scratchBmp = scratchBmp // Capture outer scope
@@ -422,21 +427,6 @@ private suspend fun runExperiment(
     b64
             }
 
-            val masterCanvas = android.graphics.Canvas(masterBmp)
-            masterCanvas.drawColor(android.graphics.Color.BLACK)
-            masterCanvas.drawBitmap(rawBitmap, 0f, 0f, null)
-            
-            // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
-            val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, null)
-
-            rawBitmap.recycle()
-
-            // Apply global filters to established baseline
-            OdometerOcrUtils.applyGrayscaleInPlace(masterBmp)
-            
-            // Phase 115: Synchronize the unaligned raw masterBmp into the global Dashboard set before deskew/discovery
-            com.davidlang.vehicleexpensesautomated.ui.util.NativeImageUtils.syncMatFromArgb(masterBmp!!, NativePaddleEngine.fullBufferSet.p.mat)
-            
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp)
@@ -455,7 +445,7 @@ private suspend fun runExperiment(
                     val matrix = android.graphics.Matrix()
                     matrix.postRotate(-tilt, masterBmp.width / 2f, masterBmp.height / 2f)
                     scratchCanvas.drawBitmap(masterBmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-                    masterCanvas.drawBitmap(scratchBmp, 0f, 0f, null)
+                    android.graphics.Canvas(masterBmp).drawBitmap(scratchBmp, 0f, 0f, null)
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 
