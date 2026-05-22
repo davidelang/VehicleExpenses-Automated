@@ -20,34 +20,30 @@ data class IngestionMetadata(
 object ImageIngestionProvider {
     private const val TAG = "ImageIngestion"
 
-    private class HeaderDecodedException(val width: Int, val height: Int) : Exception()
-
     /**
      * Probes the natural dimensions of an image file, bypassing thumbnails where possible.
+     * For DNG files, uses ExifInterface to find the true sensor resolution.
      */
     fun probeDimensions(context: Context, path: String): Pair<Int, Int> {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val source = if (path.startsWith("content://")) {
-                ImageDecoder.createSource(context.contentResolver, Uri.parse(path))
-            } else {
-                ImageDecoder.createSource(File(path))
-            }
+        return try {
+            val exif = android.media.ExifInterface(path)
+            val w = exif.getAttributeInt(android.media.ExifInterface.TAG_IMAGE_WIDTH, 0)
+            val h = exif.getAttributeInt(android.media.ExifInterface.TAG_IMAGE_LENGTH, 0)
             
-            try {
-                // We use ImageDecoder to get the TRUE raw sensor dimensions.
-                // We throw an exception in the listener to stop before pixel allocation/development occurs.
-                ImageDecoder.decodeDrawable(source) { _, info, _ ->
-                    throw HeaderDecodedException(info.size.width, info.size.height)
-                }
-            } catch (e: HeaderDecodedException) {
-                return Pair(e.width, e.height)
-            } catch (e: Exception) {
-                Log.w(TAG, "ImageDecoder probe failed for $path, falling back to BitmapFactory: ${e.message}")
+            if (w > 0 && h > 0) {
+                Pair(w, h)
+            } else {
+                // Fallback to BitmapFactory for metadata if tags are missing
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(path, options)
+                Pair(options.outWidth, options.outHeight)
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Exif probe failed for $path, falling back to BitmapFactory: ${e.message}")
+            val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(path, options)
+            Pair(options.outWidth, options.outHeight)
         }
-        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        android.graphics.BitmapFactory.decodeFile(path, options)
-        return Pair(options.outWidth, options.outHeight)
     }
 
     /**
@@ -58,14 +54,16 @@ object ImageIngestionProvider {
         context: Context,
         path: String,
         target: BufferSet,
+        probedW: Int,
+        probedH: Int,
         scratchBmp: Bitmap?, // Placeholder for future reuse logic
         masterBmp: Bitmap
     ): IngestionMetadata {
         val t0 = System.currentTimeMillis()
         val file = File(path)
         
-        var originalW = 0
-        var originalH = 0
+        var originalW = probedW
+        var originalH = probedH
         var decodedW = 0
         var decodedH = 0
         var format = "unknown"
@@ -78,11 +76,13 @@ object ImageIngestionProvider {
             }
 
             val decodedBitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                originalW = info.size.width
-                originalH = info.size.height
                 format = info.mimeType
                 
-                // Allow hardware limit check if needed, but default to Natural resolution
+                // If it's a DNG or we have a larger probed resolution, force high-res development
+                if (probedW > info.size.width || probedH > info.size.height) {
+                    decoder.setTargetSize(probedW, probedH)
+                }
+                
                 // Note: ALLOCATOR_SOFTWARE is critical for JNI access to RAW data developed by ImageDecoder
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
