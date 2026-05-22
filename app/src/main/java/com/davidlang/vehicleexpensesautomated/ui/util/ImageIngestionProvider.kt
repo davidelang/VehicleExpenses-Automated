@@ -95,13 +95,16 @@ object ImageIngestionProvider {
         masterBmp: Bitmap,
         startTime: Long
     ): IngestionMetadata {
-        // We use ExifInterface to get the true RAW dimensions, as DNGs often hide it.
+        // We use LibRaw for dimensions as it's the source of truth for developed pixels
         val (probedW, probedH) = probeDimensions(context, path)
 
         // Step 1: Native Ingestion (Direct LibRaw -> YUV)
         NativeImageUtils.ingestDngToYuv(path, target.p)
         
-        // Step 2: UI Sync (YUV -> ARGB)
+        // Step 2: Stabilize state for monochrome-expecting logic
+        target.p.clearChroma()
+        
+        // Step 3: UI Sync (YUV -> ARGB)
         if (masterBmp.width == probedW && masterBmp.height == probedH) {
             NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
         } else {
@@ -142,7 +145,10 @@ object ImageIngestionProvider {
         // Step 1: Native Ingestion (Direct imread -> YUV)
         NativeImageUtils.ingestJpegToYuv(path, target.p)
         
-        // Step 2: UI Sync (YUV -> ARGB)
+        // Step 2: Stabilize state
+        target.p.clearChroma()
+        
+        // Step 3: UI Sync (YUV -> ARGB)
         if (masterBmp.width == w && masterBmp.height == h) {
             NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
         }

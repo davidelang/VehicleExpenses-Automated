@@ -93,7 +93,13 @@
         - [ ] Enhance `BufferSet.normalizeYUV()` with a high-performance C++ implementation to adapt any YUV format to the internal NV21 standard.
         - [ ] Implement `nativeIngestJpegToYuv` using OpenCV `imread` (libjpeg-turbo) for zero-copy JPEG ingestion with in-place NV21 conversion.
         - [ ] Implement `nativeTestImread` diagnostic to probe native DNG support.
-    - [ ] Step 4: Integrate native RAW decoder (e.g. `LibRaw`) for zero-copy DNG development (with in-place NV21 conversion).
+    - [x] **DONE:** Step 4: Integrate native RAW decoder (e.g. `LibRaw`) for zero-copy DNG development (with in-place NV21 conversion).
+    - [ ] **ACTIVE:** Step 5: Final Optimization & Normalization.
+        - [x] **DONE:** Ensure Chroma planes are neutralized (clearChroma) after high-fidelity ingestion.
+        - [ ] Unify reporting and metadata across ingestion dispatcher.
+    - [ ] **Sub-Pixel Landmark Refinement:**
+        - **Context:** Now that we have 12MP sensor data (up from 0.3MP thumbnails), the landmark detection precision is limited by our 0.0-1.0 normalized coordinate system.
+        - [ ] Implement a sub-pixel alignment stage that uses the high-resolution luma data to refine vehicle anchor points before crop extraction.
     - [ ] **Optimization (Camera2 Borrowing):** Implement "Buffer Borrowing" strategy. Temporarily point `BufferSet.primary` to the hardware Y-plane from `ImageReader`, then release the hardware lock immediately after the first `BufferSet.flip()` to achieve zero-copy ingestion of 12MP data.
     - [ ] **Optimization (Dual-Plane BufferSet):** Explore extending `BufferSet` to handle dual UV planes. A `.mono` accessor would return a static/virtual plane of 128s, while `.color` holds actual chroma. `clearColor()` would only affect the `.color` slice.
 - **Identity & Matching:**
