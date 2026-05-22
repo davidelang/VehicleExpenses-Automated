@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -225,45 +226,55 @@ object OdometerOcrUtils {
     }
 
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
-        val validCandidates = candidates.filter { it.boundingBox.height() > 0 }
+        val validCandidates = candidates.filter { 
+            it.boundingBox.height() > 0 && it.boundingBox.width() > 0 && it.angle.isFinite()
+        }
         if (validCandidates.isEmpty()) return 0f
 
-        val heights = validCandidates.map { it.boundingBox.height().toFloat() / imgHeight.toFloat() }
-        val roundedHeights = heights.map { Math.round(it / 0.005f) * 0.005f }
-        val counts = roundedHeights.groupingBy { it }.eachCount()
+        // Thickness (Filter Basis): Use the shortest side to identify the text line thickness regardless of rotation.
+        val thicknesses = validCandidates.map { 
+            kotlin.math.min(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat() 
+        }
+        val roundedThicknesses = thicknesses.map { Math.round(it / 0.005f) * 0.005f }
+        val counts = roundedThicknesses.groupingBy { it }.eachCount()
         val threshold = Math.max(2, (validCandidates.size * 0.15).toInt())
         val peaks = counts.filter { it.value >= threshold }.keys
         
         val floor = if (peaks.isNotEmpty()) {
-            peaks.minOrNull()!! / 2.0f
+            peaks.minOrNull()!! * 0.7f
         } else {
-            val sortedH = heights.sorted()
-            sortedH[sortedH.size / 2] / 2.0f
+            val sortedT = thicknesses.sorted()
+            sortedT[sortedT.size / 2] * 0.5f
         }
 
         val ceiling = if (peaks.isNotEmpty()) {
-            peaks.maxOrNull()!! * 2.0f
+            peaks.maxOrNull()!! * 1.5f
         } else {
-            val sortedH = heights.sorted()
-            sortedH[sortedH.size / 2] * 2.0f
+            val sortedT = thicknesses.sorted()
+            sortedT[sortedT.size / 2] * 2.0f
         }
 
-        val heightFiltered = validCandidates.filter { 
-            val h = it.boundingBox.height().toFloat() / imgHeight.toFloat()
-            h >= floor && h <= ceiling
+        val filtered = validCandidates.filter { 
+            val t = kotlin.math.min(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat()
+            t >= floor && t <= ceiling
         }
 
-        if (heightFiltered.isEmpty()) return 0f
+        if (filtered.isEmpty()) return 0f
 
-        // RANSAC: Pick the most frequent angle (the consensus)
+        // RANSAC-lite: Pick the most frequent angle (the consensus)
         // Group angles by +/- 0.5 degree bucket, normalized to [-45, 45]
-        val buckets = heightFiltered.groupBy { Math.round(normalizeAngle(it.angle) * 2) / 2.0f }
+        val buckets = filtered.groupBy { Math.round(normalizeAngle(it.angle) * 2) / 2.0f }
         
-        // Find bucket with the most support
-        val bestBucket = buckets.maxByOrNull { it.value.size }
+        // Weight by sqrt(Length) where Length is the longest side of the detection.
+        // sqrt dampens single large outliers while allowing multiple text blocks to outvote dust.
+        val bestBucket = buckets.maxByOrNull { bucket -> 
+            bucket.value.sumOf { 
+                kotlin.math.sqrt(kotlin.math.max(it.boundingBox.width(), it.boundingBox.height()).toDouble()) 
+            }
+        }
         
-        // Return consensus angle from largest bucket
-        return bestBucket?.key ?: 0f
+        val finalAngle = bestBucket?.key ?: 0f
+        return if (finalAngle.isFinite()) finalAngle else 0f
     }
 
     fun matToBase64(mat: Mat, quality: Int = 80): String {
