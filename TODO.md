@@ -12,6 +12,10 @@
 - [x] **Deskew Angle Normalization:** Implement normalization to [-45, 45] range in `OdometerOcrUtils` to unify ML Kit and Paddle outputs.
 - [x] **BufferSet Rotation Logic Switch:** Switch the BufferSet pipeline to use Paddle Mono deskew results for rotation in `ExperimentAlignmentScreen`.
 - [ ] **Deskew Forensic Logging:** Add text-block-level logging to the deskew stage and unify coordinate systems for forensic analysis.
+- [ ] **ACTIVE: Isotropic Coordinate System (ICRS) Migration**
+    - [x] **DONE:** Finalize `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
+    - [ ] **Phase 1: Codebase Audit & Dependency Mapping.** Identify all usages of `0-1f` normalization and landmark comparisons.
+    - [ ] **Phase 2: Transition Layer.** Implement ICRS math utilities and temporary conversion bridges.
 - [ ] **Technical Reference Backlog**
 
     - [ ] Create `docs/reference/DATABASE_SCHEMA.md`
