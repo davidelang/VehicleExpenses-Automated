@@ -433,7 +433,8 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 val dstMat = NativePaddleEngine.fullBufferSet.s.mat
 
                 // Phase 115: Use Paddle Mono deskew for native rotation as it's more robust on these displays
-                val paddleTiltMono = deskewResMono.engines["Paddle V3"]?.angle ?: 0f
+                val paddleTiltMonoRaw = deskewResMono.engines["Paddle V3"]?.angle ?: 0f
+                val paddleTiltMono = if (paddleTiltMonoRaw.isFinite()) paddleTiltMonoRaw else 0f
                 
                 val m = android.graphics.Matrix()
                 m.postRotate(-paddleTiltMono, srcMat.cols() / 2f, srcMat.rows() / 2f)
@@ -1045,6 +1046,9 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
 
                 val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, alignedNativeBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
+                if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
+                currentFile.appendText(rowHtml); currentSize += rowHtml.length
+
                 val photoJson = serializePhotoResultToJson(
                     index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
                     queryOcrDiscovery, queryOcrDiscoveryMono, 
@@ -1052,9 +1056,6 @@ private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCro
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
-                
-                if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
-                currentFile.appendText(rowHtml); currentSize += rowHtml.length
                 
                 val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
                 val winnerHarnessResults = winnerRef?.let { vehicleResultsMap[it.vehicle.id]?.harnessResults } ?: emptyMap()
@@ -1101,7 +1102,8 @@ private fun serializePhotoResultToJson(
     discovery: OcrResult, discoveryMono: OcrResult?, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
 ): JSONObject {
-    return JSONObject().apply {
+    val root = JSONObject()
+    root.apply {
         put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo)
         
         // Benchmarking: Alignment (Standard vs Mono)
@@ -1119,72 +1121,75 @@ private fun serializePhotoResultToJson(
             val monoTx = winnerRes.alignmentTraceMono.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val monoTy = winnerRes.alignmentTraceMono.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
             
-            put("alignment_delta_scale", monoS - stdS)
-            put("alignment_delta_tx", monoTx - stdTx)
-            put("alignment_delta_ty", monoTy - stdTy)
+            putSafe("alignment_delta_scale", monoS - stdS, fileName)
+            putSafe("alignment_delta_tx", monoTx - stdTx, fileName)
+            putSafe("alignment_delta_ty", monoTy - stdTy, fileName)
             put("alignment_consensus_std", winnerRes.alignmentTrace.metadata["Consensus"] ?: "")
-            put("alignment_consensus_mono", winnerRes.alignmentTraceMono?.metadata["Consensus"] ?: "")
-            put("aligned_image_native_b64", winnerRes.alignmentTraceMono?.alignedImageBase64 ?: "")
-            }
-
-        
-        put("deskew_time_ms", tDeskew + tRotate); put("deskew_time_rotation_ms", tRotate)
-        put("deskew_time_mono_ms", (deskewResMono?.mlTimeMs ?: 0L) + (deskewResMono?.paddleTimeMs ?: 0L) + tRotateMono)
-        put("deskew_time_rotation_mono_ms", tRotateMono)
-        
-        val timingsObj = JSONObject().apply {
-            put("paddle", JSONObject().apply { 
-                put("standard_ms", deskewRes.paddleTimeMs)
-                put("mono_ms", deskewResMono?.paddleTimeMs ?: 0L)
-            })
-            put("mlkit", JSONObject().apply {
-                put("standard_ms", deskewRes.mlTimeMs)
-                put("mono_ms", deskewResMono?.mlTimeMs ?: 0L)
-            })
+            put("alignment_consensus_mono", winnerRes.alignmentTraceMono.metadata["Consensus"] ?: "")
+            put("aligned_image_native_b64", winnerRes.alignmentTraceMono.alignedImageBase64)
         }
+
+        putSafe("deskew_time_ms", (tDeskew + tRotate).toDouble(), fileName)
+        putSafe("deskew_time_rotation_ms", tRotate.toDouble(), fileName)
+        putSafe("deskew_time_mono_ms", ((deskewResMono?.mlTimeMs ?: 0L) + (deskewResMono?.paddleTimeMs ?: 0L) + tRotateMono).toDouble(), fileName)
+        putSafe("deskew_time_rotation_mono_ms", tRotateMono.toDouble(), fileName)
+        
+        val timingsObj = JSONObject()
+        val pdTimings = JSONObject()
+        pdTimings.putSafe("standard_ms", deskewRes.paddleTimeMs.toDouble(), fileName)
+        pdTimings.putSafe("mono_ms", (deskewResMono?.paddleTimeMs ?: 0L).toDouble(), fileName)
+        timingsObj.put("paddle", pdTimings)
+        
+        val mlTimings = JSONObject()
+        mlTimings.putSafe("standard_ms", deskewRes.mlTimeMs.toDouble(), fileName)
+        mlTimings.putSafe("mono_ms", (deskewResMono?.mlTimeMs ?: 0L).toDouble(), fileName)
+        timingsObj.put("mlkit", mlTimings)
         put("deskew_timings", timingsObj)
         
-        val anglesObj = JSONObject().apply {
-            put("paddle", JSONObject().apply { 
-                put("standard", deskewRes.engines["Paddle V3"]?.angle ?: 0f)
-                put("mono", deskewResMono?.engines?.get("Paddle V3")?.angle ?: 0f)
-            })
-            put("mlkit", JSONObject().apply {
-                put("standard", deskewRes.engines["ML Kit"]?.angle ?: 0f)
-                put("mono", deskewResMono?.engines?.get("ML Kit")?.angle ?: 0f)
-            })
-        }
+        val anglesObj = JSONObject()
+        val pdAngles = JSONObject()
+        pdAngles.putSafe("standard", (deskewRes.engines["Paddle V3"]?.angle ?: 0f).toDouble(), fileName)
+        pdAngles.putSafe("mono", (deskewResMono?.engines?.get("Paddle V3")?.angle ?: 0f).toDouble(), fileName)
+        anglesObj.put("paddle", pdAngles)
+        
+        val mlAngles = JSONObject()
+        mlAngles.putSafe("standard", (deskewRes.engines["ML Kit"]?.angle ?: 0f).toDouble(), fileName)
+        mlAngles.putSafe("mono", (deskewResMono?.engines?.get("ML Kit")?.angle ?: 0f).toDouble(), fileName)
+        anglesObj.put("mlkit", mlAngles)
         put("deskew_angles", anglesObj)
         
-        put("discovery_time_ms", tDiscovery)
-        put("discovery_time_mono_ms", winnerRes?.discoveryTimeMonoMs ?: 0L)
+        putSafe("discovery_time_ms", tDiscovery.toDouble(), fileName)
+        putSafe("discovery_time_mono_ms", (winnerRes?.discoveryTimeMonoMs ?: 0L).toDouble(), fileName)
         
         if (winnerRes?.alignmentTrace != null) {
-            put("alignment_time_std_ms", winnerRes.alignmentTrace.timeMs)
-            put("alignment_time_mono_ms", winnerRes.alignmentTraceMono?.timeMs ?: 0L)
+            putSafe("alignment_time_std_ms", winnerRes.alignmentTrace.timeMs.toDouble(), fileName)
+            putSafe("alignment_time_mono_ms", (winnerRes.alignmentTraceMono?.timeMs ?: 0L).toDouble(), fileName)
             
             val stdS = winnerRes.alignmentTrace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val stdTx = winnerRes.alignmentTrace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val stdTy = winnerRes.alignmentTrace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
             
-            val monoS = winnerRes.alignmentTraceMono?.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
-            val monoTx = winnerRes.alignmentTraceMono?.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
-            val monoTy = winnerRes.alignmentTraceMono?.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
+            val monoS = winnerRes.alignmentTraceMono?.metadata?.get("raw_scale")?.toDoubleOrNull() ?: 0.0
+            val monoTx = winnerRes.alignmentTraceMono?.metadata?.get("raw_tx")?.toDoubleOrNull() ?: 0.0
+            val monoTy = winnerRes.alignmentTraceMono?.metadata?.get("raw_ty")?.toDoubleOrNull() ?: 0.0
             
-            put("alignment_delta_scale", monoS - stdS)
-            put("alignment_delta_tx", monoTx - stdTx)
-            put("alignment_delta_ty", monoTy - stdTy)
+            putSafe("alignment_delta_scale", monoS - stdS, fileName)
+            putSafe("alignment_delta_tx", monoTx - stdTx, fileName)
+            putSafe("alignment_delta_ty", monoTy - stdTy, fileName)
         }
         
+        val safeW = discovery.imageWidth.toDouble().coerceAtLeast(1.0)
+        val safeH = discovery.imageHeight.toDouble().coerceAtLeast(1.0)
+
         val mlArray = JSONArray()
         deskewRes.mlBlocks.forEach { block ->
             mlArray.put(JSONObject().apply {
                 put("text", block.text)
-                put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble())
-                put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
-                put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble())
-                put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
-                put("angle", block.angle)
+                putSafe("cx", block.boundingBox.centerX().toDouble() / safeW, fileName)
+                putSafe("cy", block.boundingBox.centerY().toDouble() / safeH, fileName)
+                putSafe("w", block.boundingBox.width().toDouble() / safeW, fileName)
+                putSafe("h", block.boundingBox.height().toDouble() / safeH, fileName)
+                putSafe("angle", block.angle.toDouble(), fileName)
             })
         }
         put("deskew_data", mlArray) // Keep primary as 'deskew_data' for backwards compatibility
@@ -1194,16 +1199,17 @@ private fun serializePhotoResultToJson(
         deskewRes.paddleBlocks.forEach { block ->
             pdArray.put(JSONObject().apply {
                 put("text", block.text)
-                put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble())
-                put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
-                put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble())
-                put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
-                put("angle", block.angle)
+                putSafe("cx", block.boundingBox.centerX().toDouble() / safeW, fileName)
+                putSafe("cy", block.boundingBox.centerY().toDouble() / safeH, fileName)
+                putSafe("w", block.boundingBox.width().toDouble() / safeW, fileName)
+                putSafe("h", block.boundingBox.height().toDouble() / safeH, fileName)
+                putSafe("angle", block.angle.toDouble(), fileName)
             })
         }
         put("deskew_data_paddle", pdArray)
 
-        val fullImageOcrTimings = JSONObject(); fullImageOcrTimings.put("ML Kit", tDeskew + discovery.executionTimeMs)
+        val fullImageOcrTimings = JSONObject()
+        fullImageOcrTimings.putSafe("ML Kit", (tDeskew + discovery.executionTimeMs).toDouble(), fileName)
         put("has_heatmap", discovery.rawHeatmap != null); put("full_image_ocr_timings", fullImageOcrTimings)
         val vSweepJson = JSONObject(); val safeVehicles = vetoSweep.filter { !it.value.isVetoed }.map { vRes -> vehicles.find { it.id == vRes.key }?.name ?: "Unknown" }
         vSweepJson.put("ML Kit", JSONObject().apply { put("safe_count", safeVehicles.size); put("safe_vehicles", JSONArray(safeVehicles)) }); put("veto_accuracy_sweep", vSweepJson)
@@ -1213,9 +1219,12 @@ private fun serializePhotoResultToJson(
             val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
             if (cleanedText.length > 1) {
                 landmarksArray.put(JSONObject().apply { 
-                    put("text", cleanedText); put("cx", block.boundingBox.centerX().toDouble() / discovery.imageWidth.toDouble()); put("cy", block.boundingBox.centerY().toDouble() / discovery.imageHeight.toDouble())
-                    put("w", block.boundingBox.width().toDouble() / discovery.imageWidth.toDouble()); put("h", block.boundingBox.height().toDouble() / discovery.imageHeight.toDouble())
-                    put("angle", block.angle)
+                    put("text", cleanedText)
+                    putSafe("cx", block.boundingBox.centerX().toDouble() / safeW, fileName)
+                    putSafe("cy", block.boundingBox.centerY().toDouble() / safeH, fileName)
+                    putSafe("w", block.boundingBox.width().toDouble() / safeW, fileName)
+                    putSafe("h", block.boundingBox.height().toDouble() / safeH, fileName)
+                    putSafe("angle", block.angle.toDouble(), fileName)
                     put("instance", block.instanceId)
                 })
             }
@@ -1223,14 +1232,19 @@ private fun serializePhotoResultToJson(
         dResults.put("ML Kit", landmarksArray)
 
         if (discoveryMono != null) {
+            val safeWMono = discoveryMono.imageWidth.toDouble().coerceAtLeast(1.0)
+            val safeHMono = discoveryMono.imageHeight.toDouble().coerceAtLeast(1.0)
             val monoArray = JSONArray()
             discoveryMono.textBlocks.forEach { block -> 
                 val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
                 if (cleanedText.length > 1) {
                     monoArray.put(JSONObject().apply { 
-                        put("text", cleanedText); put("cx", block.boundingBox.centerX().toDouble() / discoveryMono.imageWidth.toDouble()); put("cy", block.boundingBox.centerY().toDouble() / discoveryMono.imageHeight.toDouble())
-                        put("w", block.boundingBox.width().toDouble() / discoveryMono.imageWidth.toDouble()); put("h", block.boundingBox.height().toDouble() / discoveryMono.imageHeight.toDouble())
-                        put("angle", block.angle)
+                        put("text", cleanedText)
+                        putSafe("cx", block.boundingBox.centerX().toDouble() / safeWMono, fileName)
+                        putSafe("cy", block.boundingBox.centerY().toDouble() / safeHMono, fileName)
+                        putSafe("w", block.boundingBox.width().toDouble() / safeWMono, fileName)
+                        putSafe("h", block.boundingBox.height().toDouble() / safeHMono, fileName)
+                        putSafe("angle", block.angle.toDouble(), fileName)
                         put("instance", block.instanceId)
                     })
                 }
@@ -1247,7 +1261,8 @@ private fun serializePhotoResultToJson(
                 put("veto_pool", JSONArray(vr.vetoPool))
                 val refDetails = JSONObject()
                 vr.refinementTraces.forEach { (strat, trace) -> 
-                    val stratObj = JSONObject(); stratObj.put("time_ms", trace.timeMs)
+                    val stratObj = JSONObject()
+                    stratObj.putSafe("time_ms", trace.timeMs.toDouble(), fileName)
                     val stepsArr = JSONArray()
                     trace.steps.forEach { step -> 
                         val stepObj = JSONObject()
@@ -1261,12 +1276,12 @@ private fun serializePhotoResultToJson(
                         }
                         if (step.metadata.isNotEmpty()) {
                             val metaObj = JSONObject()
-                        step.metadata.forEach { (k, v) ->
-                            if (!k.startsWith("forensic_")) {
-                                metaObj.put(k, v)
+                            step.metadata.forEach { (k, v) ->
+                                if (!k.startsWith("forensic_")) {
+                                    metaObj.put(k, v)
+                                }
                             }
-                        }
-                        stepObj.put("metadata", metaObj)
+                            stepObj.put("metadata", metaObj)
                         }
                         stepsArr.put(stepObj)
                     }
@@ -1278,7 +1293,7 @@ private fun serializePhotoResultToJson(
                 vr.harnessResults.forEach { (engine, res) ->
                     val engineObj = JSONObject()
                     engineObj.put("odometer", res.odometerValue)
-                    engineObj.put("time_ms", res.totalTimeMs)
+                    engineObj.putSafe("time_ms", res.totalTimeMs.toDouble(), fileName)
                     // Convert GSON JsonObject to org.json.JSONObject via string
                     engineObj.put("metadata", JSONObject(res.jsonSection.toString()))
                     harnessObj.put(engine, engineObj)
@@ -1287,6 +1302,7 @@ private fun serializePhotoResultToJson(
             }) 
         }; put("vehicles", vehicleResults)
     }
+    return root
 }
 
 private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>, harnessEngines: List<String>): String = buildString {
@@ -1475,6 +1491,24 @@ private suspend fun performLandmarkDiscovery(
         queryOcrDiscovery.imageHeight
     )
     return Pair(queryOcrDiscovery, landmarks)
+}
+
+private fun JSONObject.putSafe(key: String, value: Double, context: String = ""): JSONObject {
+    return if (value.isFinite()) {
+        this.put(key, value)
+    } else {
+        android.util.Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context")
+        this.put(key, "ERR: $value")
+    }
+}
+
+private fun JSONObject.putSafe(key: String, value: Float, context: String = ""): JSONObject {
+    return if (value.isFinite()) {
+        this.put(key, value)
+    } else {
+        android.util.Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context")
+        this.put(key, "ERR: $value")
+    }
 }
 
 
