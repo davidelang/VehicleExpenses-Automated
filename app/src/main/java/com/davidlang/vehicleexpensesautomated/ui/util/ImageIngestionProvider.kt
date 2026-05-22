@@ -20,6 +20,8 @@ data class IngestionMetadata(
 object ImageIngestionProvider {
     private const val TAG = "ImageIngestion"
 
+    private class HeaderDecodedException(val width: Int, val height: Int) : Exception()
+
     /**
      * Probes the natural dimensions of an image file, bypassing thumbnails where possible.
      */
@@ -30,22 +32,18 @@ object ImageIngestionProvider {
             } else {
                 ImageDecoder.createSource(File(path))
             }
-            // ImageDecoder doesn't have a cheap 'probe' without listener.
-            // We use a dummy decode that we abort or just use it to get info.
-            // Actually, we can use the 'info' from the first part of decode.
-            var w = 0; var h = 0
+            
             try {
-                // This is slightly expensive but accurate for DNG RAW dimensions.
-                // We don't actually decode the pixels here if we throw an exception in the listener? 
-                // No, that's hacky. 
-                // Let's use BitmapFactory as a first pass, it's usually correct for metadata 
-                // even if it fails for pixel development.
-                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                android.graphics.BitmapFactory.decodeFile(path, options)
-                w = options.outWidth
-                h = options.outHeight
-            } catch (e: Exception) {}
-            return Pair(w, h)
+                // We use ImageDecoder to get the TRUE raw sensor dimensions.
+                // We throw an exception in the listener to stop before pixel allocation/development occurs.
+                ImageDecoder.decodeDrawable(source) { _, info, _ ->
+                    throw HeaderDecodedException(info.size.width, info.size.height)
+                }
+            } catch (e: HeaderDecodedException) {
+                return Pair(e.width, e.height)
+            } catch (e: Exception) {
+                Log.w(TAG, "ImageDecoder probe failed for $path, falling back to BitmapFactory: ${e.message}")
+            }
         }
         val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeFile(path, options)
