@@ -181,6 +181,24 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
     return JNI_TRUE;
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbeDngResolution(
+    JNIEnv* env, jobject thiz, jstring path) {
+    const char* nativePath = env->GetStringUTFChars(path, nullptr);
+    LibRaw RawProcessor;
+    int ret = RawProcessor.open_file(nativePath);
+    env->ReleaseStringUTFChars(path, nativePath);
+    
+    if (ret != LIBRAW_SUCCESS) return env->NewStringUTF("FAILED");
+    
+    // We adjust for LibRaw's internal development size (iwidth/iheight)
+    // which accounts for margins/black area removal.
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%dx%d", RawProcessor.imgdata.sizes.iwidth, RawProcessor.imgdata.sizes.iheight);
+    RawProcessor.recycle();
+    return env->NewStringUTF(buf);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeIngestDngToYuv(
     JNIEnv* env, jobject thiz, jstring path, jlong handlePtr) {
@@ -198,20 +216,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         LOGE("LibRaw open_file failed: %s", libraw_strerror(ret));
         return JNI_FALSE;
     }
-    
-    // Check if the sensor resolution matches our BufferSet
-    if (handle->width != (size_t)RawProcessor.imgdata.sizes.width || 
-        handle->height != (size_t)RawProcessor.imgdata.sizes.height) {
-        LOGE("LibRaw size mismatch. Buffer: %dx%d, LibRaw: %dx%d (iwidth/iheight: %dx%d)", 
+
+    // Use internal dimensions (iwidth/iheight) which reflect the developed image size
+    if (handle->width != (size_t)RawProcessor.imgdata.sizes.iwidth || 
+        handle->height != (size_t)RawProcessor.imgdata.sizes.iheight) {
+        LOGE("LibRaw size mismatch. Buffer: %dx%d, LibRaw iwidth: %dx%d", 
              (int)handle->width, (int)handle->height, 
-             RawProcessor.imgdata.sizes.width, RawProcessor.imgdata.sizes.height,
              RawProcessor.imgdata.sizes.iwidth, RawProcessor.imgdata.sizes.iheight);
+        RawProcessor.recycle();
         return JNI_FALSE;
     }
     
     ret = RawProcessor.unpack();
     if (ret != LIBRAW_SUCCESS) {
         LOGE("LibRaw unpack failed: %s", libraw_strerror(ret));
+        RawProcessor.recycle();
         return JNI_FALSE;
     }
     
@@ -221,10 +240,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
     RawProcessor.imgdata.params.half_size = 0; // Full resolution
     
     ret = RawProcessor.dcraw_process();
-    if (ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    if (ret != LIBRAW_SUCCESS) {
+        LOGE("LibRaw dcraw_process failed: %s", libraw_strerror(ret));
+        RawProcessor.recycle();
+        return JNI_FALSE;
+    }
     
     libraw_processed_image_t *image = RawProcessor.dcraw_make_mem_image(&ret);
-    if (!image || ret != LIBRAW_SUCCESS) return JNI_FALSE;
+    if (!image || ret != LIBRAW_SUCCESS) {
+        RawProcessor.recycle();
+        return JNI_FALSE;
+    }
     
     // We now have RGB bytes. Wrap them in a Mat.
     cv::Mat rgb(image->height, image->width, CV_8UC3, image->data);

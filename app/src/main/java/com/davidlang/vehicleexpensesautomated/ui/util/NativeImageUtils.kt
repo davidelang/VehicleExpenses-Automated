@@ -126,6 +126,13 @@ object NativeImageUtils {
     }
 
     /**
+     * Diagnostic: Probe DNG dimensions using LibRaw.
+     */
+    fun probeDngResolution(path: String): String {
+        return nativeProbeDngResolution(path)
+    }
+
+    /**
      * High-performance ingestion from DNG file directly to BufferSet YUV planes using LibRaw.
      * Bypasses Java heap Bitmaps.
      */
@@ -143,6 +150,7 @@ object NativeImageUtils {
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
     private external fun nativeTestImread(path: String): String
+    private external fun nativeProbeDngResolution(path: String): String
     private external fun nativeIngestJpegToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
