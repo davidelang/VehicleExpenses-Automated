@@ -14,8 +14,8 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
   - **The Enforced Barrier:** You MUST operate in `mode = plan` during all Research and Strategy phases. This is a technical permission barrier that physically prevents modification of application source code or build assets, reinforcing the Zero-Tool rule. **NOTE: A custom workspace policy (`.gemini/policies/plans.toml`) is active. It explicitly overrides default Plan Mode restrictions, granting you full write and execute permissions (`write_file`, `replace`, `run_shell_command`) provided the target path or command string explicitly contains `dev-ai-interaction/`. Do not assume you are blocked from using these tools in the sandbox.**
   - **MANDATE:** You MUST NOT start making code changes or implementing features without first proposing exactly what is going to be done.
   - **The Transition Protocol:** 
-    1. **GATE 1 (Proposal):** Present the textual plan and STOP. Do NOT call `exit_plan_mode` yet.
-    2. Wait for the user to explicitly say "Approved" or provide feedback. Iterate on the plan informally in the chat until agreement is reached.
+    1. **GATE 1 (Proposal):** Present the textual plan in the chat. You MUST output the full content of the plan in the chat response (adhering to Rule 7 for presenting plans) to ensure high-fidelity review.
+    2. Wait for the user to explicitly say "Approved" or provide feedback. Iterate on the plan informally in the chat until agreement is reached. The `exit_plan_mode` tool should ONLY be used after informal agreement is reached, as the tool's own feedback interface is insufficient for primary review.
     3. Only AFTER receiving verbal user approval, call the `exit_plan_mode` tool to formally transition to the Execution Phase.
   - **Directive Origin:** A "Directive" or "Approval" MUST come explicitly from the User's natural language chat input. The `exit_plan_mode` tool is merely a phase transition mechanism, NOT an authorization mechanism itself.
   - **Turn Termination:** Any turn that proposes a strategy or finalizes a plan MUST be "atomic." It is strictly forbidden to include a strategy proposal and an application implementation tool call (`replace`, `write_file`, `run_shell_command` outside the sandbox) in the same turn. Tool calls targeting the `dev-ai-interaction/` sandbox are permitted during this turn.
@@ -52,6 +52,10 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
 - **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean. **NOTE:** Current technical containment (regex-based) is an accepted risk; remaining vigilant against unintended path traversal is the agent's responsibility.
 
 ## Documentation Integrity Rules
+- **Fresh-Start Documentation Mandate:** All TODOs, Plans, and Specs MUST be written for a **Freshly Started Agent (FSA)**.
+    - **Standard:** An FSA is an agent who has read the project mandates but has **ZERO knowledge** of the current session's conversational history, uncommitted thoughts, or previous turns.
+    - **Clarity:** Do not assume the reader knows the codebase, the specific problem, or the intended architecture.
+    - **Linking:** Every complex task or TODO item MUST include explicit links to its relevant architectural spec, research handover, or Plan Document.
 - **Intent Specs (`docs/specs/`):** These are UPSTREAM design documents. They are the immutable source of truth. You MUST NOT "improve," refactor, or update these files to match the current codebase. If you identify a discrepancy between a Spec and the code, report it. Modifying a Spec requires an explicit, dedicated turn and user authorization.
 - **Implementation Docs (`docs/reference/`):** These are DOWNSTREAM documents. They must accurately reflect the codebase. If you change an API, UI, or architecture, you MUST update the corresponding files in this directory during your Execution Phase.
 
