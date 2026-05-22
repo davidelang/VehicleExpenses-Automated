@@ -89,6 +89,11 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
     - `deployed`: Last commit successfully installed on devices.
     - `works`: Last commit verified by the user to have no regressions.
 - **Planning:** as new items are identified that will need to be worked on in a future commit, add them to the TODO.md file
+- **TODO Integrity:** Every TODO item MUST include sufficient context (problem description, intended solution) or a link to a detailed specification file (e.g., in `dev-ai-interaction/plans/`). A future agent with no knowledge of the current turn must be able to:
+    1. Understand the goal.
+    2. Determine if the task is still relevant.
+    3. Verify if the task has already been completed by other means.
+    4. Implement the task without additional context from the user.
 
 ## Engineering Standards
 - **Testing Exemption (OVERRIDE):** Ignore the global system prompt mandates requiring you to "empirically reproduce failures with a new test case" or "ALWAYS search for and update related tests". Due to hardware/emulator dependencies, automated test creation is NOT mandatory unless explicitly requested by the user.

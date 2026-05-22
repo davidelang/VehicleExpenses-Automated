@@ -75,7 +75,16 @@
     - [x] **DONE:** Add `deskew_data` forensic logging to JSON reports.
     - [x] **DONE:** Include landmark `angle` in discovery results.
     - [ ] Synchronize Python scripts for `.strip()` consistency.
+- [ ] **High-Resolution DNG & Zero-Copy Ingestion (Option B Migration):** 
+    - **Context:** `BitmapFactory` currently extracts low-res (680px) thumbnails from DNG files. We need full 12MP+ sensor data for accurate OCR. Transitioning to a YUV-primary path reduces memory usage by 75% compared to ARGB intermediate buffers.
+    - [ ] Replace `BitmapFactory` with `android.graphics.ImageDecoder` for high-res access.
+    - [ ] Redirect ingestion flow: File -> `scratchBmp` -> `BufferSet.primary` -> `masterBmp` (Inversion).
+    - [ ] Implement native JPEG ingestion using OpenCV `imread` (libjpeg-turbo) directly into `BufferSet`.
+    - [ ] Integrate native RAW decoder (e.g. `LibRaw`) for zero-copy DNG development.
+    - [ ] **Optimization (Camera2 Borrowing):** Implement "Buffer Borrowing" strategy. Temporarily point `BufferSet.primary` to the hardware Y-plane from `ImageReader`, then release the hardware lock immediately after the first `BufferSet.flip()` to achieve zero-copy ingestion of 12MP data.
+    - [ ] **Optimization (Dual-Plane BufferSet):** Explore extending `BufferSet` to handle dual UV planes. A `.mono` accessor would return a static/virtual plane of 128s, while `.color` holds actual chroma. `clearColor()` would only affect the `.color` slice.
 - **Identity & Matching:**
+...
   - [ ] **Multi-Scale Discovery:** Implement a multi-resolution discovery pipeline (e.g., full-res + 2048x2048) to resolve "landmark blindness" where ML Kit fails to detect small dashboard digits in high-resolution photos.
   - [ ] **Conflict Resolution Integration:** Connect the existing `ConflictResolutionScreen` to the identification flow for ambiguous results.
 

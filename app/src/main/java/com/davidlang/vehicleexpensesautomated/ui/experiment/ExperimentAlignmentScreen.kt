@@ -54,6 +54,20 @@ import kotlin.math.min
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 
+private val GOLDEN_SUBSET = listOf(
+    "PXL_20220701_020707365.dng",
+    "PXL_20220821_051055938.dng",
+    "PXL_20221029_002946498.dng",
+    "PXL_20221020_215546513.dng",
+    "PXL_20221221_205939873.dng",
+    "PXL_20221228_164725812.dng",
+    "PXL_20221222_211445685.dng",
+    "PXL_20230113_231330881.dng",
+    "PXL_20221121_021330418.jpg",
+    "PXL_20221126_210323823.jpg",
+    "PXL_20221128_172727575.jpg"
+)
+
 // Phase 115: Row-Level Global Scratch Buffers
 
 @Immutable
@@ -115,14 +129,28 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
         Button(onClick = { 
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch { 
-                totalPhotos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.size ?: 0
+                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }) { res, p -> 
+                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, null) { res, p -> 
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName 
                 }
                 isRunning = false; status = "Complete! Reports saved." 
             } 
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
+        Button(onClick = { 
+            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
+            scope.launch { 
+                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
+                totalPhotos = subset.size
+                isRunning = true; resultsList.clear()
+                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, GOLDEN_SUBSET) { res, p -> 
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName 
+                }
+                isRunning = false; status = "Complete! Limited Report saved." 
+            } 
+        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Limited Experiment (Golden Subset)") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
@@ -190,8 +218,12 @@ data class ProcessedPhotoResult(
     val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
 )
 
-private suspend fun runExperiment(experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, onLog: (String) -> Unit, onProgress: (PhotoResultSummary, Float) -> Unit) = withContext(Dispatchers.IO) {
-    val photos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.sortedBy { it.name } ?: return@withContext
+private suspend fun runExperiment(
+    experimentDir: File, reportDir: File, debugCropDir: File, vehicles: List<Vehicle>, context: Context, 
+    onLog: (String) -> Unit, subsetNames: List<String>?, onProgress: (PhotoResultSummary, Float) -> Unit
+) = withContext(Dispatchers.IO) {
+    val allPhotos = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") }?.sortedBy { it.name } ?: return@withContext
+    val photos = if (subsetNames != null) allPhotos.filter { it.name in subsetNames } else allPhotos
     
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
