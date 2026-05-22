@@ -28,6 +28,21 @@ object ImageIngestionProvider {
      * Probes the natural dimensions of an image file, bypassing thumbnails where possible.
      */
     fun probeDimensions(context: Context, path: String): Pair<Int, Int> {
+        val ext = path.lowercase().substringAfterLast(".", "")
+        if (ext == "dng") {
+            try {
+                val diag = NativeImageUtils.probeDngResolution(path)
+                if (diag != "FAILED") {
+                    val parts = diag.split("x")
+                    if (parts.size == 2) {
+                        return Pair(parts[0].toInt(), parts[1].toInt())
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Native DNG probe failed for $path: ${e.message}")
+            }
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val source = if (path.startsWith("content://")) {
                 ImageDecoder.createSource(context.contentResolver, Uri.parse(path))
