@@ -654,10 +654,13 @@ object OdometerOcrUtils {
                 val obj = JSONObject()
                 obj.put("text", cleaned)
                 val box = block.boundingBox
-                obj.put("cx", box.centerX().toDouble() / imgW.toDouble())
-                obj.put("cy", box.centerY().toDouble() / imgH.toDouble())
-                obj.put("w", box.width().toDouble() / imgW.toDouble())
-                obj.put("h", box.height().toDouble() / imgH.toDouble())
+                val icrs = IcrsMath.pixelToIcrs(box.centerX().toFloat(), box.centerY().toFloat(), imgW, imgH)
+                val s = minOf(imgW, imgH).toDouble()
+                obj.put("cx", icrs.x.toDouble())
+                obj.put("cy", icrs.y.toDouble())
+                obj.put("w", box.width().toDouble() / s)
+                obj.put("h", box.height().toDouble() / s)
+                obj.put("is_icrs", true)
                 array.put(obj)
             }
         }
@@ -697,11 +700,15 @@ object OdometerOcrUtils {
                     
                     val obj = JSONObject()
                     obj.put("text", cleaned)
-                    obj.put("cx", block.boundingBox.centerX().toDouble() / res.imageWidth.toDouble())
-                    obj.put("cy", block.boundingBox.centerY().toDouble() / res.imageHeight.toDouble())
-                    obj.put("w", block.boundingBox.width().toDouble() / res.imageWidth.toDouble())
-                    obj.put("h", block.boundingBox.height().toDouble() / res.imageHeight.toDouble())
+                    val box = block.boundingBox
+                    val icrs = IcrsMath.pixelToIcrs(box.centerX().toFloat(), box.centerY().toFloat(), res.imageWidth, res.imageHeight)
+                    val s = minOf(res.imageWidth, res.imageHeight).toDouble()
+                    obj.put("cx", icrs.x.toDouble())
+                    obj.put("cy", icrs.y.toDouble())
+                    obj.put("w", box.width().toDouble() / s)
+                    obj.put("h", box.height().toDouble() / s)
                     obj.put("instance", instance)
+                    obj.put("is_icrs", true)
                     array.put(obj)
                 }
             }
@@ -724,11 +731,22 @@ object OdometerOcrUtils {
                 for (i in 0 until array.length()) {
                     try {
                         val obj = array.getJSONObject(i)
-                        val cx = obj.getDouble("cx")
-                        val cy = obj.getDouble("cy")
-                        val w = obj.getDouble("w")
-                        val h = obj.getDouble("h")
+                        var cx = obj.getDouble("cx")
+                        var cy = obj.getDouble("cy")
+                        var w = obj.getDouble("w")
+                        var h = obj.getDouble("h")
                         val instanceId = if (obj.has("instance")) obj.getInt("instance") else -1
+                        val isIcrs = obj.optBoolean("is_icrs", false)
+
+                        if (isIcrs) {
+                            val legacy = IcrsMath.icrsToLegacyAnisotropic(cx.toFloat(), cy.toFloat(), imgW, imgH)
+                            cx = legacy.x.toDouble()
+                            cy = legacy.y.toDouble()
+                            val s = minOf(imgW, imgH).toDouble()
+                            w = (w * s) / imgW.toDouble()
+                            h = (h * s) / imgH.toDouble()
+                        }
+
                         val left = ((cx - w / 2.0) * imgW).toInt()
                         val top = ((cy - h / 2.0) * imgH).toInt()
                         val right = ((cx + w / 2.0) * imgW).toInt()
