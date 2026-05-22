@@ -31,6 +31,14 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
     - **Discovery over Implementation:** If you encounter a bug, style inconsistency, or potential optimization while implementing an approved plan, you MUST report it in your turn response (Conclusion) rather than fixing it. Unauthorized fixes or cleanups, no matter how trivial or "correct" they seem, are a violation of build integrity and the coordination protocol. Add these findings to `TODO.md` only after explicit user approval.
   - **LIMITS:** Do not add new work or perform significant refactoring/cleanup without additional, specific approval.
 
+- **Plan Hygiene & State Awareness (MANDATORY):**
+  - **Marking Progress:** Every implementation turn MUST include an update to the current `.md` plan file in `dev-ai-interaction/plans/`, marking completed steps with `[x] DONE`.
+  - **Incremental Sync:** If a turn completes a significant sub-item of a `TODO.md` task, that item MUST also be updated or moved to the "Completed" section of `TODO.md`.
+  - **Pre-Flight Check:** Before applying any change, you MUST verify if the codebase already reflects the intended state. If the work is already done, skip the edit and report it.
+  - **Prefer State over Delta:** Phrase your implementation strategy in terms of target states (e.g., "Ensure column X is Y") rather than relative deltas (e.g., "Swap X and Y") whenever possible.
+  - **Collision Prevention:** Use significant context in `replace` calls. If a change has already been applied, the `old_string` will fail to match, preventing "double-swapping" or accidental reverts.
+  - **Turn Finalization:** The last tool call of an implementation turn SHOULD ideally be the plan update, ensuring the recorded state matches the disk state before the turn terminates.
+
   ## Execution Rigor
   - **The Execution Wall (Immutability):** Once a Plan Document is formally approved, it is **IMMUTABLE** during the Execution phase. Refining or improving the design during implementation is strictly forbidden. Any deviation, no matter how "correct" it seems, is a Protocol Violation.
   - **Design/Execution Split:** All architectural and specification design MUST occur in Plan Mode. During the Execution phase, your only authorized activity is the high-fidelity transcription of the approved plan into code. You are an executor, not a designer.
@@ -94,6 +102,7 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
     2. Determine if the task is still relevant.
     3. Verify if the task has already been completed by other means.
     4. Implement the task without additional context from the user.
+- **Active Task Transitions:** When a task from `TODO.md` enters active development (i.e., a specific Plan Document is created), the TODO item MUST be updated with a link to that plan (e.g., `(See: plans/my-task.md)`). This prevents other agents from re-planning the same high-level goal from scratch.
 
 ## Engineering Standards
 - **Testing Exemption (OVERRIDE):** Ignore the global system prompt mandates requiring you to "empirically reproduce failures with a new test case" or "ALWAYS search for and update related tests". Due to hardware/emulator dependencies, automated test creation is NOT mandatory unless explicitly requested by the user.
