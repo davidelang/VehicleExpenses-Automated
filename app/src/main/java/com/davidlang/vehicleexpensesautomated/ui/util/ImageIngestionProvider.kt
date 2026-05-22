@@ -86,9 +86,17 @@ object ImageIngestionProvider {
         startTime: Long
     ): IngestionMetadata {
         val diag = NativeImageUtils.testImread(path)
+        if (diag == "FAILED_TO_LOAD") {
+            throw Exception("Native imread failed for JPEG: $path")
+        }
+        
         // Parse "WxH channels:C"
         val parts = diag.split(" ")
+        if (parts.isEmpty()) throw Exception("Invalid native diagnostic: $diag")
+        
         val res = parts[0].split("x")
+        if (res.size < 2) throw Exception("Invalid native resolution: ${parts[0]}")
+        
         val w = res[0].toInt()
         val h = res[1].toInt()
 
