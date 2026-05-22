@@ -14,116 +14,131 @@ data class IngestionMetadata(
     val decodedWidth: Int,
     val decodedHeight: Int,
     val format: String,
-    val timeMs: Long
+    val timeMs: Long,
+    val isDegraded: Boolean = false
 )
 
 object ImageIngestionProvider {
     private const val TAG = "ImageIngestion"
 
+    private class HeaderDecodedException(val width: Int, val height: Int, val mimeType: String) : Exception()
+
     /**
      * Probes the natural dimensions of an image file, bypassing thumbnails where possible.
-     * For DNG files, uses ExifInterface to find the true sensor resolution.
      */
     fun probeDimensions(context: Context, path: String): Pair<Int, Int> {
-        return try {
-            val exif = android.media.ExifInterface(path)
-            val w = exif.getAttributeInt(android.media.ExifInterface.TAG_IMAGE_WIDTH, 0)
-            val h = exif.getAttributeInt(android.media.ExifInterface.TAG_IMAGE_LENGTH, 0)
-            
-            if (w > 0 && h > 0) {
-                Pair(w, h)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val source = if (path.startsWith("content://")) {
+                ImageDecoder.createSource(context.contentResolver, Uri.parse(path))
             } else {
-                // Fallback to BitmapFactory for metadata if tags are missing
-                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                android.graphics.BitmapFactory.decodeFile(path, options)
-                Pair(options.outWidth, options.outHeight)
+                ImageDecoder.createSource(File(path))
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Exif probe failed for $path, falling back to BitmapFactory: ${e.message}")
-            val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeFile(path, options)
-            Pair(options.outWidth, options.outHeight)
+            
+            try {
+                // Use ImageDecoder header listener to find TRUE raw sensor dimensions.
+                ImageDecoder.decodeDrawable(source) { _, info, _ ->
+                    throw HeaderDecodedException(info.size.width, info.size.height, info.mimeType)
+                }
+            } catch (e: HeaderDecodedException) {
+                return Pair(e.width, e.height)
+            } catch (e: Exception) {
+                Log.w(TAG, "ImageDecoder probe failed for $path, falling back to BitmapFactory: ${e.message}")
+            }
         }
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(path, options)
+        return Pair(options.outWidth, options.outHeight)
     }
 
     /**
      * High-Fidelity Ingestion: Bypasses thumbnails and moves data into native YUV primary.
-     * Temporary Bridge: Uses ARGB intermediates to maintain visual feedback.
      */
     suspend fun ingestFromFile(
         context: Context,
         path: String,
         target: BufferSet,
-        probedW: Int,
-        probedH: Int,
-        scratchBmp: Bitmap?, // Placeholder for future reuse logic
+        scratchBmp: Bitmap?, 
         masterBmp: Bitmap
     ): IngestionMetadata {
         val t0 = System.currentTimeMillis()
         val file = File(path)
+        val ext = file.extension.lowercase()
         
-        var originalW = probedW
-        var originalH = probedH
-        var decodedW = 0
-        var decodedH = 0
-        var format = "unknown"
+        // --- TYPE-AWARE DISPATCHER ---
+        return when (ext) {
+            "dng" -> ingestViaImageDecoder(context, path, target, masterBmp, t0)
+            "jpg", "jpeg", "png" -> ingestViaImageDecoder(context, path, target, masterBmp, t0) // Standard for now
+            else -> ingestViaImageDecoder(context, path, target, masterBmp, t0) // Fallback
+        }
+    }
 
+    private fun ingestViaImageDecoder(
+        context: Context,
+        path: String,
+        target: BufferSet,
+        masterBmp: Bitmap,
+        startTime: Long
+    ): IngestionMetadata {
+        val (probedW, probedH) = probeDimensions(context, path)
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val source = if (path.startsWith("content://")) {
                 ImageDecoder.createSource(context.contentResolver, Uri.parse(path))
             } else {
-                ImageDecoder.createSource(file)
+                ImageDecoder.createSource(File(path))
             }
 
+            var originalW = 0
+            var originalH = 0
+            var format = "unknown"
+
             val decodedBitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                originalW = info.size.width
+                originalH = info.size.height
                 format = info.mimeType
                 
-                // If it's a DNG or we have a larger probed resolution, force high-res development
+                // Force high-res development if the probed size is larger than the default (preview)
                 if (probedW > info.size.width || probedH > info.size.height) {
                     decoder.setTargetSize(probedW, probedH)
                 }
                 
-                // Note: ALLOCATOR_SOFTWARE is critical for JNI access to RAW data developed by ImageDecoder
+                // Software allocator is required for JNI access
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
 
-            decodedW = decodedBitmap.width
-            decodedH = decodedBitmap.height
+            val decodedW = decodedBitmap.width
+            val decodedH = decodedBitmap.height
+            val isDegraded = decodedW < probedW || decodedH < probedH
 
-            // Step 2: Native Ingestion (ARGB -> YUV)
-            // We use the fullBufferSet.p as the target
+            // Native Ingestion (ARGB -> YUV)
             NativeImageUtils.ingestArgbToYuv(decodedBitmap, target.p)
-            
-            // Step 3: Stabilize Luma
             target.p.clearChroma()
             
-            // Step 4: UI Sync (YUV -> ARGB)
-            // Re-populate the provided masterBmp for visual verification
+            // UI Sync (YUV -> ARGB)
             if (masterBmp.width == decodedW && masterBmp.height == decodedH) {
                 NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
-            } else {
-                Log.e(TAG, "masterBmp size mismatch: ${masterBmp.width}x${masterBmp.height} vs decoded ${decodedW}x${decodedH}")
             }
             
             decodedBitmap.recycle()
+
+            return IngestionMetadata(
+                probedW, probedH, 
+                decodedW, decodedH, 
+                format, 
+                System.currentTimeMillis() - startTime,
+                isDegraded
+            )
         } else {
-            // Fallback for older devices using existing (potentially low-res) logic
+            // Fallback for older devices
             val bmp = OdometerOcrUtils.decodeBitmapSafely(context, path) ?: throw Exception("Fallback decode failed")
-            originalW = bmp.width; originalH = bmp.height
-            decodedW = bmp.width; decodedH = bmp.height
             NativeImageUtils.ingestArgbToYuv(bmp, target.p)
             target.p.clearChroma()
             if (masterBmp.width == bmp.width && masterBmp.height == bmp.height) {
                 NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
             }
+            val meta = IngestionMetadata(bmp.width, bmp.height, bmp.width, bmp.height, "legacy", System.currentTimeMillis() - startTime, false)
             bmp.recycle()
+            return meta
         }
-
-        return IngestionMetadata(
-            originalW, originalH, 
-            decodedW, decodedH, 
-            format, 
-            System.currentTimeMillis() - t0
-        )
     }
 }

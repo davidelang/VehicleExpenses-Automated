@@ -310,7 +310,7 @@ private suspend fun runExperiment(
             val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             
             // Ingest at full fidelity
-            val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.fullBufferSet, imgW, imgH, scratchBmp, masterBmp)
+            val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.fullBufferSet, scratchBmp, masterBmp)
             
             // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
             val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, null)
@@ -1066,13 +1066,14 @@ private suspend fun runExperiment(
                     }
                 }
 
-                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, originalBase64, alignedBase64, alignedNativeBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
+                val rowHtml = buildHtmlRowDynamic(index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, alignedBase64, alignedNativeBase64, queryOcrDiscovery.debugText, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, tilt, deskewRes)
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
                 val photoJson = serializePhotoResultToJson(
-                    index + 1, file.name, imgW, imgH, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
+                    index + 1, file.name, meta.originalWidth, meta.originalHeight, meta.decodedWidth, meta.decodedHeight, meta.isDegraded, 
+                    finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
                     queryOcrDiscovery, queryOcrDiscoveryMono, 
                     primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes, deskewResMono
                 )
@@ -1120,14 +1121,17 @@ private suspend fun runExperiment(
 }
 
 private fun serializePhotoResultToJson(
-    lineNumber: Int, fileName: String, imgW: Int, imgH: Int, winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
+    lineNumber: Int, fileName: String, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
+    winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, discoveryMono: OcrResult?, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
 ): JSONObject {
     val root = JSONObject()
     root.apply {
         put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo)
-        put("imageWidth", imgW); put("imageHeight", imgH)
+        put("probedWidth", probedW); put("probedHeight", probedH)
+        put("imageWidth", decodedW); put("imageHeight", decodedH)
+        put("isDegraded", isDegraded)
         
         // Benchmarking: Alignment (Standard vs Mono)
         val winnerVehicle = vehicles.find { it.name == winner }
@@ -1342,6 +1346,7 @@ private fun buildHtmlRowDynamic(
     fileName: String, 
     imgW: Int,
     imgH: Int,
+    isDegraded: Boolean,
     originalBase64: String, 
     alignedBase64: String,
     alignedNativeBase64: String,
@@ -1356,7 +1361,8 @@ private fun buildHtmlRowDynamic(
     tilt: Float,
     deskewRes: OdometerOcrUtils.DeskewResult
 ): String = buildString {
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>Res: ${imgW}x${imgH}</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small><br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     
