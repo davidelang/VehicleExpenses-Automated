@@ -68,15 +68,39 @@ object ImageIngestionProvider {
         // --- TYPE-AWARE DISPATCHER ---
         return when (ext) {
             "jpg", "jpeg" -> ingestViaNativeJpeg(path, target, masterBmp, t0)
-            "dng" -> {
-                // Diagnostic: Probe if native imread can see the high-res RAW
-                val diag = NativeImageUtils.testImread(path)
-                Log.i(TAG, "Native DNG Diagnostic for $path: $diag")
-                val meta = ingestViaImageDecoder(context, path, target, masterBmp, t0)
-                meta.copy(diagnostic = diag)
-            }
+            "dng" -> ingestViaNativeDng(context, path, target, masterBmp, t0)
             else -> ingestViaImageDecoder(context, path, target, masterBmp, t0) // Fallback for png etc
         }
+    }
+
+    private fun ingestViaNativeDng(
+        context: Context,
+        path: String,
+        target: BufferSet,
+        masterBmp: Bitmap,
+        startTime: Long
+    ): IngestionMetadata {
+        // We use ExifInterface to get the true RAW dimensions, as DNGs often hide it.
+        val (probedW, probedH) = probeDimensions(context, path)
+
+        // Step 1: Native Ingestion (Direct LibRaw -> YUV)
+        NativeImageUtils.ingestDngToYuv(path, target.p)
+        
+        // Step 2: UI Sync (YUV -> ARGB)
+        if (masterBmp.width == probedW && masterBmp.height == probedH) {
+            NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
+        } else {
+            Log.w(TAG, "DNG MasterBmp mismatch: expected ${probedW}x${probedH}, got ${masterBmp.width}x${masterBmp.height}")
+        }
+
+        return IngestionMetadata(
+            probedW, probedH, 
+            probedW, probedH, 
+            "image/x-adobe-dng", 
+            System.currentTimeMillis() - startTime,
+            false,
+            "LibRaw: ${probedW}x${probedH}"
+        )
     }
 
     private fun ingestViaNativeJpeg(

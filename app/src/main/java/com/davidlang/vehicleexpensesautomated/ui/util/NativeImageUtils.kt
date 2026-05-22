@@ -125,10 +125,25 @@ object NativeImageUtils {
         return nativeTestImread(path)
     }
 
+    /**
+     * High-performance ingestion from DNG file directly to BufferSet YUV planes using LibRaw.
+     * Bypasses Java heap Bitmaps.
+     */
+    fun ingestDngToYuv(path: String, target: BufferSet.Slice) {
+        if (target is BufferSet.Instance) {
+            if (!nativeIngestDngToYuv(path, target.nativePtr)) {
+                throw Exception("Native DNG ingestion failed for $path")
+            }
+        } else {
+            throw IllegalArgumentException("Native ingestion required an Instance handle")
+        }
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
     private external fun nativeTestImread(path: String): String
     private external fun nativeIngestJpegToYuv(path: String, handlePtr: Long): Boolean
+    private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
 }
