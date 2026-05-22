@@ -1072,7 +1072,7 @@ private suspend fun runExperiment(
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
                 val photoJson = serializePhotoResultToJson(
-                    index + 1, file.name, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
+                    index + 1, file.name, imgW, imgH, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
                     queryOcrDiscovery, queryOcrDiscoveryMono, 
                     primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes, deskewResMono
                 )
@@ -1120,13 +1120,14 @@ private suspend fun runExperiment(
 }
 
 private fun serializePhotoResultToJson(
-    lineNumber: Int, fileName: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
+    lineNumber: Int, fileName: String, imgW: Int, imgH: Int, winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, discoveryMono: OcrResult?, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
     vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
 ): JSONObject {
     val root = JSONObject()
     root.apply {
         put("line_number", lineNumber); put("file", fileName); put("winner", winner); put("ground_truth", "unmapped"); put("odometer", odo)
+        put("imageWidth", imgW); put("imageHeight", imgH)
         
         // Benchmarking: Alignment (Standard vs Mono)
         val winnerVehicle = vehicles.find { it.name == winner }
