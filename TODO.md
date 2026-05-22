@@ -88,11 +88,12 @@
 - [ ] **High-Resolution DNG & Zero-Copy Ingestion (Option B Migration):** 
     - **Context:** `BitmapFactory` currently extracts low-res (680px) thumbnails from DNG files. We need full 12MP+ sensor data for accurate OCR. Transitioning to a YUV-primary path reduces memory usage by 75% compared to ARGB intermediate buffers.
     - [x] **DONE:** Step 1: Create Golden Subset test harness and baseline resolution logging.
-    - [x] **DONE:** Step 2: Implement the YUV Bridge (ImageDecoder + JNI zero-copy ingestion). (Confirmed framework limitations for DNG sensor access).
-    - [ ] **ACTIVE:** Phase 1: Planar YUV Foundation (Safe Infrastructure Migration). See: `dev-ai-interaction/plans/YUV_ARCHITECTURE_STRATEGY.md`
-    - [ ] Phase 2: Native JPEG Ingestion (`cv::imread` direct to Planar YUV).
-    - [ ] Phase 3: OpenCV RAW Diagnostic (Confirm `imread` limits on DNG).
-    - [ ] Phase 4: Integrate native RAW decoder (e.g. `LibRaw`) for zero-copy DNG development to Planar YUV.
+    - [x] **DONE:** Step 2: Implement the YUV Bridge (Confirmed framework limitations for DNG sensor access).
+    - [ ] **ACTIVE:** Step 3: Native Ingestion & Universal YUV Adapter. See `dev-ai-interaction/plans/high-res-ingestion-step-3.md`
+        - [ ] Enhance `BufferSet.normalizeYUV()` with a high-performance C++ implementation to adapt any YUV format to the internal NV21 standard.
+        - [ ] Implement `nativeIngestJpegToYuv` using OpenCV `imread` (libjpeg-turbo) for zero-copy JPEG ingestion with in-place NV21 conversion.
+        - [ ] Implement `nativeTestImread` diagnostic to probe native DNG support.
+    - [ ] Step 4: Integrate native RAW decoder (e.g. `LibRaw`) for zero-copy DNG development (with in-place NV21 conversion).
     - [ ] **Optimization (Camera2 Borrowing):** Implement "Buffer Borrowing" strategy. Temporarily point `BufferSet.primary` to the hardware Y-plane from `ImageReader`, then release the hardware lock immediately after the first `BufferSet.flip()` to achieve zero-copy ingestion of 12MP data.
     - [ ] **Optimization (Dual-Plane BufferSet):** Explore extending `BufferSet` to handle dual UV planes. A `.mono` accessor would return a static/virtual plane of 128s, while `.color` holds actual chroma. `clearColor()` would only affect the `.color` slice.
 - **Identity & Matching:**
