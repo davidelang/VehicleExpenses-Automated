@@ -79,7 +79,7 @@
     - **Context:** `BitmapFactory` currently extracts low-res (680px) thumbnails from DNG files. We need full 12MP+ sensor data for accurate OCR. Transitioning to a YUV-primary path reduces memory usage by 75% compared to ARGB intermediate buffers.
     - [x] **DONE:** Step 1: Create Golden Subset test harness and baseline resolution logging.
     - [ ] **ACTIVE:** Step 2: Implement the YUV Bridge (ImageDecoder + JNI zero-copy ingestion).
-        - [ ] **ACTIVE:** Fix UnsatisfiedLinkError due to internal JNI name mangling.
+        - [x] **DONE:** Fix UnsatisfiedLinkError due to internal JNI name mangling.
     - [ ] Replace `BitmapFactory` with `android.graphics.ImageDecoder` for high-res access.
     - [ ] Redirect ingestion flow: File -> `scratchBmp` -> `BufferSet.primary` -> `masterBmp` (Inversion).
     - [ ] Implement native JPEG ingestion using OpenCV `imread` (libjpeg-turbo) directly into `BufferSet`.
