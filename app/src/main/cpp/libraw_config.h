@@ -1,0 +1,8 @@
+#ifndef LIBRAW_CONFIG_H
+#define LIBRAW_CONFIG_H
+
+#define LIBRAW_NOTHREADS 1
+#define LIBRAW_NODISPLAY 1
+#define LIBRAW_NO_WINSOCK2 1
+
+#endif
