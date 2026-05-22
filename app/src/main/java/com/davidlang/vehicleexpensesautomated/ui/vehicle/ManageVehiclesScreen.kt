@@ -104,8 +104,9 @@ fun ManageVehiclesScreen(
                     originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
                 } catch (e: Exception) { Log.e("ManageVehicles", "Failed dimensions", e) }
             }
-            odometerCropRect = it.odometerCropLeft?.let { left -> Rect(left, it.odometerCropTop ?: 0f, it.odometerCropRight ?: 1f, it.odometerCropBottom ?: 1f) }
-            otherTextCropRect = it.otherTextCropLeft?.let { left -> Rect(left, it.otherTextCropTop ?: 0f, it.otherTextCropRight ?: 1f, it.otherTextCropBottom ?: 1f) }
+            val (odo, other) = vehicleViewModel.getLegacyCrops(it, originalImageSize.x.toInt(), originalImageSize.y.toInt())
+            odometerCropRect = odo
+            otherTextCropRect = other
             
             // Hydration handled by the "Show Landmarks" button
             discoveryResults = null 

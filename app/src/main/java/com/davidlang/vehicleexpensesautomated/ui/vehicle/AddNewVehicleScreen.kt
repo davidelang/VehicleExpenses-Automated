@@ -130,7 +130,8 @@ fun AddNewVehicleScreen(
                     scope.launch {
                         vehicleViewModel.createNewVehicleWithReference(
                             name = name, make = make, model = model, year = year.toIntOrNull() ?: 2025, licensePlate = licensePlate, referenceDashPhotoUrl = pickedPhotoUrl, cleanedReferenceDashPhotoUrl = null,
-                            odometerCropRect = odometerCropRect, otherTextCropRect = otherTextCropRect, initialOdometer = odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson = landmarkTextBlocksJson
+                            odometerCropRect = odometerCropRect, otherTextCropRect = otherTextCropRect, initialOdometer = odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson = landmarkTextBlocksJson,
+                            imgW = lastOcrDebugResult?.imageWidth ?: 0, imgH = lastOcrDebugResult?.imageHeight ?: 0
                         )
                         navController.popBackStack()
                     }
