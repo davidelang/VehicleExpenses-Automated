@@ -44,6 +44,9 @@
     - [x] Step 5.5: Fix takeSnapshot destructive resize.
 - [x] **DONE:** Phase 25.3 - BufferSet Pointer Invalidation Fix (JNI In-Place & Smart Proxy).
 - [x] **DONE:** Remove OCR Gating and Unannotated Snapshots (Phase 25.4).
+- [ ] **BUG:** Normalization Discrepancy. Odometer crop coordinates (Y) in database appear to be normalized relative to Image Width rather than Height for some vehicles (e.g., Honda).
+    - [ ] Audit `ManageVehiclesScreen.kt` and `OdometerOcrUtils.kt` to ensure axis-specific normalization is strictly enforced repository-wide.
+    - [ ] If width-normalization for Y is intended (square coordinate system), provide technical justification and update `BUFFER_SET_SPEC.md` to document this non-standard behavior.
 - [ ] **ACTIVE:** Phase 3: Total Scope Sanitization & Annotation Fix (Shadowing & Offset Resolution).
 - [ ] **ACTIVE:** Phase 23 - Foundational YUV Handle Infrastructure (Standard Multi-Plane Descriptor).
 - [x] **DONE:** Phase 11.5 - Protocol Hardening (Execution Rigor Mandates).
@@ -65,6 +68,7 @@
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
     - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
+    - [ ] **Robust Paddle Deskew (Refinement 2.2):** Resolve "0.0 degree" swamping in noisy dashboards. Implement Cluster-Based Voting. See handover: `dev-ai-interaction/plans/DESKEW_HANDOVER.md`
     - [ ] Add rotational gating (±20°) to deskew logic.
     - [x] **DONE:** Implement `applyContrastStretch` using OpenCV histogram analysis.
     - [ ] Expand `runMultiStepOcr` refinement loop with S-75% and S-80% stages.
