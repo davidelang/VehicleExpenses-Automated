@@ -273,37 +273,35 @@ object ImageAlignmentUtils {
                     val q1 = confirmedPairs[i].second
                     val q2 = confirmedPairs[j].second
                     
-                    // Corrected: Map BOTH sets of landmarks to NORMALIZED (0.0 to 1.0) space for math
-                    // This ensures the Scale factor represents the geometric zoom ratio (~1.0)
-                    // and prevents 18x zoom issues when resolutions differ.
-                    val r1nx = if (r1.boundingBox.width() > 1) r1.boundingBox.centerX().toFloat() / refW else r1.boundingBox.centerX().toFloat()
-                    val r1ny = if (r1.boundingBox.width() > 1) r1.boundingBox.centerY().toFloat() / refH else r1.boundingBox.centerY().toFloat()
-                    val r2nx = if (r2.boundingBox.width() > 1) r2.boundingBox.centerX().toFloat() / refW else r2.boundingBox.centerX().toFloat()
-                    val r2ny = if (r2.boundingBox.width() > 1) r2.boundingBox.centerY().toFloat() / refH else r2.boundingBox.centerY().toFloat()
+                    // Use raw pixel coordinates (absolute) for RANSAC consensus math
+                    val r1px = r1.boundingBox.centerX().toFloat()
+                    val r1py = r1.boundingBox.centerY().toFloat()
+                    val r2px = r2.boundingBox.centerX().toFloat()
+                    val r2py = r2.boundingBox.centerY().toFloat()
                     
-                    val q1nx = if (q1.boundingBox.width() > 1) q1.boundingBox.centerX().toFloat() / queW else q1.boundingBox.centerX().toFloat()
-                    val q1ny = if (q1.boundingBox.width() > 1) q1.boundingBox.centerY().toFloat() / queH else q1.boundingBox.centerY().toFloat()
-                    val q2nx = if (q2.boundingBox.width() > 1) q2.boundingBox.centerX().toFloat() / queW else q2.boundingBox.centerX().toFloat()
-                    val q2ny = if (q2.boundingBox.width() > 1) q2.boundingBox.centerY().toFloat() / queH else q2.boundingBox.centerY().toFloat()
+                    val q1px = q1.boundingBox.centerX().toFloat()
+                    val q1py = q1.boundingBox.centerY().toFloat()
+                    val q2px = q2.boundingBox.centerX().toFloat()
+                    val q2py = q2.boundingBox.centerY().toFloat()
                     
-                    val refDist = sqrt((r1nx - r2nx).toDouble().pow(2.0) + (r1ny - r2ny).toDouble().pow(2.0))
-                    val queDist = sqrt((q1nx - q2nx).toDouble().pow(2.0) + (q1ny - q2ny).toDouble().pow(2.0))
+                    val refDist = sqrt((r1px - r2px).toDouble().pow(2.0) + (r1py - r2py).toDouble().pow(2.0))
+                    val queDist = sqrt((q1px - q2px).toDouble().pow(2.0) + (q1py - q2py).toDouble().pow(2.0))
                     
                     if (queDist > 0) {
                         val s = (refDist / queDist).toFloat()
                         
-                        // Calculate Rotation (Phase 44)
-                        val rAngle = Math.atan2((r2ny - r1ny).toDouble(), (r2nx - r1nx).toDouble())
-                        val qAngle = Math.atan2((q2ny - q1ny).toDouble(), (q2nx - q1nx).toDouble())
+                        // Calculate Rotation
+                        val rAngle = Math.atan2((r2py - r1py).toDouble(), (r2px - r1px).toDouble())
+                        val qAngle = Math.atan2((q2py - q1py).toDouble(), (q2px - q1px).toDouble())
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
-                        // Phase 53: Rotational Tolerance Filter and Zero-Rotation Warp
                         if (kotlin.math.abs(rot) > 4.0f) continue
-                        val tx = r1nx - (s * q1nx)
-                        val ty = r1ny - (s * q1ny)
-                        val cyRef = (r1ny + r2ny) / 2.0f
-
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.3f, ty=%.3f".format(s, rot, tx, ty), cyRef, r1ny, r2ny))
+                        val tx = r1px - (s * q1px)
+                        val ty = r1py - (s * q1py)
+                        
+                        // Forensic data: include absolute pixel coordinates and candidates
+                        val debugMsg = "S=%.3f, R=%.1f, tx=%.1f, ty=%.1f | P1(%.1f,%.1f) P2(%.1f,%.1f)".format(s, rot, tx, ty, r1px, r1py, r2px, r2py)
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist.toFloat(), debugMsg, 0f, 0f, 0f))
                     }
                 }
             }
@@ -315,6 +313,9 @@ object ImageAlignmentUtils {
         // Find the candidate group with the most mutual agreement
         var bestGroup = mutableListOf<AnchorCandidate>()
         var maxSupport = -1
+        
+        // Agreement threshold: 5% scale, 5% of short edge in translation
+        val pixelThreshold = (minOf(bmp.width, bmp.height) * 0.05f)
 
         for (c1 in allCandidates) {
             val supportGroup = mutableListOf<AnchorCandidate>()
@@ -323,8 +324,7 @@ object ImageAlignmentUtils {
                 val dtx = kotlin.math.abs(c1.tx - c2.tx)
                 val dty = kotlin.math.abs(c1.ty - c2.ty)
                 
-                // Agreement threshold: 5% scale, 0.05 normalized translation
-                if (ds < 0.05f && dtx < 0.05f && dty < 0.05f) {
+                if (ds < 0.05f && dtx < pixelThreshold && dty < pixelThreshold) {
                     supportGroup.add(c2)
                 }
             }
