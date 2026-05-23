@@ -328,9 +328,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopul
         return;
     }
 
-    if (src->cols != tensorW || src->rows != tensorH) {
+    if (src->cols > tensorW || src->rows > tensorH) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "Dimension mismatch: Mat=%dx%d, Tensor=%dx%d", src->cols, src->rows, tensorW, tensorH);
+        snprintf(buf, sizeof(buf), "Source Mat (%dx%d) exceeds Tensor capacity (%dx%d)", src->cols, src->rows, tensorW, tensorH);
         env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), buf);
         return;
     }
@@ -341,19 +341,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopul
     int w = src->cols;
     int h = src->rows;
 
-    if (src->isContinuous()) {
-        const uint8_t* ptr = src->ptr<uint8_t>(0);
-        size_t total = (size_t)w * h;
-        for (size_t i = 0; i < total; ++i) {
-            dst[i] = ((float)ptr[i] / 255.0f - mean) / std;
-        }
-    } else {
-        for (int y = 0; y < h; ++y) {
-            const uint8_t* row = src->ptr<uint8_t>(y);
-            jfloat* dst_row = dst + (y * tensorW);
-            for (int x = 0; x < w; ++x) {
-                dst_row[x] = ((float)row[x] / 255.0f - mean) / std;
-            }
+    // Fixed: Always use row-by-row population to support filling the top-left corner
+    // of a larger tensor. isContinuous() optimization is only safe if src fills the full tensor.
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* row = src->ptr<uint8_t>(y);
+        jfloat* dst_row = dst + (y * tensorW);
+        for (int x = 0; x < w; ++x) {
+            dst_row[x] = ((float)row[x] / 255.0f - mean) / std;
         }
     }
 
