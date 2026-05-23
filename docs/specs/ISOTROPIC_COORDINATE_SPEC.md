@@ -45,6 +45,22 @@ Given an image of `Width` and `Height`:
 *   **The Long Edge:** Will exceed the `±0.5` bounds (e.g., in a 16:9 image, the X-axis spans roughly `[-0.88, 0.88]`). This "overflow" is intended behavior and mathematically correct.
 *   **Physical Purity:** A physical shape (e.g., a circular speedometer) retains its mathematical proportions regardless of the camera's aspect ratio.
 
+### 2.3 Unified ICRS Matrix Formulation
+To transform a Query coordinate (`pq`) to a Target coordinate (`pt`) using an ICRS consensus alignment (Scale `s`, ICRS Translation `tx/ty`):
+
+`pt = (s * st / sq) * pq - (s * st * cxq / sq) + (tx * st) + cxt`
+
+Where:
+*   `sq`, `st`: Short edges of query and target images.
+*   `cxq`, `cxt`: Horizontal centers of query and target images.
+
+**Simplified ARGB Matrix (st = sq, cxt = cxq):**
+*   `Matrix_Scale = s`
+*   `Matrix_TX = cxq * (1 - s) + (tx * sq)`
+*   `Matrix_TY = cyq * (1 - s) + (ty * sq)`
+
+This unified formulation eliminates scale-translation coupling and correctly accounts for origin shifts across varying device resolutions.
+
 ---
 
 ## 3. The Pipeline Workflow
