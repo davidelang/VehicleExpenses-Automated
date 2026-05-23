@@ -325,119 +325,6 @@ private suspend fun runExperiment(
             val tSnapOrig0 = System.currentTimeMillis()
             val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, null)
             val tSnapOrig = System.currentTimeMillis() - tSnapOrig0
-// Explicit Decision: takeSnapshot is a local function to capture row-local buffers without explicit parameter passing.
-suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: Int, annotations: List<SnapshotAnnotation>): Pair<String, Long> = withContext(Dispatchers.IO) {
-    val tSnap0 = System.currentTimeMillis()
-    // Step 1: Geometry Normalization
-
-                val scratchBmp = scratchBmp // Capture outer scope
-                // Step 1: Geometry Normalization
-    val srcW: Int
-    val srcH: Int
-    when (source) {
-        is Bitmap -> { srcW = source.width; srcH = source.height }
-        is org.opencv.core.Mat -> { srcW = source.cols(); srcH = source.rows() }
-        is BufferSet.Slice -> { srcW = source.width; srcH = source.height }
-        else -> { srcW = 0; srcH = 0 }
-    }
-    
-    val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
-    val cvRoi = org.opencv.core.Rect(roi.left, roi.top, roi.width(), roi.height())
-    val roiW = roi.width().coerceAtLeast(1)
-    val roiH = roi.height().coerceAtLeast(1)
-    val sourceAspect = roiW.toFloat() / roiH.toFloat()
-    
-    val toEven = { v: Float -> ((v + 1).toInt() / 2) * 2 }
-
-    var finalW: Int
-    var finalH: Int
-    
-    if (targetW > 0 && targetH > 0) {
-        val targetAspect = targetW.toFloat() / targetH
-        if (targetAspect > sourceAspect) {
-            finalH = targetH; finalW = (targetH * sourceAspect).toInt()
-        } else {
-            finalW = targetW; finalH = (targetW / sourceAspect).toInt()
-        }
-    } else if (targetW > 0) {
-        finalW = targetW; finalH = (targetW / sourceAspect).toInt()
-    } else if (targetH > 0) {
-        finalH = targetH; finalW = (targetH * sourceAspect).toInt()
-    } else {
-        finalW = roiW; finalH = roiH
-    }
-    
-    // Cap to scratch buffer dimensions and ensure 2-pixel alignment
-    finalW = toEven(finalW.toFloat().coerceIn(2f, 4000f))
-    finalH = toEven(finalH.toFloat().coerceIn(2f, 3072f))
-
-    // Calculate scaling factors for annotations (Source ROI -> Final Thumbnail)
-    val snapInternalScaleX = finalW.toFloat() / roiW.toFloat()
-    val snapInternalScaleY = finalH.toFloat() / roiH.toFloat()
-    val scaledAnnotations = annotations.map { ann ->
-        ann.copy(
-            x1 = ((ann.x1 - roi.left) * snapInternalScaleX).toInt(),
-            y1 = ((ann.y1 - roi.top) * snapInternalScaleY).toInt(),
-            x2 = ((ann.x2 - roi.left) * snapInternalScaleX).toInt(),
-            y2 = ((ann.y2 - roi.top) * snapInternalScaleY).toInt()
-        )
-    }
-
-    // Step 2: Prepare the logical snapshot area
-    NativePaddleEngine.fullBufferSet.s.clear()
-    
-    // Register a transient crop for the snapshot area
-    val snapCropId = NativePaddleEngine.fullBufferSet.s.createCrop(0, 0, finalW, finalH)
-    
-    val snapRoiY = NativePaddleEngine.fullBufferSet.c[snapCropId].mat
-    val snapRoiUV = NativePaddleEngine.fullBufferSet.c[snapCropId].uvMat
-
-    when (source) {
-        is Bitmap -> {
-            // Explicit Decision: Use row-local scratchBmp as ARGB workspace to avoid heap pixel allocation.
-            val canvas = Canvas(scratchBmp)
-            canvas.drawColor(Color.BLACK, android.graphics.PorterDuff.Mode.CLEAR)
-            canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), null)
-            
-            // Sync result into Native workspace (Red channel extraction)
-            val subset = Bitmap.createBitmap(scratchBmp, 0, 0, finalW, finalH)
-            NativeImageUtils.syncMatFromArgb(subset, snapRoiY)
-            subset.recycle()
-        }
-        is org.opencv.core.Mat -> {
-            val sub = source.submat(cvRoi)
-            val graySub = if (sub.channels() == 4) {
-                val g = org.opencv.core.Mat()
-                org.opencv.imgproc.Imgproc.cvtColor(sub, g, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
-                g
-            } else sub
-            org.opencv.imgproc.Imgproc.resize(graySub, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            if (graySub !== sub) graySub.release()
-            sub.release()
-        }
-        is BufferSet.Slice -> {
-            // Luma Resize
-            val subY = source.mat.submat(cvRoi)
-            org.opencv.imgproc.Imgproc.resize(subY, snapRoiY, snapRoiY.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            
-            // Chroma Resize (8UC2 interleaved)
-            val roiUV = org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2)
-            val subUV = source.uvMat.submat(roiUV)
-            org.opencv.imgproc.Imgproc.resize(subUV, snapRoiUV, snapRoiUV.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            
-            subY.release(); subUV.release()
-        }
-    }
-    
-    // Step 3: Native Annotation (Use handle directly for stride awareness)
-    NativeImageUtils.drawYuvAnnotations(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, scaledAnnotations)
-
-    // Step 4: Direct Encoding (Native Split-Plane)
-    val b64 = NativeImageUtils.compressYuvToBase64(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, 80)
-    
-    NativePaddleEngine.fullBufferSet.c[snapCropId].release()
-    Pair(b64, System.currentTimeMillis() - tSnap0)
-            }
 
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
@@ -750,12 +637,14 @@ suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: 
                                     }
 
                                     // Source from high-res odoBuffer.p directly
-                                    val (snapB64, tSnap) = takeSnapshot(
+                                    val (snapB64, tSnap) = OcrUtils.takeSnapshot(
                                         source = odoBuffer.p,
                                         sourceRect = null,
                                         targetW = 320,
                                         targetH = 48,
-                                        annotations = annotations
+                                        annotations = annotations,
+                                        scratchArgb = scratchBmp,
+                                        scratchYuv = NativePaddleEngine.fullBufferSet
                                     )
                                     lastThumbB64 = snapB64; tSnapTotal += tSnap
 
@@ -944,12 +833,14 @@ suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: 
                                     }
 
                                     // Source from high-res odoBuffer.p directly
-                                    val (snapB64, tSnap) = takeSnapshot(
+                                    val (snapB64, tSnap) = OcrUtils.takeSnapshot(
                                         source = odoBuffer.p,
                                         sourceRect = null, // Full Odometer Area
                                         targetW = 320,
                                         targetH = 48,
-                                        annotations = annotations
+                                        annotations = annotations,
+                                        scratchArgb = scratchBmp,
+                                        scratchYuv = NativePaddleEngine.fullBufferSet
                                     )
                                     lastThumbB64 = snapB64; tSnapTotal += tSnap
 
@@ -1011,7 +902,17 @@ suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: 
                     )
                     
                     // FIX: Capture Native ALIGNED Thumbnail IMMEDIATELY before scratchBmp is reused
-                    val (nativeB64, tSnap) = if (nativeAlignRes.success) { takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 600, 450, emptyList()) } else Pair("", 0L)
+                    val (nativeB64, tSnap) = if (nativeAlignRes.success) { 
+                        OcrUtils.takeSnapshot(
+                            source = NativePaddleEngine.fullBufferSet.p, 
+                            sourceRect = null, 
+                            targetW = 600, 
+                            targetH = 450, 
+                            annotations = emptyList(),
+                            scratchArgb = scratchBmp,
+                            scratchYuv = NativePaddleEngine.fullBufferSet
+                        ) 
+                    } else Pair("", 0L)
                     alignedNativeBase64 = nativeB64; tSnapAlign = tSnap
 
                     // Capture Standard ALIGNED Thumbnail for Report (Use null to prevent clobbering)

@@ -12,3 +12,7 @@
 - [x] DONE: Optimize `OdometerOcrUtils` to bypass Bitmap-to-Mat roundtrips during deskew.
 - [ ] Parallelize `nativePopulateMonoTensor` using SIMD/OpenMP for 2048px tensors.
 - [x] DONE: Implement microscopic instrumentation for JNI boundaries and inference stages.
+
+# TODO: Gas Pump Extraction
+- [x] DONE: Decouple `takeSnapshot` utility (See: plans/decouple-take-snapshot.md)
+- [ ] Implement Gas Pump Field Extraction Experiment on Android (See: plans/pump-extraction-experiment.md)
