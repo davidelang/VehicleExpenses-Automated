@@ -9,6 +9,6 @@
 
 # TODO: OCR Performance Optimization
 - [x] DONE: Implement `nativePopulateMonoTensor`.
-- [ ] Optimize `OdometerOcrUtils` to bypass Bitmap-to-Mat roundtrips during deskew.
+- [x] DONE: Optimize `OdometerOcrUtils` to bypass Bitmap-to-Mat roundtrips during deskew.
 - [ ] Parallelize `nativePopulateMonoTensor` using SIMD/OpenMP for 2048px tensors.
-- [ ] Implement microscopic instrumentation for JNI boundaries and inference stages.
+- [x] DONE: Implement microscopic instrumentation for JNI boundaries and inference stages.
