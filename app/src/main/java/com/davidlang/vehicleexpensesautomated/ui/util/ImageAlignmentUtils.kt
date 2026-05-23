@@ -664,10 +664,12 @@ object ImageAlignmentUtils {
             bufferSet.flip()
             warpMat.release()
             
+            val elapsed = System.currentTimeMillis() - t0
+            
             // Sync to scratchBmp for report visualization
             NativeImageUtils.syncMatToArgb(bufferSet.p.mat, scratchBmp)
             
-            AnchorResult(true, scratchBmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Native Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
+            AnchorResult(true, scratchBmp, 0.5f, elapsed, metadata, "Native Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
         } catch (e: Exception) {
             AnchorResult(false, message = "Native warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }

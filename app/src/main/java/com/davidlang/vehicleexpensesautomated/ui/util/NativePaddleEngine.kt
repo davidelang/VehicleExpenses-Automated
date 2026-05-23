@@ -27,7 +27,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     override val name = "Paddle $variant Greedy" + if (useMono) " Mono" else ""
     fun isV3() = variant == "V3"
     
-    data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int)
+    data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val metadata: Map<String, String> = emptyMap())
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
     var isAvailable = false
@@ -277,6 +277,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         floatData.fill(0.0f)
 
+        val tPop0 = System.nanoTime()
         when (input) {
             is Bitmap -> {
                 // Use the passed targetWidth/targetHeight. DO NOT shadow or hardcode.
@@ -288,13 +289,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 } else input
 
                 if (useMono) {
-                    for (y in 0 until fitH) {
-                        for (x in 0 until fitW) {
-                            val px = scaled.getPixel(x, y)
-                            // Use Red channel for grayscaled ARGB bitmaps
-                            floatData[y * tensorWidth + x] = (((px shr 16) and 0xFF) / 255.0f - 0.485f) / 0.229f
-                        }
-                    }
+                    val m = Mat(scaled.height, scaled.width, org.opencv.core.CvType.CV_8UC1)
+                    NativeImageUtils.syncMatFromArgb(scaled, m)
+                    NativeImageUtils.populateMonoTensor(m, floatData, tensorWidth, tensorHeight, 0.485f, 0.229f)
+                    m.release()
                 } else {
                     for (y in 0 until fitH) {
                         for (x in 0 until fitW) {
@@ -311,9 +309,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 input.rewind()
                 val fitW = targetWidth.coerceAtMost(tensorWidth)
                 val fitH = targetHeight.coerceAtMost(tensorHeight)
-                for (y in 0 until fitH) {
-                    for (x in 0 until fitW) {
-                        floatData[y * tensorWidth + x] = ((input.get().toInt() and 0xFF) / 255.0f - 0.485f) / 0.229f
+                if (useMono) {
+                    val m = Mat(fitH, fitW, org.opencv.core.CvType.CV_8UC1, input)
+                    NativeImageUtils.populateMonoTensor(m, floatData, tensorWidth, tensorHeight, 0.485f, 0.229f)
+                } else {
+                    for (y in 0 until fitH) {
+                        for (x in 0 until fitW) {
+                            floatData[y * tensorWidth + x] = ((input.get().toInt() and 0xFF) / 255.0f - 0.485f) / 0.229f
+                        }
                     }
                 }
             }
@@ -322,18 +325,38 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 return null
             }
         }
+        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
-            val inputTensor = predictor.getInput(0); inputTensor.setData(floatData); predictor.run()
+            val tJniIn0 = System.nanoTime()
+            val inputTensor = predictor.getInput(0); inputTensor.setData(floatData)
+            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+
+            val tInfer0 = System.nanoTime()
+            predictor.run()
+            val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+
+            val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
-            return DetectionResult(outputTensor.floatData, dims[3].toInt(), dims[2].toInt())
+            val heatmap = outputTensor.floatData
+            val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+
+            val meta = mapOf(
+                "t_pop_tensor_ms" to "%.3f".format(tPop),
+                "t_jni_in_ms" to "%.3f".format(tJniIn),
+                "t_inference_ms" to "%.3f".format(tInfer),
+                "t_jni_out_ms" to "%.3f".format(tJniOut)
+            )
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta)
         } catch (t: Throwable) { Log.e("PaddleDetect", "Detection failed", t); return null }
     }
 
-    fun detectMono(input: Any): DetectionResult? {
-        val w: Int; val h: Int; val buffer: java.nio.ByteBuffer
+    fun detectMono(input: Any, targetW: Int? = null, targetH: Int? = null): DetectionResult? {
+        val tPop0 = System.nanoTime()
+        val w: Int; val h: Int; val srcMat: Mat
         when (input) {
-            is BufferSet.Slice -> { w = input.width; h = input.height; buffer = input.raw }
+            is BufferSet.Slice -> { w = input.width; h = input.height; srcMat = input.mat }
+            is Mat -> { w = targetW ?: input.cols(); h = targetH ?: input.rows(); srcMat = input }
             else -> throw IllegalArgumentException("Unsupported input type for detectMono")
         }
 
@@ -345,18 +368,32 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val floatData = if (w >= 2048) bufferLargeMono else bufferSmallMono
         
         floatData.fill(0.0f)
-        buffer.rewind()
-        
-        val fitW = w.coerceAtMost(tensorWidth)
-        val fitH = h.coerceAtMost(tensorHeight)
         
         val mean = 0.485f; val std = 0.229f
-        NativeImageUtils.populateMonoTensor(input.mat, floatData, tensorWidth, tensorHeight, mean, std)
+        NativeImageUtils.populateMonoTensor(srcMat, floatData, tensorWidth, tensorHeight, mean, std)
+        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
-            val inputTensor = predictor.getInput(0); inputTensor.setData(floatData); predictor.run()
+            val tJniIn0 = System.nanoTime()
+            val inputTensor = predictor.getInput(0); inputTensor.setData(floatData)
+            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+
+            val tInfer0 = System.nanoTime()
+            predictor.run()
+            val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+
+            val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
-            return DetectionResult(outputTensor.floatData, dims[3].toInt(), dims[2].toInt())
+            val heatmap = outputTensor.floatData
+            val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+
+            val meta = mapOf(
+                "t_pop_tensor_ms" to "%.3f".format(tPop),
+                "t_jni_in_ms" to "%.3f".format(tJniIn),
+                "t_inference_ms" to "%.3f".format(tInfer),
+                "t_jni_out_ms" to "%.3f".format(tJniOut)
+            )
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta)
         } catch (t: Throwable) { 
             Log.e("PaddleDetect", "Mono detection failed", t)
             return null 
@@ -377,18 +414,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val floatData: FloatArray = if (useMono) bufferRecMono else bufferRec
         floatData.fill(0.0f)
 
+        val tPop0 = System.nanoTime()
         when (input) {
             is Bitmap -> {
                 w = input.width; h = input.height; val area = w * h
                 Log.d("OCR_DEBUG", "START RECOGNITION (Bitmap): engine=$name, dims=${w}x${h}")
                 if (useMono) {
-                    val mean = 0.5f; val std = 0.5f
-                    for (y in 0 until h) {
-                        for (x in 0 until w) {
-                            val px = input.getPixel(x, y)
-                            floatData[y * w + x] = (((px ushr 24) and 0xFF) / 255.0f - mean) / std
-                        }
-                    }
+                    val m = Mat(h, w, org.opencv.core.CvType.CV_8UC1)
+                    NativeImageUtils.syncMatFromArgb(input, m)
+                    NativeImageUtils.populateMonoTensor(m, floatData, w, h, 0.5f, 0.5f)
+                    m.release()
                 } else {
                     val mean = 0.5f; val std = 0.5f
                     for (y in 0 until h) {
@@ -403,9 +438,27 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             else -> return RecStageResult("(Unsupported Input)", 0, 0f, null)
         }
+        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
         
-        predictor.getInput(0).setData(floatData); predictor.run()
+        val tJniIn0 = System.nanoTime()
+        predictor.getInput(0).setData(floatData)
+        val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+
+        val tInfer0 = System.nanoTime()
+        predictor.run()
+        val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+
+        val tJniOut0 = System.nanoTime()
         val outputTensor = predictor.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+        val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+
+        val meta = mapOf(
+            "t_pop_tensor_ms" to "%.3f".format(tPop),
+            "t_jni_in_ms" to "%.3f".format(tJniIn),
+            "t_inference_ms" to "%.3f".format(tInfer),
+            "t_jni_out_ms" to "%.3f".format(tJniOut)
+        )
+
         val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder()
         var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
         
@@ -431,12 +484,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         val w: Int
         val h: Int
-        val buffer: java.nio.ByteBuffer
+        val srcMat: Mat
         when (input) {
             is BufferSet.Slice -> {
                 w = input.width
                 h = input.height
-                buffer = input.raw
+                srcMat = input.mat
+            }
+            is Mat -> {
+                w = input.cols()
+                h = input.rows()
+                srcMat = input
             }
             else -> throw IllegalArgumentException("Unsupported input type for runConstrainedStaticMono")
         }
@@ -447,13 +505,31 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
              return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
 
-        bufferRecMono.fill(0.0f)
+        val tPop0 = System.nanoTime()
         val mean = 0.5f; val std = 0.5f
-        NativeImageUtils.populateMonoTensor(input.mat, bufferRecMono, 320, 48, mean, std)
+        NativeImageUtils.populateMonoTensor(srcMat, bufferRecMono, 320, 48, mean, std)
+        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
-            recognizer!!.getInput(0).setData(bufferRecMono); recognizer!!.run()
+            val tJniIn0 = System.nanoTime()
+            recognizer!!.getInput(0).setData(bufferRecMono)
+            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+
+            val tInfer0 = System.nanoTime()
+            recognizer!!.run()
+            val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+
+            val tJniOut0 = System.nanoTime()
             val outputTensor = recognizer!!.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+            val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+
+            val meta = mapOf(
+                "t_pop_tensor_ms" to "%.3f".format(tPop),
+                "t_jni_in_ms" to "%.3f".format(tJniIn),
+                "t_inference_ms" to "%.3f".format(tInfer),
+                "t_jni_out_ms" to "%.3f".format(tJniOut)
+            )
+
             val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
@@ -468,18 +544,35 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 lastIdx = maxIdx
             }
             val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null)
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, meta)
         } catch (t: Throwable) { 
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }
     }
-    data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null)
-    override suspend fun recognize(input: Any): OcrResult = recognize(input as Bitmap, false)
-    suspend fun recognize(bitmap: Bitmap, isRecursive: Boolean): OcrResult = withContext(Dispatchers.IO) {
-        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = bitmap.width, imageHeight = bitmap.height)
+    data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null, val metadata: Map<String, String> = emptyMap())
+    override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val predictor = recognizer ?: return@withContext OcrResult(engineName = name, debugText = "Predictor null")
-        val res = runRecognitionStageStatic(bitmap, 48, dictionary, predictor)
-        OcrResult(engineName = name, executionTimeMs = System.currentTimeMillis() - t0, debugText = res.text, textBlocks = listOf(TextBlock(res.text, Rect(0,0,bitmap.width, bitmap.height))), imageWidth = bitmap.width, imageHeight = bitmap.height)
+
+        val w: Int; val h: Int
+        when (input) {
+            is Bitmap -> { w = input.width; h = input.height }
+            is BufferSet.Slice -> { w = input.width; h = input.height }
+            is Mat -> { w = input.cols(); h = input.rows() }
+            else -> throw IllegalArgumentException("Unsupported input type for recognize")
+        }
+
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = w, imageHeight = h)
+
+        val res = runRecognitionStageStatic(input, 48, dictionary, predictor)
+        OcrResult(
+            engineName = name,
+            executionTimeMs = System.currentTimeMillis() - t0,
+            debugText = res.text,
+            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h))),
+            imageWidth = w,
+            imageHeight = h,
+            metadata = res.metadata
+        )
     }
 }

@@ -323,10 +323,14 @@ private suspend fun runExperiment(
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.fullBufferSet, scratchBmp, masterBmp)
             
             // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
+            val tSnapOrig0 = System.currentTimeMillis()
             val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, null)
+            val tSnapOrig = System.currentTimeMillis() - tSnapOrig0
+// Explicit Decision: takeSnapshot is a local function to capture row-local buffers without explicit parameter passing.
+suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: Int, annotations: List<SnapshotAnnotation>): Pair<String, Long> = withContext(Dispatchers.IO) {
+    val tSnap0 = System.currentTimeMillis()
+    // Step 1: Geometry Normalization
 
-            // Explicit Decision: takeSnapshot is a local function to capture row-local buffers without explicit parameter passing.
-            suspend fun takeSnapshot(source: Any, sourceRect: Rect?, targetW: Int, targetH: Int, annotations: List<SnapshotAnnotation>): String = withContext(Dispatchers.IO) {
                 val scratchBmp = scratchBmp // Capture outer scope
                 // Step 1: Geometry Normalization
     val srcW: Int
@@ -433,8 +437,7 @@ private suspend fun runExperiment(
     val b64 = NativeImageUtils.compressYuvToBase64(NativePaddleEngine.fullBufferSet.c[snapCropId].yuv, 80)
     
     NativePaddleEngine.fullBufferSet.c[snapCropId].release()
-    
-    b64
+    Pair(b64, System.currentTimeMillis() - tSnap0)
             }
 
             try {
@@ -498,6 +501,7 @@ private suspend fun runExperiment(
                 
                 var alignedBase64 = ""
                 var alignedNativeBase64 = ""
+                var tSnapAlign = 0L
 
                 // Winner-Only Processing block
                 
@@ -525,6 +529,7 @@ private suspend fun runExperiment(
 
                                 val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
                                 var lastThumbB64 = ""
+                                var tSnapTotal = 0L
 
                                 stages.forEach { stage ->
                                     val tStart = System.currentTimeMillis()
@@ -746,13 +751,14 @@ private suspend fun runExperiment(
                                     }
 
                                     // Source from high-res odoBuffer.p directly
-                                    lastThumbB64 = takeSnapshot(
+                                    val (snapB64, tSnap) = takeSnapshot(
                                         source = odoBuffer.p,
                                         sourceRect = null,
                                         targetW = 320,
                                         targetH = 48,
                                         annotations = annotations
                                     )
+                                    lastThumbB64 = snapB64; tSnapTotal += tSnap
 
                                     val tLoop = System.currentTimeMillis() - tStart
                                     htmlOutput.append("<div class='ocr-step'><b>Recognition ($stage):</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
@@ -773,7 +779,8 @@ private suspend fun runExperiment(
                                     jsonSection = meta,
                                     odometerValue = allOdo.groupBy { it }.maxByOrNull { it.value.size }?.key,
                                     thumbB64 = lastThumbB64,
-                                    totalTimeMs = System.currentTimeMillis() - tHarnessStart
+                                    totalTimeMs = System.currentTimeMillis() - tHarnessStart,
+                                    tSnapshotMs = tSnapTotal
                                 )
                                 report.add(displayName, result)
                             }
@@ -809,6 +816,7 @@ private suspend fun runExperiment(
 
                                 val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
                                 var lastThumbB64 = ""
+                                var tSnapTotal = 0L
 
                                 stages.forEach { stage ->
                                     val tStart = System.currentTimeMillis()
@@ -937,13 +945,14 @@ private suspend fun runExperiment(
                                     }
 
                                     // Source from high-res odoBuffer.p directly
-                                    lastThumbB64 = takeSnapshot(
+                                    val (snapB64, tSnap) = takeSnapshot(
                                         source = odoBuffer.p,
                                         sourceRect = null, // Full Odometer Area
                                         targetW = 320,
                                         targetH = 48,
                                         annotations = annotations
                                     )
+                                    lastThumbB64 = snapB64; tSnapTotal += tSnap
 
                                     val tLoop = System.currentTimeMillis() - tStart
                                     htmlOutput.append("<div class='ocr-step'><b>Recognition ($stage):</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
@@ -964,7 +973,8 @@ private suspend fun runExperiment(
                                     jsonSection = com.google.gson.JsonObject().apply { add("stages", jsonStages) },
                                     odometerValue = allOdo.firstOrNull { it.isNotBlank() },
                                     thumbB64 = lastThumbB64,
-                                    totalTimeMs = System.currentTimeMillis() - tHarnessStart
+                                    totalTimeMs = System.currentTimeMillis() - tHarnessStart,
+                                    tSnapshotMs = tSnapTotal
                                 )
                                 report.add(displayName, result)
                             }
@@ -1002,7 +1012,8 @@ private suspend fun runExperiment(
                     )
                     
                     // FIX: Capture Native ALIGNED Thumbnail IMMEDIATELY before scratchBmp is reused
-                    alignedNativeBase64 = if (nativeAlignRes.success) { takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 600, 450, emptyList()) } else ""
+                    val (nativeB64, tSnap) = if (nativeAlignRes.success) { takeSnapshot(NativePaddleEngine.fullBufferSet.p, null, 600, 450, emptyList()) } else Pair("", 0L)
+                    alignedNativeBase64 = nativeB64; tSnapAlign = tSnap
 
                     // Capture Standard ALIGNED Thumbnail for Report (Use null to prevent clobbering)
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, null)
@@ -1085,7 +1096,7 @@ private suspend fun runExperiment(
                     index + 1, file.name, meta.originalWidth, meta.originalHeight, meta.decodedWidth, meta.decodedHeight, meta.isDegraded, 
                     meta.diagnostic, finalWinnerName, bestOdometer, (tMl + tPd), tRotate, tRotateMono, tilt, tDiscoveryTotal, 
                     queryOcrDiscovery, queryOcrDiscoveryMono, 
-                    primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes, deskewResMono
+                    primaryVetoResults, vehicleResultsMap, vehicles, emptyList(), deskewRes, deskewResMono, tSnapAlign, tSnapOrig
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -1134,7 +1145,8 @@ private fun serializePhotoResultToJson(
     lineNumber: Int, fileName: String, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
     nativeProbe: String, winner: String, odo: String, tDeskew: Long, tRotate: Long, tRotateMono: Long, deskewAngle: Float, tDiscovery: Long,
     discovery: OcrResult, discoveryMono: OcrResult?, vetoSweep: Map<Int, VetoResult>, vResults: Map<Int, SingleVehicleResult>,
-    vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null
+    vehicles: List<Vehicle>, strategies: List<String>, deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null,
+    tSnapAlign: Long = 0, tSnapOrig: Long = 0
 ): JSONObject {
     val root = JSONObject()
     root.apply {
@@ -1143,6 +1155,8 @@ private fun serializePhotoResultToJson(
         put("imageWidth", decodedW); put("imageHeight", decodedH)
         put("isDegraded", isDegraded)
         put("nativeProbe", nativeProbe)
+        put("t_snap_orig_ms", tSnapOrig)
+        put("t_snap_align_ms", tSnapAlign)
         
         // Benchmarking: Alignment (Standard vs Mono)
         val winnerVehicle = vehicles.find { it.name == winner }
@@ -1179,6 +1193,14 @@ private fun serializePhotoResultToJson(
         putSafe("deskew_time_mono_ms", ((deskewResMono?.mlTimeMs ?: 0L) + (deskewResMono?.paddleTimeMs ?: 0L) + tRotateMono).toDouble(), fileName)
         putSafe("deskew_time_rotation_mono_ms", tRotateMono.toDouble(), fileName)
         
+        val deskewMeta = JSONObject()
+        deskewRes.metadata.forEach { (k, v) -> deskewMeta.put(k, v) }
+        put("deskew_metadata_std", deskewMeta)
+        
+        val deskewMetaMono = JSONObject()
+        deskewResMono?.metadata?.forEach { (k, v) -> deskewMetaMono.put(k, v) }
+        put("deskew_metadata_mono", deskewMetaMono)
+
         val timingsObj = JSONObject()
         val pdTimings = JSONObject()
         pdTimings.putSafe("standard_ms", deskewRes.paddleTimeMs.toDouble(), fileName)
@@ -1346,6 +1368,20 @@ private fun serializePhotoResultToJson(
                 put("harness_diagnostics", harnessObj)
             }) 
         }; put("vehicles", vehicleResults)
+        val harnessTimings = JSONObject()
+        winnerRes?.harnessResults?.forEach { (engine, res) ->
+            val hRes = JSONObject()
+            hRes.put("total_time_ms", res.totalTimeMs)
+            hRes.put("snapshot_time_ms", res.tSnapshotMs)
+            
+            val stages = JSONObject()
+            res.jsonSection.getAsJsonObject("stages")?.entrySet()?.forEach { entry ->
+                stages.put(entry.key, entry.value)
+            }
+            hRes.put("stages", stages)
+            harnessTimings.put(engine, hRes)
+        }
+        put("harness_timings", harnessTimings)
     }
     return root
 }

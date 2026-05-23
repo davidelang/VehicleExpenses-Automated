@@ -51,7 +51,7 @@ object OdometerOcrUtils {
         }
     }
 
-    data class EngineResult(val angle: Float, val timesMs: List<Long>, val blocks: List<TextBlock> = emptyList())
+    data class EngineResult(val angle: Float, val timesMs: List<Long>, val blocks: List<TextBlock> = emptyList(), val metadata: Map<String, String> = emptyMap())
     data class DeskewResult(
         val angle: Float, 
         val mlAngle: Float, 
@@ -60,10 +60,19 @@ object OdometerOcrUtils {
         val mlBlocks: List<TextBlock> = emptyList(), 
         val paddleBlocks: List<TextBlock> = emptyList(), 
         
-        val engines: Map<String, EngineResult> = emptyMap()
+        val engines: Map<String, EngineResult> = emptyMap(),
+        val metadata: Map<String, String> = emptyMap()
     )
 
     suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
+        return if (input is BufferSet.Slice) {
+            calculateAverageTextAngleMono(input)
+        } else {
+            calculateAverageTextAngleStandard(input)
+        }
+    }
+
+    private suspend fun calculateAverageTextAngleStandard(input: Any): DeskewResult {
         val t0 = System.currentTimeMillis()
         
         val enabledEngines = mapOf(
@@ -92,7 +101,92 @@ object OdometerOcrUtils {
         )
     }
 
-    private suspend fun deskewMlKit(input: Any): EngineResult {
+    private suspend fun calculateAverageTextAngleMono(input: BufferSet.Slice): DeskewResult {
+        val t0 = System.currentTimeMillis()
+        val (resizedMat, pScale) = prepDeskewBufferMono(input)
+        val tPrep = System.currentTimeMillis() - t0
+        
+        val results = mutableMapOf<String, EngineResult>()
+        
+        val tMl0 = System.currentTimeMillis()
+        val mlBmp = Bitmap.createBitmap(resizedMat.cols(), resizedMat.rows(), Bitmap.Config.ALPHA_8)
+        Utils.matToBitmap(resizedMat, mlBmp)
+        val mlRes = deskewMlKitMono(mlBmp, pScale)
+        val tMl = System.currentTimeMillis() - tMl0
+        results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
+        mlBmp.recycle()
+
+        val tPd0 = System.currentTimeMillis()
+        val pdRes = deskewPaddleMono(resizedMat, resizedMat.cols(), resizedMat.rows(), pScale)
+        val tPd = System.currentTimeMillis() - tPd0
+        results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
+        
+        resizedMat.release()
+        
+        val finalAngle = mlRes.angle
+        
+        return DeskewResult(
+            angle = finalAngle.coerceIn(-20f, 20f), 
+            mlAngle = finalAngle,
+            mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
+            paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
+            mlBlocks = mlRes.blocks,
+            paddleBlocks = pdRes.blocks,
+            engines = results,
+            metadata = mapOf("mode" to "mono", "t_prep_ms" to tPrep.toString())
+        )
+    }
+
+    private suspend fun deskewMlKitMono(bmp: Bitmap, pScale: Float): EngineResult {
+        val tStart = System.currentTimeMillis()
+        val res = extractFromPhotoBitmapRaw(com.google.mlkit.vision.common.InputImage.fromBitmap(bmp, 0))
+        val tDetect = System.currentTimeMillis() - tStart
+        
+        val invScale = 1.0f / pScale
+        val scaledBlocks = res.textBlocks.map { block ->
+            val b = block.boundingBox
+            val scaledRect = android.graphics.Rect(
+                (b.left * invScale).toInt(),
+                (b.top * invScale).toInt(),
+                (b.right * invScale).toInt(),
+                (b.bottom * invScale).toInt()
+            )
+            block.copy(boundingBox = scaledRect)
+        }
+
+        val srcH = (bmp.height * invScale).toInt()
+        val angle = calculateWeightedAverage(scaledBlocks, srcH)
+        return EngineResult(angle, listOf(tDetect), scaledBlocks)
+    }
+
+    private suspend fun deskewPaddleMono(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
+        val tStart = System.currentTimeMillis()
+        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, listOf(0L))
+        val det = paddleEngine.detectMono(resizedMat, pWidth, pHeight)
+        val tDetect = System.currentTimeMillis() - tStart
+        
+        var angle = 0f
+        var blocks = emptyList<TextBlock>()
+        if (det != null) {
+            blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None", "PaddleMono")
+            val srcH = (pHeight / pScale).toInt()
+            angle = calculateWeightedAverage(blocks, srcH)
+        }
+        return EngineResult(angle, listOf(tDetect), blocks, det?.metadata ?: emptyMap())
+    }
+
+    private fun prepDeskewBufferMono(input: BufferSet.Slice): Pair<Mat, Float> {
+        val pTargetSize = 2048
+        val srcW = input.width
+        val srcH = input.height
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val pWidth = (srcW * pScale).toInt()
+        val pHeight = (srcH * pScale).toInt()
+        
+        val resizedGray = Mat(pHeight, pWidth, CvType.CV_8U)
+        Imgproc.resize(input.mat, resizedGray, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        return Pair(resizedGray, pScale)
+    }
         val tStart = System.currentTimeMillis()
         val targetBitmap = NativePaddleEngine.sharedBmp2048
         
