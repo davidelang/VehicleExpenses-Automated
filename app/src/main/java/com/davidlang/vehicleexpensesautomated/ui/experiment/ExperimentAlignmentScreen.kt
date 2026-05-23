@@ -1164,7 +1164,14 @@ private fun serializePhotoResultToJson(
             putSafe("alignment_delta_ty", monoTy - stdTy, fileName)
             put("alignment_consensus_std", winnerRes.alignmentTrace.metadata["Consensus"] ?: "")
             put("alignment_consensus_mono", winnerRes.alignmentTraceMono.metadata["Consensus"] ?: "")
+            put("winning_anchors", winnerRes.alignmentTrace.metadata["winning_anchors"] ?: "")
             put("aligned_image_native_b64", winnerRes.alignmentTraceMono.alignedImageBase64)
+
+            // Serialize full metadata maps for audit
+            val stdMeta = JSONObject(); winnerRes.alignmentTrace.metadata.forEach { (k, v) -> stdMeta.put(k, v) }
+            put("alignment_metadata_std", stdMeta)
+            val monoMeta = JSONObject(); winnerRes.alignmentTraceMono.metadata.forEach { (k, v) -> monoMeta.put(k, v) }
+            put("alignment_metadata_mono", monoMeta)
         }
 
         putSafe("deskew_time_ms", (tDeskew + tRotate).toDouble(), fileName)
