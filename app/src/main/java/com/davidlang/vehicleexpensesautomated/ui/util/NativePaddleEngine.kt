@@ -174,6 +174,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 val detPath = copy("paddle/det_v4_4000_$arch.nb"); val detPathMono = copy("paddle/det_v4_4000_mono_$arch.nb")
                 val config = MobileConfig()
+                config.setThreads(4)
+                config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_HIGH)
                 config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 3, 2048, 2048))
                 config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 3, 128, 512))
                 config.setModelFromFile(detPathMono); sharedDetectorLargeMono = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLargeMono!!.getInput(0).resize(longArrayOf(1, 1, 2048, 2048))
@@ -522,6 +524,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         val tPop0 = System.nanoTime()
+        bufferRecMono.fill(0.0f)
         val mean = 0.5f; val std = 0.5f
         NativeImageUtils.populateMonoTensor(srcMat, bufferRecMono, 320, 48, mean, std)
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
