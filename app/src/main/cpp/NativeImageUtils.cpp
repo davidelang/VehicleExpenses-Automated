@@ -318,4 +318,46 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCompr
     return env->NewStringUTF(b64.c_str());
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateMonoTensor(
+    JNIEnv* env, jobject thiz, jlong srcMatPtr, jfloatArray dstTensor, jint tensorW, jint tensorH, jfloat mean, jfloat std) {
+    
+    auto* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
+    if (!src || src->empty()) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), "Source Mat is null or empty");
+        return;
+    }
+
+    if (src->cols != tensorW || src->rows != tensorH) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Dimension mismatch: Mat=%dx%d, Tensor=%dx%d", src->cols, src->rows, tensorW, tensorH);
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), buf);
+        return;
+    }
+
+    jfloat* dst = env->GetFloatArrayElements(dstTensor, nullptr);
+    if (!dst) return;
+
+    int w = src->cols;
+    int h = src->rows;
+
+    if (src->isContinuous()) {
+        const uint8_t* ptr = src->ptr<uint8_t>(0);
+        size_t total = (size_t)w * h;
+        for (size_t i = 0; i < total; ++i) {
+            dst[i] = ((float)ptr[i] / 255.0f - mean) / std;
+        }
+    } else {
+        for (int y = 0; y < h; ++y) {
+            const uint8_t* row = src->ptr<uint8_t>(y);
+            jfloat* dst_row = dst + (y * tensorW);
+            for (int x = 0; x < w; ++x) {
+                dst_row[x] = ((float)row[x] / 255.0f - mean) / std;
+            }
+        }
+    }
+
+    env->ReleaseFloatArrayElements(dstTensor, dst, 0);
+}
+
 }
