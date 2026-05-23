@@ -301,7 +301,7 @@ object ImageAlignmentUtils {
                         
                         // Forensic data: include absolute pixel coordinates and candidates
                         val debugMsg = "S=%.3f, R=%.1f, tx=%.1f, ty=%.1f | P1(%.1f,%.1f) P2(%.1f,%.1f)".format(s, rot, tx, ty, r1px, r1py, r2px, r2py)
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx.toDouble(), ty.toDouble(), refDist, debugMsg, 0.0, r1py.toDouble(), r2py.toDouble()))
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist.toFloat(), debugMsg, 0f, r1py, r2py))
                     }
                 }
             }
