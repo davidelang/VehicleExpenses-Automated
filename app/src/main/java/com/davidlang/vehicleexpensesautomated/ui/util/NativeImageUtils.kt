@@ -146,6 +146,14 @@ object NativeImageUtils {
         }
     }
 
+    /**
+     * High-performance population of a mono (1-channel) float tensor from an OpenCV Mat.
+     * Enforces strict dimension parity.
+     */
+    fun populateMonoTensor(src: Mat, dst: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float) {
+        nativePopulateMonoTensor(src.nativeObj, dst, tensorW, tensorH, mean, std)
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -154,4 +162,5 @@ object NativeImageUtils {
     private external fun nativeIngestJpegToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
+    private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
 }

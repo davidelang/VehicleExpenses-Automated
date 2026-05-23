@@ -351,16 +351,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val fitH = h.coerceAtMost(tensorHeight)
         
         val mean = 0.485f; val std = 0.229f
-        for (y in 0 until fitH) {
-            for (x in 0 until fitW) {
-                floatData[y * tensorWidth + x] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
-            }
-            // Skip the rest of the source row if it was wider than fitW
-            if (w > fitW) {
-                val skip = w - fitW
-                repeat(skip) { buffer.get() }
-            }
-        }
+        NativeImageUtils.populateMonoTensor(input.mat, floatData, tensorWidth, tensorHeight, mean, std)
 
         try {
             val inputTensor = predictor.getInput(0); inputTensor.setData(floatData); predictor.run()
@@ -457,11 +448,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         bufferRecMono.fill(0.0f)
-        buffer.rewind()
         val mean = 0.5f; val std = 0.5f
-        for (i in 0 until area) {
-            bufferRecMono[i] = ((buffer.get().toInt() and 0xFF) / 255.0f - mean) / std
-        }
+        NativeImageUtils.populateMonoTensor(input.mat, bufferRecMono, 320, 48, mean, std)
 
         try {
             recognizer!!.getInput(0).setData(bufferRecMono); recognizer!!.run()

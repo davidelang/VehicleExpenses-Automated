@@ -6,3 +6,6 @@
 - [x] Phase 5: Final Verification & Cleanup (See: dev-ai-interaction/plans/phase-5-final-restoration.md)
   - [x] Restore metadata reporting keys.
   - [x] Serialize forensic winning_anchors to JSON.
+
+# TODO: OCR Performance Optimization
+- [ ] Enhance `nativePopulateMonoTensor` to support source/target resizing (currently strict parity enforced).
