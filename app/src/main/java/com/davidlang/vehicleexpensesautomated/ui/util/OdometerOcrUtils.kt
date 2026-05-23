@@ -39,10 +39,6 @@ import org.opencv.imgproc.Imgproc
 import java.util.Collections
 
 object OdometerOcrUtils {
-    // Zero-Allocation Buffers for ML Kit Mono (NV21) Conversion
-    val reusablePixelArray = IntArray(4000 * 3072)
-    val reusableByteStaging = ByteArray(4000 * 3072)
-
 
     init {
         if (!OpenCVLoader.initLocal()) {
@@ -114,30 +110,31 @@ object OdometerOcrUtils {
         val pWidth = (srcW * pScale).toInt()
         val pHeight = (srcH * pScale).toInt()
 
-        // 2. Register transient crop in workspace (Zero-Allocation sub-view)
+        // 2. Register transient crop in workspace (Zero-Allocation sub-view for Native Resize)
         bufferSet.p.clear()
         val cropId = bufferSet.createCrop(0, 0, pWidth, pHeight)
-        val workspace = bufferSet.c[cropId]
+        val workspaceCrop = bufferSet.c[cropId]
 
         // 3. Native Resize directly into the crop
-        Imgproc.resize(input.mat, workspace.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        Imgproc.resize(input.mat, workspaceCrop.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
         val tPrep = System.currentTimeMillis() - t0
         
         val results = mutableMapOf<String, EngineResult>()
         
-        // 4. ML Kit Path: Zero-Copy NV21
+        // 4. ML Kit Path: Zero-Copy NV21 from FULL contiguous buffer
+        // Note: We pass full 2048x2048 dimensions because crops do not support nv21 access.
         val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKitMono(workspace, pScale)
+        val mlRes = deskewMlKitMono(bufferSet.p, pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
-        // 5. Paddle Path: Native Mat Tensor Population
+        // 5. Paddle Path: Native Mat Tensor Population from CROP
         val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleMono(workspace.mat, workspace.width, workspace.height, pScale)
+        val pdRes = deskewPaddleMono(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
         
-        workspace.release() // Free transient crop
+        workspaceCrop.release() // Free transient crop
         
         val finalAngle = mlRes.angle
         
@@ -153,10 +150,10 @@ object OdometerOcrUtils {
         )
     }
 
-    private suspend fun deskewMlKitMono(workspace: BufferSet.Slice, pScale: Float): EngineResult {
+    private suspend fun deskewMlKitMono(workspace: BufferSet.Instance, pScale: Float): EngineResult {
         val tStart = System.currentTimeMillis()
         
-        // Zero-copy transition to ML Kit using pre-allocated NV21 buffer
+        // Zero-copy transition to ML Kit using pre-allocated FULL NV21 buffer (Contiguous)
         val img = InputImage.fromByteBuffer(
             workspace.nv21, workspace.width, workspace.height, 0, InputImage.IMAGE_FORMAT_NV21
         )
