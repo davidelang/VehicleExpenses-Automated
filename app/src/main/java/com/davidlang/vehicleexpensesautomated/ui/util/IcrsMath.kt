@@ -30,6 +30,7 @@ object IcrsMath {
      */
     fun icrsToPixel(icrsX: Float, icrsY: Float, imgW: Int, imgH: Int): PointF {
         val s = minOf(imgW, imgH).toFloat()
+        if (s <= 0) return PointF(imgW / 2f, imgH / 2f)
         
         val px = (icrsX * s) + (imgW / 2f)
         val py = (icrsY * s) + (imgH / 2f)
@@ -45,15 +46,5 @@ object IcrsMath {
         val px = lx * imgW
         val py = ly * imgH
         return pixelToIcrs(px, py, imgW, imgH)
-    }
-
-    /**
-     * Reverse Bridge:
-     * Converts pure ICRS coordinates back into legacy [0.0 - 1.0] anisotropic floats.
-     * Useful for feeding legacy pipeline stages during transition.
-     */
-    fun icrsToLegacyAnisotropic(icrsX: Float, icrsY: Float, imgW: Int, imgH: Int): PointF {
-        val pix = icrsToPixel(icrsX, icrsY, imgW, imgH)
-        return PointF(pix.x / imgW.toFloat(), pix.y / imgH.toFloat())
     }
 }

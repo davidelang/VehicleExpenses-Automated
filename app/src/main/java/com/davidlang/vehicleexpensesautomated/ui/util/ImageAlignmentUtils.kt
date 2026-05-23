@@ -254,8 +254,8 @@ object ImageAlignmentUtils {
         }
         val allCandidates = mutableListOf<AnchorCandidate>()
         val icrsTargetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
-            val legacyY = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
-            IcrsMath.legacyAnisotropicToIcrs(0.5f, legacyY, refW, refH).y
+            val center = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
+            if (vehicle.isIcrs) center else IcrsMath.legacyAnisotropicToIcrs(0.5f, center, refW, refH).y
         } else 0f
         
         // 1. Filter and Match Confirmed Landmarks
@@ -544,8 +544,8 @@ object ImageAlignmentUtils {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
         val icrsTargetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
-            val legacyY = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
-            IcrsMath.legacyAnisotropicToIcrs(0.5f, legacyY, refW, refH).y
+            val center = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
+            if (vehicle.isIcrs) center else IcrsMath.legacyAnisotropicToIcrs(0.5f, center, refW, refH).y
         } else 0f
         
         // 1. Filter and Match Confirmed Landmarks

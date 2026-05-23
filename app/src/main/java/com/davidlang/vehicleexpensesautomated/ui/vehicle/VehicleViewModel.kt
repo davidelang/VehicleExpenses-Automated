@@ -56,24 +56,6 @@ class VehicleViewModel @Inject constructor(
         imgW: Int = 0,
         imgH: Int = 0
     ) {
-        var lOdo: android.graphics.PointF? = null
-        var rOdo: android.graphics.PointF? = null
-        var lOther: android.graphics.PointF? = null
-        var rOther: android.graphics.PointF? = null
-        var isIcrs = false
-
-        if (imgW > 0 && imgH > 0) {
-            odometerCropRect?.let {
-                lOdo = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.legacyAnisotropicToIcrs(it.left, it.top, imgW, imgH)
-                rOdo = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.legacyAnisotropicToIcrs(it.right, it.bottom, imgW, imgH)
-            }
-            otherTextCropRect?.let {
-                lOther = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.legacyAnisotropicToIcrs(it.left, it.top, imgW, imgH)
-                rOther = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.legacyAnisotropicToIcrs(it.right, it.bottom, imgW, imgH)
-            }
-            isIcrs = true
-        }
-
         val newVehicle = Vehicle(
             name = name,
             make = make,
@@ -82,16 +64,16 @@ class VehicleViewModel @Inject constructor(
             licensePlate = licensePlate,
             referenceDashPhotoUrl = referenceDashPhotoUrl,
             cleanedReferenceDashPhotoUrl = cleanedReferenceDashPhotoUrl,
-            odometerCropLeft = if (isIcrs) lOdo?.x else odometerCropRect?.left,
-            odometerCropTop = if (isIcrs) lOdo?.y else odometerCropRect?.top,
-            odometerCropRight = if (isIcrs) rOdo?.x else odometerCropRect?.right,
-            odometerCropBottom = if (isIcrs) rOdo?.y else odometerCropRect?.bottom,
-            otherTextCropLeft = if (isIcrs) lOther?.x else otherTextCropRect?.left,
-            otherTextCropTop = if (isIcrs) lOther?.y else otherTextCropRect?.top,
-            otherTextCropRight = if (isIcrs) rOther?.x else otherTextCropRect?.right,
-            otherTextCropBottom = if (isIcrs) rOther?.y else otherTextCropRect?.bottom,
+            odometerCropLeft = odometerCropRect?.left,
+            odometerCropTop = odometerCropRect?.top,
+            odometerCropRight = odometerCropRect?.right,
+            odometerCropBottom = odometerCropRect?.bottom,
+            otherTextCropLeft = otherTextCropRect?.left,
+            otherTextCropTop = otherTextCropRect?.top,
+            otherTextCropRight = otherTextCropRect?.right,
+            otherTextCropBottom = otherTextCropRect?.bottom,
             landmarkTextBlocksJson = landmarkTextBlocksJson,
-            isIcrs = isIcrs
+            isIcrs = true
         )
 
         try {
@@ -118,29 +100,16 @@ class VehicleViewModel @Inject constructor(
     }
 
     /**
-     * Bridge method to convert a Vehicle's ICRS crop coordinates back to Legacy Anisotropic
-     * for UI components that still expect [0.0 - 1.0] relative to Width/Height.
+     * Get the crop rectangles for a vehicle.
      */
-    fun getLegacyCrops(vehicle: Vehicle, imgW: Int, imgH: Int): Pair<androidx.compose.ui.geometry.Rect?, androidx.compose.ui.geometry.Rect?> {
-        if (!vehicle.isIcrs || imgW <= 0 || imgH <= 0) {
-            val odo = vehicle.odometerCropLeft?.let { l ->
-                androidx.compose.ui.geometry.Rect(l, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
-            }
-            val other = vehicle.otherTextCropLeft?.let { l ->
-                androidx.compose.ui.geometry.Rect(l, vehicle.otherTextCropTop ?: 0f, vehicle.otherTextCropRight ?: 1f, vehicle.otherTextCropBottom ?: 1f)
-            }
-            return Pair(odo, other)
+    fun getCrops(vehicle: Vehicle): Pair<androidx.compose.ui.geometry.Rect?, androidx.compose.ui.geometry.Rect?> {
+        val odo = vehicle.odometerCropLeft?.let { l ->
+            androidx.compose.ui.geometry.Rect(l, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
         }
-
-        val lOdo = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.icrsToLegacyAnisotropic(vehicle.odometerCropLeft!!, vehicle.odometerCropTop!!, imgW, imgH)
-        val rOdo = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.icrsToLegacyAnisotropic(vehicle.odometerCropRight!!, vehicle.odometerCropBottom!!, imgW, imgH)
-        val lOther = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.icrsToLegacyAnisotropic(vehicle.otherTextCropLeft!!, vehicle.otherTextCropTop!!, imgW, imgH)
-        val rOther = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.icrsToLegacyAnisotropic(vehicle.otherTextCropRight!!, vehicle.otherTextCropBottom!!, imgW, imgH)
-
-        return Pair(
-            androidx.compose.ui.geometry.Rect(lOdo.x, lOdo.y, rOdo.x, rOdo.y),
-            androidx.compose.ui.geometry.Rect(lOther.x, lOther.y, rOther.x, rOther.y)
-        )
+        val other = vehicle.otherTextCropLeft?.let { l ->
+            androidx.compose.ui.geometry.Rect(l, vehicle.otherTextCropTop ?: 0f, vehicle.otherTextCropRight ?: 1f, vehicle.otherTextCropBottom ?: 1f)
+        }
+        return Pair(odo, other)
     }
 
     suspend fun ensureCleanedReference(vehicle: Vehicle): String? {

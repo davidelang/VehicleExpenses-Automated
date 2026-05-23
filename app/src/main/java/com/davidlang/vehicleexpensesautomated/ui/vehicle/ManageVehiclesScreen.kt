@@ -104,7 +104,7 @@ fun ManageVehiclesScreen(
                     originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
                 } catch (e: Exception) { Log.e("ManageVehicles", "Failed dimensions", e) }
             }
-            val (odo, other) = vehicleViewModel.getLegacyCrops(it, originalImageSize.x.toInt(), originalImageSize.y.toInt())
+            val (odo, other) = vehicleViewModel.getCrops(it)
             odometerCropRect = odo
             otherTextCropRect = other
             
