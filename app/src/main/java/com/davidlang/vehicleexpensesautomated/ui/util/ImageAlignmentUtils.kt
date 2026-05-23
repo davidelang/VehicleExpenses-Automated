@@ -543,9 +543,10 @@ object ImageAlignmentUtils {
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
-        val targetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
-            (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
-        } else 0.5f
+        val icrsTargetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
+            val legacyY = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
+            IcrsMath.legacyAnisotropicToIcrs(0.5f, legacyY, refW, refH).y
+        } else 0f
         
         // 1. Filter and Match Confirmed Landmarks
         val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
@@ -563,31 +564,28 @@ object ImageAlignmentUtils {
                     val q1 = confirmedPairs[i].second
                     val q2 = confirmedPairs[j].second
                     
-                    val r1nx = if (r1.boundingBox.width() > 1) r1.boundingBox.centerX().toFloat() / refW else r1.boundingBox.centerX().toFloat()
-                    val r1ny = if (r1.boundingBox.width() > 1) r1.boundingBox.centerY().toFloat() / refH else r1.boundingBox.centerY().toFloat()
-                    val r2nx = if (r2.boundingBox.width() > 1) r2.boundingBox.centerX().toFloat() / refW else r2.boundingBox.centerX().toFloat()
-                    val r2ny = if (r2.boundingBox.width() > 1) r2.boundingBox.centerY().toFloat() / refH else r2.boundingBox.centerY().toFloat()
+                    val r1Icrs = IcrsMath.pixelToIcrs(r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), refW, refH)
+                    val r2Icrs = IcrsMath.pixelToIcrs(r2.boundingBox.centerX().toFloat(), r2.boundingBox.centerY().toFloat(), refW, refH)
+                    val q1Icrs = IcrsMath.pixelToIcrs(q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat(), queW, queH)
+                    val q2Icrs = IcrsMath.pixelToIcrs(q2.boundingBox.centerX().toFloat(), q2.boundingBox.centerY().toFloat(), queW, queH)
                     
-                    val q1nx = if (q1.boundingBox.width() > 1) q1.boundingBox.centerX().toFloat() / queW else q1.boundingBox.centerX().toFloat()
-                    val q1ny = if (q1.boundingBox.width() > 1) q1.boundingBox.centerY().toFloat() / queH else q1.boundingBox.centerY().toFloat()
-                    val q2nx = if (q2.boundingBox.width() > 1) q2.boundingBox.centerX().toFloat() / queW else q2.boundingBox.centerX().toFloat()
-                    val q2ny = if (q2.boundingBox.width() > 1) q2.boundingBox.centerY().toFloat() / queH else q2.boundingBox.centerY().toFloat()
-                    
-                    val refDist = Math.sqrt((r1nx - r2nx).toDouble().pow(2.0) + (r1ny - r2ny).toDouble().pow(2.0))
-                    val queDist = Math.sqrt((q1nx - q2nx).toDouble().pow(2.0) + (q1ny - q2ny).toDouble().pow(2.0))
+                    val refDist = Math.sqrt((r1Icrs.x - r2Icrs.x).toDouble().pow(2.0) + (r1Icrs.y - r2Icrs.y).toDouble().pow(2.0))
+                    val queDist = Math.sqrt((q1Icrs.x - q2Icrs.x).toDouble().pow(2.0) + (q1Icrs.y - q2Icrs.y).toDouble().pow(2.0))
                     
                     if (queDist > 0) {
                         val s = (refDist / queDist).toFloat()
-                        val rAngle = Math.atan2((r2ny - r1ny).toDouble(), (r2nx - r1nx).toDouble())
-                        val qAngle = Math.atan2((q2ny - q1ny).toDouble(), (q2nx - q1nx).toDouble())
+                        val rAngle = Math.atan2((r2Icrs.y - r1Icrs.y).toDouble(), (r2Icrs.x - r1Icrs.x).toDouble())
+                        val qAngle = Math.atan2((q2Icrs.y - q1Icrs.y).toDouble(), (q2Icrs.x - q1Icrs.x).toDouble())
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
                         if (kotlin.math.abs(rot) > 4.0f) continue
-                        val tx = r1nx - (s * q1nx)
-                        val ty = r1ny - (s * q1ny)
-                        val cyRef = (r1ny + r2ny) / 2.0f
+                        val tx = r1Icrs.x - (s * q1Icrs.x)
+                        val ty = r1Icrs.y - (s * q1Icrs.y)
 
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, "S=%.3f, R=%.1f (Filter), tx=%.3f, ty=%.3f".format(s, rot, tx, ty), cyRef, r1ny, r2ny))
+                        val debugMsg = "S=%.3f, R=%.1f, tx_icrs=%.3f, ty_icrs=%.3f | RefP1(%.1f,%.1f) QueP1(%.1f,%.1f)".format(
+                            s, rot, tx, ty, r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat()
+                        )
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, debugMsg, (r1Icrs.y + r2Icrs.y)/2f, r1Icrs.y, r2Icrs.y))
                     }
                 }
             }
@@ -595,16 +593,17 @@ object ImageAlignmentUtils {
 
         if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchors.", timeMs = System.currentTimeMillis() - t0)
 
-        // Consensus math (Identical to ARGB flow)
+        // Consensus math (Shared ICRS logic)
         var bestGroup = mutableListOf<AnchorCandidate>()
         var maxSupport = -1
+        val threshold = 0.05f
         for (c1 in allCandidates) {
             val supportGroup = mutableListOf<AnchorCandidate>()
             for (c2 in allCandidates) {
                 val ds = kotlin.math.abs(c1.scale - c2.scale) / c1.scale
                 val dtx = kotlin.math.abs(c1.tx - c2.tx)
                 val dty = kotlin.math.abs(c1.ty - c2.ty)
-                if (ds < 0.05f && dtx < 0.05f && dty < 0.05f) supportGroup.add(c2)
+                if (ds < threshold && dtx < threshold && dty < threshold) supportGroup.add(c2)
             }
             if (supportGroup.size > maxSupport) { maxSupport = supportGroup.size; bestGroup = supportGroup }
         }
@@ -613,9 +612,9 @@ object ImageAlignmentUtils {
         if (bestGroup.isNotEmpty()) {
             var sumScale = 0.0; var sumTx = 0.0; var sumTy = 0.0; var totalW = 0.0
             for (c in bestGroup) {
-                val isBracketed = (c.y1Ref - targetY) * (c.y2Ref - targetY) < 0
+                val isBracketed = (c.y1Ref - icrsTargetY) * (c.y2Ref - icrsTargetY) < 0
                 val bracketBonus = if (isBracketed) { bracketedCount++; 5.0 } else 1.0
-                val vDist = kotlin.math.abs(c.cyRef - targetY)
+                val vDist = kotlin.math.abs(c.cyRef - icrsTargetY)
                 val w = (c.distance * bracketBonus) / (vDist + 0.05)
                 sumScale += c.scale * w; sumTx += c.tx * w; sumTy += c.ty * w; totalW += w
             }
@@ -626,9 +625,19 @@ object ImageAlignmentUtils {
             finalScale = allCandidates.map { it.scale }.median(); finalTx = allCandidates.map { it.tx }.median(); finalTy = allCandidates.map { it.ty }.median()
         }
 
+        val sq = queW.toFloat() // Using actual query width (long edge usually) is wrong if we want short-edge scaling
+        // Actually, sq/st should be the MIN(W,H) as per Unified ICRS Matrix Spec
+        val sqS = minOf(queW, queH).toFloat()
+        val cxq = queW / 2f
+        val cyq = queH / 2f
+        
+        val matrixTX = cxq * (1f - finalScale) + (finalTx * sqS)
+        val matrixTY = cyq * (1f - finalScale) + (finalTy * sqS)
+
         val metadata = mapOf(
-            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d)".format(finalScale, finalTx * queW, finalTy * queH, bestGroup.size, allCandidates.size),
-            "raw_scale" to finalScale.toString(), "raw_tx" to (finalTx * queW).toString(), "raw_ty" to (finalTy * queH).toString()
+            "Consensus" to "S=%.3f, tx_icrs=%.3f, ty_icrs=%.3f (Support: %d/%d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size),
+            "raw_scale" to finalScale.toString(), "raw_tx" to matrixTX.toString(), "raw_ty" to matrixTY.toString(),
+            "icrs_tx" to finalTx.toString(), "icrs_ty" to finalTy.toString()
         )
 
         return try {
@@ -636,18 +645,22 @@ object ImageAlignmentUtils {
             val src = bufferSet.p.mat
             val dst = bufferSet.s.mat
 
-            // Use Android Matrix as mathematical calculator for 100% parity
             val m = android.graphics.Matrix()
-            m.postScale(finalScale, finalScale)
-            m.postTranslate(finalTx * queW, finalTy * queH)
-            val values = FloatArray(9)
-            m.getValues(values)
+            val values = floatArrayOf(
+                finalScale, 0f, matrixTX,
+                0f, finalScale, matrixTY,
+                0f, 0f, 1f
+            )
+            m.setValues(values)
+            val matrixValues = FloatArray(9)
+            m.getValues(matrixValues)
 
             val warpMat = Mat(2, 3, CvType.CV_64F)
-            warpMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
-            warpMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
+            warpMat.put(0, 0, matrixValues[0].toDouble(), matrixValues[1].toDouble(), matrixValues[2].toDouble())
+            warpMat.put(1, 0, matrixValues[3].toDouble(), matrixValues[4].toDouble(), matrixValues[5].toDouble())
             
             Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0))
+
             bufferSet.flip()
             warpMat.release()
             
