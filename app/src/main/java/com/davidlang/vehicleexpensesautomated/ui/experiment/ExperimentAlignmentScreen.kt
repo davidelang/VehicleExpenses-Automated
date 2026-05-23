@@ -1229,7 +1229,7 @@ private fun serializePhotoResultToJson(
         
         putSafe("discovery_time_ms", tDiscovery.toDouble(), fileName)
         putSafe("discovery_time_mono_ms", (winnerRes?.discoveryTimeMonoMs ?: 0L).toDouble(), fileName)
-        val discMetaMono = JSONObject(); queryOcrDiscoveryMono?.metadata?.forEach { (k, v) -> discMetaMono.put(k, v) }
+        val discMetaMono = JSONObject(); discoveryMono?.metadata?.forEach { (k, v) -> discMetaMono.put(k, v) }
         put("discovery_metadata_mono", discMetaMono)
         
         if (winnerRes?.alignmentTrace != null) {
