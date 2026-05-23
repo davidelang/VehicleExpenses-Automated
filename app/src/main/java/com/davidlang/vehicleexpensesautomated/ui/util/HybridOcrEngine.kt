@@ -26,8 +26,8 @@ class HybridOcrEngine(private val context: Context) : OcrEngine {
         val bitmap = input as Bitmap
         val t0 = System.currentTimeMillis()
         
-        // 1. DISCOVERY: Run primary Paddle pass (recursive disabled)
-        val discoveryResult = paddleDiscovery.recognize(bitmap, isRecursive = true)
+        // 1. DISCOVERY: Run primary Paddle pass
+        val discoveryResult = paddleDiscovery.recognize(bitmap)
         val finalBlocks = mutableListOf<TextBlock>()
         val sb = StringBuilder()
 
