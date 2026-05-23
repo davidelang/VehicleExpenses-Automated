@@ -29,6 +29,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfFloat
@@ -187,6 +188,8 @@ object OdometerOcrUtils {
         Imgproc.resize(input.mat, resizedGray, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
         return Pair(resizedGray, pScale)
     }
+
+    private suspend fun deskewMlKit(input: Any): EngineResult {
         val tStart = System.currentTimeMillis()
         val targetBitmap = NativePaddleEngine.sharedBmp2048
         

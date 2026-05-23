@@ -1155,7 +1155,7 @@ private fun serializePhotoResultToJson(
         put("imageWidth", decodedW); put("imageHeight", decodedH)
         put("isDegraded", isDegraded)
         put("nativeProbe", nativeProbe)
-        put("t_snap_orig_ms", tSnapOrig)
+        put("t_thumb_orig_ms", tSnapOrig)
         put("t_snap_align_ms", tSnapAlign)
         
         // Benchmarking: Alignment (Standard vs Mono)
@@ -1205,6 +1205,8 @@ private fun serializePhotoResultToJson(
         val pdTimings = JSONObject()
         pdTimings.putSafe("standard_ms", deskewRes.paddleTimeMs.toDouble(), fileName)
         pdTimings.putSafe("mono_ms", (deskewResMono?.paddleTimeMs ?: 0L).toDouble(), fileName)
+        val pdMetaMono = JSONObject(); deskewResMono?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) -> pdMetaMono.put(k, v) }
+        pdTimings.put("mono_metadata", pdMetaMono)
         timingsObj.put("paddle", pdTimings)
         
         val mlTimings = JSONObject()
@@ -1227,6 +1229,8 @@ private fun serializePhotoResultToJson(
         
         putSafe("discovery_time_ms", tDiscovery.toDouble(), fileName)
         putSafe("discovery_time_mono_ms", (winnerRes?.discoveryTimeMonoMs ?: 0L).toDouble(), fileName)
+        val discMetaMono = JSONObject(); queryOcrDiscoveryMono?.metadata?.forEach { (k, v) -> discMetaMono.put(k, v) }
+        put("discovery_metadata_mono", discMetaMono)
         
         if (winnerRes?.alignmentTrace != null) {
             putSafe("alignment_time_std_ms", winnerRes.alignmentTrace.timeMs.toDouble(), fileName)
