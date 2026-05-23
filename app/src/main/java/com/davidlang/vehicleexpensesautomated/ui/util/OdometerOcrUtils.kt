@@ -124,7 +124,7 @@ object OdometerOcrUtils {
         // 4. ML Kit Path: Zero-Copy NV21 from FULL contiguous buffer
         // Note: We pass full 2048x2048 dimensions because crops do not support nv21 access.
         val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKitMono(bufferSet.p, pScale)
+        val mlRes = deskewMlKitMono(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
@@ -150,12 +150,12 @@ object OdometerOcrUtils {
         )
     }
 
-    private suspend fun deskewMlKitMono(workspace: BufferSet.Instance, pScale: Float): EngineResult {
+    private suspend fun deskewMlKitMono(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
         val tStart = System.currentTimeMillis()
         
         // Zero-copy transition to ML Kit using pre-allocated FULL NV21 buffer (Contiguous)
         val img = InputImage.fromByteBuffer(
-            workspace.nv21, workspace.width, workspace.height, 0, InputImage.IMAGE_FORMAT_NV21
+            nv21, width, height, 0, InputImage.IMAGE_FORMAT_NV21
         )
         
         val res = extractFromPhotoBitmapRaw(img)
@@ -173,7 +173,7 @@ object OdometerOcrUtils {
             block.copy(boundingBox = scaledRect)
         }
 
-        val srcH = (workspace.height * invScale).toInt()
+        val srcH = (height * invScale).toInt()
         val angle = calculateWeightedAverage(scaledBlocks, srcH)
         return EngineResult(angle, listOf(tDetect), scaledBlocks)
     }
