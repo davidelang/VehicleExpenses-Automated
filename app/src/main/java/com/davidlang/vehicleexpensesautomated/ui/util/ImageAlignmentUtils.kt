@@ -253,9 +253,10 @@ object ImageAlignmentUtils {
             throw IllegalArgumentException("Dimension mismatch: bmp=${bmp.width}x${bmp.height}, scratch=${scratchBmp.width}x${scratchBmp.height}")
         }
         val allCandidates = mutableListOf<AnchorCandidate>()
-        val targetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
-            (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
-        } else 0.5f
+        val icrsTargetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
+            val legacyY = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
+            IcrsMath.legacyAnisotropicToIcrs(0.5f, legacyY, refW, refH).y
+        } else 0f
         
         // 1. Filter and Match Confirmed Landmarks
         val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
@@ -273,35 +274,32 @@ object ImageAlignmentUtils {
                     val q1 = confirmedPairs[i].second
                     val q2 = confirmedPairs[j].second
                     
-                    // Use raw pixel coordinates (absolute) for RANSAC consensus math
-                    val r1px = r1.boundingBox.centerX().toFloat()
-                    val r1py = r1.boundingBox.centerY().toFloat()
-                    val r2px = r2.boundingBox.centerX().toFloat()
-                    val r2py = r2.boundingBox.centerY().toFloat()
+                    // Normalize to ICRS space
+                    val r1Icrs = IcrsMath.pixelToIcrs(r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), refW, refH)
+                    val r2Icrs = IcrsMath.pixelToIcrs(r2.boundingBox.centerX().toFloat(), r2.boundingBox.centerY().toFloat(), refW, refH)
+                    val q1Icrs = IcrsMath.pixelToIcrs(q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat(), queW, queH)
+                    val q2Icrs = IcrsMath.pixelToIcrs(q2.boundingBox.centerX().toFloat(), q2.boundingBox.centerY().toFloat(), queW, queH)
                     
-                    val q1px = q1.boundingBox.centerX().toFloat()
-                    val q1py = q1.boundingBox.centerY().toFloat()
-                    val q2px = q2.boundingBox.centerX().toFloat()
-                    val q2py = q2.boundingBox.centerY().toFloat()
-                    
-                    val refDist = sqrt((r1px - r2px).toDouble().pow(2.0) + (r1py - r2py).toDouble().pow(2.0))
-                    val queDist = sqrt((q1px - q2px).toDouble().pow(2.0) + (q1py - q2py).toDouble().pow(2.0))
+                    val refDist = sqrt((r1Icrs.x - r2Icrs.x).toDouble().pow(2.0) + (r1Icrs.y - r2Icrs.y).toDouble().pow(2.0))
+                    val queDist = sqrt((q1Icrs.x - q2Icrs.x).toDouble().pow(2.0) + (q1Icrs.y - q2Icrs.y).toDouble().pow(2.0))
                     
                     if (queDist > 0) {
                         val s = (refDist / queDist).toFloat()
                         
                         // Calculate Rotation
-                        val rAngle = Math.atan2((r2py - r1py).toDouble(), (r2px - r1px).toDouble())
-                        val qAngle = Math.atan2((q2py - q1py).toDouble(), (q2px - q1px).toDouble())
+                        val rAngle = Math.atan2((r2Icrs.y - r1Icrs.y).toDouble(), (r2Icrs.x - r1Icrs.x).toDouble())
+                        val qAngle = Math.atan2((q2Icrs.y - q1Icrs.y).toDouble(), (q2Icrs.x - q1Icrs.x).toDouble())
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
                         
                         if (kotlin.math.abs(rot) > 4.0f) continue
-                        val tx = r1px - (s * q1px)
-                        val ty = r1py - (s * q1py)
+                        val tx = r1Icrs.x - (s * q1Icrs.x)
+                        val ty = r1Icrs.y - (s * q1Icrs.y)
                         
-                        // Forensic data: include absolute pixel coordinates and candidates
-                        val debugMsg = "S=%.3f, R=%.1f, tx=%.1f, ty=%.1f | P1(%.1f,%.1f) P2(%.1f,%.1f)".format(s, rot, tx, ty, r1px, r1py, r2px, r2py)
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, debugMsg, 0f, r1py, r2py))
+                        // Forensic data: ICRS and Pixel coordinates
+                        val debugMsg = "S=%.3f, R=%.1f, tx_icrs=%.3f, ty_icrs=%.3f | RefP1(%.1f,%.1f) QueP1(%.1f,%.1f)".format(
+                            s, rot, tx, ty, r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat()
+                        )
+                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, debugMsg, (r1Icrs.y + r2Icrs.y)/2f, r1Icrs.y, r2Icrs.y))
                     }
                 }
             }
@@ -310,12 +308,11 @@ object ImageAlignmentUtils {
         if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchor sets after disambiguation.", timeMs = System.currentTimeMillis() - t0)
 
         // RANSAC-Lite Consensus (Phase 64)
-        // Find the candidate group with the most mutual agreement
         var bestGroup = mutableListOf<AnchorCandidate>()
         var maxSupport = -1
         
-        // Agreement threshold: 5% scale, 5% of short edge in translation
-        val pixelThreshold = (minOf(bmp.width, bmp.height) * 0.05f)
+        // Agreement threshold: 5% scale, 5% ICRS units (which is 5% of short edge)
+        val threshold = 0.05f
 
         for (c1 in allCandidates) {
             val supportGroup = mutableListOf<AnchorCandidate>()
@@ -324,7 +321,7 @@ object ImageAlignmentUtils {
                 val dtx = kotlin.math.abs(c1.tx - c2.tx)
                 val dty = kotlin.math.abs(c1.ty - c2.ty)
                 
-                if (ds < 0.05f && dtx < pixelThreshold && dty < pixelThreshold) {
+                if (ds < threshold && dtx < threshold && dty < threshold) {
                     supportGroup.add(c2)
                 }
             }
@@ -346,13 +343,10 @@ object ImageAlignmentUtils {
             var sumTy = 0.0
             var totalW = 0.0
             for (c in bestGroup) {
-                // Phase 66: Midline Bracketing Bonus
-                // A pair "brackets" the odometer if one point is above and one is below the midline.
-                val isBracketed = (c.y1Ref - targetY) * (c.y2Ref - targetY) < 0
+                val isBracketed = (c.y1Ref - icrsTargetY) * (c.y2Ref - icrsTargetY) < 0
                 val bracketBonus = if (isBracketed) { bracketedCount++; 5.0 } else 1.0
 
-                // Vertical Proximity Weighting (Phase 65): Favor landmarks near the odometer midline
-                val vDist = kotlin.math.abs(c.cyRef - targetY)
+                val vDist = kotlin.math.abs(c.cyRef - icrsTargetY)
                 val w = (c.distance * bracketBonus) / (vDist + 0.05)
                 sumScale += c.scale * w
                 sumTx += c.tx * w
@@ -368,10 +362,22 @@ object ImageAlignmentUtils {
             finalTy = allCandidates.map { it.ty }.median()
         }
 
+        // Unified ICRS Matrix Construction
+        // pt = (s * st / sq) * pq - (s * st * cxq / sq) + (tx * st) + cxt
+        // For ARGB (st = sq, cxt = cxq):
+        // pt = s * pq + cxq * (1 - s) + (tx * sq)
+        
+        val sq = minOf(bmp.width, bmp.height).toFloat()
+        val cxq = bmp.width / 2f
+        val cyq = bmp.height / 2f
+        
+        val matrixTX = cxq * (1f - finalScale) + (finalTx * sq)
+        val matrixTY = cyq * (1f - finalScale) + (finalTy * sq)
+
         val matrix = android.graphics.Matrix()
         val values = floatArrayOf(
-            finalScale, 0f, finalTx,
-            0f, finalScale, finalTy,
+            finalScale, 0f, matrixTX,
+            0f, finalScale, matrixTY,
             0f, 0f, 1f
         )
         matrix.setValues(values)
@@ -386,12 +392,15 @@ object ImageAlignmentUtils {
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
+            "Consensus" to "S=%.3f, tx_icrs=%.3f, ty_icrs=%.3f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
             "winning_anchors" to winningAnchorsStr,
-            "raw_scale" to finalScale.toString(),
-            "raw_tx" to finalTx.toString(),
-            "raw_ty" to finalTy.toString()
+            "icrs_scale" to finalScale.toString(),
+            "icrs_tx" to finalTx.toString(),
+            "icrs_ty" to finalTy.toString(),
+            "matrix_tx" to matrixTX.toString(),
+            "matrix_ty" to matrixTY.toString()
         )
+
 
         return try {
             // Phase 115: In-Place Morphing using passed scratch buffer.
