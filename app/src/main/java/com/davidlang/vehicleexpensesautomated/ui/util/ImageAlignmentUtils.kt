@@ -392,7 +392,10 @@ object ImageAlignmentUtils {
             "Consensus" to "S=%.3f, tx_icrs=%.3f, ty_icrs=%.3f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
             "winning_anchors" to winningAnchorsStr,
             "matrix_tx" to matrixTX.toString(),
-            "matrix_ty" to matrixTY.toString()
+            "matrix_ty" to matrixTY.toString(),
+            "raw_scale" to finalScale.toString(),
+            "raw_tx" to matrixTX.toString(),
+            "raw_ty" to matrixTY.toString()
         )
 
 
@@ -631,7 +634,10 @@ object ImageAlignmentUtils {
         val metadata = mapOf(
             "Consensus" to "S=%.3f, tx_icrs=%.3f, ty_icrs=%.3f (Support: %d/%d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size),
             "matrix_tx" to matrixTX.toString(),
-            "matrix_ty" to matrixTY.toString()
+            "matrix_ty" to matrixTY.toString(),
+            "raw_scale" to finalScale.toString(),
+            "raw_tx" to matrixTX.toString(),
+            "raw_ty" to matrixTY.toString()
         )
 
         return try {
