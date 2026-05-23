@@ -738,19 +738,20 @@ object OdometerOcrUtils {
                         val instanceId = if (obj.has("instance")) obj.getInt("instance") else -1
                         val isIcrs = obj.optBoolean("is_icrs", false)
 
-                        if (isIcrs) {
-                            val legacy = IcrsMath.icrsToLegacyAnisotropic(cx.toFloat(), cy.toFloat(), imgW, imgH)
-                            cx = legacy.x.toDouble()
-                            cy = legacy.y.toDouble()
-                            val s = minOf(imgW, imgH).toDouble()
-                            w = (w * s) / imgW.toDouble()
-                            h = (h * s) / imgH.toDouble()
+                        val centerPix = if (isIcrs) {
+                            IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
+                        } else {
+                            android.graphics.PointF((cx * imgW).toFloat(), (cy * imgH).toFloat())
                         }
 
-                        val left = ((cx - w / 2.0) * imgW).toInt()
-                        val top = ((cy - h / 2.0) * imgH).toInt()
-                        val right = ((cx + w / 2.0) * imgW).toInt()
-                        val bottom = ((cy + h / 2.0) * imgH).toInt()
+                        val shortEdge = minOf(imgW, imgH).toDouble()
+                        val pixW = if (isIcrs) (w * shortEdge) else (w * imgW)
+                        val pixH = if (isIcrs) (h * shortEdge) else (h * imgH)
+
+                        val left = (centerPix.x - pixW / 2.0).toInt()
+                        val top = (centerPix.y - pixH / 2.0).toInt()
+                        val right = (centerPix.x + pixW / 2.0).toInt()
+                        val bottom = (centerPix.y + pixH / 2.0).toInt()
                         blocks.add(TextBlock(obj.getString("text"), android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
                     } catch (e: Exception) {
                         Log.w("OdometerOcr", "Skipping malformed landmark entry in JSON: ${e.message}")

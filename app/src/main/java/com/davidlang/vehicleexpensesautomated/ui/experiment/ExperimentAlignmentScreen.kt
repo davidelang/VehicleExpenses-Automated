@@ -257,13 +257,23 @@ private suspend fun runExperiment(
                     vehicleArgbScratches[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
 
                     // Register long-term odometer ROI on the full-res dashboard set
-                    NativePaddleEngine.fullBufferSet.p.createCrop(
-                        ref.vehicle.odometerCropLeft ?: 0f,
-                        ref.vehicle.odometerCropTop ?: 0f,
-                        (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
-                        (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f),
-                        id = ref.vehicle.id
-                    )
+                    if (ref.vehicle.isIcrs) {
+                        NativePaddleEngine.fullBufferSet.p.createCrop(
+                            ref.vehicle.odometerCropLeft ?: 0f,
+                            ref.vehicle.odometerCropTop ?: 0f,
+                            (ref.vehicle.odometerCropRight ?: 0f) - (ref.vehicle.odometerCropLeft ?: 0f),
+                            (ref.vehicle.odometerCropBottom ?: 0f) - (ref.vehicle.odometerCropTop ?: 0f),
+                            id = ref.vehicle.id
+                        )
+                    } else {
+                        NativePaddleEngine.fullBufferSet.p.createCropLegacy(
+                            ref.vehicle.odometerCropLeft ?: 0f,
+                            ref.vehicle.odometerCropTop ?: 0f,
+                            (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
+                            (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f),
+                            id = ref.vehicle.id
+                        )
+                    }
                 }
             }
         }
@@ -1473,7 +1483,11 @@ private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, t
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
     val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = android.graphics.Canvas(annotated); val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f; color = android.graphics.Color.RED }
-    vehicle.odometerCropLeft?.let { l -> canvas.drawRect(l * bmp.width, (vehicle.odometerCropTop ?: 0f) * bmp.height, (vehicle.odometerCropRight ?: 1f) * bmp.width, (vehicle.odometerCropBottom ?: 1f) * bmp.height, paint) }
+    
+    val p1 = IcrsMath.icrsToPixel(vehicle.odometerCropLeft ?: 0f, vehicle.odometerCropTop ?: 0f, bmp.width, bmp.height)
+    val p2 = IcrsMath.icrsToPixel(vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f, bmp.width, bmp.height)
+    canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint)
+    
     return annotated
 }
 
@@ -1483,17 +1497,28 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
         for (i in 0 until array.length()) {
             try {
                 val obj = array.getJSONObject(i); val text = obj.getString("text")
-                var cx = obj.optDouble("cx", 0.0); var cy = obj.optDouble("cy", 0.0)
-                var w = obj.optDouble("w", 0.0); var h = obj.optDouble("h", 0.0)
+                val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0)
+                val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
                 val isIcrs = obj.optBoolean("is_icrs", false)
-                if (isIcrs) {
-                    val legacy = com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath.icrsToLegacyAnisotropic(cx.toFloat(), cy.toFloat(), imgW, imgH)
-                    cx = legacy.x.toDouble(); cy = legacy.y.toDouble()
-                    val s = minOf(imgW, imgH).toDouble()
-                    w = (w * s) / imgW.toDouble(); h = (h * s) / imgH.toDouble()
+                
+                val centerPix = if (isIcrs) {
+                    IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
+                } else {
+                    android.graphics.PointF((cx * imgW).toFloat(), (cy * imgH).toFloat())
                 }
+                
+                val shortEdge = minOf(imgW, imgH).toDouble()
+                val pixW = if (isIcrs) (w * shortEdge) else (w * imgW)
+                val pixH = if (isIcrs) (h * shortEdge) else (h * imgH)
+                
                 val instanceId = if (obj.has("instance")) obj.getInt("instance") else -1
-                val cleanText = OdometerOcrUtils.cleanLandmarkString(text); val left = ((cx - w/2.0) * imgW).toInt(); val top = ((cy - h/2.0) * imgH).toInt(); val right = ((cx + w/2.0) * imgW).toInt(); val bottom = ((cy + h/2.0) * imgH).toInt()
+                val cleanText = OdometerOcrUtils.cleanLandmarkString(text)
+                
+                val left = (centerPix.x - pixW/2.0).toInt()
+                val top = (centerPix.y - pixH/2.0).toInt()
+                val right = (centerPix.x + pixW/2.0).toInt()
+                val bottom = (centerPix.y + pixH/2.0).toInt()
+                
                 list.add(TextBlock(cleanText, android.graphics.Rect(left, top, right, bottom), instanceId = instanceId))
             } catch (e: Exception) { 
                 Log.w("ExperimentAlignment", "Skipping malformed landmark entry in JSON: ${e.message}")

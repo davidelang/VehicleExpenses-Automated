@@ -175,13 +175,23 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         fun physicalRelease() { disarm(); if (nativeHandle != 0L) { nativeRelease(nativeHandle); nativeHandle = 0 } }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
-            val crop = ManagedCrop(this, false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
+            val crop = ManagedCrop(this, isNormalized = false, isIcrs = false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
             crop.refresh(); return registerCrop(crop, id)
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            val crop = ManagedCrop(this, true, x, y, w, h)
+            // Default to ICRS for Float input in Phase 4
+            val crop = ManagedCrop(this, isNormalized = false, isIcrs = true, x, y, w, h)
             crop.refresh(); return registerCrop(crop, id)
         }
+        
+        /**
+         * Legacy Anisotropic Support (explicit).
+         */
+        fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
+            val crop = ManagedCrop(this, isNormalized = true, isIcrs = false, x, y, w, h)
+            crop.refresh(); return registerCrop(crop, id)
+        }
+
         override fun resize(x: Int, y: Int, w: Int, h: Int) = throw UnsupportedOperationException("Base Primary/Scratch buffers cannot be resized via Slice interface. Use BufferSet.resize().")
         override fun resize(x: Float, y: Float, w: Float, h: Float) = throw UnsupportedOperationException("Base Primary/Scratch buffers cannot be resized via Slice interface. Use BufferSet.resize().")
         override fun release() = throw UnsupportedOperationException("Base Primary/Scratch buffers cannot be released via Slice interface. Use BufferSet.release().")
@@ -192,6 +202,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     inner class ManagedCrop(
         internal var owner: Instance,
         internal var isNormalized: Boolean,
+        internal var isIcrs: Boolean = false,
         private var rawX: Float, private var rawY: Float, private var rawW: Float, private var rawH: Float
     ) : Slice {
         private var _mat: Mat? = null
@@ -234,10 +245,18 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
 
         fun refresh() {
-            val (px, py, pw, ph) = if (isNormalized) {
-                listOf((rawX * _width).toInt(), (rawY * _height).toInt(), (rawW * _width).toInt(), (rawH * _height).toInt())
-            } else {
-                listOf(rawX.toInt(), rawY.toInt(), rawW.toInt(), rawH.toInt())
+            val (px, py, pw, ph) = when {
+                isIcrs -> {
+                    val p1 = IcrsMath.icrsToPixel(rawX, rawY, _width, _height)
+                    val p2 = IcrsMath.icrsToPixel(rawX + rawW, rawY + rawH, _width, _height)
+                    listOf(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
+                }
+                isNormalized -> {
+                    listOf((rawX * _width).toInt(), (rawY * _height).toInt(), (rawW * _width).toInt(), (rawH * _height).toInt())
+                }
+                else -> {
+                    listOf(rawX.toInt(), rawY.toInt(), rawW.toInt(), rawH.toInt())
+                }
             }
             absX = (px / 2) * 2; absY = (py / 2) * 2
             val x2 = ((px + pw + 1) / 2) * 2; val y2 = ((py + ph + 1) / 2) * 2
@@ -256,14 +275,15 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
             Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            return registerCrop(ManagedCrop(owner, false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat()), id)
+            return registerCrop(ManagedCrop(owner, isNormalized = false, isIcrs = false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat()), id)
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
             Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            return registerCrop(ManagedCrop(owner, false, absX + (x * absW), absY + (y * absH), w * absW, h * absH), id)
+            // Nested float crop defaults to legacy anisotropic behavior within the crop slice
+            return registerCrop(ManagedCrop(owner, isNormalized = true, isIcrs = false, absX + (x * absW), absY + (y * absH), w * absW, h * absH), id)
         }
-        override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
-        override fun resize(x: Float, y: Float, w: Float, h: Float) { isNormalized = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
+        override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; isIcrs = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
+        override fun resize(x: Float, y: Float, w: Float, h: Float) { isNormalized = false; isIcrs = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
         override fun release() { 
             managedCrops.values.remove(this)
             _mat?.release()
