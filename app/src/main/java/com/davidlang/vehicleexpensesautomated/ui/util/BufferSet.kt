@@ -37,6 +37,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         // Creation & Lifecycle
         fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int
         fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int
+        fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int
         fun resize(x: Int, y: Int, w: Int, h: Int)
         fun resize(x: Float, y: Float, w: Float, h: Float)
         fun release()
@@ -107,6 +108,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
     fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
+    fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCropLegacy(x, y, w, h, id)
 
     fun release() {
         managedCrops.values.forEach { it.disarm() }
@@ -187,7 +189,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         /**
          * Legacy Anisotropic Support (explicit).
          */
-        fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
+        override fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
             val crop = ManagedCrop(this, isNormalized = true, isIcrs = false, x, y, w, h)
             crop.refresh(); return registerCrop(crop, id)
         }
@@ -279,7 +281,12 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
             Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            // Nested float crop defaults to legacy anisotropic behavior within the crop slice
+            // Nested float crop defaults to ICRS within the crop slice in Phase 4
+            return registerCrop(ManagedCrop(owner, isNormalized = false, isIcrs = true, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH), id)
+        }
+        override fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
+            Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
+            // Nested legacy float crop
             return registerCrop(ManagedCrop(owner, isNormalized = true, isIcrs = false, absX + (x * absW), absY + (y * absH), w * absW, h * absH), id)
         }
         override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; isIcrs = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
