@@ -370,23 +370,16 @@ object ImageAlignmentUtils {
 
         val matrix = android.graphics.Matrix()
         matrix.postScale(finalScale, finalScale)
-        
-        // Corrected Origin: Convert ICRS translation to Pixel Space (Top-Left origin)
-        val pixelTranslation = IcrsMath.icrsToPixel(finalTx, finalTy, bmp.width, bmp.height)
-        val originOffset = IcrsMath.icrsToPixel(0f, 0f, bmp.width, bmp.height)
-        val pixTx = pixelTranslation.x - originOffset.x
-        val pixTy = pixelTranslation.y - originOffset.y
-        
-        matrix.postTranslate(pixTx, pixTy)
+        matrix.postTranslate(finalTx, finalTy)
 
         val metadata = mapOf(
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
-            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx * bmp.width, finalTy * bmp.height, bestGroup.size, allCandidates.size, bracketedCount),
+            "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
             "raw_scale" to finalScale.toString(),
-            "raw_tx" to (finalTx * bmp.width).toString(),
-            "raw_ty" to (finalTy * bmp.height).toString()
+            "raw_tx" to finalTx.toString(),
+            "raw_ty" to finalTy.toString()
         )
 
         return try {
