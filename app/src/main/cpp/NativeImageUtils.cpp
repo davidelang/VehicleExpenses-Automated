@@ -323,17 +323,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopul
     JNIEnv* env, jobject thiz, jlong srcMatPtr, jfloatArray dstTensor, jint tensorW, jint tensorH, jfloat mean, jfloat std) {
     
     auto* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
-    if (!src || src->empty()) {
-        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), "Source Mat is null or empty");
-        return;
-    }
+    if (!src || src->empty()) return;
 
-    if (src->cols > tensorW || src->rows > tensorH) {
-        char buf[128];
-        snprintf(buf, sizeof(buf), "Source Mat (%dx%d) exceeds Tensor capacity (%dx%d)", src->cols, src->rows, tensorW, tensorH);
-        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), buf);
-        return;
-    }
+    if (src->cols > tensorW || src->rows > tensorH) return;
 
     jfloat* dst = env->GetFloatArrayElements(dstTensor, nullptr);
     if (!dst) return;

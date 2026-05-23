@@ -268,14 +268,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     fun detect(input: Any, targetWidth: Int = 512, targetHeight: Int = 128): DetectionResult? {
-        val predictor = if (targetWidth >= 2048) detectorLarge else detectorSmall
+        val isLarge = targetWidth > 512 || targetHeight > 128
+        val predictor = if (isLarge) detectorLarge else detectorSmall
         if (predictor == null) return null
 
-        val tensorWidth = if (targetWidth >= 2048) 2048 else 512
-        val tensorHeight = if (targetWidth >= 2048) 2048 else 128
+        val tensorWidth = if (isLarge) 2048 else 512
+        val tensorHeight = if (isLarge) 2048 else 128
         val planeStride = tensorWidth * tensorHeight
         
-        val floatData = if (targetWidth >= 2048) {
+        val floatData = if (isLarge) {
             if (useMono) bufferLargeMono else bufferLarge
         } else {
             if (useMono) bufferSmallMono else bufferSmall
@@ -296,7 +297,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 if (useMono) {
                     val m = Mat(scaled.height, scaled.width, org.opencv.core.CvType.CV_8UC1)
                     NativeImageUtils.syncMatFromArgb(scaled, m)
-                    NativeImageUtils.populateMonoTensor(m, floatData, tensorWidth, tensorHeight, 0.485f, 0.229f)
+                    if (m.cols() <= tensorWidth && m.rows() <= tensorHeight) {
+                        NativeImageUtils.populateMonoTensor(m, floatData, tensorWidth, tensorHeight, 0.485f, 0.229f)
+                    }
                     m.release()
                 } else {
                     for (y in 0 until fitH) {
@@ -316,7 +319,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val fitH = targetHeight.coerceAtMost(tensorHeight)
                 if (useMono) {
                     val m = Mat(fitH, fitW, org.opencv.core.CvType.CV_8UC1, input)
-                    NativeImageUtils.populateMonoTensor(m, floatData, tensorWidth, tensorHeight, 0.485f, 0.229f)
+                    if (m.cols() <= tensorWidth && m.rows() <= tensorHeight) {
+                        NativeImageUtils.populateMonoTensor(m, floatData, tensorWidth, tensorHeight, 0.485f, 0.229f)
+                    }
                 } else {
                     for (y in 0 until fitH) {
                         for (x in 0 until fitW) {
@@ -365,17 +370,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             else -> throw IllegalArgumentException("Unsupported input type for detectMono")
         }
 
-        val predictor = if (w >= 2048) detectorLarge else detectorSmall
+        val isLarge = w > 512 || h > 128
+        val predictor = if (isLarge) detectorLarge else detectorSmall
         if (predictor == null) return null
 
-        val tensorWidth = if (w >= 2048) 2048 else 512
-        val tensorHeight = if (w >= 2048) 2048 else 128
-        val floatData = if (w >= 2048) bufferLargeMono else bufferSmallMono
+        val tensorWidth = if (isLarge) 2048 else 512
+        val tensorHeight = if (isLarge) 2048 else 128
+        val floatData = if (isLarge) bufferLargeMono else bufferSmallMono
         
         floatData.fill(0.0f)
         
         val mean = 0.485f; val std = 0.229f
-        NativeImageUtils.populateMonoTensor(srcMat, floatData, tensorWidth, tensorHeight, mean, std)
+        if (srcMat.cols() <= tensorWidth && srcMat.rows() <= tensorHeight) {
+            NativeImageUtils.populateMonoTensor(srcMat, floatData, tensorWidth, tensorHeight, mean, std)
+        } else {
+            Log.e("PaddleDetect", "Source Mat (%dx%d) exceeds Tensor capacity (%dx%d)".format(srcMat.cols(), srcMat.rows(), tensorWidth, tensorHeight))
+            return null
+        }
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
