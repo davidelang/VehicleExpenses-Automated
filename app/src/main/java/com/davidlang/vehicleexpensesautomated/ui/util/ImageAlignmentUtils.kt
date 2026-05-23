@@ -369,14 +369,25 @@ object ImageAlignmentUtils {
         }
 
         val matrix = android.graphics.Matrix()
-        matrix.postScale(finalScale, finalScale)
-        matrix.postTranslate(finalTx, finalTy)
+        val values = floatArrayOf(
+            finalScale, 0f, finalTx,
+            0f, finalScale, finalTy,
+            0f, 0f, 1f
+        )
+        matrix.setValues(values)
+
+        val winningAnchorsStr = if (bestGroup.isNotEmpty()) {
+            bestGroup.joinToString(" | ") { c ->
+                "Anchors: [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
+            }
+        } else "N/A"
 
         val metadata = mapOf(
             "Candidates" to allCandidates.sortedByDescending { it.distance }.take(5).mapIndexed { i, c ->
                 "#${i+1}: ${c.strategy} [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
             }.joinToString("\n"),
             "Consensus" to "S=%.3f, tx=%.1f, ty=%.1f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
+            "winning_anchors" to winningAnchorsStr,
             "raw_scale" to finalScale.toString(),
             "raw_tx" to finalTx.toString(),
             "raw_ty" to finalTy.toString()
