@@ -16,10 +16,11 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
-import org.opencv.core.Point
-import org.opencv.core.MatOfByte
+import org.opencv.core.*
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
+
+import android.graphics.Paint
 
 /**
  * Simple Rect implementation for Float normalized coordinates.
@@ -171,6 +172,143 @@ class MlKitEngine : OcrEngine {
 }
 
 object OcrUtils {
+    /**
+     * Stateless Native Snapshot Utility: Produces a high-fidelity Base64 JPEG thumbnail.
+     * Supports Bitmap, Mat, and BufferSet.Slice sources.
+     *
+     * @param source The image source (Bitmap, Mat, or BufferSet.Slice).
+     * @param sourceRect Optional ROI within the source.
+     * @param targetW Requested width for the thumbnail (aspect ratio preserved).
+     * @param targetH Requested height for the thumbnail (aspect ratio preserved).
+     * @param annotations List of colored boxes/lines to draw.
+     * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
+     * @param scratchYuv Optional reusable BufferSet for YUV processing.
+     */
+    suspend fun takeSnapshot(
+        source: Any,
+        sourceRect: Rect? = null,
+        targetW: Int = 0,
+        targetH: Int = 0,
+        annotations: List<SnapshotAnnotation> = emptyList(),
+        scratchArgb: Bitmap? = null,
+        scratchYuv: BufferSet? = null
+    ): Pair<String, Long> = withContext(Dispatchers.IO) {
+        val tStart = System.currentTimeMillis()
+        val srcW: Int
+        val srcH: Int
+        when (source) {
+            is Bitmap -> {
+                srcW = source.width
+                srcH = source.height
+            }
+            is org.opencv.core.Mat -> {
+                srcW = source.cols()
+                srcH = source.rows()
+            }
+            is BufferSet.Slice -> {
+                srcW = source.width
+                srcH = source.height
+            }
+            else -> throw IllegalArgumentException("Unsupported source type: ${source.javaClass.name}")
+        }
+
+        val roi = sourceRect ?: Rect(0, 0, srcW, srcH)
+        val roiW = roi.width().coerceAtLeast(1)
+        val roiH = roi.height().coerceAtLeast(1)
+        val sourceAspect = roiW.toFloat() / roiH.toFloat()
+
+        var finalW: Int
+        var finalH: Int
+
+        if (targetW > 0 && targetH > 0) {
+            val targetAspect = targetW.toFloat() / targetH
+            if (targetAspect > sourceAspect) {
+                finalH = targetH; finalW = (targetH * sourceAspect).toInt()
+            } else {
+                finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+            }
+        } else if (targetW > 0) {
+            finalW = targetW; finalH = (targetW / sourceAspect).toInt()
+        } else if (targetH > 0) {
+            finalH = targetH; finalW = (targetH * sourceAspect).toInt()
+        } else {
+            finalW = roiW; finalH = roiH
+        }
+
+        // 2-pixel alignment for YUV
+        finalW = ((finalW + 1) / 2) * 2
+        finalH = ((finalH + 1) / 2) * 2
+
+        // Safety cap
+        finalW = finalW.coerceIn(2, 4000)
+        finalH = finalH.coerceIn(2, 3072)
+
+        // Allocation padding (32x2)
+        val allocW = ((finalW + 31) / 32) * 32
+        val allocH = ((finalH + 1) / 2) * 2
+
+        val bufferSet = scratchYuv ?: BufferSet(allocW, allocH)
+        val workspace = if (scratchYuv != null) bufferSet.s else bufferSet.p
+
+        workspace.clear()
+        val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
+        val target = bufferSet.c[snapCropId]
+
+        try {
+            when (source) {
+                is Bitmap -> {
+                    val localScratch = scratchArgb ?: Bitmap.createBitmap(finalW, finalH, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(localScratch)
+                    canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC)
+                    canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), Paint(Paint.FILTER_BITMAP_FLAG))
+
+                    // Direct sync to Mat
+                    NativeImageUtils.syncMatFromArgb(localScratch, target.mat)
+                    if (scratchArgb == null) localScratch.recycle()
+                }
+                is org.opencv.core.Mat -> {
+                    val sub = source.submat(org.opencv.core.Rect(roi.left, roi.top, roiW, roiH))
+                    val graySub = if (sub.channels() == 4) {
+                        val g = org.opencv.core.Mat()
+                        Imgproc.cvtColor(sub, g, Imgproc.COLOR_RGBA2GRAY)
+                        g
+                    } else sub
+                    Imgproc.resize(graySub, target.mat, target.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                    if (graySub !== sub) graySub.release()
+                    sub.release()
+                }
+                is BufferSet.Slice -> {
+                    val subY = source.mat.submat(org.opencv.core.Rect(roi.left, roi.top, roiW, roiH))
+                    Imgproc.resize(subY, target.mat, target.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+
+                    val subUV = source.uvMat.submat(org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2))
+                    Imgproc.resize(subUV, target.uvMat, target.uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+
+                    subY.release(); subUV.release()
+                }
+            }
+
+            // Annotation scaling
+            val scaleX = finalW.toFloat() / roiW.toFloat()
+            val scaleY = finalH.toFloat() / roiH.toFloat()
+            val scaledAnns = annotations.map { ann ->
+                ann.copy(
+                    x1 = ((ann.x1 - roi.left) * scaleX).toInt(),
+                    y1 = ((ann.y1 - roi.top) * scaleY).toInt(),
+                    x2 = ((ann.x2 - roi.left) * scaleX).toInt(),
+                    y2 = ((ann.y2 - roi.top) * scaleY).toInt()
+                )
+            }
+
+            NativeImageUtils.drawYuvAnnotations(target.yuv, scaledAnns)
+            val b64 = NativeImageUtils.compressYuvToBase64(target.yuv, 80)
+            Pair(b64, System.currentTimeMillis() - tStart)
+        } finally {
+            target.release()
+            if (scratchYuv == null) bufferSet.release()
+        }
+    }
+
     fun bitmapToBase64(bitmap: Bitmap, quality: Int = 80): String {
         val outputStream = java.io.ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
