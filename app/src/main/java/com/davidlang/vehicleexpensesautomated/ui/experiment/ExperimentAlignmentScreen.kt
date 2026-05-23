@@ -227,7 +227,6 @@ private suspend fun runExperiment(
     
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-    val paddleEngineV2 = NativePaddleEngine(context, variant = "V2")
     val paddleEngineV3 = NativePaddleEngine(context, variant = "V3")
     val paddleEngineV3Mono = NativePaddleEngine(context, variant = "V3", useMono = true)
 
