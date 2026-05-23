@@ -502,69 +502,8 @@ private suspend fun runExperiment(
                                     val det = paddleEngineV3Mono.detectMono(experimentDetSet512x128.p)
                                     val rawBlocks = if (det != null) OdometerOcrUtils.processPaddleHeatmap(det.heatmap, det.width, det.height, detScale, odoBuffer.p.mat, "Paddle") else emptyList()
                                     
-                                    // 2. Valley Expansion (Pixel Walking)
-                                    fun getLineAverage(mat: org.opencv.core.Mat, start: Int, end: Int, fixed: Int, horizontal: Boolean): Double {
-                                        var sum = 0.0; var count = 0; val maxD = if (horizontal) mat.cols() else mat.rows()
-                                        if (fixed < 0 || fixed >= (if (horizontal) mat.rows() else mat.cols())) return 0.0
-                                        for (i in start until end) { if (i < 0 || i >= maxD) continue; sum += if (horizontal) mat.get(fixed, i)[0] else mat.get(i, fixed)[0]; count++ }
-                                        return if (count > 0) sum / count else 0.0
-                                    }
-                                    
-                                    fun expandByValleyStop(redFloor: android.graphics.Rect, bufferSet: BufferSet): android.graphics.Rect {
-                                        val gray = bufferSet.p.mat
-                                        val maxH = gray.rows(); val maxW = gray.cols()
-                                        
-                                        // 1. Clamp redFloor to 1px from the edge before submat
-                                        val safeL = redFloor.left.coerceIn(0, maxW - 1)
-                                        val safeT = redFloor.top.coerceIn(0, maxH - 1)
-                                        val safeR = redFloor.right.coerceIn(safeL + 1, maxW)
-                                        val safeB = redFloor.bottom.coerceIn(safeT + 1, maxH)
-                                        
-                                        val sampleId = bufferSet.createCrop(safeL, safeT, safeR - safeL, safeB - safeT)
-                                        val hillBrightness = org.opencv.core.Core.mean(bufferSet.c[sampleId].mat).`val`[0]
-                                        bufferSet.c[sampleId].release()
-                                        
-                                        val valleyThreshold = hillBrightness * 0.40 
-                                        var minX = redFloor.left.toDouble(); var maxX = redFloor.right.toDouble()
-                                        var minY = redFloor.top.toDouble(); var maxY = redFloor.bottom.toDouble()
-                                        
-                                        val sX = minX; val sXX = maxX; val sY = minY; val sYY = maxY
-                                        val hL = (maxX - minX) * 12.0; val vL = (maxY - minY) * 1.0
-                                        val lookAhead = (maxY - minY) * 4.0
-                                        
-                                        fun isValley(avg: Double): Boolean = avg < 15.0 || avg < valleyThreshold
-                                        
-                                        // Vertical Expansion (Simple Stop)
-                                        while (minY > 0 && (sY - minY) < vL) { if (isValley(getLineAverage(gray, minX.toInt(), maxX.toInt(), (minY - 1).toInt(), true))) break; minY -= 1.0 }
-                                        while (maxY < maxH - 1 && (maxY - sYY) < vL) { if (isValley(getLineAverage(gray, minX.toInt(), maxX.toInt(), (maxY + 1).toInt(), true))) break; maxY += 1.0 }
-                                        
-                                        // Horizontal Expansion (Jump and Collapse)
-                                        var walkL = minX
-                                        var lastGoodL = minX
-                                        while (walkL > 0 && (sX - walkL) < hL) {
-                                            walkL -= 1.0
-                                            if (!isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), walkL.toInt(), false))) {
-                                                minX = walkL; lastGoodL = walkL
-                                            } else {
-                                                if ((lastGoodL - walkL) > lookAhead) break
-                                            }
-                                        }
-
-                                        var walkR = maxX
-                                        var lastGoodR = maxX
-                                        while (walkR < maxW - 1 && (walkR - sXX) < hL) {
-                                            walkR += 1.0
-                                            if (!isValley(getLineAverage(gray, minY.toInt(), maxY.toInt(), walkR.toInt(), false))) {
-                                                maxX = walkR; lastGoodR = walkR
-                                            } else {
-                                                if ((walkR - lastGoodR) > lookAhead) break
-                                            }
-                                        }
-                                        
-                                        return android.graphics.Rect(kotlin.math.max(0, minX.toInt()), kotlin.math.max(0, minY.toInt()), kotlin.math.min(maxW, maxX.toInt()), kotlin.math.min(maxH, maxY.toInt()))
-                                    }
-
-                                    val orangeFragments = rawBlocks.map { expandByValleyStop(it.boundingBox, odoBuffer) }
+                                    // 2. Native Valley Expansion
+                                    val orangeFragments = rawBlocks.map { NativeImageUtils.expandByValley(odoBuffer.p.mat, it.boundingBox) }
                                     
                                     // 3. Clustering
                                     val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
@@ -590,6 +529,8 @@ private suspend fun runExperiment(
                                     // 4. Recognition Stage (4-Pixel Padding)
                                     val odoBuilder = StringBuilder()
                                     val finalBoxes = mutableListOf<android.graphics.Rect>()
+                                    val jsonStageMeta = com.google.gson.JsonObject()
+                                    
                                     consolidatedBoxes.forEach { box ->
                                         // 2. Clamp final box to matrix edges
                                         val safeL = box.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
@@ -621,11 +562,15 @@ private suspend fun runExperiment(
                                             odoBuilder.append(ocrResult.text).append(" ")
                                             finalBoxes.add(box)
                                         }
+                                        // Capture micro-instrumentation for the last block of the stage
+                                        ocrResult.metadata.forEach { (k, v) -> jsonStageMeta.addProperty(k, v) }
                                     }
                                     val odo = odoBuilder.toString().trim()
                                     allOdo.add(odo)
+
+                                    val tLoop = System.currentTimeMillis() - tStart
                                     
-                                    // 4.6 Recognition Snapshot (High-Res Visualization)
+                                    // 4.6 Recognition Snapshot (High-Res Visualization) - OUTSIDE TIMED LOOP
                                     val annotations = mutableListOf<SnapshotAnnotation>()
                                     val annPaddleScaleX = 1.0f
                                     val annPaddleScaleY = 1.0f
@@ -648,12 +593,12 @@ private suspend fun runExperiment(
                                     )
                                     lastThumbB64 = snapB64; tSnapTotal += tSnap
 
-                                    val tLoop = System.currentTimeMillis() - tStart
                                     htmlOutput.append("<div class='ocr-step'><b>Recognition ($stage):</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
                                     
                                     val stageObj = com.google.gson.JsonObject()
                                     stageObj.addProperty("text", odo)
                                     stageObj.addProperty("time", tLoop)
+                                    jsonStageMeta.entrySet().forEach { entry -> stageObj.add(entry.key, entry.value) }
                                     jsonStages.add(stage, stageObj)
                                 }
 
@@ -817,7 +762,9 @@ private suspend fun runExperiment(
                                     val odo = odoBuilder.toString()
                                     allOdo.add(odo)
 
-                                    // 4.6 Recognition Snapshot (High-Res Visualization)
+                                    val tLoop = System.currentTimeMillis() - tStart
+
+                                    // 4.6 Recognition Snapshot (High-Res Visualization) - OUTSIDE TIMED LOOP
                                     val annotations = mutableListOf<SnapshotAnnotation>()
                                     val annMlKitScaleX = odoBuffer.p.mat.cols().toFloat() / evenW.toFloat()
                                     val annMlKitScaleY = odoBuffer.p.mat.rows().toFloat() / evenH.toFloat()
@@ -844,7 +791,6 @@ private suspend fun runExperiment(
                                     )
                                     lastThumbB64 = snapB64; tSnapTotal += tSnap
 
-                                    val tLoop = System.currentTimeMillis() - tStart
                                     htmlOutput.append("<div class='ocr-step'><b>Recognition ($stage):</b> ($tLoop ms)<br><img src='data:image/jpeg;base64,$lastThumbB64'><br>$odo</div>")
                                     
                                     val stageObj = com.google.gson.JsonObject()

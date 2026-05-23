@@ -346,4 +346,98 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopul
     env->ReleaseFloatArrayElements(dstTensor, dst, 0);
 }
 
+JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandByValley(
+    JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
+    
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    int maxW = mat->cols;
+    int maxH = mat->rows;
+
+    // 1. Clamp input rect to valid image boundaries
+    int safeL = std::max(0, std::min(L, maxW - 1));
+    int safeT = std::max(0, std::min(T, maxH - 1));
+    int safeR = std::max(safeL + 1, std::min(R, maxW));
+    int safeB = std::max(safeT + 1, std::min(B, maxH));
+
+    // 2. Calculate baseline "Hill" brightness
+    cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
+    cv::Scalar meanVal = cv::mean((*mat)(roi));
+    double hillBrightness = meanVal[0];
+    double valleyThreshold = std::max(15.0, hillBrightness * (double)thresholdFactor);
+
+    double minX = L, maxX = R, minY = T, maxY = B;
+    double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
+    double hL = (maxX - minX) * 12.0; 
+    double vL = (maxY - minY) * 1.0;
+    double lookAhead = (maxY - minY) * 4.0;
+
+    auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
+        double sum = 0;
+        int count = 0;
+        if (horizontal) {
+            if (fixed < 0 || fixed >= maxH) return true;
+            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxW, end);
+            for (int i = startIdx; i < endIdx; ++i) {
+                sum += rowPtr[i];
+                count++;
+            }
+        } else {
+            if (fixed < 0 || fixed >= maxW) return true;
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxH, end);
+            for (int i = startIdx; i < endIdx; ++i) {
+                sum += mat->at<uint8_t>(i, fixed);
+                count++;
+            }
+        }
+        double avg = (count > 0) ? (sum / count) : 0.0;
+        return (avg < 15.0 || avg < valleyThreshold);
+    };
+
+    // 3. Vertical Expansion (Simple Stop)
+    while (minY > 0 && (sY - minY) < vL) {
+        if (isValley((int)minX, (int)maxX, (int)minY - 1, true)) break;
+        minY -= 1.0;
+    }
+    while (maxY < maxH - 1 && (maxY - sYY) < vL) {
+        if (isValley((int)minX, (int)maxX, (int)maxY + 1, true)) break;
+        maxY += 1.0;
+    }
+
+    // 4. Horizontal Expansion (Jump and Collapse)
+    double walkL = minX;
+    double lastGoodL = minX;
+    while (walkL > 0 && (sX - walkL) < hL) {
+        walkL -= 1.0;
+        if (!isValley((int)minY, (int)maxY, (int)walkL, false)) {
+            minX = walkL;
+            lastGoodL = walkL;
+        } else {
+            if ((lastGoodL - walkL) > lookAhead) break;
+        }
+    }
+
+    double walkR = maxX;
+    double lastGoodR = maxX;
+    while (walkR < maxW - 1 && (walkR - sXX) < hL) {
+        walkR += 1.0;
+        if (!isValley((int)minY, (int)maxY, (int)walkR, false)) {
+            maxX = walkR;
+            lastGoodR = walkR;
+        } else {
+            if ((walkR - lastGoodR) > lookAhead) break;
+        }
+    }
+
+    jintArray result = env->NewIntArray(4);
+    jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
+    env->SetIntArrayRegion(result, 0, 4, dims);
+    return result;
+}
+
 }

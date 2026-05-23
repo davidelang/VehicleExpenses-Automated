@@ -154,6 +154,17 @@ object NativeImageUtils {
         nativePopulateMonoTensor(src.nativeObj, dst, tensorW, tensorH, mean, std)
     }
 
+    /**
+     * Offloads the entire Valley Expansion algorithm to C++.
+     * Reduces thousands of JNI calls to a single call.
+     */
+    fun expandByValley(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
+        val res = nativeExpandByValley(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        return if (res != null && res.size == 4) {
+            android.graphics.Rect(res[0], res[1], res[2], res[3])
+        } else rect
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -163,4 +174,5 @@ object NativeImageUtils {
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
+    private external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
 }
