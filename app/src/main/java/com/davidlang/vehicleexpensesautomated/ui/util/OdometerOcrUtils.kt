@@ -109,14 +109,13 @@ object OdometerOcrUtils {
         
         val results = mutableMapOf<String, EngineResult>()
         
+        // ML Kit Path: Zero-Copy NV21 (using internal staging buffer if direct slice exposure is needed)
         val tMl0 = System.currentTimeMillis()
-        val mlBmp = Bitmap.createBitmap(resizedMat.cols(), resizedMat.rows(), Bitmap.Config.ALPHA_8)
-        Utils.matToBitmap(resizedMat, mlBmp)
-        val mlRes = deskewMlKitMono(mlBmp, pScale)
+        val mlRes = deskewMlKitMono(resizedMat, pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
-        mlBmp.recycle()
 
+        // Paddle Path: Native Mat Tensor Population
         val tPd0 = System.currentTimeMillis()
         val pdRes = deskewPaddleMono(resizedMat, resizedMat.cols(), resizedMat.rows(), pScale)
         val tPd = System.currentTimeMillis() - tPd0
@@ -138,9 +137,32 @@ object OdometerOcrUtils {
         )
     }
 
-    private suspend fun deskewMlKitMono(bmp: Bitmap, pScale: Float): EngineResult {
+    private suspend fun deskewMlKitMono(mat: Mat, pScale: Float): EngineResult {
         val tStart = System.currentTimeMillis()
-        val res = extractFromPhotoBitmapRaw(com.google.mlkit.vision.common.InputImage.fromBitmap(bmp, 0))
+        
+        // Wrap Mat in NV21 InputImage for zero-copy OCR
+        // We reuse the staging buffer for NV21 layout to satisfy ML Kit's requirements
+        val w = mat.cols(); val h = mat.rows()
+        val nv21Size = w * h + (w / 2) * (h / 2) * 2
+        val nv21Buffer = ByteBuffer.allocateDirect(nv21Size)
+        
+        // Copy Luma channel (C1)
+        val lumaSize = w * h
+        val lumaData = ByteArray(lumaSize)
+        mat.get(0, 0, lumaData)
+        nv21Buffer.put(lumaData)
+        
+        // Fill Chroma with neutral 128 (Grayscale)
+        val chromaSize = nv21Size - lumaSize
+        val neutralChroma = ByteArray(chromaSize) { 128.toByte() }
+        nv21Buffer.put(neutralChroma)
+        nv21Buffer.rewind()
+
+        val img = InputImage.fromByteBuffer(
+            nv21Buffer, w, h, 0, InputImage.IMAGE_FORMAT_NV21
+        )
+        
+        val res = extractFromPhotoBitmapRaw(img)
         val tDetect = System.currentTimeMillis() - tStart
         
         val invScale = 1.0f / pScale
@@ -155,10 +177,10 @@ object OdometerOcrUtils {
             block.copy(boundingBox = scaledRect)
         }
 
-        val srcH = (bmp.height * invScale).toInt()
+        val srcH = (h * invScale).toInt()
         val angle = calculateWeightedAverage(scaledBlocks, srcH)
         return EngineResult(angle, listOf(tDetect), scaledBlocks)
-    }
+        }
 
     private suspend fun deskewPaddleMono(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
         val tStart = System.currentTimeMillis()
