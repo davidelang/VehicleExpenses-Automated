@@ -104,23 +104,40 @@ object OdometerOcrUtils {
 
     private suspend fun calculateAverageTextAngleMono(input: BufferSet.Slice): DeskewResult {
         val t0 = System.currentTimeMillis()
-        val workspace = NativePaddleEngine.deskewBufferSet2048.p
-        val pScale = prepDeskewBufferMono(input, workspace)
+        val bufferSet = NativePaddleEngine.deskewBufferSet2048
+        
+        // 1. Geometry Normalization
+        val pTargetSize = 2048
+        val srcW = input.width
+        val srcH = input.height
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val pWidth = (srcW * pScale).toInt()
+        val pHeight = (srcH * pScale).toInt()
+
+        // 2. Register transient crop in workspace (Zero-Allocation sub-view)
+        bufferSet.p.clear()
+        val cropId = bufferSet.createCrop(0, 0, pWidth, pHeight)
+        val workspace = bufferSet.c[cropId]
+
+        // 3. Native Resize directly into the crop
+        Imgproc.resize(input.mat, workspace.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
         val tPrep = System.currentTimeMillis() - t0
         
         val results = mutableMapOf<String, EngineResult>()
         
-        // ML Kit Path: Zero-Copy NV21
+        // 4. ML Kit Path: Zero-Copy NV21
         val tMl0 = System.currentTimeMillis()
         val mlRes = deskewMlKitMono(workspace, pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
-        // Paddle Path: Native Mat Tensor Population
+        // 5. Paddle Path: Native Mat Tensor Population
         val tPd0 = System.currentTimeMillis()
         val pdRes = deskewPaddleMono(workspace.mat, workspace.width, workspace.height, pScale)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
+        
+        workspace.release() // Free transient crop
         
         val finalAngle = mlRes.angle
         
@@ -178,21 +195,6 @@ object OdometerOcrUtils {
             angle = calculateWeightedAverage(blocks, srcH)
         }
         return EngineResult(angle, listOf(tDetect), blocks, det?.metadata ?: emptyMap())
-    }
-
-    private fun prepDeskewBufferMono(input: BufferSet.Slice, workspace: BufferSet.Slice): Float {
-        val pTargetSize = 2048
-        val srcW = input.width
-        val srcH = input.height
-        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
-        val pWidth = (srcW * pScale).toInt()
-        val pHeight = (srcH * pScale).toInt()
-        
-        workspace.clear() // Essential: workspace.mat is 2048x2048, but we only use the top-left ROI
-        workspace.resize(0, 0, pWidth, pHeight)
-        
-        Imgproc.resize(input.mat, workspace.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-        return pScale
     }
 
     private suspend fun deskewMlKit(input: Any): EngineResult {
