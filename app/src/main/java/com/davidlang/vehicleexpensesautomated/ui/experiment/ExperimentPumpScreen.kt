@@ -24,7 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Pump
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -107,7 +107,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
         if (isRunning) {
-            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalPump = Pump.CenterHorizontally) {
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Pump.CenterHorizontally) {
                 Text(
                     text = "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos",
                     style = MaterialTheme.typography.headlineLarge,
@@ -153,7 +153,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(modifier = Modifier.padding(8.dp), verticalPump = Pump.CenterVertically) {
+                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Pump.CenterVertically) {
                         Text("${index + 1}.", style = MaterialTheme.typography.titleSmall); Spacer(modifier = Modifier.width(8.dp))
                         Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary); Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall) }
                     }
@@ -348,7 +348,7 @@ private suspend fun runPumpExperiment(
                 val (ocrB, queryLandmarksB) = pPerformLandmarkDiscovery(NativePaddleEngine.bufferSetB.p, context)
                 val tDiscoveryTotalB = System.currentTimeMillis() - tDisc0B
                 
-                val primaryVetoResults = ImagePumpUtils.performTier1Veto(queryLandmarksA, cachedRefs.map { it.vehicle }, "ML Kit")
+                val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksA, cachedRefs.map { it.vehicle }, "ML Kit")
                 // Phase 116: We primarily use the Standard path for identification (Winner selection)
                 // but discovery is run independently for refinement downstream.
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
@@ -379,11 +379,11 @@ private suspend fun runPumpExperiment(
                     Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
                     
                     // Phase 116: Independent Disambiguation for A and B
-                    val queryLandmarksAPrimary = ImagePumpUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
-                    val queryLandmarksBPrimary = ImagePumpUtils.disambiguateLandmarks(queryLandmarksB, winnerRef.curatedLandmarks)
+                    val queryLandmarksAPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
+                    val queryLandmarksBPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksB, winnerRef.curatedLandmarks)
                     
                     // 1.2 Pump A (In-place on bufferSetA)
-                    val alignResA = ImagePumpUtils.anchorAlign(
+                    val alignResA = ImageAlignmentUtils.anchorAlign(
                         NativePaddleEngine.bufferSetA, 
                         winnerRef.curatedLandmarks, 
                         queryLandmarksAPrimary, 
@@ -410,7 +410,7 @@ private suspend fun runPumpExperiment(
                     alignedA64 = snapA
 
                     // 1.3 Pump B (In-place on bufferSetB)
-                    val alignResB = ImagePumpUtils.anchorAlign(
+                    val alignResB = ImageAlignmentUtils.anchorAlign(
                         NativePaddleEngine.bufferSetB, 
                         winnerRef.curatedLandmarks, 
                         queryLandmarksBPrimary, 
@@ -440,8 +440,8 @@ private suspend fun runPumpExperiment(
                     alignedBase64 = pCreateScaledBase64(masterBmp!!, 600, 50, null)
                     tSnapAlign = tSnapA + tSnapB
 
-                    val pumpTraceA = PumpTraceResult(alignResA.success, alignResA.timeMs, alignedA64, alignResA.metadata)
-                    val pumpTraceB = PumpTraceResult(alignResB.success, alignResB.timeMs, alignedB64, alignResB.metadata)
+                    val alignmentTraceA = AlignmentTraceResult(alignResA.success, alignResA.timeMs, alignedA64, alignResA.metadata)
+                    val alignmentTraceB = AlignmentTraceResult(alignResB.success, alignResB.timeMs, alignedB64, alignResB.metadata)
                     
                     // Phase 58: Refinement Loop (Always executed to provide diagnostic data)
                     val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
@@ -483,8 +483,8 @@ private suspend fun runPumpExperiment(
                     if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
 
                     // Reporting Pass: Store result for winner (Phase 116 Dual Paths)
-                    val setAPath = SingleVehiclePathwayResult(pumpTraceA, refinementTracesA, hA)
-                    val setBPath = SingleVehiclePathwayResult(pumpTraceB, refinementTracesB, hB)
+                    val setAPath = SingleVehiclePathwayResult(alignmentTraceA, refinementTracesA, hA)
+                    val setBPath = SingleVehiclePathwayResult(alignmentTraceB, refinementTracesB, hB)
                     
                     vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(
                         winnerRef.vehicle.name, 
@@ -672,7 +672,7 @@ private fun pSerializePhotoResultToJson(
                 // Mirror "standard" to legacy keys for script compatibility (Phase 116 Emergency Fix)
                 vRes.pathResults["standard"]?.let { std ->
                     val legacyTrace = JSONObject()
-                    std.pumpTrace?.let { t -> 
+                    std.alignmentTrace?.let { t -> 
                         val aObj = JSONObject()
                         aObj.put("success", t.success); aObj.put("time_ms", t.timeMs)
                         val m = JSONObject(); t.metadata.forEach { (k, v) -> m.put(k, v) }
@@ -724,7 +724,7 @@ private fun pSerializePathwayToJson(res: PhotoPathwayResult): JSONObject {
 private fun pSerializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSONObject {
     val root = JSONObject()
     root.apply {
-        res.pumpTrace?.let { trace ->
+        res.alignmentTrace?.let { trace ->
             val tObj = JSONObject()
             tObj.put("success", trace.success)
             tObj.put("time_ms", trace.timeMs)
@@ -797,7 +797,7 @@ private fun pBuildHtmlRowDynamic(
     appendLine("<td>")
     if (alignedA64.isNotEmpty()) {
         appendLine("<img src='data:image/jpeg;base64,$alignedA64'><br>")
-        vRes?.pathResults?.get("set_a")?.pumpTrace?.let { trace ->
+        vRes?.pathResults?.get("set_a")?.alignmentTrace?.let { trace ->
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
@@ -812,7 +812,7 @@ private fun pBuildHtmlRowDynamic(
     appendLine("<td>")
     if (alignedB64.isNotEmpty()) {
         appendLine("<img src='data:image/jpeg;base64,$alignedB64'><br>")
-        vRes?.pathResults?.get("set_b")?.pumpTrace?.let { trace ->
+        vRes?.pathResults?.get("set_b")?.alignmentTrace?.let { trace ->
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
