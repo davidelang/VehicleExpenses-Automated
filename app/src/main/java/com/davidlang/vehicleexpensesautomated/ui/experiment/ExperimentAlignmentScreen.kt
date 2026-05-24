@@ -397,12 +397,6 @@ private suspend fun runExperiment(
                     val queryLandmarksAPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
                     val queryLandmarksBPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksB, winnerRef.curatedLandmarks)
                     
-                    // 1. Standard Alignment (In-place on masterBmp)
-                    val t0 = System.currentTimeMillis()
-                    val alignRes = ImageAlignmentUtils.anchorAlign(masterBmp!!, winnerRef.curatedLandmarks, queryLandmarksPrimary, winnerRef.vehicle, winnerRef.width, winnerRef.height, imgW, imgH, scratchBmp)
-                    val elapsedAlign = System.currentTimeMillis() - t0
-
-                    
                     // 1.2 Alignment A (In-place on bufferSetA)
                     val alignResA = ImageAlignmentUtils.anchorAlign(
                         NativePaddleEngine.bufferSetA, 
@@ -461,7 +455,6 @@ private suspend fun runExperiment(
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, null)
                     tSnapAlign = tSnapA + tSnapB
 
-                    val alignmentTrace = AlignmentTraceResult(alignRes.success, elapsedAlign, alignedBase64, alignRes.metadata)
                     val alignmentTraceA = AlignmentTraceResult(alignResA.success, alignResA.timeMs, alignedA64, alignResA.metadata)
                     val alignmentTraceB = AlignmentTraceResult(alignResB.success, alignResB.timeMs, alignedB64, alignResB.metadata)
                     
@@ -509,19 +502,15 @@ private suspend fun runExperiment(
                     if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
 
                     // Reporting Pass: Store result for winner (Phase 116 Dual Paths)
-                    val standardPath = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, hStd)
                     val setAPath = SingleVehiclePathwayResult(alignmentTraceA, refinementTracesA, hA)
                     val setBPath = SingleVehiclePathwayResult(alignmentTraceB, refinementTracesB, hB)
-                    
-                    // Populate legacy harness map for top-level photo reporting
-                    harnessResultsMap.putAll(hStd)
                     
                     vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(
                         winnerRef.vehicle.name, 
                         "", 
                         0L, 
                         0L, 
-                        mapOf("standard" to standardPath, "set_a" to setAPath, "set_b" to setBPath),
+                        mapOf("set_a" to setAPath, "set_b" to setBPath),
                         emptyList(), 
                         emptyList(), 
                         emptyList(), 
