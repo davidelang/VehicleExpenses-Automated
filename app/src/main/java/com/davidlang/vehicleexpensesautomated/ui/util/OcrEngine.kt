@@ -72,6 +72,56 @@ data class TextBlock(
     val instanceId: Int = -1
 )
 
+data class AlignmentTraceResult(
+    val success: Boolean,
+    val timeMs: Long,
+    val alignedImageBase64: String,
+    val metadata: Map<String, String> = emptyMap()
+)
+
+data class RefinementTrace(
+    val strategyName: String,
+    val timeMs: Long,
+    val steps: List<OcrStepResult>,
+    val metadata: Map<String, String> = emptyMap()
+)
+
+data class SingleVehiclePathwayResult(
+    val alignmentTrace: AlignmentTraceResult?,
+    val refinementTraces: Map<String, RefinementTrace>,
+    val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
+)
+
+data class SingleVehicleResult(
+    val vehicleName: String,
+    val vetoReason: String,
+    val tMatchMs: Long,
+    val discoveryTimeMonoMs: Long = 0,
+    val pathResults: Map<String, SingleVehiclePathwayResult>, // Keys: "set_a", "set_b", "standard"
+    val vetoQueryWords: List<String>,
+    val vetoMyManifest: List<String>,
+    val vetoPool: List<String>,
+    val isWinner: Boolean
+)
+
+data class PhotoPathwayResult(
+    val winnerName: String,
+    val bestOdometer: String,
+    val tDeskewTotal: Long,
+    val tDiscoveryTotal: Long,
+    val deskewedBase64: String,
+    val discoveryResult: OcrResult,
+    val discoveryLandmarks: List<TextBlock>,
+    val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
+)
+
+data class ProcessedPhotoResult(
+    val fileName: String,
+    val pathways: Map<String, PhotoPathwayResult>, // Keys: "set_a", "set_b", "standard"
+    val vehicleResultsMap: Map<Int, SingleVehicleResult>,
+    val primaryVetoResults: Map<Int, VetoResult>
+)
+
 /**
  * Encapsulates the results of an OCR operation.
  */
