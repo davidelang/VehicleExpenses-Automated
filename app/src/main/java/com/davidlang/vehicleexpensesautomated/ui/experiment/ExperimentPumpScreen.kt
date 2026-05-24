@@ -12,11 +12,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,11 +82,17 @@ private suspend fun runPumpExperiment(
 ) = withContext(Dispatchers.IO) {
     onLog("Initializing Pump Experiment...")
     
+    val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val rootDir = context.getExternalFilesDir(null) ?: return@withContext
     val photosDir = File(rootDir, "pump_photos")
     val zipFile = File(rootDir, "pump_photos.zip")
-    val reportFile = File(rootDir, "reports/pump_experiment.html")
-    reportFile.parentFile?.mkdirs()
+    
+    // Unified report directory
+    val reportDir = File(context.filesDir, "experiment_reports")
+    if (!reportDir.exists()) reportDir.mkdirs()
+    
+    val reportFile = File(reportDir, "pump_experiment_$timestamp.html")
+    val jsonFile = File(reportDir, "pump_results_$timestamp.json")
 
     if (!photosDir.exists() && zipFile.exists()) {
         onLog("Extracting pump_photos.zip...")
@@ -97,15 +108,23 @@ private suspend fun runPumpExperiment(
         return@withContext
     }
 
-    val htmlOutput = StringBuilder()
-    htmlOutput.append("<html><head><style>")
-    htmlOutput.append("body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 20px; }")
-    htmlOutput.append(".row { border-bottom: 1px solid #444; padding: 20px 0; display: flex; gap: 20px; }")
-    htmlOutput.append(".img-container { flex: 0 0 400px; }")
-    htmlOutput.append("img { max-width: 100%; border: 1px solid #666; }")
-    htmlOutput.append(".results { flex: 1; }")
-    htmlOutput.append("b { color: #bb86fc; }")
-    htmlOutput.append("</style></head><body><h1>Pump Field Extraction Experiment</h1>")
+    // Initialize HTML
+    val htmlHeader = """
+        <html><head><style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 20px; }
+        .row { border-bottom: 1px solid #444; padding: 20px 0; display: flex; gap: 20px; }
+        .img-container { flex: 0 0 400px; }
+        img { max-width: 100%; border: 1px solid #666; }
+        .results { flex: 1; }
+        b { color: #bb86fc; }
+        </style></head><body>
+        <h1>Pump Field Extraction Experiment</h1>
+        <p><b>Time:</b> $timestamp | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> ${files.size}</p>
+    """.trimIndent()
+    reportFile.writeText(htmlHeader)
+
+    // Initialize JSON
+    jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": ${files.size},\n  \"results\": [\n")
 
     val masterBufferSet = NativePaddleEngine.fullBufferSet
     val paddleEngine = NativePaddleEngine(context, variant = "V3", useMono = true)
@@ -144,20 +163,28 @@ private suspend fun runPumpExperiment(
                 scratchYuv = masterBufferSet
             ).first
 
-            htmlOutput.append("<div class='row'>")
-            htmlOutput.append("<div class='img-container'><img src='data:image/jpeg;base64,$snapB64'></div>")
-            htmlOutput.append("<div class='results'>")
-            htmlOutput.append("<b>File:</b> ${file.name}<br>")
-            htmlOutput.append("<b>Execution Time:</b> ${result.executionTimeMs}ms<br>")
-            htmlOutput.append("<b>Cost:</b> ${result.cost ?: "NOT FOUND"}<br>")
-            htmlOutput.append("<b>Volume:</b> ${result.gallons ?: "NOT FOUND"}<br>")
-            htmlOutput.append("<div class='meta'>")
+            // Incremental HTML Row
+            val rowHtml = StringBuilder()
+            rowHtml.append("<div class='row'>")
+            rowHtml.append("<div class='img-container'><img src='data:image/jpeg;base64,$snapB64'></div>")
+            rowHtml.append("<div class='results'>")
+            rowHtml.append("<b>File:</b> ${file.name}<br>")
+            rowHtml.append("<b>Execution Time:</b> ${result.executionTimeMs}ms<br>")
+            rowHtml.append("<b>Cost:</b> ${result.cost ?: "NOT FOUND"}<br>")
+            rowHtml.append("<b>Volume:</b> ${result.gallons ?: "NOT FOUND"}<br>")
+            rowHtml.append("<div class='meta'>")
             result.metadata.forEach { (key, value) ->
-                htmlOutput.append("$key: $value<br>")
+                rowHtml.append("$key: $value<br>")
             }
-            htmlOutput.append("</div>")
-            htmlOutput.append("<br><small>${result.debugText}</small>")
-            htmlOutput.append("</div></div>")
+            rowHtml.append("</div>")
+            rowHtml.append("<br><small>${result.debugText}</small>")
+            rowHtml.append("</div></div>")
+            reportFile.appendText(rowHtml.toString())
+
+            // Incremental JSON Row
+            val photoJson = serializePumpResultToJson(file, result, imgW, imgH)
+            val comma = if (index < files.size - 1) "," else ""
+            jsonFile.appendText(photoJson.toString(2) + "$comma\n")
 
             masterBmp.recycle()
             scratchBmp.recycle()
@@ -167,7 +194,29 @@ private suspend fun runPumpExperiment(
         }
     }
 
-    htmlOutput.append("</body></html>")
-    reportFile.writeText(htmlOutput.toString())
-    onLog("Experiment Complete. Report saved to: ${reportFile.absolutePath}")
+    reportFile.appendText("</body></html>")
+    jsonFile.appendText("\n  ]\n}")
+    onLog("Experiment Complete. Reports saved to: ${reportDir.absolutePath}")
+}
+
+private fun serializePumpResultToJson(
+    file: File,
+    result: OcrResult,
+    imgW: Int,
+    imgH: Int
+): JSONObject {
+    val root = JSONObject()
+    root.put("file", file.name)
+    root.put("execution_time_ms", result.executionTimeMs)
+    root.put("cost", result.cost ?: "")
+    root.put("volume", result.gallons ?: "")
+    root.put("imageWidth", imgW)
+    root.put("imageHeight", imgH)
+    
+    val meta = JSONObject()
+    result.metadata.forEach { (k, v) -> meta.put(k, v) }
+    root.put("metadata", meta)
+    
+    root.put("debugText", result.debugText)
+    return root
 }

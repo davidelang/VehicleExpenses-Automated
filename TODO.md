@@ -1,5 +1,10 @@
 # TODO: Protocol Alignment
-- [ ] Fix memory and GEMINI.md discrepancies (Strike System, No-Deploy, Plan Mode transitions). (See: dev-ai-interaction/plans/protocol-alignment.md)
+- [x] DONE: Fix memory and GEMINI.md discrepancies (Strike System, No-Deploy, Plan Mode transitions). (See: dev-ai-interaction/plans/protocol-alignment.md)
+
+# TODO: Gas Pump Extraction
+- [x] DONE: Decouple `takeSnapshot` utility (See: plans/decouple-take-snapshot.md)
+- [x] DONE: Implement Gas Pump Field Extraction Experiment on Android (See: dev-ai-interaction/plans/integrate-pump-extraction.md)
+- [ ] Fix Pump Experiment reporting (Incremental JSON/HTML, Path Unification). (See: dev-ai-interaction/plans/pump-reporting-and-analysis.md)
 
 # TODO: ICRS Alignment Core Migration
 - [x] Phase 1: Define ICRS Architecture (See: docs/specs/ISOTROPIC_COORDINATE_SPEC.md)
