@@ -268,7 +268,9 @@ private suspend fun runExperiment(
     var currentFile = startNewFile()
     
     photos.forEachIndexed { index, file ->
-        var photoResult: ProcessedPhotoResult? = null
+        // Phase 116 Emergency Fix: Initialize photoResult early with "No Match" state
+        // to prevent serializePhotoResultToJson crashes on failed identification.
+        var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
         var finalWinnerName = "No match"
         var bestOdometer = "FAILED"
         try {
@@ -687,6 +689,31 @@ private fun serializePhotoResultToJson(
                     pathsObj.put(pathKey, serializeVehiclePathwayToJson(pathRes))
                 }
                 put("path_results", pathsObj)
+
+                // Mirror "standard" to legacy keys for script compatibility (Phase 116 Emergency Fix)
+                vRes.pathResults["standard"]?.let { std ->
+                    val legacyTrace = JSONObject()
+                    std.alignmentTrace?.let { t -> 
+                        val aObj = JSONObject()
+                        aObj.put("success", t.success); aObj.put("time_ms", t.timeMs)
+                        val m = JSONObject(); t.metadata.forEach { (k, v) -> m.put(k, v) }
+                        aObj.put("metadata", m)
+                        legacyTrace.put("alignment", aObj)
+                    }
+                    val legacyRef = JSONObject()
+                    std.refinementTraces.forEach { (strat, trace) ->
+                        val rObj = JSONObject(); rObj.put("time_ms", trace.timeMs)
+                        val sArr = JSONArray()
+                        trace.steps.forEach { step ->
+                            val sObj = JSONObject(); sObj.put("stage", step.stageName); sObj.put("text", step.text)
+                            val m = JSONObject(); step.metadata.forEach { (k, v) -> m.put(k, v) }
+                            sObj.put("metadata", m); sArr.put(sObj)
+                        }
+                        rObj.put("steps", sArr); legacyRef.put(strat, rObj)
+                    }
+                    put("refinement_details", legacyRef)
+                    put("alignment_results", legacyTrace)
+                }
             }) 
         }; put("vehicles", vehicleResults)
     }
@@ -805,32 +832,32 @@ private fun buildHtmlRowDynamic(
 
     // Native Aligned Column (Set A Path)
     appendLine("<td>")
-    vRes?.pathResults?.get("set_a")?.alignmentTrace?.let { trace ->
-        if (trace.alignedImageBase64.isNotEmpty()) {
-            appendLine("<img src='data:image/jpeg;base64,${trace.alignedImageBase64}'><br>")
+    if (alignedNativeAB64.isNotEmpty()) {
+        appendLine("<img src='data:image/jpeg;base64,$alignedNativeAB64'><br>")
+        vRes?.pathResults?.get("set_a")?.alignmentTrace?.let { trace ->
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
             appendLine("<small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small>".format(s, tx, ty))
-        } else {
-            appendLine("<i>No native trace</i>")
         }
-    } ?: appendLine("<i>Not Aligned</i>")
+    } else {
+        appendLine("<i>Not Aligned</i>")
+    }
     appendLine("</td>")
 
     // Native Aligned Column (Set B Path)
     appendLine("<td>")
-    vRes?.pathResults?.get("set_b")?.alignmentTrace?.let { trace ->
-        if (trace.alignedImageBase64.isNotEmpty()) {
-            appendLine("<img src='data:image/jpeg;base64,${trace.alignedImageBase64}'><br>")
+    if (alignedNativeBB64.isNotEmpty()) {
+        appendLine("<img src='data:image/jpeg;base64,$alignedNativeBB64'><br>")
+        vRes?.pathResults?.get("set_b")?.alignmentTrace?.let { trace ->
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
             val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
             appendLine("<small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small>".format(s, tx, ty))
-        } else {
-            appendLine("<i>No native trace</i>")
         }
-    } ?: appendLine("<i>Not Aligned</i>")
+    } else {
+        appendLine("<i>Not Aligned</i>")
+    }
     appendLine("</td>")
     
     val allReadings = mutableListOf<String>()
