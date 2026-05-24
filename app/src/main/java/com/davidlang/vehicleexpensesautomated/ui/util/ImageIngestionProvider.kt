@@ -113,13 +113,6 @@ object ImageIngestionProvider {
         // Step 2: Stabilize state for monochrome-expecting logic
         target.p.clearChroma()
         
-        // Step 3: UI Sync (YUV -> ARGB)
-        if (masterBmp.width == probedW && masterBmp.height == probedH) {
-        // NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
-        } else {
-            Log.w(TAG, "DNG MasterBmp mismatch: expected ${probedW}x${probedH}, got ${masterBmp.width}x${masterBmp.height}")
-        }
-
         return IngestionMetadata(
             probedW, probedH, 
             probedW, probedH, 
@@ -157,11 +150,6 @@ object ImageIngestionProvider {
         // Step 2: Stabilize state
         target.p.clearChroma()
         
-        // Step 3: UI Sync (YUV -> ARGB)
-        if (masterBmp.width == w && masterBmp.height == h) {
-        // NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
-        }
-
         return IngestionMetadata(
             w, h, 
             w, h, 
@@ -214,11 +202,6 @@ object ImageIngestionProvider {
             NativeImageUtils.ingestArgbToYuv(decodedBitmap, target.p)
             target.p.clearChroma()
             
-            // UI Sync (YUV -> ARGB)
-            if (masterBmp.width == decodedW && masterBmp.height == decodedH) {
-            // NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
-            }
-            
             decodedBitmap.recycle()
 
             return IngestionMetadata(
@@ -233,9 +216,6 @@ object ImageIngestionProvider {
             val bmp = OdometerOcrUtils.decodeBitmapSafely(context, path) ?: throw Exception("Fallback decode failed")
             NativeImageUtils.ingestArgbToYuv(bmp, target.p)
             target.p.clearChroma()
-            if (masterBmp.width == bmp.width && masterBmp.height == bmp.height) {
-            // NativeImageUtils.syncMatToArgb(target.p.mat, masterBmp)
-            }
             val meta = IngestionMetadata(bmp.width, bmp.height, bmp.width, bmp.height, "legacy", System.currentTimeMillis() - startTime, false)
             bmp.recycle()
             return meta
