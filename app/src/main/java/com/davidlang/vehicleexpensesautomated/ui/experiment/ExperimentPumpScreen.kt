@@ -107,7 +107,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
         if (isRunning) {
-            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Pump.CenterHorizontally) {
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos",
                     style = MaterialTheme.typography.headlineLarge,
@@ -153,7 +153,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Pump.CenterVertically) {
+                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("${index + 1}.", style = MaterialTheme.typography.titleSmall); Spacer(modifier = Modifier.width(8.dp))
                         Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary); Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall) }
                     }
