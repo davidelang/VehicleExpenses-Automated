@@ -347,9 +347,10 @@ private suspend fun runExperiment(
                 val angleB = deskewResA.engines["Paddle V3"]?.angle ?: 0f
                 val tRotateB = rotate(NativePaddleEngine.bufferSetB, angleB)
 
-                val tDiscoveryStart = System.currentTimeMillis()
-                val (ocrStd, queryLandmarksRaw) = performLandmarkDiscovery(masterBmp, context)
-                val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
+                // Standard Discovery (DISABLED - Logic Eradication Phase)
+                val tDiscoveryTotal = 0L
+                val ocrStd = OcrResult(engineName = "Standard (Disabled)", debugText = "", textBlocks = emptyList(), imageWidth = 0, imageHeight = 0)
+                val queryLandmarksRaw = emptyList<TextBlock>()
                 
                 // Path A Discovery
                 val tDisc0A = System.currentTimeMillis()
