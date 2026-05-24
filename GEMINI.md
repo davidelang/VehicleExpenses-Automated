@@ -21,8 +21,13 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
   - **Turn Termination:** Any turn that proposes a strategy or finalizes a plan MUST be "atomic." It is strictly forbidden to include a strategy proposal and an application implementation tool call (`replace`, `write_file`, `run_shell_command` outside the sandbox) in the same turn. Tool calls targeting the `dev-ai-interaction/` sandbox are permitted during this turn.
   - **Immutable Protocol:** The "Propose -> Wait -> Act" cycle is absolute. No other instruction, including "Corruption Reset" or "Emergency Stability" clauses, authorizes a bypass of this protocol. Urgency never grants tool-use permission during a strategy turn.
   - **STRICT BI-MODAL WORKFLOW:** 
-    1. **MODE 1 (STRATEGIC PLANNING):** Research, review, planning. Present the textual plan and STOP for review. Do not use application-modifying tools.
-    2. **MODE 2 (IMPLEMENTATION):** After approval, implement changes, then use `./build_app "Commit Message" file1 file2...` to commit and build (to ensure `git describe` versioning is correct). 'Commit Message' can also be `@msg_file.txt` to include a longer message from a file. STOP for review. Do NOT deploy. The user will deploy manually.
+    1. **MODE 1 (PLANNING):** Research, review, planning. Present the textual plan and STOP for review. Do not use application-modifying tools.
+    2. **MODE 2 (EXECUTION):** After approval, implement changes, then use `./build_app "Commit Message" file1 file2...` to commit and build. STOP for review. 
+    - **NO DEPLOYMENT:** The agent is strictly forbidden from running `./deploy` or `./gradlew installDebug`. Deployment is a manual user action.
+    - **PLAN MODE TRANSITION:** You MUST switch to `mode = plan` in the following scenarios:
+        1. After a **successful** build (`./build_app` succeeds).
+        2. After a **mandatory reset** (Strike 3, 6, or 9).
+        3. At the **end of any turn** where an application build was attempted. This ensures the next turn always begins with a Strategic or Forensic review of the current state.
   - **The Exclusivity & Planning Protocol:**
     - **Exclusivity:** The **Approved Plan Document** (or the most recent directive text) is the **EXCLUSIVE boundary** for all changes. Logic, refactors, or carry-overs from previous turns are **STRICTLY FORBIDDEN** unless they are explicit line-items in the current plan.
     - **The "Refactor = Feature" Mandate:** Architectural improvements, function decomposition, and "Senior best practices" are considered **NEW WORK**. They must be proposed, justified, and approved as specific line-items. No "invisible" or "piggybacked" improvements.
@@ -43,7 +48,6 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
   - **The Execution Wall (Immutability):** Once a Plan Document is formally approved, it is **IMMUTABLE** during the Execution phase. Refining or improving the design during implementation is strictly forbidden. Any deviation, no matter how "correct" it seems, is a Protocol Violation.
   - **Design/Execution Split:** All architectural and specification design MUST occur in Plan Mode. During the Execution phase, your only authorized activity is the high-fidelity transcription of the approved plan into code. You are an executor, not a designer.
   - **Mandatory Reversion Protocol:** If any implementation step fails (syntax errors, logical gaps) or reveals a flaw in the plan (unaccounted edge cases), you MUST immediately revert ALL changes from the current turn (`git reset --hard builds`) and return to Plan Mode. Do not attempt to "patch" a flawed plan during an execution turn.
-  - **Use Plan mode:** At the end of every turn, when you finish building, you are to switch to mode=plan to be prepared for the next round of strategic planning and review.
 
   - **Zero-Tool Rule (Outside Sandbox):** During the "Strategy" phase (proposing a plan), you MUST NOT execute any tools that modify the application codebase or deploy to devices. 
  You MAY use `write_file`, `replace`, and `run_shell_command` exclusively to create and execute data, scripts, and plans within the `dev-ai-interaction/` directory. The proposal turn must end immediately after the plan is stated.
@@ -80,9 +84,10 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
     `git clean -fd -e "dev-ai-interaction/" -e "app/src/main/jniLibs/" -e "app/src/main/assets/libs_backup/"`
     Note that post-reset analysis may recommend going back to `deployed` or `works` tags depending on the analysis.
 - **Strike System (3-3-3 Rule):**
-    - **Strike 1-3:** If a build fails, you have up to 3 attempts to fix it. After the 3rd failed compile, a reset to the `builds` tag is MANDATORY. This reset does not require a pause.
-    - **Strike 4-6:** After resetting, you have another 3 attempts to fix the task using lessons learned. After the 6th total failed compile, another reset to `builds` is MANDATORY. This reset does not require a pause.
-    - **Strike 7-9:** After the second reset, you have a final 3 attempts. After the 9th total failed compile, you must reset to `builds` and perform a **Mandatory Forensic Analysis**.
+    - **Strike 1:** Initial implementation fails to compile.
+    - **Strike 2:** First attempt to fix the error (`fix 1`) fails to compile.
+    - **Strike 3:** Second attempt to fix the error (`fix 2`) fails to compile.
+    - **MANDATORY RESET:** After Strike 3, you MUST `git reset --hard builds` and switch to `mode = plan` for forensic analysis. This cycle repeats for Strikes 4-6 and 7-9.
 - **Strategic Strike System (Runtime Regression):**
     - If an implemented change passes compilation but fails during runtime (crashes, severe regressions reported by user), you have 3 attempts to fix the regression.
     - If the 4th attempt fails, you MUST stop and **propose** a reset to the `works` tag (or the last known stable tag).

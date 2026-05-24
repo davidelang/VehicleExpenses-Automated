@@ -1,3 +1,6 @@
+# TODO: Protocol Alignment
+- [ ] Fix memory and GEMINI.md discrepancies (Strike System, No-Deploy, Plan Mode transitions). (See: dev-ai-interaction/plans/protocol-alignment.md)
+
 # TODO: ICRS Alignment Core Migration
 - [x] Phase 1: Define ICRS Architecture (See: docs/specs/ISOTROPIC_COORDINATE_SPEC.md)
 - [x] Phase 2: Database Source of Truth Migration
