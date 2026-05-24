@@ -299,12 +299,11 @@ private suspend fun runExperiment(
 
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp)
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
 
-                val tilt = deskewRes.angle
-                val tMl = deskewRes.mlTimeMs
-                val tPd = deskewRes.paddleTimeMs
+                val tilt = 0f
+                val tMl = deskewResA.mlTimeMs
+                val tPd = deskewResA.paddleTimeMs
 
                 // Phase 116: Independent High-Quality Rotation (Cubic)
                 suspend fun rotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
@@ -312,10 +311,10 @@ private suspend fun runExperiment(
                     val src = set.p.mat
                     val dst = set.s.mat
                     
-                    val matrix = android.graphics.Matrix()
-                    matrix.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
+                    val matrixLocal = android.graphics.Matrix()
+                    matrixLocal.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
                     val values = FloatArray(9)
-                    matrix.getValues(values)
+                    matrixLocal.getValues(values)
 
                     val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
                     rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
@@ -327,17 +326,8 @@ private suspend fun runExperiment(
                     System.currentTimeMillis() - tRot0
                 }
 
-                // Standard Rotation
-                val tRotate = if (Math.abs(tilt) > 0.2f) {
-                    val tR0 = System.currentTimeMillis()
-                    val matrix = android.graphics.Matrix()
-                    matrix.postRotate(-tilt, masterBmp.width / 2f, masterBmp.height / 2f)
-                    val scratchCanvas = Canvas(scratchBmp)
-                    scratchCanvas.drawColor(Color.BLACK)
-                    scratchCanvas.drawBitmap(masterBmp, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
-                    Canvas(masterBmp).drawBitmap(scratchBmp, 0f, 0f, null)
-                    System.currentTimeMillis() - tR0
-                } else 0L
+                // Standard Rotation (DISABLED)
+                val tRotate = 0L
 
                 // Path A: ML Kit Deskew
                 val angleA = deskewResA.engines["ML Kit"]?.angle ?: 0f
@@ -540,18 +530,18 @@ private suspend fun runExperiment(
 
                 val rowHtml = buildHtmlRowDynamic(
                     index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
-                    alignedBase64, alignedA64, alignedB64, ocrStd.debugText, 
+                    "", alignedA64, alignedB64, ocrA.debugText, 
                     vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), 
-                    harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, 
-                    tilt, deskewRes, meta.diagnostic
+                    harnessEngineNames, (tMl + tPd), (tDiscoveryTotalA + tDiscoveryTotalB), 
+                    tilt, deskewResA, meta.diagnostic
                 )
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
                 val photoJson = serializePhotoResultToJson(
-                    index + 1, imgW, imgH, masterBmp.width, masterBmp.height, meta.isDegraded, 
-                    meta.diagnostic, photoResult!!, vehicles, deskewRes, deskewResA, tSnapOrig, tSnapAlign
+                    index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, 
+                    meta.diagnostic, photoResult!!, vehicles, OdometerOcrUtils.DeskewResult(0f, 0f, 0L, 0L), deskewResA, tSnapOrig, tSnapAlign
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
