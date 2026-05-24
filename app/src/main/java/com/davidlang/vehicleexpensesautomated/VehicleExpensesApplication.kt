@@ -26,7 +26,6 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     companion object {
         var anchoredEngineV3: NativePaddleEngine? = null; private set
-        var anchoredEngineV3Mono: NativePaddleEngine? = null; private set
     }
 
     override fun onCreate() {
@@ -41,7 +40,6 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         
         // 3. Anchor Engine Instances (External to class load loop)
         anchoredEngineV3 = NativePaddleEngine(this, variant = "V3")
-        anchoredEngineV3Mono = NativePaddleEngine(this, variant = "V3", useMono = true)
         
         android.util.Log.i("VehicleExpensesApp", "onCreate complete. Engines anchored.")
         super.onCreate()

@@ -84,8 +84,8 @@ object ImageIngestionProvider {
         
         // --- TYPE-AWARE DISPATCHER ---
         val meta = when (ext) {
-            "jpg", "jpeg" -> ingestViaNativeJpeg(path, targetA, masterBmp, t0)
-            "dng" -> ingestViaNativeDng(context, path, targetA, masterBmp, t0)
+            "jpg", "jpeg" -> ingestJpeg(path, targetA, masterBmp, t0)
+            "dng" -> ingestDng(context, path, targetA, masterBmp, t0)
             else -> ingestViaImageDecoder(context, path, targetA, masterBmp, t0) // Fallback for png etc
         }
 
@@ -97,7 +97,7 @@ object ImageIngestionProvider {
         return meta
     }
 
-    private fun ingestViaNativeDng(
+    private fun ingestDng(
         context: Context,
         path: String,
         target: BufferSet,
@@ -130,7 +130,7 @@ object ImageIngestionProvider {
         )
     }
 
-    private fun ingestViaNativeJpeg(
+    private fun ingestJpeg(
         path: String,
         target: BufferSet,
         masterBmp: Bitmap,

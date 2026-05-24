@@ -62,186 +62,93 @@ object OdometerOcrUtils {
     )
 
     suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
-        return if (input is BufferSet.Slice) {
-            calculateAverageTextAngleMono(input)
-        } else {
-            calculateAverageTextAngleStandard(input)
-        }
-    }
-
-    private suspend fun calculateAverageTextAngleStandard(input: Any): DeskewResult {
         val t0 = System.currentTimeMillis()
         
-        val enabledEngines = mapOf(
-            "ML Kit" to ::deskewMlKit,
-            "Paddle V3" to ::deskewPaddle
-        )
-        
-        val results = mutableMapOf<String, EngineResult>()
-        enabledEngines.forEach { (name, func) ->
-            results[name] = func(input)
-        }
-        
-        val mlRes = results["ML Kit"]
-        val pdRes = results["Paddle V3"]
-        
-        val finalAngle = mlRes?.angle ?: 0.0f
-        
-        return DeskewResult(
-            angle = finalAngle.coerceIn(-20f, 20f), 
-            mlAngle = finalAngle,
-            mlTimeMs = mlRes?.timesMs?.sum() ?: 0L,
-            paddleTimeMs = pdRes?.timesMs?.sum() ?: 0L,
-            mlBlocks = mlRes?.blocks ?: emptyList(),
-            paddleBlocks = pdRes?.blocks ?: emptyList(),
-            engines = results
-        )
-    }
-
-    private suspend fun calculateAverageTextAngleMono(input: BufferSet.Slice): DeskewResult {
-        val t0 = System.currentTimeMillis()
+        // 1. Unified Preparation (Bitmap or BufferSet.Slice)
+        val pTargetSize = 2048
         val bufferSet = NativePaddleEngine.deskewBufferSet2048
         
-        // 1. Geometry Normalization
-        val pTargetSize = 2048
-        val srcW = input.width
-        val srcH = input.height
+        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
+        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
+        
         val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
         val pWidth = (srcW * pScale).toInt()
         val pHeight = (srcH * pScale).toInt()
 
-        // 2. Register transient crop in workspace (Zero-Allocation sub-view for Native Resize)
         bufferSet.p.clear()
         val cropId = bufferSet.createCrop(0, 0, pWidth, pHeight)
         val workspaceCrop = bufferSet.c[cropId]
 
-        // 3. Native Resize directly into the crop
-        Imgproc.resize(input.mat, workspaceCrop.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-        val tPrep = System.currentTimeMillis() - t0
+        // 2. Native Resize into workspace
+        if (input is Bitmap) {
+            val argbMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(input, argbMat)
+            val gray = Mat()
+            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.resize(gray, workspaceCrop.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+            argbMat.release(); gray.release()
+        } else {
+            Imgproc.resize((input as BufferSet.Slice).mat, workspaceCrop.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        }
         
+        val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
         
-        // 4. ML Kit Path: Zero-Copy NV21 from FULL contiguous buffer
-        // Note: We pass full 2048x2048 dimensions because crops do not support nv21 access.
+        // 3. ML Kit Path
         val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKitMono(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
+        val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
-        // 5. Paddle Path: Native Mat Tensor Population from CROP
+        // 4. Paddle Path
         val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleMono(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
+        val pdRes = deskewPaddle(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
         
-        workspaceCrop.release() // Free transient crop
-        
-        val finalAngle = mlRes.angle
+        workspaceCrop.release()
         
         return DeskewResult(
-            angle = finalAngle.coerceIn(-20f, 20f), 
-            mlAngle = finalAngle,
+            angle = mlRes.angle.coerceIn(-20f, 20f), 
+            mlAngle = mlRes.angle,
             mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
             mlBlocks = mlRes.blocks,
             paddleBlocks = pdRes.blocks,
             engines = results,
-            metadata = mapOf("mode" to "mono", "t_prep_ms" to tPrep.toString())
+            metadata = mapOf("t_prep_ms" to tPrep.toString())
         )
     }
 
-    private suspend fun deskewMlKitMono(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
+    private suspend fun deskewMlKit(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
         val tStart = System.currentTimeMillis()
-        
-        // Zero-copy transition to ML Kit using pre-allocated FULL NV21 buffer (Contiguous)
-        val img = InputImage.fromByteBuffer(
-            nv21, width, height, 0, InputImage.IMAGE_FORMAT_NV21
-        )
-        
+        val img = InputImage.fromByteBuffer(nv21, width, height, 0, InputImage.IMAGE_FORMAT_NV21)
         val res = extractFromPhotoBitmapRaw(img)
         val tDetect = System.currentTimeMillis() - tStart
         
         val invScale = 1.0f / pScale
         val scaledBlocks = res.textBlocks.map { block ->
             val b = block.boundingBox
-            val scaledRect = android.graphics.Rect(
-                (b.left * invScale).toInt(),
-                (b.top * invScale).toInt(),
-                (b.right * invScale).toInt(),
-                (b.bottom * invScale).toInt()
-            )
-            block.copy(boundingBox = scaledRect)
+            block.copy(boundingBox = android.graphics.Rect((b.left * invScale).toInt(), (b.top * invScale).toInt(), (b.right * invScale).toInt(), (b.bottom * invScale).toInt()))
         }
-
         val srcH = (height * invScale).toInt()
-        val angle = calculateWeightedAverage(scaledBlocks, srcH)
-        return EngineResult(angle, listOf(tDetect), scaledBlocks)
+        return EngineResult(calculateWeightedAverage(scaledBlocks, srcH), listOf(tDetect), scaledBlocks)
     }
 
-    private suspend fun deskewPaddleMono(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
+    private suspend fun deskewPaddle(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
         val tStart = System.currentTimeMillis()
-        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3Mono ?: return EngineResult(0f, listOf(0L))
-        val det = paddleEngine.detectMono(resizedMat, pWidth, pHeight)
+        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, listOf(0L))
+        val det = paddleEngine.detect(resizedMat, pWidth, pHeight)
         val tDetect = System.currentTimeMillis() - tStart
         
         var angle = 0f
         var blocks = emptyList<TextBlock>()
         if (det != null) {
-            blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None", "PaddleMono")
+            blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
             val srcH = (pHeight / pScale).toInt()
             angle = calculateWeightedAverage(blocks, srcH)
         }
         return EngineResult(angle, listOf(tDetect), blocks, det?.metadata ?: emptyMap())
-    }
-
-    private suspend fun deskewMlKit(input: Any): EngineResult {
-        val tStart = System.currentTimeMillis()
-        val targetBitmap = NativePaddleEngine.sharedBmp2048
-        
-        val (pWidth, pHeight, pScale) = prepDeskewBuffer(input, targetBitmap)
-        val tPrep = System.currentTimeMillis() - tStart
-
-        val t1 = System.currentTimeMillis()
-        val res = extractFromPhotoBitmapRaw(com.google.mlkit.vision.common.InputImage.fromBitmap(targetBitmap, 0))
-        val tDetect = System.currentTimeMillis() - t1
-        
-        val invScale = 1.0f / pScale
-        val scaledBlocks = res.textBlocks.map { block ->
-            val b = block.boundingBox
-            val scaledRect = android.graphics.Rect(
-                (b.left * invScale).toInt(),
-                (b.top * invScale).toInt(),
-                (b.right * invScale).toInt(),
-                (b.bottom * invScale).toInt()
-            )
-            block.copy(boundingBox = scaledRect)
-        }
-
-        val srcH = (pHeight * invScale).toInt()
-        val angle = calculateWeightedAverage(scaledBlocks, srcH)
-        return EngineResult(angle, listOf(tPrep, tDetect), scaledBlocks)
-    }
-
-    private suspend fun deskewPaddle(input: Any): EngineResult {
-        val tStart = System.currentTimeMillis()
-        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, listOf(0L))
-        val targetBitmap = NativePaddleEngine.sharedBmp2048
-
-        val (pWidth, pHeight, pScale) = prepDeskewBuffer(input, targetBitmap)
-        val tPrep = System.currentTimeMillis() - tStart
-
-        val t1 = System.currentTimeMillis()
-        val det = paddleEngine.detect(targetBitmap, pWidth, pHeight)
-        val tDetect = System.currentTimeMillis() - t1
-        
-        var angle = 0f
-        var blocks = emptyList<TextBlock>()
-        if (det != null) {
-            blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, targetBitmap, "Paddle")
-            val srcH = (pHeight / pScale).toInt()
-            angle = calculateWeightedAverage(blocks, srcH)
-        }
-        return EngineResult(angle, listOf(tPrep, tDetect), blocks)
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
@@ -420,7 +327,7 @@ object OdometerOcrUtils {
     }
 
     fun applyBilateralInPlace(bitmap: Bitmap, scratchBmp: Bitmap) {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
@@ -429,7 +336,7 @@ object OdometerOcrUtils {
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
         
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmapMono(filtered, bitmap)
+            matToBitmap(filtered, bitmap)
         } else {
             val outMat = Mat(); Imgproc.cvtColor(filtered, outMat, Imgproc.COLOR_GRAY2RGBA)
             org.opencv.android.Utils.matToBitmap(outMat, scratchBmp)
@@ -449,7 +356,7 @@ object OdometerOcrUtils {
     }
 
     fun applyBilateral(bitmap: Bitmap, argbScratch: Bitmap? = null): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
@@ -459,7 +366,7 @@ object OdometerOcrUtils {
 
         // Phase 115: In-place update
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmapMono(filtered, bitmap)
+            matToBitmap(filtered, bitmap)
         } else {
             org.opencv.android.Utils.matToBitmap(filtered, bitmap)
         }
@@ -477,7 +384,7 @@ object OdometerOcrUtils {
     }
 
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMatMono(bitmap) else {
+        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
         }
         val gray = Mat()
@@ -494,14 +401,14 @@ object OdometerOcrUtils {
 
         // Phase 115: In-place update to long-lived buffer
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmapMono(dst, bitmap)
+            matToBitmap(dst, bitmap)
         } else {
             org.opencv.android.Utils.matToBitmap(dst, bitmap)
         }
         src.release(); gray.release(); hist.release(); dst.release(); return bitmap
     }
     // Phase 115: CV_8UC1 Monochrome Bridge (Zero-Allocation)
-    fun bitmapToMatMono(bitmap: Bitmap): Mat {
+    fun bitmapToMat(bitmap: Bitmap): Mat {
         val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8U)
         val capacity = bitmap.width * bitmap.height
         val buffer = java.nio.ByteBuffer.allocateDirect(capacity).order(java.nio.ByteOrder.nativeOrder())
@@ -514,7 +421,7 @@ object OdometerOcrUtils {
         return mat
     }
 
-    fun matToBitmapMono(mat: Mat, bitmap: Bitmap) {
+    fun matToBitmap(mat: Mat, bitmap: Bitmap) {
         val capacity = bitmap.width * bitmap.height
         val bytes = ByteArray(capacity)
         mat.get(0, 0, bytes)
@@ -621,48 +528,6 @@ object OdometerOcrUtils {
             Log.e("OdometerOcr", "ML Kit failed", e)
             OcrResult(engineName = "ML Kit", debugText = "(ML Kit error: ${e.message})", imageWidth = image.width, imageHeight = image.height)
         }
-    }
-
-    /**
-     * Phase 58: Multi-Column OCR Refinement.
-     */
-    private suspend fun runMlKitMonoNew(bmp: Bitmap, stageName: String): OcrStepResult {
-        val targetW = 320; val targetH = 48
-        
-        // 1. Force-scale input to recognition dimensions
-        val scaledBmp = Bitmap.createScaledBitmap(bmp, targetW, targetH, true)
-        
-        val meta = mutableMapOf<String, String>()
-        meta["inputW"] = bmp.width.toString()
-        meta["inputH"] = bmp.height.toString()
-        meta["targetW"] = targetW.toString()
-        meta["targetH"] = targetH.toString()
-        
-        // 2. NV21 Construction
-        val frameSize = targetW * targetH
-        val nv21 = ByteArray(frameSize * 3 / 2)
-        val pixels = IntArray(frameSize)
-        scaledBmp.getPixels(pixels, 0, targetW, 0, 0, targetW, targetH)
-        
-        for (i in 0 until frameSize) {
-            nv21[i] = ((pixels[i] shr 16) and 0xFF).toByte()
-        }
-        for (i in frameSize until nv21.size) nv21[i] = 128.toByte()
-        
-        // 3. Diagnostic: Capture base64 of NV21 buffer
-        meta["rawBufferBase64"] = android.util.Base64.encodeToString(nv21, android.util.Base64.NO_WRAP)
-        
-        return OcrStepResult(
-            stageName = stageName,
-            thumbB64 = OcrUtils.bitmapToBase64(scaledBmp),
-            ocrInputB64 = meta["rawBufferBase64"],
-            text = "DIAGNOSTIC",
-            boxes = emptyList(),
-            normalizedBoxes = emptyList(),
-            rawBox = Rect(0,0,targetW,targetH),
-            refinedBox = Rect(0,0,targetW,targetH),
-            metadata = meta
-        )
     }
 
     fun addPadding(bitmap: Bitmap, padding: Int, color: Int = Color.BLACK): Bitmap {

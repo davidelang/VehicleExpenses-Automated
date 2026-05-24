@@ -192,8 +192,7 @@ private suspend fun runExperiment(
     
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-    val paddleEngineV3 = NativePaddleEngine(context, variant = "V3")
-    val paddleEngineV3Mono = NativePaddleEngine(context, variant = "V3", useMono = true)
+    val paddleEngine = NativePaddleEngine(context, variant = "V3")
 
     val cachedRefs = vehicles.map { vehicle ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, vehicle.referenceDashPhotoUrl!!) 
@@ -292,14 +291,14 @@ private suspend fun runExperiment(
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp)
-                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
+                val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
 
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
                 val tPd = deskewRes.paddleTimeMs
 
                 // Phase 116: Independent High-Quality Rotation (Cubic)
-                suspend fun rotateNative(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
+                suspend fun rotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
                     val tRot0 = System.currentTimeMillis()
                     val src = set.p.mat
                     val dst = set.s.mat
@@ -332,12 +331,12 @@ private suspend fun runExperiment(
                 } else 0L
 
                 // Path A: ML Kit Deskew
-                val angleA = deskewResMono.engines["ML Kit"]?.angle ?: 0f
-                val tRotateA = rotateNative(NativePaddleEngine.bufferSetA, angleA)
+                val angleA = deskewResA.engines["ML Kit"]?.angle ?: 0f
+                val tRotateA = rotate(NativePaddleEngine.bufferSetA, angleA)
                 
                 // Path B: Paddle Deskew
-                val angleB = deskewResMono.engines["Paddle V3"]?.angle ?: 0f
-                val tRotateB = rotateNative(NativePaddleEngine.bufferSetB, angleB)
+                val angleB = deskewResA.engines["Paddle V3"]?.angle ?: 0f
+                val tRotateB = rotate(NativePaddleEngine.bufferSetB, angleB)
 
                 val tDiscoveryStart = System.currentTimeMillis()
                 val (ocrStd, queryLandmarksRaw) = performLandmarkDiscovery(masterBmp, context)
@@ -364,8 +363,8 @@ private suspend fun runExperiment(
                 val winnerRef = cachedRefs.find { it.vehicle.id == winnerId }
                 
                 var alignedBase64 = ""
-                var alignedAB64 = ""
-                var alignedBB64 = ""
+                var alignedA64 = ""
+                var alignedB64 = ""
                 var tSnapAlign = 0L
 
                 // Winner-Only Processing block
@@ -386,8 +385,8 @@ private suspend fun runExperiment(
                     val elapsedAlign = System.currentTimeMillis() - t0
 
                     
-                    // 1.2 Native Alignment A (In-place on bufferSetA)
-                    val nativeAlignResA = ImageAlignmentUtils.anchorAlignNative(
+                    // 1.2 Alignment A (In-place on bufferSetA)
+                    val alignResA = ImageAlignmentUtils.anchorAlign(
                         NativePaddleEngine.bufferSetA, 
                         winnerRef.curatedLandmarks, 
                         queryLandmarksAPrimary, 
@@ -399,8 +398,8 @@ private suspend fun runExperiment(
                         scratchBmp
                     )
                     
-                    // FIX: Capture Native A ALIGNED Thumbnail
-                    val (snapA, tSnapA) = if (nativeAlignResA.success) { 
+                    // Capture Aligned Thumbnail A
+                    val (snapA, tSnapA) = if (alignResA.success) { 
                         OcrUtils.takeSnapshot(
                             source = NativePaddleEngine.bufferSetA.p, 
                             sourceRect = null, 
@@ -411,10 +410,10 @@ private suspend fun runExperiment(
                             scratchYuv = NativePaddleEngine.bufferSetA
                         ) 
                     } else Pair("", 0L)
-                    alignedAB64 = snapA
+                    alignedA64 = snapA
 
-                    // 1.3 Native Alignment B (In-place on bufferSetB)
-                    val nativeAlignResB = ImageAlignmentUtils.anchorAlignNative(
+                    // 1.3 Alignment B (In-place on bufferSetB)
+                    val alignResB = ImageAlignmentUtils.anchorAlign(
                         NativePaddleEngine.bufferSetB, 
                         winnerRef.curatedLandmarks, 
                         queryLandmarksBPrimary, 
@@ -426,8 +425,8 @@ private suspend fun runExperiment(
                         scratchBmp
                     )
                     
-                    // FIX: Capture Native B ALIGNED Thumbnail
-                    val (snapB, tSnapB) = if (nativeAlignResB.success) { 
+                    // Capture Aligned Thumbnail B
+                    val (snapB, tSnapB) = if (alignResB.success) { 
                         OcrUtils.takeSnapshot(
                             source = NativePaddleEngine.bufferSetB.p, 
                             sourceRect = null, 
@@ -438,15 +437,15 @@ private suspend fun runExperiment(
                             scratchYuv = NativePaddleEngine.bufferSetB
                         ) 
                     } else Pair("", 0L)
-                    alignedBB64 = snapB
+                    alignedB64 = snapB
 
                     // Capture Standard ALIGNED Thumbnail for Report (Use null to prevent clobbering)
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, null)
                     tSnapAlign = tSnapA + tSnapB
 
                     val alignmentTrace = AlignmentTraceResult(alignRes.success, elapsedAlign, alignedBase64, alignRes.metadata)
-                    val alignmentTraceA = AlignmentTraceResult(nativeAlignResA.success, nativeAlignResA.timeMs, alignedAB64, nativeAlignResA.metadata)
-                    val alignmentTraceB = AlignmentTraceResult(nativeAlignResB.success, nativeAlignResB.timeMs, alignedBB64, nativeAlignResB.metadata)
+                    val alignmentTraceA = AlignmentTraceResult(alignResA.success, alignResA.timeMs, alignedA64, alignResA.metadata)
+                    val alignmentTraceB = AlignmentTraceResult(alignResB.success, alignResB.timeMs, alignedB64, alignResB.metadata)
                     
                     val refinementTraces = mutableMapOf<String, RefinementTrace>()
                     val refinementTracesA = mutableMapOf<String, RefinementTrace>()
@@ -485,14 +484,14 @@ private suspend fun runExperiment(
                         // --- Sequential Execution (Phase 116 Restoration) ---
                         // Standard Baseline
                         runMLKitIterative("ML Diag", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hStd, refinementTraces)
-                        runPaddleValleyMonoIterative("Paddle Std", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, hStd, refinementTraces)
+                        runPaddleValleyIterative("Paddle Std", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hStd, refinementTraces)
                         
                         // Path A
-                        runMLKitIterative("ML Native", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hA, refinementTracesA)
-                        runPaddleValleyMonoIterative("Set A", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, hA, refinementTracesA)
+                        runMLKitIterative("Set A (ML)", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hA, refinementTracesA)
+                        runPaddleValleyIterative("Set A", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hA, refinementTracesA)
 
                         // Path B
-                        runPaddleValleyMonoIterative("Set B", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, hB, refinementTracesB)
+                        runPaddleValleyIterative("Set B", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hB, refinementTracesB)
                     }
                     
                     val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
@@ -538,15 +537,15 @@ private suspend fun runExperiment(
 
                 // Photo-level Pathway Results (Phase 116)
                 val standardPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryTotal, alignedBase64, ocrStd, queryLandmarksRaw, harnessResultsMap)
-                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.mlTimeMs), tDiscoveryTotalA, alignedAB64, ocrA, queryLandmarksA, harnessResultsMap)
-                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.paddleTimeMs), tDiscoveryTotalB, alignedBB64, ocrB, queryLandmarksB, harnessResultsMap)
+                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.mlTimeMs), tDiscoveryTotalA, alignedA64, ocrA, queryLandmarksA, harnessResultsMap)
+                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.paddleTimeMs), tDiscoveryTotalB, alignedB64, ocrB, queryLandmarksB, harnessResultsMap)
                 
                 val pathways = mapOf("standard" to standardPhotoPath, "set_a" to setAPhotoPath, "set_b" to setBPhotoPath)
                 photoResult = ProcessedPhotoResult(file.name, pathways, vehicleResultsMap, primaryVetoResults)
 
                 val rowHtml = buildHtmlRowDynamic(
                     index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
-                    alignedBase64, alignedAB64, alignedBB64, ocrStd.debugText, 
+                    alignedBase64, alignedA64, alignedB64, ocrStd.debugText, 
                     vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(), 
                     harnessEngineNames, (tMl + tPd + tRotate), tDiscoveryTotal, 
                     tilt, deskewRes, meta.diagnostic
@@ -557,7 +556,7 @@ private suspend fun runExperiment(
 
                 val photoJson = serializePhotoResultToJson(
                     index + 1, imgW, imgH, masterBmp.width, masterBmp.height, meta.isDegraded, 
-                    meta.diagnostic, photoResult!!, vehicles, deskewRes, deskewResMono, tSnapOrig, tSnapAlign
+                    meta.diagnostic, photoResult!!, vehicles, deskewRes, deskewResA, tSnapOrig, tSnapAlign
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -598,7 +597,7 @@ private suspend fun runExperiment(
 private fun serializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
     nativeProbe: String, photoResult: ProcessedPhotoResult, vehicles: List<Vehicle>, 
-    deskewRes: OdometerOcrUtils.DeskewResult, deskewResMono: OdometerOcrUtils.DeskewResult? = null,
+    deskewRes: OdometerOcrUtils.DeskewResult, deskewResA: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapAlign: Long = 0
 ): JSONObject {
     val root = JSONObject()
@@ -628,7 +627,7 @@ private fun serializePhotoResultToJson(
         // Deskew Data (Combined map for A/B comparison)
         val deskewObj = JSONObject()
         deskewObj.putSafe("std_angle", deskewRes.angle.toDouble())
-        deskewObj.putSafe("mono_angle", (deskewResMono?.angle ?: 0f).toDouble())
+        deskewObj.putSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
         put("deskew", deskewObj)
 
         val safeW = (photoResult.pathways["standard"]?.discoveryResult?.imageWidth ?: 1).toDouble()
@@ -977,7 +976,7 @@ private fun clusterRects(fragments: List<android.graphics.Rect>): List<android.g
     }
 }
 
-private suspend fun runPaddleValleyMonoIterative(
+private suspend fun runPaddleValleyIterative(
     displayName: String, 
     masterBuffer: Any, 
     mWidth: Int, 
@@ -987,7 +986,7 @@ private suspend fun runPaddleValleyMonoIterative(
     vehicleArgbCrops: Map<Int, Bitmap>,
     experimentDetSet512x128: BufferSet,
     experimentRecSet320x48: BufferSet,
-    paddleEngineV3Mono: NativePaddleEngine,
+    paddleEngine: NativePaddleEngine,
     scratchBmp: Bitmap,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>
@@ -1044,7 +1043,7 @@ private suspend fun runPaddleValleyMonoIterative(
         
         val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes = paddleEngineV3Mono.detectMono(experimentDetSet512x128.p)
+        val detRes = paddleEngine.detect(experimentDetSet512x128.p)
         val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, odoBuffer.p.mat, "Paddle") else emptyList()
         experimentDetSet512x128.c[detCropId].release()
         
@@ -1069,7 +1068,7 @@ private suspend fun runPaddleValleyMonoIterative(
             odoBuffer.c[rSrcId].release()
             experimentRecSet320x48.c[rCrId].release()
             
-            val ocrR = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.p, paddleEngineV3Mono.getDictionary())
+            val ocrR = paddleEngine.runConstrainedStatic(experimentRecSet320x48.p, paddleEngine.getDictionary())
             if (ocrR.text.isNotBlank()) { odoB.append(ocrR.text).append(" "); fBoxes.add(box) }
             ocrR.metadata.forEach { (k, v) -> jMeta.addProperty(k, v) }
         }
@@ -1083,7 +1082,7 @@ private suspend fun runPaddleValleyMonoIterative(
         rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
         fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
         
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.fullBufferSet)
+        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.bufferSetA)
         lastThumb = sB64
         tSnTotal += ts
         htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
@@ -1189,7 +1188,7 @@ private suspend fun runMLKitIterative(
             b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) } 
         }
         
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.fullBufferSet)
+        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.bufferSetA)
         lastThumb = sB64
         tSnTotal += ts
         htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
