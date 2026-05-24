@@ -288,9 +288,15 @@ private suspend fun runExperiment(
             
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB, scratchBmp, masterBmp)
             
-            val tSnapOrig0 = System.currentTimeMillis()
-            val originalBase64 = createScaledBase64(masterBmp!!, 225, 50, null)
-            val tSnapOrig = System.currentTimeMillis() - tSnapOrig0
+            val (originalBase64, tSnapOrig) = OcrUtils.takeSnapshot(
+                source = NativePaddleEngine.bufferSetA.p,
+                sourceRect = null,
+                targetW = 225,
+                targetH = 0, // Aspect-aware
+                annotations = emptyList(),
+                scratchArgb = null,
+                scratchYuv = NativePaddleEngine.bufferSetA
+            )
 
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
