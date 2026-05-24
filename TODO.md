@@ -16,4 +16,4 @@
 
 # TODO: Gas Pump Extraction
 - [x] DONE: Decouple `takeSnapshot` utility (See: plans/decouple-take-snapshot.md)
-- [ ] Implement Gas Pump Field Extraction Experiment on Android (See: plans/pump-extraction-experiment.md)
+- [x] DONE: Implement Gas Pump Field Extraction Experiment on Android (See: dev-ai-interaction/plans/integrate-pump-extraction.md)
