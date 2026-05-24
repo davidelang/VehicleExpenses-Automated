@@ -306,7 +306,7 @@ private suspend fun runPumpExperiment(
 
                 val rowHtml = pBuildHtmlRowDynamic(
                     index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
-                    deskewedA64, deskewedB64, (tRotateA + tRotateB), tilt, meta.diagnostic
+                    deskewedA64, deskewedB64, (tRotateA + tRotateB), tilt, angleA, angleB, meta.diagnostic
                 )
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
@@ -392,6 +392,8 @@ private fun pBuildHtmlRowDynamic(
     deskewedB64: String,
     tDeskew: Long, 
     tilt: Float,
+    angleA: Float,
+    angleB: Float,
     diagnostic: String = ""
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
@@ -401,7 +403,7 @@ private fun pBuildHtmlRowDynamic(
     // Deskewed A (ML Kit)
     appendLine("<td>")
     if (deskewedA64.isNotEmpty()) {
-        appendLine("<img src='data:image/jpeg;base64,$deskewedA64'><br>")
+        appendLine("<img src='data:image/jpeg;base64,$deskewedA64'><br><small>Angle: %.2f&deg;</small>".format(angleA))
     } else {
         appendLine("<i>Failed</i>")
     }
@@ -410,7 +412,7 @@ private fun pBuildHtmlRowDynamic(
     // Deskewed B (Paddle)
     appendLine("<td>")
     if (deskewedB64.isNotEmpty()) {
-        appendLine("<img src='data:image/jpeg;base64,$deskewedB64'><br>")
+        appendLine("<img src='data:image/jpeg;base64,$deskewedB64'><br><small>Angle: %.2f&deg;</small>".format(angleB))
     } else {
         appendLine("<i>Failed</i>")
     }
