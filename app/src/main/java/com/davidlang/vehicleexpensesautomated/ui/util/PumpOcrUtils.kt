@@ -1,13 +1,11 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Rect
 import android.util.Log
-import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.opencv.core.Mat
+import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
 /**
@@ -15,31 +13,29 @@ import org.opencv.imgproc.Imgproc
  * Ported from: dev-ai-interaction/research/PUMP_EXTRACTION_ALGORITHM.md
  *
  * This utility is designed for high-resolution discovery and extraction of 
- * Total Cost and Volume fields from gas pump displays.
+ * Total Cost and Volume fields from gas pump displays using the Rigid Buffer Architecture.
  */
 object PumpOcrUtils {
     private const val TAG = "PumpOcrUtils"
 
-    // Multi-scale resolutions defined in v40 spec
-    private val SCALES = listOf(200, 600, 1000, 2500)
+    // Multi-scale resolutions defined in v40 spec, clamped to 2048 mono-tensor limits
+    private val SCALES = listOf(200, 600, 1000, 2048)
 
     /**
      * Main entry point for pump field discovery.
-     * Performs multi-scale detection, merging, stitching, and lane pairing.
+     * Operates strictly on global rigid buffers (fullBufferSet, deskewBufferSet2048).
      */
     suspend fun discoverPumpFields(
-        masterBmp: Bitmap,
         context: Context,
-        bufferSet: BufferSet,
-        scratchBmp: Bitmap,
         paddleEngine: NativePaddleEngine,
         report: (String) -> Unit = {}
     ): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
+        val metaLog = mutableMapOf<String, String>()
         report("Starting multi-scale discovery...")
 
         // 1. Multi-Scale Detection Pass
-        val allBoxes = performMultiScalePass(masterBmp, bufferSet, paddleEngine, report)
+        val allBoxes = performMultiScalePass(paddleEngine, report, metaLog)
 
         // 2. Hybrid Hunk Construction (IoU Merging)
         val mergedBoxes = mergeBoxes(allBoxes)
@@ -52,54 +48,75 @@ object PumpOcrUtils {
 
         // 5. Final Recognition Pass (on best pair)
         val result = if (bestPair != null) {
-            recognizeFields(masterBmp, bestPair, bufferSet, scratchBmp, paddleEngine)
+            recognizeFields(bestPair, paddleEngine, metaLog)
         } else {
             OcrResult(debugText = "No pump lanes detected")
         }
 
         result.copy(
             executionTimeMs = System.currentTimeMillis() - t0,
-            imageWidth = masterBmp.width,
-            imageHeight = masterBmp.height
+            imageWidth = NativePaddleEngine.fullBufferSet.width,
+            imageHeight = NativePaddleEngine.fullBufferSet.height,
+            metadata = result.metadata + metaLog
         )
     }
 
     /**
-     * Executes the detection model at four scales (200, 600, 1000, 2500 px).
+     * Executes the detection model at four scales (200, 600, 1000, 2048 px).
      */
     private suspend fun performMultiScalePass(
-        masterBmp: Bitmap,
-        bufferSet: BufferSet,
         paddleEngine: NativePaddleEngine,
-        report: (String) -> Unit
+        report: (String) -> Unit,
+        metaLog: MutableMap<String, String>
     ): List<RectF> {
         val resultBoxes = mutableListOf<RectF>()
         
+        val sourceW = NativePaddleEngine.fullBufferSet.width
+        val sourceH = NativePaddleEngine.fullBufferSet.height
+        val aspect = sourceW.toFloat() / sourceH.toFloat()
+
         for (scale in SCALES) {
             report("Detection at ${scale}px...")
             
             // 1. Prepare target scale (Preserve aspect ratio)
-            val aspect = masterBmp.width.toFloat() / masterBmp.height.toFloat()
             val targetW: Int
             val targetH: Int
-            if (masterBmp.width > masterBmp.height) {
+            if (sourceW > sourceH) {
                 targetW = scale; targetH = (scale / aspect).toInt()
             } else {
                 targetH = scale; targetW = (scale * aspect).toInt()
             }
             
-            // 2. Run Detection (Paddle Mono)
-            val det = paddleEngine.detectMono(masterBmp, targetW, targetH)
-            if (det != null) {
-                // 3. Process Heatmap to get blocks
-                val blocks = OdometerOcrUtils.processPaddleHeatmap(
-                    det.heatmap, det.width, det.height, 1.0f, "None", "PaddlePump"
+            metaLog["Scale_${scale}_Dims"] = "${targetW}x${targetH}"
+
+            // 2. Create Logical Crop on Scratchpad
+            val cropId = NativePaddleEngine.deskewBufferSet2048.s.createCrop(0, 0, targetW, targetH)
+            
+            try {
+                // 3. Resize Source into Scratchpad Crop
+                val targetMat = NativePaddleEngine.deskewBufferSet2048.c[cropId].mat
+                Imgproc.resize(
+                    NativePaddleEngine.fullBufferSet.p.mat,
+                    targetMat,
+                    Size(targetW.toDouble(), targetH.toDouble()),
+                    0.0, 0.0, Imgproc.INTER_AREA
                 )
-                
-                // 4. Collect Normalized Boxes
-                blocks.forEach { block ->
-                    block.rawDiscoveryBox?.let { resultBoxes.add(it) }
+
+                // 4. Run Detection (Paddle Mono)
+                val det = paddleEngine.detectMono(NativePaddleEngine.deskewBufferSet2048.c[cropId])
+                if (det != null) {
+                    // 5. Process Heatmap to get blocks
+                    val blocks = OdometerOcrUtils.processPaddleHeatmap(
+                        det.heatmap, det.width, det.height, 1.0f, "None", "PaddlePump"
+                    )
+                    
+                    // 6. Collect Normalized Boxes
+                    blocks.forEach { block ->
+                        block.rawDiscoveryBox?.let { resultBoxes.add(it) }
+                    }
                 }
+            } finally {
+                NativePaddleEngine.deskewBufferSet2048.c[cropId].release()
             }
         }
         
@@ -210,18 +227,18 @@ object PumpOcrUtils {
             for (j in i + 1 until sorted.size) {
                 val bottom = sorted[j]
                 
-                // Criteria 1: Vertical proximity (bottom must be below top, gap < 2x height)
+                // Criteria 1: Vertical proximity (bottom must be below top, gap < 3x height)
                 val vGap = bottom.top - top.bottom
                 val h = top.bottom - top.top
                 if (vGap < 0 || vGap > h * 3.0f) continue
                 
-                // Criteria 2: Horizontal alignment (centers must be within 20% of width)
+                // Criteria 2: Horizontal alignment (centers must be within 30% of width)
                 val centerTop = (top.left + top.right) / 2f
                 val centerBottom = (bottom.left + bottom.right) / 2f
                 val width = maxOf(top.right - top.left, bottom.right - bottom.left)
                 if (Math.abs(centerTop - centerBottom) > width * 0.3f) continue
                 
-                // Criteria 3: Width similarity (should be within 50%)
+                // Criteria 3: Width similarity (should be within 60%)
                 val wTop = top.right - top.left
                 val wBottom = bottom.right - bottom.left
                 if (Math.abs(wTop - wBottom) > width * 0.6f) continue
@@ -241,17 +258,15 @@ object PumpOcrUtils {
      * Performs final high-resolution recognition on the selected lanes.
      */
     private suspend fun recognizeFields(
-        masterBmp: Bitmap,
         pair: Pair<RectF, RectF>,
-        bufferSet: BufferSet,
-        scratchBmp: Bitmap,
-        paddleEngine: NativePaddleEngine
+        paddleEngine: NativePaddleEngine,
+        metaLog: MutableMap<String, String>
     ): OcrResult {
         val top = pair.first
         val bottom = pair.second
 
-        val costStr = recognizeLane(masterBmp, top, paddleEngine)
-        val gallonsStr = recognizeLane(masterBmp, bottom, paddleEngine)
+        val costStr = recognizeLane(top, paddleEngine, "Cost", metaLog)
+        val gallonsStr = recognizeLane(bottom, paddleEngine, "Volume", metaLog)
 
         return OcrResult(
             cost = cleanNumericString(costStr, 2),
@@ -267,9 +282,14 @@ object PumpOcrUtils {
         return golden.any { combined.contains(it) }
     }
 
-    private suspend fun recognizeLane(masterBmp: Bitmap, roi: RectF, paddleEngine: NativePaddleEngine): String {
-        val w = masterBmp.width
-        val h = masterBmp.height
+    private suspend fun recognizeLane(
+        roi: RectF, 
+        paddleEngine: NativePaddleEngine, 
+        label: String,
+        metaLog: MutableMap<String, String>
+    ): String {
+        val w = NativePaddleEngine.fullBufferSet.width
+        val h = NativePaddleEngine.fullBufferSet.height
 
         val roiW = (roi.right - roi.left) * w
         val roiH = (roi.bottom - roi.top) * h
@@ -283,20 +303,48 @@ object PumpOcrUtils {
         val expLeft = (roi.left * w) - newH
         val expRight = (roi.right * w) + newH
 
-        val cropRect = Rect(
-            expLeft.toInt().coerceIn(0, w - 1),
-            expTop.toInt().coerceIn(0, h - 1),
-            expRight.toInt().coerceIn(1, w),
-            expBottom.toInt().coerceIn(1, h)
-        )
+        // Create logical crop on primary buffer using Float layout to trigger Anisotropic extraction
+        val cropX = expLeft / w.toFloat()
+        val cropY = expTop / h.toFloat()
+        val cropW = (expRight - expLeft) / w.toFloat()
+        val cropH = (expBottom - expTop) / h.toFloat()
+        
+        // Log telemetry for dynamic sizing analysis
+        val pixelWidth = expRight - expLeft
+        val pixelHeight = expBottom - expTop
+        val requiredRatio = pixelWidth / pixelHeight
+        val recTargetHeight = 48
+        val requiredTargetWidth = (recTargetHeight * requiredRatio).toInt()
+        metaLog["Rec_${label}_SourceRatio"] = "%.2f".format(requiredRatio)
+        metaLog["Rec_${label}_ReqWidthForH48"] = "$requiredTargetWidth"
+        
+        // Clamp to tensor max bounds
+        val tensorW = minOf(requiredTargetWidth, 320)
+        
+        val sourceCropId = NativePaddleEngine.fullBufferSet.p.createCropLegacy(cropX, cropY, cropW, cropH)
+        val targetCropId = NativePaddleEngine.deskewBufferSet2048.s.createCrop(0, 0, tensorW, recTargetHeight)
 
-        if (cropRect.width() <= 0 || cropRect.height() <= 0) return ""
+        try {
+            val srcMat = NativePaddleEngine.fullBufferSet.c[sourceCropId].mat
+            if (srcMat.cols() <= 0 || srcMat.rows() <= 0) return ""
 
-        val cropBmp = Bitmap.createBitmap(masterBmp, cropRect.left, cropRect.top, cropRect.width(), cropRect.height())
-        val res = paddleEngine.recognize(cropBmp)
-        cropBmp.recycle()
+            val dstMat = NativePaddleEngine.deskewBufferSet2048.c[targetCropId].mat
+            Imgproc.resize(
+                srcMat, 
+                dstMat, 
+                Size(tensorW.toDouble(), recTargetHeight.toDouble()), 
+                0.0, 0.0, Imgproc.INTER_AREA
+            )
 
-        return res.debugText
+            val res = paddleEngine.runConstrainedStaticMono(
+                NativePaddleEngine.deskewBufferSet2048.c[targetCropId], 
+                paddleEngine.getDictionary()
+            )
+            return res.text
+        } finally {
+            NativePaddleEngine.fullBufferSet.c[sourceCropId].release()
+            NativePaddleEngine.deskewBufferSet2048.c[targetCropId].release()
+        }
     }
 
     private fun cleanNumericString(input: String, decimalPlaces: Int): String {
