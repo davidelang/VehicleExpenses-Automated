@@ -419,6 +419,8 @@ private suspend fun runExperiment(
                 
                 var alignedBase64 = ""
                 var alignedNativeBase64 = ""
+                var alignedAB64 = ""
+                var alignedBB64 = ""
                 var tSnapAlign = 0L
 
                 // Winner-Only Processing block
@@ -850,9 +852,10 @@ private suspend fun runExperiment(
 
                     Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
                     
-                    // Phase 108: Independent Disambiguation
+                    // Phase 116: Independent Disambiguation for A and B
                     val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
-                    val queryLandmarksMonoPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
+                    val queryLandmarksAPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
+                    val queryLandmarksBPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksB, winnerRef.curatedLandmarks)
                     
                     // 1. Standard Alignment (In-place on masterBmp)
                     val t0 = System.currentTimeMillis()
@@ -860,11 +863,11 @@ private suspend fun runExperiment(
                     val elapsedAlign = System.currentTimeMillis() - t0
 
                     
-                    // 1.2 Native Alignment (In-place on bufferSetA)
-                    val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
+                    // 1.2 Native Alignment A (In-place on bufferSetA)
+                    val nativeAlignResA = ImageAlignmentUtils.anchorAlignNative(
                         NativePaddleEngine.bufferSetA, 
                         winnerRef.curatedLandmarks, 
-                        queryLandmarksMonoPrimary, 
+                        queryLandmarksAPrimary, 
                         winnerRef.vehicle, 
                         winnerRef.width, 
                         winnerRef.height, 
@@ -873,29 +876,60 @@ private suspend fun runExperiment(
                         scratchBmp
                     )
                     
-                    // FIX: Capture Native ALIGNED Thumbnail IMMEDIATELY before scratchBmp is reused
-                    val (nativeB64, tSnap) = if (nativeAlignRes.success) { 
+                    // FIX: Capture Native A ALIGNED Thumbnail
+                    val (snapA, tSnapA) = if (nativeAlignResA.success) { 
                         OcrUtils.takeSnapshot(
-                            source = NativePaddleEngine.fullBufferSet.p, 
+                            source = NativePaddleEngine.bufferSetA.p, 
                             sourceRect = null, 
                             targetW = 600, 
                             targetH = 450, 
                             annotations = emptyList(),
                             scratchArgb = scratchBmp,
-                            scratchYuv = NativePaddleEngine.fullBufferSet
+                            scratchYuv = NativePaddleEngine.bufferSetA
                         ) 
                     } else Pair("", 0L)
-                    alignedNativeBase64 = nativeB64; tSnapAlign = tSnap
+                    alignedAB64 = snapA
+
+                    // 1.3 Native Alignment B (In-place on bufferSetB)
+                    val nativeAlignResB = ImageAlignmentUtils.anchorAlignNative(
+                        NativePaddleEngine.bufferSetB, 
+                        winnerRef.curatedLandmarks, 
+                        queryLandmarksBPrimary, 
+                        winnerRef.vehicle, 
+                        winnerRef.width, 
+                        winnerRef.height, 
+                        imgW, 
+                        imgH, 
+                        scratchBmp
+                    )
+                    
+                    // FIX: Capture Native B ALIGNED Thumbnail
+                    val (snapB, tSnapB) = if (nativeAlignResB.success) { 
+                        OcrUtils.takeSnapshot(
+                            source = NativePaddleEngine.bufferSetB.p, 
+                            sourceRect = null, 
+                            targetW = 600, 
+                            targetH = 450, 
+                            annotations = emptyList(),
+                            scratchArgb = scratchBmp,
+                            scratchYuv = NativePaddleEngine.bufferSetB
+                        ) 
+                    } else Pair("", 0L)
+                    alignedBB64 = snapB
 
                     // Capture Standard ALIGNED Thumbnail for Report (Use null to prevent clobbering)
                     alignedBase64 = createScaledBase64(masterBmp!!, 600, 50, null)
+                    alignedNativeBase64 = alignedAB64 // Use A for legacy HTML row for now
+                    tSnapAlign = tSnapA + tSnapB
 
-
-                    // 2. Mono Alignment (Native OpenCV)
-                    val alignmentTraceMono = AlignmentTraceResult(nativeAlignRes.success, nativeAlignRes.timeMs, alignedNativeBase64, nativeAlignRes.metadata)
-
-                    val alignmentTrace = AlignmentTraceResult(alignRes.success, elapsedAlign, createScaledBase64(masterBmp!!, 600, 70, null), alignRes.metadata)
+                    val alignmentTrace = AlignmentTraceResult(alignRes.success, elapsedAlign, alignedBase64, alignRes.metadata)
+                    val alignmentTraceA = AlignmentTraceResult(nativeAlignResA.success, nativeAlignResA.timeMs, alignedAB64, nativeAlignResA.metadata)
+                    val alignmentTraceB = AlignmentTraceResult(nativeAlignResB.success, nativeAlignResB.timeMs, alignedBB64, nativeAlignResB.metadata)
+                    
                     val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                    // Temporary: Map traces for Part 3.2
+                    val refinementTracesA = mutableMapOf<String, RefinementTrace>()
+                    val refinementTracesB = mutableMapOf<String, RefinementTrace>()
                     
                     // Phase 58: Refinement Loop (Always executed to provide diagnostic data)
                     val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
@@ -950,11 +984,8 @@ private suspend fun runExperiment(
 
                     // Reporting Pass: Store result for winner (Phase 116 Dual Paths)
                     val standardPath = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, harnessResultsMap)
-                    
-                    // Temporary: For Phase 2, we haven't diverged alignment yet, so we use dummy traces
-                    // Path A alignment will happen in Phase 3
-                    val setAPath = SingleVehiclePathwayResult(null, refinementTraces, harnessResultsMap)
-                    val setBPath = SingleVehiclePathwayResult(null, refinementTraces, harnessResultsMap)
+                    val setAPath = SingleVehiclePathwayResult(alignmentTraceA, refinementTracesA, harnessResultsMap)
+                    val setBPath = SingleVehiclePathwayResult(alignmentTraceB, refinementTracesB, harnessResultsMap)
                     
                     vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(
                         winnerRef.vehicle.name, 
@@ -988,8 +1019,8 @@ private suspend fun runExperiment(
 
                 // Photo-level Pathway Results (Phase 116)
                 val standardPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryTotal, alignedBase64, queryOcrDiscovery, queryLandmarksRaw, harnessResultsMap)
-                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.mlTimeMs), tDiscoveryTotalA, alignedNativeBase64, ocrA, queryLandmarksA, harnessResultsMap)
-                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.paddleTimeMs), tDiscoveryTotalB, alignedNativeBase64, ocrB, queryLandmarksB, harnessResultsMap)
+                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.mlTimeMs), tDiscoveryTotalA, alignedAB64, ocrA, queryLandmarksA, harnessResultsMap)
+                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.paddleTimeMs), tDiscoveryTotalB, alignedBB64, ocrB, queryLandmarksB, harnessResultsMap)
                 
                 val pathways = mapOf("standard" to standardPhotoPath, "set_a" to setAPhotoPath, "set_b" to setBPhotoPath)
                 val photoResult = ProcessedPhotoResult(file.name, pathways, vehicleResultsMap, primaryVetoResults)
