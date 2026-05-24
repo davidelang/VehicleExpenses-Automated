@@ -501,8 +501,8 @@ private suspend fun runExperiment(
 
                     // Reporting Pass: Store result for winner (Phase 116 Dual Paths)
                     val standardPath = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, hStd)
-                    val setAPath = SingleVehiclePathwayResult(alignmentTraceA, refinementTracesA, harnessA)
-                    val setBPath = SingleVehiclePathwayResult(alignmentTraceB, refinementTracesB, harnessB)
+                    val setAPath = SingleVehiclePathwayResult(alignmentTraceA, refinementTracesA, hA)
+                    val setBPath = SingleVehiclePathwayResult(alignmentTraceB, refinementTracesB, hB)
                     
                     // Populate legacy harness map for top-level photo reporting
                     harnessResultsMap.putAll(hStd)
