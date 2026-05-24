@@ -61,7 +61,6 @@ data class AnchorCandidate(
 
 data class AnchorResult(
     val success: Boolean,
-    val alignedImage: Bitmap? = null,
     val confidence: Float = 0f,
     val timeMs: Long = 0,
     val metadata: Map<String, String> = emptyMap(),
@@ -391,7 +390,7 @@ object ImageAlignmentUtils {
                 src.release(); dst.release()
             }
             
-            AnchorResult(true, if (useBufferSet) scratchBmp else input as Bitmap, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
+            AnchorResult(true, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
