@@ -287,6 +287,10 @@ private suspend fun runExperiment(
             
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB, scratchBmp, masterBmp)
             
+            // Manual Distribution (A to B)
+            NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
+            NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
+            
             val (originalBase64, tSnapOrig) = OcrUtils.takeSnapshot(
                 source = NativePaddleEngine.bufferSetA.p,
                 sourceRect = null,

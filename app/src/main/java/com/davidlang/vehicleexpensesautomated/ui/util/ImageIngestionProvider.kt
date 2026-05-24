@@ -89,11 +89,7 @@ object ImageIngestionProvider {
             else -> ingestViaImageDecoder(context, path, targetA, masterBmp, t0) // Fallback for png etc
         }
 
-        // Phase 116: Dual Buffer Sync
-        // Duplicate the primary data from A to B (Zero-allocation copy)
-        targetA.p.mat.copyTo(targetB.p.mat)
-        targetA.p.uvMat.copyTo(targetB.p.uvMat)
-        
+        // Distribution logic removed from here
         return meta
     }
 
