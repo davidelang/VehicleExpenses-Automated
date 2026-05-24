@@ -509,7 +509,7 @@ private suspend fun runExperiment(
                         winnerRef.vehicle.name, 
                         "", 
                         0L, 
-                        0L, // discoveryTimeMonoMs is now inside PhotoPathwayResult
+                        0L, 
                         mapOf("standard" to standardPath, "set_a" to setAPath, "set_b" to setBPath),
                         emptyList(), 
                         emptyList(), 
@@ -793,8 +793,8 @@ private fun buildHtmlRowDynamic(
     isDegraded: Boolean,
     originalBase64: String, 
     alignedBase64: String,
-    alignedNativeAB64: String,
-    alignedNativeBB64: String,
+    alignedA64: String,
+    alignedB64: String,
     discovery: String, 
     vehicleResults: Map<Int, SingleVehicleResult>, 
     cachedRefs: List<ReferenceCache>, 
@@ -829,10 +829,10 @@ private fun buildHtmlRowDynamic(
     }
     appendLine("</td>")
 
-    // Native Aligned Column (Set A Path)
+    // Aligned Column (Set A Path)
     appendLine("<td>")
-    if (alignedNativeAB64.isNotEmpty()) {
-        appendLine("<img src='data:image/jpeg;base64,$alignedNativeAB64'><br>")
+    if (alignedA64.isNotEmpty()) {
+        appendLine("<img src='data:image/jpeg;base64,$alignedA64'><br>")
         vRes?.pathResults?.get("set_a")?.alignmentTrace?.let { trace ->
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
@@ -844,10 +844,10 @@ private fun buildHtmlRowDynamic(
     }
     appendLine("</td>")
 
-    // Native Aligned Column (Set B Path)
+    // Aligned Column (Set B Path)
     appendLine("<td>")
-    if (alignedNativeBB64.isNotEmpty()) {
-        appendLine("<img src='data:image/jpeg;base64,$alignedNativeBB64'><br>")
+    if (alignedB64.isNotEmpty()) {
+        appendLine("<img src='data:image/jpeg;base64,$alignedB64'><br>")
         vRes?.pathResults?.get("set_b")?.alignmentTrace?.let { trace ->
             val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
             val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
