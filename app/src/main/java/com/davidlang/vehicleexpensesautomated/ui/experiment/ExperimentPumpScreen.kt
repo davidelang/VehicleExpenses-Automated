@@ -8,7 +8,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -22,6 +24,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.util.Log
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,7 +33,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
     val scope = rememberCoroutineScope()
     var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
-    var detailLog by remember { mutableStateOf("Ready to start Pump Experiment.") }
+    val logs = remember { mutableStateListOf<String>("Ready to start Pump Experiment.") }
     
     // Placeholder for the experiment directory
     val experimentDir = File(context.getExternalFilesDir(null), "pump_experiment")
@@ -50,7 +53,8 @@ fun ExperimentPumpScreen(navController: NavHostController) {
                 onClick = {
                     scope.launch {
                         isRunning = true
-                        runPumpExperiment(context, { progress = it }, { detailLog = it })
+                        logs.clear()
+                        runPumpExperiment(context, { progress = it }, { logs.add(it) })
                         isRunning = false
                     }
                 },
@@ -61,16 +65,24 @@ fun ExperimentPumpScreen(navController: NavHostController) {
             }
 
             LinearProgressIndicator(
-                progress = progress,
+                progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 16.dp)
             )
 
-            Text(
-                text = detailLog,
-                modifier = Modifier.weight(1f)
-            )
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                reverseLayout = true
+            ) {
+                itemsIndexed(logs.toList().asReversed()) { _, msg ->
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (msg.contains("Error", ignoreCase = true)) ComposeColor.Red else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
         }
     }
 }
@@ -81,6 +93,7 @@ private suspend fun runPumpExperiment(
     onLog: (String) -> Unit
 ) = withContext(Dispatchers.IO) {
     onLog("Initializing Pump Experiment...")
+    Log.i("PumpExperiment", "Starting Gas Pump Field Extraction Experiment")
     
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val rootDir = context.getExternalFilesDir(null) ?: return@withContext
@@ -105,8 +118,11 @@ private suspend fun runPumpExperiment(
 
     if (files.isEmpty()) {
         onLog("No pump photos found in ${photosDir.absolutePath}")
+        Log.e("PumpExperiment", "Photo directory empty: ${photosDir.absolutePath}")
         return@withContext
     }
+
+    Log.i("PumpExperiment", "Found ${files.size} photos. Initializing reports.")
 
     // Initialize HTML
     val htmlHeader = """
@@ -133,28 +149,36 @@ private suspend fun runPumpExperiment(
         val p = (index + 1).toFloat() / files.size
         onProgress(p)
         onLog("Processing ${index + 1}/${files.size}: ${file.name}")
+        Log.i("PumpExperiment", "[${index + 1}/${files.size}] Processing: ${file.name}")
 
         try {
+            Log.d("PumpExperiment", "Probing dimensions...")
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
+            Log.d("PumpExperiment", "Resizing masterBufferSet to ${imgW}x${imgH}...")
             masterBufferSet.resize(imgW, imgH)
             
             val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             
+            Log.d("PumpExperiment", "Ingesting file...")
             ImageIngestionProvider.ingestFromFile(
                 context, 
                 file.absolutePath, 
                 masterBufferSet, 
-                masterBufferSet, // No A/B testing for pump yet, use same set
+                masterBufferSet, // Self-sync A=B
                 scratchBmp, 
                 masterBmp
             )
             
-            val result = PumpOcrUtils.discoverPumpFields(context, paddleEngine) {
-                // Nested logs if needed
+            Log.d("PumpExperiment", "Starting discovery algorithm...")
+            val result = PumpOcrUtils.discoverPumpFields(context, paddleEngine) { logMsg ->
+                // Log discovery sub-steps
+                Log.v("PumpExperiment", "  Discovery: $logMsg")
             }
+            Log.d("PumpExperiment", "Discovery complete. Cost: ${result.cost}, Vol: ${result.gallons}")
 
             // Capture Snapshot
+            Log.d("PumpExperiment", "Capturing snapshot...")
             val snapB64 = OcrUtils.takeSnapshot(
                 source = masterBmp,
                 targetW = 600,
@@ -164,6 +188,7 @@ private suspend fun runPumpExperiment(
             ).first
 
             // Incremental HTML Row
+            Log.d("PumpExperiment", "Appending to HTML...")
             val rowHtml = StringBuilder()
             rowHtml.append("<div class='row'>")
             rowHtml.append("<div class='img-container'><img src='data:image/jpeg;base64,$snapB64'></div>")
@@ -182,21 +207,27 @@ private suspend fun runPumpExperiment(
             reportFile.appendText(rowHtml.toString())
 
             // Incremental JSON Row
+            Log.d("PumpExperiment", "Appending to JSON...")
             val photoJson = serializePumpResultToJson(file, result, imgW, imgH)
             val comma = if (index < files.size - 1) "," else ""
             jsonFile.appendText(photoJson.toString(2) + "$comma\n")
 
+            onLog("  DONE. Reports: ${reportFile.length() / 1024}KB / ${jsonFile.length() / 1024}KB")
+            Log.i("PumpExperiment", "  Successfully processed ${file.name}. JSON size: ${jsonFile.length()}")
+
             masterBmp.recycle()
             scratchBmp.recycle()
 
-        } catch (e: Exception) {
-            onLog("Error processing ${file.name}: ${e.message}")
+        } catch (t: Throwable) {
+            onLog("Error processing ${file.name}: ${t.message ?: t.toString()}")
+            Log.e("PumpExperiment", "Fatal error on ${file.name}", t)
         }
     }
 
     reportFile.appendText("</body></html>")
     jsonFile.appendText("\n  ]\n}")
     onLog("Experiment Complete. Reports saved to: ${reportDir.absolutePath}")
+    Log.i("PumpExperiment", "Experiment Complete. Final JSON size: ${jsonFile.length()}")
 }
 
 private fun serializePumpResultToJson(
