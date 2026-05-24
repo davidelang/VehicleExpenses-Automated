@@ -122,7 +122,14 @@ private suspend fun runPumpExperiment(
             val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             
-            ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBufferSet, scratchBmp, masterBmp)
+            ImageIngestionProvider.ingestFromFile(
+                context, 
+                file.absolutePath, 
+                masterBufferSet, 
+                masterBufferSet, // No A/B testing for pump yet, use same set
+                scratchBmp, 
+                masterBmp
+            )
             
             val result = PumpOcrUtils.discoverPumpFields(context, paddleEngine) {
                 // Nested logs if needed

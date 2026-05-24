@@ -68,11 +68,13 @@ object ImageIngestionProvider {
 
     /**
      * High-Fidelity Ingestion: Bypasses thumbnails and moves data into native YUV primary.
+     * Phase 116: Supports dual A/B BufferSets with zero-allocation copying.
      */
     suspend fun ingestFromFile(
         context: Context,
         path: String,
-        target: BufferSet,
+        targetA: BufferSet,
+        targetB: BufferSet,
         scratchBmp: Bitmap?, 
         masterBmp: Bitmap
     ): IngestionMetadata {
@@ -81,11 +83,18 @@ object ImageIngestionProvider {
         val ext = file.extension.lowercase()
         
         // --- TYPE-AWARE DISPATCHER ---
-        return when (ext) {
-            "jpg", "jpeg" -> ingestViaNativeJpeg(path, target, masterBmp, t0)
-            "dng" -> ingestViaNativeDng(context, path, target, masterBmp, t0)
-            else -> ingestViaImageDecoder(context, path, target, masterBmp, t0) // Fallback for png etc
+        val meta = when (ext) {
+            "jpg", "jpeg" -> ingestViaNativeJpeg(path, targetA, masterBmp, t0)
+            "dng" -> ingestViaNativeDng(context, path, targetA, masterBmp, t0)
+            else -> ingestViaImageDecoder(context, path, targetA, masterBmp, t0) // Fallback for png etc
         }
+
+        // Phase 116: Dual Buffer Sync
+        // Duplicate the primary data from A to B (Zero-allocation copy)
+        targetA.p.mat.copyTo(targetB.p.mat)
+        targetA.p.uvMat.copyTo(targetB.p.uvMat)
+        
+        return meta
     }
 
     private fun ingestViaNativeDng(

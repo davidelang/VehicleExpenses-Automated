@@ -54,7 +54,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var isNativeLibLoaded = false
 
         // Phase 115: Safe Rigid Backing Fields (Eliminates background JNI locks)
-        private var _fullBufferSet: BufferSet? = null
+        private var _bufferSetA: BufferSet? = null
+        private var _bufferSetB: BufferSet? = null
         private var _deskewBufferSet2048: BufferSet? = null
         private var _bufferLarge: FloatArray? = null
         private var _bufferLargeMono: FloatArray? = null
@@ -81,7 +82,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedMonoBytes: ByteArray? = null
 
         // Public Non-Null Accessors (API Stability)
-        val fullBufferSet: BufferSet get() = _fullBufferSet!!
+        val bufferSetA: BufferSet get() = _bufferSetA!!
+        val bufferSetB: BufferSet get() = _bufferSetB!!
+        val fullBufferSet: BufferSet get() = _bufferSetA!! // Alias for backward compatibility during transition
         val deskewBufferSet2048: BufferSet get() = _deskewBufferSet2048!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         private val bufferLargeMono: FloatArray get() = _bufferLargeMono!!
@@ -126,7 +129,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             if (isAvailableGlobally) return
             Log.i("PaddleLite", "Initializing Global Rigid Buffers on thread: ${Thread.currentThread().name}")
 
-            _fullBufferSet = BufferSet(4000, 3072)
+            _bufferSetA = BufferSet(4000, 3072)
+            _bufferSetB = BufferSet(4000, 3072)
             _deskewBufferSet2048 = BufferSet(2048, 2048)
             _deskewBufferSet2048!!.p.clearChroma() // Init to neutral grayscale
             _deskewBufferSet2048!!.s.clearChroma()
