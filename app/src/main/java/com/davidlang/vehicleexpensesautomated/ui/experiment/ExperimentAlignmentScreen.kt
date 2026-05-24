@@ -256,7 +256,11 @@ private suspend fun runExperiment(
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
     val experimentDetSet512x128 = BufferSet(512, 128)
-    val harnessEngineNames = mutableListOf("ML Diag", "ML Native", "Paddle Std", "Set A", "Set B")
+    val harnessEngineNames = mutableListOf(
+        "Std ML", "Std Paddle", 
+        "Set A ML", "Set A Paddle", 
+        "Set B ML", "Set B Paddle"
+    )
 
     fun startNewFile(): File {
         val f = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html")
@@ -481,17 +485,18 @@ private suspend fun runExperiment(
                         val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                         try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
-                        // --- Sequential Execution (Phase 116 Restoration) ---
+                        // --- Sequential Execution (Phase 116 Restoration & Fixes) ---
                         // Standard Baseline
-                        runMLKitIterative("ML Diag", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hStd, refinementTraces)
-                        runPaddleValleyIterative("Paddle Std", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hStd, refinementTraces)
+                        runMLKitIterative("Std ML", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hStd, refinementTraces)
+                        runPaddleValleyIterative("Std Paddle", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hStd, refinementTraces)
                         
                         // Path A
-                        runMLKitIterative("Set A (ML)", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hA, refinementTracesA)
-                        runPaddleValleyIterative("Set A", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hA, refinementTracesA)
+                        runMLKitIterative("Set A ML", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hA, refinementTracesA)
+                        runPaddleValleyIterative("Set A Paddle", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hA, refinementTracesA)
 
                         // Path B
-                        runPaddleValleyIterative("Set B", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hB, refinementTracesB)
+                        runMLKitIterative("Set B ML", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hB, refinementTracesB)
+                        runPaddleValleyIterative("Set B Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hB, refinementTracesB)
                     }
                     
                     val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
@@ -536,9 +541,9 @@ private suspend fun runExperiment(
                 }
 
                 // Photo-level Pathway Results (Phase 116)
-                val standardPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryTotal, alignedBase64, ocrStd, queryLandmarksRaw, harnessResultsMap)
-                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.mlTimeMs), tDiscoveryTotalA, alignedA64, ocrA, queryLandmarksA, harnessResultsMap)
-                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.paddleTimeMs), tDiscoveryTotalB, alignedB64, ocrB, queryLandmarksB, harnessResultsMap)
+                val standardPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryTotal, alignedBase64, ocrStd, queryLandmarksRaw, hStd)
+                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.mlTimeMs), tDiscoveryTotalA, alignedA64, ocrA, queryLandmarksA, hA)
+                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.paddleTimeMs), tDiscoveryTotalB, alignedB64, ocrB, queryLandmarksB, hB)
                 
                 val pathways = mapOf("standard" to standardPhotoPath, "set_a" to setAPhotoPath, "set_b" to setBPhotoPath)
                 photoResult = ProcessedPhotoResult(file.name, pathways, vehicleResultsMap, primaryVetoResults)

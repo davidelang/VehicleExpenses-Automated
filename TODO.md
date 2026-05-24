@@ -4,7 +4,7 @@
 - [x] DONE: Phase 2: Deskew & Early Rotation
 - [x] DONE: Phase 3.1: Data Model Infrastructure
 - [x] DONE: Phase 3.2: Parallel Native Alignment (Restoration & Fixes)
-- [x] DONE: Phase 3.3: Diverged Native Refinement
+- [/] IN PROGRESS: Phase 3.3: Diverged Native Refinement (Restoration & Fixes) (See: dev-ai-interaction/plans/phase-116-part-3-3-refinement-reporting-fix.md)
 - [/] IN PROGRESS: Phase 4: Engine API Purge (See: dev-ai-interaction/plans/phase-116-part-4-api-purge.md)
 - [ ] Phase 5: Deep Dead Code Elimination
 
