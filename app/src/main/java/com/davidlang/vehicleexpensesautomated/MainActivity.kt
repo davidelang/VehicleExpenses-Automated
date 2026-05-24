@@ -43,7 +43,6 @@ import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
@@ -101,7 +100,6 @@ class MainActivity : ComponentActivity() {
                     "help" -> "Help"
                     "about" -> "About"
                     "experiment" -> "Alignment Experiment"
-                    "experiment_pump" -> "Gas Pump Extraction Experiment"
                     else -> "Vehicle Expenses"
                 }
 
@@ -190,14 +188,6 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
-                            NavigationDrawerItem(
-                                label = { Text("Pump Experiment") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("experiment_pump")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
                         }
                     }
                 ) {
@@ -229,7 +219,6 @@ class MainActivity : ComponentActivity() {
                                 composable("help") { HelpScreen() }
                                 composable("about") { AboutScreen() }
                                 composable("experiment") { ExperimentAlignmentScreen(navController = navController) }
-                                composable("experiment_pump") { ExperimentPumpScreen(navController = navController) }
                             }
                         }
                     }
