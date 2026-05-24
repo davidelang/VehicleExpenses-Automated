@@ -1,11 +1,11 @@
 # Phase 116: Pure Native A/B Testing
 - [x] DONE: Phase 0: Repository Cleanup
-- [x] DONE: Phase 1: Dual Native Buffer Architecture
+- [x] DONE: Phase 1: Dual Native Architecture
 - [x] DONE: Phase 2: Deskew & Early Rotation
 - [x] DONE: Phase 3.1: Data Model Infrastructure
-- [/] IN PROGRESS: Phase 3.2: Parallel Native Alignment (Restoration & Fixes) (See: dev-ai-interaction/plans/phase-116-part-3-2-restoration-and-fix.md)
-- [ ] Phase 3.3: Diverged Native Refinement
-- [ ] Phase 4: Engine API Purge
+- [x] DONE: Phase 3.2: Parallel Native Alignment (Restoration & Fixes)
+- [x] DONE: Phase 3.3: Diverged Native Refinement
+- [/] IN PROGRESS: Phase 4: Engine API Purge (See: dev-ai-interaction/plans/phase-116-part-4-api-purge.md)
 - [ ] Phase 5: Deep Dead Code Elimination
 
 # TODO: Protocol Alignment
@@ -17,4 +17,3 @@
 - [ ] Parallelize `nativePopulateMonoTensor` using SIMD/OpenMP for 2048px tensors.
 - [x] DONE: Implement microscopic instrumentation for JNI boundaries and inference stages.
 - [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.
-

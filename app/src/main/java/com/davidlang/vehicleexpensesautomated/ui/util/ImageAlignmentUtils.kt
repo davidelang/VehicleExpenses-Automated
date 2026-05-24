@@ -10,6 +10,7 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
 import org.opencv.core.*
 import org.opencv.features2d.*
 import org.opencv.imgproc.Imgproc
@@ -236,299 +237,13 @@ object ImageAlignmentUtils {
         return results
     }
 
-    fun anchorAlign(
-        bmp: Bitmap,
-        refLandmarks: List<TextBlock>,
-        queryLandmarks: List<TextBlock>,
-        vehicle: Vehicle,
-        refW: Int = 4000,
-        refH: Int = 3072,
-        queW: Int = 4000,
-        queH: Int = 3072,
-        scratchBmp: Bitmap
-    ): AnchorResult {
-        val t0 = System.currentTimeMillis()
-
-        if (bmp.width != scratchBmp.width || bmp.height != scratchBmp.height) {
-            throw IllegalArgumentException("Dimension mismatch: bmp=${bmp.width}x${bmp.height}, scratch=${scratchBmp.width}x${scratchBmp.height}")
-        }
-        val allCandidates = mutableListOf<AnchorCandidate>()
-        val icrsTargetY = if (vehicle.odometerCropTop != null && vehicle.odometerCropBottom != null) {
-            val center = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
-            if (vehicle.isIcrs) center else IcrsMath.legacyAnisotropicToIcrs(0.5f, center, refW, refH).y
-        } else 0f
-        
-        // 1. Filter and Match Confirmed Landmarks
-        val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
-            .mapNotNull { queMark ->
-                val refMark = refLandmarks.find { it.text == queMark.text && it.instanceId == queMark.instanceId && it.boundingBox.width() > 0 }
-                if (refMark != null) refMark to queMark else null
-            }
-
-        // 2. Generate Alignment Candidates from Pairs of Confirmed Anchors
-        if (confirmedPairs.size >= 2) {
-            for (i in confirmedPairs.indices) {
-                for (j in i + 1 until confirmedPairs.size) {
-                    val r1 = confirmedPairs[i].first
-                    val r2 = confirmedPairs[j].first
-                    val q1 = confirmedPairs[i].second
-                    val q2 = confirmedPairs[j].second
-                    
-                    // Normalize to ICRS space
-                    val r1Icrs = IcrsMath.pixelToIcrs(r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), refW, refH)
-                    val r2Icrs = IcrsMath.pixelToIcrs(r2.boundingBox.centerX().toFloat(), r2.boundingBox.centerY().toFloat(), refW, refH)
-                    val q1Icrs = IcrsMath.pixelToIcrs(q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat(), queW, queH)
-                    val q2Icrs = IcrsMath.pixelToIcrs(q2.boundingBox.centerX().toFloat(), q2.boundingBox.centerY().toFloat(), queW, queH)
-                    
-                    val refDist = sqrt((r1Icrs.x - r2Icrs.x).toDouble().pow(2.0) + (r1Icrs.y - r2Icrs.y).toDouble().pow(2.0))
-                    val queDist = sqrt((q1Icrs.x - q2Icrs.x).toDouble().pow(2.0) + (q1Icrs.y - q2Icrs.y).toDouble().pow(2.0))
-                    
-                    if (queDist > 0) {
-                        val s = (refDist / queDist).toFloat()
-                        
-                        // Calculate Rotation
-                        val rAngle = Math.atan2((r2Icrs.y - r1Icrs.y).toDouble(), (r2Icrs.x - r1Icrs.x).toDouble())
-                        val qAngle = Math.atan2((q2Icrs.y - q1Icrs.y).toDouble(), (q2Icrs.x - q1Icrs.x).toDouble())
-                        val rot = Math.toDegrees(rAngle - qAngle).toFloat()
-                        
-                        if (kotlin.math.abs(rot) > 4.0f) continue
-                        val tx = r1Icrs.x - (s * q1Icrs.x)
-                        val ty = r1Icrs.y - (s * q1Icrs.y)
-                        
-                        // Forensic data: ICRS and Pixel coordinates
-                        val debugMsg = "S=%.3f, R=%.1f, tx_icrs=%.3f, ty_icrs=%.3f | RefP1(%.1f,%.1f) QueP1(%.1f,%.1f)".format(
-                            s, rot, tx, ty, r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat()
-                        )
-                        allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, debugMsg, (r1Icrs.y + r2Icrs.y)/2f, r1Icrs.y, r2Icrs.y))
-                    }
-                }
-            }
-        } 
-
-        if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchor sets after disambiguation.", timeMs = System.currentTimeMillis() - t0)
-
-        // RANSAC-Lite Consensus (Phase 64)
-        var bestGroup = mutableListOf<AnchorCandidate>()
-        var maxSupport = -1
-        
-        // Agreement threshold: 5% scale, 5% ICRS units (which is 5% of short edge)
-        val threshold = 0.05f
-
-        for (c1 in allCandidates) {
-            val supportGroup = mutableListOf<AnchorCandidate>()
-            for (c2 in allCandidates) {
-                val ds = kotlin.math.abs(c1.scale - c2.scale) / c1.scale
-                val dtx = kotlin.math.abs(c1.tx - c2.tx)
-                val dty = kotlin.math.abs(c1.ty - c2.ty)
-                
-                if (ds < threshold && dtx < threshold && dty < threshold) {
-                    supportGroup.add(c2)
-                }
-            }
-            if (supportGroup.size > maxSupport) {
-                maxSupport = supportGroup.size
-                bestGroup = supportGroup
-            }
-        }
-
-        // Distance-Weighted and Proximity-Weighted Average of the winning consensus group
-        val finalScale: Float
-        val finalTx: Float
-        val finalTy: Float
-        var bracketedCount = 0
-
-        if (bestGroup.isNotEmpty()) {
-            var sumScale = 0.0
-            var sumTx = 0.0
-            var sumTy = 0.0
-            var totalW = 0.0
-            for (c in bestGroup) {
-                val isBracketed = (c.y1Ref - icrsTargetY) * (c.y2Ref - icrsTargetY) < 0
-                val bracketBonus = if (isBracketed) { bracketedCount++; 5.0 } else 1.0
-
-                val vDist = kotlin.math.abs(c.cyRef - icrsTargetY)
-                val w = (c.distance * bracketBonus) / (vDist + 0.05)
-                sumScale += c.scale * w
-                sumTx += c.tx * w
-                sumTy += c.ty * w
-                totalW += w
-            }
-            finalScale = if (totalW > 0) (sumScale / totalW).toFloat() else allCandidates.map { it.scale }.median()
-            finalTx = if (totalW > 0) (sumTx / totalW).toFloat() else allCandidates.map { it.tx }.median()
-            finalTy = if (totalW > 0) (sumTy / totalW).toFloat() else allCandidates.map { it.ty }.median()
-        } else {
-            finalScale = allCandidates.map { it.scale }.median()
-            finalTx = allCandidates.map { it.tx }.median()
-            finalTy = allCandidates.map { it.ty }.median()
-        }
-
-        // Unified ICRS Matrix Construction
-        // pt = (s * st / sq) * pq - (s * st * cxq / sq) + (tx * st) + cxt
-        // For ARGB (st = sq, cxt = cxq):
-        // pt = s * pq + cxq * (1 - s) + (tx * sq)
-        
-        val sq = minOf(bmp.width, bmp.height).toFloat()
-        val cxq = bmp.width / 2f
-        val cyq = bmp.height / 2f
-        
-        val matrixTX = cxq * (1f - finalScale) + (finalTx * sq)
-        val matrixTY = cyq * (1f - finalScale) + (finalTy * sq)
-
-        val matrix = android.graphics.Matrix()
-        val values = floatArrayOf(
-            finalScale, 0f, matrixTX,
-            0f, finalScale, matrixTY,
-            0f, 0f, 1f
-        )
-        matrix.setValues(values)
-
-        val winningAnchorsStr = if (bestGroup.isNotEmpty()) {
-            bestGroup.joinToString(" | ") { c ->
-                "Anchors: [${c.anchorsUsed.joinToString(", ")}] -> ${c.message}"
-            }
-        } else "N/A"
-
-        val metadata = mapOf(
-            "Consensus" to "S=%.3f, tx_icrs=%.3f, ty_icrs=%.3f (Support: %d/%d, Bracketing: %d)".format(finalScale, finalTx, finalTy, bestGroup.size, allCandidates.size, bracketedCount),
-            "winning_anchors" to winningAnchorsStr,
-            "matrix_tx" to matrixTX.toString(),
-            "matrix_ty" to matrixTY.toString(),
-            "raw_scale" to finalScale.toString(),
-            "raw_tx" to matrixTX.toString(),
-            "raw_ty" to matrixTY.toString()
-        )
-
-
-        return try {
-            // Phase 115: In-Place Morphing using passed scratch buffer.
-            val canvas = android.graphics.Canvas(scratchBmp)
-            canvas.drawColor(android.graphics.Color.BLACK)
-            canvas.drawBitmap(bmp, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-            
-            // Draw scratch back to the original passed buffer (bmp)
-            val originalCanvas = android.graphics.Canvas(bmp)
-            originalCanvas.drawBitmap(scratchBmp, 0f, 0f, null)
-            
-            AnchorResult(true, bmp, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d) [B:%d]: S=%.3f, tx=%.1f, ty=%.1f".format(bestGroup.size, allCandidates.size, bracketedCount, finalScale, finalTx, finalTy))
-        } catch (e: Exception) {
-            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
-        }
-    }
-
-    private fun dist(a: TextBlock, b: TextBlock): Double {
-        val dx = (a.boundingBox.centerX() - b.boundingBox.centerX()).toDouble()
-        val dy = (a.boundingBox.centerY() - b.boundingBox.centerY()).toDouble()
-        return sqrt(dx * dx + dy * dy)
-    }
-
-    fun getLandmarksFromJson(json: String?, engineName: String): Set<String> {
-        if (json.isNullOrBlank()) return emptySet()
-        val result = mutableSetOf<String>()
-        try {
-            val root = JSONObject(json)
-            val array = if (root.has(engineName)) {
-                root.getJSONArray(engineName)
-            } else if (json.startsWith("[")) {
-                JSONArray(json) // Legacy support
-            } else {
-                Log.e("ImageAlignment", "Manifest missing data for engine: $engineName")
-                return emptySet()
-            }
-
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                result.add(obj.getString("text").trim())
-            }
-        } catch (e: Exception) { Log.e("ImageAlignment", "JSON parse failed", e) }
-        return result
-    }
-
     /**
-     * Tier 1: Veto Elimination
-     * For each vehicle, check if any word in the query belongs to OTHER vehicles
-     * but NOT to this vehicle.
+     * Unified Anchor Alignment Flow.
+     * Geometrically equivalent to legacy anchorAlign but executes natively via OpenCV warpAffine.
+     * Supports both BufferSet (Native Path) and Bitmap (Standard Path).
      */
-    fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>, engineName: String): Map<Int, VetoResult> {
-        val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
-        val queryWordsSet = queryWordsList.toSet()
-        val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
-        
-        val initialResults = allVehicles.associate { currentVehicle ->
-            val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
-            
-            // Pool = all words from everyone else
-            val otherWordsPool = vehicleLandmarks.filter { it.key != currentVehicle.id }
-                .values.flatten().toSet()
-            
-            // Veto Pool = Words others have that I don't
-            val vetoPool = otherWordsPool - myWords
-            
-            // DYNAMIC FIX: Identify ALL triggers, sort them, and remove duplicates
-            val triggers = queryWordsSet.intersect(vetoPool).sorted()
-            
-            currentVehicle.id to VetoResult(
-                isVetoed = triggers.isNotEmpty(),
-                reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",
-                tierReached = 0,
-                queryWords = queryWordsList,
-                myManifest = myWords.toList().sorted(),
-                vetoPool = vetoPool.toList().sorted()
-            )
-        }
-
-        // Phase 47: Least-Vetoed Rescue Algorithm
-        // Check if ALL vehicles were vetoed (Mutual Veto)
-        if (initialResults.values.all { it.isVetoed }) {
-            // Count triggers for each vehicle
-            val triggerCounts = initialResults.mapValues { (_, res) -> 
-                if (res.reasonWord.isEmpty()) 0 else res.reasonWord.split(", ").size 
-            }
-            
-            // Identify vehicles with exactly 1 trigger
-            val vehiclesWithOneTrigger = triggerCounts.filter { it.value == 1 }.keys.toList()
-            
-            // Identify if all OTHER vehicles have 3 or more triggers
-            val otherVehiclesHaveManyTriggers = triggerCounts.filter { it.key !in vehiclesWithOneTrigger }
-                .all { it.value >= 3 }
-                
-            // Rescue Condition: Exactly ONE vehicle has 1 trigger, AND all others have >= 3
-            if (vehiclesWithOneTrigger.size == 1 && otherVehiclesHaveManyTriggers && allVehicles.size > 1) {
-                val rescuedId = vehiclesWithOneTrigger[0]
-                val rescuedResult = initialResults[rescuedId]!!
-                val newResults = initialResults.toMutableMap()
-                newResults[rescuedId] = rescuedResult.copy(
-                    isVetoed = false,
-                    reasonWord = "[RESCUED 1 vs 3+] Was: ${rescuedResult.reasonWord}"
-                )
-                return newResults
-            }
-        }
-        
-        return initialResults
-    }
-
-    fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, imgW: Int, imgH: Int): Boolean {
-        if (crop == null) return false
-        val b = block.boundingBox
-        val bL = b.left.toFloat() / imgW
-        val bT = b.top.toFloat() / imgH
-        val bR = b.right.toFloat() / imgW
-        val bB = b.bottom.toFloat() / imgH
-        return bL >= crop.left && bR <= crop.right && bT >= crop.top && bB <= crop.bottom
-    }
-
-    private fun List<Float>.median(): Float {
-        if (isEmpty()) return 0f
-        val sorted = sorted()
-        return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2f else sorted[size / 2]
-    }
-
-    /**
-     * Phase 115: Native Alignment Flow for BufferSet.
-     * Geometrically equivalent to anchorAlign but executes natively via OpenCV warpAffine.
-     */
-    suspend fun anchorAlignNative(
-        bufferSet: BufferSet,
+    suspend fun anchorAlign(
+        input: Any,
         refLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
         vehicle: Vehicle,
@@ -579,9 +294,7 @@ object ImageAlignmentUtils {
                         val tx = r1Icrs.x - (s * q1Icrs.x)
                         val ty = r1Icrs.y - (s * q1Icrs.y)
 
-                        val debugMsg = "S=%.3f, R=%.1f, tx_icrs=%.3f, ty_icrs=%.3f | RefP1(%.1f,%.1f) QueP1(%.1f,%.1f)".format(
-                            s, rot, tx, ty, r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat()
-                        )
+                        val debugMsg = "S=%.3f, R=%.1f, tx_icrs=%.3f, ty_icrs=%.3f".format(s, rot, tx, ty)
                         allCandidates.add(AnchorCandidate("Deterministic", listOf(r1.text, r2.text), s, rot, tx, ty, refDist, debugMsg, (r1Icrs.y + r2Icrs.y)/2f, r1Icrs.y, r2Icrs.y))
                     }
                 }
@@ -590,7 +303,7 @@ object ImageAlignmentUtils {
 
         if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchors.", timeMs = System.currentTimeMillis() - t0)
 
-        // Consensus math (Shared ICRS logic)
+        // Consensus math
         var bestGroup = mutableListOf<AnchorCandidate>()
         var maxSupport = -1
         val threshold = 0.05f
@@ -622,8 +335,6 @@ object ImageAlignmentUtils {
             finalScale = allCandidates.map { it.scale }.median(); finalTx = allCandidates.map { it.tx }.median(); finalTy = allCandidates.map { it.ty }.median()
         }
 
-        val sq = queW.toFloat() // Using actual query width (long edge usually) is wrong if we want short-edge scaling
-        // Actually, sq/st should be the MIN(W,H) as per Unified ICRS Matrix Spec
         val sqS = minOf(queW, queH).toFloat()
         val cxq = queW / 2f
         val cyq = queH / 2f
@@ -641,37 +352,128 @@ object ImageAlignmentUtils {
         )
 
         return try {
-            // Phase 115: Native Morphing using Imgproc.warpAffine
-            val src = bufferSet.p.mat
-            val dst = bufferSet.s.mat
+            val src: Mat
+            val dst: Mat
+            val useBufferSet = input is BufferSet
 
-            val m = android.graphics.Matrix()
+            if (useBufferSet) {
+                src = (input as BufferSet).p.mat
+                dst = input.s.mat
+            } else {
+                src = Mat()
+                Utils.bitmapToMat(input as Bitmap, src)
+                dst = Mat(src.size(), src.type(), Scalar(0.0, 0.0, 0.0, 255.0))
+            }
+
+            val matrixLocal = android.graphics.Matrix()
             val values = floatArrayOf(
                 finalScale, 0f, matrixTX,
                 0f, finalScale, matrixTY,
                 0f, 0f, 1f
             )
-            m.setValues(values)
+            matrixLocal.setValues(values)
             val matrixValues = FloatArray(9)
-            m.getValues(matrixValues)
+            matrixLocal.getValues(matrixValues)
 
             val warpMat = Mat(2, 3, CvType.CV_64F)
             warpMat.put(0, 0, matrixValues[0].toDouble(), matrixValues[1].toDouble(), matrixValues[2].toDouble())
             warpMat.put(1, 0, matrixValues[3].toDouble(), matrixValues[4].toDouble(), matrixValues[5].toDouble())
             
-            Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0))
-
-            bufferSet.flip()
+            Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0, 0.0, 0.0, 255.0))
             warpMat.release()
+
+            if (useBufferSet) {
+                (input as BufferSet).flip()
+                // Sync to scratchBmp for report visualization
+                NativeImageUtils.syncMatToArgb(input.p.mat, scratchBmp)
+            } else {
+                Utils.matToBitmap(dst, input as Bitmap)
+                src.release(); dst.release()
+            }
             
-            val elapsed = System.currentTimeMillis() - t0
-            
-            // Sync to scratchBmp for report visualization
-            NativeImageUtils.syncMatToArgb(bufferSet.p.mat, scratchBmp)
-            
-            AnchorResult(true, scratchBmp, 0.5f, elapsed, metadata, "Native Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
+            AnchorResult(true, if (useBufferSet) scratchBmp else input as Bitmap, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
         } catch (e: Exception) {
-            AnchorResult(false, message = "Native warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
+            AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
         }
+    }
+
+    private fun dist(a: TextBlock, b: TextBlock): Double {
+        val dx = (a.boundingBox.centerX() - b.boundingBox.centerX()).toDouble()
+        val dy = (a.boundingBox.centerY() - b.boundingBox.centerY()).toDouble()
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    private fun List<Float>.median(): Float {
+        if (isEmpty()) return 0f
+        val sorted = sorted()
+        return if (size % 2 == 0) (sorted[size / 2 - 1] + sorted[size / 2]) / 2f else sorted[size / 2]
+    }
+
+    fun getLandmarksFromJson(json: String?, engineName: String): Set<String> {
+        if (json.isNullOrBlank()) return emptySet()
+        val result = mutableSetOf<String>()
+        try {
+            val root = JSONObject(json)
+            val array = if (root.has(engineName)) {
+                root.getJSONArray(engineName)
+            } else if (json.startsWith("[")) {
+                JSONArray(json) // Legacy support
+            } else {
+                Log.e("ImageAlignment", "Manifest missing data for engine: $engineName")
+                return emptySet()
+            }
+
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                result.add(obj.getString("text").trim())
+            }
+        } catch (e: Exception) { Log.e("ImageAlignment", "JSON parse failed", e) }
+        return result
+    }
+
+    fun performTier1Veto(queryLandmarks: List<TextBlock>, allVehicles: List<Vehicle>, engineName: String): Map<Int, VetoResult> {
+        val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
+        val queryWordsSet = queryWordsList.toSet()
+        val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
+        
+        val initialResults = allVehicles.associate { currentVehicle ->
+            val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
+            val otherWordsPool = vehicleLandmarks.filter { it.key != currentVehicle.id }.values.flatten().toSet()
+            val vetoPool = otherWordsPool - myWords
+            val triggers = queryWordsSet.intersect(vetoPool).sorted()
+            
+            currentVehicle.id to VetoResult(
+                isVetoed = triggers.isNotEmpty(),
+                reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",
+                tierReached = 0,
+                queryWords = queryWordsList,
+                myManifest = myWords.toList().sorted(),
+                vetoPool = vetoPool.toList().sorted()
+            )
+        }
+
+        if (initialResults.values.all { it.isVetoed }) {
+            val triggerCounts = initialResults.mapValues { (_, res) -> if (res.reasonWord.isEmpty()) 0 else res.reasonWord.split(", ").size }
+            val vehiclesWithOneTrigger = triggerCounts.filter { it.value == 1 }.keys.toList()
+            val otherVehiclesHaveManyTriggers = triggerCounts.filter { it.key !in vehiclesWithOneTrigger }.all { it.value >= 3 }
+            if (vehiclesWithOneTrigger.size == 1 && otherVehiclesHaveManyTriggers && allVehicles.size > 1) {
+                val rescuedId = vehiclesWithOneTrigger[0]
+                val rescuedResult = initialResults[rescuedId]!!
+                val newResults = initialResults.toMutableMap()
+                newResults[rescuedId] = rescuedResult.copy(isVetoed = false, reasonWord = "[RESCUED 1 vs 3+] Was: ${rescuedResult.reasonWord}")
+                return newResults
+            }
+        }
+        return initialResults
+    }
+
+    fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, imgW: Int, imgH: Int): Boolean {
+        if (crop == null) return false
+        val b = block.boundingBox
+        val bL = b.left.toFloat() / imgW
+        val bT = b.top.toFloat() / imgH
+        val bR = b.right.toFloat() / imgW
+        val bB = b.bottom.toFloat() / imgH
+        return bL >= crop.left && bR <= crop.right && bT >= crop.top && bB <= crop.bottom
     }
 }

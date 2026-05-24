@@ -96,7 +96,7 @@ data class SingleVehicleResult(
     val vehicleName: String,
     val vetoReason: String,
     val tMatchMs: Long,
-    val discoveryTimeMonoMs: Long = 0,
+    val discoveryTimeMs: Long = 0,
     val pathResults: Map<String, SingleVehiclePathwayResult>, // Keys: "set_a", "set_b", "standard"
     val vetoQueryWords: List<String>,
     val vetoMyManifest: List<String>,
