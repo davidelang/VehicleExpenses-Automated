@@ -55,17 +55,16 @@ private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81x
 private const val TAG = "ExperimentPump"
 
 private val GOLDEN_SUBSET = listOf(
-    "PXL_20220701_020707365.dng",
-    "PXL_20220821_051055938.dng",
-    "PXL_20221029_002946498.dng",
-    "PXL_20221020_215546513.dng",
-    "PXL_20221221_205939873.dng",
-    "PXL_20221228_164725812.dng",
-    "PXL_20221222_211445685.dng",
-    "PXL_20230113_231330881.dng",
-    "PXL_20221121_021330418.jpg",
-    "PXL_20221126_210323823.jpg",
-    "PXL_20221128_172727575.jpg"
+    "PXL_20260202_204443784.jpg",
+    "PXL_20250626_205528017.jpg",
+    "PXL_20220701_020625793.dng",
+    "PXL_20260114_020053675.jpg",
+    "PXL_20241230_191439866.jpg",
+    "PXL_20250224_001547856.jpg",
+    "PXL_20240708_222637707.jpg",
+    "PXL_20241130_183108905.jpg",
+    "PXL_20260302_000113349.jpg",
+    "PXL_20250930_065746276.jpg"
 )
 
 @Immutable
@@ -92,9 +91,9 @@ fun ExperimentPumpScreen(navController: NavHostController) {
     var totalPhotos by remember { mutableIntStateOf(0) }
     val resultsList = remember { mutableStateListOf<PumpPhotoResultSummary>() }
 
-    val experimentDir = File(context.filesDir, "experiment_photos")
-    val reportDir = File(context.filesDir, "experiment_reports")
-    val debugCropDir = File(context.filesDir, "experiment_debug_crops")
+    val experimentDir = File(context.getExternalFilesDir(null), "pump_photos")
+    val reportDir = File(context.getExternalFilesDir(null), "pump_reports")
+    val debugCropDir = File(context.getExternalFilesDir(null), "pump_debug_crops")
 
     if (!reportDir.exists()) reportDir.mkdirs()
     if (!debugCropDir.exists()) debugCropDir.mkdirs()
@@ -125,25 +124,23 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
         Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
         Button(onClick = { 
-            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch { 
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
                 totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, null) { res, p -> 
+                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, null) { res, p -> 
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName 
                 }
                 isRunning = false; status = "Complete! Reports saved." 
             } 
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
         Button(onClick = { 
-            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch { 
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
                 val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, GOLDEN_SUBSET) { res, p -> 
+                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, GOLDEN_SUBSET) { res, p -> 
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName 
                 }
                 isRunning = false; status = "Complete! Limited Report saved." 
@@ -176,7 +173,6 @@ private suspend fun runPumpExperiment(
     experimentDir: File, 
     reportDir: File, 
     debugCropDir: File, 
-    vehicles: List<Vehicle>, 
     context: Context, 
     onLog: (String) -> Unit, 
     subsetNames: List<String>?, 
@@ -194,59 +190,6 @@ private suspend fun runPumpExperiment(
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val paddleEngine = NativePaddleEngine(context, variant = "V3")
 
-    val cachedRefs = vehicles.map { vehicle ->
-        val bmp = OdometerOcrUtils.decodeBitmapSafely(context, vehicle.referenceDashPhotoUrl!!) 
-            ?: BitmapFactory.decodeFile(vehicle.referenceDashPhotoUrl)
-        val curated = pGetFullLandmarksFromJson(vehicle.landmarkTextBlocksJson, "ML Kit", bmp.width, bmp.height)
-        val annotatedBmp = pDrawCropBoxesOnReference(bmp, vehicle)
-        val refBase64 = pCreateScaledBase64(annotatedBmp, 400, 70)
-        annotatedBmp.recycle()
-        PumpReferenceCache(vehicle, refBase64, curated, bmp, bmp.width, bmp.height)
-    }
-    
-    val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
-    val vehicleArgbCrops = mutableMapOf<Int, Bitmap>()
-    val vehicleArgbScratches = mutableMapOf<Int, Bitmap>()
-    withContext(Dispatchers.Main) {
-        cachedRefs.forEach { ref ->
-            val l = ref.vehicle.odometerCropLeft
-            if (l != null) {
-                val srcW = (((ref.vehicle.odometerCropRight ?: 1f) - l) * ref.bmp.width).toInt()
-                val srcH = (((ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f)) * ref.bmp.height).toInt()
-                
-                // Align to 32-pixel boundaries for efficient native processing
-                val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
-                val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
-                
-                if (targetW > 0 && targetH > 0) {
-                    vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
-                    vehicleArgbCrops[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-                    vehicleArgbScratches[ref.vehicle.id] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-
-                    listOf(NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB).forEach { set ->
-                        if (ref.vehicle.isIcrs) {
-                            set.p.createCrop(
-                                ref.vehicle.odometerCropLeft ?: 0f,
-                                ref.vehicle.odometerCropTop ?: 0f,
-                                (ref.vehicle.odometerCropRight ?: 0f) - (ref.vehicle.odometerCropLeft ?: 0f),
-                                (ref.vehicle.odometerCropBottom ?: 0f) - (ref.vehicle.odometerCropTop ?: 0f),
-                                id = ref.vehicle.id
-                            )
-                        } else {
-                            set.p.createCropLegacy(
-                                ref.vehicle.odometerCropLeft ?: 0f,
-                                ref.vehicle.odometerCropTop ?: 0f,
-                                (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
-                                (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f),
-                                id = ref.vehicle.id
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
     
@@ -401,14 +344,8 @@ private suspend fun runPumpExperiment(
     currentFile.appendText(footer)
     jsonFile.appendText("\n  ]\n}")
     
-    cachedRefs.forEach { it.bmp.recycle() }
     experimentRecSet320x48.release()
     experimentDetSet512x128.release()
-    vehicleBufferSets.values.forEach { it.release() }
-    vehicleArgbCrops.values.forEach { it.recycle() }
-    vehicleArgbScratches.values.forEach { it.recycle() }
-    vehicleArgbCrops.clear()
-    vehicleArgbScratches.clear()
 }
 
 private fun pSerializePhotoResultToJson(
