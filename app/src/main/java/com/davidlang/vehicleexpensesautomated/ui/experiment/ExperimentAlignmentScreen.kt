@@ -476,21 +476,24 @@ private suspend fun runExperiment(
                         val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                         try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
-                        val harnessA = mutableMapOf<String, OcrHarnessResult>()
-                        val harnessB = mutableMapOf<String, OcrHarnessResult>()
-                        val harnessStd = mutableMapOf<String, OcrHarnessResult>()
+                        val refinementTracesA = mutableMapOf<String, RefinementTrace>()
+                        val refinementTracesB = mutableMapOf<String, RefinementTrace>()
+                        
+                        val hA = mutableMapOf<String, OcrHarnessResult>()
+                        val hB = mutableMapOf<String, OcrHarnessResult>()
+                        val hStd = mutableMapOf<String, OcrHarnessResult>()
 
                         // --- Sequential Execution (Phase 116 Restoration) ---
                         // Standard Baseline
-                        runMLKitIterative("ML Diag", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, harnessStd, refinementTraces)
-                        runPaddleValleyMonoIterative("Paddle Std", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, harnessStd, refinementTraces)
+                        runMLKitIterative("ML Diag", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hStd, refinementTraces)
+                        runPaddleValleyMonoIterative("Paddle Std", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, hStd, refinementTraces)
                         
                         // Path A
-                        runMLKitIterative("ML Native", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, harnessA, refinementTracesA)
-                        runPaddleValleyMonoIterative("Set A", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, harnessA, refinementTracesA)
+                        runMLKitIterative("ML Native", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hA, refinementTracesA)
+                        runPaddleValleyMonoIterative("Set A", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, hA, refinementTracesA)
 
                         // Path B
-                        runPaddleValleyMonoIterative("Set B", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, harnessB, refinementTracesB)
+                        runPaddleValleyMonoIterative("Set B", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, hB, refinementTracesB)
                     }
                     
                     val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
