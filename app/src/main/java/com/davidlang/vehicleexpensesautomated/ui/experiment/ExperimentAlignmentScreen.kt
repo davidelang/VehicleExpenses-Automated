@@ -301,7 +301,7 @@ private suspend fun runExperiment(
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
 
-                val tilt = 0f
+                val tilt = deskewResA.angle
                 val tMl = deskewResA.mlTimeMs
                 val tPd = deskewResA.paddleTimeMs
 
@@ -326,9 +326,6 @@ private suspend fun runExperiment(
                     System.currentTimeMillis() - tRot0
                 }
 
-                // Standard Rotation (DISABLED)
-                val tRotate = 0L
-
                 // Path A: ML Kit Deskew
                 val angleA = deskewResA.engines["ML Kit"]?.angle ?: 0f
                 val tRotateA = rotate(NativePaddleEngine.bufferSetA, angleA)
@@ -337,11 +334,6 @@ private suspend fun runExperiment(
                 val angleB = deskewResA.engines["Paddle V3"]?.angle ?: 0f
                 val tRotateB = rotate(NativePaddleEngine.bufferSetB, angleB)
 
-                // Standard Discovery (DISABLED - Logic Eradication Phase)
-                val tDiscoveryTotal = 0L
-                val ocrStd = OcrResult(engineName = "Standard (Disabled)", debugText = "", textBlocks = emptyList(), imageWidth = 0, imageHeight = 0)
-                val queryLandmarksRaw = emptyList<TextBlock>()
-                
                 // Path A Discovery
                 val tDisc0A = System.currentTimeMillis()
                 val (ocrA, queryLandmarksA) = performLandmarkDiscovery(NativePaddleEngine.bufferSetA.p, context)
@@ -521,7 +513,6 @@ private suspend fun runExperiment(
                 }
 
                 // Photo-level Pathway Results (Phase 116)
-                val standardPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryTotal, alignedBase64, ocrStd, queryLandmarksRaw, hStd)
                 val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.mlTimeMs), tDiscoveryTotalA, alignedA64, ocrA, queryLandmarksA, hA)
                 val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResA.paddleTimeMs), tDiscoveryTotalB, alignedB64, ocrB, queryLandmarksB, hB)
                 
