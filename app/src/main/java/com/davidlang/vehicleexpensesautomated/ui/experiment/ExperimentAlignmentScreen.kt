@@ -392,7 +392,6 @@ private suspend fun runExperiment(
                     Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
                     
                     // Phase 116: Independent Disambiguation for A and B
-                    val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
                     val queryLandmarksAPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
                     val queryLandmarksBPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksB, winnerRef.curatedLandmarks)
                     
