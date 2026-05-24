@@ -850,15 +850,9 @@ private suspend fun runExperiment(
 
                     Log.d("DISAMB_TRACE", "--- Processing Winner: $finalWinnerName for ${file.name} ---")
                     
-                    // Phase 115: Actual Native Discovery Pass
-                    val tDiscMono0 = System.currentTimeMillis()
-                    val (ocrMono, queryLandmarksMonoRaw) = performLandmarkDiscovery(NativePaddleEngine.fullBufferSet.p, context)
-                    queryOcrDiscoveryMono = ocrMono
-                    tDiscoveryMonoTotal = System.currentTimeMillis() - tDiscMono0
-
                     // Phase 108: Independent Disambiguation
                     val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksRaw, winnerRef.curatedLandmarks)
-                    val queryLandmarksMonoPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksMonoRaw, winnerRef.curatedLandmarks)
+                    val queryLandmarksMonoPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarksA, winnerRef.curatedLandmarks)
                     
                     // 1. Standard Alignment (In-place on masterBmp)
                     val t0 = System.currentTimeMillis()
@@ -866,9 +860,9 @@ private suspend fun runExperiment(
                     val elapsedAlign = System.currentTimeMillis() - t0
 
                     
-                    // 1.2 Native Alignment (In-place on fullBufferSet)
+                    // 1.2 Native Alignment (In-place on bufferSetA)
                     val nativeAlignRes = ImageAlignmentUtils.anchorAlignNative(
-                        NativePaddleEngine.fullBufferSet, 
+                        NativePaddleEngine.bufferSetA, 
                         winnerRef.curatedLandmarks, 
                         queryLandmarksMonoPrimary, 
                         winnerRef.vehicle, 
