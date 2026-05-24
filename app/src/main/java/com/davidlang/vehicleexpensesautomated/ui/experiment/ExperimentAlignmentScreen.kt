@@ -371,6 +371,14 @@ private suspend fun runExperiment(
                 var alignedB64 = ""
                 var tSnapAlign = 0L
 
+                val hStd = mutableMapOf<String, OcrHarnessResult>()
+                val hA = mutableMapOf<String, OcrHarnessResult>()
+                val hB = mutableMapOf<String, OcrHarnessResult>()
+                
+                val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                val refinementTracesA = mutableMapOf<String, RefinementTrace>()
+                val refinementTracesB = mutableMapOf<String, RefinementTrace>()
+
                 // Winner-Only Processing block
                 
                 if (winnerRef != null) {
@@ -451,14 +459,6 @@ private suspend fun runExperiment(
                     val alignmentTraceA = AlignmentTraceResult(alignResA.success, alignResA.timeMs, alignedA64, alignResA.metadata)
                     val alignmentTraceB = AlignmentTraceResult(alignResB.success, alignResB.timeMs, alignedB64, alignResB.metadata)
                     
-                    val refinementTraces = mutableMapOf<String, RefinementTrace>()
-                    val refinementTracesA = mutableMapOf<String, RefinementTrace>()
-                    val refinementTracesB = mutableMapOf<String, RefinementTrace>()
-                    
-                    val hA = mutableMapOf<String, OcrHarnessResult>()
-                    val hB = mutableMapOf<String, OcrHarnessResult>()
-                    val hStd = mutableMapOf<String, OcrHarnessResult>()
-
                     // Phase 58: Refinement Loop (Always executed to provide diagnostic data)
                     val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
                     if (exactCrop != null) {
