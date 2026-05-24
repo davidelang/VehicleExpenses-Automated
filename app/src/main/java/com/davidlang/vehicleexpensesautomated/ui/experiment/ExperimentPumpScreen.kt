@@ -124,7 +124,7 @@ private suspend fun runPumpExperiment(
             
             ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBufferSet, scratchBmp, masterBmp)
             
-            val result = PumpOcrUtils.discoverPumpFields(masterBmp, context, masterBufferSet, scratchBmp, paddleEngine) {
+            val result = PumpOcrUtils.discoverPumpFields(context, paddleEngine) {
                 // Nested logs if needed
             }
 
@@ -141,8 +141,14 @@ private suspend fun runPumpExperiment(
             htmlOutput.append("<div class='img-container'><img src='data:image/jpeg;base64,$snapB64'></div>")
             htmlOutput.append("<div class='results'>")
             htmlOutput.append("<b>File:</b> ${file.name}<br>")
+            htmlOutput.append("<b>Execution Time:</b> ${result.executionTimeMs}ms<br>")
             htmlOutput.append("<b>Cost:</b> ${result.cost ?: "NOT FOUND"}<br>")
             htmlOutput.append("<b>Volume:</b> ${result.gallons ?: "NOT FOUND"}<br>")
+            htmlOutput.append("<div class='meta'>")
+            result.metadata.forEach { (key, value) ->
+                htmlOutput.append("$key: $value<br>")
+            }
+            htmlOutput.append("</div>")
             htmlOutput.append("<br><small>${result.debugText}</small>")
             htmlOutput.append("</div></div>")
 
