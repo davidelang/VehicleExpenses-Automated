@@ -319,7 +319,14 @@ private suspend fun runExperiment(
             val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             
             // Ingest at full fidelity
-            val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.fullBufferSet, scratchBmp, masterBmp)
+            val meta = ImageIngestionProvider.ingestFromFile(
+                context, 
+                file.absolutePath, 
+                NativePaddleEngine.bufferSetA, 
+                NativePaddleEngine.bufferSetB, 
+                scratchBmp, 
+                masterBmp
+            )
             
             // Capture ORIGINAL Thumbnail for Report (Before filters/rotation)
             val tSnapOrig0 = System.currentTimeMillis()
