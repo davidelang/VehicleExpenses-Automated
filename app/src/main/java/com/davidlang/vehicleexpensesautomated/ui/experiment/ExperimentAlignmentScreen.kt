@@ -345,7 +345,7 @@ private suspend fun runExperiment(
             try {
                 // Step 2 (Deskew): Calculate tilt independently for both pipelines
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBmp)
-                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.fullBufferSet.p)
+                val deskewResMono = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
 
                 val tilt = deskewRes.angle
                 val tMl = deskewRes.mlTimeMs
@@ -364,37 +364,52 @@ private suspend fun runExperiment(
                     tRotate = System.currentTimeMillis() - tRot0
                 }
                 
-                // Native: Independent High-Quality Rotation (Cubic) using Paddle Mono angle
-                val tRotMono0 = System.currentTimeMillis()
-                val srcMat = NativePaddleEngine.fullBufferSet.p.mat
-                val dstMat = NativePaddleEngine.fullBufferSet.s.mat
+                // Phase 116: Independent High-Quality Rotation (Cubic)
+                suspend fun rotateNative(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
+                    val tRot0 = System.currentTimeMillis()
+                    val src = set.p.mat
+                    val dst = set.s.mat
+                    
+                    val m = android.graphics.Matrix()
+                    m.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
+                    val values = FloatArray(9)
+                    m.getValues(values)
 
-                // Phase 115: Use Paddle Mono deskew for native rotation as it's more robust on these displays
-                val paddleTiltMonoRaw = deskewResMono.engines["Paddle V3"]?.angle ?: 0f
-                val paddleTiltMono = if (paddleTiltMonoRaw.isFinite()) paddleTiltMonoRaw else 0f
+                    val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
+                    rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
+                    rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
+
+                    org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+                    set.flip()
+                    rotMat.release()
+                    System.currentTimeMillis() - tRot0
+                }
+
+                // Path A: ML Kit Deskew
+                val angleA = deskewResMono.engines["ML Kit"]?.angle ?: 0f
+                val tRotateA = rotateNative(NativePaddleEngine.bufferSetA, angleA)
                 
-                val m = android.graphics.Matrix()
-                m.postRotate(-paddleTiltMono, srcMat.cols() / 2f, srcMat.rows() / 2f)
-                val values = FloatArray(9)
-                m.getValues(values)
-
-                val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
-                rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
-                rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
-
-                org.opencv.imgproc.Imgproc.warpAffine(srcMat, dstMat, rotMat, srcMat.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-                NativePaddleEngine.fullBufferSet.flip()
-                rotMat.release()
-                val tRotateMono = System.currentTimeMillis() - tRotMono0
+                // Path B: Paddle Deskew
+                val angleB = deskewResMono.engines["Paddle V3"]?.angle ?: 0f
+                val tRotateB = rotateNative(NativePaddleEngine.bufferSetB, angleB)
 
                 val tDiscoveryStart = System.currentTimeMillis()
                 val (queryOcrDiscovery, queryLandmarksRaw) = performLandmarkDiscovery(masterBmp, context)
                 val tDiscoveryTotal = System.currentTimeMillis() - tDiscoveryStart
                 
-                var queryOcrDiscoveryMono: OcrResult? = null
-                var tDiscoveryMonoTotal = 0L
+                // Path A Discovery
+                val tDisc0A = System.currentTimeMillis()
+                val (ocrA, queryLandmarksA) = performLandmarkDiscovery(NativePaddleEngine.bufferSetA.p, context)
+                val tDiscoveryTotalA = System.currentTimeMillis() - tDisc0A
+                
+                // Path B Discovery
+                val tDisc0B = System.currentTimeMillis()
+                val (ocrB, queryLandmarksB) = performLandmarkDiscovery(NativePaddleEngine.bufferSetB.p, context)
+                val tDiscoveryTotalB = System.currentTimeMillis() - tDisc0B
                 
                 val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarksRaw, cachedRefs.map { it.vehicle }, "ML Kit")
+                // Phase 116: We primarily use the Standard path for identification (Winner selection)
+                // but discovery is run independently for refinement downstream.
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
                 val harnessResultsMap = mutableMapOf<String, OcrHarnessResult>()
 
@@ -941,15 +956,17 @@ private suspend fun runExperiment(
 
                     // Reporting Pass: Store result for winner (Phase 116 Dual Paths)
                     val standardPath = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, harnessResultsMap)
-                    // Temporary: Map existing mono results to both Set A and Set B for Phase 1.4
-                    val setAPath = SingleVehiclePathwayResult(alignmentTraceMono, refinementTraces, harnessResultsMap)
-                    val setBPath = SingleVehiclePathwayResult(alignmentTraceMono, refinementTraces, harnessResultsMap)
+                    
+                    // Temporary: For Phase 2, we haven't diverged alignment yet, so we use dummy traces
+                    // Path A alignment will happen in Phase 3
+                    val setAPath = SingleVehiclePathwayResult(null, refinementTraces, harnessResultsMap)
+                    val setBPath = SingleVehiclePathwayResult(null, refinementTraces, harnessResultsMap)
                     
                     vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(
                         winnerRef.vehicle.name, 
                         "", 
                         0L, 
-                        tDiscoveryMonoTotal, 
+                        0L, // discoveryTimeMonoMs is now inside PhotoPathwayResult
                         mapOf("standard" to standardPath, "set_a" to setAPath, "set_b" to setBPath),
                         emptyList(), 
                         emptyList(), 
@@ -976,9 +993,9 @@ private suspend fun runExperiment(
                 }
 
                 // Photo-level Pathway Results (Phase 116)
-                val standardPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryTotal, alignedBase64, queryOcrDiscovery, emptyList(), harnessResultsMap)
-                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryMonoTotal, alignedNativeBase64, queryOcrDiscoveryMono ?: queryOcrDiscovery, emptyList(), harnessResultsMap)
-                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryMonoTotal, alignedNativeBase64, queryOcrDiscoveryMono ?: queryOcrDiscovery, emptyList(), harnessResultsMap)
+                val standardPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (tMl + tPd), tDiscoveryTotal, alignedBase64, queryOcrDiscovery, queryLandmarksRaw, harnessResultsMap)
+                val setAPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.mlTimeMs), tDiscoveryTotalA, alignedNativeBase64, ocrA, queryLandmarksA, harnessResultsMap)
+                val setBPhotoPath = PhotoPathwayResult(finalWinnerName, bestOdometer, (deskewResMono.paddleTimeMs), tDiscoveryTotalB, alignedNativeBase64, ocrB, queryLandmarksB, harnessResultsMap)
                 
                 val pathways = mapOf("standard" to standardPhotoPath, "set_a" to setAPhotoPath, "set_b" to setBPhotoPath)
                 val photoResult = ProcessedPhotoResult(file.name, pathways, vehicleResultsMap, primaryVetoResults)
