@@ -449,7 +449,13 @@ private suspend fun runExperiment(
                     val alignmentTraceB = AlignmentTraceResult(nativeAlignResB.success, nativeAlignResB.timeMs, alignedBB64, nativeAlignResB.metadata)
                     
                     val refinementTraces = mutableMapOf<String, RefinementTrace>()
+                    val refinementTracesA = mutableMapOf<String, RefinementTrace>()
+                    val refinementTracesB = mutableMapOf<String, RefinementTrace>()
                     
+                    val hA = mutableMapOf<String, OcrHarnessResult>()
+                    val hB = mutableMapOf<String, OcrHarnessResult>()
+                    val hStd = mutableMapOf<String, OcrHarnessResult>()
+
                     // Phase 58: Refinement Loop (Always executed to provide diagnostic data)
                     val exactCrop = vehicleArgbCrops[winnerRef.vehicle.id]
                     if (exactCrop != null) {
@@ -475,13 +481,6 @@ private suspend fun runExperiment(
 
                         val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                         try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
-
-                        val refinementTracesA = mutableMapOf<String, RefinementTrace>()
-                        val refinementTracesB = mutableMapOf<String, RefinementTrace>()
-                        
-                        val hA = mutableMapOf<String, OcrHarnessResult>()
-                        val hB = mutableMapOf<String, OcrHarnessResult>()
-                        val hStd = mutableMapOf<String, OcrHarnessResult>()
 
                         // --- Sequential Execution (Phase 116 Restoration) ---
                         // Standard Baseline
