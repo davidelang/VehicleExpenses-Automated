@@ -476,35 +476,33 @@ private suspend fun runExperiment(
                         val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                         try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
-                        val report = object : ReportCollector {
-                            override fun add(engineName: String, result: OcrHarnessResult) {
-                                harnessResultsMap[engineName] = result
-                                val steps = result.jsonSection.getAsJsonObject("stages")?.entrySet()?.map { (stage, data) ->
-                                    val obj = data.asJsonObject
-                                    OcrStepResult(stageName = stage, thumbB64 = result.thumbB64 ?: "", text = obj.get("text")?.asString, metadata = mapOf("loop_time" to obj.get("time")?.asString.toString()))
-                                } ?: emptyList()
-                                refinementTraces[engineName] = RefinementTrace(engineName, result.totalTimeMs, steps)
-                                Log.d("OCR_DEBUG", "Harness $engineName returned: ${result.odometerValue}")
-                            }
-                        }
+                        val harnessA = mutableMapOf<String, OcrHarnessResult>()
+                        val harnessB = mutableMapOf<String, OcrHarnessResult>()
+                        val harnessStd = mutableMapOf<String, OcrHarnessResult>()
 
-                        // --- Sequential Execution ---
-                        // Sequential A/B Refinement (Phase 116)
-                        // runMLKitIterative("ML Diag", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                        // runMLKitIterative("ML Native", NativePaddleEngine.bufferSetA, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                        // runPaddleValleyMonoIterative("Paddle Std", masterBmp!!, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                        // runPaddleValleyMonoIterative("Set A", NativePaddleEngine.bufferSetA, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
-                        // runPaddleValleyMonoIterative("Set B", NativePaddleEngine.bufferSetB, masterW = masterBmp.width, masterH = masterBmp.height, report = report)
+                        // --- Sequential Execution (Phase 116 Restoration) ---
+                        // Standard Baseline
+                        runMLKitIterative("ML Diag", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, harnessStd, refinementTraces)
+                        runPaddleValleyMonoIterative("Paddle Std", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, harnessStd, refinementTraces)
+                        
+                        // Path A
+                        runMLKitIterative("ML Native", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, harnessA, refinementTracesA)
+                        runPaddleValleyMonoIterative("Set A", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, harnessA, refinementTracesA)
 
+                        // Path B
+                        runPaddleValleyMonoIterative("Set B", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngineV3Mono, scratchBmp, harnessB, refinementTracesB)
                     }
                     
                     val allResults = refinementTraces.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
                     if (allResults.isNotEmpty()) bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
 
                     // Reporting Pass: Store result for winner (Phase 116 Dual Paths)
-                    val standardPath = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, harnessResultsMap)
-                    val setAPath = SingleVehiclePathwayResult(alignmentTraceA, refinementTraces, harnessResultsMap)
-                    val setBPath = SingleVehiclePathwayResult(alignmentTraceB, refinementTraces, harnessResultsMap)
+                    val standardPath = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, hStd)
+                    val setAPath = SingleVehiclePathwayResult(alignmentTraceA, refinementTracesA, harnessA)
+                    val setBPath = SingleVehiclePathwayResult(alignmentTraceB, refinementTracesB, harnessB)
+                    
+                    // Populate legacy harness map for top-level photo reporting
+                    harnessResultsMap.putAll(hStd)
                     
                     vehicleResultsMap[winnerRef.vehicle.id] = SingleVehicleResult(
                         winnerRef.vehicle.name, 
@@ -975,4 +973,231 @@ private fun clusterRects(fragments: List<android.graphics.Rect>): List<android.g
     return clusters.map { cluster -> 
         android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) 
     }
+}
+
+private suspend fun runPaddleValleyMonoIterative(
+    displayName: String, 
+    masterBuffer: Any, 
+    mWidth: Int, 
+    mHeight: Int, 
+    winnerRef: ReferenceCache,
+    vehicleBufferSets: Map<Int, BufferSet>,
+    vehicleArgbCrops: Map<Int, Bitmap>,
+    experimentDetSet512x128: BufferSet,
+    experimentRecSet320x48: BufferSet,
+    paddleEngineV3Mono: NativePaddleEngine,
+    scratchBmp: Bitmap,
+    report: MutableMap<String, OcrHarnessResult>, 
+    targetRefMap: MutableMap<String, RefinementTrace>
+) {
+    val tH0 = System.currentTimeMillis()
+    val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
+    val argbCropLocal = vehicleArgbCrops[winnerRef.vehicle.id] ?: return
+    val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
+    val jsonStages = com.google.gson.JsonObject()
+    val allOdo = mutableListOf<String>()
+    
+    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+    val t = winnerRef.vehicle.odometerCropTop ?: 0f
+    val r = winnerRef.vehicle.odometerCropRight ?: 1f
+    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+    
+    val roiW = ((r - l) * mWidth).toInt().coerceAtMost(mWidth)
+    val roiH = ((b - t) * mHeight).toInt().coerceAtMost(mHeight)
+    val startX = (l * mWidth).toInt().coerceIn(0, mWidth - 1)
+    val startY = (t * mHeight).toInt().coerceIn(0, mHeight - 1)
+    
+    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
+    var lastThumb = ""
+    var tSnTotal = 0L
+    val steps = mutableListOf<OcrStepResult>()
+    
+    stages.forEach { stage ->
+        val tS0 = System.currentTimeMillis()
+        when (masterBuffer) {
+            is Bitmap -> {
+                val canvas = Canvas(argbCropLocal)
+                canvas.drawColor(Color.BLACK)
+                val matrixLocal = android.graphics.Matrix()
+                val scX = argbCropLocal.width.toFloat() / roiW.toFloat()
+                val scY = argbCropLocal.height.toFloat() / roiH.toFloat()
+                matrixLocal.postTranslate(-startX.toFloat(), -startY.toFloat())
+                matrixLocal.postScale(scX, scY)
+                canvas.drawBitmap(masterBuffer, matrixLocal, Paint(Paint.FILTER_BITMAP_FLAG))
+                NativeImageUtils.syncMatFromArgb(argbCropLocal, odoBuffer.p.mat)
+            }
+            is BufferSet -> {
+                odoBuffer.p.clear()
+                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+            }
+        }
+        
+        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
+        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
+        
+        val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
+        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
+        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
+        
+        val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        val detRes = paddleEngineV3Mono.detectMono(experimentDetSet512x128.p)
+        val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, odoBuffer.p.mat, "Paddle") else emptyList()
+        experimentDetSet512x128.c[detCropId].release()
+        
+        val frags = rawB.map { NativeImageUtils.expandByValley(odoBuffer.p.mat, it.boundingBox) }
+        val cons = clusterRects(frags).sortedBy { it.left }
+        val odoB = StringBuilder()
+        val fBoxes = mutableListOf<android.graphics.Rect>()
+        val jMeta = com.google.gson.JsonObject()
+        
+        cons.forEach { box ->
+            val sL = box.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
+            val sT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
+            val sR = box.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
+            val sB = box.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
+            val rSrcId = odoBuffer.createCrop(sL, sT, sR - sL, sB - sT)
+            experimentRecSet320x48.p.clear()
+            val rSc = minOf(312f / (sR - sL), 40f / (sB - sT))
+            val ew = (( (sR - sL) * rSc + 1).toInt() / 2) * 2
+            val eh = (( (sB - sT) * rSc + 1).toInt() / 2) * 2
+            val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
+            org.opencv.imgproc.Imgproc.resize(odoBuffer.c[rSrcId].mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            odoBuffer.c[rSrcId].release()
+            experimentRecSet320x48.c[rCrId].release()
+            
+            val ocrR = paddleEngineV3Mono.runConstrainedStaticMono(experimentRecSet320x48.p, paddleEngineV3Mono.getDictionary())
+            if (ocrR.text.isNotBlank()) { odoB.append(ocrR.text).append(" "); fBoxes.add(box) }
+            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty(k, v) }
+        }
+        
+        val odoStr = odoB.toString().trim()
+        allOdo.add(odoStr)
+        val tL = System.currentTimeMillis() - tS0
+        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, jMeta.asMap().mapValues { it.value.asString }))
+        
+        val anns = mutableListOf<SnapshotAnnotation>()
+        rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
+        fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
+        
+        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.fullBufferSet)
+        lastThumb = sB64
+        tSnTotal += ts
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
+        val sObj = com.google.gson.JsonObject()
+        sObj.addProperty("text", odoStr)
+        sObj.addProperty("time", tL)
+        jMeta.entrySet().forEach { e -> sObj.add(e.key, e.value) }
+        jsonStages.add(stage, sObj)
+    }
+    
+    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
+    report[displayName] = result
+    targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
+}
+
+private suspend fun runMLKitIterative(
+    displayName: String, 
+    masterBuffer: Any, 
+    mWidth: Int, 
+    mHeight: Int, 
+    winnerRef: ReferenceCache,
+    vehicleBufferSets: Map<Int, BufferSet>,
+    vehicleArgbCrops: Map<Int, Bitmap>,
+    experimentRecSet320x48: BufferSet,
+    scratchBmp: Bitmap,
+    report: MutableMap<String, OcrHarnessResult>, 
+    targetRefMap: MutableMap<String, RefinementTrace>
+) {
+    val tH0 = System.currentTimeMillis()
+    val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
+    val argbCropLocal = vehicleArgbCrops[winnerRef.vehicle.id] ?: return
+    val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
+    val jsonStages = com.google.gson.JsonObject()
+    val allOdo = mutableListOf<String>()
+    
+    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
+    val t = winnerRef.vehicle.odometerCropTop ?: 0f
+    val r = winnerRef.vehicle.odometerCropRight ?: 1f
+    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+    
+    val roiW = ((r - l) * mWidth).toInt().coerceAtMost(mWidth)
+    val roiH = ((b - t) * mHeight).toInt().coerceAtMost(mHeight)
+    val sX = (l * mWidth).toInt()
+    val sY = (t * mHeight).toInt()
+    
+    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
+    var lastThumb = ""
+    var tSnTotal = 0L
+    val steps = mutableListOf<OcrStepResult>()
+    
+    stages.forEach { stage ->
+        val tS0 = System.currentTimeMillis()
+        when (masterBuffer) {
+            is Bitmap -> {
+                val canvas = Canvas(argbCropLocal)
+                canvas.drawColor(Color.BLACK)
+                val matrixLocal = android.graphics.Matrix()
+                val scX = argbCropLocal.width.toFloat() / roiW.toFloat()
+                val scY = argbCropLocal.height.toFloat() / roiH.toFloat()
+                matrixLocal.postTranslate(-sX.toFloat(), -sY.toFloat())
+                matrixLocal.postScale(scX, scY)
+                canvas.drawBitmap(masterBuffer, matrixLocal, Paint(Paint.FILTER_BITMAP_FLAG))
+                NativeImageUtils.syncMatFromArgb(argbCropLocal, odoBuffer.p.mat)
+            }
+            is BufferSet -> {
+                odoBuffer.p.clear()
+                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+            }
+        }
+        
+        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
+        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
+        
+        experimentRecSet320x48.p.clear()
+        val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())
+        val ew = ((odoBuffer.p.mat.cols() * rSc + 1).toInt() / 2) * 2
+        val eh = ((odoBuffer.p.mat.rows() * rSc + 1).toInt() / 2) * 2
+        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
+        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        
+        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+        val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
+        experimentRecSet320x48.c[rCrId].release()
+        
+        val odoB = StringBuilder()
+        vText.textBlocks.forEach { blk -> 
+            blk.lines.forEach { line -> 
+                val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
+                if (cleaned.isNotBlank()) odoB.append(cleaned) 
+            } 
+        }
+        
+        val odoStr = odoB.toString()
+        allOdo.add(odoStr)
+        val tL = System.currentTimeMillis() - tS0
+        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, emptyMap()))
+        
+        val anns = mutableListOf<SnapshotAnnotation>()
+        val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
+        val snY = odoBuffer.p.mat.rows().toFloat() / eh.toFloat()
+        vText.textBlocks.forEach { b -> 
+            b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) } 
+        }
+        
+        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.fullBufferSet)
+        lastThumb = sB64
+        tSnTotal += ts
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
+        val sObj = com.google.gson.JsonObject()
+        sObj.addProperty("text", odoStr)
+        sObj.addProperty("time", tL)
+        jsonStages.add(stage, sObj)
+    }
+    
+    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
+    report[displayName] = result
+    targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
 }
