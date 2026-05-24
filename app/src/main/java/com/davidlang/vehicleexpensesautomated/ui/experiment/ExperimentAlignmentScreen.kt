@@ -257,7 +257,6 @@ private suspend fun runExperiment(
     val experimentRecSet320x48 = BufferSet(320, 48)
     val experimentDetSet512x128 = BufferSet(512, 128)
     val harnessEngineNames = mutableListOf(
-        "Std ML", "Std Paddle", 
         "Set A ML", "Set A Paddle", 
         "Set B ML", "Set B Paddle"
     )
@@ -485,10 +484,6 @@ private suspend fun runExperiment(
                         try { cropFile.outputStream().use { out -> exactCrop.compress(Bitmap.CompressFormat.JPEG, 95, out) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
                         // --- Sequential Execution (Phase 116 Restoration & Fixes) ---
-                        // Standard Baseline
-                        runMLKitIterative("Std ML", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hStd, refinementTraces)
-                        runPaddleValleyIterative("Std Paddle", masterBmp!!, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hStd, refinementTraces)
-                        
                         // Path A
                         runMLKitIterative("Set A ML", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentRecSet320x48, scratchBmp, hA, refinementTracesA)
                         runPaddleValleyIterative("Set A Paddle", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, vehicleArgbCrops, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, scratchBmp, hA, refinementTracesA)
