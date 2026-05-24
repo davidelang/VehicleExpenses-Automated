@@ -73,41 +73,34 @@ object ImageIngestionProvider {
     suspend fun ingestFromFile(
         context: Context,
         path: String,
-        targetA: BufferSet,
-        targetB: BufferSet,
-        scratchBmp: Bitmap?, 
-        masterBmp: Bitmap
+        target: BufferSet.Slice
     ): IngestionMetadata {
         val t0 = System.currentTimeMillis()
         val file = java.io.File(path)
         val ext = file.extension.lowercase()
         
         // --- TYPE-AWARE DISPATCHER ---
-        val meta = when (ext) {
-            "jpg", "jpeg" -> ingestJpeg(path, targetA, masterBmp, t0)
-            "dng" -> ingestDng(context, path, targetA, masterBmp, t0)
-            else -> ingestViaImageDecoder(context, path, targetA, masterBmp, t0) // Fallback for png etc
+        return when (ext) {
+            "jpg", "jpeg" -> ingestJpeg(path, target, t0)
+            "dng" -> ingestDng(context, path, target, t0)
+            else -> ingestViaImageDecoder(context, path, target, t0) // Fallback for png etc
         }
-
-        // Distribution logic removed from here
-        return meta
     }
 
     private fun ingestDng(
         context: Context,
         path: String,
-        target: BufferSet,
-        masterBmp: Bitmap,
+        target: BufferSet.Slice,
         startTime: Long
     ): IngestionMetadata {
         // We use LibRaw for dimensions as it's the source of truth for developed pixels
         val (probedW, probedH) = probeDimensions(context, path)
 
         // Step 1: Native Ingestion (Direct LibRaw -> YUV)
-        NativeImageUtils.ingestDngToYuv(path, target.p)
+        NativeImageUtils.ingestDngToYuv(path, target)
         
         // Step 2: Stabilize state for monochrome-expecting logic
-        target.p.clearChroma()
+        target.clearChroma()
         
         return IngestionMetadata(
             probedW, probedH, 
@@ -121,8 +114,7 @@ object ImageIngestionProvider {
 
     private fun ingestJpeg(
         path: String,
-        target: BufferSet,
-        masterBmp: Bitmap,
+        target: BufferSet.Slice,
         startTime: Long
     ): IngestionMetadata {
         val diag = NativeImageUtils.testImread(path)
@@ -141,10 +133,10 @@ object ImageIngestionProvider {
         val h = res[1].toInt()
 
         // Step 1: Native Ingestion (Direct imread -> YUV)
-        NativeImageUtils.ingestJpegToYuv(path, target.p)
+        NativeImageUtils.ingestJpegToYuv(path, target)
         
         // Step 2: Stabilize state
-        target.p.clearChroma()
+        target.clearChroma()
         
         return IngestionMetadata(
             w, h, 
@@ -159,59 +151,30 @@ object ImageIngestionProvider {
     private fun ingestViaImageDecoder(
         context: Context,
         path: String,
-        target: BufferSet,
-        masterBmp: Bitmap,
+        target: BufferSet.Slice,
         startTime: Long
     ): IngestionMetadata {
         val (probedW, probedH) = probeDimensions(context, path)
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val source = if (path.startsWith("content://")) {
-                ImageDecoder.createSource(context.contentResolver, Uri.parse(path))
-            } else {
-                ImageDecoder.createSource(File(path))
-            }
-
-            var originalW = 0
-            var originalH = 0
+            val source = if (path.startsWith("content://")) ImageDecoder.createSource(context.contentResolver, Uri.parse(path)) else ImageDecoder.createSource(File(path))
             var format = "unknown"
-
             val decodedBitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                originalW = info.size.width
-                originalH = info.size.height
                 format = info.mimeType
-                
-                // Force high-res development if the probed size is larger than the default (preview)
-                if (probedW > info.size.width || probedH > info.size.height) {
-                    decoder.setTargetSize(probedW, probedH)
-                }
-                
-                // Software allocator is required for JNI access
+                if (probedW > info.size.width || probedH > info.size.height) decoder.setTargetSize(probedW, probedH)
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
 
-            val decodedW = decodedBitmap.width
-            val decodedH = decodedBitmap.height
-            val isDegraded = decodedW < probedW || decodedH < probedH
-
-            // Native Ingestion (ARGB -> YUV)
-            NativeImageUtils.ingestArgbToYuv(decodedBitmap, target.p)
-            target.p.clearChroma()
+            NativeImageUtils.ingestArgbToYuv(decodedBitmap, target)
+            target.clearChroma()
             
+            val meta = IngestionMetadata(probedW, probedH, decodedBitmap.width, decodedBitmap.height, format, System.currentTimeMillis() - startTime, decodedBitmap.width < probedW || decodedBitmap.height < probedH)
             decodedBitmap.recycle()
-
-            return IngestionMetadata(
-                probedW, probedH, 
-                decodedW, decodedH, 
-                format, 
-                System.currentTimeMillis() - startTime,
-                isDegraded
-            )
+            return meta
         } else {
-            // Fallback for older devices
             val bmp = OdometerOcrUtils.decodeBitmapSafely(context, path) ?: throw Exception("Fallback decode failed")
-            NativeImageUtils.ingestArgbToYuv(bmp, target.p)
-            target.p.clearChroma()
+            NativeImageUtils.ingestArgbToYuv(bmp, target)
+            target.clearChroma()
             val meta = IngestionMetadata(bmp.width, bmp.height, bmp.width, bmp.height, "legacy", System.currentTimeMillis() - startTime, false)
             bmp.recycle()
             return meta
