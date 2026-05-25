@@ -222,11 +222,7 @@ private suspend fun runPumpExperiment(
         var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
         var finalWinnerName = "No match"
         var bestOdometer = "FAILED"
-        
-            // Step 1.5: 80% Contrast Stretch (Separate for A and B)
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.80f)
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
-            
+
             try {
             withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
             
@@ -245,8 +241,8 @@ private suspend fun runPumpExperiment(
             NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
 
             // Step 1.5: 80% Contrast Stretch
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.80f)
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
+            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.75f)
+            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.75f)
             
             val (originalBase64, tSnapOrig) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
 
@@ -863,7 +859,7 @@ private suspend fun pRunPaddleValleyIterative(
             }
         }
         
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
+        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.75f) 
         else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
         
         val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
@@ -969,7 +965,7 @@ private suspend fun pRunMLKitIterative(
             }
         }
         
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
+        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.75f) 
         else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
         
         experimentRecSet320x48.p.clear()
