@@ -6,7 +6,7 @@
 - [x] DONE: Phase 4: Engine API Purge
 - [x] DONE: Phase 5.1: Hollowing Out the Standard Path (Transitioning dependencies and reporting) (See: dev-ai-interaction/plans/phase-116-part-5-1-hollow-out.md)
 - [x] DONE: Phase 5.2: Logic Removal (Stop Standard path execution)
-- [/] IN PROGRESS: Phase 5.3: ARGB Eradication (Buffer Removal & Dead Code Elimination) (See: dev-ai-interaction/plans/phase-116-part-5-3-argb-eradication.md)
+- [x] DONE: Phase 5.3: ARGB Eradication (Buffer Removal & Dead Code Elimination) (See: dev-ai-interaction/plans/phase-116-part-5-3-argb-eradication.md)
 
 # TODO: Protocol Alignment
 - [x] DONE: Fix memory and GEMINI.md discrepancies (Strike System, No-Deploy, Plan Mode transitions). (See: dev-ai-interaction/plans/protocol-alignment.md)
