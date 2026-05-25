@@ -745,7 +745,15 @@ private fun buildHtmlRowDynamic(
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    val angMl = deskewRes.mlAngle
+    val angV3 = deskewRes.engines["Paddle V3"]?.angle ?: 0f
+    val angCpp = deskewRes.paddleCppAngle
+    appendLine("<tr><td><b>#$rowIndex</b>")
+    appendLine("<br><small>$fileName</small>")
+    appendLine("<br><small>$resHtml</small>$diagHtml")
+    appendLine("<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms")
+    appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
+    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     

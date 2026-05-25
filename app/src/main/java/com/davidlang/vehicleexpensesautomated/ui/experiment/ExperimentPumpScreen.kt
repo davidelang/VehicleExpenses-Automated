@@ -343,7 +343,7 @@ private suspend fun runPumpExperiment(
                 val rowHtml = pBuildHtmlRowDynamic(
                     index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
                     hunksAMl64, hunksAPd64, hunksBMl64, hunksBPd64, resAMl, resAPd, resBMl, resBPd,
-                    (tRotateA + tRotateB), tilt, angleA, angleB, meta.diagnostic
+                    (tRotateA + tRotateB), tilt, deskewResA, meta.diagnostic
                 )
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
@@ -441,12 +441,12 @@ private fun pBuildHtmlHeader(time: String, total: Int, version: String): String 
 }
 
 private fun pBuildHtmlRowDynamic(
-    rowIndex: Int, 
-    fileName: String, 
+    rowIndex: Int,
+    fileName: String,
     imgW: Int,
     imgH: Int,
     isDegraded: Boolean,
-    originalBase64: String, 
+    originalBase64: String,
     hunksAMl64: String,
     hunksAPd64: String,
     hunksBMl64: String,
@@ -455,16 +455,22 @@ private fun pBuildHtmlRowDynamic(
     resAPd: PathResult,
     resBMl: PathResult,
     resBPd: PathResult,
-    tDeskew: Long, 
+    tDeskew: Long,
     tilt: Float,
-    angleA: Float,
-    angleB: Float,
+    deskewRes: OdometerOcrUtils.DeskewResult,
     diagnostic: String = ""
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
-    appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'></td>")
+    val angMl = deskewRes.mlAngle
+    val angV3 = deskewRes.engines["Paddle V3"]?.angle ?: 0f
+    val angCpp = deskewRes.paddleCppAngle
+    appendLine("<tr><td><b>#$rowIndex</b>")
+    appendLine("<br><small>$fileName</small>")
+    appendLine("<br><small>$resHtml</small>$diagHtml")
+    appendLine("<br><b>Deskew Time:</b> ${tDeskew}ms")
+    appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
+    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'></td>")    appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'></td>")
     appendLine("<td><b>Paddle (A):</b><br><img src='data:image/jpeg;base64,$hunksAPd64'></td>")
     appendLine("<td><b>ML Kit (B):</b><br><img src='data:image/jpeg;base64,$hunksBMl64'></td>")
     appendLine("<td><b>Paddle (B):</b><br><img src='data:image/jpeg;base64,$hunksBPd64'></td>")

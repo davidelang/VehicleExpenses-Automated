@@ -175,4 +175,7 @@ object NativeImageUtils {
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     private external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+
+    external fun nativeHeatmapToTextAreas(heatmap: FloatArray, w: Int, h: Int, threshold: Float, invScale: Float): FloatArray
+    external fun nativeHeatmapToAngle(heatmap: FloatArray, w: Int, h: Int, threshold: Float): Float
 }
