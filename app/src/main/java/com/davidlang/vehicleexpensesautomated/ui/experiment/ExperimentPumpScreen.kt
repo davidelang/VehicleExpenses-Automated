@@ -645,14 +645,32 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Pu
 }
 
 private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<PumpHunk> {
-    val res = paddleEngine.detect(buffer.c[999]!!) ?: return emptyList()
-    val scaleW = res.width.toFloat(); val scaleH = res.height.toFloat()
+    val crop = buffer.c[999]!!
+    val res = paddleEngine.detect(crop) ?: return emptyList()
+    
+    // Calculate the actual occupancy of the image within the fixed-size detector tensor
+    // Large detector: 2048x2048. Small detector: 512x128.
+    val isLarge = crop.width > 512 || crop.height > 128
+    val tensorW = if (isLarge) 2048f else 512f
+    val tensorH = if (isLarge) 2048f else 128f
+    
+    // Calculate how many heatmap pixels represent the input image
+    // res.width/res.height are the heatmap dimensions (usually 1/4 of tensor)
+    val occW = (crop.width / tensorW) * res.width
+    val occH = (crop.height / tensorH) * res.height
+    
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
-    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[999]!!)
+    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     return blocks.map { block ->
-        val ml = block.boundingBox.left * masterW / scaleW; val mt = block.boundingBox.top * masterH / scaleH
-        val mr = block.boundingBox.right * masterW / scaleW; val mb = block.boundingBox.bottom * masterH / scaleH
+        // Normalize coordinates relative to the occupied portion of the heatmap
+        val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
+        val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
+        
+        // Map normalized coordinates to master pixels
+        val ml = nl * masterW; val mt = nt * masterH
+        val mr = nr * masterW; val mb = nb * masterH
+        
         val i1 = IcrsMath.pixelToIcrs(ml, mt, masterW, masterH)
         val i2 = IcrsMath.pixelToIcrs(mr, mb, masterW, masterH)
         PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
