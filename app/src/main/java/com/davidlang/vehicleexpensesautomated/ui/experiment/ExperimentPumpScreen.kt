@@ -333,11 +333,11 @@ private suspend fun runPumpExperiment(
 
                 // Capture Hunk Overlays
                 val mlHunksBmp = drawHunksOnBitmap(masterBmp, mlHunks, Color.RED)
-                val hunksA64 = createScaledBase64(mlHunksBmp, 600, 70)
+                val hunksA64 = pumpCreateScaledBase64(mlHunksBmp, 600, 70)
                 mlHunksBmp.recycle()
                 
                 val pdHunksBmp = drawHunksOnBitmap(masterBmp, pdHunks, Color.GREEN)
-                val hunksB64 = createScaledBase64(pdHunksBmp, 600, 70)
+                val hunksB64 = pumpCreateScaledBase64(pdHunksBmp, 600, 70)
                 pdHunksBmp.recycle()
                 masterBmp.recycle()
 
@@ -499,7 +499,10 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int) {
         targetH = (srcH * scale).toInt()
     }
     
-    val cropId = buffer.s.createCropLegacy(0f, 0f, targetW.toFloat() / buffer.s.width, targetH.toFloat() / buffer.s.height, id = 999)
+    val i1 = IcrsMath.pixelToIcrs(0f, 0f, buffer.s.width, buffer.s.height)
+    val i2 = IcrsMath.pixelToIcrs(targetW.toFloat(), targetH.toFloat(), buffer.s.width, buffer.s.height)
+    
+    val cropId = buffer.s.createCrop(i1.x, i1.y, i2.x - i1.x, i2.y - i1.y, id = 999)
     val dstMat = buffer.c[cropId].mat
     org.opencv.imgproc.Imgproc.resize(buffer.p.mat, dstMat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()))
 }
@@ -508,40 +511,41 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Te
     val result = OcrHarness.runDiscovery(buffer.c[999], context)
     val scaleW = result.imageWidth.toFloat()
     val scaleH = result.imageHeight.toFloat()
+    val masterW = buffer.p.width; val masterH = buffer.p.height
     
     return result.textBlocks.map { block ->
-        val l = block.boundingBox.left / scaleW
-        val t = block.boundingBox.top / scaleH
-        val r = block.boundingBox.right / scaleW
-        val b = block.boundingBox.bottom / scaleH
-        TextBlock(block.text, Rect((l * 10000).toInt(), (t * 10000).toInt(), (r * 10000).toInt(), (b * 10000).toInt()))
+        val ml = block.boundingBox.left * masterW / scaleW; val mt = block.boundingBox.top * masterH / scaleH
+        val mr = block.boundingBox.right * masterW / scaleW; val mb = block.boundingBox.bottom * masterH / scaleH
+        val i1 = IcrsMath.pixelToIcrs(ml, mt, masterW, masterH)
+        val i2 = IcrsMath.pixelToIcrs(mr, mb, masterW, masterH)
+        TextBlock(block.text, Rect((i1.x * 10000).toInt(), (i1.y * 10000).toInt(), (i2.x * 10000).toInt(), (i2.y * 10000).toInt()))
     }
 }
 
 private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<TextBlock> {
     val res = paddleEngine.detect(buffer.c[999]) ?: return emptyList()
-    val scaleW = res.width.toFloat()
-    val scaleH = res.height.toFloat()
+    val scaleW = res.width.toFloat(); val scaleH = res.height.toFloat()
+    val masterW = buffer.p.width; val masterH = buffer.p.height
     
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[999])
     return blocks.map { block ->
-        val l = block.boundingBox.left / scaleW
-        val t = block.boundingBox.top / scaleH
-        val r = block.boundingBox.right / scaleW
-        val b = block.boundingBox.bottom / scaleH
-        TextBlock("", Rect((l * 10000).toInt(), (t * 10000).toInt(), (r * 10000).toInt(), (b * 10000).toInt()))
+        val ml = block.boundingBox.left * masterW / scaleW; val mt = block.boundingBox.top * masterH / scaleH
+        val mr = block.boundingBox.right * masterW / scaleW; val mb = block.boundingBox.bottom * masterH / scaleH
+        val i1 = IcrsMath.pixelToIcrs(ml, mt, masterW, masterH)
+        val i2 = IcrsMath.pixelToIcrs(mr, mb, masterW, masterH)
+        TextBlock("", Rect((i1.x * 10000).toInt(), (i1.y * 10000).toInt(), (i2.x * 10000).toInt(), (i2.y * 10000).toInt()))
     }
 }
 
 private fun mergeGeometryIntoHunks(allBlocks: List<TextBlock>): List<TextBlock> {
     if (allBlocks.isEmpty()) return emptyList()
     
-    data class NormBox(val text: String, val l: Float, val t: Float, val r: Float, val b: Float)
+    data class IcrsBox(val text: String, val l: Float, val t: Float, val r: Float, val b: Float)
     val boxes = allBlocks.map { b ->
-        NormBox(b.text, b.boundingBox.left / 10000f, b.boundingBox.top / 10000f, b.boundingBox.right / 10000f, b.boundingBox.bottom / 10000f)
+        IcrsBox(b.text, b.boundingBox.left / 10000f, b.boundingBox.top / 10000f, b.boundingBox.right / 10000f, b.boundingBox.bottom / 10000f)
     }
 
-    val clusters = mutableListOf<MutableList<NormBox>>()
+    val clusters = mutableListOf<MutableList<IcrsBox>>()
     for (box in boxes) {
         var found = false
         for (cluster in clusters) {
@@ -566,8 +570,6 @@ private fun mergeGeometryIntoHunks(allBlocks: List<TextBlock>): List<TextBlock> 
         val widestL = cluster.minOf { it.l }; val widestR = cluster.maxOf { it.r }
         val shortestH = cluster.minOf { it.b - it.t }
         val centerY = cluster.map { (it.t + it.b) / 2f }.average().toFloat()
-        
-        // Inherit string with highest digit count
         val bestText = cluster.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
         
         val fT = centerY - shortestH / 2f; val fB = centerY + shortestH / 2f
@@ -575,23 +577,14 @@ private fun mergeGeometryIntoHunks(allBlocks: List<TextBlock>): List<TextBlock> 
     }
 }
 
-private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, targetBuffer: Bitmap? = null): String {
-    if (bitmap.isRecycled) return ""
-    val scale = targetWidth.toFloat() / bitmap.width; val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
-    val target = targetBuffer ?: Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888); val targetCanvas = android.graphics.Canvas(target)
-    if (targetBuffer != null) targetCanvas.drawColor(android.graphics.Color.BLACK); val matrix = android.graphics.Matrix(); matrix.postScale(scale, scale); targetCanvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-    val view = Bitmap.createBitmap(target, 0, 0, targetWidth, targetHeight); val b64 = OcrUtils.bitmapToBase64(view, quality); view.recycle()
-    if (targetBuffer == null) target.recycle(); return b64
-}
-
 private suspend fun performHunkRecognition(hunks: List<TextBlock>, buffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context): List<TextBlock> {
      return hunks.map { hunk ->
-         val l = (hunk.boundingBox.left / 10000f).coerceIn(0f, 0.999f)
-         val t = (hunk.boundingBox.top / 10000f).coerceIn(0f, 0.999f)
-         val r = (hunk.boundingBox.right / 10000f).coerceIn(l + 0.001f, 1f)
-         val b = (hunk.boundingBox.bottom / 10000f).coerceIn(t + 0.001f, 1f)
+         val l = hunk.boundingBox.left / 10000f
+         val t = hunk.boundingBox.top / 10000f
+         val r = hunk.boundingBox.right / 10000f
+         val b = hunk.boundingBox.bottom / 10000f
          
-         val cropId = buffer.createCropLegacy(l, t, r - l, b - t, id = 888)
+         val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
          val res = if (engine == "ML Kit") {
              MlKitEngine().recognize(buffer.c[cropId]!!)
          } else {
@@ -607,11 +600,20 @@ private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<TextBlock>, color: Int): 
     val out = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = Canvas(out)
     val paint = Paint().apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 10f }
     hunks.forEach { hunk ->
-        val l = hunk.boundingBox.left / 10000f * bmp.width; val t = hunk.boundingBox.top / 10000f * bmp.height
-        val r = hunk.boundingBox.right / 10000f * bmp.width; val b = hunk.boundingBox.bottom / 10000f * bmp.height
-        canvas.drawRect(l, t, r, b, paint)
+        val p1 = IcrsMath.icrsToPixel(hunk.boundingBox.left / 10000f, hunk.boundingBox.top / 10000f, bmp.width, bmp.height)
+        val p2 = IcrsMath.icrsToPixel(hunk.boundingBox.right / 10000f, hunk.boundingBox.bottom / 10000f, bmp.width, bmp.height)
+        canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint)
     }
     return out
+}
+
+private fun pumpCreateScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, targetBuffer: Bitmap? = null): String {
+    if (bitmap.isRecycled) return ""
+    val scale = targetWidth.toFloat() / bitmap.width; val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+    val target = targetBuffer ?: Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888); val targetCanvas = android.graphics.Canvas(target)
+    if (targetBuffer != null) targetCanvas.drawColor(android.graphics.Color.BLACK); val matrix = android.graphics.Matrix(); matrix.postScale(scale, scale); targetCanvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+    val view = Bitmap.createBitmap(target, 0, 0, targetWidth, targetHeight); val b64 = OcrUtils.bitmapToBase64(view, quality); view.recycle()
+    if (targetBuffer == null) target.recycle(); return b64
 }
 
 private suspend fun pPerformLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
