@@ -557,13 +557,13 @@ object OdometerOcrUtils {
         // 2. New Native C++ Path (Instrumented)
         val (blocksCpp, chksCpp) = try {
             val rawData = NativeImageUtils.nativeHeatmapToTextAreas(heatmap, w, h, 0.20f, invScale)
-            if (rawData.isEmpty()) Pair(emptyList<TextBlock>(), floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f))
+            if (rawData.isEmpty()) Pair(emptyList<TextBlock>(), floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f))
             else {
-                val chks = floatArrayOf(rawData[0], rawData[1], rawData[2], rawData[3], rawData[4], rawData[5], rawData[6])
-                val count = rawData[7].toInt()
+                val chks = floatArrayOf(rawData[0], rawData[1], rawData[2], rawData[3], rawData[4], rawData[5], rawData[6], rawData[7], rawData[8])
+                val count = rawData[9].toInt()
                 val res = mutableListOf<TextBlock>()
                 for (i in 0 until count) {
-                    val base = 8 + i * 10
+                    val base = 10 + i * 10
                     val p1 = org.opencv.core.Point(rawData[base + 0].toDouble(), rawData[base + 1].toDouble())
                     val p2 = org.opencv.core.Point(rawData[base + 2].toDouble(), rawData[base + 3].toDouble())
                     val p3 = org.opencv.core.Point(rawData[base + 4].toDouble(), rawData[base + 5].toDouble())
@@ -588,15 +588,15 @@ object OdometerOcrUtils {
             }
         } catch (e: Exception) {
             Log.e("PaddlePost", "Native call failed", e)
-            Pair(emptyList<TextBlock>(), floatArrayOf(-1f, -1f, -1f, -1f, -1f, -1f, -1f))
+            Pair(emptyList<TextBlock>(), floatArrayOf(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f))
         }
 
         // 3. Collate metadata
         val meta = mutableMapOf<String, String>()
         meta["kt_chk_mask"] = "%.1f".format(chksKt[0])
         meta["kt_chk_mask_pos"] = "%.1f".format(chksKt[1])
-        meta["kt_byte_0"] = "%.1f".format(chksKt[2])
-        meta["kt_byte_mid"] = "%.1f".format(chksKt[3])
+        meta["kt_chk_row_f"] = "%.1f".format(chksKt[2])
+        meta["kt_chk_row_l"] = "%.1f".format(chksKt[3])
         meta["kt_chk_rawc"] = "%.1f".format(chksKt[4])
         meta["kt_chk_validc"] = "%.1f".format(chksKt[5])
         meta["kt_chk_geom"] = "%.1f".format(chksKt[6])
@@ -604,11 +604,13 @@ object OdometerOcrUtils {
         
         meta["cpp_chk_mask"] = "%.1f".format(chksCpp[0])
         meta["cpp_chk_mask_pos"] = "%.1f".format(chksCpp[1])
-        meta["cpp_byte_0"] = "%.1f".format(chksCpp[2])
-        meta["cpp_byte_mid"] = "%.1f".format(chksCpp[3])
+        meta["cpp_chk_row_f"] = "%.1f".format(chksCpp[2])
+        meta["cpp_chk_row_l"] = "%.1f".format(chksCpp[3])
         meta["cpp_chk_rawc"] = "%.1f".format(chksCpp[4])
         meta["cpp_chk_validc"] = "%.1f".format(chksCpp[5])
         meta["cpp_chk_geom"] = "%.1f".format(chksCpp[6])
+        meta["cpp_raw_c_size"] = "%.1f".format(chksCpp[7])
+        meta["cpp_hier_size"] = "%.1f".format(chksCpp[8])
         meta["cpp_count"] = blocksCpp.size.toString()
 
         // 4. Return Legacy blocks to guarantee experiment success
@@ -624,6 +626,8 @@ object OdometerOcrUtils {
         val data = ByteArray(heatmap.size)
         var chkMask = 0f
         var chkMaskPos = 0.0
+        var chkRowFirst = 0f
+        var chkRowLast = 0f
         for (i in heatmap.indices) {
             val v = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte()
             data[i] = v
@@ -631,12 +635,11 @@ object OdometerOcrUtils {
                 chkMask += 1.0f
                 val x = i % w; val y = i / w
                 chkMaskPos += x.toDouble() * y.toDouble()
+                if (y < 5) chkRowFirst += 1.0f
+                if (y >= h - 5) chkRowLast += 1.0f
             }
         }
         mask.put(0, 0, data)
-
-        val byte0 = data[0].toFloat()
-        val byteMid = data[(h / 2) * w + (w / 2)].toFloat()
 
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()
         val hierarchy = Mat()
@@ -674,7 +677,7 @@ object OdometerOcrUtils {
         } finally {
             mask.release(); hierarchy.release(); contours.forEach { it.release() }
         }
-        return Pair(results, floatArrayOf(chkMask, chkMaskPos.toFloat(), byte0, byteMid, chkRawC, chkValidC, chkGeom))
+        return Pair(results, floatArrayOf(chkMask, chkMaskPos.toFloat(), chkRowFirst, chkRowLast, chkRawC, chkValidC, chkGeom))
     }
 
     fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap {

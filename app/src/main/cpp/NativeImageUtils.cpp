@@ -533,14 +533,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     jfloat* heatmapData = env->GetFloatArrayElements(heatmapArr, nullptr);
     if (!heatmapData) return nullptr;
 
+    LOGE("PROBE: heatmapArr=%p, w=%d, h=%d, invScale=%.3f", (void*)heatmapData, w, h, invScale);
+
     double chkMaskPos = 0;
     cv::Mat heatmap(h, w, CV_32F, heatmapData);
     cv::Mat mask = heatmap > threshold;
 
+    float chkRowFirst = 0, chkRowLast = 0;
     for (int y = 0; y < h; ++y) {
         uchar* row = mask.ptr<uchar>(y);
         for (int x = 0; x < w; ++x) {
-            if (row[x] != 0) chkMaskPos += (double)x * (double)y;
+            if (row[x] != 0) {
+                chkMaskPos += (double)x * (double)y;
+                if (y < 5) chkRowFirst += 1.0f;
+                if (y >= h - 5) chkRowLast += 1.0f;
+            }
         }
     }
 
@@ -548,56 +555,74 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     float byte0 = (float)mask.data[0];
     float byteMid = (float)mask.data[(h / 2) * w + (w / 2)];
 
-    float chkRawC = 0, chkValidC = 0, chkGeom = 0;
-
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
+    
+    LOGE("PROBE: mask_data=%p, continuous=%d", (void*)mask.data, mask.isContinuous());
+
     cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-    for (const auto& contour : contours) {
-        for (const auto& p : contour) chkRawC += (float)(p.x + p.y);
+    LOGE("PROBE: contours.size()=%zu, hierarchy.size()=%zu", contours.size(), hierarchy.size());
+
+    float chkRawC = 0, chkValidC = 0, chkGeom = 0;
+    bool corrupted = (contours.size() > 5000);
+    
+    if (!corrupted) {
+        for (size_t i = 0; i < contours.size(); ++i) {
+            const std::vector<cv::Point>& contour = contours[i];
+            if (i == 0) LOGE("PROBE: first_contour_ptr=%p, size=%zu", (void*)contour.data(), contour.size());
+            for (const auto& p : contour) chkRawC += (float)(p.x + p.y);
+        }
+
+        std::vector<NormalizedBox> boxes;
+        for (const auto& contour : contours) {
+            if (cv::contourArea(contour) < 10) continue;
+            for (const auto& p : contour) chkValidC += (float)(p.x + p.y);
+
+            cv::RotatedRect rrect = cv::minAreaRect(contour);
+            cv::Point2f pts[4];
+            rrect.points(pts);
+            for (int i = 0; i < 4; ++i) chkGeom += (pts[i].x + pts[i].y);
+
+            boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
+        }
+
+        std::vector<float> outData;
+        outData.push_back(chkMask);
+        outData.push_back((float)chkMaskPos);
+        outData.push_back(chkRowFirst);
+        outData.push_back(chkRowLast);
+        outData.push_back(chkRawC);
+        outData.push_back(chkValidC);
+        outData.push_back(chkGeom);
+        outData.push_back((float)contours.size());
+        outData.push_back((float)hierarchy.size());
+        outData.push_back((float)boxes.size());
+        for (const auto& box : boxes) {
+            outData.push_back(box.points[0].x * invScale);
+            outData.push_back(box.points[0].y * invScale);
+            outData.push_back(box.points[1].x * invScale);
+            outData.push_back(box.points[1].y * invScale);
+            outData.push_back(box.points[2].x * invScale);
+            outData.push_back(box.points[2].y * invScale);
+            outData.push_back(box.points[3].x * invScale);
+            outData.push_back(box.points[3].y * invScale);
+            outData.push_back(box.angle);
+            outData.push_back(box.confidence);
+        }
+
+        jfloatArray result = env->NewFloatArray((jsize)outData.size());
+        env->SetFloatArrayRegion(result, 0, (jsize)outData.size(), outData.data());
+        env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
+        return result;
+    } else {
+        LOGE("PROBE: CRITICAL CORRUPTION - contours.size() exceeds safety limit!");
+        float err[] = {chkMask, (float)chkMaskPos, chkRowFirst, chkRowLast, -8888.0f, 0, 0, (float)contours.size(), (float)hierarchy.size(), 0};
+        jfloatArray result = env->NewFloatArray(10);
+        env->SetFloatArrayRegion(result, 0, 10, err);
+        env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
+        return result;
     }
-
-    std::vector<NormalizedBox> boxes;
-    for (const auto& contour : contours) {
-        if (cv::contourArea(contour) < 10) continue;
-        for (const auto& p : contour) chkValidC += (float)(p.x + p.y);
-
-        cv::RotatedRect rrect = cv::minAreaRect(contour);
-        cv::Point2f pts[4];
-        rrect.points(pts);
-        for (int i = 0; i < 4; ++i) chkGeom += (pts[i].x + pts[i].y);
-
-        boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
-    }
-
-    std::vector<float> outData;
-    outData.push_back(chkMask);
-    outData.push_back((float)chkMaskPos);
-    outData.push_back(byte0);
-    outData.push_back(byteMid);
-    outData.push_back(chkRawC);
-    outData.push_back(chkValidC);
-    outData.push_back(chkGeom);
-    outData.push_back((float)boxes.size());
-    for (const auto& box : boxes) {
-        outData.push_back(box.points[0].x * invScale);
-        outData.push_back(box.points[0].y * invScale);
-        outData.push_back(box.points[1].x * invScale);
-        outData.push_back(box.points[1].y * invScale);
-        outData.push_back(box.points[2].x * invScale);
-        outData.push_back(box.points[2].y * invScale);
-        outData.push_back(box.points[3].x * invScale);
-        outData.push_back(box.points[3].y * invScale);
-        outData.push_back(box.angle);
-        outData.push_back(box.confidence);
-    }
-
-    jfloatArray result = env->NewFloatArray((jsize)outData.size());
-    env->SetFloatArrayRegion(result, 0, (jsize)outData.size(), outData.data());
-
-    env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
-    return result;
 }
 
 JNIEXPORT jfloat JNICALL
