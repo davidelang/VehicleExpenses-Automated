@@ -537,14 +537,21 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     val crop = buffer.c[999]!!
     val res = paddleEngine.detect(crop) ?: return emptyList()
     
-    val scaleW = res.width.toFloat(); val scaleH = res.height.toFloat()
+    // Calculate actual occupancy in the heatmap based on detector tensor size
+    val isLarge = crop.width > 512 || crop.height > 128
+    val tensorW = if (isLarge) 2048f else 512f
+    val tensorH = if (isLarge) 2048f else 128f
+    
+    val occW = (crop.width / tensorW) * res.width
+    val occH = (crop.height / tensorH) * res.height
+    
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     return blocks.map { block ->
-        // Normalize coordinates relative to full heatmap (assuming stretched tensor)
-        val nl = block.boundingBox.left / scaleW; val nt = block.boundingBox.top / scaleH
-        val nr = block.boundingBox.right / scaleW; val nb = block.boundingBox.bottom / scaleH
+        // Normalize coordinates relative to the occupied portion of the heatmap
+        val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
+        val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
         
         // Map to master pixels
         val ml = nl * masterW; val mt = nt * masterH
