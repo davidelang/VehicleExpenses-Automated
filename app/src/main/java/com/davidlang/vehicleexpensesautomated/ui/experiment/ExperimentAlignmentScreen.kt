@@ -592,18 +592,21 @@ private fun serializePhotoResultToJson(
         deskewObj.putSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
         put("deskew", deskewObj)
 
-        val safeW = (photoResult.pathways["set_a"]?.discoveryResult?.imageWidth ?: 1).toDouble()
-        val safeH = (photoResult.pathways["set_a"]?.discoveryResult?.imageHeight ?: 1).toDouble()
+        val safeW = decodedW
+        val safeH = decodedH
+        val safeS = minOf(safeW, safeH).toDouble()
 
         val mlArray = JSONArray()
         deskewResA?.mlBlocks?.forEach { block ->
             mlArray.put(JSONObject().apply {
                 put("text", block.text)
-                putSafe("cx", block.boundingBox.centerX().toDouble() / safeW, "")
-                putSafe("cy", block.boundingBox.centerY().toDouble() / safeH, "")
-                putSafe("w", block.boundingBox.width().toDouble() / safeW, "")
-                putSafe("h", block.boundingBox.height().toDouble() / safeH, "")
+                val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), safeW, safeH)
+                putSafe("cx", icrs.x.toDouble(), "")
+                putSafe("cy", icrs.y.toDouble(), "")
+                putSafe("w", block.boundingBox.width().toDouble() / safeS, "")
+                putSafe("h", block.boundingBox.height().toDouble() / safeS, "")
                 putSafe("angle", block.angle.toDouble(), "")
+                put("is_icrs", true)
             })
         }
         put("deskew_data_mlkit", mlArray)
@@ -612,11 +615,13 @@ private fun serializePhotoResultToJson(
         deskewResA?.paddleBlocks?.forEach { block ->
             pdArray.put(JSONObject().apply {
                 put("text", block.text)
-                putSafe("cx", block.boundingBox.centerX().toDouble() / safeW, "")
-                putSafe("cy", block.boundingBox.centerY().toDouble() / safeH, "")
-                putSafe("w", block.boundingBox.width().toDouble() / safeW, "")
-                putSafe("h", block.boundingBox.height().toDouble() / safeH, "")
+                val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), safeW, safeH)
+                putSafe("cx", icrs.x.toDouble(), "")
+                putSafe("cy", icrs.y.toDouble(), "")
+                putSafe("w", block.boundingBox.width().toDouble() / safeS, "")
+                putSafe("h", block.boundingBox.height().toDouble() / safeS, "")
                 putSafe("angle", block.angle.toDouble(), "")
+                put("is_icrs", true)
             })
         }
         put("deskew_data_paddle", pdArray)
@@ -627,12 +632,14 @@ private fun serializePhotoResultToJson(
             if (cleanedText.length > 1) {
                 landmarksArray.put(JSONObject().apply { 
                     put("text", cleanedText)
-                    putSafe("cx", block.boundingBox.centerX().toDouble() / safeW, "")
-                    putSafe("cy", block.boundingBox.centerY().toDouble() / safeH, "")
-                    putSafe("w", block.boundingBox.width().toDouble() / safeW, "")
-                    putSafe("h", block.boundingBox.height().toDouble() / safeH, "")
+                    val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), safeW, safeH)
+                    putSafe("cx", icrs.x.toDouble(), "")
+                    putSafe("cy", icrs.y.toDouble(), "")
+                    putSafe("w", block.boundingBox.width().toDouble() / safeS, "")
+                    putSafe("h", block.boundingBox.height().toDouble() / safeS, "")
                     putSafe("angle", block.angle.toDouble(), "")
                     put("instance", block.instanceId)
+                    put("is_icrs", true)
                 })
             }
         }
