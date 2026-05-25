@@ -54,6 +54,7 @@ object OdometerOcrUtils {
         val mlAngle: Float, 
         val mlTimeMs: Long, 
         val paddleTimeMs: Long, 
+        val paddleCppAngle: Float = 0f,
         val mlBlocks: List<TextBlock> = emptyList(), 
         val paddleBlocks: List<TextBlock> = emptyList(), 
         
@@ -100,11 +101,12 @@ object OdometerOcrUtils {
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
-        // 4. Paddle Path
+        // 4. Paddle Path (Combined V3 Kotlin + C++ Native)
         val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddle(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
+        val (pdV3, pdCpp) = deskewPaddleDual(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
         val tPd = System.currentTimeMillis() - tPd0
-        results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
+        results["Paddle V3"] = pdV3.copy(timesMs = listOf(tPrep, tPd))
+        results["Paddle C++"] = pdCpp.copy(timesMs = listOf(tPrep, tPd))
         
         workspaceCrop.release()
         
@@ -113,8 +115,9 @@ object OdometerOcrUtils {
             mlAngle = mlRes.angle,
             mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
+            paddleCppAngle = pdCpp.angle,
             mlBlocks = mlRes.blocks,
-            paddleBlocks = pdRes.blocks,
+            paddleBlocks = pdV3.blocks,
             engines = results,
             metadata = mapOf("t_prep_ms" to tPrep.toString())
         )
@@ -135,20 +138,21 @@ object OdometerOcrUtils {
         return EngineResult(calculateWeightedAverage(scaledBlocks, srcH), listOf(tDetect), scaledBlocks)
     }
 
-    private suspend fun deskewPaddle(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
-        val tStart = System.currentTimeMillis()
-        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, listOf(0L))
-        val det = paddleEngine.detect(resizedMat, pWidth, pHeight)
-        val tDetect = System.currentTimeMillis() - tStart
+    private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): Pair<EngineResult, EngineResult> {
+        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(EngineResult(0f, emptyList()), EngineResult(0f, emptyList()))
+        val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return Pair(EngineResult(0f, emptyList()), EngineResult(0f, emptyList()))
         
-        var angle = 0f
-        var blocks = emptyList<TextBlock>()
-        if (det != null) {
-            blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
-            val srcH = (pHeight / pScale).toInt()
-            angle = calculateWeightedAverage(blocks, srcH)
-        }
-        return EngineResult(angle, listOf(tDetect), blocks, det?.metadata ?: emptyMap())
+        // 1. Paddle V3 (Legacy Kotlin Math on new fast blocks)
+        val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
+        val srcH = (pHeight / pScale).toInt()
+        val angleV3 = calculateWeightedAverage(blocks, srcH)
+        val resV3 = EngineResult(angleV3, emptyList(), blocks, det.metadata)
+
+        // 2. Paddle C++ (New Native Math)
+        val angleCpp = NativeImageUtils.nativeHeatmapToAngle(det.heatmap, det.width, det.height, 0.20f)
+        val resCpp = EngineResult(angleCpp, emptyList(), emptyList(), det.metadata)
+
+        return Pair(resV3, resCpp)
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
@@ -539,55 +543,39 @@ object OdometerOcrUtils {
     }
 
     /**
-     * Phase 63: Heatmap Post-Processing
+     * Phase 117: Fused Native Heatmap Processing
      */
     fun processPaddleHeatmap(
         heatmap: FloatArray, w: Int, h: Int, scale: Float, 
         sourceBuffer: Any, algorithm: String = "Native"
     ): List<TextBlock> {
-        val invScale = 1.0 / scale.toDouble()
+        val invScale = 1.0f / scale
+        val rawData = NativeImageUtils.nativeHeatmapToTextAreas(heatmap, w, h, 0.20f, invScale)
+        if (rawData.isEmpty()) return emptyList()
 
-        var maxHeat = 0f
-        for (v in heatmap) { if (v > maxHeat) maxHeat = v }
-        val maskThreshold = 0.20f
-        Log.e("PADDLE_HEATMAP_DIAG", "Heatmap Max: $maxHeat, Threshold: $maskThreshold")
-
-        val mask = Mat(h, w, CvType.CV_8U)
-        val data = ByteArray(heatmap.size)
-        for (i in heatmap.indices) {
-            data[i] = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte()
-        }
-        mask.put(0, 0, data)
-
-        val contours = mutableListOf<org.opencv.core.MatOfPoint>()
-        val hierarchy = Mat()
+        val count = rawData[0].toInt()
         val results = mutableListOf<TextBlock>()
+        for (i in 0 until count) {
+            val base = 1 + i * 10
+            val p1 = org.opencv.core.Point(rawData[base + 0].toDouble(), rawData[base + 1].toDouble())
+            val p2 = org.opencv.core.Point(rawData[base + 2].toDouble(), rawData[base + 3].toDouble())
+            val p3 = org.opencv.core.Point(rawData[base + 4].toDouble(), rawData[base + 5].toDouble())
+            val p4 = org.opencv.core.Point(rawData[base + 6].toDouble(), rawData[base + 7].toDouble())
+            val angle = rawData[base + 8]
+            val confidence = rawData[base + 9]
 
-        try {
-            Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+            val minX = minOf(p1.x, p2.x, p3.x, p4.x).toInt()
+            val minY = minOf(p1.y, p2.y, p3.y, p4.y).toInt()
+            val maxX = maxOf(p1.x, p2.x, p3.x, p4.x).toInt()
+            val maxY = maxOf(p1.y, p2.y, p3.y, p4.y).toInt()
 
-            for (contour in contours) {
-                if (Imgproc.contourArea(contour) < 10) continue
-                val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
-                val rotatedRect = Imgproc.minAreaRect(p2f)
-                val points = arrayOf(org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point())
-                rotatedRect.points(points)
-                p2f.release() 
-                
-                val bounds = android.graphics.Rect(
-                    (rotatedRect.boundingRect().x * invScale).toInt(),
-                    (rotatedRect.boundingRect().y * invScale).toInt(),
-                    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
-                    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
-                )
-                
-                val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
-                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints))
-            }
-        } finally {
-            mask.release()
-            hierarchy.release()
-            contours.forEach { it.release() }
+            results.add(TextBlock(
+                text = "",
+                boundingBox = android.graphics.Rect(minX, minY, maxX, maxY),
+                angle = angle,
+                points = listOf(p1, p2, p3, p4),
+                confidence = confidence
+            ))
         }
         return results
     }

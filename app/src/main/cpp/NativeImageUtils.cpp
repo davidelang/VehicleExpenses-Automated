@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <map>
+#include <cmath>
 #include "BufferSetHandle.h"
 #include <android/log.h>
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
@@ -46,6 +48,71 @@ std::string base64_encode(unsigned char const* bytes_to_encode, unsigned int in_
         while((i++ < 3)) ret += '=';
     }
     return ret;
+}
+
+struct NormalizedBox {
+    cv::Point2f points[4];
+    float angle;
+    float confidence;
+    float length;
+};
+
+NormalizedBox pNormalizeRect(const cv::RotatedRect& rect, const cv::Mat& heatmap, const std::vector<cv::Point>& contour) {
+    NormalizedBox res;
+    cv::Point2f pts[4];
+    rect.points(pts);
+
+    // Identify the "Bottom" edge: the edge that is closest to horizontal (-45 to 45 degrees)
+    int bestIdx = 0;
+    float minAbsAngle = 180.0f;
+    float maxLen = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        cv::Point2f p1 = pts[i];
+        cv::Point2f p2 = pts[(i + 1) % 4];
+        float dx = p2.x - p1.x;
+        float dy = p2.y - p1.y;
+        float len = std::sqrt(dx * dx + dy * dy);
+        float ang = std::atan2(dy, dx) * 180.0f / 3.1415926535f;
+
+        // Normalize angle to [-45, 45] using 90-deg symmetry
+        float normAng = ang;
+        while (normAng <= -45.0f) normAng += 90.0f;
+        while (normAng > 45.0f) normAng -= 90.0f;
+
+        if (std::abs(normAng) < minAbsAngle || (std::abs(normAng) == minAbsAngle && len > maxLen)) {
+            minAbsAngle = std::abs(normAng);
+            maxLen = len;
+            bestIdx = i;
+            res.angle = normAng;
+            res.length = len;
+        }
+    }
+
+    // Re-order points starting from the identified "Bottom-Left" relative to the horizontal edge
+    // Order: BL, BR, TR, TL
+    for (int i = 0; i < 4; ++i) {
+        res.points[i] = pts[(bestIdx + i) % 4];
+    }
+
+    // Calculate Confidence: Mean heatmap value inside the contour
+    cv::Rect bounds = rect.boundingRect();
+    bounds &= cv::Rect(0, 0, heatmap.cols, heatmap.rows);
+    if (bounds.width > 0 && bounds.height > 0) {
+        cv::Mat mask = cv::Mat::zeros(bounds.size(), CV_8U);
+        std::vector<cv::Point> localContour;
+        for (const auto& pt : contour) {
+            localContour.push_back(pt - bounds.tl());
+        }
+        std::vector<std::vector<cv::Point>> polys = {localContour};
+        cv::fillPoly(mask, polys, cv::Scalar(255));
+        cv::Scalar mean = cv::mean(heatmap(bounds), mask);
+        res.confidence = (float)mean[0];
+    } else {
+        res.confidence = 0.0f;
+    }
+
+    return res;
 }
 
 extern "C" {
@@ -438,6 +505,98 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
     env->SetIntArrayRegion(result, 0, 4, dims);
     return result;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToTextAreas(
+    JNIEnv* env, jobject thiz, jfloatArray heatmapArr, jint w, jint h, jfloat threshold, jfloat invScale) {
+
+    jfloat* heatmapData = env->GetFloatArrayElements(heatmapArr, nullptr);
+    if (!heatmapData) return nullptr;
+
+    cv::Mat heatmap(h, w, CV_32F, heatmapData);
+    cv::Mat mask;
+    cv::threshold(heatmap, mask, (double)threshold, 255.0, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_8U);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    std::vector<NormalizedBox> boxes;
+    for (const auto& contour : contours) {
+        if (cv::contourArea(contour) < 10) continue;
+        cv::RotatedRect rrect = cv::minAreaRect(contour);
+        boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
+    }
+
+    jfloatArray result = env->NewFloatArray(1 + (jsize)boxes.size() * 10);
+    jfloat* out = env->GetFloatArrayElements(result, nullptr);
+    out[0] = (jfloat)boxes.size();
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        size_t base = 1 + i * 10;
+        out[base + 0] = boxes[i].points[0].x * invScale;
+        out[base + 1] = boxes[i].points[0].y * invScale;
+        out[base + 2] = boxes[i].points[1].x * invScale;
+        out[base + 3] = boxes[i].points[1].y * invScale;
+        out[base + 4] = boxes[i].points[2].x * invScale;
+        out[base + 5] = boxes[i].points[2].y * invScale;
+        out[base + 6] = boxes[i].points[3].x * invScale;
+        out[base + 7] = boxes[i].points[3].y * invScale;
+        out[base + 8] = boxes[i].angle;
+        out[base + 9] = boxes[i].confidence;
+    }
+
+    env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
+    env->ReleaseFloatArrayElements(result, out, 0);
+    return result;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngle(
+    JNIEnv* env, jobject thiz, jfloatArray heatmapArr, jint w, jint h, jfloat threshold) {
+
+    jfloat* heatmapData = env->GetFloatArrayElements(heatmapArr, nullptr);
+    if (!heatmapData) return 0.0f;
+
+    cv::Mat heatmap(h, w, CV_32F, heatmapData);
+    cv::Mat mask;
+    cv::threshold(heatmap, mask, (double)threshold, 255.0, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_8U);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    std::vector<NormalizedBox> boxes;
+    for (const auto& contour : contours) {
+        if (cv::contourArea(contour) < 10) continue;
+        cv::RotatedRect rrect = cv::minAreaRect(contour);
+        boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
+    }
+
+    if (boxes.empty()) {
+        env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
+        return 0.0f;
+    }
+
+    // Weighted Consensus Voting (0.5 degree buckets)
+    std::map<int, double> buckets;
+    for (const auto& box : boxes) {
+        int bucketIdx = (int)std::round(box.angle * 2.0f);
+        double weight = (double)box.length * (double)box.confidence;
+        buckets[bucketIdx] += weight;
+    }
+
+    int bestBucket = 0;
+    double maxWeight = -1.0;
+    for (const auto& entry : buckets) {
+        if (entry.second > maxWeight) {
+            maxWeight = entry.second;
+            bestBucket = entry.first;
+        }
+    }
+
+    env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
+    return (float)bestBucket / 2.0f;
 }
 
 }

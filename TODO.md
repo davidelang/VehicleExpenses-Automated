@@ -21,6 +21,7 @@
 # TODO: OCR Performance Optimization
 - [x] DONE: Implement `nativePopulateMonoTensor`.
 - [x] DONE: Optimize `OdometerOcrUtils` to bypass Bitmap-to-Mat roundtrips during deskew.
+- [/] IN PROGRESS: Phase 117: Native Heatmap Fusing & Zero-Copy Math (See: dev-ai-interaction/plans/phase-117-native-heatmap-fusing.md)
 - [ ] Parallelize `nativePopulateMonoTensor` using SIMD/OpenMP for 2048px tensors.
 - [x] DONE: Implement microscopic instrumentation for JNI boundaries and inference stages.
 - [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.

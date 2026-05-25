@@ -69,7 +69,8 @@ data class TextBlock(
      *  0: Globally unique landmark (appears only once in the vehicle manifest).
      * 1+: Specific instance of a duplicate landmark (1st, 2nd, etc. occurrence).
      */
-    val instanceId: Int = -1
+    val instanceId: Int = -1,
+    val confidence: Float = 0f
 )
 
 data class AlignmentTraceResult(
