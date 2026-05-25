@@ -265,24 +265,31 @@ private suspend fun runPumpExperiment(
                 val angleA = deskewResA.engines["ML Kit"]?.angle ?: 0f; val tRotateA = pRotate(NativePaddleEngine.bufferSetA, angleA)
                 val angleB = deskewResA.engines["Paddle V3"]?.angle ?: 0f; val tRotateB = pRotate(NativePaddleEngine.bufferSetB, angleB)
 
-                // 1. Discovery Paths A & B
+                // 1. Quad Discovery (Multi-Scale A/B x ML/PD)
                 val scales = listOf(200, 600, 1000, 2500)
+                
+                // Track details for JSON
+                val detailsA = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>("ML" to mutableMapOf(), "PD" to mutableMapOf())
+                val detailsB = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>("ML" to mutableMapOf(), "PD" to mutableMapOf())
+
+                // Discovery Path A
                 val mlBlocksRawA = mutableListOf<PumpHunk>(); val pdBlocksRawA = mutableListOf<PumpHunk>()
                 val t0A = System.currentTimeMillis()
                 scales.forEach { scale ->
                     prepareScale(NativePaddleEngine.bufferSetA, scale)
-                    mlBlocksRawA.addAll(runDiscoveryML(NativePaddleEngine.bufferSetA, context))
-                    pdBlocksRawA.addAll(runDiscoveryPaddle(NativePaddleEngine.bufferSetA, paddleEngine))
+                    val ml = runDiscoveryML(NativePaddleEngine.bufferSetA, context); mlBlocksRawA.addAll(ml); detailsA["ML"]!![scale] = ml
+                    val pd = runDiscoveryPaddle(NativePaddleEngine.bufferSetA, paddleEngine); pdBlocksRawA.addAll(pd); detailsA["PD"]!![scale] = pd
                 }
                 val tDiscoveryA = System.currentTimeMillis() - t0A
                 val mlHunksRawA = mergeGeometryIntoHunks(mlBlocksRawA); val pdHunksRawA = mergeGeometryIntoHunks(pdBlocksRawA)
                 
+                // Discovery Path B
                 val mlBlocksRawB = mutableListOf<PumpHunk>(); val pdBlocksRawB = mutableListOf<PumpHunk>()
                 val t0B = System.currentTimeMillis()
                 scales.forEach { scale ->
                     prepareScale(NativePaddleEngine.bufferSetB, scale)
-                    mlBlocksRawB.addAll(runDiscoveryML(NativePaddleEngine.bufferSetB, context))
-                    pdBlocksRawB.addAll(runDiscoveryPaddle(NativePaddleEngine.bufferSetB, paddleEngine))
+                    val ml = runDiscoveryML(NativePaddleEngine.bufferSetB, context); mlBlocksRawB.addAll(ml); detailsB["ML"]!![scale] = ml
+                    val pd = runDiscoveryPaddle(NativePaddleEngine.bufferSetB, paddleEngine); pdBlocksRawB.addAll(pd); detailsB["PD"]!![scale] = pd
                 }
                 val tDiscoveryB = System.currentTimeMillis() - t0B
                 val mlHunksRawB = mergeGeometryIntoHunks(mlBlocksRawB); val pdHunksRawB = mergeGeometryIntoHunks(pdBlocksRawB)
@@ -295,10 +302,7 @@ private suspend fun runPumpExperiment(
                     val stitched = stitchHunksHorizontally(hunks)
                     val (top, bottom) = groupLanesByVerticalGap(stitched)
                     val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
-                    
-                    val expT = expandHunkContext(pair.first, maxX, maxY)
-                    val expB = expandHunkContext(pair.second, maxX, maxY)
-                    
+                    val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
                     val res = performHunkRecognition(listOf(expT, expB), buf, experimentRecSet320x48, engine, paddleEngine, context, ang)
                     
                     suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
@@ -322,14 +326,19 @@ private suspend fun runPumpExperiment(
                 val resBPd = getFinal(pdHunksRawB, NativePaddleEngine.bufferSetB, "Paddle", angleB)
 
                 // 3. Visualization
-                fun getAnns(raw: List<PumpHunk>, color: Int) = raw.map { h -> 
+                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h -> 
                     val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, 4)
+                    SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
-                val (hunksAMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, getAnns(mlHunksRawA, 0xFFFF0000.toInt()), null, NativePaddleEngine.bufferSetA)
-                val (hunksAPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, getAnns(pdHunksRawA, 0xFF00FF00.toInt()), null, NativePaddleEngine.bufferSetA)
-                val (hunksBMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, getAnns(mlHunksRawB, 0xFFFF0000.toInt()), null, NativePaddleEngine.bufferSetB)
-                val (hunksBPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, getAnns(pdHunksRawB, 0xFF00FF00.toInt()), null, NativePaddleEngine.bufferSetB)
+                
+                val aAMl = getAnns(mlBlocksRawA, 0xFFFFA500.toInt(), 2) + getAnns(mlHunksRawA, 0xFFFF0000.toInt(), 4)
+                val (hunksAMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, aAMl, null, NativePaddleEngine.bufferSetA)
+                val aAPd = getAnns(pdBlocksRawA, 0xFFFFA500.toInt(), 2) + getAnns(pdHunksRawA, 0xFF00FF00.toInt(), 4)
+                val (hunksAPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, aAPd, null, NativePaddleEngine.bufferSetA)
+                val aBMl = getAnns(mlBlocksRawB, 0xFFFFA500.toInt(), 2) + getAnns(mlHunksRawB, 0xFFFF0000.toInt(), 4)
+                val (hunksBMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, aBMl, null, NativePaddleEngine.bufferSetB)
+                val aBPd = getAnns(pdBlocksRawB, 0xFFFFA500.toInt(), 2) + getAnns(pdHunksRawB, 0xFF00FF00.toInt(), 4)
+                val (hunksBPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, aBPd, null, NativePaddleEngine.bufferSetB)
 
                 val rowHtml = pBuildHtmlRowDynamic(
                     index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
@@ -340,13 +349,19 @@ private suspend fun runPumpExperiment(
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
+                val discDetails = JSONObject().apply { 
+                    put("path_a", serializeDiscoveryDetails(detailsA))
+                    put("path_b", serializeDiscoveryDetails(detailsB))
+                }
+
                 val photoJson = pSerializePhotoResultToJson(
                     index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name,
-                    tDiscoveryA, tDiscoveryB, resAMl, resAPd, resBMl, resBPd, mlHunksRawA.size, pdHunksRawA.size
+                    tDiscoveryA, tDiscoveryB, resAMl, resAPd, resBMl, resBPd, mlHunksRawA.size, pdHunksRawA.size, discDetails
                 )
                 val comma = if (index < total - 1) "," else ""
-                jsonFile.appendText(photoJson.toString(2) + "$comma\n")
-                val resultSummary = PumpPhotoResultSummary(file.name, "ML: ${mlHunksRawA.size} | PD: ${pdHunksRawA.size}", 1.0f, "${resAMl.cost} / ${resAMl.vol}"); withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
+                jsonFile.appendText(photoJson.toString(2) + "$comma" + "\\n")
+                val resultSummary = PumpPhotoResultSummary(file.name, "ML: ${mlHunksRawA.size} | PD: ${pdHunksRawA.size}", 1.0f, "${resAMl.cost} / ${resAMl.vol}")
+                withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
                 delay(150)
 
 
@@ -374,7 +389,8 @@ private fun pSerializePhotoResultToJson(
     resAPd: PathResult = PathResult("N/A", "N/A", "", ""),
     resBMl: PathResult = PathResult("N/A", "N/A", "", ""),
     resBPd: PathResult = PathResult("N/A", "N/A", "", ""),
-    mlHunkCountA: Int = 0, pdHunkCountA: Int = 0
+    mlHunkCountA: Int = 0, pdHunkCountA: Int = 0,
+    discoveryDetails: JSONObject? = null
 ): JSONObject {
     val root = JSONObject()
     root.apply {
@@ -385,6 +401,7 @@ private fun pSerializePhotoResultToJson(
         put("t_thumb_orig_ms", tSnapOrig); put("t_snap_deskew_ms", tSnapDeskew)
         put("t_discovery_a_ms", tDiscoveryA); put("t_discovery_b_ms", tDiscoveryB)
         put("ml_hunk_count_a", mlHunkCountA); put("pd_hunk_count_a", pdHunkCountA)
+        if (discoveryDetails != null) put("discovery_details", discoveryDetails)
         val r = JSONObject()
         r.put("aml_cost", resAMl.cost); r.put("aml_vol", resAMl.vol)
         r.put("apd_cost", resAPd.cost); r.put("apd_vol", resAPd.vol)
@@ -392,6 +409,27 @@ private fun pSerializePhotoResultToJson(
         r.put("bpd_cost", resBPd.cost); r.put("bpd_vol", resBPd.vol)
         put("quad_results", r)
         val d = JSONObject(); d.pPutSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble()); put("deskew", d)
+    }
+    return root
+}
+
+
+private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHunk>>>): JSONObject {
+    val root = JSONObject()
+    details.forEach { (engine, scales) ->
+        val engObj = JSONObject()
+        scales.forEach { (scale, hunks) ->
+            val arr = JSONArray()
+            hunks.forEach { h ->
+                arr.put(JSONObject().apply {
+                    put("l", h.icrs.left.toDouble()); put("t", h.icrs.top.toDouble())
+                    put("w", h.icrs.width().toDouble()); put("h", h.icrs.height().toDouble())
+                    put("text", h.text)
+                })
+            }
+            engObj.put(scale.toString(), arr)
+        }
+        root.put(engine, engObj)
     }
     return root
 }
