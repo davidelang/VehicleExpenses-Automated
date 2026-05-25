@@ -250,7 +250,7 @@ object ImageAlignmentUtils {
         refH: Int = 3072,
         queW: Int = 4000,
         queH: Int = 3072,
-        scratchBmp: Bitmap
+        scratchBmp: Bitmap? = null
     ): AnchorResult {
         val t0 = System.currentTimeMillis()
         val allCandidates = mutableListOf<AnchorCandidate>()
@@ -383,8 +383,8 @@ object ImageAlignmentUtils {
 
             if (useBufferSet) {
                 (input as BufferSet).flip()
-                // Sync to scratchBmp for report visualization
-                NativeImageUtils.syncMatToArgb(input.p.mat, scratchBmp)
+                // Sync to scratchBmp for report visualization (if provided)
+                scratchBmp?.let { NativeImageUtils.syncMatToArgb(input.p.mat, it) }
             } else {
                 Utils.matToBitmap(dst, input as Bitmap)
                 src.release(); dst.release()
