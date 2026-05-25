@@ -142,15 +142,15 @@ object OdometerOcrUtils {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(EngineResult(0f, emptyList()), EngineResult(0f, emptyList()))
         val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return Pair(EngineResult(0f, emptyList()), EngineResult(0f, emptyList()))
         
-        // 1. Paddle V3 (Legacy Kotlin Math on new fast blocks)
-        val (blocks, chks) = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
+        // 1. Paddle V3 (Legacy Kotlin Math)
+        val (blocks, _) = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
         val srcH = (pHeight / pScale).toInt()
         val angleV3 = calculateWeightedAverage(blocks, srcH)
-        val resV3 = EngineResult(angleV3, emptyList(), blocks, det.metadata + chks)
+        val resV3 = EngineResult(angleV3, emptyList(), blocks, det.metadata)
 
         // 2. Paddle C++ (New Native Math)
         val angleCpp = NativeImageUtils.nativeHeatmapToAngle(det.heatmap, det.width, det.height, 0.20f)
-        val resCpp = EngineResult(angleCpp, emptyList(), emptyList(), det.metadata + chks)
+        val resCpp = EngineResult(angleCpp, emptyList(), emptyList(), det.metadata)
 
         return Pair(resV3, resCpp)
     }
@@ -549,72 +549,11 @@ object OdometerOcrUtils {
         heatmap: FloatArray, w: Int, h: Int, scale: Float, 
         sourceBuffer: Any, algorithm: String = "Native"
     ): Pair<List<TextBlock>, Map<String, String>> {
-        val invScale = 1.0f / scale
+        // Execute Legacy Kotlin Path
+        val (blocksKt, _) = processPaddleHeatmapLegacy(heatmap, w, h, scale)
         
-        // 1. Legacy Kotlin Path (Instrumented)
-        val (blocksKt, chksKt) = processPaddleHeatmapLegacy(heatmap, w, h, scale)
-        
-        // 2. New Native C++ Path (Instrumented)
-        val (blocksCpp, chksCpp) = try {
-            val rawData = NativeImageUtils.nativeHeatmapToTextAreas(heatmap, w, h, 0.20f, invScale)
-            if (rawData.isEmpty()) Pair(emptyList<TextBlock>(), floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f))
-            else {
-                val chks = floatArrayOf(rawData[0], rawData[1], rawData[2], rawData[3], rawData[4], rawData[5], rawData[6], rawData[7], rawData[8], rawData[9], rawData[10], rawData[11])
-                val count = rawData[12].toInt()
-                val res = mutableListOf<TextBlock>()
-                for (i in 0 until count) {
-                    val base = 13 + i * 10
-                    val p1 = org.opencv.core.Point(rawData[base + 0].toDouble(), rawData[base + 1].toDouble())
-                    val p2 = org.opencv.core.Point(rawData[base + 2].toDouble(), rawData[base + 3].toDouble())
-                    val p3 = org.opencv.core.Point(rawData[base + 4].toDouble(), rawData[base + 5].toDouble())
-                    val p4 = org.opencv.core.Point(rawData[base + 6].toDouble(), rawData[base + 7].toDouble())
-                    val angle = rawData[base + 8]
-                    val confidence = rawData[base + 9]
-
-                    val minX = minOf(p1.x, p2.x, p3.x, p4.x).toInt()
-                    val minY = minOf(p1.y, p2.y, p3.y, p4.y).toInt()
-                    val maxX = maxOf(p1.x, p2.x, p3.x, p4.x).toInt()
-                    val maxY = maxOf(p1.y, p2.y, p3.y, p4.y).toInt()
-
-                    res.add(TextBlock(
-                        text = "",
-                        boundingBox = android.graphics.Rect(minX, minY, maxX, maxY),
-                        angle = angle,
-                        points = listOf(p1, p2, p3, p4),
-                        confidence = confidence
-                    ))
-                }
-                Pair(res, chks)
-            }
-        } catch (e: Exception) {
-            Log.e("PaddlePost", "Native call failed", e)
-            Pair(emptyList<TextBlock>(), floatArrayOf(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f))
-        }
-
-        // 3. Collate metadata
-        val meta = mutableMapOf<String, String>()
-        meta["kt_chk_mask"] = "%.1f".format(chksKt[0])
-        meta["kt_chk_mask_pos"] = "%.1f".format(chksKt[1])
-        meta["kt_chk_row_f"] = "%.1f".format(chksKt[2])
-        meta["kt_chk_row_l"] = "%.1f".format(chksKt[3])
-        meta["kt_chk_rawc"] = "%.1f".format(chksKt[4])
-        meta["kt_chk_validc"] = "%.1f".format(chksKt[5])
-        meta["kt_chk_geom"] = "%.1f".format(chksKt[6])
-        meta["kt_count"] = blocksKt.size.toString()
-        
-        meta["cpp_chk_mask"] = "%.1f".format(chksCpp[0])
-        meta["cpp_chk_mask_pos"] = "%.1f".format(chksCpp[1])
-        meta["cpp_chk_row_f"] = "%.1f".format(chksCpp[2])
-        meta["cpp_chk_row_l"] = "%.1f".format(chksCpp[3])
-        meta["cpp_chk_rawc"] = "%.1f".format(chksCpp[4])
-        meta["cpp_chk_validc"] = "%.1f".format(chksCpp[5])
-        meta["cpp_chk_geom"] = "%.1f".format(chksCpp[6])
-        meta["cpp_raw_ints"] = "[%.1f, %.1f, %.1f, %.1f]".format(chksCpp[7], chksCpp[8], chksCpp[9], chksCpp[10])
-        meta["cpp_raw_c_size"] = "%.1f".format(chksCpp[11])
-        meta["cpp_count"] = blocksCpp.size.toString()
-
-        // 4. Return Legacy blocks to guarantee experiment success
-        return Pair(blocksKt, meta)
+        // Return Legacy blocks
+        return Pair(blocksKt, emptyMap())
     }
 
     private fun processPaddleHeatmapLegacy(
