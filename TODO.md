@@ -1,28 +1,3 @@
-# Phase 116: Pure Native A/B Testing
-- [x] DONE: Phase 0: Repository Cleanup
-- [x] DONE: Phase 1: Dual Native Architecture
-- [x] DONE: Phase 2: Deskew & Early Rotation
-- [x] DONE: Phase 3: Diverged Alignment & Refinement
-- [x] DONE: Phase 4: Engine API Purge
-- [x] DONE: Phase 5.1: Hollowing Out the Standard Path (Transitioning dependencies and reporting) (See: dev-ai-interaction/plans/phase-116-part-5-1-hollow-out.md)
-- [x] DONE: Phase 5.2: Logic Removal (Stop Standard path execution)
-- [x] DONE: Phase 5.3: ARGB Eradication (Buffer Removal & Dead Code Elimination) (See: dev-ai-interaction/plans/phase-116-part-5-3-argb-eradication.md)
+# TODO List
 
-# TODO: Protocol Alignment
-- [x] DONE: Fix memory and GEMINI.md discrepancies (Strike System, No-Deploy, Plan Mode transitions). (See: dev-ai-interaction/plans/protocol-alignment.md)
-
-# TODO: Gas Pump Field Extraction
-- [x] DONE: Phase 1: Multi-Scale Discovery & Hunk Construction (See: dev-ai-interaction/plans/pump-multi-scale-discovery.md)
-- [x] DONE: Phase 1.1: ICRS Coordinate Migration (See: dev-ai-interaction/plans/pump-icrs-migration.md)
-- [x] DONE: Phase 2: Horizontal Stitching & Lane Grouping (See: dev-ai-interaction/plans/pump-lane-grouping.md)
-- [/] IN PROGRESS: Phase 3 & 4: Lane-Pairing & Selection Heuristics (See: dev-ai-interaction/plans/pump-final-extraction.md)
-- [ ] Phase 3.5: CDF Diagnostic & 40% Stretch (See: dev-ai-interaction/plans/pump-cdf-diagnostic.md)
-- [ ] Phase 4: High-Resolution Extraction & Recognition
-
-# TODO: OCR Performance Optimization
-- [x] DONE: Implement `nativePopulateMonoTensor`.
-- [x] DONE: Optimize `OdometerOcrUtils` to bypass Bitmap-to-Mat roundtrips during deskew.
-- [x] DONE: Phase 117: Native Heatmap Fusing & Zero-Copy Math (See: dev-ai-interaction/plans/phase-117-native-heatmap-fusing.md)
-- [ ] Parallelize `nativePopulateMonoTensor` using SIMD/OpenMP for 2048px tensors.
-- [x] DONE: Implement microscopic instrumentation for JNI boundaries and inference stages.
-- [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.
+- [x] Phase 117 Reversion: Remove `nativeHeatmapToTextAreas` (See: plans/revert-117-native-heatmap.md)
