@@ -408,9 +408,20 @@ private suspend fun runPumpExperiment(
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
+                
                 val photoJson = pSerializePhotoResultToJson(
-                    index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, 
-                    meta.diagnostic, deskewResA, tSnapOrig, tSnapDeskew, file.name
+                    lineNumber = index + 1,
+                    probedW = imgW, probedH = imgH, decodedW = imgW, decodedH = imgH,
+                    isDegraded = meta.isDegraded,
+                    nativeProbe = meta.diagnostic,
+                    deskewResA = deskewResA,
+                    tSnapOrig = tSnapOrig,
+                    tSnapDeskew = tSnapDeskew,
+                    fileName = file.name,
+                    tDiscoveryML = tDiscoveryML,
+                    tDiscoveryPD = tDiscoveryPD,
+                    finalCost = finalCost,
+                    finalVolume = finalVolume
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -446,7 +457,9 @@ private suspend fun runPumpExperiment(
 private fun pSerializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
     nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
-    tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = ""
+    tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = "",
+    tDiscoveryML: Long = 0, tDiscoveryPD: Long = 0,
+    finalCost: String = "N/A", finalVolume: String = "N/A"
 ): JSONObject {
     val root = JSONObject()
     root.apply {
@@ -460,6 +473,10 @@ private fun pSerializePhotoResultToJson(
         put("nativeProbe", nativeProbe)
         put("t_thumb_orig_ms", tSnapOrig)
         put("t_snap_deskew_ms", tSnapDeskew)
+        put("t_discovery_ml_ms", tDiscoveryML)
+        put("t_discovery_pd_ms", tDiscoveryPD)
+        put("final_cost", finalCost)
+        put("final_volume", finalVolume)
 
         // Deskew Data (Source from Path A)
         val deskewObj = JSONObject()
