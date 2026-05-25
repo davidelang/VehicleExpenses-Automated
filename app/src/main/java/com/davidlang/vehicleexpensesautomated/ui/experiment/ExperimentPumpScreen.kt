@@ -685,7 +685,7 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
-    val (blocks, _) = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
+    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     return blocks.map { block ->
         // Normalize coordinates relative to the occupied portion of the heatmap
         val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
@@ -1014,7 +1014,7 @@ private suspend fun pRunPaddleValleyIterative(
         val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes = paddleEngine.detect(experimentDetSet512x128.p)
-        val (rawB, _) = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, odoBuffer.p.mat, "Paddle") else Pair(emptyList<TextBlock>(), emptyMap<String, String>())
+        val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, odoBuffer.p.mat, "Paddle") else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
         
         val frags = rawB.map { NativeImageUtils.expandByValley(odoBuffer.p.mat, it.boundingBox) }
