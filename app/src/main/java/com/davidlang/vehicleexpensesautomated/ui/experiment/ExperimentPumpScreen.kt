@@ -483,11 +483,9 @@ private suspend fun pRunPaddleValleyIterative(
     mHeight: Int, 
     winnerRef: PumpReferenceCache,
     vehicleBufferSets: Map<Int, BufferSet>,
-    vehicleArgbCrops: Map<Int, Bitmap>,
     experimentDetSet512x128: BufferSet,
     experimentRecSet320x48: BufferSet,
     paddleEngine: NativePaddleEngine,
-    scratchBmp: Bitmap,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>
 ) {
@@ -516,17 +514,6 @@ private suspend fun pRunPaddleValleyIterative(
     stages.forEach { stage ->
         val tS0 = System.currentTimeMillis()
         when (masterBuffer) {
-            is Bitmap -> {
-                val canvas = Canvas(argbCropLocal)
-                canvas.drawColor(Color.BLACK)
-                val matrixLocal = android.graphics.Matrix()
-                val scX = argbCropLocal.width.toFloat() / roiW.toFloat()
-                val scY = argbCropLocal.height.toFloat() / roiH.toFloat()
-                matrixLocal.postTranslate(-startX.toFloat(), -startY.toFloat())
-                matrixLocal.postScale(scX, scY)
-                canvas.drawBitmap(masterBuffer, matrixLocal, Paint(Paint.FILTER_BITMAP_FLAG))
-                NativeImageUtils.syncMatFromArgb(argbCropLocal, odoBuffer.p.mat)
-            }
             is BufferSet -> {
                 odoBuffer.p.clear()
                 val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
@@ -582,7 +569,7 @@ private suspend fun pRunPaddleValleyIterative(
         rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
         fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
         
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.bufferSetA)
+        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         lastThumb = sB64
         tSnTotal += ts
         htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
@@ -605,9 +592,7 @@ private suspend fun pRunMLKitIterative(
     mHeight: Int, 
     winnerRef: PumpReferenceCache,
     vehicleBufferSets: Map<Int, BufferSet>,
-    vehicleArgbCrops: Map<Int, Bitmap>,
     experimentRecSet320x48: BufferSet,
-    scratchBmp: Bitmap,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>
 ) {
@@ -636,17 +621,6 @@ private suspend fun pRunMLKitIterative(
     stages.forEach { stage ->
         val tS0 = System.currentTimeMillis()
         when (masterBuffer) {
-            is Bitmap -> {
-                val canvas = Canvas(argbCropLocal)
-                canvas.drawColor(Color.BLACK)
-                val matrixLocal = android.graphics.Matrix()
-                val scX = argbCropLocal.width.toFloat() / roiW.toFloat()
-                val scY = argbCropLocal.height.toFloat() / roiH.toFloat()
-                matrixLocal.postTranslate(-sX.toFloat(), -sY.toFloat())
-                matrixLocal.postScale(scX, scY)
-                canvas.drawBitmap(masterBuffer, matrixLocal, Paint(Paint.FILTER_BITMAP_FLAG))
-                NativeImageUtils.syncMatFromArgb(argbCropLocal, odoBuffer.p.mat)
-            }
             is BufferSet -> {
                 odoBuffer.p.clear()
                 val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
@@ -688,7 +662,7 @@ private suspend fun pRunMLKitIterative(
             b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) } 
         }
         
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, scratchBmp, NativePaddleEngine.bufferSetA)
+        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         lastThumb = sB64
         tSnTotal += ts
         htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
