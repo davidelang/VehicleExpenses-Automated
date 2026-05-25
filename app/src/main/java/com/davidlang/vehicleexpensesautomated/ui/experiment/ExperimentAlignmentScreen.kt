@@ -590,6 +590,11 @@ private fun serializePhotoResultToJson(
         // Deskew Data (Source from Path A)
         val deskewObj = JSONObject()
         deskewObj.putSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
+        
+        // Add A/B Parity Checksums (Phase 117 Patch 3)
+        deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) -> 
+            if (k.contains("chk") || k.contains("count")) deskewObj.put(k, v)
+        }
         put("deskew", deskewObj)
 
         val safeW = decodedW
