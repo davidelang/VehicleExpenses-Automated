@@ -507,8 +507,30 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int) {
     org.opencv.imgproc.Imgproc.resize(buffer.p.mat, dstMat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()))
 }
 
+private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
+    val w = slice.width; val h = slice.height
+    val ySize = w * h; val uvSize = (w / 2) * (h / 2) * 2
+    val nv21 = ByteArray(ySize + uvSize)
+    
+    // Copy Y plane
+    val yData = ByteArray(ySize)
+    slice.mat.get(0, 0, yData)
+    System.arraycopy(yData, 0, nv21, 0, ySize)
+    
+    // Copy UV plane (interleaved)
+    val uvData = ByteArray(uvSize)
+    slice.uvMat.get(0, 0, uvData)
+    System.arraycopy(uvData, 0, nv21, ySize, uvSize)
+    
+    return java.nio.ByteBuffer.wrap(nv21)
+}
+
 private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<TextBlock> {
-    val result = OcrHarness.runDiscovery(buffer.c[999], context)
+    val crop = buffer.c[999]!!
+    val nv21 = flattenToNv21(crop)
+    val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+    val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+    
     val scaleW = result.imageWidth.toFloat()
     val scaleH = result.imageHeight.toFloat()
     val masterW = buffer.p.width; val masterH = buffer.p.height
@@ -585,12 +607,15 @@ private suspend fun performHunkRecognition(hunks: List<TextBlock>, buffer: Buffe
          val b = hunk.boundingBox.bottom / 10000f
          
          val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
+         val crop = buffer.c[cropId]!!
          val res = if (engine == "ML Kit") {
-             MlKitEngine().recognize(buffer.c[cropId]!!)
+             val nv21 = flattenToNv21(crop)
+             val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+             OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
          } else {
-             paddleEngine.recognize(buffer.c[cropId]!!)
+             paddleEngine.recognize(crop)
          }
-         buffer.c[cropId]!!.release()
+         crop.release()
          
          TextBlock(res.debugText, hunk.boundingBox)
      }
