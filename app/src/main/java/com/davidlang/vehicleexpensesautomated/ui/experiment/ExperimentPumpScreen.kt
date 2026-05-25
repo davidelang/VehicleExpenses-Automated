@@ -499,13 +499,13 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int) {
         targetH = (srcH * scale).toInt()
     }
     
-    buffer.s.createCrop(0f, 0f, targetW.toFloat() / buffer.s.width, targetH.toFloat() / buffer.s.height, id = 999)
-    val dstMat = buffer.s.mat
+    val cropId = buffer.s.createCropLegacy(0f, 0f, targetW.toFloat() / buffer.s.width, targetH.toFloat() / buffer.s.height, id = 999)
+    val dstMat = buffer.c[cropId].mat
     org.opencv.imgproc.Imgproc.resize(buffer.p.mat, dstMat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()))
 }
 
 private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<TextBlock> {
-    val result = OcrHarness.runDiscovery(buffer.s, context)
+    val result = OcrHarness.runDiscovery(buffer.c[999], context)
     val scaleW = result.imageWidth.toFloat()
     val scaleH = result.imageHeight.toFloat()
     
@@ -519,11 +519,11 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Te
 }
 
 private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<TextBlock> {
-    val res = paddleEngine.detect(buffer.s) ?: return emptyList()
+    val res = paddleEngine.detect(buffer.c[999]) ?: return emptyList()
     val scaleW = res.width.toFloat()
     val scaleH = res.height.toFloat()
     
-    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.s)
+    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[999])
     return blocks.map { block ->
         val l = block.boundingBox.left / scaleW
         val t = block.boundingBox.top / scaleH
@@ -586,12 +586,12 @@ private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, t
 
 private suspend fun performHunkRecognition(hunks: List<TextBlock>, buffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context): List<TextBlock> {
      return hunks.map { hunk ->
-         val l = hunk.boundingBox.left / 10000f
-         val t = hunk.boundingBox.top / 10000f
-         val r = hunk.boundingBox.right / 10000f
-         val b = hunk.boundingBox.bottom / 10000f
+         val l = (hunk.boundingBox.left / 10000f).coerceIn(0f, 0.999f)
+         val t = (hunk.boundingBox.top / 10000f).coerceIn(0f, 0.999f)
+         val r = (hunk.boundingBox.right / 10000f).coerceIn(l + 0.001f, 1f)
+         val b = (hunk.boundingBox.bottom / 10000f).coerceIn(t + 0.001f, 1f)
          
-         val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
+         val cropId = buffer.createCropLegacy(l, t, r - l, b - t, id = 888)
          val res = if (engine == "ML Kit") {
              MlKitEngine().recognize(buffer.c[cropId]!!)
          } else {
