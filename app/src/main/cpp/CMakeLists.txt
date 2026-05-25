@@ -19,7 +19,7 @@ set_target_properties(opencv_java4 PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_D
 
 # 1. buffer_set library (Isolated memory management)
 add_library(buffer_set SHARED BufferSet.cpp)
-target_link_libraries(buffer_set jnigraphics log)
+target_link_libraries(buffer_set jnigraphics log opencv_java4)
 
 # 2. native_ocr library (OpenCV dependent, uses c++_shared)
 add_library(native_ocr SHARED NativeImageUtils.cpp)
