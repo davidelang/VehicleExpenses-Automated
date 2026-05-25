@@ -75,6 +75,8 @@ data class PumpPhotoResultSummary(
     val odometer: String?
 )
 
+data class PumpHunk(val text: String, val icrs: RectF)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExperimentPumpScreen(navController: NavHostController) {
@@ -307,7 +309,7 @@ private suspend fun runPumpExperiment(
                 
                 // Discovery ML Kit (Path A)
                 val t0ML = System.currentTimeMillis()
-                val mlBlocksRaw = mutableListOf<TextBlock>()
+                val mlBlocksRaw = mutableListOf<PumpHunk>()
                 scales.forEach { scale ->
                     prepareScale(NativePaddleEngine.bufferSetA, scale)
                     mlBlocksRaw.addAll(runDiscoveryML(NativePaddleEngine.bufferSetA, context))
@@ -318,7 +320,7 @@ private suspend fun runPumpExperiment(
                 
                 // Discovery Paddle (Path B)
                 val t0PD = System.currentTimeMillis()
-                val pdBlocksRaw = mutableListOf<TextBlock>()
+                val pdBlocksRaw = mutableListOf<PumpHunk>()
                 scales.forEach { scale ->
                     prepareScale(NativePaddleEngine.bufferSetB, scale)
                     pdBlocksRaw.addAll(runDiscoveryPaddle(NativePaddleEngine.bufferSetB, paddleEngine))
@@ -525,7 +527,7 @@ private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
     return java.nio.ByteBuffer.wrap(nv21)
 }
 
-private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<TextBlock> {
+private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<PumpHunk> {
     val crop = buffer.c[999]!!
     val nv21 = flattenToNv21(crop)
     val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
@@ -540,43 +542,38 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Te
         val mr = block.boundingBox.right * masterW / scaleW; val mb = block.boundingBox.bottom * masterH / scaleH
         val i1 = IcrsMath.pixelToIcrs(ml, mt, masterW, masterH)
         val i2 = IcrsMath.pixelToIcrs(mr, mb, masterW, masterH)
-        TextBlock(block.text, Rect((i1.x * 10000).toInt(), (i1.y * 10000).toInt(), (i2.x * 10000).toInt(), (i2.y * 10000).toInt()))
+        PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
     }
 }
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<TextBlock> {
-    val res = paddleEngine.detect(buffer.c[999]) ?: return emptyList()
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<PumpHunk> {
+    val res = paddleEngine.detect(buffer.c[999]!!) ?: return emptyList()
     val scaleW = res.width.toFloat(); val scaleH = res.height.toFloat()
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
-    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[999])
+    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[999]!!)
     return blocks.map { block ->
         val ml = block.boundingBox.left * masterW / scaleW; val mt = block.boundingBox.top * masterH / scaleH
         val mr = block.boundingBox.right * masterW / scaleW; val mb = block.boundingBox.bottom * masterH / scaleH
         val i1 = IcrsMath.pixelToIcrs(ml, mt, masterW, masterH)
         val i2 = IcrsMath.pixelToIcrs(mr, mb, masterW, masterH)
-        TextBlock("", Rect((i1.x * 10000).toInt(), (i1.y * 10000).toInt(), (i2.x * 10000).toInt(), (i2.y * 10000).toInt()))
+        PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
     }
 }
 
-private fun mergeGeometryIntoHunks(allBlocks: List<TextBlock>): List<TextBlock> {
+private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
     if (allBlocks.isEmpty()) return emptyList()
     
-    data class IcrsBox(val text: String, val l: Float, val t: Float, val r: Float, val b: Float)
-    val boxes = allBlocks.map { b ->
-        IcrsBox(b.text, b.boundingBox.left / 10000f, b.boundingBox.top / 10000f, b.boundingBox.right / 10000f, b.boundingBox.bottom / 10000f)
-    }
-
-    val clusters = mutableListOf<MutableList<IcrsBox>>()
-    for (box in boxes) {
+    val clusters = mutableListOf<MutableList<PumpHunk>>()
+    for (box in allBlocks) {
         var found = false
         for (cluster in clusters) {
             if (cluster.any { c -> 
-                val interL = max(box.l, c.l); val interT = max(box.t, c.t)
-                val interR = min(box.r, c.r); val interB = min(box.b, c.b)
+                val interL = max(box.icrs.left, c.icrs.left); val interT = max(box.icrs.top, c.icrs.top)
+                val interR = min(box.icrs.right, c.icrs.right); val interB = min(box.icrs.bottom, c.icrs.bottom)
                 if (interR > interL && interB > interT) {
                     val interArea = (interR - interL) * (interB - interT)
-                    val unionArea = (box.r - box.l) * (box.b - box.t) + (c.r - c.l) * (c.b - c.t) - interArea
+                    val unionArea = (box.icrs.width() * box.icrs.height()) + (c.icrs.width() * c.icrs.height()) - interArea
                     (interArea / unionArea) > 0.4f
                 } else false
             }) {
@@ -589,22 +586,38 @@ private fun mergeGeometryIntoHunks(allBlocks: List<TextBlock>): List<TextBlock> 
     }
 
     return clusters.map { cluster ->
-        val widestL = cluster.minOf { it.l }; val widestR = cluster.maxOf { it.r }
-        val shortestH = cluster.minOf { it.b - it.t }
-        val centerY = cluster.map { (it.t + it.b) / 2f }.average().toFloat()
+        val widestL = cluster.minOf { it.icrs.left }; val widestR = cluster.maxOf { it.icrs.right }
+        val shortestH = cluster.minOf { it.icrs.height() }
+        val centerY = cluster.map { it.icrs.centerY() }.average().toFloat()
+        
         val bestText = cluster.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
         
         val fT = centerY - shortestH / 2f; val fB = centerY + shortestH / 2f
-        TextBlock(bestText, Rect((widestL * 10000).toInt(), (fT * 10000).toInt(), (widestR * 10000).toInt(), (fB * 10000).toInt()))
+        PumpHunk(bestText, RectF(widestL, fT, widestR, fB))
     }
 }
 
-private suspend fun performHunkRecognition(hunks: List<TextBlock>, buffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context): List<TextBlock> {
+private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context): List<PumpHunk> {
+     val masterW = buffer.p.width; val masterH = buffer.p.height
+     val minEdge = min(masterW, masterH).toFloat()
+     val maxX = masterW / (2f * minEdge); val maxY = masterH / (2f * minEdge)
+     
      return hunks.map { hunk ->
-         val l = hunk.boundingBox.left / 10000f
-         val t = hunk.boundingBox.top / 10000f
-         val r = hunk.boundingBox.right / 10000f
-         val b = hunk.boundingBox.bottom / 10000f
+         val l = hunk.icrs.left.coerceIn(-maxX, maxX - 0.001f)
+         val t = hunk.icrs.top.coerceIn(-maxY, maxY - 0.001f)
+         val r = hunk.icrs.right.coerceIn(l + 0.001f, maxX)
+         val b = hunk.icrs.bottom.coerceIn(t + 0.001f, maxY)
+         
+         val p1 = IcrsMath.icrsToPixel(l, t, masterW, masterH)
+         val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
+         val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+         
+         if (pW < 32 || pH < 32) {
+             Log.i("PUMP_ICRS", "Skipping tiny hunk: x at ICRS [, , , ]")
+             return@map hunk
+         }
+         
+         Log.i("PUMP_ICRS", "Hunk ICRS: [, , , ] | Master: x | Pixels:  x ")
          
          val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
          val crop = buffer.c[cropId]!!
@@ -617,16 +630,16 @@ private suspend fun performHunkRecognition(hunks: List<TextBlock>, buffer: Buffe
          }
          crop.release()
          
-         TextBlock(res.debugText, hunk.boundingBox)
+         PumpHunk(res.debugText, hunk.icrs)
      }
 }
 
-private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<TextBlock>, color: Int): Bitmap {
+private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<PumpHunk>, color: Int): Bitmap {
     val out = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = Canvas(out)
     val paint = Paint().apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 10f }
     hunks.forEach { hunk ->
-        val p1 = IcrsMath.icrsToPixel(hunk.boundingBox.left / 10000f, hunk.boundingBox.top / 10000f, bmp.width, bmp.height)
-        val p2 = IcrsMath.icrsToPixel(hunk.boundingBox.right / 10000f, hunk.boundingBox.bottom / 10000f, bmp.width, bmp.height)
+        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, bmp.width, bmp.height)
+        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, bmp.width, bmp.height)
         canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint)
     }
     return out
