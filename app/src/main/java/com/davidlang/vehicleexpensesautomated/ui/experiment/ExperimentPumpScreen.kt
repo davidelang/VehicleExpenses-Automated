@@ -225,8 +225,6 @@ private suspend fun runPumpExperiment(
             // Sequential A/B Ingestion
             NativePaddleEngine.bufferSetA.resize(imgW, imgH)
             NativePaddleEngine.bufferSetB.resize(imgW, imgH)
-            val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
-            val scratchBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
             
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.bufferSetA.p)
             
@@ -287,7 +285,7 @@ private suspend fun runPumpExperiment(
                     targetW = 600, 
                     targetH = 450, 
                     annotations = emptyList(),
-                    scratchArgb = scratchBmp,
+                    scratchArgb = null,
                     scratchYuv = NativePaddleEngine.bufferSetA
                 ) 
                 
@@ -298,7 +296,7 @@ private suspend fun runPumpExperiment(
                     targetW = 600, 
                     targetH = 450, 
                     annotations = emptyList(),
-                    scratchArgb = scratchBmp,
+                    scratchArgb = null,
                     scratchYuv = NativePaddleEngine.bufferSetB
                 ) 
                 
@@ -314,7 +312,7 @@ private suspend fun runPumpExperiment(
 
                 val photoJson = pSerializePhotoResultToJson(
                     index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, 
-                    meta.diagnostic, deskewResA, deskewResA, tSnapOrig, tSnapDeskew, file.name
+                    meta.diagnostic, deskewResA, tSnapOrig, tSnapDeskew, file.name
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -334,8 +332,7 @@ private suspend fun runPumpExperiment(
                 
                 delay(150)
             } finally {
-                masterBmp?.recycle()
-                scratchBmp?.recycle()
+                // BufferSets are cleaned up globally or at end of session
             }
         } catch (e: Exception) {
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
@@ -350,7 +347,7 @@ private suspend fun runPumpExperiment(
 
 private fun pSerializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
-    nativeProbe: String, deskewRes: OdometerOcrUtils.DeskewResult, deskewResA: OdometerOcrUtils.DeskewResult? = null,
+    nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = ""
 ): JSONObject {
     val root = JSONObject()
@@ -366,9 +363,8 @@ private fun pSerializePhotoResultToJson(
         put("t_thumb_orig_ms", tSnapOrig)
         put("t_snap_deskew_ms", tSnapDeskew)
 
-        // Deskew Data (Combined map for A/B comparison)
+        // Deskew Data (Source from Path A)
         val deskewObj = JSONObject()
-        deskewObj.pPutSafe("std_angle", deskewRes.angle.toDouble())
         deskewObj.pPutSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
         put("deskew", deskewObj)
     }
@@ -417,20 +413,6 @@ private fun pBuildHtmlRowDynamic(
         appendLine("<i>Failed</i>")
     }
     appendLine("</td></tr>")
-}
-
-private fun pCreateScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, targetBuffer: Bitmap? = null): String {
-    if (bitmap.isRecycled) return ""
-    val scale = targetWidth.toFloat() / bitmap.width; val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
-    val target = targetBuffer ?: Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888); val targetCanvas = android.graphics.Canvas(target)
-    if (targetBuffer != null) targetCanvas.drawColor(android.graphics.Color.BLACK); val matrix = android.graphics.Matrix(); matrix.postScale(scale, scale); targetCanvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-    val view = Bitmap.createBitmap(target, 0, 0, targetWidth, targetHeight); val b64 = OcrUtils.bitmapToBase64(view, quality); view.recycle()
-    if (targetBuffer == null) target.recycle(); return b64
-}
-
-private fun pDrawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
-    val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = android.graphics.Canvas(annotated); val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f; color = android.graphics.Color.RED }
-    val p1 = IcrsMath.icrsToPixel(vehicle.odometerCropLeft ?: 0f, vehicle.odometerCropTop ?: 0f, bmp.width, bmp.height); val p2 = IcrsMath.icrsToPixel(vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f, bmp.width, bmp.height); canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint); return annotated
 }
 
 private fun pGetFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
