@@ -315,7 +315,9 @@ private suspend fun runPumpExperiment(
                     mlBlocksRaw.addAll(runDiscoveryML(NativePaddleEngine.bufferSetA, context))
                 }
                 val mlHunksRaw = mergeGeometryIntoHunks(mlBlocksRaw)
-                val mlHunks = performHunkRecognition(mlHunksRaw, NativePaddleEngine.bufferSetA, "ML Kit", paddleEngine, context)
+                val mlStitched = stitchHunksHorizontally(mlHunksRaw)
+                val (mlTop, mlBottom) = groupLanesByVerticalGap(mlStitched)
+                val mlHunks = performHunkRecognition(mlTop + mlBottom, NativePaddleEngine.bufferSetA, "ML Kit", paddleEngine, context)
                 val tDiscoveryML = System.currentTimeMillis() - t0ML
                 
                 // Discovery Paddle (Path B)
@@ -326,7 +328,9 @@ private suspend fun runPumpExperiment(
                     pdBlocksRaw.addAll(runDiscoveryPaddle(NativePaddleEngine.bufferSetB, paddleEngine))
                 }
                 val pdHunksRaw = mergeGeometryIntoHunks(pdBlocksRaw)
-                val pdHunks = performHunkRecognition(pdHunksRaw, NativePaddleEngine.bufferSetB, "Paddle", paddleEngine, context)
+                val pdStitched = stitchHunksHorizontally(pdHunksRaw)
+                val (pdTop, pdBottom) = groupLanesByVerticalGap(pdStitched)
+                val pdHunks = performHunkRecognition(pdTop + pdBottom, NativePaddleEngine.bufferSetB, "Paddle", paddleEngine, context)
                 val tDiscoveryPD = System.currentTimeMillis() - t0PD
 
                 // Create master BMP for overlays
@@ -334,13 +338,17 @@ private suspend fun runPumpExperiment(
                 org.opencv.android.Utils.matToBitmap(NativePaddleEngine.bufferSetA.p.mat, masterBmp)
 
                 // Capture Hunk Overlays
-                val mlHunksBmp = drawHunksOnBitmap(masterBmp, mlHunks, Color.RED)
-                val hunksA64 = pumpCreateScaledBase64(mlHunksBmp, 600, 70)
-                mlHunksBmp.recycle()
+                val mlOutBmp = masterBmp.copy(Bitmap.Config.ARGB_8888, true); val mlCanvas = Canvas(mlOutBmp)
+                drawHunksOnBitmap(mlOutBmp, mlHunksRaw, Color.RED, mlCanvas) // Raw Hunks
+                drawHunksOnBitmap(mlOutBmp, mlStitched, Color.BLUE, mlCanvas) // Stitched Lanes
+                val hunksA64 = pumpCreateScaledBase64(mlOutBmp, 600, 70)
+                mlOutBmp.recycle()
                 
-                val pdHunksBmp = drawHunksOnBitmap(masterBmp, pdHunks, Color.GREEN)
-                val hunksB64 = pumpCreateScaledBase64(pdHunksBmp, 600, 70)
-                pdHunksBmp.recycle()
+                val pdOutBmp = masterBmp.copy(Bitmap.Config.ARGB_8888, true); val pdCanvas = Canvas(pdOutBmp)
+                drawHunksOnBitmap(pdOutBmp, pdHunksRaw, Color.GREEN, pdCanvas) // Raw Hunks
+                drawHunksOnBitmap(pdOutBmp, pdStitched, Color.BLUE, pdCanvas) // Stitched Lanes
+                val hunksB64 = pumpCreateScaledBase64(pdOutBmp, 600, 70)
+                pdOutBmp.recycle()
                 masterBmp.recycle()
 
                 val rowHtml = pBuildHtmlRowDynamic(
@@ -634,8 +642,89 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
      }
 }
 
-private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<PumpHunk>, color: Int): Bitmap {
-    val out = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = Canvas(out)
+
+private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
+    if (hunks.isEmpty()) return emptyList()
+    val sorted = hunks.sortedBy { it.icrs.left }
+    val result = mutableListOf<MutableList<PumpHunk>>()
+    
+    for (hunk in sorted) {
+        var merged = false
+        for (line in result) {
+            val last = line.last()
+            val h = min(hunk.icrs.height(), last.icrs.height())
+            val vOverlap = max(0f, min(hunk.icrs.bottom, last.icrs.bottom) - max(hunk.icrs.top, last.icrs.top))
+            val hGap = hunk.icrs.left - last.icrs.right
+            
+            if (vOverlap > 0.7f * h && hGap < 1.0f * h) {
+                line.add(hunk)
+                merged = true
+                break
+            }
+        }
+        if (!merged) result.add(mutableListOf(hunk))
+    }
+    
+    return result.map { line ->
+        val l = line.minOf { it.icrs.left }
+        val t = line.minOf { it.icrs.top }
+        val r = line.maxOf { it.icrs.right }
+        val b = line.maxOf { it.icrs.bottom }
+        val widest = r - l
+        val shortest = line.minOf { it.icrs.height() }
+        val centerY = line.map { it.icrs.centerY() }.average().toFloat()
+        
+        // Spec: inherit string with highest digit count
+        val bestText = line.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
+        
+        val fT = centerY - shortest / 2f; val fB = centerY + shortest / 2f
+        PumpHunk(bestText, RectF(l, fT, r, fB))
+    }
+}
+
+private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>, List<PumpHunk>> {
+    if (hunks.isEmpty()) return Pair(emptyList(), emptyList())
+    val sortedY = hunks.sortedBy { it.icrs.centerY() }
+    
+    val lanes = mutableListOf<MutableList<PumpHunk>>()
+    for (hunk in sortedY) {
+        var found = false
+        for (lane in lanes) {
+            val anchor = lane.first()
+            val h = anchor.icrs.height()
+            if (Math.abs(hunk.icrs.centerY() - anchor.icrs.centerY()) < 0.3f * h) {
+                lane.add(hunk)
+                found = true
+                break
+            }
+        }
+        if (!found) lanes.add(mutableListOf(hunk))
+    }
+    
+    if (lanes.size < 2) return Pair(hunks, emptyList())
+    
+    // Sort lanes by centerY
+    val sortedLanes = lanes.sortedBy { it.first().icrs.centerY() }
+    
+    // Find largest gap between adjacent lanes
+    var maxGap = -1f
+    var splitIdx = 0
+    for (i in 0 until sortedLanes.size - 1) {
+        val gap = sortedLanes[i+1].first().icrs.centerY() - sortedLanes[i].first().icrs.centerY()
+        if (gap > maxGap) {
+            maxGap = gap
+            splitIdx = i
+        }
+    }
+    
+    val top = sortedLanes.take(splitIdx + 1).flatten()
+    val bottom = sortedLanes.drop(splitIdx + 1).flatten()
+    return Pair(top, bottom)
+}
+
+private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<PumpHunk>, color: Int, existingCanvas: Canvas? = null): Bitmap {
+    val out = if (existingCanvas == null) bmp.copy(Bitmap.Config.ARGB_8888, true) else bmp
+    val canvas = existingCanvas ?: Canvas(out)
     val paint = Paint().apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 10f }
     hunks.forEach { hunk ->
         val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, bmp.width, bmp.height)
