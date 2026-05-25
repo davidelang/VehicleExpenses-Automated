@@ -143,7 +143,7 @@ object OdometerOcrUtils {
         val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return Pair(EngineResult(0f, emptyList()), EngineResult(0f, emptyList()))
         
         // 1. Paddle V3 (Legacy Kotlin Math)
-        val (blocks, _) = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
+        val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
         val srcH = (pHeight / pScale).toInt()
         val angleV3 = calculateWeightedAverage(blocks, srcH)
         val resV3 = EngineResult(angleV3, emptyList(), blocks, det.metadata)
@@ -548,61 +548,37 @@ object OdometerOcrUtils {
     fun processPaddleHeatmap(
         heatmap: FloatArray, w: Int, h: Int, scale: Float, 
         sourceBuffer: Any, algorithm: String = "Native"
-    ): Pair<List<TextBlock>, Map<String, String>> {
-        // Execute Legacy Kotlin Path
-        val (blocksKt, _) = processPaddleHeatmapLegacy(heatmap, w, h, scale)
-        
-        // Return Legacy blocks
-        return Pair(blocksKt, emptyMap())
+    ): List<TextBlock> {
+        return processPaddleHeatmapLegacy(heatmap, w, h, scale)
     }
 
     private fun processPaddleHeatmapLegacy(
         heatmap: FloatArray, w: Int, h: Int, scale: Float
-    ): Pair<List<TextBlock>, FloatArray> {
+    ): List<TextBlock> {
         val invScale = 1.0 / scale.toDouble()
         val maskThreshold = 0.20f
         val mask = Mat(h, w, CvType.CV_8U)
         val data = ByteArray(heatmap.size)
-        var chkMask = 0f
-        var chkMaskPos = 0.0
-        var chkRowFirst = 0f
-        var chkRowLast = 0f
         for (i in heatmap.indices) {
-            val v = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte()
-            data[i] = v
-            if (v != 0.toByte()) {
-                chkMask += 1.0f
-                val x = i % w; val y = i / w
-                chkMaskPos += x.toDouble() * y.toDouble()
-                if (y < 5) chkRowFirst += 1.0f
-                if (y >= h - 5) chkRowLast += 1.0f
-            }
+            data[i] = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte()
         }
         mask.put(0, 0, data)
 
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()
         val hierarchy = Mat()
         val results = mutableListOf<TextBlock>()
-        
-        var chkRawC = 0f; var chkValidC = 0f; var chkGeom = 0f
 
         try {
             Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
             for (contour in contours) {
-                val pts = contour.toArray()
-                for (p in pts) chkRawC += (p.x + p.y).toFloat()
-
                 if (Imgproc.contourArea(contour) < 10) continue
-                for (p in pts) chkValidC += (p.x + p.y).toFloat()
 
-                val p2f = org.opencv.core.MatOfPoint2f(*pts)
+                val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
                 val rotatedRect = Imgproc.minAreaRect(p2f)
                 val points = arrayOf(org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point())
                 rotatedRect.points(points)
                 p2f.release() 
                 
-                for (p in points) chkGeom += (p.x + p.y).toFloat()
-
                 val bounds = android.graphics.Rect(
                     (rotatedRect.boundingRect().x * invScale).toInt(),
                     (rotatedRect.boundingRect().y * invScale).toInt(),
@@ -616,7 +592,7 @@ object OdometerOcrUtils {
         } finally {
             mask.release(); hierarchy.release(); contours.forEach { it.release() }
         }
-        return Pair(results, floatArrayOf(chkMask, chkMaskPos.toFloat(), chkRowFirst, chkRowLast, chkRawC, chkValidC, chkGeom))
+        return results
     }
 
     fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap {
