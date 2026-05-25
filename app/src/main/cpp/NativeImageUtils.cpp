@@ -533,20 +533,37 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     jfloat* heatmapData = env->GetFloatArrayElements(heatmapArr, nullptr);
     if (!heatmapData) return nullptr;
 
+    float chkMask = 0, chkRawC = 0, chkValidC = 0, chkGeom = 0;
+
     cv::Mat heatmap(h, w, CV_32F, heatmapData);
     cv::Mat mask = heatmap > threshold;
+    chkMask = (float)cv::countNonZero(mask);
 
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
+    for (const auto& contour : contours) {
+        for (const auto& p : contour) chkRawC += (float)(p.x + p.y);
+    }
+
     std::vector<NormalizedBox> boxes;
     for (const auto& contour : contours) {
         if (cv::contourArea(contour) < 10) continue;
+        for (const auto& p : contour) chkValidC += (float)(p.x + p.y);
+
         cv::RotatedRect rrect = cv::minAreaRect(contour);
+        cv::Point2f pts[4];
+        rrect.points(pts);
+        for (int i = 0; i < 4; ++i) chkGeom += (pts[i].x + pts[i].y);
+
         boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
     }
 
     std::vector<float> outData;
+    outData.push_back(chkMask);
+    outData.push_back(chkRawC);
+    outData.push_back(chkValidC);
+    outData.push_back(chkGeom);
     outData.push_back((float)boxes.size());
     for (const auto& box : boxes) {
         outData.push_back(box.points[0].x * invScale);
