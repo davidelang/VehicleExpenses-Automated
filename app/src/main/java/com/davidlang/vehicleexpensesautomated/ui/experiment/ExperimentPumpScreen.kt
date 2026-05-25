@@ -528,27 +528,27 @@ private fun pBuildHtmlRowDynamic(
     angleB: Float,
     diagnostic: String = ""
 ): String = buildString {
-    val resHtml = if (isDegraded) "<span style='color:red;'>Res: x (DEGRADED)</span>" else "Res: x"
-    val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: </small>" else ""
-    appendLine("<tr><td><b>#</b><br><small></small><br><small></small><br><b>Deskew Time:</b> ms<br><b>Tilt:</b> <br><img src='data:image/jpeg;base64,'></td>")
+    val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
+    val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
     // ML Kit Column
     appendLine("<td>")
-    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,'><br><small>Angle: %.2f&deg;</small><br>".format(angleA))
-    appendLine("<b>Ideal Hunks (ML Kit):</b><br><img src='data:image/jpeg;base64,'><br><small>Time: ms</small>")
+    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedA64'><br><small>Angle: %.2f&deg;</small><br>".format(angleA))
+    appendLine("<b>Ideal Hunks (ML Kit):</b><br><img src='data:image/jpeg;base64,$hunksA64'><br><small>Time: ${tDiscoveryML}ms</small>")
     appendLine("</td>")
 
     // Paddle Column
     appendLine("<td>")
-    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,'><br><small>Angle: %.2f&deg;</small><br>".format(angleB))
-    appendLine("<b>Ideal Hunks (Paddle):</b><br><img src='data:image/jpeg;base64,'><br><small>Time: ms</small>")
+    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedB64'><br><small>Angle: %.2f&deg;</small><br>".format(angleB))
+    appendLine("<b>Ideal Hunks (Paddle):</b><br><img src='data:image/jpeg;base64,$hunksB64'><br><small>Time: ${tDiscoveryPD}ms</small>")
     appendLine("</td>")
     
     // Final Extraction Column
     appendLine("<td>")
     appendLine("<b>Final Extraction:</b><br>")
-    appendLine("Cost: <b></b><br><img src='data:image/jpeg;base64,'><br>")
-    appendLine("Volume: <b></b><br><img src='data:image/jpeg;base64,'><br>")
+    appendLine("Cost: <b>$finalCost</b><br><img src='data:image/jpeg;base64,$costCrop64'><br>")
+    appendLine("Volume: <b>$finalVolume</b><br><img src='data:image/jpeg;base64,$volumeCrop64'><br>")
     appendLine("</td></tr>")
 }
 
