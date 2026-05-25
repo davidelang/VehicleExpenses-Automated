@@ -16,6 +16,12 @@ android {
         versionCode = 1
         versionName = providers.exec { commandLine("git", "describe", "--always") }.standardOutput.asText.get().trim()
         buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
+
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
     }
     buildTypes {
         release {
