@@ -16,6 +16,7 @@
 - [x] DONE: Phase 1.1: ICRS Coordinate Migration (See: dev-ai-interaction/plans/pump-icrs-migration.md)
 - [x] DONE: Phase 2: Horizontal Stitching & Lane Grouping (See: dev-ai-interaction/plans/pump-lane-grouping.md)
 - [/] IN PROGRESS: Phase 3 & 4: Lane-Pairing & Selection Heuristics (See: dev-ai-interaction/plans/pump-final-extraction.md)
+- [ ] Phase 3.5: CDF Diagnostic & 40% Stretch (See: dev-ai-interaction/plans/pump-cdf-diagnostic.md)
 - [ ] Phase 4: High-Resolution Extraction & Recognition
 
 # TODO: OCR Performance Optimization
