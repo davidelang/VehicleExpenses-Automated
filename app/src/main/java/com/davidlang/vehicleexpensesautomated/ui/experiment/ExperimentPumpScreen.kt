@@ -351,9 +351,58 @@ private suspend fun runPumpExperiment(
                 pdOutBmp.recycle()
                 masterBmp.recycle()
 
+                // 2. Selection & High-Res Refinement
+                val winningPair = findBestLanePair(mlTop, mlBottom) ?: findBestLanePair(pdTop, pdBottom)
+                var finalCost = "N/A"; var finalVolume = "N/A"
+                var costCrop64 = ""; var volumeCrop64 = ""
+                
+                if (winningPair != null) {
+                    val masterW = NativePaddleEngine.bufferSetA.p.width; val masterH = NativePaddleEngine.bufferSetA.p.height
+                    val minEdge = Math.min(masterW, masterH).toFloat()
+                    val maxX = masterW / (2f * minEdge); val maxY = masterH / (2f * minEdge)
+                    val expCost = expandHunkContext(winningPair.first, maxX, maxY)
+                    val expVol = expandHunkContext(winningPair.second, maxX, maxY)
+                    
+                    val finalResults = performHunkRecognition(listOf(expCost, expVol), NativePaddleEngine.bufferSetA, "ML Kit", paddleEngine, context)
+                    finalCost = applyRecognitionHeuristics(finalResults[0].text)
+                    finalVolume = applyRecognitionHeuristics(finalResults[1].text)
+                    
+                    val pCost1 = IcrsMath.icrsToPixel(expCost.icrs.left, expCost.icrs.top, masterW, masterH)
+                    val pCost2 = IcrsMath.icrsToPixel(expCost.icrs.right, expCost.icrs.bottom, masterW, masterH)
+                    val costRect = android.graphics.Rect(pCost1.x.toInt(), pCost1.y.toInt(), pCost2.x.toInt(), pCost2.y.toInt())
+                    costCrop64 = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, costRect, 300, 100, emptyList(), null, NativePaddleEngine.bufferSetA).first
+                    
+                    val pVol1 = IcrsMath.icrsToPixel(expVol.icrs.left, expVol.icrs.top, masterW, masterH)
+                    val pVol2 = IcrsMath.icrsToPixel(expVol.icrs.right, expVol.icrs.bottom, masterW, masterH)
+                    val volRect = android.graphics.Rect(pVol1.x.toInt(), pVol1.y.toInt(), pVol2.x.toInt(), pVol2.y.toInt())
+                    volumeCrop64 = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, volRect, 300, 100, emptyList(), null, NativePaddleEngine.bufferSetA).first
+                }
+
+
+                
+                
                 val rowHtml = pBuildHtmlRowDynamic(
-                    index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
-                    deskewedA64, deskewedB64, hunksA64, hunksB64, (tRotateA + tRotateB), tDiscoveryML, tDiscoveryPD, tilt, angleA, angleB, meta.diagnostic
+                    rowIndex = index + 1,
+                    fileName = file.name,
+                    imgW = imgW,
+                    imgH = imgH,
+                    isDegraded = meta.isDegraded,
+                    originalBase64 = originalBase64,
+                    deskewedA64 = deskewedA64,
+                    deskewedB64 = deskewedB64,
+                    hunksA64 = hunksA64,
+                    hunksB64 = hunksB64,
+                    finalCost = finalCost,
+                    finalVolume = finalVolume,
+                    costCrop64 = costCrop64,
+                    volumeCrop64 = volumeCrop64,
+                    tDeskew = (tRotateA + tRotateB),
+                    tDiscoveryML = tDiscoveryML,
+                    tDiscoveryPD = tDiscoveryPD,
+                    tilt = tilt,
+                    angleA = angleA,
+                    angleB = angleB,
+                    diagnostic = meta.diagnostic
                 )
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
@@ -423,7 +472,7 @@ private fun pSerializePhotoResultToJson(
 private fun pBuildHtmlHeader(time: String, total: Int, version: String): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; }</style></head><body>")
-    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:650px;'>ML Kit Hunks</th><th style='width:650px;'>Paddle Hunks</th></tr>")
+    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:650px;'>ML Kit Hunks</th><th style='width:650px;'>Paddle Hunks</th><th style='width:400px;'>Final Result</th></tr>")
 }
 
 private fun pBuildHtmlRowDynamic(
@@ -437,6 +486,10 @@ private fun pBuildHtmlRowDynamic(
     deskewedB64: String,
     hunksA64: String,
     hunksB64: String,
+    finalCost: String,
+    finalVolume: String,
+    costCrop64: String,
+    volumeCrop64: String,
     tDeskew: Long, 
     tDiscoveryML: Long,
     tDiscoveryPD: Long,
@@ -445,20 +498,27 @@ private fun pBuildHtmlRowDynamic(
     angleB: Float,
     diagnostic: String = ""
 ): String = buildString {
-    val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
-    val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    val resHtml = if (isDegraded) "<span style='color:red;'>Res: x (DEGRADED)</span>" else "Res: x"
+    val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: </small>" else ""
+    appendLine("<tr><td><b>#</b><br><small></small><br><small></small><br><b>Deskew Time:</b> ms<br><b>Tilt:</b> <br><img src='data:image/jpeg;base64,'></td>")
     
     // ML Kit Column
     appendLine("<td>")
-    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedA64'><br><small>Angle: %.2f&deg;</small><br>".format(angleA))
-    appendLine("<b>Ideal Hunks (ML Kit):</b><br><img src='data:image/jpeg;base64,$hunksA64'><br><small>Time: ${tDiscoveryML}ms</small>")
+    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,'><br><small>Angle: %.2f&deg;</small><br>".format(angleA))
+    appendLine("<b>Ideal Hunks (ML Kit):</b><br><img src='data:image/jpeg;base64,'><br><small>Time: ms</small>")
     appendLine("</td>")
 
     // Paddle Column
     appendLine("<td>")
-    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedB64'><br><small>Angle: %.2f&deg;</small><br>".format(angleB))
-    appendLine("<b>Ideal Hunks (Paddle):</b><br><img src='data:image/jpeg;base64,$hunksB64'><br><small>Time: ${tDiscoveryPD}ms</small>")
+    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,'><br><small>Angle: %.2f&deg;</small><br>".format(angleB))
+    appendLine("<b>Ideal Hunks (Paddle):</b><br><img src='data:image/jpeg;base64,'><br><small>Time: ms</small>")
+    appendLine("</td>")
+    
+    // Final Extraction Column
+    appendLine("<td>")
+    appendLine("<b>Final Extraction:</b><br>")
+    appendLine("Cost: <b></b><br><img src='data:image/jpeg;base64,'><br>")
+    appendLine("Volume: <b></b><br><img src='data:image/jpeg;base64,'><br>")
     appendLine("</td></tr>")
 }
 
@@ -720,6 +780,56 @@ private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>,
     val top = sortedLanes.take(splitIdx + 1).flatten()
     val bottom = sortedLanes.drop(splitIdx + 1).flatten()
     return Pair(top, bottom)
+}
+
+private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHunk>): Pair<PumpHunk, PumpHunk>? {
+    val pairs = mutableListOf<Pair<PumpHunk, PumpHunk>>()
+    
+    for (top in topLanes) {
+        for (bottom in bottomLanes) {
+            val hB = bottom.icrs.height()
+            val gap = bottom.icrs.top - top.icrs.bottom
+            val vOverlap = max(0f, min(top.icrs.bottom, bottom.icrs.bottom) - max(top.icrs.top, bottom.icrs.top))
+            val xOverlap = max(0f, min(top.icrs.right, bottom.icrs.right) - max(top.icrs.left, bottom.icrs.left))
+            
+            val digitTop = top.text.count { it.isDigit() }
+            val digitBottom = bottom.text.count { it.isDigit() }
+            
+            if (gap < 1.25f * hB && vOverlap < 0.2f * hB && xOverlap > 0 && digitTop >= 2 && digitBottom >= 2) {
+                pairs.add(Pair(top, bottom))
+            }
+        }
+    }
+    
+    if (pairs.isEmpty()) return null
+    
+    val goldenWords = listOf("Sale", "Total", "Gallon", "$", "Price")
+    return pairs.maxByOrNull { (t, b) ->
+        var score = 0
+        if (goldenWords.any { t.text.contains(it, ignoreCase = true) }) score += 10
+        if (goldenWords.any { b.text.contains(it, ignoreCase = true) }) score += 10
+        score + t.text.count { it.isDigit() } + b.text.count { it.isDigit() }
+    }
+}
+
+private fun expandHunkContext(hunk: PumpHunk, maxX: Float, maxY: Float): PumpHunk {
+    val h = hunk.icrs.height()
+    val newH = h * 1.5f
+    val dy = (newH - h) / 2f
+    val dx = newH // Horizontal expansion is value of NEW height on EACH side
+    
+    val l = (hunk.icrs.left - dx).coerceIn(-maxX, maxX - 0.001f)
+    val t = (hunk.icrs.top - dy).coerceIn(-maxY, maxY - 0.001f)
+    val r = (hunk.icrs.right + dx).coerceIn(l + 0.001f, maxX)
+    val b = (hunk.icrs.bottom + dy).coerceIn(t + 0.001f, maxY)
+    
+    return PumpHunk(hunk.text, RectF(l, t, r, b))
+}
+
+private fun applyRecognitionHeuristics(text: String): String {
+    var s = text.trim()
+    if (s.startsWith(".")) s = s.substring(1).trim()
+    return s
 }
 
 private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<PumpHunk>, color: Int, existingCanvas: Canvas? = null): Bitmap {
