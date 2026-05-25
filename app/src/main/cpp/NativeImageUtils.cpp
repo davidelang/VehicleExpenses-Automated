@@ -50,22 +50,12 @@ std::string base64_encode(unsigned char const* bytes_to_encode, unsigned int in_
     return ret;
 }
 
-struct NormalizedBox {
-    cv::Point2f points[4];
-    float angle;
-    float confidence;
-    float length;
-};
-
-NormalizedBox pNormalizeRect(const cv::RotatedRect& rect, const cv::Mat& heatmap, const std::vector<cv::Point>& contour) {
-    NormalizedBox res;
+// Refactored helper: only calculates angle, no longer returns struct
+float calculateAngle(const cv::RotatedRect& rect) {
     cv::Point2f pts[4];
     rect.points(pts);
-
-    // 1. Identify the "Bottom" edge: most horizontal AND further down (larger Y)
-    int edgeIdx = 0;
     float minAbsAngle = 180.0f;
-    float maxAvgY = -1.0e9f;
+    float resAngle = 0.0f;
 
     for (int i = 0; i < 4; ++i) {
         cv::Point2f p1 = pts[i];
@@ -73,68 +63,20 @@ NormalizedBox pNormalizeRect(const cv::RotatedRect& rect, const cv::Mat& heatmap
         float dx = p2.x - p1.x;
         float dy = p2.y - p1.y;
         float ang = std::atan2(dy, dx) * 180.0f / 3.1415926535f;
-
         float normAng = ang;
         while (normAng <= -45.0f) normAng += 90.0f;
         while (normAng > 45.0f) normAng -= 90.0f;
-
-        float avgY = (p1.y + p2.y) / 2.0f;
-
         if (std::abs(normAng) < minAbsAngle) {
             minAbsAngle = std::abs(normAng);
-            edgeIdx = i;
-            maxAvgY = avgY;
-            res.angle = normAng;
-        } else if (std::abs(std::abs(normAng) - minAbsAngle) < 0.01f) {
-            if (avgY > maxAvgY) {
-                maxAvgY = avgY;
-                edgeIdx = i;
-                res.angle = normAng;
-            }
+            resAngle = normAng;
         }
     }
-
-    // 2. Assign points based on the identified Bottom edge (ordered L to R)
-    cv::Point2f pBL = pts[edgeIdx];
-    cv::Point2f pBR = pts[(edgeIdx + 1) % 4];
-    if (pBL.x > pBR.x) std::swap(pBL, pBR);
-
-    // Find the other two points and order them Top-Right, Top-Left
-    std::vector<cv::Point2f> others;
-    for (int i = 0; i < 4; ++i) {
-        if (i != edgeIdx && i != (edgeIdx + 1) % 4) others.push_back(pts[i]);
-    }
-    cv::Point2f pTL = others[0];
-    cv::Point2f pTR = others[1];
-    if (pTL.x > pTR.x) std::swap(pTL, pTR);
-
-    res.points[0] = pBL;
-    res.points[1] = pBR;
-    res.points[2] = pTR;
-    res.points[3] = pTL;
-    res.length = std::sqrt(std::pow(pBR.x - pBL.x, 2) + std::pow(pBR.y - pBL.y, 2));
-
-    // Calculate Confidence: Mean heatmap value inside the contour
-    cv::Rect bounds = rect.boundingRect();
-    bounds &= cv::Rect(0, 0, heatmap.cols, heatmap.rows);
-    if (bounds.width > 0 && bounds.height > 0) {
-        cv::Mat mask = cv::Mat::zeros(bounds.size(), CV_8U);
-        std::vector<cv::Point> localContour;
-        for (const auto& pt : contour) {
-            localContour.push_back(pt - bounds.tl());
-        }
-        std::vector<std::vector<cv::Point>> polys = {localContour};
-        cv::fillPoly(mask, polys, cv::Scalar(255));
-        cv::Scalar mean = cv::mean(heatmap(bounds), mask);
-        res.confidence = (float)mean[0];
-    } else {
-        res.confidence = 0.0f;
-    }
-
-    return res;
+    return resAngle;
 }
 
 extern "C" {
+// ... (keep nativeSyncMatFromArgb etc)
+
 
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSyncMatFromArgb(
@@ -526,119 +468,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     return result;
 }
 
-JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToTextAreas(
-    JNIEnv* env, jobject thiz, jfloatArray heatmapArr, jint w, jint h, jfloat threshold, jfloat invScale) {
-
-    jfloat* heatmapData = env->GetFloatArrayElements(heatmapArr, nullptr);
-    if (!heatmapData) return nullptr;
-
-    LOGE("PROBE: heatmapArr=%p, w=%d, h=%d, invScale=%.3f", (void*)heatmapData, w, h, invScale);
-
-    double chkMaskPos = 0;
-    cv::Mat heatmap(h, w, CV_32F, heatmapData);
-    cv::Mat mask = heatmap > threshold;
-
-    float chkRowFirst = 0, chkRowLast = 0;
-    for (int y = 0; y < h; ++y) {
-        uchar* row = mask.ptr<uchar>(y);
-        for (int x = 0; x < w; ++x) {
-            if (row[x] != 0) {
-                chkMaskPos += (double)x * (double)y;
-                if (y < 5) chkRowFirst += 1.0f;
-                if (y >= h - 5) chkRowLast += 1.0f;
-            }
-        }
-    }
-
-    float chkMask = (float)cv::countNonZero(mask);
-    float byte0 = (float)mask.data[0];
-    float byteMid = (float)mask.data[(h / 2) * w + (w / 2)];
-
-    std::vector<std::vector<cv::Point>> contours;
-    std::vector<cv::Vec4i> hierarchy;
-    
-    LOGE("PROBE: mask_data=%p, continuous=%d", (void*)mask.data, mask.isContinuous());
-
-    cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-    LOGE("PROBE: contours.size()=%zu, hierarchy.size()=%zu", contours.size(), hierarchy.size());
-
-    float chkRawC = 0, chkValidC = 0, chkGeom = 0;
-    float rawInts[4] = {-666.0f, -666.0f, -666.0f, -666.0f};
-
-    // Safety Guard to prevent crash on corrupted vector headers
-    if (contours.size() < 1000) {
-        for (size_t i = 0; i < contours.size(); ++i) {
-            const std::vector<cv::Point>& contour = contours[i];
-            
-            // Raw Memory Probe: Dump first 4 integers of the first contour
-            if (i == 0 && contour.size() >= 2) {
-                const int32_t* rawPtr = (const int32_t*)contour.data();
-                rawInts[0] = (float)rawPtr[0];
-                rawInts[1] = (float)rawPtr[1];
-                rawInts[2] = (float)rawPtr[2];
-                rawInts[3] = (float)rawPtr[3];
-                LOGE("PROBE: c0_ptr=%p, c0_size=%zu, first_pt=(%d,%d)", (void*)rawPtr, contour.size(), rawPtr[0], rawPtr[1]);
-            }
-            
-            for (const auto& p : contour) chkRawC += (float)(p.x + p.y);
-        }
-
-        std::vector<NormalizedBox> boxes;
-        for (const auto& contour : contours) {
-            if (cv::contourArea(contour) < 10) continue;
-            for (const auto& p : contour) chkValidC += (float)(p.x + p.y);
-
-            cv::RotatedRect rrect = cv::minAreaRect(contour);
-            cv::Point2f pts[4];
-            rrect.points(pts);
-            for (int i = 0; i < 4; ++i) chkGeom += (pts[i].x + pts[i].y);
-
-            boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
-        }
-
-        std::vector<float> outData;
-        outData.push_back(chkMask);
-        outData.push_back((float)chkMaskPos);
-        outData.push_back(chkRowFirst);
-        outData.push_back(chkRowLast);
-        outData.push_back(chkRawC);
-        outData.push_back(chkValidC);
-        outData.push_back(chkGeom);
-        outData.push_back(rawInts[0]);
-        outData.push_back(rawInts[1]);
-        outData.push_back(rawInts[2]);
-        outData.push_back(rawInts[3]);
-        outData.push_back((float)contours.size());
-        outData.push_back((float)boxes.size());
-        for (const auto& box : boxes) {
-            outData.push_back(box.points[0].x * invScale);
-            outData.push_back(box.points[0].y * invScale);
-            outData.push_back(box.points[1].x * invScale);
-            outData.push_back(box.points[1].y * invScale);
-            outData.push_back(box.points[2].x * invScale);
-            outData.push_back(box.points[2].y * invScale);
-            outData.push_back(box.points[3].x * invScale);
-            outData.push_back(box.points[3].y * invScale);
-            outData.push_back(box.angle);
-            outData.push_back(box.confidence);
-        }
-
-        jfloatArray result = env->NewFloatArray((jsize)outData.size());
-        env->SetFloatArrayRegion(result, 0, (jsize)outData.size(), outData.data());
-        env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
-        return result;
-    } else {
-        LOGE("PROBE: CRITICAL CORRUPTION - contours.size() exceeds safety limit!");
-        float err[] = {chkMask, (float)chkMaskPos, chkRowFirst, chkRowLast, -8888.0f, 0, 0, -666, -666, -666, -666, (float)contours.size(), 0};
-        jfloatArray result = env->NewFloatArray(13);
-        env->SetFloatArrayRegion(result, 0, 13, err);
-        env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
-        return result;
-    }
-}
-
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngle(
     JNIEnv* env, jobject thiz, jfloatArray heatmapArr, jint w, jint h, jfloat threshold) {
@@ -653,23 +482,33 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     std::vector<cv::Vec4i> hierarchy;
     cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-    std::vector<NormalizedBox> boxes;
-    for (const auto& contour : contours) {
-        if (cv::contourArea(contour) < 10) continue;
-        cv::RotatedRect rrect = cv::minAreaRect(contour);
-        boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
-    }
-
-    if (boxes.empty()) {
+    if (contours.empty()) {
         env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
         return 0.0f;
     }
 
     // Weighted Consensus Voting (0.5 degree buckets)
     std::map<int, double> buckets;
-    for (const auto& box : boxes) {
-        int bucketIdx = (int)std::round(box.angle * 2.0f);
-        double weight = (double)box.length * (double)box.confidence;
+    for (const auto& contour : contours) {
+        if (cv::contourArea(contour) < 10) continue;
+        cv::RotatedRect rrect = cv::minAreaRect(contour);
+        float angle = calculateAngle(rrect);
+        
+        // Calculate Confidence: Mean heatmap value inside the contour
+        cv::Rect bounds = rrect.boundingRect();
+        bounds &= cv::Rect(0, 0, heatmap.cols, heatmap.rows);
+        float confidence = 0.0f;
+        if (bounds.width > 0 && bounds.height > 0) {
+            cv::Mat mask = cv::Mat::zeros(bounds.size(), CV_8U);
+            std::vector<std::vector<cv::Point>> polys = {{contour}};
+            for (auto& p : polys[0]) p -= bounds.tl();
+            cv::fillPoly(mask, polys, cv::Scalar(255));
+            cv::Scalar mean = cv::mean(heatmap(bounds), mask);
+            confidence = (float)mean[0];
+        }
+
+        int bucketIdx = (int)std::round(angle * 2.0f);
+        double weight = (double)cv::arcLength(contour, true) * (double)confidence;
         buckets[bucketIdx] += weight;
     }
 
@@ -687,3 +526,4 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 }
 
 }
+
