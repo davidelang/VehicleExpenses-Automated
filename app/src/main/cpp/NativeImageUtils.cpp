@@ -533,14 +533,26 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     jfloat* heatmapData = env->GetFloatArrayElements(heatmapArr, nullptr);
     if (!heatmapData) return nullptr;
 
-    float chkMask = 0, chkRawC = 0, chkValidC = 0, chkGeom = 0;
-
+    double chkMaskPos = 0;
     cv::Mat heatmap(h, w, CV_32F, heatmapData);
     cv::Mat mask = heatmap > threshold;
-    chkMask = (float)cv::countNonZero(mask);
+
+    for (int y = 0; y < h; ++y) {
+        uchar* row = mask.ptr<uchar>(y);
+        for (int x = 0; x < w; ++x) {
+            if (row[x] != 0) chkMaskPos += (double)x * (double)y;
+        }
+    }
+
+    float chkMask = (float)cv::countNonZero(mask);
+    float byte0 = (float)mask.data[0];
+    float byteMid = (float)mask.data[(h / 2) * w + (w / 2)];
+
+    float chkRawC = 0, chkValidC = 0, chkGeom = 0;
 
     std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     for (const auto& contour : contours) {
         for (const auto& p : contour) chkRawC += (float)(p.x + p.y);
@@ -561,6 +573,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 
     std::vector<float> outData;
     outData.push_back(chkMask);
+    outData.push_back((float)chkMaskPos);
+    outData.push_back(byte0);
+    outData.push_back(byteMid);
     outData.push_back(chkRawC);
     outData.push_back(chkValidC);
     outData.push_back(chkGeom);
@@ -596,7 +611,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     cv::Mat mask = heatmap > threshold;
 
     std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     std::vector<NormalizedBox> boxes;
     for (const auto& contour : contours) {
