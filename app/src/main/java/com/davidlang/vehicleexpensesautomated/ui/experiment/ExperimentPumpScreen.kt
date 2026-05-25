@@ -229,27 +229,27 @@ private suspend fun runPumpExperiment(
             
             
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
-            
-            // Sequential A/B Ingestion
             NativePaddleEngine.bufferSetA.resize(imgW, imgH)
             NativePaddleEngine.bufferSetB.resize(imgW, imgH)
-            
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.bufferSetA.p)
-            
-            // Manual Distribution (A to B)
             NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
             NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
 
-            // Step 1.5: 80% Contrast Stretch
+            // Capture BEFORE and generate Histogram
+            val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
+            val histB64 = generateHistogramB64(NativePaddleEngine.bufferSetA.p.mat, 0.75f)
+
+            // Step 1.5: 75% Contrast Stretch
             OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.75f)
             OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.75f)
             
-            val (originalBase64, tSnapOrig) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
+            // Capture AFTER
+            val (afterB64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
 
             try {
-                // Step 2 (Deskew)
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
                 val tilt = deskewResA.angle
+                val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
 
                 suspend fun pRotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
                     val tRot0 = System.currentTimeMillis()
@@ -340,10 +340,30 @@ private suspend fun runPumpExperiment(
                 val aBPd = getAnns(pdBlocksRawB, 0xFFFFA500.toInt(), 2) + getAnns(pdHunksRawB, 0xFF00FF00.toInt(), 4)
                 val (hunksBPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, aBPd, null, NativePaddleEngine.bufferSetB)
 
+                
                 val rowHtml = pBuildHtmlRowDynamic(
-                    index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
-                    hunksAMl64, hunksAPd64, hunksBMl64, hunksBPd64, resAMl, resAPd, resBMl, resBPd,
-                    (tRotateA + tRotateB), tilt, deskewResA, meta.diagnostic
+                    rowIndex = index + 1,
+                    fileName = file.name,
+                    imgW = imgW,
+                    imgH = imgH,
+                    isDegraded = meta.isDegraded,
+                    beforeB64 = beforeB64,
+                    histB64 = histB64,
+                    afterB64 = afterB64,
+                    deskewHtml = deskewHtml,
+                    hunksAMl64 = hunksAMl64,
+                    hunksAPd64 = hunksAPd64,
+                    hunksBMl64 = hunksBMl64,
+                    hunksBPd64 = hunksBPd64,
+                    resAMl = resAMl,
+                    resAPd = resAPd,
+                    resBMl = resBMl,
+                    resBPd = resBPd,
+                    tDeskew = (tRotateA + tRotateB),
+                    tilt = tilt,
+                    angleA = angleA,
+                    angleB = angleB,
+                    diagnostic = meta.diagnostic
                 )
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
@@ -441,6 +461,30 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
     return root
 }
 
+
+private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
+    val hist = org.opencv.core.Mat()
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+    
+    val total = (mat.rows() * mat.cols()).toDouble()
+    val bins = FloatArray(256); hist.get(0, 0, bins)
+    
+    val bmp = Bitmap.createBitmap(100, 60, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
+    canvas.drawColor(Color.BLACK)
+    val paint = Paint(); val maxVal = (0..255).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
+    
+    for (i in 0..99) {
+        val bStart = (i * 2.56).toInt(); val bEnd = ((i + 1) * 2.56).toInt()
+        val avg = (bStart until bEnd.coerceAtMost(256)).map { bins[it] }.average()
+        val h = (avg / maxVal * 50.0).toInt()
+        paint.color = Color.WHITE; canvas.drawRect(i.toFloat(), (50 - h).toFloat(), (i + 1).toFloat(), 50f, paint)
+        
+        if (i % 10 == 0) { paint.color = Color.RED; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
+        if (i == (floorPercentile * 100).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
+    }
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
+}
+
 private fun pBuildHtmlHeader(time: String, total: Int, version: String): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
@@ -448,12 +492,15 @@ private fun pBuildHtmlHeader(time: String, total: Int, version: String): String 
 }
 
 private fun pBuildHtmlRowDynamic(
-    rowIndex: Int,
-    fileName: String,
+    rowIndex: Int, 
+    fileName: String, 
     imgW: Int,
     imgH: Int,
     isDegraded: Boolean,
-    originalBase64: String,
+    beforeB64: String, 
+    histB64: String, 
+    afterB64: String, 
+    deskewHtml: String,
     hunksAMl64: String,
     hunksAPd64: String,
     hunksBMl64: String,
@@ -462,26 +509,21 @@ private fun pBuildHtmlRowDynamic(
     resAPd: PathResult,
     resBMl: PathResult,
     resBPd: PathResult,
-    tDeskew: Long,
+    tDeskew: Long, 
     tilt: Float,
-    deskewRes: OdometerOcrUtils.DeskewResult,
+    angleA: Float,
+    angleB: Float,
     diagnostic: String = ""
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
-    val angMl = deskewRes.mlAngle
-    val angV3 = deskewRes.engines["Paddle V3"]?.angle ?: 0f
-    val angCpp = deskewRes.paddleCppAngle
-    appendLine("<tr><td><b>#$rowIndex</b>")
-    appendLine("<br><small>$fileName</small>")
-    appendLine("<br><small>$resHtml</small>$diagHtml")
-    appendLine("<br><b>Deskew Time:</b> ${tDeskew}ms")
-    appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
-    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$beforeB64'></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$histB64'></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$afterB64'></td><td style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
+    
     appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'></td>")
     appendLine("<td><b>Paddle (A):</b><br><img src='data:image/jpeg;base64,$hunksAPd64'></td>")
     appendLine("<td><b>ML Kit (B):</b><br><img src='data:image/jpeg;base64,$hunksBMl64'></td>")
     appendLine("<td><b>Paddle (B):</b><br><img src='data:image/jpeg;base64,$hunksBPd64'></td>")
+
     appendLine("<td><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
     val pArr = listOf("A:ML" to resAMl, "A:PD" to resAPd, "B:ML" to resBMl, "B:PD" to resBPd)
     pArr.forEach { (name, res) ->
