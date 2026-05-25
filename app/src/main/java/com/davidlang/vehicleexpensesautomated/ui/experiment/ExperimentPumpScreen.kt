@@ -302,9 +302,48 @@ private suspend fun runPumpExperiment(
                 
                 val tSnapDeskew = tSnapA + tSnapB
 
+                // PUMP_PIPELINE_TARGET
+                val scales = listOf(200, 600, 1000, 2500)
+                
+                // Discovery ML Kit (Path A)
+                val t0ML = System.currentTimeMillis()
+                val mlBlocksRaw = mutableListOf<TextBlock>()
+                scales.forEach { scale ->
+                    prepareScale(NativePaddleEngine.bufferSetA, scale)
+                    mlBlocksRaw.addAll(runDiscoveryML(NativePaddleEngine.bufferSetA, context))
+                }
+                val mlHunksRaw = mergeGeometryIntoHunks(mlBlocksRaw)
+                val mlHunks = performHunkRecognition(mlHunksRaw, NativePaddleEngine.bufferSetA, "ML Kit", paddleEngine, context)
+                val tDiscoveryML = System.currentTimeMillis() - t0ML
+                
+                // Discovery Paddle (Path B)
+                val t0PD = System.currentTimeMillis()
+                val pdBlocksRaw = mutableListOf<TextBlock>()
+                scales.forEach { scale ->
+                    prepareScale(NativePaddleEngine.bufferSetB, scale)
+                    pdBlocksRaw.addAll(runDiscoveryPaddle(NativePaddleEngine.bufferSetB, paddleEngine))
+                }
+                val pdHunksRaw = mergeGeometryIntoHunks(pdBlocksRaw)
+                val pdHunks = performHunkRecognition(pdHunksRaw, NativePaddleEngine.bufferSetB, "Paddle", paddleEngine, context)
+                val tDiscoveryPD = System.currentTimeMillis() - t0PD
+
+                // Create master BMP for overlays
+                val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
+                org.opencv.android.Utils.matToBitmap(NativePaddleEngine.bufferSetA.p.mat, masterBmp)
+
+                // Capture Hunk Overlays
+                val mlHunksBmp = drawHunksOnBitmap(masterBmp, mlHunks, Color.RED)
+                val hunksA64 = createScaledBase64(mlHunksBmp, 600, 70)
+                mlHunksBmp.recycle()
+                
+                val pdHunksBmp = drawHunksOnBitmap(masterBmp, pdHunks, Color.GREEN)
+                val hunksB64 = createScaledBase64(pdHunksBmp, 600, 70)
+                pdHunksBmp.recycle()
+                masterBmp.recycle()
+
                 val rowHtml = pBuildHtmlRowDynamic(
                     index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64, 
-                    deskewedA64, deskewedB64, (tRotateA + tRotateB), tilt, angleA, angleB, meta.diagnostic
+                    deskewedA64, deskewedB64, hunksA64, hunksB64, (tRotateA + tRotateB), tDiscoveryML, tDiscoveryPD, tilt, angleA, angleB, meta.diagnostic
                 )
 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
@@ -374,7 +413,7 @@ private fun pSerializePhotoResultToJson(
 private fun pBuildHtmlHeader(time: String, total: Int, version: String): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; }</style></head><body>")
-    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:650px;'>Deskewed A (ML Kit)</th><th style='width:650px;'>Deskewed B (Paddle)</th></tr>")
+    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:650px;'>ML Kit Hunks</th><th style='width:650px;'>Paddle Hunks</th></tr>")
 }
 
 private fun pBuildHtmlRowDynamic(
@@ -386,7 +425,11 @@ private fun pBuildHtmlRowDynamic(
     originalBase64: String, 
     deskewedA64: String,
     deskewedB64: String,
+    hunksA64: String,
+    hunksB64: String,
     tDeskew: Long, 
+    tDiscoveryML: Long,
+    tDiscoveryPD: Long,
     tilt: Float,
     angleA: Float,
     angleB: Float,
@@ -396,22 +439,16 @@ private fun pBuildHtmlRowDynamic(
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
-    // Deskewed A (ML Kit)
+    // ML Kit Column
     appendLine("<td>")
-    if (deskewedA64.isNotEmpty()) {
-        appendLine("<img src='data:image/jpeg;base64,$deskewedA64'><br><small>Angle: %.2f&deg;</small>".format(angleA))
-    } else {
-        appendLine("<i>Failed</i>")
-    }
+    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedA64'><br><small>Angle: %.2f&deg;</small><br>".format(angleA))
+    appendLine("<b>Ideal Hunks (ML Kit):</b><br><img src='data:image/jpeg;base64,$hunksA64'><br><small>Time: ${tDiscoveryML}ms</small>")
     appendLine("</td>")
 
-    // Deskewed B (Paddle)
+    // Paddle Column
     appendLine("<td>")
-    if (deskewedB64.isNotEmpty()) {
-        appendLine("<img src='data:image/jpeg;base64,$deskewedB64'><br><small>Angle: %.2f&deg;</small>".format(angleB))
-    } else {
-        appendLine("<i>Failed</i>")
-    }
+    appendLine("<b>Deskewed:</b><br><img src='data:image/jpeg;base64,$deskewedB64'><br><small>Angle: %.2f&deg;</small><br>".format(angleB))
+    appendLine("<b>Ideal Hunks (Paddle):</b><br><img src='data:image/jpeg;base64,$hunksB64'><br><small>Time: ${tDiscoveryPD}ms</small>")
     appendLine("</td></tr>")
 }
 
@@ -444,6 +481,138 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
 }
 
 private fun pToEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
+
+private fun prepareScale(buffer: BufferSet, targetLongEdge: Int) {
+    val srcW = buffer.p.width
+    val srcH = buffer.p.height
+    val currentLongEdge = max(srcW, srcH)
+    
+    val targetW: Int
+    val targetH: Int
+    
+    if (currentLongEdge <= targetLongEdge) {
+        targetW = srcW
+        targetH = srcH
+    } else {
+        val scale = targetLongEdge.toFloat() / currentLongEdge
+        targetW = (srcW * scale).toInt()
+        targetH = (srcH * scale).toInt()
+    }
+    
+    buffer.s.createCrop(0f, 0f, targetW.toFloat() / buffer.s.width, targetH.toFloat() / buffer.s.height, id = 999)
+    val dstMat = buffer.s.mat
+    org.opencv.imgproc.Imgproc.resize(buffer.p.mat, dstMat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()))
+}
+
+private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<TextBlock> {
+    val result = OcrHarness.runDiscovery(buffer.s, context)
+    val scaleW = result.imageWidth.toFloat()
+    val scaleH = result.imageHeight.toFloat()
+    
+    return result.textBlocks.map { block ->
+        val l = block.boundingBox.left / scaleW
+        val t = block.boundingBox.top / scaleH
+        val r = block.boundingBox.right / scaleW
+        val b = block.boundingBox.bottom / scaleH
+        TextBlock(block.text, Rect((l * 10000).toInt(), (t * 10000).toInt(), (r * 10000).toInt(), (b * 10000).toInt()))
+    }
+}
+
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<TextBlock> {
+    val res = paddleEngine.detect(buffer.s) ?: return emptyList()
+    val scaleW = res.width.toFloat()
+    val scaleH = res.height.toFloat()
+    
+    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.s)
+    return blocks.map { block ->
+        val l = block.boundingBox.left / scaleW
+        val t = block.boundingBox.top / scaleH
+        val r = block.boundingBox.right / scaleW
+        val b = block.boundingBox.bottom / scaleH
+        TextBlock("", Rect((l * 10000).toInt(), (t * 10000).toInt(), (r * 10000).toInt(), (b * 10000).toInt()))
+    }
+}
+
+private fun mergeGeometryIntoHunks(allBlocks: List<TextBlock>): List<TextBlock> {
+    if (allBlocks.isEmpty()) return emptyList()
+    
+    data class NormBox(val text: String, val l: Float, val t: Float, val r: Float, val b: Float)
+    val boxes = allBlocks.map { b ->
+        NormBox(b.text, b.boundingBox.left / 10000f, b.boundingBox.top / 10000f, b.boundingBox.right / 10000f, b.boundingBox.bottom / 10000f)
+    }
+
+    val clusters = mutableListOf<MutableList<NormBox>>()
+    for (box in boxes) {
+        var found = false
+        for (cluster in clusters) {
+            if (cluster.any { c -> 
+                val interL = max(box.l, c.l); val interT = max(box.t, c.t)
+                val interR = min(box.r, c.r); val interB = min(box.b, c.b)
+                if (interR > interL && interB > interT) {
+                    val interArea = (interR - interL) * (interB - interT)
+                    val unionArea = (box.r - box.l) * (box.b - box.t) + (c.r - c.l) * (c.b - c.t) - interArea
+                    (interArea / unionArea) > 0.4f
+                } else false
+            }) {
+                cluster.add(box)
+                found = true
+                break
+            }
+        }
+        if (!found) clusters.add(mutableListOf(box))
+    }
+
+    return clusters.map { cluster ->
+        val widestL = cluster.minOf { it.l }; val widestR = cluster.maxOf { it.r }
+        val shortestH = cluster.minOf { it.b - it.t }
+        val centerY = cluster.map { (it.t + it.b) / 2f }.average().toFloat()
+        
+        // Inherit string with highest digit count
+        val bestText = cluster.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
+        
+        val fT = centerY - shortestH / 2f; val fB = centerY + shortestH / 2f
+        TextBlock(bestText, Rect((widestL * 10000).toInt(), (fT * 10000).toInt(), (widestR * 10000).toInt(), (fB * 10000).toInt()))
+    }
+}
+
+private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, targetBuffer: Bitmap? = null): String {
+    if (bitmap.isRecycled) return ""
+    val scale = targetWidth.toFloat() / bitmap.width; val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+    val target = targetBuffer ?: Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888); val targetCanvas = android.graphics.Canvas(target)
+    if (targetBuffer != null) targetCanvas.drawColor(android.graphics.Color.BLACK); val matrix = android.graphics.Matrix(); matrix.postScale(scale, scale); targetCanvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+    val view = Bitmap.createBitmap(target, 0, 0, targetWidth, targetHeight); val b64 = OcrUtils.bitmapToBase64(view, quality); view.recycle()
+    if (targetBuffer == null) target.recycle(); return b64
+}
+
+private suspend fun performHunkRecognition(hunks: List<TextBlock>, buffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context): List<TextBlock> {
+     return hunks.map { hunk ->
+         val l = hunk.boundingBox.left / 10000f
+         val t = hunk.boundingBox.top / 10000f
+         val r = hunk.boundingBox.right / 10000f
+         val b = hunk.boundingBox.bottom / 10000f
+         
+         val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
+         val res = if (engine == "ML Kit") {
+             MlKitEngine().recognize(buffer.c[cropId]!!)
+         } else {
+             paddleEngine.recognize(buffer.c[cropId]!!)
+         }
+         buffer.c[cropId]!!.release()
+         
+         TextBlock(res.debugText, hunk.boundingBox)
+     }
+}
+
+private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<TextBlock>, color: Int): Bitmap {
+    val out = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = Canvas(out)
+    val paint = Paint().apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 10f }
+    hunks.forEach { hunk ->
+        val l = hunk.boundingBox.left / 10000f * bmp.width; val t = hunk.boundingBox.top / 10000f * bmp.height
+        val r = hunk.boundingBox.right / 10000f * bmp.width; val b = hunk.boundingBox.bottom / 10000f * bmp.height
+        canvas.drawRect(l, t, r, b, paint)
+    }
+    return out
+}
 
 private suspend fun pPerformLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
     val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)

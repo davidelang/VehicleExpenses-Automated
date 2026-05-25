@@ -11,6 +11,12 @@
 # TODO: Protocol Alignment
 - [x] DONE: Fix memory and GEMINI.md discrepancies (Strike System, No-Deploy, Plan Mode transitions). (See: dev-ai-interaction/plans/protocol-alignment.md)
 
+# TODO: Gas Pump Field Extraction
+- [x] DONE: Phase 1: Multi-Scale Discovery & Hunk Construction (See: dev-ai-interaction/plans/pump-multi-scale-discovery.md)
+- [ ] Phase 2: Horizontal Stitching & Lane Grouping
+- [ ] Phase 3: Lane-Pairing & Selection Heuristics
+- [ ] Phase 4: High-Resolution Extraction & Recognition
+
 # TODO: OCR Performance Optimization
 - [x] DONE: Implement `nativePopulateMonoTensor`.
 - [x] DONE: Optimize `OdometerOcrUtils` to bypass Bitmap-to-Mat roundtrips during deskew.
