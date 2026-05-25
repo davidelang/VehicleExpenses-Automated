@@ -176,5 +176,4 @@ object NativeImageUtils {
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     private external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
 
-    external fun nativeHeatmapToAngle(heatmap: FloatArray, w: Int, h: Int, threshold: Float): Float
 }
