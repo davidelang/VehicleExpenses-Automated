@@ -220,7 +220,12 @@ private suspend fun runPumpExperiment(
         var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
         var finalWinnerName = "No match"
         var bestOdometer = "FAILED"
-        try {
+        
+            // Step 1.5: 80% Contrast Stretch (Separate for A and B)
+            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.80f)
+            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
+            
+            try {
             withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             
@@ -318,7 +323,7 @@ private suspend fun runPumpExperiment(
                 val mlStitched = stitchHunksHorizontally(mlHunksRaw)
                 val (mlTop, mlBottom) = groupLanesByVerticalGap(mlStitched)
                 val mlHunks = performHunkRecognition(mlTop + mlBottom, NativePaddleEngine.bufferSetA, experimentRecSet320x48, "ML Kit", paddleEngine, context)
-                val tDiscoveryML = System.currentTimeMillis() - t0ML
+                val tDiscoveryML = System.currentTimeMillis() - t0ML; val mlHunkCount = mlHunks.size
                 
                 // Discovery Paddle (Path B)
                 val t0PD = System.currentTimeMillis()
@@ -331,7 +336,7 @@ private suspend fun runPumpExperiment(
                 val pdStitched = stitchHunksHorizontally(pdHunksRaw)
                 val (pdTop, pdBottom) = groupLanesByVerticalGap(pdStitched)
                 val pdHunks = performHunkRecognition(pdTop + pdBottom, NativePaddleEngine.bufferSetB, experimentRecSet320x48, "Paddle", paddleEngine, context)
-                val tDiscoveryPD = System.currentTimeMillis() - t0PD
+                val tDiscoveryPD = System.currentTimeMillis() - t0PD; val pdHunkCount = pdHunks.size
 
                 // Create master BMP for overlays
                 val masterBmp = Bitmap.createBitmap(imgW, imgH, Bitmap.Config.ARGB_8888)
@@ -394,6 +399,8 @@ private suspend fun runPumpExperiment(
                     hunksB64 = hunksB64,
                     finalCost = finalCost,
                     finalVolume = finalVolume,
+                    mlHunkCount = mlHunkCount,
+                    pdHunkCount = pdHunkCount,
                     costCrop64 = costCrop64,
                     volumeCrop64 = volumeCrop64,
                     tDeskew = (tRotateA + tRotateB),
@@ -409,24 +416,25 @@ private suspend fun runPumpExperiment(
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
                 
-                val photoJson = pSerializePhotoResultToJson(
-                    lineNumber = index + 1,
-                    probedW = imgW, probedH = imgH, decodedW = imgW, decodedH = imgH,
-                    isDegraded = meta.isDegraded,
-                    nativeProbe = meta.diagnostic,
-                    deskewResA = deskewResA,
-                    tSnapOrig = tSnapOrig,
-                    tSnapDeskew = tSnapDeskew,
-                    fileName = file.name,
-                    tDiscoveryML = tDiscoveryML,
-                    tDiscoveryPD = tDiscoveryPD,
-                    finalCost = finalCost,
-                    finalVolume = finalVolume
+                                                                                                                                val photoJson = pSerializePhotoResultToJson(
+                    index + 1, imgW, imgH, imgW, imgH,
+                    meta.isDegraded,
+                    meta.diagnostic,
+                    deskewResA,
+                    tSnapOrig,
+                    tSnapDeskew,
+                    file.name,
+                    tDiscoveryML,
+                    tDiscoveryPD,
+                    finalCost,
+                    finalVolume,
+                    mlHunkCount,
+                    pdHunkCount
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
-                finalWinnerName = "N/A"
+                 finalWinnerName = "ML: $mlHunkCount | PD: $pdHunkCount"
                 bestOdometer = "N/A"
                 val resultSummary = PumpPhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
 
@@ -455,11 +463,12 @@ private suspend fun runPumpExperiment(
 }
 
 private fun pSerializePhotoResultToJson(
-    lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
-    nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
+    lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, 
+    isDegraded: Boolean, nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = "",
     tDiscoveryML: Long = 0, tDiscoveryPD: Long = 0,
-    finalCost: String = "N/A", finalVolume: String = "N/A"
+    finalCost: String = "N/A", finalVolume: String = "N/A",
+    mlHunkCount: Int = 0, pdHunkCount: Int = 0
 ): JSONObject {
     val root = JSONObject()
     root.apply {
@@ -473,8 +482,10 @@ private fun pSerializePhotoResultToJson(
         put("nativeProbe", nativeProbe)
         put("t_thumb_orig_ms", tSnapOrig)
         put("t_snap_deskew_ms", tSnapDeskew)
-        put("t_discovery_ml_ms", tDiscoveryML)
+                put("t_discovery_ml_ms", tDiscoveryML)
         put("t_discovery_pd_ms", tDiscoveryPD)
+        put("ml_hunk_count", mlHunkCount)
+        put("pd_hunk_count", pdHunkCount)
         put("final_cost", finalCost)
         put("final_volume", finalVolume)
 
@@ -505,6 +516,8 @@ private fun pBuildHtmlRowDynamic(
     hunksB64: String,
     finalCost: String,
     finalVolume: String,
+    mlHunkCount: Int,
+    pdHunkCount: Int,
     costCrop64: String,
     volumeCrop64: String,
     tDeskew: Long, 
