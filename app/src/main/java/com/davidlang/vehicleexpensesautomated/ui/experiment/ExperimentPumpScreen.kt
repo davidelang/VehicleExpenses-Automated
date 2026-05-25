@@ -237,11 +237,12 @@ private suspend fun runPumpExperiment(
 
             // Capture BEFORE and generate Histogram
             val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
-            val histB64 = generateHistogramB64(NativePaddleEngine.bufferSetA.p.mat, 0.75f)
+            val histB64 = generateHistogramB64(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
+            val cdfB64 = generateCdfB64(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
 
-            // Step 1.5: 75% Contrast Stretch
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.75f)
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.75f)
+            // Step 1.5: 40% Contrast Stretch
+            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
+            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.40f)
             
             // Capture AFTER
             val (afterB64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
@@ -349,6 +350,7 @@ private suspend fun runPumpExperiment(
                     isDegraded = meta.isDegraded,
                     beforeB64 = beforeB64,
                     histB64 = histB64,
+                    cdfB64 = cdfB64,
                     afterB64 = afterB64,
                     deskewHtml = deskewHtml,
                     hunksAMl64 = hunksAMl64,
@@ -463,10 +465,10 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 
 
 private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
+    if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
     
-    val total = (mat.rows() * mat.cols()).toDouble()
     val bins = FloatArray(256); hist.get(0, 0, bins)
     
     val bmp = Bitmap.createBitmap(100, 60, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
@@ -485,6 +487,43 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
+private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
+    if (mat.empty()) return ""
+    val hist = org.opencv.core.Mat()
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+    
+    val totalPixels = (mat.rows() * mat.cols()).toDouble()
+    val bins = FloatArray(256); hist.get(0, 0, bins)
+    
+    val bmp = Bitmap.createBitmap(100, 60, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
+    canvas.drawColor(Color.BLACK)
+    val paint = Paint()
+    
+    var runningSum = 0.0
+    val cdf = FloatArray(256)
+    for (i in 0..255) {
+        runningSum += bins[i]
+        cdf[i] = (runningSum / totalPixels).toFloat()
+    }
+
+    paint.color = Color.WHITE
+    paint.strokeWidth = 1f
+    for (i in 0..98) {
+        val x1 = i.toFloat()
+        val y1 = 50 - (cdf[(i * 2.56).toInt()] * 50f)
+        val x2 = (i + 1).toFloat()
+        val y2 = 50 - (cdf[((i + 1) * 2.56).toInt()] * 50f)
+        canvas.drawLine(x1, y1, x2, y2, paint)
+    }
+    
+    for (i in 0..99) {
+        if (i % 10 == 0) { paint.color = Color.RED; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
+        if (i == (floorPercentile * 100).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
+    }
+    
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
+}
+
 private fun pBuildHtmlHeader(time: String, total: Int, version: String): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
@@ -499,6 +538,7 @@ private fun pBuildHtmlRowDynamic(
     isDegraded: Boolean,
     beforeB64: String, 
     histB64: String, 
+    cdfB64: String,
     afterB64: String, 
     deskewHtml: String,
     hunksAMl64: String,
@@ -517,7 +557,7 @@ private fun pBuildHtmlRowDynamic(
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$beforeB64'></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$histB64'></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$afterB64'></td><td style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$beforeB64'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$histB64'><br><small>Hist</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$afterB64'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$cdfB64'><br><small>CDF</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
     
     appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'></td>")
     appendLine("<td><b>Paddle (A):</b><br><img src='data:image/jpeg;base64,$hunksAPd64'></td>")
@@ -582,6 +622,8 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int) {
         targetH = (srcH * scale).toInt()
     }
     
+    Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x$targetH (src=${srcW}x$srcH)")
+    
     val i1 = IcrsMath.pixelToIcrs(0f, 0f, buffer.s.width, buffer.s.height)
     val i2 = IcrsMath.pixelToIcrs(targetW.toFloat(), targetH.toFloat(), buffer.s.width, buffer.s.height)
     
@@ -609,7 +651,8 @@ private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
 }
 
 private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<PumpHunk> {
-    val crop = buffer.c[999]!!
+    val crop = buffer.c[999] ?: return emptyList()
+    Log.d(TAG, "runDiscoveryML: crop=${crop.width}x${crop.height}")
     val nv21 = flattenToNv21(crop)
     val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
     val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
@@ -628,7 +671,8 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Pu
 }
 
 private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<PumpHunk> {
-    val crop = buffer.c[999]!!
+    val crop = buffer.c[999] ?: return emptyList()
+    Log.d(TAG, "runDiscoveryPaddle: crop=${crop.width}x${crop.height}")
     val res = paddleEngine.detect(crop) ?: return emptyList()
     
     // Calculate actual occupancy in the heatmap based on detector tensor size
