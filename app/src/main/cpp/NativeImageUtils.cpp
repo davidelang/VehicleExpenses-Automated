@@ -62,38 +62,57 @@ NormalizedBox pNormalizeRect(const cv::RotatedRect& rect, const cv::Mat& heatmap
     cv::Point2f pts[4];
     rect.points(pts);
 
-    // Identify the "Bottom" edge: the edge that is closest to horizontal (-45 to 45 degrees)
-    int bestIdx = 0;
+    // 1. Identify the "Bottom" edge: most horizontal AND further down (larger Y)
+    int edgeIdx = 0;
     float minAbsAngle = 180.0f;
-    float maxLen = 0;
+    float maxAvgY = -1.0e9f;
 
     for (int i = 0; i < 4; ++i) {
         cv::Point2f p1 = pts[i];
         cv::Point2f p2 = pts[(i + 1) % 4];
         float dx = p2.x - p1.x;
         float dy = p2.y - p1.y;
-        float len = std::sqrt(dx * dx + dy * dy);
         float ang = std::atan2(dy, dx) * 180.0f / 3.1415926535f;
 
-        // Normalize angle to [-45, 45] using 90-deg symmetry
         float normAng = ang;
         while (normAng <= -45.0f) normAng += 90.0f;
         while (normAng > 45.0f) normAng -= 90.0f;
 
-        if (std::abs(normAng) < minAbsAngle || (std::abs(normAng) == minAbsAngle && len > maxLen)) {
+        float avgY = (p1.y + p2.y) / 2.0f;
+
+        if (std::abs(normAng) < minAbsAngle) {
             minAbsAngle = std::abs(normAng);
-            maxLen = len;
-            bestIdx = i;
+            edgeIdx = i;
+            maxAvgY = avgY;
             res.angle = normAng;
-            res.length = len;
+        } else if (std::abs(std::abs(normAng) - minAbsAngle) < 0.01f) {
+            if (avgY > maxAvgY) {
+                maxAvgY = avgY;
+                edgeIdx = i;
+                res.angle = normAng;
+            }
         }
     }
 
-    // Re-order points starting from the identified "Bottom-Left" relative to the horizontal edge
-    // Order: BL, BR, TR, TL
+    // 2. Assign points based on the identified Bottom edge (ordered L to R)
+    cv::Point2f pBL = pts[edgeIdx];
+    cv::Point2f pBR = pts[(edgeIdx + 1) % 4];
+    if (pBL.x > pBR.x) std::swap(pBL, pBR);
+
+    // Find the other two points and order them Top-Right, Top-Left
+    std::vector<cv::Point2f> others;
     for (int i = 0; i < 4; ++i) {
-        res.points[i] = pts[(bestIdx + i) % 4];
+        if (i != edgeIdx && i != (edgeIdx + 1) % 4) others.push_back(pts[i]);
     }
+    cv::Point2f pTL = others[0];
+    cv::Point2f pTR = others[1];
+    if (pTL.x > pTR.x) std::swap(pTL, pTR);
+
+    res.points[0] = pBL;
+    res.points[1] = pBR;
+    res.points[2] = pTR;
+    res.points[3] = pTL;
+    res.length = std::sqrt(std::pow(pBR.x - pBL.x, 2) + std::pow(pBR.y - pBL.y, 2));
 
     // Calculate Confidence: Mean heatmap value inside the contour
     cv::Rect bounds = rect.boundingRect();
@@ -515,9 +534,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     if (!heatmapData) return nullptr;
 
     cv::Mat heatmap(h, w, CV_32F, heatmapData);
-    cv::Mat mask;
-    cv::threshold(heatmap, mask, (double)threshold, 255.0, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_8U);
+    cv::Mat mask = heatmap > threshold;
 
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -529,25 +546,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         boxes.push_back(pNormalizeRect(rrect, heatmap, contour));
     }
 
-    jfloatArray result = env->NewFloatArray(1 + (jsize)boxes.size() * 10);
-    jfloat* out = env->GetFloatArrayElements(result, nullptr);
-    out[0] = (jfloat)boxes.size();
-    for (size_t i = 0; i < boxes.size(); ++i) {
-        size_t base = 1 + i * 10;
-        out[base + 0] = boxes[i].points[0].x * invScale;
-        out[base + 1] = boxes[i].points[0].y * invScale;
-        out[base + 2] = boxes[i].points[1].x * invScale;
-        out[base + 3] = boxes[i].points[1].y * invScale;
-        out[base + 4] = boxes[i].points[2].x * invScale;
-        out[base + 5] = boxes[i].points[2].y * invScale;
-        out[base + 6] = boxes[i].points[3].x * invScale;
-        out[base + 7] = boxes[i].points[3].y * invScale;
-        out[base + 8] = boxes[i].angle;
-        out[base + 9] = boxes[i].confidence;
+    std::vector<float> outData;
+    outData.push_back((float)boxes.size());
+    for (const auto& box : boxes) {
+        outData.push_back(box.points[0].x * invScale);
+        outData.push_back(box.points[0].y * invScale);
+        outData.push_back(box.points[1].x * invScale);
+        outData.push_back(box.points[1].y * invScale);
+        outData.push_back(box.points[2].x * invScale);
+        outData.push_back(box.points[2].y * invScale);
+        outData.push_back(box.points[3].x * invScale);
+        outData.push_back(box.points[3].y * invScale);
+        outData.push_back(box.angle);
+        outData.push_back(box.confidence);
     }
 
+    jfloatArray result = env->NewFloatArray((jsize)outData.size());
+    env->SetFloatArrayRegion(result, 0, (jsize)outData.size(), outData.data());
+
     env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
-    env->ReleaseFloatArrayElements(result, out, 0);
     return result;
 }
 
@@ -559,9 +576,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     if (!heatmapData) return 0.0f;
 
     cv::Mat heatmap(h, w, CV_32F, heatmapData);
-    cv::Mat mask;
-    cv::threshold(heatmap, mask, (double)threshold, 255.0, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_8U);
+    cv::Mat mask = heatmap > threshold;
 
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
