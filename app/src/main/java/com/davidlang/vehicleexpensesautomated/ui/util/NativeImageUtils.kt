@@ -11,7 +11,7 @@ import java.nio.ByteBuffer
  */
 object NativeImageUtils {
     init {
-        System.loadLibrary("memory_bridge")
+        System.loadLibrary("native_ocr")
     }
 
     /**
