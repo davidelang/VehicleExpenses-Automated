@@ -426,8 +426,8 @@ private fun pSerializePhotoResultToJson(
 
 private fun pBuildHtmlHeader(time: String, total: Int, version: String): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; }</style></head><body>")
-    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:350px;'>Set A ML Kit</th><th style='width:350px;'>Set A Paddle</th><th style='width:350px;'>Set B ML Kit</th><th style='width:350px;'>Set B Paddle</th><th style='width:600px;'>Extraction Comparison</th></tr>")
+    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
+    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:350px;'>Set A ML Kit</th><th style='width:350px;'>Set A Paddle</th><th style='width:350px;'>Set B ML Kit</th><th style='width:350px;'>Set B Paddle</th><th style='width:600px;'>Final Comparison</th></tr>")
 }
 
 private fun pBuildHtmlRowDynamic(
@@ -457,18 +457,16 @@ private fun pBuildHtmlRowDynamic(
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
     
-    // Set A Columns
-    appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'><br><small>Angle: %.2f&deg;</small></td>".format(angleA))
-    appendLine("<td><b>Paddle (A):</b><br><img src='data:image/jpeg;base64,$hunksAPd64'><br><small>Angle: %.2f&deg;</small></td>".format(angleA))
-    
-    // Set B Columns
-    appendLine("<td><b>ML Kit (B):</b><br><img src='data:image/jpeg;base64,$hunksBMl64'><br><small>Angle: %.2f&deg;</small></td>".format(angleB))
-    appendLine("<td><b>Paddle (B):</b><br><img src='data:image/jpeg;base64,$hunksBPd64'><br><small>Angle: %.2f&deg;</small></td>".format(angleB))
+    // Visualization Columns
+    appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'></td>")
+    appendLine("<td><b>Paddle (A):</b><br><img src='data:image/jpeg;base64,$hunksAPd64'></td>")
+    appendLine("<td><b>ML Kit (B):</b><br><img src='data:image/jpeg;base64,$hunksBMl64'></td>")
+    appendLine("<td><b>Paddle (B):</b><br><img src='data:image/jpeg;base64,$hunksBPd64'></td>")
 
     // Comparison Column
     appendLine("<td>")
-    appendLine("<table style='width:100%; border:none;'>")
-    appendLine("<tr><th>Engine</th><th>Cost</th><th>Volume</th></tr>")
+    appendLine("<table class='res-table'>")
+    appendLine("<tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
     appendLine("<tr><td>A:ML</td><td><b>${resAMl.first}</b></td><td><b>${resAMl.second}</b></td></tr>")
     appendLine("<tr><td>A:PD</td><td><b>${resAPd.first}</b></td><td><b>${resAPd.second}</b></td></tr>")
     appendLine("<tr><td>B:ML</td><td><b>${resBMl.first}</b></td><td><b>${resBMl.second}</b></td></tr>")
@@ -575,26 +573,16 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     val crop = buffer.c[999]!!
     val res = paddleEngine.detect(crop) ?: return emptyList()
     
-    // Calculate the actual occupancy of the image within the fixed-size detector tensor
-    // Large detector: 2048x2048. Small detector: 512x128.
-    val isLarge = crop.width > 512 || crop.height > 128
-    val tensorW = if (isLarge) 2048f else 512f
-    val tensorH = if (isLarge) 2048f else 128f
-    
-    // Calculate how many heatmap pixels represent the input image
-    // res.width/res.height are the heatmap dimensions (usually 1/4 of tensor)
-    val occW = (crop.width / tensorW) * res.width
-    val occH = (crop.height / tensorH) * res.height
-    
+    val scaleW = res.width.toFloat(); val scaleH = res.height.toFloat()
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     return blocks.map { block ->
-        // Normalize coordinates relative to the occupied portion of the heatmap
-        val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
-        val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
+        // Normalize coordinates relative to full heatmap (assuming stretched tensor)
+        val nl = block.boundingBox.left / scaleW; val nt = block.boundingBox.top / scaleH
+        val nr = block.boundingBox.right / scaleW; val nb = block.boundingBox.bottom / scaleH
         
-        // Map normalized coordinates to master pixels
+        // Map to master pixels
         val ml = nl * masterW; val mt = nt * masterH
         val mr = nr * masterW; val mb = nb * masterH
         
@@ -651,39 +639,32 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
          val r = hunk.icrs.right.coerceIn(l + 0.001f, maxX)
          val b = hunk.icrs.bottom.coerceIn(t + 0.001f, maxY)
          
-         val p1 = IcrsMath.icrsToPixel(l, t, masterW, masterH)
-         val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
+         val p1 = IcrsMath.icrsToPixel(l, t, masterW, masterH); val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
          val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
          
          if (pW < 2 || pH < 2) return@map hunk
 
-         // 1. Extract Hunk from Master
          val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
          val crop = buffer.c[cropId]!!
          
-         // 2. Standardize to 48px height in recBuffer
-         val targetH = 48
-         val scale = 48f / pH
-         val targetW = Math.min(320, (pW * scale).toInt())
-         
+         val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
          recBuffer.p.clear()
          val recCropId = recBuffer.createCrop(0, 0, targetW, targetH, id = 777)
          val recCrop = recBuffer.c[recCropId]!!
-         
          org.opencv.imgproc.Imgproc.resize(crop.mat, recCrop.mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
          
-         // 3. Recognize
          val res = if (engine == "ML Kit") {
              val nv21 = flattenToNv21(recCrop)
              val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
-             OdometerOcrUtils.extractFromPhotoBitmapRaw(img).let { res -> if (engine == "ML Kit") res.copy(debugText = OdometerOcrUtils.clean7SegmentDigits(res.debugText, Math.abs(angle) > 135f)) else res }.let { res -> if (engine == "ML Kit") res.copy(debugText = OdometerOcrUtils.clean7SegmentDigits(res.debugText, Math.abs(angle) > 135f)) else res }
+             val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+             // ML Kit 7-Segment Cleanup + Upside Down detection
+             val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
+             ocrRes.copy(debugText = cleaned)
          } else {
              paddleEngine.recognize(recCrop)
          }
          
-         recCrop.release()
-         crop.release()
-         
+         recCrop.release(); crop.release()
          PumpHunk(res.debugText, hunk.icrs)
      }
 }
