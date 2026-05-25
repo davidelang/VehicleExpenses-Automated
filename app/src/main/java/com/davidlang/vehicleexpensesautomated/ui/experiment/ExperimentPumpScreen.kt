@@ -491,7 +491,6 @@ private suspend fun pRunPaddleValleyIterative(
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
-    val argbCropLocal = vehicleArgbCrops[winnerRef.vehicle.id] ?: return
     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
@@ -598,7 +597,6 @@ private suspend fun pRunMLKitIterative(
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
-    val argbCropLocal = vehicleArgbCrops[winnerRef.vehicle.id] ?: return
     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
