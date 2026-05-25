@@ -557,13 +557,13 @@ object OdometerOcrUtils {
         // 2. New Native C++ Path (Instrumented)
         val (blocksCpp, chksCpp) = try {
             val rawData = NativeImageUtils.nativeHeatmapToTextAreas(heatmap, w, h, 0.20f, invScale)
-            if (rawData.isEmpty()) Pair(emptyList<TextBlock>(), floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f))
+            if (rawData.isEmpty()) Pair(emptyList<TextBlock>(), floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f))
             else {
-                val chks = floatArrayOf(rawData[0], rawData[1], rawData[2], rawData[3], rawData[4], rawData[5], rawData[6], rawData[7], rawData[8])
-                val count = rawData[9].toInt()
+                val chks = floatArrayOf(rawData[0], rawData[1], rawData[2], rawData[3], rawData[4], rawData[5], rawData[6], rawData[7], rawData[8], rawData[9], rawData[10], rawData[11])
+                val count = rawData[12].toInt()
                 val res = mutableListOf<TextBlock>()
                 for (i in 0 until count) {
-                    val base = 10 + i * 10
+                    val base = 13 + i * 10
                     val p1 = org.opencv.core.Point(rawData[base + 0].toDouble(), rawData[base + 1].toDouble())
                     val p2 = org.opencv.core.Point(rawData[base + 2].toDouble(), rawData[base + 3].toDouble())
                     val p3 = org.opencv.core.Point(rawData[base + 4].toDouble(), rawData[base + 5].toDouble())
@@ -588,7 +588,7 @@ object OdometerOcrUtils {
             }
         } catch (e: Exception) {
             Log.e("PaddlePost", "Native call failed", e)
-            Pair(emptyList<TextBlock>(), floatArrayOf(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f))
+            Pair(emptyList<TextBlock>(), floatArrayOf(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f))
         }
 
         // 3. Collate metadata
@@ -609,8 +609,8 @@ object OdometerOcrUtils {
         meta["cpp_chk_rawc"] = "%.1f".format(chksCpp[4])
         meta["cpp_chk_validc"] = "%.1f".format(chksCpp[5])
         meta["cpp_chk_geom"] = "%.1f".format(chksCpp[6])
-        meta["cpp_raw_c_size"] = "%.1f".format(chksCpp[7])
-        meta["cpp_hier_size"] = "%.1f".format(chksCpp[8])
+        meta["cpp_raw_ints"] = "[%.1f, %.1f, %.1f, %.1f]".format(chksCpp[7], chksCpp[8], chksCpp[9], chksCpp[10])
+        meta["cpp_raw_c_size"] = "%.1f".format(chksCpp[11])
         meta["cpp_count"] = blocksCpp.size.toString()
 
         // 4. Return Legacy blocks to guarantee experiment success

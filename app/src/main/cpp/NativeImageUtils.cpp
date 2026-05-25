@@ -565,12 +565,23 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     LOGE("PROBE: contours.size()=%zu, hierarchy.size()=%zu", contours.size(), hierarchy.size());
 
     float chkRawC = 0, chkValidC = 0, chkGeom = 0;
-    bool corrupted = (contours.size() > 5000);
-    
-    if (!corrupted) {
+    float rawInts[4] = {-666.0f, -666.0f, -666.0f, -666.0f};
+
+    // Safety Guard to prevent crash on corrupted vector headers
+    if (contours.size() < 1000) {
         for (size_t i = 0; i < contours.size(); ++i) {
             const std::vector<cv::Point>& contour = contours[i];
-            if (i == 0) LOGE("PROBE: first_contour_ptr=%p, size=%zu", (void*)contour.data(), contour.size());
+            
+            // Raw Memory Probe: Dump first 4 integers of the first contour
+            if (i == 0 && contour.size() >= 2) {
+                const int32_t* rawPtr = (const int32_t*)contour.data();
+                rawInts[0] = (float)rawPtr[0];
+                rawInts[1] = (float)rawPtr[1];
+                rawInts[2] = (float)rawPtr[2];
+                rawInts[3] = (float)rawPtr[3];
+                LOGE("PROBE: c0_ptr=%p, c0_size=%zu, first_pt=(%d,%d)", (void*)rawPtr, contour.size(), rawPtr[0], rawPtr[1]);
+            }
+            
             for (const auto& p : contour) chkRawC += (float)(p.x + p.y);
         }
 
@@ -595,8 +606,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         outData.push_back(chkRawC);
         outData.push_back(chkValidC);
         outData.push_back(chkGeom);
+        outData.push_back(rawInts[0]);
+        outData.push_back(rawInts[1]);
+        outData.push_back(rawInts[2]);
+        outData.push_back(rawInts[3]);
         outData.push_back((float)contours.size());
-        outData.push_back((float)hierarchy.size());
         outData.push_back((float)boxes.size());
         for (const auto& box : boxes) {
             outData.push_back(box.points[0].x * invScale);
@@ -617,9 +631,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         return result;
     } else {
         LOGE("PROBE: CRITICAL CORRUPTION - contours.size() exceeds safety limit!");
-        float err[] = {chkMask, (float)chkMaskPos, chkRowFirst, chkRowLast, -8888.0f, 0, 0, (float)contours.size(), (float)hierarchy.size(), 0};
-        jfloatArray result = env->NewFloatArray(10);
-        env->SetFloatArrayRegion(result, 0, 10, err);
+        float err[] = {chkMask, (float)chkMaskPos, chkRowFirst, chkRowLast, -8888.0f, 0, 0, -666, -666, -666, -666, (float)contours.size(), 0};
+        jfloatArray result = env->NewFloatArray(13);
+        env->SetFloatArrayRegion(result, 0, 13, err);
         env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
         return result;
     }
