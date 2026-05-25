@@ -103,10 +103,9 @@ object OdometerOcrUtils {
 
         // 4. Paddle Path (Combined V3 Kotlin + C++ Native)
         val tPd0 = System.currentTimeMillis()
-        val (pdV3, pdCpp) = deskewPaddleDual(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
+        val pdRes = deskewPaddleDual(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
         val tPd = System.currentTimeMillis() - tPd0
-        results["Paddle V3"] = pdV3.copy(timesMs = listOf(tPrep, tPd))
-        results["Paddle C++"] = pdCpp.copy(timesMs = listOf(tPrep, tPd))
+        results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
         
         workspaceCrop.release()
         
@@ -115,9 +114,8 @@ object OdometerOcrUtils {
             mlAngle = mlRes.angle,
             mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
-            paddleCppAngle = pdCpp.angle,
             mlBlocks = mlRes.blocks,
-            paddleBlocks = pdV3.blocks,
+            paddleBlocks = pdRes.blocks,
             engines = results,
             metadata = mapOf("t_prep_ms" to tPrep.toString())
         )
@@ -138,21 +136,15 @@ object OdometerOcrUtils {
         return EngineResult(calculateWeightedAverage(scaledBlocks, srcH), listOf(tDetect), scaledBlocks)
     }
 
-    private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): Pair<EngineResult, EngineResult> {
-        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(EngineResult(0f, emptyList()), EngineResult(0f, emptyList()))
-        val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return Pair(EngineResult(0f, emptyList()), EngineResult(0f, emptyList()))
+    private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
+        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
+        val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return EngineResult(0f, emptyList())
         
-        // 1. Paddle V3 (Legacy Kotlin Math)
+        // Paddle V3 (Legacy Kotlin Math)
         val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
         val srcH = (pHeight / pScale).toInt()
         val angleV3 = calculateWeightedAverage(blocks, srcH)
-        val resV3 = EngineResult(angleV3, emptyList(), blocks, det.metadata)
-
-        // 2. Paddle C++ (New Native Math)
-        val angleCpp = NativeImageUtils.nativeHeatmapToAngle(det.heatmap, det.width, det.height, 0.20f)
-        val resCpp = EngineResult(angleCpp, emptyList(), emptyList(), det.metadata)
-
-        return Pair(resV3, resCpp)
+        return EngineResult(angleV3, emptyList(), blocks, det.metadata)
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
