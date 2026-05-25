@@ -13,6 +13,7 @@
 
 # TODO: Gas Pump Field Extraction
 - [x] DONE: Phase 1: Multi-Scale Discovery & Hunk Construction (See: dev-ai-interaction/plans/pump-multi-scale-discovery.md)
+- [x] DONE: Phase 1.1: ICRS Coordinate Migration (See: dev-ai-interaction/plans/pump-icrs-migration.md)
 - [ ] Phase 2: Horizontal Stitching & Lane Grouping
 - [ ] Phase 3: Lane-Pairing & Selection Heuristics
 - [ ] Phase 4: High-Resolution Extraction & Recognition
