@@ -317,7 +317,7 @@ private suspend fun runPumpExperiment(
                 val mlHunksRaw = mergeGeometryIntoHunks(mlBlocksRaw)
                 val mlStitched = stitchHunksHorizontally(mlHunksRaw)
                 val (mlTop, mlBottom) = groupLanesByVerticalGap(mlStitched)
-                val mlHunks = performHunkRecognition(mlTop + mlBottom, NativePaddleEngine.bufferSetA, "ML Kit", paddleEngine, context)
+                val mlHunks = performHunkRecognition(mlTop + mlBottom, NativePaddleEngine.bufferSetA, experimentRecSet320x48, "ML Kit", paddleEngine, context)
                 val tDiscoveryML = System.currentTimeMillis() - t0ML
                 
                 // Discovery Paddle (Path B)
@@ -330,7 +330,7 @@ private suspend fun runPumpExperiment(
                 val pdHunksRaw = mergeGeometryIntoHunks(pdBlocksRaw)
                 val pdStitched = stitchHunksHorizontally(pdHunksRaw)
                 val (pdTop, pdBottom) = groupLanesByVerticalGap(pdStitched)
-                val pdHunks = performHunkRecognition(pdTop + pdBottom, NativePaddleEngine.bufferSetB, "Paddle", paddleEngine, context)
+                val pdHunks = performHunkRecognition(pdTop + pdBottom, NativePaddleEngine.bufferSetB, experimentRecSet320x48, "Paddle", paddleEngine, context)
                 val tDiscoveryPD = System.currentTimeMillis() - t0PD
 
                 // Create master BMP for overlays
@@ -363,7 +363,7 @@ private suspend fun runPumpExperiment(
                     val expCost = expandHunkContext(winningPair.first, maxX, maxY)
                     val expVol = expandHunkContext(winningPair.second, maxX, maxY)
                     
-                    val finalResults = performHunkRecognition(listOf(expCost, expVol), NativePaddleEngine.bufferSetA, "ML Kit", paddleEngine, context)
+                    val finalResults = performHunkRecognition(listOf(expCost, expVol), NativePaddleEngine.bufferSetA, experimentRecSet320x48, "ML Kit", paddleEngine, context)
                     finalCost = applyRecognitionHeuristics(finalResults[0].text)
                     finalVolume = applyRecognitionHeuristics(finalResults[1].text)
                     
@@ -665,9 +665,9 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
     }
 }
 
-private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context): List<PumpHunk> {
+private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: BufferSet, recBuffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context): List<PumpHunk> {
      val masterW = buffer.p.width; val masterH = buffer.p.height
-     val minEdge = min(masterW, masterH).toFloat()
+     val minEdge = Math.min(masterW, masterH).toFloat()
      val maxX = masterW / (2f * minEdge); val maxY = masterH / (2f * minEdge)
      
      return hunks.map { hunk ->
@@ -680,22 +680,33 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
          val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
          val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
          
-         if (pW < 32 || pH < 32) {
-             Log.i("PUMP_ICRS", "Skipping tiny hunk: x at ICRS [, , , ]")
-             return@map hunk
-         }
-         
-         Log.i("PUMP_ICRS", "Hunk ICRS: [, , , ] | Master: x | Pixels:  x ")
-         
+         if (pW < 2 || pH < 2) return@map hunk
+
+         // 1. Extract Hunk from Master
          val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
          val crop = buffer.c[cropId]!!
+         
+         // 2. Standardize to 48px height in recBuffer
+         val targetH = 48
+         val scale = 48f / pH
+         val targetW = Math.min(320, (pW * scale).toInt())
+         
+         recBuffer.p.clear()
+         val recCropId = recBuffer.createCrop(0, 0, targetW, targetH, id = 777)
+         val recCrop = recBuffer.c[recCropId]!!
+         
+         org.opencv.imgproc.Imgproc.resize(crop.mat, recCrop.mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+         
+         // 3. Recognize
          val res = if (engine == "ML Kit") {
-             val nv21 = flattenToNv21(crop)
-             val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+             val nv21 = flattenToNv21(recCrop)
+             val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
              OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
          } else {
-             paddleEngine.recognize(crop)
+             paddleEngine.recognize(recCrop)
          }
+         
+         recCrop.release()
          crop.release()
          
          PumpHunk(res.debugText, hunk.icrs)
