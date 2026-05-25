@@ -317,7 +317,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     private external fun nativeUpdateCropMat(cropMatPtr: Long, parentMatPtr: Long, x: Int, y: Int, w: Int, h: Int)
     private external fun nativeNormalizeYUV(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, yRStride: Int, uRStride: Int, vRStride: Int, yPStride: Int, uPStride: Int, vPStride: Int, w: Int, h: Int, dstHandle: Long)
     companion object {
-        init { System.loadLibrary("memory_bridge") }
+        init { System.loadLibrary("buffer_set") }
         @JvmStatic private external fun nativeDisarmMat(matObj: Mat)
     }
 }
