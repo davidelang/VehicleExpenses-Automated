@@ -458,11 +458,11 @@ private suspend fun runExperiment(
 
                         // --- Sequential Execution (Phase 116 Restoration & Fixes) ---
                         // Path A
-                        runMLKitIterative("Set A ML", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, hA, refinementTracesA)
+                        runMLKitIterative("Set A ML", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, experimentRecSet320x48, hA, refinementTracesA)
                         runPaddleValleyIterative("Set A Paddle", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hA, refinementTracesA)
 
                         // Path B
-                        runMLKitIterative("Set B ML", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, hB, refinementTracesB)
+                        runMLKitIterative("Set B ML", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, experimentRecSet320x48, hB, refinementTracesB)
                         runPaddleValleyIterative("Set B Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hB, refinementTracesB)
                     }
                     
@@ -1011,6 +1011,7 @@ private suspend fun runMLKitIterative(
     mHeight: Int, 
     winnerRef: ReferenceCache,
     vehicleBufferSets: Map<Int, BufferSet>,
+    experimentRecSet320x48: BufferSet,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>
 ) {
