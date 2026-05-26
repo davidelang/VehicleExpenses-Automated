@@ -423,41 +423,51 @@ object OdometerOcrUtils {
 
     fun automaticContrastStretch(mat: Mat) {
         val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
         
-        val bins = FloatArray(256); hist.get(0, 0, bins)
-        val smoothed = FloatArray(256)
-        for (i in 0..255) {
-            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(255)
+        val bins = FloatArray(64); hist.get(0, 0, bins)
+        val smoothed = FloatArray(64)
+        for (i in 0..63) {
+            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
             smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
         }
 
         // Find first peak from left
-        var pLow = 2.0 // Fallback
-        for (i in 1..254) {
+        var pLow = 0.5 // Fallback bin
+        for (i in 1..62) {
             if (smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1] && smoothed[i] > 0) {
                 pLow = i.toDouble(); break
             }
         }
 
         // Find first peak from right
-        var pHigh = 253.0 // Fallback
-        for (i in 254 downTo 1) {
+        var pHigh = 62.5 // Fallback bin
+        for (i in 62 downTo 1) {
             if (smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1] && smoothed[i] > 0) {
                 pHigh = i.toDouble(); break
             }
         }
 
-        // If peaks are too close or invalid, fallback to percentiles
-        if (pHigh - pLow < 20.0) {
-            val total = mat.rows() * mat.cols(); var sum = 0.0
-            for (i in 0..255) { sum += bins[i]; if (sum >= total * 0.02) { pLow = i.toDouble(); break } }
-            sum = 0.0; for (i in 255 downTo 0) { sum += bins[i]; if (sum >= total * 0.02) { pHigh = i.toDouble(); break } }
-        }
+        // Map bin peaks back to 0-255 intensity (1 bin = 4 intensity levels)
+        val intensityLow = pLow * 4.0
+        val intensityHigh = pHigh * 4.0
 
-        val alpha = if (pHigh > pLow) 255.0 / (pHigh - pLow) else 1.0
-        val beta = -pLow * alpha
-        mat.convertTo(mat, CvType.CV_8U, alpha, beta)
+        // If peaks are too close, fallback to 2%/98% percentiles on the same 64-bin hist
+        if (intensityHigh - intensityLow < 20.0) {
+            val total = mat.rows() * mat.cols(); var sum = 0.0
+            var iLow = 0.0; var iHigh = 255.0
+            for (i in 0..63) { sum += bins[i]; if (sum >= total * 0.02) { iLow = i * 4.0; break } }
+            sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= total * 0.02) { iHigh = i * 4.0; break } }
+            
+            val alpha = if (iHigh > iLow) 255.0 / (iHigh - iLow) else 1.0
+            val beta = -iLow * alpha
+            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
+        } else {
+            val alpha = 255.0 / (intensityHigh - intensityLow)
+            val beta = -intensityLow * alpha
+            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
+        }
+        
         hist.release()
     }
 
