@@ -77,8 +77,8 @@ private suspend fun runMultiPredictorTest(
     val output = mutableListOf<MultiPredictorResult>()
     
     // 1. Path Resolution
-    val arch = android.os.Build.SUPPORTED_ABIS[0]
-    val modelPath = File(context.cacheDir, "paddle/det_v4_4000_mono_$arch.nb").absolutePath
+    val arch = if (android.os.Build.SUPPORTED_ABIS[0].contains("arm")) "armv8" else "x86_64"
+    val modelPath = File(context.filesDir, "paddle_det_v4_4000_mono_$arch.nb").absolutePath
     
     if (!File(modelPath).exists()) {
         withContext(Dispatchers.Main) { onStatus("Error: Model not found at $modelPath") }
