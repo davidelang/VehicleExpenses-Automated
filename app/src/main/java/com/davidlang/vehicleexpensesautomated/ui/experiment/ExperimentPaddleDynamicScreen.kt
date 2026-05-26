@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
-import android.graphics.Bitmap
 import android.graphics.RectF
 import android.util.Log
 import androidx.compose.foundation.layout.*
@@ -18,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.imgproc.Imgproc
+import java.io.File
 import kotlin.math.max
 
 @Composable
@@ -26,20 +26,24 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     var results by remember { mutableStateOf<List<DynamicResult>>(emptyList()) }
     var isRunning by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf("Ready") }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text(statusMessage, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+        
         Button(
             onClick = {
                 isRunning = true
+                results = emptyList()
                 scope.launch {
-                    results = runDynamicValidation(context)
+                    results = runDynamicValidation(context) { statusMessage = it }
                     isRunning = false
                 }
             },
             enabled = !isRunning,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (isRunning) "Running..." else "Run Dynamic Detect Test (Dash Row 1)")
+            Text(if (isRunning) "Running..." else "Run Dynamic Detect Test (Dash/Pump)")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -67,24 +71,42 @@ data class DynamicResult(
     val detectionCount: Int
 )
 
-private suspend fun runDynamicValidation(context: android.content.Context): List<DynamicResult> = withContext(Dispatchers.IO) {
+private suspend fun runDynamicValidation(
+    context: android.content.Context, 
+    onStatus: (String) -> Unit
+): List<DynamicResult> = withContext(Dispatchers.IO) {
     val output = mutableListOf<DynamicResult>()
-    val testFile = "PXL_20220701_020625793.dng"
     
+    // Dash Row 1 (Internal Storage)
+    val dashFile = File(context.filesDir, "experiment_photos/PXL_20220701_020625793.dng")
+    // Pump Row 7 (External Storage)
+    val pumpFile = File(context.getExternalFilesDir(null), "pump_photos/PXL_20260114_020053675.jpg")
+    
+    val targetFile = if (dashFile.exists()) dashFile else if (pumpFile.exists()) pumpFile else null
+    
+    if (targetFile == null) {
+        val err = "Missing files:\n${dashFile.absolutePath}\n${pumpFile.absolutePath}"
+        Log.e("DynamicTest", err)
+        withContext(Dispatchers.Main) { onStatus(err) }
+        return@withContext emptyList()
+    }
+    
+    val testPath = targetFile.absolutePath
+    withContext(Dispatchers.Main) { onStatus("Testing: $testPath") }
+
     // 1. Isolation: Local BufferSet
     val buffer = BufferSet(4000, 3072)
     val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return@withContext emptyList<DynamicResult>()
     
     try {
         // 2. Load Image into Primary
-        val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, testFile)
+        val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, testPath)
         buffer.resize(imgW, imgH)
-        ImageIngestionProvider.ingestFromFile(context, testFile, buffer.p)
+        ImageIngestionProvider.ingestFromFile(context, testPath, buffer.p)
         
         val scales = listOf(224, 608, 1024, 2496)
         
         scales.forEach { scaleLongEdge ->
-            // 3. Variable-based Alignment Logic
             val currentLongEdge = max(imgW, imgH)
             val s = if (currentLongEdge <= scaleLongEdge) 1.0f else scaleLongEdge.toFloat() / currentLongEdge
             val targetW = (imgW * s).toInt()
@@ -94,6 +116,8 @@ private suspend fun runDynamicValidation(context: android.content.Context): List
             val alignedW = ((targetW + 31) / 32) * 32
             val alignedH = ((targetH + 31) / 32) * 32
             
+            withContext(Dispatchers.Main) { onStatus("Scale $scaleLongEdge: Aligned to ${alignedW}x${alignedH}") }
+
             // 4. Manual Letterboxing in Scratch
             val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
             val outerSlice = buffer.c[outerId]
@@ -118,8 +142,10 @@ private suspend fun runDynamicValidation(context: android.content.Context): List
             innerSlice.release()
             outerSlice.release()
         }
+        withContext(Dispatchers.Main) { onStatus("Complete: $testPath") }
     } catch (e: Exception) {
         Log.e("DynamicTest", "Test failed", e)
+        withContext(Dispatchers.Main) { onStatus("Failed: ${e.message}") }
     } finally {
         buffer.release()
     }
