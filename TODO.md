@@ -11,4 +11,5 @@
 - [x] Capacity Upgrade (2560x2560) and Logic Refinements (See: plans/upgrade-capacity-and-refine-logic.md)
 - [x] Fix Pump Pipeline Expansion Integration (See: plans/pump-pipeline-expansion-fix-v2.md)
 - [x] Implement Shoulder-Based Contrast and Simplify Expansion (See: plans/shoulder-contrast-and-expansion-simplify.md)
-- [ ] Diagnostic Color Tiers and Shoulder Contrast Activation (See: plans/diagnostic-tiers-and-shoulder-contrast.md)
+- [x] Diagnostic Color Tiers and Shoulder Contrast Activation (See: plans/diagnostic-tiers-and-shoulder-contrast.md)
+- [ ] Implement Pull-Back Expansion and Zero Padding (See: plans/pullback-zero-padding.md)

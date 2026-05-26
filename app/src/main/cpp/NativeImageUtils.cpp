@@ -485,10 +485,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int safeB = std::max(safeT + 1, std::min(B, maxH));
 
     double minX = L, maxX = R, minY = T, maxY = B;
-    double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.0;
-    double lookAhead = (maxY - minY) * 4.0;
+
+    const int THRESHOLD_UNIFORM = 30;
+    const int THRESHOLD_CONTENT = 40;
 
     auto isUniform = [&](int start, int end, int fixed, bool horizontal) -> bool {
         uint8_t minV = 255;
@@ -518,34 +519,83 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         }
         if (count == 0) return true;
         
-        bool uniform = (maxV - minV) < 40;
-        LOGE("EXPAND_TRACE: %d (%s) min=%d max=%d range=%d %s", fixed, horizontal ? "H" : "V", minV, maxV, (maxV-minV), uniform ? "STOP" : "");
-        return uniform;
+        int range = maxV - minV;
+        return range < THRESHOLD_UNIFORM;
     };
 
-    while (minY > 0 && (sY - minY) < vL) {
+    auto isContent = [&](int start, int end, int fixed, bool horizontal) -> bool {
+        uint8_t minV = 255;
+        uint8_t maxV = 0;
+        int count = 0;
+        if (horizontal) {
+            if (fixed < 0 || fixed >= maxH) return false;
+            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxW, end);
+            for (int i = startIdx; i < endIdx; ++i) {
+                uint8_t v = rowPtr[i];
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
+                count++;
+            }
+        } else {
+            if (fixed < 0 || fixed >= maxW) return false;
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxH, end);
+            for (int i = startIdx; i < endIdx; ++i) {
+                uint8_t v = mat->at<uint8_t>(i, fixed);
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
+                count++;
+            }
+        }
+        if (count == 0) return false;
+        
+        int range = maxV - minV;
+        return range >= THRESHOLD_CONTENT;
+    };
+
+    // --- PHASE 1: EXPAND OUT ---
+    while (minY > 0) {
         if (isUniform((int)minX, (int)maxX, (int)minY - 1, true)) break;
         minY -= 1.0;
     }
-    while (maxY < maxH - 1 && (maxY - sYY) < vL) {
+    while (maxY < maxH - 1) {
         if (isUniform((int)minX, (int)maxX, (int)maxY + 1, true)) break;
         maxY += 1.0;
     }
-
-    while (minX > 0 && (sX - minX) < hL) {
+    while (minX > 0) {
         if (isUniform((int)minY, (int)maxY, (int)minX - 1, false)) break;
         minX -= 1.0;
     }
-    while (maxX < maxW - 1 && (maxX - sXX) < hL) {
+    while (maxX < maxW - 1) {
         if (isUniform((int)minY, (int)maxY, (int)maxX + 1, false)) break;
         maxX += 1.0;
     }
 
-    // Safety Padding: Nudge outward by 2px to ensure edge clearance
-    minX = std::max(0.0, minX - 2.0);
-    minY = std::max(0.0, minY - 2.0);
-    maxX = std::min((double)maxW, maxX + 2.0);
-    maxY = std::min((double)maxH, maxY + 2.0);
+    // --- JUMP OUT (Initial Padding/Look-ahead) ---
+    minY = std::max(0.0, minY - 4.0);
+    maxY = std::min((double)maxH - 1, maxY + 4.0);
+    minX = std::max(0.0, minX - 4.0);
+    maxX = std::min((double)maxW - 1, maxX + 4.0);
+
+    // --- PHASE 2: PULL BACK IN ---
+    while (minY < maxY) {
+        if (isContent((int)minX, (int)maxX, (int)minY, true)) break;
+        minY += 1.0;
+    }
+    while (maxY > minY) {
+        if (isContent((int)minX, (int)maxX, (int)maxY, true)) break;
+        maxY -= 1.0;
+    }
+    while (minX < maxX) {
+        if (isContent((int)minY, (int)maxY, (int)minX, false)) break;
+        minX += 1.0;
+    }
+    while (maxX > minX) {
+        if (isContent((int)minY, (int)maxY, (int)maxX, false)) break;
+        maxX -= 1.0;
+    }
 
     LOGE("EXPAND: Result (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
 
