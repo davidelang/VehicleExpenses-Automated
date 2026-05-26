@@ -394,6 +394,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
     cv::Scalar meanVal = cv::mean((*mat)(roi));
     double hillBrightness = meanVal[0];
+    double valleyThreshold = std::max(15.0, hillBrightness * (double)thresholdFactor);
     double minX = L, maxX = R, minY = T, maxY = B;
     double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
     double hL = (maxX - minX) * 12.0; 
