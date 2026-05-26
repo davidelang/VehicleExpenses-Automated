@@ -262,7 +262,7 @@ private suspend fun runPumpExperiment(
                 masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
 
                 // 1. Transform
-                val rawHist = OdometerOcrUtils.shoulderContrastStretch(workspace.p.mat)
+                val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                 if (flowName == flows.first()) {
                     originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
                     root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
