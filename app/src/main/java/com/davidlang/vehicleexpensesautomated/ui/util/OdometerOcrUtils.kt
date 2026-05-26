@@ -137,12 +137,53 @@ object OdometerOcrUtils {
         return EngineResult(calculateWeightedAverage(scaledBlocks, srcH), listOf(tDetect), scaledBlocks)
     }
 
+    fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
+        if (fragments.isEmpty()) return emptyList()
+        val merged = mutableListOf<android.graphics.Rect>()
+        val remaining = fragments.toMutableList()
+
+        while (remaining.isNotEmpty()) {
+            var current = remaining.removeAt(0)
+            var changed = true
+            while (changed) {
+                changed = false
+                val iterator = remaining.iterator()
+                while (iterator.hasNext()) {
+                    val next = iterator.next()
+                    val intersection = android.graphics.Rect(
+                        kotlin.math.max(current.left, next.left),
+                        kotlin.math.max(current.top, next.top),
+                        kotlin.math.min(current.right, next.right),
+                        kotlin.math.min(current.bottom, next.bottom)
+                    )
+                    
+                    // Merge if any overlap exists OR one is nested
+                    if ((intersection.width() > 0 && intersection.height() > 0) || current.contains(next) || next.contains(current)) {
+                        current = android.graphics.Rect(
+                            kotlin.math.min(current.left, next.left),
+                            kotlin.math.min(current.top, next.top),
+                            kotlin.math.max(current.right, next.right),
+                            kotlin.math.max(current.bottom, next.bottom)
+                        )
+                        iterator.remove()
+                        changed = true
+                    }
+                }
+            }
+            merged.add(current)
+        }
+        return merged
+    }
+
     private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
         val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return EngineResult(0f, emptyList())
         
         // Paddle V3 (Legacy Kotlin Math)
-        val blocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
+        val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
+        val clusteredBoxes = clusterRects(rawBlocks.map { it.boundingBox })
+        val blocks = clusteredBoxes.map { b -> TextBlock("", b, 0f) }
+        
         val srcH = (pHeight / pScale).toInt()
         val angleV3 = calculateWeightedAverage(blocks, srcH)
         return EngineResult(angleV3, emptyList(), blocks, det.metadata)
