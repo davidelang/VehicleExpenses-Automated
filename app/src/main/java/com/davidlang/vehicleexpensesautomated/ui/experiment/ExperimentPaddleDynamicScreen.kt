@@ -78,7 +78,7 @@ private suspend fun runDynamicValidation(
     val output = mutableListOf<DynamicResult>()
     
     // 1. Path Resolution
-    val dashFile = File(context.filesDir, "experiment_photos/PXL_20220701_020625793.dng")
+    val dashFile = File(context.filesDir, "experiment_photos/PXL_20220701_020707365.dng")
     val pumpFile = File(context.getExternalFilesDir(null), "pump_photos/PXL_20260114_020053675.jpg")
     
     val targetFile = if (dashFile.exists()) dashFile else if (pumpFile.exists()) pumpFile else null
@@ -136,6 +136,7 @@ private suspend fun runDynamicValidation(
             if (res != null) {
                 val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
                 val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, outerSlice)
+                Log.i("DynamicResult", "Scale: $scaleLongEdge | Tensor: ${alignedW}x${alignedH} | Inf: ${tInf}ms | Det: ${blocks.size}")
                 output.add(DynamicResult(scaleLongEdge, alignedW, alignedH, tInf, blocks.size))
             }
             
