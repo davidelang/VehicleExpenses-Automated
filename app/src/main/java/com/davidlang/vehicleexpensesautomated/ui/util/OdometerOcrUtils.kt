@@ -74,24 +74,34 @@ object OdometerOcrUtils {
         val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
         
         val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
-        val pWidth = (srcW * pScale).toInt()
-        val pHeight = (srcH * pScale).toInt()
+        val targetW = (srcW * pScale).toInt()
+        val targetH = (srcH * pScale).toInt()
+        
+        // Phase 125: Aligned letterboxing for deskew Mat
+        val pWidth = ((targetW + 31) / 32) * 32
+        val pHeight = ((targetH + 31) / 32) * 32
 
         bufferSet.p.clear()
-        val cropId = bufferSet.createCrop(0, 0, pWidth, pHeight)
-        val workspaceCrop = bufferSet.c[cropId]
+        val alignedId = bufferSet.createCrop(0, 0, pWidth, pHeight)
+        val alignedCrop = bufferSet.c[alignedId]
+        alignedCrop.clear() // Padding
 
-        // 2. Native Resize into workspace
+        val imgId = alignedCrop.createCrop(0, 0, targetW, targetH)
+        val imgCrop = bufferSet.c[imgId]
+
+        // 2. Native Resize into workspace (top-left)
         if (input is Bitmap) {
             val argbMat = Mat()
             org.opencv.android.Utils.bitmapToMat(input, argbMat)
             val gray = Mat()
             Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, workspaceCrop.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+            Imgproc.resize(gray, imgCrop.mat, imgCrop.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
             argbMat.release(); gray.release()
         } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, workspaceCrop.mat, Size(pWidth.toDouble(), pHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+            Imgproc.resize((input as BufferSet.Slice).mat, imgCrop.mat, imgCrop.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
         }
+        
+        imgCrop.release()
         
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
@@ -104,11 +114,11 @@ object OdometerOcrUtils {
 
         // 4. Paddle Path (Combined V3 Kotlin + C++ Native)
         val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleDual(workspaceCrop.mat, workspaceCrop.width, workspaceCrop.height, pScale)
+        val pdRes = deskewPaddleDual(alignedCrop.mat, pWidth, pHeight, pScale)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
         
-        workspaceCrop.release()
+        alignedCrop.release()
         
         return DeskewResult(
             angle = mlRes.angle.coerceIn(-20f, 20f), 
