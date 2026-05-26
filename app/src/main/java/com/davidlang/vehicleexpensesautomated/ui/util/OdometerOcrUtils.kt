@@ -487,6 +487,53 @@ object OdometerOcrUtils {
         return bins
     }
 
+    fun shoulderContrastStretch(mat: Mat): FloatArray {
+        val hist = Mat()
+        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
+        
+        val bins = FloatArray(64); hist.get(0, 0, bins)
+        val smoothed = FloatArray(64)
+        for (i in 0..63) {
+            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+        }
+
+        var maxCount = 0f; var maxBin = 32
+        for (i in 0..63) { if (smoothed[i] > maxCount) { maxCount = smoothed[i]; maxBin = i } }
+
+        val shoulderThreshold = maxCount * 0.10f
+        var sLow = 0.0; var sHigh = 63.0
+
+        // Find Low Shoulder
+        for (i in maxBin downTo 0) {
+            if (smoothed[i] < shoulderThreshold) { sLow = i.toDouble(); break }
+        }
+        // Find High Shoulder
+        for (i in maxBin..63) {
+            if (smoothed[i] < shoulderThreshold) { sHigh = i.toDouble(); break }
+        }
+
+        val intensityLow = sLow * 4.0
+        val intensityHigh = sHigh * 4.0
+
+        if (intensityHigh - intensityLow < 20.0) {
+            val totalPixels = mat.rows() * mat.cols()
+            var iLow = 0.0; var iHigh = 255.0; var sum = 0.0
+            for (i in 0..63) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iLow = i * 4.0; break } }
+            sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iHigh = i * 4.0; break } }
+            val alpha = if (iHigh > iLow) 255.0 / (iHigh - iLow) else 1.0
+            val beta = -iLow * alpha
+            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
+        } else {
+            val alpha = 255.0 / (intensityHigh - intensityLow)
+            val beta = -intensityLow * alpha
+            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
+        }
+        
+        hist.release()
+        return bins
+    }
+
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
         val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
