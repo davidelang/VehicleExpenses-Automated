@@ -91,6 +91,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         fun initializeGlobalBuffers(context: Context) {
             if (isAvailableGlobally) return
+            val tStart = System.currentTimeMillis()
             Log.i("PaddleLite", "Initializing Global Rigid Buffers")
 
             _bufferSetA = BufferSet(4000, 3072)
@@ -125,24 +126,47 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             _sharedBuffer = java.nio.ByteBuffer.allocateDirect(512 * 128).order(java.nio.ByteOrder.nativeOrder())
             _sharedBytes = ByteArray(512 * 128)
+            
+            val tBuffers = System.currentTimeMillis() - tStart
+            Log.i("PaddleLite", "Buffer Allocation took ${tBuffers}ms")
 
             try {
                 System.loadLibrary("paddle_lite_jni")
                 val arch = if (Build.SUPPORTED_ABIS[0].contains("arm")) "armv8" else "x86_64"
+                val tLib = System.currentTimeMillis() - (tStart + tBuffers)
+                
                 fun copy(p: String): String {
                     val f = File(context.filesDir, p.replace("/", "_"))
                     context.assets.open(p).use { it.copyTo(FileOutputStream(f)) }
                     return f.absolutePath
                 }
+                
+                val tCopy0 = System.currentTimeMillis()
                 val detPath = copy("paddle/det_v4_4000_mono_$arch.nb")
+                val tCopy = System.currentTimeMillis() - tCopy0
+                Log.i("PaddleLite", "Model copying took ${tCopy}ms")
+                
                 val config = MobileConfig()
                 config.setThreads(4); config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_HIGH)
                 
+                val tDetL0 = System.currentTimeMillis()
                 config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 1, 2560, 2560))
-                config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 1, 128, 512))
+                val tDetL = System.currentTimeMillis() - tDetL0
                 
+                val tDetS0 = System.currentTimeMillis()
+                config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 1, 128, 512))
+                val tDetS = System.currentTimeMillis() - tDetS0
+                
+                val tRecV30 = System.currentTimeMillis()
                 config.setModelFromFile(copy("paddle/rec_v3_mono_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
+                val tRecV3 = System.currentTimeMillis() - tRecV30
+                
+                val tRecN0 = System.currentTimeMillis()
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
+                val tRecN = System.currentTimeMillis() - tRecN0
+                
+                Log.i("PaddleLite", "Predictor Init: Large=${tDetL}ms, Small=${tDetS}ms, RecV3=${tRecV3}ms, RecN=${tRecN}ms")
+                Log.i("PaddleLite", "Total Global Init: ${System.currentTimeMillis() - tStart}ms")
                 
                 isAvailableGlobally = true
             } catch (e: Exception) { Log.e("PaddleLite", "Failed Global Init", e) }
