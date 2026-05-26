@@ -652,8 +652,8 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
     
     val isLarge = crop.width > 512 || crop.height > 128
-    val tensorW = if (isLarge) 2500f else 512f
-    val tensorH = if (isLarge) 2500f else 128f
+    val tensorW = if (isLarge) 2560f else 512f
+    val tensorH = if (isLarge) 2560f else 128f
     
     val occW = (crop.width / tensorW) * res.width
     val occH = (crop.height / tensorH) * res.height
@@ -662,10 +662,19 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     val hunks = blocks.map { block ->
+        // 1. Map raw block to master pixel coordinates
         val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
         val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
-        val i1 = IcrsMath.pixelToIcrs(nl * masterW, nt * masterH, masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(nr * masterW, nb * masterH, masterW, masterH)
+        val ml = (nl * masterW).toInt(); val mt = (nt * masterH).toInt()
+        val mr = (nr * masterW).toInt(); val mb = (nb * masterH).toInt()
+        val rawRect = android.graphics.Rect(ml, mt, mr, mb)
+
+        // 2. Perform native expansion against the high-resolution master buffer
+        val expandedRect = NativeImageUtils.expandByUniformity(buffer.p.mat, rawRect)
+
+        // 3. Map expanded coordinates back to ICRS space
+        val i1 = IcrsMath.pixelToIcrs(expandedRect.left.toFloat(), expandedRect.top.toFloat(), masterW, masterH)
+        val i2 = IcrsMath.pixelToIcrs(expandedRect.right.toFloat(), expandedRect.bottom.toFloat(), masterW, masterH)
         PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
     }
     return Pair(hunks, tInf)
