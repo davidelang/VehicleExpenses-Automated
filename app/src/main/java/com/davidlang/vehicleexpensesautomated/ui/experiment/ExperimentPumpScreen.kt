@@ -227,7 +227,8 @@ private suspend fun runPumpExperiment(
     val masterBuffer = BufferSet(1, 1)
 
     // Define flows for N-sets support
-    val flows = listOf("Set A", "Set B")
+    // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
+    val flows = listOf("Set A")
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -524,8 +525,8 @@ private fun pBuildHtmlRowDynamic(
     root.subBranches.toSortedMap().forEach { (name, br) ->
         br.pathResults.forEach { (eng, res) ->
             appendLine("<tr><td>$name:$eng</td>")
-            appendLine("<td><b>${res.cost}</b><br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'></td>")
-            appendLine("<td><b>${res.vol}</b><br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'></td>")
+            appendLine("<td><b>${res.cost}</b>" + (if(res.costB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'>" else "") + "</td>")
+            appendLine("<td><b>${res.vol}</b>" + (if(res.volB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'>" else "") + "</td>")
             appendLine("</tr>")
         }
     }
