@@ -379,6 +379,26 @@ object OdometerOcrUtils {
         hist.release()
     }
 
+    fun automaticContrastStretch(mat: Mat) {
+        val hist = Mat()
+        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
+        
+        var peak1 = 0; var peak2 = 0
+        var val1 = 0.0; var val2 = 0.0
+        for (i in 0..255) {
+            val v = hist.get(i, 0)[0]
+            if (v > val1) { val2 = val1; peak2 = peak1; val1 = v; peak1 = i }
+            else if (v > val2) { val2 = v; peak2 = i }
+        }
+
+        if (peak2 > peak1) {
+            Core.bitwise_not(mat, mat)
+        }
+
+        applyContrastStretch(mat, 0.20f)
+        hist.release()
+    }
+
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
         val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m

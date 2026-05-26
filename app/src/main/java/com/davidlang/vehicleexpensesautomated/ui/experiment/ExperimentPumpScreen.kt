@@ -241,8 +241,8 @@ private suspend fun runPumpExperiment(
             val cdfB64 = generateCdfB64(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
 
             // Step 1.5: 40% Contrast Stretch
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
-            OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.40f)
+            OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetA.p.mat)
+            OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetB.p.mat)
             
             // Capture AFTER
             val (afterB64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
