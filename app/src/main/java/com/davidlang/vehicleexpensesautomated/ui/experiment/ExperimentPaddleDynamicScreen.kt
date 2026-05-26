@@ -77,9 +77,8 @@ private suspend fun runDynamicValidation(
 ): List<DynamicResult> = withContext(Dispatchers.IO) {
     val output = mutableListOf<DynamicResult>()
     
-    // Dash Row 1 (Internal Storage)
+    // 1. Path Resolution
     val dashFile = File(context.filesDir, "experiment_photos/PXL_20220701_020625793.dng")
-    // Pump Row 7 (External Storage)
     val pumpFile = File(context.getExternalFilesDir(null), "pump_photos/PXL_20260114_020053675.jpg")
     
     val targetFile = if (dashFile.exists()) dashFile else if (pumpFile.exists()) pumpFile else null
@@ -92,14 +91,14 @@ private suspend fun runDynamicValidation(
     }
     
     val testPath = targetFile.absolutePath
-    withContext(Dispatchers.Main) { onStatus("Testing: $testPath") }
+    withContext(Dispatchers.Main) { onStatus("Loading: $testPath") }
 
-    // 1. Isolation: Local BufferSet
+    // 2. Isolation: Local BufferSet
     val buffer = BufferSet(4000, 3072)
     val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return@withContext emptyList<DynamicResult>()
     
     try {
-        // 2. Load Image into Primary
+        // 3. Load Image into Primary
         val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, testPath)
         buffer.resize(imgW, imgH)
         ImageIngestionProvider.ingestFromFile(context, testPath, buffer.p)
@@ -118,18 +117,20 @@ private suspend fun runDynamicValidation(
             
             withContext(Dispatchers.Main) { onStatus("Scale $scaleLongEdge: Aligned to ${alignedW}x${alignedH}") }
 
-            // 4. Manual Letterboxing in Scratch
+            // 4. Manual Letterboxing using SIBLING crops in Scratch
+            // Memory is zeroed once per scale
             val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
             val outerSlice = buffer.c[outerId]
-            outerSlice.clear() // Zero padding
+            outerSlice.clear() // Zero padding for the whole tensor region
             
-            val innerId = outerSlice.createCrop(0, 0, targetW, targetH)
+            // Inner crop for image placement (sibling of outer, both from buffer.s)
+            val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
             val innerSlice = buffer.c[innerId]
             
-            // Resize Primary into Inner
+            // Resize source Primary mat into target Inner mat
             Imgproc.resize(buffer.p.mat, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
             
-            // 5. Detect on Outer
+            // 5. Detect on the Aligned Container
             val res = paddleEngine.detectMat(outerSlice.mat)
             
             if (res != null) {
@@ -138,7 +139,7 @@ private suspend fun runDynamicValidation(
                 output.add(DynamicResult(scaleLongEdge, alignedW, alignedH, tInf, blocks.size))
             }
             
-            // 6. Explicit Release
+            // 6. Explicit Variable-based Release
             innerSlice.release()
             outerSlice.release()
         }
