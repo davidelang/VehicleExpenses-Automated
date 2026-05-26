@@ -439,9 +439,7 @@ private fun pSerializePhotoResultToJson(
         }
         
         // Add Histogram Diagnostic for Pump
-        val histData = generateHistogramB64(deskewResA?.blocks?.let { 
-             org.opencv.core.Mat() // Replace with actual heatmap mat if available
-        } ?: org.opencv.core.Mat(), 0.40f)
+        val histData = generateHistogramB64(org.opencv.core.Mat(), 0.40f)
         d.put("histogram", histData)
         
         put("deskew", d)
