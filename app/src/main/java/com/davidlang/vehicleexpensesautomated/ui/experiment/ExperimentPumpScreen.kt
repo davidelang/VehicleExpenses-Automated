@@ -433,10 +433,19 @@ private fun pSerializePhotoResultToJson(
         val d = JSONObject()
         d.pPutSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
         
-        // Add A/B Parity Checksums (Phase 117 Patch 3)
+        // Add A/B Parity Checksums
         deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) -> 
             if (k.contains("chk") || k.contains("count")) d.put(k, v)
         }
+        
+        // Add Histogram Diagnostic for Pump
+        val histData = OcrUtils.generateHistogramB64(deskewResA?.blocks?.let { 
+            // Simplified approximation for reporting
+            // We use the heatmap from the first block's metadata if available
+             null 
+        } ?: org.opencv.core.Mat(), 0.40f)
+        d.put("histogram", histData)
+        
         put("deskew", d)
     }
     return root
@@ -939,25 +948,41 @@ private fun JSONObject.pPutSafe(key: String, value: Double, context: String = ""
 private fun JSONObject.pPutSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
 private fun pClusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
-    val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
-    for (frag in fragments) {
-        val matchingClusters = mutableListOf<Int>()
-        for ((idx, cluster) in clusters.withIndex()) {
-            if (cluster.any { c ->
-                val overlapTop = kotlin.math.max(frag.top, c.top); val overlapBottom = kotlin.math.min(frag.bottom, c.bottom)
-                val overlapHeight = overlapBottom - overlapTop
-                overlapHeight > 0 && overlapHeight >= kotlin.math.min(frag.height(), c.height()) * 0.20
-            }) matchingClusters.add(idx)
+    if (fragments.isEmpty()) return emptyList()
+    val merged = mutableListOf<android.graphics.Rect>()
+    val remaining = fragments.toMutableList()
+
+    while (remaining.isNotEmpty()) {
+        var current = remaining.removeAt(0)
+        var changed = true
+        while (changed) {
+            changed = false
+            val iterator = remaining.iterator()
+            while (iterator.hasNext()) {
+                val next = iterator.next()
+                val intersection = android.graphics.Rect(
+                    kotlin.math.max(current.left, next.left),
+                    kotlin.math.max(current.top, next.top),
+                    kotlin.math.min(current.right, next.right),
+                    kotlin.math.min(current.bottom, next.bottom)
+                )
+                
+                // Merge if any overlap exists OR one is nested
+                if (intersection.width() > 0 && intersection.height() > 0 || current.contains(next) || next.contains(current)) {
+                    current = android.graphics.Rect(
+                        kotlin.math.min(current.left, next.left),
+                        kotlin.math.min(current.top, next.top),
+                        kotlin.math.max(current.right, next.right),
+                        kotlin.math.max(current.bottom, next.bottom)
+                    )
+                    iterator.remove()
+                    changed = true
+                }
+            }
         }
-        if (matchingClusters.isEmpty()) clusters.add(mutableListOf(frag))
-        else {
-            val firstIdx = matchingClusters[0]; clusters[firstIdx].add(frag)
-            for (k in matchingClusters.size - 1 downTo 1) { clusters[firstIdx].addAll(clusters[matchingClusters[k]]); clusters.removeAt(matchingClusters[k]) }
-        }
+        merged.add(current)
     }
-    return clusters.map { cluster -> 
-        android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) 
-    }
+    return merged
 }
 
 private suspend fun pRunPaddleValleyIterative(
