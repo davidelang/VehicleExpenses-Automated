@@ -8,5 +8,5 @@
 - [x] Refactor Pump Experiment for N-Sets and Tree-Based Reporting (See: plans/n-sets-tree-reporting.md)
 - [x] Refine Histogram Sensitivity (64 bins) and Debug Valley Expansion (See: plans/refine-hist-sensitivity-and-debug-expansion.md)
 - [ ] Expose Detection Speed and Refine Expansion Robustness (See: plans/speed-reporting-and-expansion-robustness.md)
-- [ ] Implement Dynamic Tensor Resizing for Detection (See: plans/dynamic-tensor-detection.md)
+- [ ] Implement Dynamic Tensor Resizing for Detection (See: plans/dynamic-tensor-detection.md) [IN PROGRESS]
 - [x] Instruction Harmonization: Resolve conflicts and add Validation Step (See: plans/instruction-harmonization.md)
