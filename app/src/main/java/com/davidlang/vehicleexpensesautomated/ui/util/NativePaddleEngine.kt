@@ -234,7 +234,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         
         val w = srcMat.cols()
         val h = srcMat.rows()
-        Log.d("PaddleDetect", "detectMat: Starting for ${w}x${h} Mat")
         
         val tPop0 = System.nanoTime()
         val floatData = FloatArray(w * h)
@@ -247,22 +246,18 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         try {
             val tJniIn0 = System.nanoTime()
             val inputTensor = predictor.getInput(0)
-            Log.d("PaddleDetect", "detectMat: Resizing tensor to ${w}x${h}")
             inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
             inputTensor.setData(floatData)
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
-            Log.d("PaddleDetect", "detectMat: Running predictor...")
             predictor.run()
-            Log.d("PaddleDetect", "detectMat: Inference complete.")
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
             val heatmap = outputTensor.floatData
-            Log.d("PaddleDetect", "detectMat: Output dims=${dims.joinToString(",")}")
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
