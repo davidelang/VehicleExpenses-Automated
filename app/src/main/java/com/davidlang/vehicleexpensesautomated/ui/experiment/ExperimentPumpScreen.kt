@@ -428,25 +428,25 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
     if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
-    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
 
-    val bins = FloatArray(256); hist.get(0, 0, bins)
+    val bins = FloatArray(64); hist.get(0, 0, bins)
 
-    // 254px wide to exclude 0 and 255 bins
-    val bmp = Bitmap.createBitmap(254, 100, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
+    // 62px wide to exclude 0 and 63 bins
+    val bmp = Bitmap.createBitmap(62, 100, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
     canvas.drawColor(Color.BLACK)
     val paint = Paint()
 
-    // Ignore bins 0 and 255 for scaling to see the peaks clearly
-    val maxVal = (1..254).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
+    // Ignore bins 0 and 63 for scaling to see the peaks clearly
+    val maxVal = (1..62).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
 
-    for (i in 1..254) {
+    for (i in 1..62) {
         val h = (bins[i] / maxVal * 80.0).toInt().coerceAtMost(80)
         val x = (i - 1).toFloat()
         paint.color = Color.WHITE; canvas.drawRect(x, (80 - h).toFloat(), x + 1f, 80f, paint)
 
-        if (i % 25 == 0) { paint.color = Color.RED; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
-        if (i == (floorPercentile * 255).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
+        if (i % 8 == 0) { paint.color = Color.RED; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
+        if (i == (floorPercentile * 63).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
     }
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }

@@ -477,6 +477,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int maxW = mat->cols;
     int maxH = mat->rows;
 
+    LOGE("EXPAND: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
+
     int safeL = std::max(0, std::min(L, maxW - 1));
     int safeT = std::max(0, std::min(T, maxH - 1));
     int safeR = std::max(safeL + 1, std::min(R, maxW));
@@ -515,7 +517,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             }
         }
         if (count == 0) return true;
-        return (maxV - minV) < 20;
+        
+        bool uniform = (maxV - minV) < 20;
+        if (uniform) {
+            // Log when we stop
+            LOGE("EXPAND: Stop @ %d (%s) min=%d max=%d range=%d", fixed, horizontal ? "H" : "V", minV, maxV, (maxV-minV));
+        }
+        return uniform;
     };
 
     while (minY > 0 && (sY - minY) < vL) {
@@ -550,6 +558,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             if ((walkR - lastGoodR) > lookAhead) break;
         }
     }
+
+    LOGE("EXPAND: Result (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
 
     jintArray result = env->NewIntArray(4);
     jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
