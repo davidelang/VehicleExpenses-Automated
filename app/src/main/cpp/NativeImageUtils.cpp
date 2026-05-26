@@ -489,7 +489,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double vL = (maxY - minY) * 1.0;
 
     const int THRESHOLD_UNIFORM = 50;
-    const int THRESHOLD_CONTENT = 50;
+    const int THRESHOLD_CONTENT = 35;
 
     auto isUniform = [&](int start, int end, int fixed, bool horizontal) -> bool {
         uint8_t minV = 255;
