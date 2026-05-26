@@ -486,7 +486,7 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
     val maxVal = (1..254).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
 
     for (i in 1..254) {
-        val h = (bins[i] / maxVal * 80.0).toInt()
+        val h = (bins[i] / maxVal * 80.0).toInt().coerceAtMost(80)
         val x = (i - 1).toFloat()
         paint.color = Color.WHITE; canvas.drawRect(x, (80 - h).toFloat(), x + 1f, 80f, paint)
 
@@ -495,6 +495,7 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
     }
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
+
 private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
     if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
