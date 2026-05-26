@@ -287,7 +287,9 @@ private suspend fun runPumpExperiment(
                 scales.forEach { scale ->
                     prepareScale(workspace, scale)
                     mlBlocksRaw.addAll(runDiscoveryML(workspace, context))
-                    pdBlocksRaw.addAll(runDiscoveryPaddle(workspace, paddleEngine))
+                    val (pdHunks, tPd) = runDiscoveryPaddle(workspace, paddleEngine)
+                    pdBlocksRaw.addAll(pdHunks)
+                    branch.metadata["t_pd_scale_$scale"] = "${tPd}ms"
                 }
                 val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw); val pdHunks = mergeGeometryIntoHunks(pdBlocksRaw)
 
@@ -511,10 +513,11 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
-    val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
+    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
+    val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
+    val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
     root.subBranches.toSortedMap().forEach { (name, br) -> 
         appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
@@ -627,12 +630,11 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Pu
     }
 }
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): List<PumpHunk> {
-    val crop = buffer.c[999] ?: return emptyList()
-    Log.d(TAG, "runDiscoveryPaddle: crop=${crop.width}x${crop.height}")
-    val res = paddleEngine.detect(crop) ?: return emptyList()
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): Pair<List<PumpHunk>, Long> {
+    val crop = buffer.c[999] ?: return Pair(emptyList(), 0L)
+    val res = paddleEngine.detect(crop) ?: return Pair(emptyList(), 0L)
+    val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
     
-    // Calculate actual occupancy in the heatmap based on detector tensor size
     val isLarge = crop.width > 512 || crop.height > 128
     val tensorW = if (isLarge) 2048f else 512f
     val tensorH = if (isLarge) 2048f else 128f
@@ -643,19 +645,14 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
-    return blocks.map { block ->
-        // Normalize coordinates relative to the occupied portion of the heatmap
+    val hunks = blocks.map { block ->
         val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
         val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
-        
-        // Map to master pixels
-        val ml = nl * masterW; val mt = nt * masterH
-        val mr = nr * masterW; val mb = nb * masterH
-        
-        val i1 = IcrsMath.pixelToIcrs(ml, mt, masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(mr, mb, masterW, masterH)
+        val i1 = IcrsMath.pixelToIcrs(nl * masterW, nt * masterH, masterW, masterH)
+        val i2 = IcrsMath.pixelToIcrs(nr * masterW, nb * masterH, masterW, masterH)
         PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
     }
+    return Pair(hunks, tInf)
 }
 
 private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {

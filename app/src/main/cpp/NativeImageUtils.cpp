@@ -518,7 +518,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         }
         if (count == 0) return true;
         
-        bool uniform = (maxV - minV) < 20;
+        bool uniform = (maxV - minV) < 40;
         if (uniform) {
             // Log when we stop
             LOGE("EXPAND: Stop @ %d (%s) min=%d max=%d range=%d", fixed, horizontal ? "H" : "V", minV, maxV, (maxV-minV));
@@ -558,6 +558,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             if ((walkR - lastGoodR) > lookAhead) break;
         }
     }
+
+    // Safety Padding: Nudge outward by 2px to ensure edge clearance
+    minX = std::max(0.0, minX - 2.0);
+    minY = std::max(0.0, minY - 2.0);
+    maxX = std::min((double)maxW, maxX + 2.0);
+    maxY = std::min((double)maxH, maxY + 2.0);
 
     LOGE("EXPAND: Result (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
 
