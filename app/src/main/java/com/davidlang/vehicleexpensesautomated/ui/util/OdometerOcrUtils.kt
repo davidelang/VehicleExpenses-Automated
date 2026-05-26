@@ -177,7 +177,7 @@ object OdometerOcrUtils {
 
     private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
-        val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return EngineResult(0f, emptyList())
+        val det = paddleEngine.detectMat(resizedMat) ?: return EngineResult(0f, emptyList())
         
         // Paddle V3 (Legacy Kotlin Math)
         val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")

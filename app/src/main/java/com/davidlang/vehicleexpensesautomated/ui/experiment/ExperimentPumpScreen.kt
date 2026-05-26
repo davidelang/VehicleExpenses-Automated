@@ -281,15 +281,16 @@ private suspend fun runPumpExperiment(
                 }
                 pRotate(workspace, tilt)
 
-                // 3. Discovery
-                val scales = listOf(200, 600, 1000, 2500)
+                // 3. Discovery (Aligned to 32-px multiples)
+                val scales = listOf(224, 608, 1024, 2496)
                 val mlBlocksRaw = mutableListOf<PumpHunk>(); val pdBlocksRaw = mutableListOf<PumpHunk>()
                 scales.forEach { scale ->
                     prepareScale(workspace, scale)
                     mlBlocksRaw.addAll(runDiscoveryML(workspace, context))
-                    val (pdHunks, tPd) = runDiscoveryPaddle(workspace, paddleEngine)
+                    val (pdHunks, tPd, pdMeta) = runDiscoveryPaddle(workspace, paddleEngine)
                     pdBlocksRaw.addAll(pdHunks)
                     branch.metadata["t_pd_scale_$scale"] = "${tPd}ms"
+                    branch.metadata["shape_$scale"] = pdMeta["dynamic_shape"] ?: "unknown"
                 }
                 val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw); val pdHunks = mergeGeometryIntoHunks(pdBlocksRaw)
 
@@ -513,7 +514,9 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
+    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.joinToString("<br>") { (k, v) -> 
+        if (k.startsWith("shape_")) "<b>Scale ${k.removePrefix("shape_")}:</b> $v" else "<small>$k: $v</small>" 
+    }
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
@@ -630,29 +633,26 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Pu
     }
 }
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): Pair<List<PumpHunk>, Long> {
-    val crop = buffer.c[999] ?: return Pair(emptyList(), 0L)
-    val res = paddleEngine.detect(crop) ?: return Pair(emptyList(), 0L)
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, Long, Map<String, String>> {
+    val crop = buffer.c[999] ?: return Triple(emptyList(), 0L, emptyMap())
+    val res = paddleEngine.detectMat(crop.mat) ?: return Triple(emptyList(), 0L, emptyMap())
     val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
-    
-    val isLarge = crop.width > 512 || crop.height > 128
-    val tensorW = if (isLarge) 2048f else 512f
-    val tensorH = if (isLarge) 2048f else 128f
-    
-    val occW = (crop.width / tensorW) * res.width
-    val occH = (crop.height / tensorH) * res.height
     
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
+    // With detectMat, heatmap size == input Mat size
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     val hunks = blocks.map { block ->
-        val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
-        val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
-        val i1 = IcrsMath.pixelToIcrs(nl * masterW, nt * masterH, masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(nr * masterW, nb * masterH, masterW, masterH)
+        val nl = block.boundingBox.left.toFloat() / res.width * masterW
+        val nt = block.boundingBox.top.toFloat() / res.height * masterH
+        val nr = block.boundingBox.right.toFloat() / res.width * masterW
+        val nb = block.boundingBox.bottom.toFloat() / res.height * masterH
+        
+        val i1 = IcrsMath.pixelToIcrs(nl, nt, masterW, masterH)
+        val i2 = IcrsMath.pixelToIcrs(nr, nb, masterW, masterH)
         PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
     }
-    return Pair(hunks, tInf)
+    return Triple(hunks, tInf, res.metadata)
 }
 
 private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
