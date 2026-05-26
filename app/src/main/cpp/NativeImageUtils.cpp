@@ -8,9 +8,11 @@
 #include <algorithm>
 #include <map>
 #include <cmath>
+#include <chrono>
 #include "BufferSetHandle.h"
 #include <android/log.h>
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "NativeImageUtils", __VA_ARGS__)
 #include "../libraw_config.h"
 #include <libraw/libraw.h>
 
@@ -236,6 +238,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
     
     const char* nativePath = env->GetStringUTFChars(path, nullptr);
     
+    auto t0 = std::chrono::high_resolution_clock::now();
+    
     LibRaw RawProcessor;
     int ret = RawProcessor.open_file(nativePath);
     env->ReleaseStringUTFChars(path, nativePath);
@@ -244,6 +248,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         LOGE("LibRaw open_file failed: %s", libraw_strerror(ret));
         return JNI_FALSE;
     }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
 
     // Use internal dimensions (iwidth/iheight) which reflect the developed image size
     if (handle->width != (size_t)RawProcessor.imgdata.sizes.iwidth || 
@@ -262,10 +268,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         return JNI_FALSE;
     }
     
+    auto t2 = std::chrono::high_resolution_clock::now();
+    
     // Configure development parameters
     RawProcessor.imgdata.params.output_color = 1; // sRGB
     RawProcessor.imgdata.params.use_camera_wb = 1; // Use camera white balance
     RawProcessor.imgdata.params.half_size = 0; // Full resolution
+    
+    // OPTIMIZATION: Linear demosaicing (Fastest)
+    // 0 is linear, 1 is VNG, 2 is PPG, 3 is AHD (default)
+    RawProcessor.imgdata.params.user_qual = 0; 
     
     ret = RawProcessor.dcraw_process();
     if (ret != LIBRAW_SUCCESS) {
@@ -273,6 +285,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         RawProcessor.recycle();
         return JNI_FALSE;
     }
+    
+    auto t3 = std::chrono::high_resolution_clock::now();
     
     libraw_processed_image_t *image = RawProcessor.dcraw_make_mem_image(&ret);
     if (!image || ret != LIBRAW_SUCCESS) {
@@ -304,6 +318,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         dst_uv[i * 2 + 1] = src_u[i];
     }
     
+    auto t4 = std::chrono::high_resolution_clock::now();
+    
+    auto dOpen = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    auto dUnpack = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+    auto dProcess = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count();
+    auto dInterleave = std::chrono::duration_cast<std::chrono::milliseconds>(t4 - t3).count();
+    
+    LOGI("DNG Ingest Profiling: Total=%lldms (Open=%lldms, Unpack=%lldms, Process=%lldms, Interleave=%lldms)",
+         (long long)(dOpen + dUnpack + dProcess + dInterleave),
+         (long long)dOpen, (long long)dUnpack, (long long)dProcess, (long long)dInterleave);
+
     LibRaw::dcraw_clear_mem(image);
     RawProcessor.recycle();
     
