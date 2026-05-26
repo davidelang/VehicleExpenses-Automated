@@ -425,23 +425,39 @@ object OdometerOcrUtils {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
         
-        // Find two largest peaks
-        var peak1 = 0; var peak2 = 0
-        var val1 = 0.0; var val2 = 0.0
+        val bins = FloatArray(256); hist.get(0, 0, bins)
+        val smoothed = FloatArray(256)
         for (i in 0..255) {
-            val v = hist.get(i, 0)[0]
-            if (v > val1) { val2 = val1; peak2 = peak1; val1 = v; peak1 = i }
-            else if (v > val2) { val2 = v; peak2 = i }
+            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(255)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
         }
 
-        val pLow = min(peak1, peak2).toDouble()
-        val pHigh = max(peak1, peak2).toDouble()
+        // Find first peak from left
+        var pLow = 2.0 // Fallback
+        for (i in 1..254) {
+            if (smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1] && smoothed[i] > 0) {
+                pLow = i.toDouble(); break
+            }
+        }
 
-        // Map pLow -> 0 and pHigh -> 255
+        // Find first peak from right
+        var pHigh = 253.0 // Fallback
+        for (i in 254 downTo 1) {
+            if (smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1] && smoothed[i] > 0) {
+                pHigh = i.toDouble(); break
+            }
+        }
+
+        // If peaks are too close or invalid, fallback to percentiles
+        if (pHigh - pLow < 20.0) {
+            val total = mat.rows() * mat.cols(); var sum = 0.0
+            for (i in 0..255) { sum += bins[i]; if (sum >= total * 0.02) { pLow = i.toDouble(); break } }
+            sum = 0.0; for (i in 255 downTo 0) { sum += bins[i]; if (sum >= total * 0.02) { pHigh = i.toDouble(); break } }
+        }
+
         val alpha = if (pHigh > pLow) 255.0 / (pHigh - pLow) else 1.0
         val beta = -pLow * alpha
         mat.convertTo(mat, CvType.CV_8U, alpha, beta)
-        
         hist.release()
     }
 
