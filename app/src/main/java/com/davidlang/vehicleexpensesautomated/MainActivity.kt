@@ -43,6 +43,7 @@ import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPaddleDynamicScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
