@@ -7,7 +7,5 @@
 - [x] Refine Pump Logic: Dual expansion engines and report cleanup (See: plans/dual-expansion-and-pump-refine.md)
 - [x] Refactor Pump Experiment for N-Sets and Tree-Based Reporting (See: plans/n-sets-tree-reporting.md)
 - [x] Refine Histogram Sensitivity (64 bins) and Debug Valley Expansion (See: plans/refine-hist-sensitivity-and-debug-expansion.md)
-- [ ] Expose Detection Speed and Refine Expansion Robustness (See: plans/speed-reporting-and-expansion-robustness.md)
-- [ ] Implement Dynamic Tensor Resizing for Detection (See: plans/dynamic-tensor-detection.md)
-- [ ] Fix Pump Experiment SIGSEGV Crash (See: plans/fix-pump-crash.md) [DEFERRED - SYSTEM RESTORED]
-- [x] Instruction Harmonization: Resolve conflicts and add Validation Step (See: plans/instruction-harmonization.md)
+- [x] Expose Detection Speed and Refine Expansion Robustness (See: plans/speed-reporting-and-expansion-robustness.md)
+- [ ] Capacity Upgrade (2500x2500), Robust Histogram, and Expansion Trace (See: plans/upgrade-capacity-and-refine-logic.md)
