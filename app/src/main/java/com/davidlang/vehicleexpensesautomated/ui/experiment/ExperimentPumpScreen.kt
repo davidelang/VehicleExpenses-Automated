@@ -439,10 +439,8 @@ private fun pSerializePhotoResultToJson(
         }
         
         // Add Histogram Diagnostic for Pump
-        val histData = OcrUtils.generateHistogramB64(deskewResA?.blocks?.let { 
-            // Simplified approximation for reporting
-            // We use the heatmap from the first block's metadata if available
-             null 
+        val histData = generateHistogramB64(deskewResA?.blocks?.let { 
+             org.opencv.core.Mat() // Replace with actual heatmap mat if available
         } ?: org.opencv.core.Mat(), 0.40f)
         d.put("histogram", histData)
         
