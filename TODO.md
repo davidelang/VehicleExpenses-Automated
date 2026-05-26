@@ -6,4 +6,5 @@
 - [x] Implement Global Clustering and Uniform-Color Valley (See: plans/global-clustering-and-uniform-valley.md)
 - [x] Refine Pump Logic: Dual expansion engines and report cleanup (See: plans/dual-expansion-and-pump-refine.md)
 - [x] Refactor Pump Experiment for N-Sets and Tree-Based Reporting (See: plans/n-sets-tree-reporting.md)
-- [ ] Refine Histogram Sensitivity (64 bins) and Debug Valley Expansion (See: plans/refine-hist-sensitivity-and-debug-expansion.md)
+- [x] Refine Histogram Sensitivity (64 bins) and Debug Valley Expansion (See: plans/refine-hist-sensitivity-and-debug-expansion.md)
+- [ ] Expose Detection Speed and Refine Expansion Robustness (See: plans/speed-reporting-and-expansion-robustness.md)
