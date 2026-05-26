@@ -518,7 +518,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         }
         if (count == 0) return true;
         
-        bool uniform = (maxV - minV) < 15;
+        bool uniform = (maxV - minV) < 30;
         LOGE("EXPAND_TRACE: %d (%s) min=%d max=%d range=%d %s", fixed, horizontal ? "H" : "V", minV, maxV, (maxV-minV), uniform ? "STOP" : "");
         return uniform;
     };
@@ -532,28 +532,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         maxY += 1.0;
     }
 
-    double walkL = minX;
-    double lastGoodL = minX;
-    while (walkL > 0 && (sX - walkL) < hL) {
-        walkL -= 1.0;
-        if (!isUniform((int)minY, (int)maxY, (int)walkL, false)) {
-            minX = walkL;
-            lastGoodL = walkL;
-        } else {
-            if ((lastGoodL - walkL) > lookAhead) break;
-        }
+    while (minX > 0 && (sX - minX) < hL) {
+        if (isUniform((int)minY, (int)maxY, (int)minX - 1, false)) break;
+        minX -= 1.0;
     }
-
-    double walkR = maxX;
-    double lastGoodR = maxX;
-    while (walkR < maxW - 1 && (walkR - sXX) < hL) {
-        walkR += 1.0;
-        if (!isUniform((int)minY, (int)maxY, (int)walkR, false)) {
-            maxX = walkR;
-            lastGoodR = walkR;
-        } else {
-            if ((walkR - lastGoodR) > lookAhead) break;
-        }
+    while (maxX < maxW - 1 && (maxX - sXX) < hL) {
+        if (isUniform((int)minY, (int)maxY, (int)maxX + 1, false)) break;
+        maxX += 1.0;
     }
 
     // Safety Padding: Nudge outward by 2px to ensure edge clearance
