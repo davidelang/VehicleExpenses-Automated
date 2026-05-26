@@ -352,7 +352,7 @@ private suspend fun runPumpExperiment(
                 
                 val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
                 branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
-                val aPd = getAnns(pdBlocksRaw, Color.RED, 2) + getAnns(pdHunks, Color.rgb(255, 165, 0), 4)
+                val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
             }
 
