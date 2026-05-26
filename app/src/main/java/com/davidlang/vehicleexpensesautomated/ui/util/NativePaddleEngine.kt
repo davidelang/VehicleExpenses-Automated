@@ -52,8 +52,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _bufferSetB: BufferSet? = null
         private var _deskewBufferSetLarge: BufferSet? = null
         private var _bufferLarge: FloatArray? = null
-        private var _sharedBmp2500: Bitmap? = null
-        private var _sharedCanvas2500: Canvas? = null
+        private var _sharedBmp2560: Bitmap? = null
+        private var _sharedCanvas2560: Canvas? = null
         private var _bufferSmall: FloatArray? = null
         private var _bufferRec: FloatArray? = null
         private var _sharedNv21Buffer: ByteArray? = null
@@ -71,8 +71,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bufferSetB: BufferSet get() = _bufferSetB!!
         val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
-        val sharedBmp2500: Bitmap get() = _sharedBmp2500!!
-        val sharedCanvas2500: Canvas get() = _sharedCanvas2500!!
+        val sharedBmp2560: Bitmap get() = _sharedBmp2560!!
+        val sharedCanvas2560: Canvas get() = _sharedCanvas2560!!
         private val bufferSmall: FloatArray get() = _bufferSmall!!
         private val bufferRec: FloatArray get() = _bufferRec!!
         val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
@@ -93,12 +93,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             _bufferSetA = BufferSet(4000, 3072)
             _bufferSetB = BufferSet(4000, 3072)
-            _deskewBufferSetLarge = BufferSet(2500, 2500)
+            _deskewBufferSetLarge = BufferSet(2560, 2560)
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
 
-            _bufferLarge = FloatArray(1 * 2500 * 2500) // Native is now exclusively 1-channel (Mono)
-            _sharedBmp2500 = Bitmap.createBitmap(2500, 2500, Bitmap.Config.ALPHA_8); _sharedCanvas2500 = Canvas(_sharedBmp2500!!)
+            _bufferLarge = FloatArray(1 * 2560 * 2560) // Native is now exclusively 1-channel (Mono)
+            _sharedBmp2560 = Bitmap.createBitmap(2560, 2560, Bitmap.Config.ALPHA_8); _sharedCanvas2560 = Canvas(_sharedBmp2560!!)
 
             _bufferSmall = FloatArray(1 * 512 * 128)
             _bufferRec = FloatArray(1 * 320 * 48)
@@ -135,7 +135,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val config = MobileConfig()
                 config.setThreads(4); config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_HIGH)
                 
-                config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 1, 2500, 2500))
+                config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 1, 2560, 2560))
                 config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 1, 128, 512))
                 
                 config.setModelFromFile(copy("paddle/rec_v3_mono_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
@@ -183,8 +183,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = if (isLarge) detectorLarge else detectorSmall
         if (predictor == null) return null
 
-        val tensorWidth = if (isLarge) 2500 else 512
-        val tensorHeight = if (isLarge) 2500 else 128
+        val tensorWidth = if (isLarge) 2560 else 512
+        val tensorHeight = if (isLarge) 2560 else 128
         val floatData = if (isLarge) bufferLarge else bufferSmall
         
         floatData.fill(0.0f)
