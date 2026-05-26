@@ -8,4 +8,4 @@
 - [x] Refactor Pump Experiment for N-Sets and Tree-Based Reporting (See: plans/n-sets-tree-reporting.md)
 - [x] Refine Histogram Sensitivity (64 bins) and Debug Valley Expansion (See: plans/refine-hist-sensitivity-and-debug-expansion.md)
 - [x] Expose Detection Speed and Refine Expansion Robustness (See: plans/speed-reporting-and-expansion-robustness.md)
-- [ ] Capacity Upgrade (2500x2500), Robust Histogram, and Expansion Trace (See: plans/upgrade-capacity-and-refine-logic.md)
+- [ ] Scale Alignment (32-Multiples) and Robust Logic Refinements (See: plans/align-32-and-refine-robustness.md)

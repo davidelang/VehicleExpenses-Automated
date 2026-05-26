@@ -285,7 +285,7 @@ private suspend fun runPumpExperiment(
                 pRotate(workspace, tilt)
 
                 // 3. Discovery
-                val scales = listOf(200, 600, 1000, 2500)
+                val scales = listOf(224, 608, 1024, 2560)
                 val mlBlocksRaw = mutableListOf<PumpHunk>(); val pdBlocksRaw = mutableListOf<PumpHunk>()
                 scales.forEach { scale ->
                     prepareScale(workspace, scale)

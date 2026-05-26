@@ -433,7 +433,7 @@ object OdometerOcrUtils {
         }
 
         val totalPixels = mat.rows() * mat.cols()
-        val dropOffThreshold = totalPixels * 0.05 // 5% drop-off requirement
+        val dropOffThreshold = totalPixels * 0.005 // 0.5% drop-off requirement
 
         // Find robust peak from left
         var pLow = 0.5
