@@ -537,15 +537,15 @@ private fun pBuildHtmlHeader(time: String, total: Int, version: String): String 
 }
 
 private fun pBuildHtmlRowDynamic(
-    rowIndex: Int, 
-    fileName: String, 
+    rowIndex: Int,
+    fileName: String,
     imgW: Int,
     imgH: Int,
     isDegraded: Boolean,
-    beforeB64: String, 
-    histB64: String, 
-    cdfB64: String,
-    afterB64: String, 
+    beforeB64: String,
+    histB64: String,
+    cdfB64: String, // This now contains the post-stretch histogram
+    afterB64: String,
     deskewHtml: String,
     hunksAMl64: String,
     hunksAPd64: String,
@@ -555,7 +555,7 @@ private fun pBuildHtmlRowDynamic(
     resAPd: PathResult,
     resBMl: PathResult,
     resBPd: PathResult,
-    tDeskew: Long, 
+    tDeskew: Long,
     tilt: Float,
     angleA: Float,
     angleB: Float,
@@ -563,8 +563,8 @@ private fun pBuildHtmlRowDynamic(
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$beforeB64'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$histB64'><br><small>Hist</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$afterB64'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$cdfB64'><br><small>CDF</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
-    
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$beforeB64'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$histB64'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$afterB64'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$cdfB64'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
+
     appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'></td>")
     appendLine("<td><b>Paddle (A):</b><br><img src='data:image/jpeg;base64,$hunksAPd64'></td>")
     appendLine("<td><b>ML Kit (B):</b><br><img src='data:image/jpeg;base64,$hunksBMl64'></td>")
@@ -580,7 +580,6 @@ private fun pBuildHtmlRowDynamic(
     }
     appendLine("</table></td></tr>")
 }
-
 private fun pGetFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
     if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
     try {
@@ -709,38 +708,40 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
 
 private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
     if (allBlocks.isEmpty()) return emptyList()
-    
-    val clusters = mutableListOf<MutableList<PumpHunk>>()
-    for (box in allBlocks) {
-        var found = false
-        for (cluster in clusters) {
-            if (cluster.any { c -> 
-                val interL = max(box.icrs.left, c.icrs.left); val interT = max(box.icrs.top, c.icrs.top)
-                val interR = min(box.icrs.right, c.icrs.right); val interB = min(box.icrs.bottom, c.icrs.bottom)
-                if (interR > interL && interB > interT) {
-                    val interArea = (interR - interL) * (interB - interT)
-                    val unionArea = (box.icrs.width() * box.icrs.height()) + (c.icrs.width() * c.icrs.height()) - interArea
-                    (interArea / unionArea) > 0.4f
-                } else false
-            }) {
-                cluster.add(box)
-                found = true
-                break
+    val merged = mutableListOf<PumpHunk>()
+    val remaining = allBlocks.toMutableList()
+
+    while (remaining.isNotEmpty()) {
+        var current = remaining.removeAt(0)
+        var changed = true
+        while (changed) {
+            changed = false
+            val iterator = remaining.iterator()
+            while (iterator.hasNext()) {
+                val next = iterator.next()
+                val interL = max(current.icrs.left, next.icrs.left); val interT = max(current.icrs.top, next.icrs.top)
+                val interR = min(current.icrs.right, next.icrs.right); val interB = min(current.icrs.bottom, next.icrs.bottom)
+                
+                val hasOverlap = (interR > interL && interB > interT)
+                val isNested = current.icrs.contains(next.icrs) || next.icrs.contains(current.icrs)
+
+                if (hasOverlap || isNested) {
+                    val newIcrs = RectF(
+                        min(current.icrs.left, next.icrs.left),
+                        min(current.icrs.top, next.icrs.top),
+                        max(current.icrs.right, next.icrs.right),
+                        max(current.icrs.bottom, next.icrs.bottom)
+                    )
+                    val bestText = if (current.text.count { it.isDigit() } >= next.text.count { it.isDigit() }) current.text else next.text
+                    current = PumpHunk(bestText, newIcrs)
+                    iterator.remove()
+                    changed = true
+                }
             }
         }
-        if (!found) clusters.add(mutableListOf(box))
+        merged.add(current)
     }
-
-    return clusters.map { cluster ->
-        val widestL = cluster.minOf { it.icrs.left }; val widestR = cluster.maxOf { it.icrs.right }
-        val shortestH = cluster.minOf { it.icrs.height() }
-        val centerY = cluster.map { it.icrs.centerY() }.average().toFloat()
-        
-        val bestText = cluster.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
-        
-        val fT = centerY - shortestH / 2f; val fB = centerY + shortestH / 2f
-        PumpHunk(bestText, RectF(widestL, fT, widestR, fB))
-    }
+    return merged
 }
 
 private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: BufferSet, recBuffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context, angle: Float = 0f): List<PumpHunk> {
@@ -935,160 +936,8 @@ private fun pumpCreateScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: In
     if (targetBuffer == null) target.recycle(); return b64
 }
 
-private suspend fun pPerformLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
-    val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)
-    val landmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
-    return Pair(queryOcrDiscovery, landmarks)
-}
-
 private fun JSONObject.pPutSafe(key: String, value: Double, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 private fun JSONObject.pPutSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
-
-private fun pClusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
-    if (fragments.isEmpty()) return emptyList()
-    val merged = mutableListOf<android.graphics.Rect>()
-    val remaining = fragments.toMutableList()
-
-    while (remaining.isNotEmpty()) {
-        var current = remaining.removeAt(0)
-        var changed = true
-        while (changed) {
-            changed = false
-            val iterator = remaining.iterator()
-            while (iterator.hasNext()) {
-                val next = iterator.next()
-                val intersection = android.graphics.Rect(
-                    kotlin.math.max(current.left, next.left),
-                    kotlin.math.max(current.top, next.top),
-                    kotlin.math.min(current.right, next.right),
-                    kotlin.math.min(current.bottom, next.bottom)
-                )
-                
-                // Merge if any overlap exists OR one is nested
-                if (intersection.width() > 0 && intersection.height() > 0 || current.contains(next) || next.contains(current)) {
-                    current = android.graphics.Rect(
-                        kotlin.math.min(current.left, next.left),
-                        kotlin.math.min(current.top, next.top),
-                        kotlin.math.max(current.right, next.right),
-                        kotlin.math.max(current.bottom, next.bottom)
-                    )
-                    iterator.remove()
-                    changed = true
-                }
-            }
-        }
-        merged.add(current)
-    }
-    return merged
-}
-
-private suspend fun pRunPaddleValleyIterative(
-    displayName: String, 
-    masterBuffer: Any, 
-    mWidth: Int, 
-    mHeight: Int, 
-    winnerRef: PumpReferenceCache,
-    vehicleBufferSets: Map<Int, BufferSet>,
-    experimentDetSet512x128: BufferSet,
-    experimentRecSet320x48: BufferSet,
-    paddleEngine: NativePaddleEngine,
-    report: MutableMap<String, OcrHarnessResult>, 
-    targetRefMap: MutableMap<String, RefinementTrace>
-) {
-    val tH0 = System.currentTimeMillis()
-    val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
-    val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
-    val jsonStages = com.google.gson.JsonObject()
-    val allOdo = mutableListOf<String>()
-    
-    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-    val t = winnerRef.vehicle.odometerCropTop ?: 0f
-    val r = winnerRef.vehicle.odometerCropRight ?: 1f
-    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-    
-    val roiW = ((r - l) * mWidth).toInt().coerceAtMost(mWidth)
-    val roiH = ((b - t) * mHeight).toInt().coerceAtMost(mHeight)
-    val startX = (l * mWidth).toInt().coerceIn(0, mWidth - 1)
-    val startY = (t * mHeight).toInt().coerceIn(0, mHeight - 1)
-    
-    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
-    var lastThumb = ""
-    var tSnTotal = 0L
-    val steps = mutableListOf<OcrStepResult>()
-    
-    stages.forEach { stage ->
-        val tS0 = System.currentTimeMillis()
-        when (masterBuffer) {
-            is BufferSet -> {
-                odoBuffer.p.clear()
-                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
-                org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
-            }
-        }
-        
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.75f) 
-        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
-        
-        val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
-        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
-        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
-        
-        val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes = paddleEngine.detect(experimentDetSet512x128.p)
-        val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, odoBuffer.p.mat, "Paddle") else emptyList<TextBlock>()
-        experimentDetSet512x128.c[detCropId].release()
-        
-        val frags = rawB.map { NativeImageUtils.expandByValley(odoBuffer.p.mat, it.boundingBox) }
-        val cons = pClusterRects(frags).sortedBy { it.left }
-        val odoB = StringBuilder()
-        val fBoxes = mutableListOf<android.graphics.Rect>()
-        val jMeta = com.google.gson.JsonObject()
-        
-        cons.forEach { box ->
-            val sL = box.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
-            val sT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
-            val sR = box.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
-            val sB = box.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
-            val rSrcId = odoBuffer.createCrop(sL, sT, sR - sL, sB - sT)
-            experimentRecSet320x48.p.clear()
-            val rSc = minOf(312f / (sR - sL), 40f / (sB - sT))
-            val ew = (( (sR - sL) * rSc + 1).toInt() / 2) * 2
-            val eh = (( (sB - sT) * rSc + 1).toInt() / 2) * 2
-            val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
-            org.opencv.imgproc.Imgproc.resize(odoBuffer.c[rSrcId].mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            odoBuffer.c[rSrcId].release()
-            experimentRecSet320x48.c[rCrId].release()
-            
-            val ocrR = paddleEngine.runConstrainedStatic(experimentRecSet320x48.p, paddleEngine.getDictionary())
-            if (ocrR.text.isNotBlank()) { odoB.append(ocrR.text).append(" "); fBoxes.add(box) }
-            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty(k, v) }
-        }
-        
-        val odoStr = odoB.toString().trim()
-        allOdo.add(odoStr)
-        val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, jMeta.asMap().mapValues { it.value.asString }))
-        
-        val anns = mutableListOf<SnapshotAnnotation>()
-        rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
-        fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
-        
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        lastThumb = sB64
-        tSnTotal += ts
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
-        val sObj = com.google.gson.JsonObject()
-        sObj.addProperty("text", odoStr)
-        sObj.addProperty("time", tL)
-        jMeta.entrySet().forEach { e -> sObj.add(e.key, e.value) }
-        jsonStages.add(stage, sObj)
-    }
-    
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
-    report[displayName] = result
-    targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
-}
 
 private suspend fun pRunMLKitIterative(
     displayName: String, 
