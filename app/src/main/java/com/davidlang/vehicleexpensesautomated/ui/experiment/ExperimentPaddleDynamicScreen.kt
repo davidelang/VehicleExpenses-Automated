@@ -53,16 +53,16 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("Scale: ${res.scale}", style = MaterialTheme.typography.titleMedium)
-                        Divider(modifier = Modifier.padding(vertical = 4.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = RowArrangement.SpaceBetween) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Init: ${res.initTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                             Text("Ingest: ${res.ingestTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                         }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = RowArrangement.SpaceBetween) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Resize: ${res.resizeTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                             Text("Populate: ${res.populateTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                         }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = RowArrangement.SpaceBetween) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Inference: ${res.inferenceTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                             Text("Post: ${res.postTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                         }
