@@ -22,7 +22,7 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
   - **Immutable Protocol:** The "Propose -> Wait -> Act" cycle is absolute. No other instruction, including "Corruption Reset" or "Emergency Stability" clauses, authorizes a bypass of this protocol. Urgency never grants tool-use permission during a strategy turn.
   - **STRICT BI-MODAL WORKFLOW:** 
     1. **MODE 1 (PLANNING):** Research, review, planning. Present the textual plan and STOP for review. Do not use application-modifying tools.
-    2. **MODE 2 (EXECUTION):** After approval, implement changes, then use `./build_app "Commit Message" file1 file2...` to commit and build. STOP for review. 
+    2. **MODE 2 (EXECUTION):** After approval, implement changes. **Crucially, before presenting the final report for the turn, you MUST perform a Validation Step by explicitly reading the target files to verify that all changes defined in the plan were actually applied.** Then use `./build_app "Commit Message" file1 file2...` to commit and build. STOP for review. 
     - **NO DEPLOYMENT:** The agent is strictly forbidden from running `./deploy` or `./gradlew installDebug`. Deployment is a manual user action.
     - **PLAN MODE TRANSITION:** You MUST switch to `mode = plan` in the following scenarios:
         1. After a **successful** build (`./build_app` succeeds).
@@ -30,10 +30,10 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
         3. At the **end of any turn** where an application build was attempted. This ensures the next turn always begins with a Strategic or Forensic review of the current state.
   - **The Exclusivity & Planning Protocol:**
     - **Exclusivity:** The **Approved Plan Document** (or the most recent directive text) is the **EXCLUSIVE boundary** for all changes. Logic, refactors, or carry-overs from previous turns are **STRICTLY FORBIDDEN** unless they are explicit line-items in the current plan.
-    - **The "Refactor = Feature" Mandate:** Architectural improvements, function decomposition, and "Senior best practices" are considered **NEW WORK**. They must be proposed, justified, and approved as specific line-items. No "invisible" or "piggybacked" improvements.
+    - **Plan Exclusivity & Deviation Protocol:** You MUST implement ONLY what was approved in the plan. Architectural improvements, function decomposition, and "Senior best practices" are considered **NEW WORK** and must be explicit line-items. If you identify a need for a change that differs from or was not discussed in the plan, you MUST STOP immediately. You must either reset to `builds` or get the code into a stable, partial implementation of the plan, then switch to plan mode to report the problem, what you were able to implement, and your proposed revision for approval.
     - **Narrowing & The Purge:** Whenever a directive narrows the scope (e.g., "only do X"), immediately move all deferred/shelved items to `TODO.md`. This physically purges them from the "Active Staging Area" and prevents latent contamination.
     - **Verification Pass:** During the Execution phase of a multi-file task, you MUST `read_file` the relevant Plan Document before every edit to verify the delta against the approved specification.
-    - **Discovery over Implementation:** If you encounter a bug, style inconsistency, or potential optimization while implementing an approved plan, you MUST report it in your turn response (Conclusion) rather than fixing it. Unauthorized fixes or cleanups, no matter how trivial or "correct" they seem, are a violation of build integrity and the coordination protocol. Add these findings to `TODO.md` only after explicit user approval.
+    - **Discovery over Implementation:** If you encounter a bug, style inconsistency, or potential optimization while implementing an approved plan, you MUST report it in your turn response (Conclusion) rather than fixing it. Unauthorized fixes or cleanups, no matter how trivial or "correct" they seem, are a violation of build integrity and the coordination protocol. You MUST NOT add these findings to `TODO.md` until you have reported them and received explicit user approval to add them.
   - **LIMITS:** Do not add new work or perform significant refactoring/cleanup without additional, specific approval.
 
 - **Plan Hygiene & State Awareness (MANDATORY):**
@@ -53,7 +53,12 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
  You MAY use `write_file`, `replace`, and `run_shell_command` exclusively to create and execute data, scripts, and plans within the `dev-ai-interaction/` directory. The proposal turn must end immediately after the plan is stated.
 - **Versioning:** ALWAYS commit changes before building/deploying. The app uses `git describe` for its version string; committing first ensures the report results are tied to the correct hash.
 - **Phase Completion:** A phase is not considered complete until it is checked in and compiled. Because `git describe` is used for the version number, you MUST check in your changes before compiling, otherwise the version number in the resulting build will be incorrect.
-- **Sandbox:** All analysis scripts, local research (PaddleOCR), and pulled device data MUST stay in the `dev-ai-interaction/` directory. This directory is ignored by git and keeps the workspace clean. **NOTE:** Current technical containment (regex-based) is an accepted risk; remaining vigilant against unintended path traversal is the agent's responsibility.
+- **Sandbox & Tooling Integrity:** All analysis scripts, local research, and pulled device data MUST stay in the `dev-ai-interaction/` directory. 
+  - **Permissions:** In Plan Mode, you ARE authorized to use tools (`write_file`, `replace`, `run_shell_command`) to create plans, write scripts, and execute them within this sandbox. You may use `git` commands provided they are executed within the sandbox's own internal repository. You ARE authorized to use read-only `git` commands (e.g., `log`, `show`, `reflog`) on the main repository for research. You MUST NOT use `git` commands that change the state of the main repository (e.g., `reset`, `checkout`, `commit`) during Plan Mode.
+  - **Bypassing .gitignore:** Because `dev-ai-interaction/` is in the main `.gitignore`, semantic tools (`glob`, `list_directory`, `grep_search`) will silently ignore its contents by default. 
+    - **For Discovery:** Use `run_shell_command` with `ls` or `find` (e.g., `find dev-ai-interaction/ -name "*.md"`).
+    - **For Semantic Search:** If `glob` or `list_directory` MUST be used, you MUST explicitly pass `respect_git_ignore=false` (or `respect_gemini_ignore=false`) in the tool parameters.
+    - **For Reading:** `read_file` ignores git rules and can be used with explicit paths.
 
 ## Documentation Integrity Rules
 - **Fresh-Start Documentation Mandate:** All TODOs, Plans, and Specs MUST be written for a **Freshly Started Agent (FSA)**.
@@ -72,7 +77,7 @@ Instructions in this file (`GEMINI.md`) are foundational and take **absolute pre
   - **Strategy Errors (Total Turn Reversion):** If you discover that the *approved plan itself is fundamentally flawed* (e.g., unforeseen architectural blockers, requires modifying out-of-scope files), you MUST STOP IMMEDIATELY. Do not attempt unapproved workarounds. Revert the repository state (`git reset --hard builds`), return to the Strategy phase, and propose a revised plan. If the 3-3-3 system reaches 9 total failures, treat it as a Strategy Error.
 
 ## Build & Stability Policy
-- **Authorized Build Path:** You MUST use `./build_app "Commit Message" file1 file2...` for all implementation tasks. 
+- **Authorized Build Path:** You MUST use `./build_app "Commit Message" file1 file2...` for all implementation tasks. The script also accepts a file path for the commit message (e.g., `./build_app @dev-ai-interaction/commit_msg.txt file1...`).
     - Raw `git commit` or `./gradlew assembleDebug` are discouraged as they bypass the versioning/cleanup logic in the script.
     - Raw `git` commands (like `git show` and `git status`) are permitted for state management and research, but should not be used as a substitute for `./build_app` during the implementation commit phase.
     - A task is NOT complete until the changes are committed and the build passes.
