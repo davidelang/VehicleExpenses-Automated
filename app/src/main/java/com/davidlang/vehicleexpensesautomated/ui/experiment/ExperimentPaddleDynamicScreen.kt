@@ -43,7 +43,7 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
             enabled = !isRunning,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (isRunning) "Running..." else "Run Multi-Predictor Test")
+            Text(if (isRunning) "Running..." else "Run Multi-Predictor Profiling")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -66,7 +66,7 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
                             Text("Inference: ${res.inferenceTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                             Text("Post: ${res.postTimeMs}ms", style = MaterialTheme.typography.bodySmall)
                         }
-                        Text("Total Det: ${res.detectionCount}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                        Text("Total Blocks: ${res.detectionCount}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
@@ -111,6 +111,7 @@ private suspend fun runMultiPredictorTest(
     
     try {
         scales.forEach { scale ->
+            withContext(Dispatchers.Main) { onStatus("Initializing predictor for $scale...") }
             val t0 = System.currentTimeMillis()
             val config = MobileConfig()
             config.setThreads(4)
