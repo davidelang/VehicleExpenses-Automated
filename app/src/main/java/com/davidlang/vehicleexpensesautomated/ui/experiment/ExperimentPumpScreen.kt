@@ -262,7 +262,7 @@ private suspend fun runPumpExperiment(
                 masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
 
                 // 1. Transform
-                val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                val rawHist = OdometerOcrUtils.shoulderContrastStretch(workspace.p.mat)
                 if (flowName == flows.first()) {
                     originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
                     root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
@@ -286,15 +286,20 @@ private suspend fun runPumpExperiment(
 
                 // 3. Discovery
                 val scales = listOf(224, 608, 1024, 2560)
-                val mlBlocksRaw = mutableListOf<PumpHunk>(); val pdBlocksRaw = mutableListOf<PumpHunk>()
+                val mlBlocksRaw = mutableListOf<PumpHunk>()
+                val pdHunksRawTotal = mutableListOf<PumpHunk>()
+                val pdHunksExpTotal = mutableListOf<PumpHunk>()
+
                 scales.forEach { scale ->
                     prepareScale(workspace, scale)
                     mlBlocksRaw.addAll(runDiscoveryML(workspace, context))
-                    val (pdHunks, tPd) = runDiscoveryPaddle(workspace, paddleEngine)
-                    pdBlocksRaw.addAll(pdHunks)
+                    val (raw, exp, tPd) = runDiscoveryPaddle(workspace, paddleEngine)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
                     branch.metadata["t_pd_scale_$scale"] = "${tPd}ms"
                 }
-                val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw); val pdHunks = mergeGeometryIntoHunks(pdBlocksRaw)
+                val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw)
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
                 // 4. Extraction
                 val minEdge = min(imgW, imgH).toFloat()
@@ -313,17 +318,31 @@ private suspend fun runPumpExperiment(
                         val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
                         val anns = mutableListOf<SnapshotAnnotation>()
                         if (engine == "Paddle") {
+                            // RED: Raw detections
+                            pdHunksRawTotal.forEach { h ->
+                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
+                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.RED, 2))
+                            }
+                            // BLUE: Expanded (4px)
+                            pdHunksExpTotal.forEach { h ->
+                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
+                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.BLUE, 4))
+                            }
+                            // ORANGE: The specific merged hunk for this crop
                             val o1 = IcrsMath.icrsToPixel(orig.icrs.left, orig.icrs.top, imgW, imgH)
                             val o2 = IcrsMath.icrsToPixel(orig.icrs.right, orig.icrs.bottom, imgW, imgH)
-                            anns.add(SnapshotAnnotation(o1.x.toInt(), o1.y.toInt(), o2.x.toInt(), o2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 4))
+                            anns.add(SnapshotAnnotation(o1.x.toInt(), o1.y.toInt(), o2.x.toInt(), o2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
                         }
                         return OcrUtils.takeSnapshot(workspace.p, rect, 300, 100, anns, null, workspace).first
                     }
-                    return PathResult(applyRecognitionHeuristics(res[0].text), applyRecognitionHeuristics(res[1].text), takeCrop(expT, pair.first), takeCrop(expB, pair.second))
+                    val cropT = takeCrop(expT, pair.first); val cropB = takeCrop(expB, pair.second)
+                    return PathResult(res[0].text, res[1].text, cropT, cropB)
                 }
 
                 branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
-                branch.pathResults["PD"] = getFinal(pdHunks, "Paddle")
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle")
 
                 // 5. Visualization
                 fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h -> 
@@ -646,9 +665,9 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Pu
     }
 }
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): Pair<List<PumpHunk>, Long> {
-    val crop = buffer.c[999] ?: return Pair(emptyList(), 0L)
-    val res = paddleEngine.detect(crop) ?: return Pair(emptyList(), 0L)
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, Long> {
+    val crop = buffer.c[999] ?: return Triple(emptyList(), emptyList(), 0L)
+    val res = paddleEngine.detect(crop) ?: return Triple(emptyList(), emptyList(), 0L)
     val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
     
     val isLarge = crop.width > 512 || crop.height > 128
@@ -661,7 +680,10 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     val masterW = buffer.p.width; val masterH = buffer.p.height
     
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
-    val hunks = blocks.map { block ->
+    val hunksRaw = mutableListOf<PumpHunk>()
+    val hunksExpanded = mutableListOf<PumpHunk>()
+
+    blocks.forEach { block ->
         // 1. Map raw block to master pixel coordinates
         val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
         val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
@@ -669,15 +691,20 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
         val mr = (nr * masterW).toInt(); val mb = (nb * masterH).toInt()
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
+        // Capture raw detection in ICRS space
+        val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), masterW, masterH)
+        val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), masterW, masterH)
+        hunksRaw.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
+
         // 2. Perform native expansion against the high-resolution master buffer
         val expandedRect = NativeImageUtils.expandByUniformity(buffer.p.mat, rawRect)
 
         // 3. Map expanded coordinates back to ICRS space
         val i1 = IcrsMath.pixelToIcrs(expandedRect.left.toFloat(), expandedRect.top.toFloat(), masterW, masterH)
         val i2 = IcrsMath.pixelToIcrs(expandedRect.right.toFloat(), expandedRect.bottom.toFloat(), masterW, masterH)
-        PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+        hunksExpanded.add(PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y)))
     }
-    return Pair(hunks, tInf)
+    return Triple(hunksRaw, hunksExpanded, tInf)
 }
 
 private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
