@@ -261,6 +261,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
             val heatmap = outputTensor.floatData
+            
+            var minVal = Float.MAX_VALUE
+            var maxVal = Float.MIN_VALUE
+            for (v in heatmap) {
+                if (v < minVal) minVal = v
+                if (v > maxVal) maxVal = v
+            }
+            Log.i("PaddleDetect", "detectMat Out: dims=${dims.joinToString("x")} size=${heatmap.size} min=$minVal max=$maxVal")
+            
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
