@@ -488,8 +488,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.0;
 
-    const int THRESHOLD_UNIFORM = 30;
-    const int THRESHOLD_CONTENT = 40;
+    const int THRESHOLD_UNIFORM = 50;
+    const int THRESHOLD_CONTENT = 50;
 
     auto isUniform = [&](int start, int end, int fixed, bool horizontal) -> bool {
         uint8_t minV = 255;
@@ -520,7 +520,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (count == 0) return true;
         
         int range = maxV - minV;
-        return range < THRESHOLD_UNIFORM;
+        bool result = range < THRESHOLD_UNIFORM;
+        LOGE("EXPAND_TRACE: [OUT] %d (%s) range=%d %s", fixed, horizontal ? "H" : "V", range, result ? "STOP" : "");
+        return result;
     };
 
     auto isContent = [&](int start, int end, int fixed, bool horizontal) -> bool {
@@ -552,7 +554,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (count == 0) return false;
         
         int range = maxV - minV;
-        return range >= THRESHOLD_CONTENT;
+        bool result = range >= THRESHOLD_CONTENT;
+        LOGE("EXPAND_TRACE: [IN] %d (%s) range=%d %s", fixed, horizontal ? "H" : "V", range, result ? "STOP" : "");
+        return result;
     };
 
     // --- PHASE 1: EXPAND OUT ---
