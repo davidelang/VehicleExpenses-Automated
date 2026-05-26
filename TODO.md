@@ -4,4 +4,5 @@
 - [x] Final diagnostic cleanup in `OdometerOcrUtils.kt`
 - [x] Implement `automaticContrastStretch` and adaptive polarity (See: plans/adaptive-contrast-and-polarity.md)
 - [x] Implement Global Clustering and Uniform-Color Valley (See: plans/global-clustering-and-uniform-valley.md)
-- [ ] Refine Pump Logic: Dual expansion engines and report cleanup (See: plans/dual-expansion-and-pump-refine.md)
+- [x] Refine Pump Logic: Dual expansion engines and report cleanup (See: plans/dual-expansion-and-pump-refine.md)
+- [ ] Refactor Pump Experiment for N-Sets and Tree-Based Reporting (See: plans/n-sets-tree-reporting.md)

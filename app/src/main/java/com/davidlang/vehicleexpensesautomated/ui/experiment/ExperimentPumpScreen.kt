@@ -164,6 +164,27 @@ fun ExperimentPumpScreen(navController: NavHostController) {
     }
 }
 
+data class PumpBranch(
+    val name: String,
+    val images: MutableMap<String, String> = mutableMapOf(),
+    val pathResults: MutableMap<String, PathResult> = mutableMapOf(),
+    val metadata: MutableMap<String, String> = mutableMapOf(),
+    val subBranches: MutableMap<String, PumpBranch> = mutableMapOf()
+) {
+    fun getBranch(name: String): PumpBranch = subBranches.getOrPut(name) { PumpBranch(name) }
+    
+    fun serializeToJson(): JSONObject {
+        val root = JSONObject()
+        val imgObj = JSONObject(); images.forEach { (k, v) -> imgObj.put(k, v) }; root.put("images", imgObj)
+        val resObj = JSONObject(); pathResults.forEach { (k, v) -> 
+            val p = JSONObject(); p.put("cost", v.cost); p.put("vol", v.vol); resObj.put(k, p) 
+        }; root.put("results", resObj)
+        val metaObj = JSONObject(); metadata.forEach { (k, v) -> metaObj.put(k, v) }; root.put("metadata", metaObj)
+        val subObj = JSONObject(); subBranches.forEach { (k, v) -> subObj.put(k, v.serializeToJson()) }; root.put("branches", subObj)
+        return root
+    }
+}
+
 data class PumpReferenceCache(
     val vehicle: Vehicle, 
     val referenceBase64: String, 
@@ -203,109 +224,82 @@ private suspend fun runPumpExperiment(
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
     val experimentDetSet512x128 = BufferSet(512, 128)
-    val harnessEngineNames = mutableListOf(
-        "Set A ML", "Set A Paddle", 
-        "Set B ML", "Set B Paddle"
-    )
+    val masterBuffer = BufferSet(1, 1)
+
+    // Define flows for N-sets support
+    val flows = listOf("Set A", "Set B")
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
-        f.writeText(pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME))
+        f.writeText(pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, flows))
         return f
     }
 
     var currentFile = pStartNewFile()
     
     photos.forEachIndexed { index, file ->
-        // Phase 116 Emergency Fix: Initialize photoResult early with "No Match" state
-        // to prevent serializePhotoResultToJson crashes on failed identification.
-        var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
-        var finalWinnerName = "No match"
-        var bestOdometer = "FAILED"
-
-            try {
+        try {
             withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
             
-            
-            
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
-            NativePaddleEngine.bufferSetA.resize(imgW, imgH)
-            NativePaddleEngine.bufferSetB.resize(imgW, imgH)
-            val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.bufferSetA.p)
-            NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
-            NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
-
-            // Capture BEFORE and generate Histogram
-            val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
-            val histB64 = generateHistogramB64(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
-            val cdfB64 = generateCdfB64(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
-
-            // Step 1.5: 40% Contrast Stretch
-            OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetA.p.mat)
-            OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetB.p.mat)
+            masterBuffer.resize(imgW, imgH)
+            val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
             
-            // Capture AFTER and generate Histogram
-            val (afterB64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
-            val histAfterB64 = generateHistogramB64(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
+            val root = PumpBranch("Root")
+            val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, 225, 0, emptyList(), null, masterBuffer)
+            root.images["before"] = beforeB64
+            root.images["hist1"] = generateHistogramB64(masterBuffer.p.mat, 0.40f)
 
-            try {
-                val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
-                val tilt = deskewResA.angle
-                val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
+            // Dynamic Flow Processing
+            flows.forEach { flowName ->
+                val branch = root.getBranch(flowName)
+                val workspace = NativePaddleEngine.bufferSetA
+                workspace.resize(imgW, imgH)
+                masterBuffer.p.mat.copyTo(workspace.p.mat)
+                masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
 
-                suspend fun pRotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
-                    val tRot0 = System.currentTimeMillis()
+                // 1. Transform
+                OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                if (flowName == flows.first()) {
+                    root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
+                    root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                }
+
+                // 2. Deskew
+                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                val tilt = deskewRes.angle
+
+                suspend fun pRotate(set: BufferSet, angle: Float) = withContext(Dispatchers.IO) {
                     val src = set.p.mat; val dst = set.s.mat
                     val matrixLocal = android.graphics.Matrix(); matrixLocal.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
                     val values = FloatArray(9); matrixLocal.getValues(values)
                     val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
                     rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble()); rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
                     org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-                    set.flip(); rotMat.release(); System.currentTimeMillis() - tRot0
+                    set.flip(); rotMat.release()
                 }
+                pRotate(workspace, tilt)
 
-                val angleA = deskewResA.engines["ML Kit"]?.angle ?: 0f; val tRotateA = pRotate(NativePaddleEngine.bufferSetA, angleA)
-                val angleB = deskewResA.engines["Paddle V3"]?.angle ?: 0f; val tRotateB = pRotate(NativePaddleEngine.bufferSetB, angleB)
-
-                // 1. Quad Discovery (Multi-Scale A/B x ML/PD)
+                // 3. Discovery
                 val scales = listOf(200, 600, 1000, 2500)
-                
-                // Track details for JSON
-                val detailsA = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>("ML" to mutableMapOf(), "PD" to mutableMapOf())
-                val detailsB = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>("ML" to mutableMapOf(), "PD" to mutableMapOf())
-
-                // Discovery Path A
-                val mlBlocksRawA = mutableListOf<PumpHunk>(); val pdBlocksRawA = mutableListOf<PumpHunk>()
-                val t0A = System.currentTimeMillis()
+                val mlBlocksRaw = mutableListOf<PumpHunk>(); val pdBlocksRaw = mutableListOf<PumpHunk>()
                 scales.forEach { scale ->
-                    prepareScale(NativePaddleEngine.bufferSetA, scale)
-                    val ml = runDiscoveryML(NativePaddleEngine.bufferSetA, context); mlBlocksRawA.addAll(ml); detailsA["ML"]!![scale] = ml
-                    val pd = runDiscoveryPaddle(NativePaddleEngine.bufferSetA, paddleEngine); pdBlocksRawA.addAll(pd); detailsA["PD"]!![scale] = pd
+                    prepareScale(workspace, scale)
+                    mlBlocksRaw.addAll(runDiscoveryML(workspace, context))
+                    pdBlocksRaw.addAll(runDiscoveryPaddle(workspace, paddleEngine))
                 }
-                val tDiscoveryA = System.currentTimeMillis() - t0A
-                val mlHunksRawA = mergeGeometryIntoHunks(mlBlocksRawA); val pdHunksRawA = mergeGeometryIntoHunks(pdBlocksRawA)
-                
-                // Discovery Path B
-                val mlBlocksRawB = mutableListOf<PumpHunk>(); val pdBlocksRawB = mutableListOf<PumpHunk>()
-                val t0B = System.currentTimeMillis()
-                scales.forEach { scale ->
-                    prepareScale(NativePaddleEngine.bufferSetB, scale)
-                    val ml = runDiscoveryML(NativePaddleEngine.bufferSetB, context); mlBlocksRawB.addAll(ml); detailsB["ML"]!![scale] = ml
-                    val pd = runDiscoveryPaddle(NativePaddleEngine.bufferSetB, paddleEngine); pdBlocksRawB.addAll(pd); detailsB["PD"]!![scale] = pd
-                }
-                val tDiscoveryB = System.currentTimeMillis() - t0B
-                val mlHunksRawB = mergeGeometryIntoHunks(mlBlocksRawB); val pdHunksRawB = mergeGeometryIntoHunks(pdBlocksRawB)
+                val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw); val pdHunks = mergeGeometryIntoHunks(pdBlocksRaw)
 
-                // 2. Selection & Extraction for ALL 4 PATHS
-                val minEdge = Math.min(imgW, imgH).toFloat()
+                // 4. Extraction
+                val minEdge = min(imgW, imgH).toFloat()
                 val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
 
-                suspend fun getFinal(hunks: List<PumpHunk>, buf: BufferSet, engine: String, ang: Float): PathResult {
+                suspend fun getFinal(hunks: List<PumpHunk>, engine: String): PathResult {
                     val stitched = stitchHunksHorizontally(hunks)
                     val (top, bottom) = groupLanesByVerticalGap(stitched)
                     val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
                     val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
-                    val res = performHunkRecognition(listOf(expT, expB), buf, experimentRecSet320x48, engine, paddleEngine, context, ang)
+                    val res = performHunkRecognition(listOf(expT, expB), workspace, experimentRecSet320x48, engine, paddleEngine, context, tilt)
                     
                     suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
                         val p1 = IcrsMath.icrsToPixel(exp.icrs.left, exp.icrs.top, imgW, imgH)
@@ -317,81 +311,57 @@ private suspend fun runPumpExperiment(
                             val o2 = IcrsMath.icrsToPixel(orig.icrs.right, orig.icrs.bottom, imgW, imgH)
                             anns.add(SnapshotAnnotation(o1.x.toInt(), o1.y.toInt(), o2.x.toInt(), o2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 4))
                         }
-                        return OcrUtils.takeSnapshot(buf.p, rect, 300, 100, anns, null, buf).first
+                        return OcrUtils.takeSnapshot(workspace.p, rect, 300, 100, anns, null, workspace).first
                     }
                     return PathResult(applyRecognitionHeuristics(res[0].text), applyRecognitionHeuristics(res[1].text), takeCrop(expT, pair.first), takeCrop(expB, pair.second))
                 }
 
-                val resAMl = getFinal(mlHunksRawA, NativePaddleEngine.bufferSetA, "ML Kit", angleA)
-                val resAPd = getFinal(pdHunksRawA, NativePaddleEngine.bufferSetA, "Paddle", angleA)
-                val resBMl = getFinal(mlHunksRawB, NativePaddleEngine.bufferSetB, "ML Kit", angleB)
-                val resBPd = getFinal(pdHunksRawB, NativePaddleEngine.bufferSetB, "Paddle", angleB)
+                branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
+                branch.pathResults["PD"] = getFinal(pdHunks, "Paddle")
 
-                // 3. Visualization
+                // 5. Visualization
                 fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h -> 
                     val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
                     SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
                 
-                val aAMl = getAnns(mlBlocksRawA, Color.RED, 2) + getAnns(mlHunksRawA, Color.rgb(255, 165, 0), 4)
-                val (hunksAMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, aAMl, null, NativePaddleEngine.bufferSetA)
-                val aAPd = getAnns(pdBlocksRawA, Color.RED, 2) + getAnns(pdHunksRawA, Color.rgb(255, 165, 0), 4)
-                val (hunksAPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, aAPd, null, NativePaddleEngine.bufferSetA)
-                val aBMl = getAnns(mlBlocksRawB, Color.RED, 2) + getAnns(mlHunksRawB, Color.rgb(255, 165, 0), 4)
-                val (hunksBMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, aBMl, null, NativePaddleEngine.bufferSetB)
-                val aBPd = getAnns(pdBlocksRawB, Color.RED, 2) + getAnns(pdHunksRawB, Color.rgb(255, 165, 0), 4)
-                val (hunksBPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, aBPd, null, NativePaddleEngine.bufferSetB)
-
-                
-                val rowHtml = pBuildHtmlRowDynamic(
-                    rowIndex = index + 1,
-                    fileName = file.name,
-                    imgW = imgW,
-                    imgH = imgH,
-                    isDegraded = meta.isDegraded,
-                    beforeB64 = beforeB64,
-                    histB64 = histB64,
-                    cdfB64 = histAfterB64,
-                    afterB64 = afterB64,
-                    deskewHtml = deskewHtml,
-                    hunksAMl64 = hunksAMl64,
-                    hunksAPd64 = hunksAPd64,
-                    hunksBMl64 = hunksBMl64,
-                    hunksBPd64 = hunksBPd64,
-                    resAMl = resAMl,
-                    resAPd = resAPd,
-                    resBMl = resBMl,
-                    resBPd = resBPd,
-                    tDeskew = (tRotateA + tRotateB),
-                    tilt = tilt,
-                    angleA = angleA,
-                    angleB = angleB,
-                    diagnostic = meta.diagnostic
-                )
-
-                if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
-                currentFile.appendText(rowHtml); currentSize += rowHtml.length
-
-                val discDetails = JSONObject().apply { 
-                    put("path_a", serializeDiscoveryDetails(detailsA))
-                    put("path_b", serializeDiscoveryDetails(detailsB))
-                }
-
-                val photoJson = pSerializePhotoResultToJson(
-                    index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name,
-                    tDiscoveryA, tDiscoveryB, resAMl, resAPd, resBMl, resBPd, mlHunksRawA.size, pdHunksRawA.size, discDetails
-                )
-                val comma = if (index < total - 1) "," else ""
-                jsonFile.appendText(photoJson.toString(2) + "$comma" + "\\n")
-                val resultSummary = PumpPhotoResultSummary(file.name, "ML: ${mlHunksRawA.size} | PD: ${pdHunksRawA.size}", 1.0f, "${resAMl.cost} / ${resAMl.vol}")
-                withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
-                delay(150)
-
-
-
-            } finally {
-                // BufferSets are cleaned up globally or at end of session
+                val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
+                branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
+                val aPd = getAnns(pdBlocksRaw, Color.RED, 2) + getAnns(pdHunks, Color.rgb(255, 165, 0), 4)
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
             }
+
+            // Final Reporting
+            val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
+            val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
+            
+            val rowHtml = pBuildHtmlRowDynamic(
+                rowIndex = index + 1,
+                fileName = file.name,
+                imgW = imgW,
+                imgH = imgH,
+                isDegraded = meta.isDegraded,
+                root = root,
+                tDeskew = 0L, // Combined in flows
+                tilt = deskewResA.angle,
+                deskewHtml = deskewHtml,
+                diagnostic = meta.diagnostic
+            )
+
+            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
+            currentFile.appendText(rowHtml); currentSize += rowHtml.length
+
+            val photoJson = pSerializePhotoResultToJson(
+                index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root
+            )
+            val comma = if (index < total - 1) "," else ""
+            jsonFile.appendText(photoJson.toString(2) + "$comma" + "\n")
+            
+            val summaryText = flows.map { f -> "$f: ${root.getBranch(f).pathResults["ML"]?.cost ?: "F"}" }.joinToString(" | ")
+            val resultSummary = PumpPhotoResultSummary(file.name, summaryText, 1.0f, "")
+            withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
+            delay(50)
+
         } catch (e: Exception) {
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
         }
@@ -401,51 +371,35 @@ private suspend fun runPumpExperiment(
     
     experimentRecSet320x48.release()
     experimentDetSet512x128.release()
+    masterBuffer.release()
 }
 
 private fun pSerializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, 
     isDegraded: Boolean, nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = "",
-    tDiscoveryA: Long = 0, tDiscoveryB: Long = 0,
-    resAMl: PathResult = PathResult("N/A", "N/A", "", ""),
-    resAPd: PathResult = PathResult("N/A", "N/A", "", ""),
-    resBMl: PathResult = PathResult("N/A", "N/A", "", ""),
-    resBPd: PathResult = PathResult("N/A", "N/A", "", ""),
-    mlHunkCountA: Int = 0, pdHunkCountA: Int = 0,
+    root: PumpBranch,
     discoveryDetails: JSONObject? = null
 ): JSONObject {
-    val root = JSONObject()
-    root.apply {
+    val rootJson = JSONObject()
+    rootJson.apply {
         put("line_number", lineNumber); put("file", fileName)
         put("probedWidth", probedW); put("probedHeight", probedH)
         put("imageWidth", decodedW); put("imageHeight", decodedH)
         put("isDegraded", isDegraded); put("nativeProbe", nativeProbe)
         put("t_thumb_orig_ms", tSnapOrig); put("t_snap_deskew_ms", tSnapDeskew)
-        put("t_discovery_a_ms", tDiscoveryA); put("t_discovery_b_ms", tDiscoveryB)
-        put("ml_hunk_count_a", mlHunkCountA); put("pd_hunk_count_a", pdHunkCountA)
         if (discoveryDetails != null) put("discovery_details", discoveryDetails)
-        val r = JSONObject()
-        r.put("aml_cost", resAMl.cost); r.put("aml_vol", resAMl.vol)
-        r.put("apd_cost", resAPd.cost); r.put("apd_vol", resAPd.vol)
-        r.put("bml_cost", resBMl.cost); r.put("bml_vol", resBMl.vol)
-        r.put("bpd_cost", resBPd.cost); r.put("bpd_vol", resBPd.vol)
-        put("quad_results", r)
+        
+        put("tree", root.serializeToJson())
+        
         val d = JSONObject()
         d.pPutSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
-        
-        // Add A/B Parity Checksums
         deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) -> 
             if (k.contains("chk") || k.contains("count")) d.put(k, v)
         }
-        
-        // Add Histogram Diagnostic for Pump
-        val histData = generateHistogramB64(org.opencv.core.Mat(), 0.40f)
-        d.put("histogram", histData)
-        
         put("deskew", d)
     }
-    return root
+    return rootJson
 }
 
 
@@ -533,10 +487,15 @@ private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): St
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
-private fun pBuildHtmlHeader(time: String, total: Int, version: String): String = buildString {
+private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
-    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th><th style='width:350px;'>Set A ML Kit</th><th style='width:350px;'>Set A Paddle</th><th style='width:350px;'>Set B ML Kit</th><th style='width:350px;'>Set B Paddle</th><th style='width:600px;'>Final Comparison</th></tr>")
+    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
+    flows.toSortedSet().forEach { flow ->
+        appendLine("<th style='width:350px;'>$flow ML</th>")
+        appendLine("<th style='width:350px;'>$flow Paddle</th>")
+    }
+    appendLine("<th style='width:600px;'>Final Comparison</th></tr>")
 }
 
 private fun pBuildHtmlRowDynamic(
@@ -545,41 +504,30 @@ private fun pBuildHtmlRowDynamic(
     imgW: Int,
     imgH: Int,
     isDegraded: Boolean,
-    beforeB64: String,
-    histB64: String,
-    cdfB64: String, // This now contains the post-stretch histogram
-    afterB64: String,
-    deskewHtml: String,
-    hunksAMl64: String,
-    hunksAPd64: String,
-    hunksBMl64: String,
-    hunksBPd64: String,
-    resAMl: PathResult,
-    resAPd: PathResult,
-    resBMl: PathResult,
-    resBPd: PathResult,
+    root: PumpBranch,
     tDeskew: Long,
     tilt: Float,
-    angleA: Float,
-    angleB: Float,
+    deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$beforeB64'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$histB64'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$afterB64'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$cdfB64'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
+    val img = root.images
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$resHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
-    appendLine("<td><b>ML Kit (A):</b><br><img src='data:image/jpeg;base64,$hunksAMl64'></td>")
-    appendLine("<td><b>Paddle (A):</b><br><img src='data:image/jpeg;base64,$hunksAPd64'></td>")
-    appendLine("<td><b>ML Kit (B):</b><br><img src='data:image/jpeg;base64,$hunksBMl64'></td>")
-    appendLine("<td><b>Paddle (B):</b><br><img src='data:image/jpeg;base64,$hunksBPd64'></td>")
+    root.subBranches.toSortedMap().forEach { (name, br) -> 
+        appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
+        appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,${br.images["PD"]}'></td>")
+    }
 
     appendLine("<td><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
-    val pArr = listOf("A:ML" to resAMl, "A:PD" to resAPd, "B:ML" to resBMl, "B:PD" to resBPd)
-    pArr.forEach { (name, res) ->
-        appendLine("<tr><td>$name</td>")
-        appendLine("<td><b>${res.cost}</b><br>" + (if(res.costB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'>" else ""))
-        appendLine("<td><b>${res.vol}</b><br>" + (if(res.volB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'>" else ""))
-        appendLine("</td></tr>")
+    root.subBranches.toSortedMap().forEach { (name, br) ->
+        br.pathResults.forEach { (eng, res) ->
+            appendLine("<tr><td>$name:$eng</td>")
+            appendLine("<td><b>${res.cost}</b><br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'></td>")
+            appendLine("<td><b>${res.vol}</b><br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'></td>")
+            appendLine("</tr>")
+        }
     }
     appendLine("</table></td></tr>")
 }
