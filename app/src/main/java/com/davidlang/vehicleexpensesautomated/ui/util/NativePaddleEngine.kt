@@ -50,16 +50,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         // Phase 116: Unified Rigid Backing Fields
         private var _bufferSetA: BufferSet? = null
         private var _bufferSetB: BufferSet? = null
-        private var _deskewBufferSet2048: BufferSet? = null
+        private var _deskewBufferSetLarge: BufferSet? = null
         private var _bufferLarge: FloatArray? = null
-        private var _sharedBmp2048: Bitmap? = null
-        private var _sharedCanvas2048: Canvas? = null
+        private var _sharedBmp2560: Bitmap? = null
+        private var _sharedCanvas2560: Canvas? = null
         private var _bufferSmall: FloatArray? = null
         private var _bufferRec: FloatArray? = null
         private var _sharedNv21Buffer: ByteArray? = null
         private var _sharedBmpOdoScratch: Bitmap? = null
         private var _sharedCanvasOdoScratch: Canvas? = null
         private var _redPaint: Paint? = null
+        private var _bluePaint4: Paint? = null
         private var _orangePaint: Paint? = null
         private var _grayToAlphaPaint: Paint? = null
         private var _alphaToGrayPaint: Paint? = null
@@ -69,16 +70,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         // Public Non-Null Accessors
         val bufferSetA: BufferSet get() = _bufferSetA!!
         val bufferSetB: BufferSet get() = _bufferSetB!!
-        val deskewBufferSet2048: BufferSet get() = _deskewBufferSet2048!!
+        val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
-        val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
-        val sharedCanvas2048: Canvas get() = _sharedCanvas2048!!
+        val sharedBmp2560: Bitmap get() = _sharedBmp2560!!
+        val sharedCanvas2560: Canvas get() = _sharedCanvas2560!!
         private val bufferSmall: FloatArray get() = _bufferSmall!!
         private val bufferRec: FloatArray get() = _bufferRec!!
         val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
         val sharedBmpOdoScratch: Bitmap get() = _sharedBmpOdoScratch!!
         val sharedCanvasOdoScratch: Canvas get() = _sharedCanvasOdoScratch!!
         val redPaint: Paint get() = _redPaint!!
+        val bluePaint4: Paint get() = _bluePaint4!!
         val orangePaint: Paint get() = _orangePaint!!
         val grayToAlphaPaint: Paint get() = _grayToAlphaPaint!!
         val alphaToGrayPaint: Paint get() = _alphaToGrayPaint!!
@@ -93,12 +95,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             _bufferSetA = BufferSet(4000, 3072)
             _bufferSetB = BufferSet(4000, 3072)
-            _deskewBufferSet2048 = BufferSet(2048, 2048)
-            _deskewBufferSet2048!!.p.clearChroma()
-            _deskewBufferSet2048!!.s.clearChroma()
+            _deskewBufferSetLarge = BufferSet(2560, 2560)
+            _deskewBufferSetLarge!!.p.clearChroma()
+            _deskewBufferSetLarge!!.s.clearChroma()
 
-            _bufferLarge = FloatArray(1 * 2048 * 2048) // Native is now exclusively 1-channel (Mono)
-            _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
+            _bufferLarge = FloatArray(1 * 2560 * 2560) // Native is now exclusively 1-channel (Mono)
+            _sharedBmp2560 = Bitmap.createBitmap(2560, 2560, Bitmap.Config.ALPHA_8); _sharedCanvas2560 = Canvas(_sharedBmp2560!!)
 
             _bufferSmall = FloatArray(1 * 512 * 128)
             _bufferRec = FloatArray(1 * 320 * 48)
@@ -107,6 +109,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
 
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
+            _bluePaint4 = Paint().apply { color = Color.BLUE; style = Paint.Style.STROKE; strokeWidth = 4f }
             _orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
 
             _grayToAlphaPaint = Paint().apply {
@@ -135,7 +138,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val config = MobileConfig()
                 config.setThreads(4); config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_HIGH)
                 
-                config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 1, 2048, 2048))
+                config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 1, 2560, 2560))
                 config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 1, 128, 512))
                 
                 config.setModelFromFile(copy("paddle/rec_v3_mono_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
@@ -183,8 +186,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = if (isLarge) detectorLarge else detectorSmall
         if (predictor == null) return null
 
-        val tensorWidth = if (isLarge) 2048 else 512
-        val tensorHeight = if (isLarge) 2048 else 128
+        val tensorWidth = if (isLarge) 2560 else 512
+        val tensorHeight = if (isLarge) 2560 else 128
         val floatData = if (isLarge) bufferLarge else bufferSmall
         
         floatData.fill(0.0f)
