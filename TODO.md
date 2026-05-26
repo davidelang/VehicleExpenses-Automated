@@ -15,3 +15,4 @@
 - [x] Implement Pull-Back Expansion and Zero Padding (See: plans/pullback-zero-padding.md)
 - [x] Unify Pull-Back Thresholds and Restore Forensic Trace (See: plans/unify-pullback-inputs.md)
 - [ ] Restore Capacity Baseline and Refine Retraction (See: plans/restore-capacity-and-refine-retraction.md)
+- [x] DNG Ingestion Optimization & Profiling (See: plans/dng-ingest-optimization.md)
