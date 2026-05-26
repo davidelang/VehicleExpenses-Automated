@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
-import android.graphics.RectF
 import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,7 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
+import com.baidu.paddle.lite.MobileConfig
+import com.baidu.paddle.lite.PaddlePredictor
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -24,7 +24,7 @@ import kotlin.math.max
 fun ExperimentPaddleDynamicScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var results by remember { mutableStateOf<List<DynamicResult>>(emptyList()) }
+    var results by remember { mutableStateOf<List<MultiPredictorResult>>(emptyList()) }
     var isRunning by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("Ready") }
 
@@ -36,14 +36,14 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
                 isRunning = true
                 results = emptyList()
                 scope.launch {
-                    results = runDynamicValidation(context) { statusMessage = it }
+                    results = runMultiPredictorTest(context) { statusMessage = it }
                     isRunning = false
                 }
             },
             enabled = !isRunning,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (isRunning) "Running..." else "Run Dynamic Detect Test (Dash/Pump)")
+            Text(if (isRunning) "Running..." else "Run Multi-Predictor Test")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -53,8 +53,8 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Scale: ${res.scale}", style = MaterialTheme.typography.titleMedium)
-                        Text("Tensor Size: ${res.alignedW}x${res.alignedH}")
-                        Text("Inference: ${res.inferenceTimeMs}ms")
+                        Text("Init Time: ${res.initTimeMs}ms")
+                        Text("Inference Time: ${res.inferenceTimeMs}ms")
                         Text("Detections: ${res.detectionCount}")
                     }
                 }
@@ -63,93 +63,122 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
     }
 }
 
-data class DynamicResult(
+data class MultiPredictorResult(
     val scale: Int,
-    val alignedW: Int,
-    val alignedH: Int,
+    val initTimeMs: Long,
     val inferenceTimeMs: Long,
     val detectionCount: Int
 )
 
-private suspend fun runDynamicValidation(
+private suspend fun runMultiPredictorTest(
     context: android.content.Context, 
     onStatus: (String) -> Unit
-): List<DynamicResult> = withContext(Dispatchers.IO) {
-    val output = mutableListOf<DynamicResult>()
+): List<MultiPredictorResult> = withContext(Dispatchers.IO) {
+    val output = mutableListOf<MultiPredictorResult>()
     
     // 1. Path Resolution
-    val dashFile = File(context.filesDir, "experiment_photos/PXL_20220701_020707365.dng")
-    val pumpFile = File(context.getExternalFilesDir(null), "pump_photos/PXL_20260114_020053675.jpg")
+    val arch = android.os.Build.SUPPORTED_ABIS[0]
+    val modelPath = File(context.cacheDir, "paddle/det_v4_4000_mono_$arch.nb").absolutePath
     
-    val targetFile = if (dashFile.exists()) dashFile else if (pumpFile.exists()) pumpFile else null
-    
-    if (targetFile == null) {
-        val err = "Missing files:\n${dashFile.absolutePath}\n${pumpFile.absolutePath}"
-        Log.e("DynamicTest", err)
-        withContext(Dispatchers.Main) { onStatus(err) }
+    if (!File(modelPath).exists()) {
+        withContext(Dispatchers.Main) { onStatus("Error: Model not found at $modelPath") }
         return@withContext emptyList()
     }
     
-    val testPath = targetFile.absolutePath
-    withContext(Dispatchers.Main) { onStatus("Loading: $testPath") }
+    val dashFile = File(context.filesDir, "experiment_photos/PXL_20220701_020707365.dng")
+    if (!dashFile.exists()) {
+        withContext(Dispatchers.Main) { onStatus("Error: Test image not found") }
+        return@withContext emptyList()
+    }
 
-    // 2. Isolation: Local BufferSet
-    val buffer = BufferSet(4000, 3072)
-    val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return@withContext emptyList<DynamicResult>()
+    // 2. Initialization Phase
+    val predictors = mutableMapOf<Int, PaddlePredictor>()
+    val initTimes = mutableMapOf<Int, Long>()
+    val scales = listOf(224, 608, 1024, 2560)
     
     try {
-        // 3. Load Image into Primary
-        val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, testPath)
-        buffer.resize(imgW, imgH)
-        ImageIngestionProvider.ingestFromFile(context, testPath, buffer.p)
-        
-        val scales = listOf(2496, 1024, 608, 224)
-        
-        scales.forEach { scaleLongEdge ->
-            val currentLongEdge = max(imgW, imgH)
-            val s = if (currentLongEdge <= scaleLongEdge) 1.0f else scaleLongEdge.toFloat() / currentLongEdge
-            val targetW = (imgW * s).toInt()
-            val targetH = (imgH * s).toInt()
+        scales.forEach { scale ->
+            withContext(Dispatchers.Main) { onStatus("Initializing predictor for $scale...") }
+            val t0 = System.currentTimeMillis()
             
-            // Round UP to 32
-            val alignedW = ((targetW + 31) / 32) * 32
-            val alignedH = ((targetH + 31) / 32) * 32
+            val config = MobileConfig()
+            config.setThreads(4)
+            config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_HIGH)
+            config.setModelFromFile(modelPath)
             
-            withContext(Dispatchers.Main) { onStatus("Scale $scaleLongEdge: Aligned to ${alignedW}x${alignedH}") }
-
-            // 4. Manual Letterboxing using SIBLING crops in Scratch
-            // Memory is zeroed once per scale
-            val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
-            val outerSlice = buffer.c[outerId]
-            outerSlice.clear() // Zero padding for the whole tensor region
+            val predictor = PaddlePredictor.createPaddlePredictor(config)
+            predictor.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
             
-            // Inner crop for image placement (sibling of outer, both from buffer.s)
-            val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
-            val innerSlice = buffer.c[innerId]
-            
-            // Resize source Primary mat into target Inner mat
-            Imgproc.resize(buffer.p.mat, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-            
-            // 5. Detect on the Aligned Container
-            val res = paddleEngine.detectMat(outerSlice.mat)
-            
-            if (res != null) {
-                val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
-                val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, outerSlice)
-                Log.i("DynamicResult", "Scale: $scaleLongEdge | Tensor: ${alignedW}x${alignedH} | Inf: ${tInf}ms | Det: ${blocks.size}")
-                output.add(DynamicResult(scaleLongEdge, alignedW, alignedH, tInf, blocks.size))
-            }
-            
-            // 6. Explicit Variable-based Release
-            innerSlice.release()
-            outerSlice.release()
+            initTimes[scale] = System.currentTimeMillis() - t0
+            predictors[scale] = predictor
         }
-        withContext(Dispatchers.Main) { onStatus("Complete: $testPath") }
+
+        // 3. Inference Phase
+        val buffer = BufferSet(4000, 3072)
+        try {
+            val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, dashFile.absolutePath)
+            buffer.resize(imgW, imgH)
+            ImageIngestionProvider.ingestFromFile(context, dashFile.absolutePath, buffer.p)
+            
+            scales.forEach { scale ->
+                withContext(Dispatchers.Main) { onStatus("Running inference for $scale...") }
+                val predictor = predictors[scale] ?: return@forEach
+                
+                // Scale calculations (preserve aspect ratio)
+                val currentLongEdge = max(imgW, imgH)
+                val s = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+                val targetW = (imgW * s).toInt()
+                val targetH = (imgH * s).toInt()
+                
+                // Setup fixed-size outer container (e.g. 224x224)
+                val outerId = buffer.s.createCrop(0, 0, scale, scale)
+                val outerSlice = buffer.c[outerId]
+                outerSlice.clear() // Zero pad
+                
+                // Resize into inner target crop
+                val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
+                val innerSlice = buffer.c[innerId]
+                Imgproc.resize(buffer.p.mat, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                
+                // Populate Tensor
+                val w = outerSlice.width
+                val h = outerSlice.height
+                val floatData = FloatArray(w * h)
+                NativeImageUtils.populateMonoTensor(outerSlice.mat, floatData, w, h, 0.485f, 0.229f)
+                
+                val tJniIn0 = System.nanoTime()
+                predictor.getInput(0).setData(floatData)
+                val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+
+                val tInfer0 = System.nanoTime()
+                predictor.run()
+                val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+                
+                val outputTensor = predictor.getOutput(0)
+                val heatmap = outputTensor.floatData
+                val dims = outputTensor.shape()
+                
+                val blocks = OdometerOcrUtils.processPaddleHeatmap(heatmap, dims[3].toInt(), dims[2].toInt(), 1.0f, outerSlice)
+                
+                output.add(
+                    MultiPredictorResult(
+                        scale = scale,
+                        initTimeMs = initTimes[scale] ?: 0L,
+                        inferenceTimeMs = tInfer.toLong(),
+                        detectionCount = blocks.size
+                    )
+                )
+                
+                innerSlice.release()
+                outerSlice.release()
+            }
+        } finally {
+            buffer.release()
+        }
+        withContext(Dispatchers.Main) { onStatus("Complete") }
     } catch (e: Exception) {
-        Log.e("DynamicTest", "Test failed", e)
+        Log.e("MultiPredictorTest", "Test failed", e)
         withContext(Dispatchers.Main) { onStatus("Failed: ${e.message}") }
-    } finally {
-        buffer.release()
     }
     
     output
