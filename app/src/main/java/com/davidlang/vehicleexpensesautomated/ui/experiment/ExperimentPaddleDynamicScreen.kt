@@ -103,7 +103,7 @@ private suspend fun runDynamicValidation(
         buffer.resize(imgW, imgH)
         ImageIngestionProvider.ingestFromFile(context, testPath, buffer.p)
         
-        val scales = listOf(224, 608, 1024, 2496)
+        val scales = listOf(2496, 1024, 608, 224)
         
         scales.forEach { scaleLongEdge ->
             val currentLongEdge = max(imgW, imgH)
