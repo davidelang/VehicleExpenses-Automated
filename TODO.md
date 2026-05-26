@@ -12,4 +12,6 @@
 - [x] Fix Pump Pipeline Expansion Integration (See: plans/pump-pipeline-expansion-fix-v2.md)
 - [x] Implement Shoulder-Based Contrast and Simplify Expansion (See: plans/shoulder-contrast-and-expansion-simplify.md)
 - [x] Diagnostic Color Tiers and Shoulder Contrast Activation (See: plans/diagnostic-tiers-and-shoulder-contrast.md)
-- [ ] Implement Pull-Back Expansion and Zero Padding (See: plans/pullback-zero-padding.md)
+- [x] Implement Pull-Back Expansion and Zero Padding (See: plans/pullback-zero-padding.md)
+- [x] Unify Pull-Back Thresholds and Restore Forensic Trace (See: plans/unify-pullback-inputs.md)
+- [ ] Restore Capacity Baseline and Refine Retraction (See: plans/restore-capacity-and-refine-retraction.md)
