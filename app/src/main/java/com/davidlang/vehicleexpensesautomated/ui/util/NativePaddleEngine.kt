@@ -224,6 +224,56 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    /**
+     * Dynamic-sized detection for arbitrary Mat crops (e.g. Pump Experiment).
+     * Resizes the internal Paddle predictor to match the input Mat dimensions exactly.
+     */
+    fun detectMat(srcMat: Mat): DetectionResult? {
+        if (!isAvailable) return null
+        val predictor = detectorLarge ?: return null
+        
+        val w = srcMat.cols()
+        val h = srcMat.rows()
+        
+        val tPop0 = System.nanoTime()
+        val floatData = FloatArray(w * h)
+        val mean = 0.485f
+        val std = 0.229f
+        
+        NativeImageUtils.populateMonoTensor(srcMat, floatData, w, h, mean, std)
+        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
+        
+        try {
+            val tJniIn0 = System.nanoTime()
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
+            inputTensor.setData(floatData)
+            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+
+            val tInfer0 = System.nanoTime()
+            predictor.run()
+            val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+
+            val tJniOut0 = System.nanoTime()
+            val outputTensor = predictor.getOutput(0)
+            val dims = outputTensor.shape()
+            val heatmap = outputTensor.floatData
+            val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+
+            val meta = mapOf(
+                "t_pop_tensor_ms" to "%.3f".format(tPop),
+                "t_jni_in_ms" to "%.3f".format(tJniIn),
+                "t_inference_ms" to "%.3f".format(tInfer),
+                "t_jni_out_ms" to "%.3f".format(tJniOut),
+                "dynamic_shape" to "%dx%d".format(w, h)
+            )
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta)
+        } catch (t: Throwable) {
+            Log.e("PaddleDetect", "Dynamic detection failed", t)
+            return null
+        }
+    }
+
     suspend fun runConstrainedStatic(input: Any, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (recognizer == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
