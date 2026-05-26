@@ -67,8 +67,8 @@ object OdometerOcrUtils {
         val t0 = System.currentTimeMillis()
         
         // 1. Unified Preparation (Bitmap or BufferSet.Slice)
-        val pTargetSize = 2048
-        val bufferSet = NativePaddleEngine.deskewBufferSet2048
+        val pTargetSize = 2500
+        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
         
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
         val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
@@ -190,7 +190,7 @@ object OdometerOcrUtils {
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
-        val pTargetSize = 2048
+        val pTargetSize = 2500
         val srcW: Int
         val srcH: Int
         when (input) {
@@ -421,7 +421,7 @@ object OdometerOcrUtils {
         hist.release()
     }
 
-    fun automaticContrastStretch(mat: Mat) {
+    fun automaticContrastStretch(mat: Mat): FloatArray {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
         
@@ -432,33 +432,48 @@ object OdometerOcrUtils {
             smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
         }
 
-        // Find first peak from left
-        var pLow = 0.5 // Fallback bin
-        for (i in 1..62) {
-            if (smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1] && smoothed[i] > 0) {
-                pLow = i.toDouble(); break
+        val totalPixels = mat.rows() * mat.cols()
+        val dropOffThreshold = totalPixels * 0.05 // 5% drop-off requirement
+
+        // Find robust peak from left
+        var pLow = 0.5
+        for (i in 1..61) {
+            if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
+                // Potential peak. Check for drop-off to the right
+                var peakConfirmed = false
+                for (j in i+1..62) {
+                    if (smoothed[j] < smoothed[i] - dropOffThreshold) {
+                        peakConfirmed = true; break
+                    }
+                    if (smoothed[j] > smoothed[i]) break // Found a higher point, this wasn't the peak
+                }
+                if (peakConfirmed) { pLow = i.toDouble(); break }
             }
         }
 
-        // Find first peak from right
-        var pHigh = 62.5 // Fallback bin
-        for (i in 62 downTo 1) {
-            if (smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1] && smoothed[i] > 0) {
-                pHigh = i.toDouble(); break
+        // Find robust peak from right
+        var pHigh = 62.5
+        for (i in 62 downTo 2) {
+            if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
+                // Potential peak. Check for drop-off to the left
+                var peakConfirmed = false
+                for (j in i-1 downTo 1) {
+                    if (smoothed[j] < smoothed[i] - dropOffThreshold) {
+                        peakConfirmed = true; break
+                    }
+                    if (smoothed[j] > smoothed[i]) break // Found a higher point
+                }
+                if (peakConfirmed) { pHigh = i.toDouble(); break }
             }
         }
 
-        // Map bin peaks back to 0-255 intensity (1 bin = 4 intensity levels)
         val intensityLow = pLow * 4.0
         val intensityHigh = pHigh * 4.0
 
-        // If peaks are too close, fallback to 2%/98% percentiles on the same 64-bin hist
         if (intensityHigh - intensityLow < 20.0) {
-            val total = mat.rows() * mat.cols(); var sum = 0.0
-            var iLow = 0.0; var iHigh = 255.0
-            for (i in 0..63) { sum += bins[i]; if (sum >= total * 0.02) { iLow = i * 4.0; break } }
-            sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= total * 0.02) { iHigh = i * 4.0; break } }
-            
+            var iLow = 0.0; var iHigh = 255.0; var sum = 0.0
+            for (i in 0..63) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iLow = i * 4.0; break } }
+            sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iHigh = i * 4.0; break } }
             val alpha = if (iHigh > iLow) 255.0 / (iHigh - iLow) else 1.0
             val beta = -iLow * alpha
             mat.convertTo(mat, CvType.CV_8U, alpha, beta)
@@ -469,6 +484,7 @@ object OdometerOcrUtils {
         }
         
         hist.release()
+        return bins
     }
 
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {

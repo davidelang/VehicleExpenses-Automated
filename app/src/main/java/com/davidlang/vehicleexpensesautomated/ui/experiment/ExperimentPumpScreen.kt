@@ -251,6 +251,8 @@ private suspend fun runPumpExperiment(
             root.images["before"] = beforeB64
             root.images["hist1"] = generateHistogramB64(masterBuffer.p.mat, 0.40f)
 
+            var originalHistogram = JSONArray()
+
             // Dynamic Flow Processing
             flows.forEach { flowName ->
                 val branch = root.getBranch(flowName)
@@ -260,8 +262,9 @@ private suspend fun runPumpExperiment(
                 masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
 
                 // 1. Transform
-                OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                 if (flowName == flows.first()) {
+                    originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
                     root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
                     root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
                 }
@@ -355,7 +358,7 @@ private suspend fun runPumpExperiment(
             currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
             val photoJson = pSerializePhotoResultToJson(
-                index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root
+                index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
             )
             val comma = if (index < total - 1) "," else ""
             jsonFile.appendText(photoJson.toString(2) + "$comma" + "\n")
@@ -382,6 +385,7 @@ private fun pSerializePhotoResultToJson(
     isDegraded: Boolean, nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = "",
     root: PumpBranch,
+    originalHistogram: JSONArray,
     discoveryDetails: JSONObject? = null
 ): JSONObject {
     val rootJson = JSONObject()
@@ -391,6 +395,18 @@ private fun pSerializePhotoResultToJson(
         put("imageWidth", decodedW); put("imageHeight", decodedH)
         put("isDegraded", isDegraded); put("nativeProbe", nativeProbe)
         put("t_thumb_orig_ms", tSnapOrig); put("t_snap_deskew_ms", tSnapDeskew)
+        put("original_histogram", originalHistogram)
+        
+        val scaleTelemetry = JSONObject()
+        root.subBranches.values.forEach { branch ->
+            branch.metadata.forEach { (k, v) ->
+                if (k.startsWith("t_pd_scale_")) {
+                    scaleTelemetry.put(k.removePrefix("t_pd_scale_"), v)
+                }
+            }
+        }
+        put("scale_telemetry", scaleTelemetry)
+
         if (discoveryDetails != null) put("discovery_details", discoveryDetails)
         
         put("tree", root.serializeToJson())
@@ -636,8 +652,8 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
     val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
     
     val isLarge = crop.width > 512 || crop.height > 128
-    val tensorW = if (isLarge) 2048f else 512f
-    val tensorH = if (isLarge) 2048f else 128f
+    val tensorW = if (isLarge) 2500f else 512f
+    val tensorH = if (isLarge) 2500f else 128f
     
     val occW = (crop.width / tensorW) * res.width
     val occH = (crop.height / tensorH) * res.height

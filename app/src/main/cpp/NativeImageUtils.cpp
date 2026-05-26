@@ -519,10 +519,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (count == 0) return true;
         
         bool uniform = (maxV - minV) < 40;
-        if (uniform) {
-            // Log when we stop
-            LOGE("EXPAND: Stop @ %d (%s) min=%d max=%d range=%d", fixed, horizontal ? "H" : "V", minV, maxV, (maxV-minV));
-        }
+        LOGE("EXPAND_TRACE: %d (%s) min=%d max=%d range=%d %s", fixed, horizontal ? "H" : "V", minV, maxV, (maxV-minV), uniform ? "STOP" : "");
         return uniform;
     };
 
