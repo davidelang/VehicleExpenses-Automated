@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
                     "about" -> "About"
                     "experiment" -> "Alignment Experiment"
                     "experiment_pump" -> "Gas Pump Extraction Experiment"
-                    "experiment_dynamic" -> "Dynamic Detect Test"
+                    "experiment_dynamic" -> "Multi-Predictor Test"
                     else -> "Vehicle Expenses"
                 }
 
@@ -201,7 +201,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Dynamic Detect Test") },
+                                label = { Text("Multi-Predictor Test") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("experiment_dynamic")
