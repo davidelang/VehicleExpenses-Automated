@@ -425,6 +425,7 @@ object OdometerOcrUtils {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
         
+        // Find two largest peaks
         var peak1 = 0; var peak2 = 0
         var val1 = 0.0; var val2 = 0.0
         for (i in 0..255) {
@@ -433,11 +434,14 @@ object OdometerOcrUtils {
             else if (v > val2) { val2 = v; peak2 = i }
         }
 
-        if (peak2 > peak1) {
-            Core.bitwise_not(mat, mat)
-        }
+        val pLow = min(peak1, peak2).toDouble()
+        val pHigh = max(peak1, peak2).toDouble()
 
-        applyContrastStretch(mat, 0.20f)
+        // Map pLow -> 0 and pHigh -> 255
+        val alpha = if (pHigh > pLow) 255.0 / (pHigh - pLow) else 1.0
+        val beta = -pLow * alpha
+        mat.convertTo(mat, CvType.CV_8U, alpha, beta)
+        
         hist.release()
     }
 
