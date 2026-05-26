@@ -51,11 +51,22 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(results) { res ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Text("Scale: ${res.scale}", style = MaterialTheme.typography.titleMedium)
-                        Text("Init Time: ${res.initTimeMs}ms")
-                        Text("Inference Time: ${res.inferenceTimeMs}ms")
-                        Text("Detections: ${res.detectionCount}")
+                        Divider(modifier = Modifier.padding(vertical = 4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = RowArrangement.SpaceBetween) {
+                            Text("Init: ${res.initTimeMs}ms", style = MaterialTheme.typography.bodySmall)
+                            Text("Ingest: ${res.ingestTimeMs}ms", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = RowArrangement.SpaceBetween) {
+                            Text("Resize: ${res.resizeTimeMs}ms", style = MaterialTheme.typography.bodySmall)
+                            Text("Populate: ${res.populateTimeMs}ms", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = RowArrangement.SpaceBetween) {
+                            Text("Inference: ${res.inferenceTimeMs}ms", style = MaterialTheme.typography.bodySmall)
+                            Text("Post: ${res.postTimeMs}ms", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text("Total Det: ${res.detectionCount}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
@@ -66,7 +77,11 @@ fun ExperimentPaddleDynamicScreen(navController: NavController) {
 data class MultiPredictorResult(
     val scale: Int,
     val initTimeMs: Long,
+    val ingestTimeMs: Long,
+    val resizeTimeMs: Long,
+    val populateTimeMs: Long,
     val inferenceTimeMs: Long,
+    val postTimeMs: Long,
     val detectionCount: Int
 )
 
@@ -76,7 +91,6 @@ private suspend fun runMultiPredictorTest(
 ): List<MultiPredictorResult> = withContext(Dispatchers.IO) {
     val output = mutableListOf<MultiPredictorResult>()
     
-    // 1. Path Resolution
     val arch = if (android.os.Build.SUPPORTED_ABIS[0].contains("arm")) "armv8" else "x86_64"
     val modelPath = File(context.filesDir, "paddle_det_v4_4000_mono_$arch.nb").absolutePath
     
@@ -91,80 +105,78 @@ private suspend fun runMultiPredictorTest(
         return@withContext emptyList()
     }
 
-    // 2. Initialization Phase
     val predictors = mutableMapOf<Int, PaddlePredictor>()
     val initTimes = mutableMapOf<Int, Long>()
     val scales = listOf(224, 608, 1024, 2560)
     
     try {
         scales.forEach { scale ->
-            withContext(Dispatchers.Main) { onStatus("Initializing predictor for $scale...") }
             val t0 = System.currentTimeMillis()
-            
             val config = MobileConfig()
             config.setThreads(4)
             config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_HIGH)
             config.setModelFromFile(modelPath)
-            
             val predictor = PaddlePredictor.createPaddlePredictor(config)
             predictor.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
-            
             initTimes[scale] = System.currentTimeMillis() - t0
             predictors[scale] = predictor
         }
 
-        // 3. Inference Phase
         val buffer = BufferSet(4000, 3072)
         try {
+            val tIngest0 = System.currentTimeMillis()
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, dashFile.absolutePath)
             buffer.resize(imgW, imgH)
             ImageIngestionProvider.ingestFromFile(context, dashFile.absolutePath, buffer.p)
+            val tIngest = System.currentTimeMillis() - tIngest0
             
             scales.forEach { scale ->
-                withContext(Dispatchers.Main) { onStatus("Running inference for $scale...") }
                 val predictor = predictors[scale] ?: return@forEach
                 
-                // Scale calculations (preserve aspect ratio)
                 val currentLongEdge = max(imgW, imgH)
                 val s = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
                 val targetW = (imgW * s).toInt()
                 val targetH = (imgH * s).toInt()
                 
-                // Setup fixed-size outer container (e.g. 224x224)
                 val outerId = buffer.s.createCrop(0, 0, scale, scale)
                 val outerSlice = buffer.c[outerId]
-                outerSlice.clear() // Zero pad
+                outerSlice.clear()
                 
-                // Resize into inner target crop
                 val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
                 val innerSlice = buffer.c[innerId]
-                Imgproc.resize(buffer.p.mat, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
                 
-                // Populate Tensor
-                val w = outerSlice.width
-                val h = outerSlice.height
+                val tResize0 = System.currentTimeMillis()
+                Imgproc.resize(buffer.p.mat, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                val tResize = System.currentTimeMillis() - tResize0
+                
+                val tPop0 = System.currentTimeMillis()
+                val w = outerSlice.width; val h = outerSlice.height
                 val floatData = FloatArray(w * h)
                 NativeImageUtils.populateMonoTensor(outerSlice.mat, floatData, w, h, 0.485f, 0.229f)
+                val tPop = System.currentTimeMillis() - tPop0
                 
-                val tJniIn0 = System.nanoTime()
                 predictor.getInput(0).setData(floatData)
-                val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
                 val tInfer0 = System.nanoTime()
                 predictor.run()
                 val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
                 
+                val tPost0 = System.currentTimeMillis()
                 val outputTensor = predictor.getOutput(0)
                 val heatmap = outputTensor.floatData
                 val dims = outputTensor.shape()
-                
                 val blocks = OdometerOcrUtils.processPaddleHeatmap(heatmap, dims[3].toInt(), dims[2].toInt(), 1.0f, outerSlice)
+                val tPost = System.currentTimeMillis() - tPost0
                 
                 output.add(
                     MultiPredictorResult(
                         scale = scale,
                         initTimeMs = initTimes[scale] ?: 0L,
+                        ingestTimeMs = tIngest,
+                        resizeTimeMs = tResize,
+                        populateTimeMs = tPop,
                         inferenceTimeMs = tInfer.toLong(),
+                        postTimeMs = tPost,
                         detectionCount = blocks.size
                     )
                 )
