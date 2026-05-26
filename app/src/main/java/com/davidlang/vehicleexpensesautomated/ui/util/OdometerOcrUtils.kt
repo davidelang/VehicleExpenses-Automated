@@ -706,9 +706,16 @@ object OdometerOcrUtils {
         val maskThreshold = 0.20f
         val mask = Mat(h, w, CvType.CV_8U)
         val data = ByteArray(heatmap.size)
+        var activePixels = 0
         for (i in heatmap.indices) {
-            data[i] = if (heatmap[i] > maskThreshold) 255.toByte() else 0.toByte()
+            if (heatmap[i] > maskThreshold) {
+                data[i] = 255.toByte()
+                activePixels++
+            } else {
+                data[i] = 0.toByte()
+            }
         }
+        Log.i("PaddleDetect", "PostProcess: Threshold=$maskThreshold, ActivePixels=$activePixels / ${heatmap.size}")
         mask.put(0, 0, data)
 
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()
@@ -717,6 +724,7 @@ object OdometerOcrUtils {
 
         try {
             Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+            Log.i("PaddleDetect", "PostProcess: Found ${contours.size} contours")
             for (contour in contours) {
                 if (Imgproc.contourArea(contour) < 10) continue
 
