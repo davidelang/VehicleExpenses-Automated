@@ -244,8 +244,9 @@ private suspend fun runPumpExperiment(
             OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetA.p.mat)
             OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetB.p.mat)
             
-            // Capture AFTER
+            // Capture AFTER and generate Histogram
             val (afterB64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 225, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
+            val histAfterB64 = generateHistogramB64(NativePaddleEngine.bufferSetA.p.mat, 0.40f)
 
             try {
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
@@ -314,7 +315,7 @@ private suspend fun runPumpExperiment(
                         if (engine == "Paddle") {
                             val o1 = IcrsMath.icrsToPixel(orig.icrs.left, orig.icrs.top, imgW, imgH)
                             val o2 = IcrsMath.icrsToPixel(orig.icrs.right, orig.icrs.bottom, imgW, imgH)
-                            anns.add(SnapshotAnnotation(o1.x.toInt(), o1.y.toInt(), o2.x.toInt(), o2.y.toInt(), Shape.RECTANGLE, 0xFFFFFFFF.toInt(), 4))
+                            anns.add(SnapshotAnnotation(o1.x.toInt(), o1.y.toInt(), o2.x.toInt(), o2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 4))
                         }
                         return OcrUtils.takeSnapshot(buf.p, rect, 300, 100, anns, null, buf).first
                     }
@@ -332,13 +333,13 @@ private suspend fun runPumpExperiment(
                     SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
                 
-                val aAMl = getAnns(mlBlocksRawA, 0xFFFFA500.toInt(), 2) + getAnns(mlHunksRawA, 0xFFFF0000.toInt(), 4)
+                val aAMl = getAnns(mlBlocksRawA, Color.RED, 2) + getAnns(mlHunksRawA, Color.rgb(255, 165, 0), 4)
                 val (hunksAMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, aAMl, null, NativePaddleEngine.bufferSetA)
-                val aAPd = getAnns(pdBlocksRawA, 0xFFFFA500.toInt(), 2) + getAnns(pdHunksRawA, 0xFF00FF00.toInt(), 4)
+                val aAPd = getAnns(pdBlocksRawA, Color.RED, 2) + getAnns(pdHunksRawA, Color.rgb(255, 165, 0), 4)
                 val (hunksAPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetA.p, null, 600, 450, aAPd, null, NativePaddleEngine.bufferSetA)
-                val aBMl = getAnns(mlBlocksRawB, 0xFFFFA500.toInt(), 2) + getAnns(mlHunksRawB, 0xFFFF0000.toInt(), 4)
+                val aBMl = getAnns(mlBlocksRawB, Color.RED, 2) + getAnns(mlHunksRawB, Color.rgb(255, 165, 0), 4)
                 val (hunksBMl64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, aBMl, null, NativePaddleEngine.bufferSetB)
-                val aBPd = getAnns(pdBlocksRawB, 0xFFFFA500.toInt(), 2) + getAnns(pdHunksRawB, 0xFF00FF00.toInt(), 4)
+                val aBPd = getAnns(pdBlocksRawB, Color.RED, 2) + getAnns(pdHunksRawB, Color.rgb(255, 165, 0), 4)
                 val (hunksBPd64, _) = OcrUtils.takeSnapshot(NativePaddleEngine.bufferSetB.p, null, 600, 450, aBPd, null, NativePaddleEngine.bufferSetB)
 
                 
@@ -350,7 +351,7 @@ private suspend fun runPumpExperiment(
                     isDegraded = meta.isDegraded,
                     beforeB64 = beforeB64,
                     histB64 = histB64,
-                    cdfB64 = cdfB64,
+                    cdfB64 = histAfterB64,
                     afterB64 = afterB64,
                     deskewHtml = deskewHtml,
                     hunksAMl64 = hunksAMl64,

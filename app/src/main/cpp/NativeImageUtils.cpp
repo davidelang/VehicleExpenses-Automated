@@ -394,16 +394,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
     cv::Scalar meanVal = cv::mean((*mat)(roi));
     double hillBrightness = meanVal[0];
-    double valleyThreshold = std::max(15.0, hillBrightness * (double)thresholdFactor);
-
     double minX = L, maxX = R, minY = T, maxY = B;
     double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.0;
     double lookAhead = (maxY - minY) * 4.0;
 
-    auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
-        double sum = 0;
+    auto isUniform = [&](int start, int end, int fixed, bool horizontal) -> bool {
+        uint8_t minV = 255;
+        uint8_t maxV = 0;
         int count = 0;
         if (horizontal) {
             if (fixed < 0 || fixed >= maxH) return true;
@@ -411,7 +410,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             int startIdx = std::max(0, start);
             int endIdx = std::min(maxW, end);
             for (int i = startIdx; i < endIdx; ++i) {
-                sum += rowPtr[i];
+                uint8_t v = rowPtr[i];
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
                 count++;
             }
         } else {
@@ -419,30 +420,32 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             int startIdx = std::max(0, start);
             int endIdx = std::min(maxH, end);
             for (int i = startIdx; i < endIdx; ++i) {
-                sum += mat->at<uint8_t>(i, fixed);
+                uint8_t v = mat->at<uint8_t>(i, fixed);
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
                 count++;
             }
         }
-        double avg = (count > 0) ? (sum / count) : 0.0;
-        return (avg < 15.0 || avg < valleyThreshold);
+        if (count == 0) return true;
+        return (maxV - minV) < 20;
     };
 
-    // 3. Vertical Expansion (Simple Stop)
+    // 3. Vertical Expansion
     while (minY > 0 && (sY - minY) < vL) {
-        if (isValley((int)minX, (int)maxX, (int)minY - 1, true)) break;
+        if (isUniform((int)minX, (int)maxX, (int)minY - 1, true)) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1 && (maxY - sYY) < vL) {
-        if (isValley((int)minX, (int)maxX, (int)maxY + 1, true)) break;
+        if (isUniform((int)minX, (int)maxX, (int)maxY + 1, true)) break;
         maxY += 1.0;
     }
 
-    // 4. Horizontal Expansion (Jump and Collapse)
+    // 4. Horizontal Expansion
     double walkL = minX;
     double lastGoodL = minX;
     while (walkL > 0 && (sX - walkL) < hL) {
         walkL -= 1.0;
-        if (!isValley((int)minY, (int)maxY, (int)walkL, false)) {
+        if (!isUniform((int)minY, (int)maxY, (int)walkL, false)) {
             minX = walkL;
             lastGoodL = walkL;
         } else {
@@ -454,7 +457,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double lastGoodR = maxX;
     while (walkR < maxW - 1 && (walkR - sXX) < hL) {
         walkR += 1.0;
-        if (!isValley((int)minY, (int)maxY, (int)walkR, false)) {
+        if (!isUniform((int)minY, (int)maxY, (int)walkR, false)) {
             maxX = walkR;
             lastGoodR = walkR;
         } else {
