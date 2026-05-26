@@ -8,6 +8,6 @@
 - [x] Refactor Pump Experiment for N-Sets and Tree-Based Reporting (See: plans/n-sets-tree-reporting.md)
 - [x] Refine Histogram Sensitivity (64 bins) and Debug Valley Expansion (See: plans/refine-hist-sensitivity-and-debug-expansion.md)
 - [ ] Expose Detection Speed and Refine Expansion Robustness (See: plans/speed-reporting-and-expansion-robustness.md)
-- [ ] Fix Pump Experiment SIGSEGV Crash (See: plans/fix-pump-crash.md) [IN PROGRESS]
 - [ ] Implement Dynamic Tensor Resizing for Detection (See: plans/dynamic-tensor-detection.md)
+- [ ] Fix Pump Experiment SIGSEGV Crash (See: plans/fix-pump-crash.md) [DEFERRED - SYSTEM RESTORED]
 - [x] Instruction Harmonization: Resolve conflicts and add Validation Step (See: plans/instruction-harmonization.md)

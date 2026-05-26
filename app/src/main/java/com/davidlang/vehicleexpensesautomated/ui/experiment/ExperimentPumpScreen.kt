@@ -281,25 +281,15 @@ private suspend fun runPumpExperiment(
                 }
                 pRotate(workspace, tilt)
 
-                // 3. Discovery (Aligned to 32-px multiples)
-                val scales = listOf(224, 608, 1024, 2496)
+                // 3. Discovery
+                val scales = listOf(200, 600, 1000, 2500)
                 val mlBlocksRaw = mutableListOf<PumpHunk>(); val pdBlocksRaw = mutableListOf<PumpHunk>()
-                scales.forEach { scaleLongEdge ->
-                    val alignedCropId = prepareScale(workspace, scaleLongEdge)
-                    val alignedCrop = workspace.c[alignedCropId]
-                    
-                    val currentLongEdge = max(imgW, imgH)
-                    val s = if (currentLongEdge <= scaleLongEdge) 1.0f else scaleLongEdge.toFloat() / currentLongEdge
-                    val pScale = ((imgW * s).toInt()).toFloat() / imgW
-
-                    mlBlocksRaw.addAll(runDiscoveryML(alignedCrop, imgW, imgH))
-                    val (pdHunks, tPd, pdMeta) = runDiscoveryPaddle(alignedCrop, paddleEngine, imgW, imgH, pScale)
+                scales.forEach { scale ->
+                    prepareScale(workspace, scale)
+                    mlBlocksRaw.addAll(runDiscoveryML(workspace, context))
+                    val (pdHunks, tPd) = runDiscoveryPaddle(workspace, paddleEngine)
                     pdBlocksRaw.addAll(pdHunks)
-                    
-                    branch.metadata["t_pd_scale_$scaleLongEdge"] = "${tPd}ms"
-                    branch.metadata["shape_$scaleLongEdge"] = pdMeta["dynamic_shape"] ?: "unknown"
-                    
-                    alignedCrop.release()
+                    branch.metadata["t_pd_scale_$scale"] = "${tPd}ms"
                 }
                 val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw); val pdHunks = mergeGeometryIntoHunks(pdBlocksRaw)
 
@@ -523,9 +513,7 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.joinToString("<br>") { (k, v) -> 
-        if (k.startsWith("shape_")) "<b>Scale ${k.removePrefix("shape_")}:</b> $v" else "<small>$k: $v</small>" 
-    }
+    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
@@ -577,35 +565,31 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
 
 private fun pToEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
-private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Int {
+private fun prepareScale(buffer: BufferSet, targetLongEdge: Int) {
     val srcW = buffer.p.width
     val srcH = buffer.p.height
     val currentLongEdge = max(srcW, srcH)
     
-    // 1. Calculate ideal scaled size (maintain aspect ratio)
-    val scale = if (currentLongEdge <= targetLongEdge) 1.0f else targetLongEdge.toFloat() / currentLongEdge
-    val targetW = (srcW * scale).toInt()
-    val targetH = (srcH * scale).toInt()
-
-    // 2. Round UP to nearest 32 for tensor alignment (Letterboxing)
-    val alignedW = ((targetW + 31) / 32) * 32
-    val alignedH = ((targetH + 31) / 32) * 32
+    val targetW: Int
+    val targetH: Int
     
-    Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
+    if (currentLongEdge <= targetLongEdge) {
+        targetW = srcW
+        targetH = srcH
+    } else {
+        val scale = targetLongEdge.toFloat() / currentLongEdge
+        targetW = (srcW * scale).toInt()
+        targetH = (srcH * scale).toInt()
+    }
+    
+    Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x$targetH (src=${srcW}x$srcH)")
     
     val i1 = IcrsMath.pixelToIcrs(0f, 0f, buffer.s.width, buffer.s.height)
-    val i2 = IcrsMath.pixelToIcrs(alignedW.toFloat(), alignedH.toFloat(), buffer.s.width, buffer.s.height)
+    val i2 = IcrsMath.pixelToIcrs(targetW.toFloat(), targetH.toFloat(), buffer.s.width, buffer.s.height)
     
-    val alignedCropId = buffer.s.createCrop(i1.x, i1.y, i2.x - i1.x, i2.y - i1.y)
-    val alignedCrop = buffer.c[alignedCropId]
-    alignedCrop.clear() // Black padding
-    
-    val imgCropId = alignedCrop.createCrop(0, 0, targetW, targetH)
-    val imgCrop = buffer.c[imgCropId]
-    org.opencv.imgproc.Imgproc.resize(buffer.p.mat, imgCrop.mat, imgCrop.mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-    
-    imgCrop.release()
-    return alignedCropId
+    val cropId = buffer.s.createCrop(i1.x, i1.y, i2.x - i1.x, i2.y - i1.y, id = 999)
+    val dstMat = buffer.c[cropId].mat
+    org.opencv.imgproc.Imgproc.resize(buffer.p.mat, dstMat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()))
 }
 
 private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
@@ -626,7 +610,8 @@ private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
     return java.nio.ByteBuffer.wrap(nv21)
 }
 
-private suspend fun runDiscoveryML(crop: BufferSet.Slice, masterW: Int, masterH: Int): List<PumpHunk> {
+private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<PumpHunk> {
+    val crop = buffer.c[999] ?: return emptyList()
     Log.d(TAG, "runDiscoveryML: crop=${crop.width}x${crop.height}")
     val nv21 = flattenToNv21(crop)
     val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
@@ -634,6 +619,7 @@ private suspend fun runDiscoveryML(crop: BufferSet.Slice, masterW: Int, masterH:
     
     val scaleW = result.imageWidth.toFloat()
     val scaleH = result.imageHeight.toFloat()
+    val masterW = buffer.p.width; val masterH = buffer.p.height
     
     return result.textBlocks.map { block ->
         val ml = block.boundingBox.left * masterW / scaleW; val mt = block.boundingBox.top * masterH / scaleH
@@ -644,18 +630,29 @@ private suspend fun runDiscoveryML(crop: BufferSet.Slice, masterW: Int, masterH:
     }
 }
 
-private suspend fun runDiscoveryPaddle(crop: BufferSet.Slice, paddleEngine: NativePaddleEngine, masterW: Int, masterH: Int, pScale: Float): Triple<List<PumpHunk>, Long, Map<String, String>> {
-    val res = paddleEngine.detectMat(crop.mat) ?: return Triple(emptyList(), 0L, emptyMap())
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): Pair<List<PumpHunk>, Long> {
+    val crop = buffer.c[999] ?: return Pair(emptyList(), 0L)
+    val res = paddleEngine.detect(crop) ?: return Pair(emptyList(), 0L)
     val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
     
-    // With detectMat, heatmap size == crop size
-    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, pScale, crop)
+    val isLarge = crop.width > 512 || crop.height > 128
+    val tensorW = if (isLarge) 2048f else 512f
+    val tensorH = if (isLarge) 2048f else 128f
+    
+    val occW = (crop.width / tensorW) * res.width
+    val occH = (crop.height / tensorH) * res.height
+    
+    val masterW = buffer.p.width; val masterH = buffer.p.height
+    
+    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     val hunks = blocks.map { block ->
-        val i1 = IcrsMath.pixelToIcrs(block.boundingBox.left.toFloat() / pScale, block.boundingBox.top.toFloat() / pScale, masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(block.boundingBox.right.toFloat() / pScale, block.boundingBox.bottom.toFloat() / pScale, masterW, masterH)
+        val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
+        val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
+        val i1 = IcrsMath.pixelToIcrs(nl * masterW, nt * masterH, masterW, masterH)
+        val i2 = IcrsMath.pixelToIcrs(nr * masterW, nb * masterH, masterW, masterH)
         PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
     }
-    return Triple(hunks, tInf, res.metadata)
+    return Pair(hunks, tInf)
 }
 
 private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
