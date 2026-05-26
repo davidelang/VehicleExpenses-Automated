@@ -10,3 +10,4 @@
 - [x] Expose Detection Speed and Refine Expansion Robustness (See: plans/speed-reporting-and-expansion-robustness.md)
 - [x] Capacity Upgrade (2560x2560) and Logic Refinements (See: plans/upgrade-capacity-and-refine-logic.md)
 - [ ] Fix Pump Pipeline Expansion Integration (See: plans/pump-pipeline-expansion-fix-v2.md)
+- [ ] Isolated Dynamic Detection Validation: Standalone test screen (See: plans/isolated-dynamic-test.md)
