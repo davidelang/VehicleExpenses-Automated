@@ -474,25 +474,27 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
     if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
-    
+
     val bins = FloatArray(256); hist.get(0, 0, bins)
-    
-    val bmp = Bitmap.createBitmap(100, 60, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
+
+    // 254px wide to exclude 0 and 255 bins
+    val bmp = Bitmap.createBitmap(254, 100, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
     canvas.drawColor(Color.BLACK)
-    val paint = Paint(); val maxVal = (0..255).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
-    
-    for (i in 0..99) {
-        val bStart = (i * 2.56).toInt(); val bEnd = ((i + 1) * 2.56).toInt()
-        val avg = (bStart until bEnd.coerceAtMost(256)).map { bins[it] }.average()
-        val h = (avg / maxVal * 50.0).toInt()
-        paint.color = Color.WHITE; canvas.drawRect(i.toFloat(), (50 - h).toFloat(), (i + 1).toFloat(), 50f, paint)
-        
-        if (i % 10 == 0) { paint.color = Color.RED; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
-        if (i == (floorPercentile * 100).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
+    val paint = Paint()
+
+    // Ignore bins 0 and 255 for scaling to see the peaks clearly
+    val maxVal = (1..254).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
+
+    for (i in 1..254) {
+        val h = (bins[i] / maxVal * 80.0).toInt()
+        val x = (i - 1).toFloat()
+        paint.color = Color.WHITE; canvas.drawRect(x, (80 - h).toFloat(), x + 1f, 80f, paint)
+
+        if (i % 25 == 0) { paint.color = Color.RED; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
+        if (i == (floorPercentile * 255).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
     }
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
-
 private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
     if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
