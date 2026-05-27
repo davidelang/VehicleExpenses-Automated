@@ -19,4 +19,4 @@
 - [x] Fix Expansion Stop Logic and Trace Logging (See: plans/fix-trace-and-expansion-logic.md)
 - [x] Restore forensic coordinate validation and diagnostic logging (See: plans/forensic-bounds-logging.md)
 - [x] Fix Active Algorithm, ASCII Expansion, and Contrast Tweak (See: plans/fix-algorithm-and-expand-ascii.md)
-- [ ] Implement Hump-Based Expansion and Merge Fix (See: plans/hump-based-expansion-and-merge-fix.md)
+- [ ] Implement Variance-Based Expansion with Content Floor (See: plans/variance-expansion-with-floor.md)

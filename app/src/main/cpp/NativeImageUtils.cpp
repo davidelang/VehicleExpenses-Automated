@@ -517,100 +517,61 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.0;
 
-    // Calculate ROI histograms for bimodal mode detection (32 bins for stability)
-    std::vector<int> roi_hist(32, 0);
-    for (int y = (int)T; y < B; ++y) {
-        const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
-        for (int x = (int)L; x < R; ++x) {
-            roi_hist[rowPtr[x] / 8]++;
-        }
-    }
-
-    // Smooth histogram [1, 2, 1]
-    std::vector<int> smoothed(32, 0);
-    for (int i = 0; i < 32; i++) {
-        int start = std::max(0, i - 1);
-        int end = std::min(31, i + 1);
-        int sum = 0, weight = 0;
-        for (int j = start; j <= end; j++) {
-            int w = (j == i) ? 2 : 1;
-            sum += roi_hist[j] * w;
-            weight += w;
-        }
-        smoothed[i] = sum / weight;
-    }
-
-    // Find two largest peaks with minimum distance
-    int peak1Bin = 0, peak2Bin = 0;
-    int max1 = -1, max2 = -1;
-    for (int i = 0; i < 32; i++) {
-        if (smoothed[i] > max1) { max1 = smoothed[i]; peak1Bin = i; }
-    }
-    for (int i = 0; i < 32; i++) {
-        if (std::abs(i - peak1Bin) < 4) continue; // Must be at least 4 bins (32 intensity levels) apart
-        if (smoothed[i] > max2) { max2 = smoothed[i]; peak2Bin = i; }
-    }
-
-    // Fallback if second peak not found
-    if (max2 == -1) { peak2Bin = (peak1Bin > 16) ? 4 : 28; max2 = smoothed[peak2Bin]; }
-
-    int darkMode = std::min(peak1Bin, peak2Bin) * 8 + 4;
-    int lightMode = std::max(peak1Bin, peak2Bin) * 8 + 4;
-    double roi_area = (double)(R - L) * (B - T);
-    double roi_dark_ratio = (double)smoothed[std::min(peak1Bin, peak2Bin)] / (roi_area / 32.0); // Rough approximation
-    double roi_light_ratio = (double)smoothed[std::max(peak1Bin, peak2Bin)] / (roi_area / 32.0);
-
-    auto isContent = [&](int start, int end, int fixed, bool horizontal) -> bool {
-        int dark_match = 0, light_match = 0;
+    auto getRange = [&](int start, int end, int fixed, bool horizontal) -> int {
+        uint8_t minV = 255;
+        uint8_t maxV = 0;
         int count = 0;
-        const int MARGIN = 35;
         if (horizontal) {
-            if (fixed < 0 || fixed >= maxH) return false;
+            if (fixed < 0 || fixed >= maxH) return 0;
             const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
-            for (int i = std::max(0, start); i < std::min(maxW, end); ++i) {
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxW, end);
+            for (int i = startIdx; i < endIdx; ++i) {
                 uint8_t v = rowPtr[i];
-                if (std::abs(v - darkMode) < MARGIN) dark_match++;
-                if (std::abs(v - lightMode) < MARGIN) light_match++;
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
                 count++;
             }
         } else {
-            if (fixed < 0 || fixed >= maxW) return false;
-            for (int i = std::max(0, start); i < std::min(maxH, end); ++i) {
+            if (fixed < 0 || fixed >= maxW) return 0;
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxH, end);
+            for (int i = startIdx; i < endIdx; ++i) {
                 uint8_t v = mat->at<uint8_t>(i, fixed);
-                if (std::abs(v - darkMode) < MARGIN) dark_match++;
-                if (std::abs(v - lightMode) < MARGIN) light_match++;
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
                 count++;
             }
         }
-        if (count == 0) return false;
-        
-        double d_ratio = (double)dark_match / count;
-        double l_ratio = (double)light_match / count;
-        
-        // A line is content if it has significant representation of BOTH modes
-        bool result = (d_ratio > 0.05) && (l_ratio > 0.05);
-        return result;
+        return (count == 0) ? 0 : (maxV - minV);
     };
 
-    // --- PHASE 1: EXPAND OUT ---
+    const int THRESHOLD = 50;
+    double floorL = L, floorR = R, floorT = T, floorB = B;
+
+    // --- PHASE 1: EXPAND OUT (Move while range is high) ---
     while (minY > 0) {
-        bool content = isContent((int)minX, (int)maxX, (int)minY - 1, true);
-        if (!content) break;
+        int r = getRange((int)minX, (int)maxX, (int)minY - 1, true);
+        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) range=%d", (int)minY - 1, r);
+        if (r < THRESHOLD) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1) {
-        bool content = isContent((int)minX, (int)maxX, (int)maxY + 1, true);
-        if (!content) break;
+        int r = getRange((int)minX, (int)maxX, (int)maxY + 1, true);
+        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) range=%d", (int)maxY + 1, r);
+        if (r < THRESHOLD) break;
         maxY += 1.0;
     }
     while (minX > 0) {
-        bool content = isContent((int)minY, (int)maxY, (int)minX - 1, false);
-        if (!content) break;
+        int r = getRange((int)minY, (int)maxY, (int)minX - 1, false);
+        LOGE("EXPAND_TRACE: [OUT] X=%d (V) range=%d", (int)minX - 1, r);
+        if (r < THRESHOLD) break;
         minX -= 1.0;
     }
     while (maxX < maxW - 1) {
-        bool content = isContent((int)minY, (int)maxY, (int)maxX + 1, false);
-        if (!content) break;
+        int r = getRange((int)minY, (int)maxY, (int)maxX + 1, false);
+        LOGE("EXPAND_TRACE: [OUT] X=%d (V) range=%d", (int)maxX + 1, r);
+        if (r < THRESHOLD) break;
         maxX += 1.0;
     }
 
@@ -620,21 +581,29 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     minX = std::max(0.0, minX - 4.0);
     maxX = std::min((double)maxW - 1, maxX + 4.0);
 
-    // --- PHASE 2: PULL BACK IN ---
-    while (minY < maxY) {
-        if (isContent((int)minX, (int)maxX, (int)minY, true)) break;
+    // --- PHASE 2: PULL BACK IN (Stop on content or original floor) ---
+    while (minY < maxY && minY < floorT) {
+        int r = getRange((int)minX, (int)maxX, (int)minY, true);
+        LOGE("EXPAND_TRACE: [IN] Y=%d (H) range=%d", (int)minY, r);
+        if (r >= THRESHOLD) break;
         minY += 1.0;
     }
-    while (maxY > minY) {
-        if (isContent((int)minX, (int)maxX, (int)maxY, true)) break;
+    while (maxY > minY && maxY > floorB) {
+        int r = getRange((int)minX, (int)maxX, (int)maxY, true);
+        LOGE("EXPAND_TRACE: [IN] Y=%d (H) range=%d", (int)maxY, r);
+        if (r >= THRESHOLD) break;
         maxY -= 1.0;
     }
-    while (minX < maxX) {
-        if (isContent((int)minY, (int)maxY, (int)minX, false)) break;
+    while (minX < maxX && minX < floorL) {
+        int r = getRange((int)minY, (int)maxY, (int)minX, false);
+        LOGE("EXPAND_TRACE: [IN] X=%d (V) range=%d", (int)minX, r);
+        if (r >= THRESHOLD) break;
         minX += 1.0;
     }
-    while (maxX > minX) {
-        if (isContent((int)minY, (int)maxY, (int)maxX, false)) break;
+    while (maxX > minX && maxX > floorR) {
+        int r = getRange((int)minY, (int)maxY, (int)maxX, false);
+        LOGE("EXPAND_TRACE: [IN] X=%d (V) range=%d", (int)maxX, r);
+        if (r >= THRESHOLD) break;
         maxX -= 1.0;
     }
 
