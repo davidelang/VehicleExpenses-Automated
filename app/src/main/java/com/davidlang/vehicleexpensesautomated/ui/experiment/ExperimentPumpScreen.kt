@@ -18,6 +18,7 @@ import android.util.Log
 import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import org.opencv.imgproc.Imgproc
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -647,17 +648,16 @@ private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
     return java.nio.ByteBuffer.wrap(nv21)
 }
 
-private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<PumpHunk> {
-    val crop = buffer.c[999] ?: return emptyList()
+private suspend fun runDiscoveryML(crop: BufferSet.Slice, context: Context): List<PumpHunk> {
+    val masterW = crop.width; val masterH = crop.height
     Log.d(TAG, "runDiscoveryML: crop=${crop.width}x${crop.height}")
     val nv21 = flattenToNv21(crop)
     val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
     val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
-    
+
     val scaleW = result.imageWidth.toFloat()
     val scaleH = result.imageHeight.toFloat()
-    val masterW = buffer.p.width; val masterH = buffer.p.height
-    
+
     return result.textBlocks.map { block ->
         val ml = block.boundingBox.left * masterW / scaleW; val mt = block.boundingBox.top * masterH / scaleH
         val mr = block.boundingBox.right * masterW / scaleW; val mb = block.boundingBox.bottom * masterH / scaleH
@@ -667,52 +667,36 @@ private suspend fun runDiscoveryML(buffer: BufferSet, context: Context): List<Pu
     }
 }
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, Long> {
-    val crop = buffer.c[999] ?: return Triple(emptyList(), emptyList(), 0L)
+private suspend fun runDiscoveryPaddle(crop: BufferSet.Slice, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, Long> {
     val res = paddleEngine.detect(crop) ?: return Triple(emptyList(), emptyList(), 0L)
     val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
-    
-    val isLarge = crop.width > 512 || crop.height > 128
-    val tensorW = if (isLarge) 2560f else 512f
-    val tensorH = if (isLarge) 2560f else 128f
-    
-    val occW = (crop.width / tensorW) * res.width
-    val occH = (crop.height / tensorH) * res.height
-    
-    val masterW = buffer.p.width; val masterH = buffer.p.height
-    
+
+    val masterW = crop.width; val masterH = crop.height
+
     val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
     val hunksRaw = mutableListOf<PumpHunk>()
     val hunksExpanded = mutableListOf<PumpHunk>()
 
     blocks.forEach { block ->
-        // 1. Map raw block to master pixel coordinates
-        val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
-        val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
-        
-        val ml = (nl * masterW).toInt().coerceIn(0, masterW - 1)
-        val mt = (nt * masterH).toInt().coerceIn(0, masterH - 1)
-        val mr = (nr * masterW).toInt().coerceIn(0, masterW - 1)
-        val mb = (nb * masterH).toInt().coerceIn(0, masterH - 1)
-        
+        val ml = block.boundingBox.left.toInt().coerceIn(0, masterW - 1)
+        val mt = block.boundingBox.top.toInt().coerceIn(0, masterH - 1)
+        val mr = block.boundingBox.right.toInt().coerceIn(0, masterW - 1)
+        val mb = block.boundingBox.bottom.toInt().coerceIn(0, masterH - 1)
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
-        Log.d("PUMP_MAPPING", "Raw Rect: $rawRect, Master: ${masterW}x${masterH}")
 
-        // Capture raw detection in ICRS space
         val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), masterW, masterH)
         val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), masterW, masterH)
         hunksRaw.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
 
-        // 2. Perform native expansion against the high-resolution master buffer
-        val expandedRect = NativeImageUtils.expandByUniformity(buffer.p.mat, rawRect)
+        val expandedRect = NativeImageUtils.expandByUniformity(crop.mat, rawRect)
 
-        // 3. Map expanded coordinates back to ICRS space
         val i1 = IcrsMath.pixelToIcrs(expandedRect.left.toFloat(), expandedRect.top.toFloat(), masterW, masterH)
         val i2 = IcrsMath.pixelToIcrs(expandedRect.right.toFloat(), expandedRect.bottom.toFloat(), masterW, masterH)
         hunksExpanded.add(PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y)))
     }
     return Triple(hunksRaw, hunksExpanded, tInf)
 }
+
 
 private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
     if (allBlocks.isEmpty()) return emptyList()
