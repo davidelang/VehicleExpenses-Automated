@@ -127,8 +127,15 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     private fun registerCrop(crop: ManagedCrop, id: Int?): Int {
         val cid = id ?: nextCropId++
-        managedCrops[cid]?.disarm()
+        if (managedCrops.containsKey(cid)) {
+            Log.w("BufferSet", "Collision detected for CID $cid! Disarming existing.")
+        }
+        managedCrops[cid]?.let {
+            Log.d("BufferSet", "Disarming existing crop at $cid")
+            it.disarm()
+        }
         managedCrops[cid] = crop
+        Log.d("BufferSet", "Registered crop at $cid. Map size: ${managedCrops.size}")
         return cid
     }
 
@@ -298,7 +305,10 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             _mat = null
             _uvMat = null
         }
-        internal fun disarm() { _mat?.let { nativeDisarmMat(it) }; _uvMat?.let { nativeDisarmMat(it) }; _mat = null; _uvMat = null }
+        internal fun disarm() { 
+            Log.d("BufferSet", "Disarming crop. Mat is null: ${_mat == null}")
+            _mat?.let { nativeDisarmMat(it) }; _uvMat?.let { nativeDisarmMat(it) }; _mat = null; _uvMat = null 
+        }
         override fun clear() { mat.setTo(Scalar(0.0)); clearChroma() }
         override fun clearChroma() { uvMat.setTo(Scalar(128.0, 128.0)) }
     }
