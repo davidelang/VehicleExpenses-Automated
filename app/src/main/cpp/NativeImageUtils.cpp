@@ -513,92 +513,78 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.0;
 
-    const int THRESHOLD_UNIFORM = 50;
-    const int THRESHOLD_CONTENT = 35;
-
-    auto isUniform = [&](int start, int end, int fixed, bool horizontal) -> bool {
-        uint8_t minV = 255;
-        uint8_t maxV = 0;
-        int count = 0;
-        if (horizontal) {
-            if (fixed < 0 || fixed >= maxH) return true;
-            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
-            int startIdx = std::max(0, start);
-            int endIdx = std::min(maxW, end);
-            for (int i = startIdx; i < endIdx; ++i) {
-                uint8_t v = rowPtr[i];
-                if (v < minV) minV = v;
-                if (v > maxV) maxV = v;
-                count++;
-            }
-        } else {
-            if (fixed < 0 || fixed >= maxW) return true;
-            int startIdx = std::max(0, start);
-            int endIdx = std::min(maxH, end);
-            for (int i = startIdx; i < endIdx; ++i) {
-                uint8_t v = mat->at<uint8_t>(i, fixed);
-                if (v < minV) minV = v;
-                if (v > maxV) maxV = v;
-                count++;
-            }
+    // Calculate ROI histograms for bimodal mode detection
+    std::vector<int> roi_hist(256, 0);
+    for (int y = (int)T; y < B; ++y) {
+        const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
+        for (int x = (int)L; x < R; ++x) {
+            roi_hist[rowPtr[x]]++;
         }
-        if (count == 0) return true;
-        
-        int range = maxV - minV;
-        bool result = range < THRESHOLD_UNIFORM;
-        LOGE("EXPAND_TRACE: [OUT] %d (%s) range=%d %s", fixed, horizontal ? "H" : "V", range, result ? "STOP" : "");
-        return result;
-    };
+    }
+
+    // Find two largest peaks
+    int peak1 = 0, peak2 = 0;
+    int max1 = 0, max2 = 0;
+    for (int i = 0; i < 256; i++) {
+        if (roi_hist[i] > max1) {
+            max2 = max1; peak2 = peak1;
+            max1 = roi_hist[i]; peak1 = i;
+        } else if (roi_hist[i] > max2) {
+            max2 = roi_hist[i]; peak2 = i;
+        }
+    }
+    int darkMode = std::min(peak1, peak2);
+    int lightMode = std::max(peak1, peak2);
+    double roi_area = (double)(R - L) * (B - T);
+    double roi_dark_ratio = (double)max1 / roi_area;
+    double roi_light_ratio = (double)max2 / roi_area;
 
     auto isContent = [&](int start, int end, int fixed, bool horizontal) -> bool {
-        uint8_t minV = 255;
-        uint8_t maxV = 0;
+        int dark_match = 0, light_match = 0;
         int count = 0;
+        const int MARGIN = 35;
         if (horizontal) {
             if (fixed < 0 || fixed >= maxH) return false;
             const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
-            int startIdx = std::max(0, start);
-            int endIdx = std::min(maxW, end);
-            for (int i = startIdx; i < endIdx; ++i) {
-                uint8_t v = rowPtr[i];
-                if (v < minV) minV = v;
-                if (v > maxV) maxV = v;
+            for (int i = std::max(0, start); i < std::min(maxW, end); ++i) {
+                if (std::abs(rowPtr[i] - darkMode) < MARGIN) dark_match++;
+                if (std::abs(rowPtr[i] - lightMode) < MARGIN) light_match++;
                 count++;
             }
         } else {
             if (fixed < 0 || fixed >= maxW) return false;
-            int startIdx = std::max(0, start);
-            int endIdx = std::min(maxH, end);
-            for (int i = startIdx; i < endIdx; ++i) {
+            for (int i = std::max(0, start); i < std::min(maxH, end); ++i) {
                 uint8_t v = mat->at<uint8_t>(i, fixed);
-                if (v < minV) minV = v;
-                if (v > maxV) maxV = v;
+                if (std::abs(v - darkMode) < MARGIN) dark_match++;
+                if (std::abs(v - lightMode) < MARGIN) light_match++;
                 count++;
             }
         }
         if (count == 0) return false;
         
-        int range = maxV - minV;
-        bool result = range >= THRESHOLD_CONTENT;
-        LOGE("EXPAND_TRACE: [IN] %d (%s) range=%d %s", fixed, horizontal ? "H" : "V", range, result ? "STOP" : "");
+        double dark_ratio = (double)dark_match / count;
+        double light_ratio = (double)light_match / count;
+        
+        bool result = (dark_ratio > roi_dark_ratio * 0.2) && (light_ratio > roi_light_ratio * 0.2);
+        LOGE("EXPAND_TRACE: [IN] %d (%s) d_ratio=%.2f l_ratio=%.2f %s", fixed, horizontal ? "H" : "V", dark_ratio, light_ratio, result ? "STOP" : "");
         return result;
     };
 
     // --- PHASE 1: EXPAND OUT ---
     while (minY > 0) {
-        if (isUniform((int)minX, (int)maxX, (int)minY - 1, true)) break;
+        if (!isContent((int)minX, (int)maxX, (int)minY - 1, true)) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1) {
-        if (isUniform((int)minX, (int)maxX, (int)maxY + 1, true)) break;
+        if (!isContent((int)minX, (int)maxX, (int)maxY + 1, true)) break;
         maxY += 1.0;
     }
     while (minX > 0) {
-        if (isUniform((int)minY, (int)maxY, (int)minX - 1, false)) break;
+        if (!isContent((int)minY, (int)maxY, (int)minX - 1, false)) break;
         minX -= 1.0;
     }
     while (maxX < maxW - 1) {
-        if (isUniform((int)minY, (int)maxY, (int)maxX + 1, false)) break;
+        if (!isContent((int)minY, (int)maxY, (int)maxX + 1, false)) break;
         maxX += 1.0;
     }
 
