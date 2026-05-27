@@ -83,12 +83,9 @@ object OdometerOcrUtils {
 
         bufferSet.p.clear()
         val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
-        val outerSlice = bufferSet.c[outerId]
-        outerSlice.clear() // Padding
+        bufferSet.c[outerId].clear() // Padding
 
         val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
-        val innerSlice = bufferSet.c[innerId]
-
 
         // 2. Native Resize into workspace (top-left)
         if (input is Bitmap) {
@@ -96,13 +93,13 @@ object OdometerOcrUtils {
             org.opencv.android.Utils.bitmapToMat(input, argbMat)
             val gray = Mat()
             Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
             argbMat.release(); gray.release()
         } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
         }
         
-        innerSlice.release()
+        bufferSet.c[innerId].release()
         
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
@@ -115,11 +112,11 @@ object OdometerOcrUtils {
 
         // 4. Paddle Path (Combined V3 Kotlin + C++ Native)
         val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleDual(outerSlice.mat, alignedW, alignedH, pScale)
+        val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
         
-        outerSlice.release()
+        bufferSet.c[outerId].release()
         
         return DeskewResult(
             angle = mlRes.angle.coerceIn(-20f, 20f), 
