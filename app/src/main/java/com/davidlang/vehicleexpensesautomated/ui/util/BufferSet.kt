@@ -66,9 +66,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     // Manager Functions
     suspend fun flip() = mutex.withLock {
         primaryIdx = 1 - primaryIdx
-        val newOwner = instances[primaryIdx] as Instance
         managedCrops.values.forEach { 
-            it.owner = newOwner
             it.rebindToOwner()
         }
     }
@@ -144,6 +142,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         private var _uvMat: Mat? = null
         private var _nv21Mat: Mat? = null
         private var _buffer: ByteBuffer? = null
+        
+        val isLogicalScratch: Boolean get() = this === instances[1 - primaryIdx]
 
         override val mat: Mat get() = _mat ?: throw IllegalStateException("Not initialized")
         override val uvMat: Mat get() = _uvMat ?: throw IllegalStateException("Not initialized")
@@ -182,12 +182,11 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         fun physicalRelease() { disarm(); if (nativeHandle != 0L) { nativeRelease(nativeHandle); nativeHandle = 0 } }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
-            val crop = ManagedCrop(this, isIcrs = false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
+            val crop = ManagedCrop(isLogicalScratch, isIcrs = false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
             crop.refresh(); return registerCrop(crop, id)
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            // Default to ICRS for Float input in Phase 4
-            val crop = ManagedCrop(this, isIcrs = true, x, y, w, h)
+            val crop = ManagedCrop(isLogicalScratch, isIcrs = true, x, y, w, h)
             crop.refresh(); return registerCrop(crop, id)
         }
 
@@ -199,10 +198,12 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     }
 
     inner class ManagedCrop(
-        internal var owner: Instance,
+        internal val isLogicalScratch: Boolean,
         internal var isIcrs: Boolean = false,
         private var rawX: Float, private var rawY: Float, private var rawW: Float, private var rawH: Float
     ) : Slice {
+        internal val owner: Instance get() = if (isLogicalScratch) instances[1 - primaryIdx] else instances[primaryIdx]
+        
         private var _mat: Mat? = null
         private var _uvMat: Mat? = null
         private var absX = 0; private var absY = 0; private var absW = 0; private var absH = 0
@@ -236,10 +237,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         fun rebindToOwner() {
             val matPtr = _mat?.nativeObj ?: return
             val uvMatPtr = _uvMat?.nativeObj ?: return
-            val lumaOffset = absY * _width + absX
-            val chromaOffset = (_width * _height) + (absY / 2 * _width) + absX
-            nativeUpdateMatData(matPtr, owner.mat.nativeObj, lumaOffset)
-            nativeUpdateMatData(uvMatPtr, owner.uvMat.nativeObj, chromaOffset)
+            nativeUpdateCropMat(matPtr, owner.mat.nativeObj, absX, absY, absW, absH)
+            nativeUpdateCropMat(uvMatPtr, owner.uvMat.nativeObj, absX / 2, absY / 2, absW / 2, absH / 2)
         }
 
         fun refresh() {
@@ -276,7 +275,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
             if (isIcrs) throw IllegalArgumentException("Cannot create Pixel sub-crop from ICRS parent. Type mismatch.")
             Log.d("BufferSet", "Nested Int crop: ($x,$y ${w}x$h) within parent ($absX,$absY ${absW}x$absH). Flattening.")
-            val crop = ManagedCrop(owner, isIcrs = false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat())
+            val crop = ManagedCrop(isLogicalScratch, isIcrs = false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat())
             crop.refresh()
             return registerCrop(crop, id)
         }
@@ -284,7 +283,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
             if (!isIcrs) throw IllegalArgumentException("Cannot create ICRS sub-crop from Pixel parent. Type mismatch.")
             Log.d("BufferSet", "Nested ICRS crop: ($x,$y ${w}x$h) within parent ($rawX,$rawY ${rawW}x$rawH). Flattening.")
-            val crop = ManagedCrop(owner, isIcrs = true, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH)
+            val crop = ManagedCrop(isLogicalScratch, isIcrs = true, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH)
             crop.refresh()
             return registerCrop(crop, id)
         }
