@@ -165,11 +165,14 @@ object NativeImageUtils {
         } else rect
     }
 
-    fun expandByUniformity(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
+    fun expandByUniformity(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, android.graphics.Rect> {
         val res = nativeExpandByUniformity(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        return if (res != null && res.size == 4) {
-            android.graphics.Rect(res[0], res[1], res[2], res[3])
-        } else rect
+        return if (res != null && res.size == 8) {
+            Pair(
+                android.graphics.Rect(res[0], res[1], res[2], res[3]),
+                android.graphics.Rect(res[4], res[5], res[6], res[7])
+            )
+        } else Pair(rect, rect)
     }
 
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
