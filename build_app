@@ -74,6 +74,7 @@ fi
 if [ $? -eq 0 ]; then
     echo "Build successful. Updating 'builds' tag."
     git tag -f builds
+    git describe
     exit 0
 else
     echo "Build failed."
