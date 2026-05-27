@@ -37,7 +37,6 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         // Creation & Lifecycle
         fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int
         fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int
-        fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int
         fun resize(x: Int, y: Int, w: Int, h: Int)
         fun resize(x: Float, y: Float, w: Float, h: Float)
         fun release()
@@ -81,10 +80,10 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         _width = w
         _height = h
         
-        // Lifecycle Rule: Preserved Normalized, drop Pixel
+        // Lifecycle Rule: Preserved ICRS, drop Pixel
         val toRemove = mutableListOf<Int>()
         managedCrops.forEach { (id, c) ->
-            if (c.isNormalized) {
+            if (c.isIcrs) {
                 c.refresh()
             } else {
                 toRemove.add(id)
@@ -108,7 +107,6 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
     fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
-    fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCropLegacy(x, y, w, h, id)
 
     fun release() {
         managedCrops.values.forEach { it.disarm() }
@@ -184,20 +182,12 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         fun physicalRelease() { disarm(); if (nativeHandle != 0L) { nativeRelease(nativeHandle); nativeHandle = 0 } }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
-            val crop = ManagedCrop(this, isNormalized = false, isIcrs = false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
+            val crop = ManagedCrop(this, isIcrs = false, x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
             crop.refresh(); return registerCrop(crop, id)
         }
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
             // Default to ICRS for Float input in Phase 4
-            val crop = ManagedCrop(this, isNormalized = false, isIcrs = true, x, y, w, h)
-            crop.refresh(); return registerCrop(crop, id)
-        }
-        
-        /**
-         * Legacy Anisotropic Support (explicit).
-         */
-        override fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            val crop = ManagedCrop(this, isNormalized = true, isIcrs = false, x, y, w, h)
+            val crop = ManagedCrop(this, isIcrs = true, x, y, w, h)
             crop.refresh(); return registerCrop(crop, id)
         }
 
@@ -210,7 +200,6 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     inner class ManagedCrop(
         internal var owner: Instance,
-        internal var isNormalized: Boolean,
         internal var isIcrs: Boolean = false,
         private var rawX: Float, private var rawY: Float, private var rawW: Float, private var rawH: Float
     ) : Slice {
@@ -254,19 +243,14 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
 
         fun refresh() {
-            val (px, py, pw, ph) = when {
-                isIcrs -> {
-                    val p1 = IcrsMath.icrsToPixel(rawX, rawY, _width, _height)
-                    val p2 = IcrsMath.icrsToPixel(rawX + rawW, rawY + rawH, _width, _height)
-                    listOf(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
-                }
-                isNormalized -> {
-                    listOf((rawX * _width).toInt(), (rawY * _height).toInt(), (rawW * _width).toInt(), (rawH * _height).toInt())
-                }
-                else -> {
-                    listOf(rawX.toInt(), rawY.toInt(), rawW.toInt(), rawH.toInt())
-                }
+            val (px, py, pw, ph) = if (isIcrs) {
+                val p1 = IcrsMath.icrsToPixel(rawX, rawY, _width, _height)
+                val p2 = IcrsMath.icrsToPixel(rawX + rawW, rawY + rawH, _width, _height)
+                listOf(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
+            } else {
+                listOf(rawX.toInt(), rawY.toInt(), rawW.toInt(), rawH.toInt())
             }
+            
             absX = (px / 2) * 2; absY = (py / 2) * 2
             val x2 = ((px + pw + 1) / 2) * 2; val y2 = ((py + ph + 1) / 2) * 2
             absW = (x2 - absX).coerceIn(2, _width - absX); absH = (y2 - absY).coerceIn(2, _height - absY)
@@ -283,43 +267,23 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
+            if (isIcrs) throw IllegalArgumentException("Cannot create Pixel sub-crop from ICRS parent. Type mismatch.")
             Log.d("BufferSet", "Nested Int crop: ($x,$y ${w}x$h) within parent ($absX,$absY ${absW}x$absH). Flattening.")
-            val crop = ManagedCrop(owner, isNormalized = false, isIcrs = false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat())
+            val crop = ManagedCrop(owner, isIcrs = false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat())
             crop.refresh()
             return registerCrop(crop, id)
         }
 
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            val crop = if (isIcrs) {
-                Log.d("BufferSet", "Nested ICRS crop: ($x,$y ${w}x$h) within parent ($rawX,$rawY ${rawW}x$rawH). Flattening.")
-                ManagedCrop(owner, isNormalized = false, isIcrs = true, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH)
-            } else if (isNormalized) {
-                Log.d("BufferSet", "Nested Normalized crop: ($x,$y ${w}x$h) within parent ($rawX,$rawY ${rawW}x$rawH). Flattening.")
-                ManagedCrop(owner, isNormalized = true, isIcrs = false, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH)
-            } else {
-                Log.w("BufferSet", "Mixed coordinate types: Creating Normalized child from Fixed Pixel parent. Use with caution.")
-                val fX = (absX + (x * absW)) / _width.toFloat()
-                val fY = (absY + (y * absH)) / _height.toFloat()
-                val fW = (w * absW) / _width.toFloat()
-                val fH = (h * absH) / _height.toFloat()
-                ManagedCrop(owner, isNormalized = true, isIcrs = false, fX, fY, fW, fH)
-            }
+            if (!isIcrs) throw IllegalArgumentException("Cannot create ICRS sub-crop from Pixel parent. Type mismatch.")
+            Log.d("BufferSet", "Nested ICRS crop: ($x,$y ${w}x$h) within parent ($rawX,$rawY ${rawW}x$rawH). Flattening.")
+            val crop = ManagedCrop(owner, isIcrs = true, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH)
             crop.refresh()
             return registerCrop(crop, id)
         }
 
-        override fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            Log.d("BufferSet", "Nested Legacy crop: flattening using pixel coords.")
-            val fX = (absX + (x * absW)) / _width.toFloat()
-            val fY = (absY + (y * absH)) / _height.toFloat()
-            val fW = (w * absW) / _width.toFloat()
-            val fH = (h * absH) / _height.toFloat()
-            val crop = ManagedCrop(owner, isNormalized = true, isIcrs = false, fX, fY, fW, fH)
-            crop.refresh()
-            return registerCrop(crop, id)
-        }
-        override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; isIcrs = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
-        override fun resize(x: Float, y: Float, w: Float, h: Float) { isNormalized = false; isIcrs = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
+        override fun resize(x: Int, y: Int, w: Int, h: Int) { isIcrs = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
+        override fun resize(x: Float, y: Float, w: Float, h: Float) { isIcrs = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
         override fun release() { 
             managedCrops.values.remove(this)
             _mat?.release()
