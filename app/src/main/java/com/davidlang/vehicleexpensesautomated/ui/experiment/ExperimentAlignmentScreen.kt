@@ -223,23 +223,13 @@ private suspend fun runExperiment(
                         // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
                         // This allows an arbitrary number of vehicles to maintain long-lived, 
                         // uniquely identifiable references within the shared global buffers.
-                        if (ref.vehicle.isIcrs) {
-                            set.p.createCrop(
-                                ref.vehicle.odometerCropLeft ?: 0f,
-                                ref.vehicle.odometerCropTop ?: 0f,
-                                (ref.vehicle.odometerCropRight ?: 0f) - (ref.vehicle.odometerCropLeft ?: 0f),
-                                (ref.vehicle.odometerCropBottom ?: 0f) - (ref.vehicle.odometerCropTop ?: 0f),
-                                id = ref.vehicle.id
-                            )
-                        } else {
-                            set.p.createCropLegacy(
-                                ref.vehicle.odometerCropLeft ?: 0f,
-                                ref.vehicle.odometerCropTop ?: 0f,
-                                (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
-                                (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f),
-                                id = ref.vehicle.id
-                            )
-                        }
+                        set.p.createCrop(
+                            ref.vehicle.odometerCropLeft ?: 0f,
+                            ref.vehicle.odometerCropTop ?: 0f,
+                            (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
+                            (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f),
+                            id = ref.vehicle.id
+                        )
                     }
                 }
             }
