@@ -167,6 +167,16 @@ fun LandmarkDebugDialog(
                                         rawDiscoveryBoxes.forEach { box ->
                                             drawRect(color = Color.Red.copy(alpha = 0.3f), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Fill)
                                         }
+                                        
+                                        fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color) {
+                                            val shortEdge = min(imgW, imgH)
+                                            val lx = (rect.left * shortEdge + (imgW / 2f)) / imgW
+                                            val ly = (rect.top * shortEdge + (imgH / 2f)) / imgH
+                                            val lw = (rect.width * shortEdge) / imgW
+                                            val lh = (rect.height * shortEdge) / imgH
+                                            drawRect(color = color, topLeft = Offset(lx * dw, ly * dh), size = Size(lw * dw, lh * dh), style = Stroke(2f))
+                                        }
+
                                         editableLandmarks.forEach { lm ->
                                             lm.refinedDiscoveryBox?.let { box ->
                                                 drawRect(color = Color(0xFFFF8C00), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(3f))
@@ -177,8 +187,8 @@ fun LandmarkDebugDialog(
                                                 drawRect(color = Color.Yellow, topLeft = Offset(nx * dw, ny * dh), size = Size(nw * dw, nh * dh), style = Stroke(1f))
                                             }
                                         }
-                                        odometerCrop?.let { drawRect(color = Color.Blue, topLeft = Offset(it.left * dw, it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(2f)) }
-                                        otherTextCrop?.let { drawRect(color = Color.Green, topLeft = Offset(it.left * dw, it.top * dh), size = Size(it.width * dw, it.height * dh), style = Stroke(2f)) }
+                                        odometerCrop?.let { drawIcrsRect(it, Color.Blue) }
+                                        otherTextCrop?.let { drawIcrsRect(it, Color.Green) }
                                     }
                                 }
                             }
