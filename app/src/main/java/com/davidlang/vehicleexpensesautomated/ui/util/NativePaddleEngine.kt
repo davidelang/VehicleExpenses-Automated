@@ -208,23 +208,18 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             else -> throw IllegalArgumentException("Unsupported input type for detect")
         }
 
-        val isLarge = w > 512 || h > 128
-        val predictor = if (isLarge) detectorLarge else detectorSmall
-        if (predictor == null) return null
-
-        val tensorWidth = if (isLarge) 2560 else 512
-        val tensorHeight = if (isLarge) 2560 else 128
-        val floatData = if (isLarge) bufferLarge else bufferSmall
+        // Automatic Tier Selection - respect explicit targets
+        val maxEdge = max(targetW ?: w, targetH ?: h)
+        val tierScale = TIER_SCALES.filter { it >= maxEdge }.minOrNull() ?: 2560
+        val predictor = sharedTiers[tierScale] ?: return null
+        val floatData = sharedTierBuffers[tierScale] ?: return null
         
         floatData.fill(0.0f)
         
         val mean = 0.485f; val std = 0.229f
-        if (srcMat.cols() <= tensorWidth && srcMat.rows() <= tensorHeight) {
-            NativeImageUtils.populateMonoTensor(srcMat, floatData, tensorWidth, tensorHeight, mean, std)
-        } else {
-            Log.e("PaddleDetect", "Source Mat (%dx%d) exceeds Tensor capacity (%dx%d)".format(srcMat.cols(), srcMat.rows(), tensorWidth, tensorHeight))
-            return null
-        }
+        // Populate the tier-sized buffer (only the Mat region)
+        NativeImageUtils.populateMonoTensor(srcMat, floatData, tierScale, tierScale, mean, std)
+        
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
