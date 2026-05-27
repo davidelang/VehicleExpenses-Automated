@@ -84,10 +84,11 @@ object OdometerOcrUtils {
         bufferSet.p.clear()
         val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
         val outerSlice = bufferSet.c[outerId]
-        outerSlice.clear()
+        outerSlice.clear() // Padding
 
-        val innerId = outerSlice.createCrop(0, 0, targetW, targetH)
+        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
         val innerSlice = bufferSet.c[innerId]
+
 
         // 2. Native Resize into workspace (top-left)
         if (input is Bitmap) {
