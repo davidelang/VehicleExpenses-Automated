@@ -714,10 +714,13 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
                 val interL = max(current.icrs.left, next.icrs.left); val interT = max(current.icrs.top, next.icrs.top)
                 val interR = min(current.icrs.right, next.icrs.right); val interB = min(current.icrs.bottom, next.icrs.bottom)
                 
-                val hasOverlap = (interR > interL && interB > interT)
+                val overlapH = if (interB > interT) interB - interT else 0f
+                val minH = min(current.icrs.height(), next.icrs.height())
+                val significantOverlap = overlapH >= (minH * 0.3f)
+                
                 val isNested = current.icrs.contains(next.icrs) || next.icrs.contains(current.icrs)
 
-                if (hasOverlap || isNested) {
+                if (significantOverlap || isNested) {
                     val newIcrs = RectF(
                         min(current.icrs.left, next.icrs.left),
                         min(current.icrs.top, next.icrs.top),

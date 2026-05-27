@@ -517,31 +517,48 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.0;
 
-    // Calculate ROI histograms for bimodal mode detection
-    std::vector<int> roi_hist(256, 0);
+    // Calculate ROI histograms for bimodal mode detection (32 bins for stability)
+    std::vector<int> roi_hist(32, 0);
     for (int y = (int)T; y < B; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
         for (int x = (int)L; x < R; ++x) {
-            roi_hist[rowPtr[x]]++;
+            roi_hist[rowPtr[x] / 8]++;
         }
     }
 
-    // Find two largest peaks
-    int peak1 = 0, peak2 = 0;
-    int max1 = 0, max2 = 0;
-    for (int i = 0; i < 256; i++) {
-        if (roi_hist[i] > max1) {
-            max2 = max1; peak2 = peak1;
-            max1 = roi_hist[i]; peak1 = i;
-        } else if (roi_hist[i] > max2) {
-            max2 = roi_hist[i]; peak2 = i;
+    // Smooth histogram [1, 2, 1]
+    std::vector<int> smoothed(32, 0);
+    for (int i = 0; i < 32; i++) {
+        int start = std::max(0, i - 1);
+        int end = std::min(31, i + 1);
+        int sum = 0, weight = 0;
+        for (int j = start; j <= end; j++) {
+            int w = (j == i) ? 2 : 1;
+            sum += roi_hist[j] * w;
+            weight += w;
         }
+        smoothed[i] = sum / weight;
     }
-    int darkMode = std::min(peak1, peak2);
-    int lightMode = std::max(peak1, peak2);
+
+    // Find two largest peaks with minimum distance
+    int peak1Bin = 0, peak2Bin = 0;
+    int max1 = -1, max2 = -1;
+    for (int i = 0; i < 32; i++) {
+        if (smoothed[i] > max1) { max1 = smoothed[i]; peak1Bin = i; }
+    }
+    for (int i = 0; i < 32; i++) {
+        if (std::abs(i - peak1Bin) < 4) continue; // Must be at least 4 bins (32 intensity levels) apart
+        if (smoothed[i] > max2) { max2 = smoothed[i]; peak2Bin = i; }
+    }
+
+    // Fallback if second peak not found
+    if (max2 == -1) { peak2Bin = (peak1Bin > 16) ? 4 : 28; max2 = smoothed[peak2Bin]; }
+
+    int darkMode = std::min(peak1Bin, peak2Bin) * 8 + 4;
+    int lightMode = std::max(peak1Bin, peak2Bin) * 8 + 4;
     double roi_area = (double)(R - L) * (B - T);
-    double roi_dark_ratio = (double)max1 / roi_area;
-    double roi_light_ratio = (double)max2 / roi_area;
+    double roi_dark_ratio = (double)smoothed[std::min(peak1Bin, peak2Bin)] / (roi_area / 32.0); // Rough approximation
+    double roi_light_ratio = (double)smoothed[std::max(peak1Bin, peak2Bin)] / (roi_area / 32.0);
 
     auto isContent = [&](int start, int end, int fixed, bool horizontal) -> bool {
         int dark_match = 0, light_match = 0;
@@ -551,8 +568,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             if (fixed < 0 || fixed >= maxH) return false;
             const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
             for (int i = std::max(0, start); i < std::min(maxW, end); ++i) {
-                if (std::abs(rowPtr[i] - darkMode) < MARGIN) dark_match++;
-                if (std::abs(rowPtr[i] - lightMode) < MARGIN) light_match++;
+                uint8_t v = rowPtr[i];
+                if (std::abs(v - darkMode) < MARGIN) dark_match++;
+                if (std::abs(v - lightMode) < MARGIN) light_match++;
                 count++;
             }
         } else {
@@ -566,41 +584,37 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         }
         if (count == 0) return false;
         
-        double dark_ratio = (double)dark_match / count;
-        double light_ratio = (double)light_match / count;
+        double d_ratio = (double)dark_match / count;
+        double l_ratio = (double)light_match / count;
         
-        bool result = (dark_ratio > roi_dark_ratio * 0.2) && (light_ratio > roi_light_ratio * 0.2);
-        LOGE("EXPAND_TRACE: [IN] %d (%s) d_ratio=%.2f l_ratio=%.2f %s", fixed, horizontal ? "H" : "V", dark_ratio, light_ratio, result ? "STOP" : "");
+        // A line is content if it has significant representation of BOTH modes
+        bool result = (d_ratio > 0.05) && (l_ratio > 0.05);
         return result;
     };
 
     // --- PHASE 1: EXPAND OUT ---
     while (minY > 0) {
         bool content = isContent((int)minX, (int)maxX, (int)minY - 1, true);
-        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) content=%d", (int)minY - 1, content);
-        if (content) break;
+        if (!content) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1) {
         bool content = isContent((int)minX, (int)maxX, (int)maxY + 1, true);
-        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) content=%d", (int)maxY + 1, content);
-        if (content) break;
+        if (!content) break;
         maxY += 1.0;
     }
     while (minX > 0) {
         bool content = isContent((int)minY, (int)maxY, (int)minX - 1, false);
-        LOGE("EXPAND_TRACE: [OUT] X=%d (V) content=%d", (int)minX - 1, content);
-        if (content) break;
+        if (!content) break;
         minX -= 1.0;
     }
     while (maxX < maxW - 1) {
         bool content = isContent((int)minY, (int)maxY, (int)maxX + 1, false);
-        LOGE("EXPAND_TRACE: [OUT] X=%d (V) content=%d", (int)maxX + 1, content);
-        if (content) break;
+        if (!content) break;
         maxX += 1.0;
     }
 
-    // --- JUMP OUT (Initial Padding/Look-ahead) ---
+    // --- JUMP OUT (Forcefully move into the gap) ---
     minY = std::max(0.0, minY - 4.0);
     maxY = std::min((double)maxH - 1, maxY + 4.0);
     minX = std::max(0.0, minX - 4.0);
