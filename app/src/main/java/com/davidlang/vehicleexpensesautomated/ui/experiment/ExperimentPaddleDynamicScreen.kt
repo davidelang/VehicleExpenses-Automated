@@ -139,22 +139,23 @@ private suspend fun runMultiPredictorTest(
                 val targetW = (imgW * s).toInt()
                 val targetH = (imgH * s).toInt()
                 
+                val alignedW = ((targetW + 31) / 32) * 32
+                val alignedH = ((targetH + 31) / 32) * 32
+                
                 // Use sibling crops (both from buffer.s)
-                val outerId = buffer.s.createCrop(0, 0, scale, scale)
-                val outerSlice = buffer.c[outerId]
-                outerSlice.clear()
+                val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
+                buffer.c[outerId].clear()
                 
                 val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
-                val innerSlice = buffer.c[innerId]
                 
                 val tResize0 = System.currentTimeMillis()
-                Imgproc.resize(buffer.p.mat, innerSlice.mat, innerSlice.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                Imgproc.resize(buffer.p.mat, buffer.c[innerId].mat, buffer.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
                 val tResize = System.currentTimeMillis() - tResize0
                 
                 val tPop0 = System.currentTimeMillis()
-                val w = outerSlice.width; val h = outerSlice.height
+                val w = buffer.c[outerId].width; val h = buffer.c[outerId].height
                 val floatData = FloatArray(w * h)
-                NativeImageUtils.populateMonoTensor(outerSlice.mat, floatData, w, h, 0.485f, 0.229f)
+                NativeImageUtils.populateMonoTensor(buffer.c[outerId].mat, floatData, w, h, 0.485f, 0.229f)
                 val tPop = System.currentTimeMillis() - tPop0
                 
                 predictor.getInput(0).setData(floatData)
@@ -167,7 +168,7 @@ private suspend fun runMultiPredictorTest(
                 val outputTensor = predictor.getOutput(0)
                 val heatmap = outputTensor.floatData
                 val dims = outputTensor.shape()
-                val blocks = OdometerOcrUtils.processPaddleHeatmap(heatmap, dims[3].toInt(), dims[2].toInt(), 1.0f, outerSlice)
+                val blocks = OdometerOcrUtils.processPaddleHeatmap(heatmap, dims[3].toInt(), dims[2].toInt(), 1.0f, buffer.c[outerId])
                 val tPost = System.currentTimeMillis() - tPost0
                 
                 output.add(
@@ -183,8 +184,8 @@ private suspend fun runMultiPredictorTest(
                     )
                 )
                 
-                innerSlice.release()
-                outerSlice.release()
+                buffer.c[innerId].release()
+                buffer.c[outerId].release()
             }
         } finally {
             buffer.release()
