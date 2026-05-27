@@ -572,19 +572,27 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     // --- PHASE 1: EXPAND OUT ---
     while (minY > 0) {
-        if (!isContent((int)minX, (int)maxX, (int)minY - 1, true)) break;
+        bool content = isContent((int)minX, (int)maxX, (int)minY - 1, true);
+        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) content=%d", (int)minY - 1, content);
+        if (content) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1) {
-        if (!isContent((int)minX, (int)maxX, (int)maxY + 1, true)) break;
+        bool content = isContent((int)minX, (int)maxX, (int)maxY + 1, true);
+        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) content=%d", (int)maxY + 1, content);
+        if (content) break;
         maxY += 1.0;
     }
     while (minX > 0) {
-        if (!isContent((int)minY, (int)maxY, (int)minX - 1, false)) break;
+        bool content = isContent((int)minY, (int)maxY, (int)minX - 1, false);
+        LOGE("EXPAND_TRACE: [OUT] X=%d (V) content=%d", (int)minX - 1, content);
+        if (content) break;
         minX -= 1.0;
     }
     while (maxX < maxW - 1) {
-        if (!isContent((int)minY, (int)maxY, (int)maxX + 1, false)) break;
+        bool content = isContent((int)minY, (int)maxY, (int)maxX + 1, false);
+        LOGE("EXPAND_TRACE: [OUT] X=%d (V) content=%d", (int)maxX + 1, content);
+        if (content) break;
         maxX += 1.0;
     }
 
