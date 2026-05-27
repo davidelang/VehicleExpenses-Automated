@@ -220,6 +220,9 @@ private suspend fun runExperiment(
                     vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
 
                     listOf(NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB).forEach { set ->
+                        // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
+                        // This allows an arbitrary number of vehicles to maintain long-lived, 
+                        // uniquely identifiable references within the shared global buffers.
                         if (ref.vehicle.isIcrs) {
                             set.p.createCrop(
                                 ref.vehicle.odometerCropLeft ?: 0f,
