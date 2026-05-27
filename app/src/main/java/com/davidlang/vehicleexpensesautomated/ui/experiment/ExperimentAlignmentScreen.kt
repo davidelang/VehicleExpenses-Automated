@@ -207,10 +207,18 @@ private suspend fun runExperiment(
     val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
     withContext(Dispatchers.Main) {
         cachedRefs.forEach { ref ->
-            val l = ref.vehicle.odometerCropLeft
+            val l = ref.vehicle.odometerCropLeft ?: 0f
+            val t = ref.vehicle.odometerCropTop ?: 0f
+            val r = ref.vehicle.odometerCropRight ?: 1f
+            val b = ref.vehicle.odometerCropBottom ?: 1f
+            
+            val icrsRect = if (ref.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), ref.bmp.width, ref.bmp.height)
+            
             if (l != null) {
-                val srcW = (((ref.vehicle.odometerCropRight ?: 1f) - l) * ref.bmp.width).toInt()
-                val srcH = (((ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f)) * ref.bmp.height).toInt()
+                val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, ref.bmp.width, ref.bmp.height)
+                val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, ref.bmp.width, ref.bmp.height)
+                val srcW = (p2.x - p1.x).toInt()
+                val srcH = (p2.y - p1.y).toInt()
                 
                 // Align to 32-pixel boundaries for efficient native processing
                 val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
@@ -223,15 +231,6 @@ private suspend fun runExperiment(
                         // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
                         // This allows an arbitrary number of vehicles to maintain long-lived, 
                         // uniquely identifiable references within the shared global buffers.
-                        val l = ref.vehicle.odometerCropLeft ?: 0f; val t = ref.vehicle.odometerCropTop ?: 0f
-                        val r = ref.vehicle.odometerCropRight ?: 1f; val b = ref.vehicle.odometerCropBottom ?: 1f
-                        
-                        val icrsRect = if (ref.vehicle.isIcrs) {
-                            RectF(l, t, r, b)
-                        } else {
-                            IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), ref.width, ref.height)
-                        }
-                        
                         set.p.createCrop(icrsRect.left, icrsRect.top, icrsRect.width(), icrsRect.height(), id = ref.vehicle.id)
                     }
                 }
@@ -438,7 +437,11 @@ private suspend fun runExperiment(
                         val t = winnerRef.vehicle.odometerCropTop ?: 0f
                         val r = winnerRef.vehicle.odometerCropRight ?: 1f
                         val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-                        val roi = Rect((l * imgW).toInt(), (t * imgH).toInt(), (r * imgW).toInt(), (b * imgH).toInt())
+                        
+                        val icrsRect = if (winnerRef.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), imgW, imgH)
+                        val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, imgW, imgH)
+                        val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
                         
                         val (cropB64, _) = OcrUtils.takeSnapshot(
                             source = NativePaddleEngine.bufferSetA.p,
@@ -848,7 +851,8 @@ private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, t
 
 private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
     val annotated = bmp.copy(Bitmap.Config.ARGB_8888, true); val canvas = android.graphics.Canvas(annotated); val paint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 8f; color = android.graphics.Color.RED }
-    val p1 = IcrsMath.icrsToPixel(vehicle.odometerCropLeft ?: 0f, vehicle.odometerCropTop ?: 0f, bmp.width, bmp.height); val p2 = IcrsMath.icrsToPixel(vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f, bmp.width, bmp.height); canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint); return annotated
+    val icrsRect = if (vehicle.isIcrs) RectF(vehicle.odometerCropLeft ?: 0f, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f) else IcrsMath.legacyAnisotropicToIcrs(RectF(vehicle.odometerCropLeft ?: 0f, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f), bmp.width, bmp.height)
+    val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, bmp.width, bmp.height); val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, bmp.width, bmp.height); canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint); return annotated
 }
 
 private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
@@ -936,10 +940,14 @@ private suspend fun runPaddleValleyIterative(
     val r = winnerRef.vehicle.odometerCropRight ?: 1f
     val b = winnerRef.vehicle.odometerCropBottom ?: 1f
     
-    val roiW = ((r - l) * mWidth).toInt().coerceAtMost(mWidth)
-    val roiH = ((b - t) * mHeight).toInt().coerceAtMost(mHeight)
-    val startX = (l * mWidth).toInt().coerceIn(0, mWidth - 1)
-    val startY = (t * mHeight).toInt().coerceIn(0, mHeight - 1)
+    val icrsRect = if (winnerRef.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), mWidth, mHeight)
+    val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
+    val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
+    
+    val roiW = (p2.x - p1.x).toInt().coerceAtMost(mWidth)
+    val roiH = (p2.y - p1.y).toInt().coerceAtMost(mHeight)
+    val startX = p1.x.toInt().coerceIn(0, mWidth - 1)
+    val startY = p1.y.toInt().coerceIn(0, mHeight - 1)
     
     val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
     var lastThumb = ""
@@ -1042,10 +1050,14 @@ private suspend fun runMLKitIterative(
     val r = winnerRef.vehicle.odometerCropRight ?: 1f
     val b = winnerRef.vehicle.odometerCropBottom ?: 1f
     
-    val roiW = ((r - l) * mWidth).toInt().coerceAtMost(mWidth)
-    val roiH = ((b - t) * mHeight).toInt().coerceAtMost(mHeight)
-    val sX = (l * mWidth).toInt()
-    val sY = (t * mHeight).toInt()
+    val icrsRect = if (winnerRef.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), mWidth, mHeight)
+    val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
+    val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
+    
+    val roiW = (p2.x - p1.x).toInt().coerceAtMost(mWidth)
+    val roiH = (p2.y - p1.y).toInt().coerceAtMost(mHeight)
+    val sX = p1.x.toInt().coerceIn(0, mWidth - 1)
+    val sY = p1.y.toInt().coerceIn(0, mHeight - 1)
     
     val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
     var lastThumb = ""
