@@ -291,12 +291,18 @@ private suspend fun runPumpExperiment(
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
 
                 scales.forEach { scale ->
-                    prepareScale(workspace, scale)
-                    mlBlocksRaw.addAll(runDiscoveryML(workspace, context))
-                    val (raw, exp, tPd) = runDiscoveryPaddle(workspace, paddleEngine)
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val outerCrop = workspace.c[outerId]
+                    val innerCrop = workspace.c[innerId]
+                    
+                    mlBlocksRaw.addAll(runDiscoveryML(innerCrop, context))
+                    val (raw, exp, tPd) = runDiscoveryPaddle(outerCrop, paddleEngine)
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
                     branch.metadata["t_pd_scale_$scale"] = "${tPd}ms"
+                    
+                    innerCrop.release()
+                    outerCrop.release()
                 }
                 val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
@@ -600,31 +606,27 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
 
 private fun pToEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
-private fun prepareScale(buffer: BufferSet, targetLongEdge: Int) {
+private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int> {
     val srcW = buffer.p.width
     val srcH = buffer.p.height
     val currentLongEdge = max(srcW, srcH)
     
-    val targetW: Int
-    val targetH: Int
+    val scale = if (currentLongEdge <= targetLongEdge) 1.0f else targetLongEdge.toFloat() / currentLongEdge
+    val targetW = (srcW * scale).toInt()
+    val targetH = (srcH * scale).toInt()
+
+    val alignedW = ((targetW + 31) / 32) * 32
+    val alignedH = ((targetH + 31) / 32) * 32
     
-    if (currentLongEdge <= targetLongEdge) {
-        targetW = srcW
-        targetH = srcH
-    } else {
-        val scale = targetLongEdge.toFloat() / currentLongEdge
-        targetW = (srcW * scale).toInt()
-        targetH = (srcH * scale).toInt()
-    }
+    Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
     
-    Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x$targetH (src=${srcW}x$srcH)")
+    val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
+    buffer.c[outerId].clear()
     
-    val i1 = IcrsMath.pixelToIcrs(0f, 0f, buffer.s.width, buffer.s.height)
-    val i2 = IcrsMath.pixelToIcrs(targetW.toFloat(), targetH.toFloat(), buffer.s.width, buffer.s.height)
+    val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
+    Imgproc.resize(buffer.p.mat, buffer.c[innerId].mat, buffer.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
     
-    val cropId = buffer.s.createCrop(i1.x, i1.y, i2.x - i1.x, i2.y - i1.y, id = 999)
-    val dstMat = buffer.c[cropId].mat
-    org.opencv.imgproc.Imgproc.resize(buffer.p.mat, dstMat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()))
+    return Pair(outerId, innerId)
 }
 
 private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
