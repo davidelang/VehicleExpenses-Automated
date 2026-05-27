@@ -517,11 +517,11 @@ object OdometerOcrUtils {
 
         // Find Low Shoulder
         for (i in maxBin downTo 0) {
-            if (smoothed[i] < shoulderThreshold) { sLow = i.toDouble(); break }
+            if (smoothed[i] < shoulderThreshold) { sLow = (i + 1).coerceAtMost(63).toDouble(); break }
         }
         // Find High Shoulder
         for (i in maxBin..63) {
-            if (smoothed[i] < shoulderThreshold) { sHigh = i.toDouble(); break }
+            if (smoothed[i] < shoulderThreshold) { sHigh = (i - 1).coerceAtLeast(0).toDouble(); break }
         }
 
         val intensityLow = sLow * 4.0
