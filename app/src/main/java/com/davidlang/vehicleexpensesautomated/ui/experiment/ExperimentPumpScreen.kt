@@ -752,12 +752,12 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
          
          if (pW < 2 || pH < 2) return@map hunk
 
-         val cropId = buffer.createCrop(l, t, r - l, b - t, id = 888)
+         val cropId = buffer.createCrop(l, t, r - l, b - t)
          val crop = buffer.c[cropId]!!
          
          val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
          recBuffer.p.clear()
-         val recCropId = recBuffer.createCrop(0, 0, targetW, targetH, id = 777)
+         val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
          val recCrop = recBuffer.c[recCropId]!!
          org.opencv.imgproc.Imgproc.resize(crop.mat, recCrop.mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
          
