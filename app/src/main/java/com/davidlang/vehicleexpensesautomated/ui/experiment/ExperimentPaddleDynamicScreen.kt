@@ -139,6 +139,7 @@ private suspend fun runMultiPredictorTest(
                 val targetW = (imgW * s).toInt()
                 val targetH = (imgH * s).toInt()
                 
+                // Use sibling crops (both from buffer.s)
                 val outerId = buffer.s.createCrop(0, 0, scale, scale)
                 val outerSlice = buffer.c[outerId]
                 outerSlice.clear()
