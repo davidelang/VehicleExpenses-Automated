@@ -967,10 +967,14 @@ private suspend fun pRunMLKitIterative(
     val r = winnerRef.vehicle.odometerCropRight ?: 1f
     val b = winnerRef.vehicle.odometerCropBottom ?: 1f
     
-    val roiW = ((r - l) * mWidth).toInt().coerceAtMost(mWidth)
-    val roiH = ((b - t) * mHeight).toInt().coerceAtMost(mHeight)
-    val sX = (l * mWidth).toInt()
-    val sY = (t * mHeight).toInt()
+    val icrsRect = if (winnerRef.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), mWidth, mHeight)
+    val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
+    val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
+    
+    val roiW = (p2.x - p1.x).toInt().coerceAtMost(mWidth)
+    val roiH = (p2.y - p1.y).toInt().coerceAtMost(mHeight)
+    val sX = p1.x.toInt().coerceIn(0, mWidth - 1)
+    val sY = p1.y.toInt().coerceIn(0, mHeight - 1)
     
     val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
     var lastThumb = ""
