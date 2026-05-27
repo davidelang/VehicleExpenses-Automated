@@ -283,18 +283,40 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
-            Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            return registerCrop(ManagedCrop(owner, isNormalized = false, isIcrs = false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat()), id)
+            Log.d("BufferSet", "Nested Int crop: ($x,$y ${w}x$h) within parent ($absX,$absY ${absW}x$absH). Flattening.")
+            val crop = ManagedCrop(owner, isNormalized = false, isIcrs = false, (absX + x).toFloat(), (absY + y).toFloat(), w.toFloat(), h.toFloat())
+            crop.refresh()
+            return registerCrop(crop, id)
         }
+
         override fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            // Nested float crop defaults to ICRS within the crop slice in Phase 4
-            return registerCrop(ManagedCrop(owner, isNormalized = false, isIcrs = true, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH), id)
+            val crop = if (isIcrs) {
+                Log.d("BufferSet", "Nested ICRS crop: ($x,$y ${w}x$h) within parent ($rawX,$rawY ${rawW}x$rawH). Flattening.")
+                ManagedCrop(owner, isNormalized = false, isIcrs = true, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH)
+            } else if (isNormalized) {
+                Log.d("BufferSet", "Nested Normalized crop: ($x,$y ${w}x$h) within parent ($rawX,$rawY ${rawW}x$rawH). Flattening.")
+                ManagedCrop(owner, isNormalized = true, isIcrs = false, rawX + (x * rawW), rawY + (y * rawH), w * rawW, h * rawH)
+            } else {
+                Log.w("BufferSet", "Mixed coordinate types: Creating Normalized child from Fixed Pixel parent. Use with caution.")
+                val fX = (absX + (x * absW)) / _width.toFloat()
+                val fY = (absY + (y * absH)) / _height.toFloat()
+                val fW = (w * absW) / _width.toFloat()
+                val fH = (h * absH) / _height.toFloat()
+                ManagedCrop(owner, isNormalized = true, isIcrs = false, fX, fY, fW, fH)
+            }
+            crop.refresh()
+            return registerCrop(crop, id)
         }
+
         override fun createCropLegacy(x: Float, y: Float, w: Float, h: Float, id: Int?): Int {
-            Log.w("BufferSet", "Nested crop creation is discouraged (flattening used). Use at your own risk.")
-            // Nested legacy float crop
-            return registerCrop(ManagedCrop(owner, isNormalized = true, isIcrs = false, absX + (x * absW), absY + (y * absH), w * absW, h * absH), id)
+            Log.d("BufferSet", "Nested Legacy crop: flattening using pixel coords.")
+            val fX = (absX + (x * absW)) / _width.toFloat()
+            val fY = (absY + (y * absH)) / _height.toFloat()
+            val fW = (w * absW) / _width.toFloat()
+            val fH = (h * absH) / _height.toFloat()
+            val crop = ManagedCrop(owner, isNormalized = true, isIcrs = false, fX, fY, fW, fH)
+            crop.refresh()
+            return registerCrop(crop, id)
         }
         override fun resize(x: Int, y: Int, w: Int, h: Int) { isNormalized = false; isIcrs = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
         override fun resize(x: Float, y: Float, w: Float, h: Float) { isNormalized = false; isIcrs = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
