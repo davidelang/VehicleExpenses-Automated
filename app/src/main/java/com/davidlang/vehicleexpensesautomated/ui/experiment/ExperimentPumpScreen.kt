@@ -687,9 +687,14 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, paddleEngine: NativePa
         // 1. Map raw block to master pixel coordinates
         val nl = block.boundingBox.left / occW; val nt = block.boundingBox.top / occH
         val nr = block.boundingBox.right / occW; val nb = block.boundingBox.bottom / occH
-        val ml = (nl * masterW).toInt(); val mt = (nt * masterH).toInt()
-        val mr = (nr * masterW).toInt(); val mb = (nb * masterH).toInt()
+        
+        val ml = (nl * masterW).toInt().coerceIn(0, masterW - 1)
+        val mt = (nt * masterH).toInt().coerceIn(0, masterH - 1)
+        val mr = (nr * masterW).toInt().coerceIn(0, masterW - 1)
+        val mb = (nb * masterH).toInt().coerceIn(0, masterH - 1)
+        
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
+        Log.d("PUMP_MAPPING", "Raw Rect: $rawRect, Master: ${masterW}x${masterH}")
 
         // Capture raw detection in ICRS space
         val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), masterW, masterH)
