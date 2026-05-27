@@ -303,7 +303,6 @@ object OcrUtils {
 
         workspace.clear()
         val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
-        val target = bufferSet.c[snapCropId]
 
         try {
             when (source) {
@@ -314,7 +313,7 @@ object OcrUtils {
                     canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), Paint(Paint.FILTER_BITMAP_FLAG))
 
                     // Direct sync to Mat
-                    NativeImageUtils.syncMatFromArgb(localScratch, target.mat)
+                    NativeImageUtils.syncMatFromArgb(localScratch, bufferSet.c[snapCropId].mat)
                     if (scratchArgb == null) localScratch.recycle()
                 }
                 is org.opencv.core.Mat -> {
@@ -324,16 +323,16 @@ object OcrUtils {
                         Imgproc.cvtColor(sub, g, Imgproc.COLOR_RGBA2GRAY)
                         g
                     } else sub
-                    Imgproc.resize(graySub, target.mat, target.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                    Imgproc.resize(graySub, bufferSet.c[snapCropId].mat, bufferSet.c[snapCropId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
                     if (graySub !== sub) graySub.release()
                     sub.release()
                 }
                 is BufferSet.Slice -> {
                     val subY = source.mat.submat(org.opencv.core.Rect(roi.left, roi.top, roiW, roiH))
-                    Imgproc.resize(subY, target.mat, target.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                    Imgproc.resize(subY, bufferSet.c[snapCropId].mat, bufferSet.c[snapCropId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
 
                     val subUV = source.uvMat.submat(org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2))
-                    Imgproc.resize(subUV, target.uvMat, target.uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                    Imgproc.resize(subUV, bufferSet.c[snapCropId].uvMat, bufferSet.c[snapCropId].uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
 
                     subY.release(); subUV.release()
                 }
@@ -351,11 +350,11 @@ object OcrUtils {
                 )
             }
 
-            NativeImageUtils.drawYuvAnnotations(target.yuv, scaledAnns)
-            val b64 = NativeImageUtils.compressYuvToBase64(target.yuv, 80)
+            NativeImageUtils.drawYuvAnnotations(bufferSet.c[snapCropId].yuv, scaledAnns)
+            val b64 = NativeImageUtils.compressYuvToBase64(bufferSet.c[snapCropId].yuv, 80)
             Pair(b64, System.currentTimeMillis() - tStart)
         } finally {
-            target.release()
+            bufferSet.c[snapCropId].release()
             if (scratchYuv == null) bufferSet.release()
         }
     }
