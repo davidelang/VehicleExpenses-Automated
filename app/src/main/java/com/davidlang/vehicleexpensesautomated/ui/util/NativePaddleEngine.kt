@@ -47,6 +47,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         
         private var isNativeLibLoaded = false
 
+        // Phase 125: Multi-Tier Predictor Array
+        val TIER_SCALES = listOf(224, 608, 1024, 2560)
+        val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
+        val sharedTierBuffers = mutableMapOf<Int, FloatArray>()
+
         // Phase 116: Unified Rigid Backing Fields
         private var _bufferSetA: BufferSet? = null
         private var _bufferSetB: BufferSet? = null
@@ -149,23 +154,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val config = MobileConfig()
                 config.setThreads(4); config.setPowerMode(com.baidu.paddle.lite.PowerMode.LITE_POWER_HIGH)
                 
-                val tDetL0 = System.currentTimeMillis()
-                config.setModelFromFile(detPath); sharedDetectorLarge = PaddlePredictor.createPaddlePredictor(config); sharedDetectorLarge!!.getInput(0).resize(longArrayOf(1, 1, 2560, 2560))
-                val tDetL = System.currentTimeMillis() - tDetL0
+                // Initialize Tiers
+                TIER_SCALES.forEach { scale ->
+                    val t0 = System.currentTimeMillis()
+                    config.setModelFromFile(detPath)
+                    val p = PaddlePredictor.createPaddlePredictor(config)
+                    p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
+                    sharedTiers[scale] = p
+                    sharedTierBuffers[scale] = FloatArray(1 * scale * scale)
+                    Log.i("PaddleLite", "Tier $scale Init: ${System.currentTimeMillis() - t0}ms")
+                }
                 
-                val tDetS0 = System.currentTimeMillis()
-                config.setModelFromFile(detPath); sharedDetectorSmall = PaddlePredictor.createPaddlePredictor(config); sharedDetectorSmall!!.getInput(0).resize(longArrayOf(1, 1, 128, 512))
-                val tDetS = System.currentTimeMillis() - tDetS0
-                
-                val tRecV30 = System.currentTimeMillis()
                 config.setModelFromFile(copy("paddle/rec_v3_mono_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
-                val tRecV3 = System.currentTimeMillis() - tRecV30
-                
-                val tRecN0 = System.currentTimeMillis()
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
-                val tRecN = System.currentTimeMillis() - tRecN0
                 
-                Log.i("PaddleLite", "Predictor Init: Large=${tDetL}ms, Small=${tDetS}ms, RecV3=${tRecV3}ms, RecN=${tRecN}ms")
                 Log.i("PaddleLite", "Total Global Init: ${System.currentTimeMillis() - tStart}ms")
                 
                 isAvailableGlobally = true
