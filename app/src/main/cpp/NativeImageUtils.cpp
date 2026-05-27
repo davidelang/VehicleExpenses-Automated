@@ -575,11 +575,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         maxX += 1.0;
     }
 
-    // --- JUMP OUT (Forcefully move into the gap) ---
+    // --- JUMP OUT (Forcefully move into potential background) ---
+    double jumpH = (maxY - minY) * 0.40;
     minY = std::max(0.0, minY - 4.0);
     maxY = std::min((double)maxH - 1, maxY + 4.0);
-    minX = std::max(0.0, minX - 4.0);
-    maxX = std::min((double)maxW - 1, maxX + 4.0);
+    minX = std::max(0.0, minX - jumpH);
+    maxX = std::min((double)maxW - 1, maxX + jumpH);
+
+    double maxExtentL = minX, maxExtentT = minY, maxExtentR = maxX, maxExtentB = maxY;
 
     // --- PHASE 2: PULL BACK IN (Stop on content or original floor) ---
     while (minY < maxY && minY < floorT) {
@@ -609,9 +612,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     LOGE("EXPAND: Result (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
 
-    jintArray result = env->NewIntArray(4);
-    jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
-    env->SetIntArrayRegion(result, 0, 4, dims);
+    jintArray result = env->NewIntArray(8);
+    jint dims[8] = {
+        (jint)minX, (jint)minY, (jint)maxX, (jint)maxY,
+        (jint)maxExtentL, (jint)maxExtentT, (jint)maxExtentR, (jint)maxExtentB
+    };
+    env->SetIntArrayRegion(result, 0, 8, dims);
     return result;
 }
 

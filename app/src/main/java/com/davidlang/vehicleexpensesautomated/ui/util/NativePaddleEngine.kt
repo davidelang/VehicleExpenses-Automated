@@ -66,6 +66,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _sharedCanvasOdoScratch: Canvas? = null
         private var _redPaint: Paint? = null
         private var _bluePaint4: Paint? = null
+        private var _yellowPaint2: Paint? = null
         private var _orangePaint: Paint? = null
         private var _grayToAlphaPaint: Paint? = null
         private var _alphaToGrayPaint: Paint? = null
@@ -86,6 +87,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedCanvasOdoScratch: Canvas get() = _sharedCanvasOdoScratch!!
         val redPaint: Paint get() = _redPaint!!
         val bluePaint4: Paint get() = _bluePaint4!!
+        val yellowPaint2: Paint get() = _yellowPaint2!!
         val orangePaint: Paint get() = _orangePaint!!
         val grayToAlphaPaint: Paint get() = _grayToAlphaPaint!!
         val alphaToGrayPaint: Paint get() = _alphaToGrayPaint!!
@@ -116,6 +118,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
             _bluePaint4 = Paint().apply { color = Color.BLUE; style = Paint.Style.STROKE; strokeWidth = 4f }
+            _yellowPaint2 = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 2f }
             _orangePaint = Paint().apply { color = Color.rgb(255, 165, 0); style = Paint.Style.STROKE; strokeWidth = 2f }
 
             _grayToAlphaPaint = Paint().apply {

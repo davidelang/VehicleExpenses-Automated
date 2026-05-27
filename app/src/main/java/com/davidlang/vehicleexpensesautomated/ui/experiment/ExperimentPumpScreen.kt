@@ -290,15 +290,16 @@ private suspend fun runPumpExperiment(
                 val mlBlocksRaw = mutableListOf<PumpHunk>()
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
+                val pdHunksMaxTotal = mutableListOf<PumpHunk>()
 
                 scales.forEach { scale ->
                     val (outerId, innerId) = prepareScale(workspace, scale)
                     
                     mlBlocksRaw.addAll(runDiscoveryML(workspace, innerId, context))
-                    val (raw, exp, tPd) = runDiscoveryPaddle(workspace, outerId, paddleEngine)
+                    val (raw, exp, maxExt) = runDiscoveryPaddle(workspace, outerId, paddleEngine)
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
-                    branch.metadata["t_pd_scale_$scale"] = "${tPd}ms"
+                    pdHunksMaxTotal.addAll(maxExt)
                     
                     workspace.c[innerId].release()
                     workspace.c[outerId].release()
@@ -665,34 +666,48 @@ private suspend fun runDiscoveryML(buffer: BufferSet, id: Int, context: Context)
     }
 }
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, Long> {
-    val res = paddleEngine.detect(buffer.c[id]) ?: return Triple(emptyList(), emptyList(), 0L)
-    val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
-
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, List<PumpHunk>> {
+    val res = paddleEngine.detect(buffer.c[id]) ?: return Triple(emptyList(), emptyList(), emptyList())
+    
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
-    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
+    val rawBlocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
+    val rawRects = rawBlocks.map { it.boundingBox }
+    
+    // 1. Consolidate Raw Character Fragments (75% overlap rule)
+    val consolidated = OdometerOcrUtils.consolidateRects(rawRects, 0.75f)
+    
     val hunksRaw = mutableListOf<PumpHunk>()
     val hunksExpanded = mutableListOf<PumpHunk>()
+    val hunksMaxExtent = mutableListOf<PumpHunk>()
 
-    blocks.forEach { block ->
-        val ml = block.boundingBox.left.toInt().coerceIn(0, masterW - 1)
-        val mt = block.boundingBox.top.toInt().coerceIn(0, masterH - 1)
-        val mr = block.boundingBox.right.toInt().coerceIn(0, masterW - 1)
-        val mb = block.boundingBox.bottom.toInt().coerceIn(0, masterH - 1)
+    consolidated.forEach { rect ->
+        // Convert to absolute master pixels
+        val ml = rect.left.toInt().coerceIn(0, masterW - 1)
+        val mt = rect.top.toInt().coerceIn(0, masterH - 1)
+        val mr = rect.right.toInt().coerceIn(0, masterW - 1)
+        val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
+        // Capture Consolidated Raw in ICRS
         val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), masterW, masterH)
         val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), masterW, masterH)
         hunksRaw.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
 
-        val expandedRect = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
+        // 2. Perform Native Expansion (with Height-Relative Jump-Out and Retraction)
+        val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
 
-        val i1 = IcrsMath.pixelToIcrs(expandedRect.left.toFloat(), expandedRect.top.toFloat(), masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(expandedRect.right.toFloat(), expandedRect.bottom.toFloat(), masterW, masterH)
+        // Capture Expanded/Retracted result
+        val i1 = IcrsMath.pixelToIcrs(retractedRect.left.toFloat(), retractedRect.top.toFloat(), masterW, masterH)
+        val i2 = IcrsMath.pixelToIcrs(retractedRect.right.toFloat(), retractedRect.bottom.toFloat(), masterW, masterH)
         hunksExpanded.add(PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y)))
+        
+        // Capture Max Extent reach (Yellow tier)
+        val y1 = IcrsMath.pixelToIcrs(maxExtentRect.left.toFloat(), maxExtentRect.top.toFloat(), masterW, masterH)
+        val y2 = IcrsMath.pixelToIcrs(maxExtentRect.right.toFloat(), maxExtentRect.bottom.toFloat(), masterW, masterH)
+        hunksMaxExtent.add(PumpHunk("", RectF(y1.x, y1.y, y2.x, y2.y)))
     }
-    return Triple(hunksRaw, hunksExpanded, tInf)
+    return Triple(hunksRaw, hunksExpanded, hunksMaxExtent)
 }
 
 

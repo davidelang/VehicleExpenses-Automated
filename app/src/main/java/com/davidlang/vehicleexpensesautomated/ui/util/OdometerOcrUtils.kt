@@ -145,6 +145,46 @@ object OdometerOcrUtils {
         return EngineResult(calculateWeightedAverage(scaledBlocks, srcH), listOf(tDetect), scaledBlocks)
     }
 
+    fun consolidateRects(fragments: List<android.graphics.Rect>, threshold: Float = 0.75f): List<android.graphics.Rect> {
+        if (fragments.isEmpty()) return emptyList()
+        val merged = mutableListOf<android.graphics.Rect>()
+        val remaining = fragments.toMutableList()
+
+        while (remaining.isNotEmpty()) {
+            var current = remaining.removeAt(0)
+            var changed = true
+            while (changed) {
+                changed = false
+                val iterator = remaining.iterator()
+                while (iterator.hasNext()) {
+                    val next = iterator.next()
+                    val interL = Math.max(current.left, next.left); val interT = Math.max(current.top, next.top)
+                    val interR = Math.min(current.right, next.right); val interB = Math.min(current.bottom, next.bottom)
+                    
+                    val overlapW = if (interR > interL) interR - interL else 0
+                    val overlapH = if (interB > interT) interB - interT else 0
+                    val minW = Math.min(current.width(), next.width())
+                    val minH = Math.min(current.height(), next.height())
+                    
+                    val significant = overlapW >= (minW * threshold) && overlapH >= (minH * threshold)
+
+                    if (significant) {
+                        current = android.graphics.Rect(
+                            Math.min(current.left, next.left),
+                            Math.min(current.top, next.top),
+                            Math.max(current.right, next.right),
+                            Math.max(current.bottom, next.bottom)
+                        )
+                        iterator.remove()
+                        changed = true
+                    }
+                }
+            }
+            merged.add(current)
+        }
+        return merged
+    }
+
     fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
         if (fragments.isEmpty()) return emptyList()
         val merged = mutableListOf<android.graphics.Rect>()
