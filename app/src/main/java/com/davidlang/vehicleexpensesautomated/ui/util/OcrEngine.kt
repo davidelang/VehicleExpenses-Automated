@@ -155,10 +155,9 @@ data class OcrResult(
     fun filterByCrops(odoCrop: android.graphics.RectF?, otherCrop: android.graphics.RectF?): OcrResult {
         val filteredBlocks = textBlocks.filter { block ->
             if (imageWidth <= 0 || imageHeight <= 0) return@filter true
-            val cx = block.boundingBox.centerX().toFloat() / imageWidth
-            val cy = block.boundingBox.centerY().toFloat() / imageHeight
-            val inOdo = odoCrop?.let { cx >= it.left && cx <= it.right && cy >= it.top && cy <= it.bottom } ?: false
-            val inOther = otherCrop?.let { cx >= it.left && cx <= it.right && cy >= it.top && cy <= it.bottom } ?: false
+            val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), imageWidth, imageHeight)
+            val inOdo = odoCrop?.let { icrs.x >= it.left && icrs.x <= it.right && icrs.y >= it.top && icrs.y <= it.bottom } ?: false
+            val inOther = otherCrop?.let { icrs.x >= it.left && icrs.x <= it.right && icrs.y >= it.top && icrs.y <= it.bottom } ?: false
             !inOdo && !inOther
         }
         return this.copy(

@@ -223,13 +223,16 @@ private suspend fun runExperiment(
                         // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
                         // This allows an arbitrary number of vehicles to maintain long-lived, 
                         // uniquely identifiable references within the shared global buffers.
-                        set.p.createCrop(
-                            ref.vehicle.odometerCropLeft ?: 0f,
-                            ref.vehicle.odometerCropTop ?: 0f,
-                            (ref.vehicle.odometerCropRight ?: 1f) - (ref.vehicle.odometerCropLeft ?: 0f),
-                            (ref.vehicle.odometerCropBottom ?: 1f) - (ref.vehicle.odometerCropTop ?: 0f),
-                            id = ref.vehicle.id
-                        )
+                        val l = ref.vehicle.odometerCropLeft ?: 0f; val t = ref.vehicle.odometerCropTop ?: 0f
+                        val r = ref.vehicle.odometerCropRight ?: 1f; val b = ref.vehicle.odometerCropBottom ?: 1f
+                        
+                        val icrsRect = if (ref.vehicle.isIcrs) {
+                            RectF(l, t, r, b)
+                        } else {
+                            IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), ref.width, ref.height)
+                        }
+                        
+                        set.p.createCrop(icrsRect.left, icrsRect.top, icrsRect.width(), icrsRect.height(), id = ref.vehicle.id)
                     }
                 }
             }
