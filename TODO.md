@@ -17,6 +17,7 @@
 - [x] Restore Capacity Baseline and Refine Retraction (See: plans/restore-capacity-and-refine-retraction.md)
 - [x] Implement Adaptive Bimodal Expansion Engine (See: plans/bimodal-expansion-engine.md)
 - [x] Fix Expansion Stop Logic and Trace Logging (See: plans/fix-trace-and-expansion-logic.md)
+- [ ] Investigate BufferSet ID collision/reuse mechanism and fix missing refresh() in nested crops (See: plans/bufferset-stabilization-roadmap.md)
 - [x] Restore forensic coordinate validation and diagnostic logging (See: plans/forensic-bounds-logging.md)
 - [x] Fix Active Algorithm, ASCII Expansion, and Contrast Tweak (See: plans/fix-algorithm-and-expand-ascii.md)
 - [ ] Implement Variance-Based Expansion with Content Floor (See: plans/variance-expansion-with-floor.md)
