@@ -105,8 +105,22 @@ fun ManageVehiclesScreen(
                 } catch (e: Exception) { Log.e("ManageVehicles", "Failed dimensions", e) }
             }
             val (odo, other) = vehicleViewModel.getCrops(it)
-            odometerCropRect = odo
-            otherTextCropRect = other
+            
+            // Phase 126: ICRS Migration Bridge
+            if (!it.isIcrs && originalImageSize != Offset.Zero) {
+                val imgW = originalImageSize.x.toInt(); val imgH = originalImageSize.y.toInt()
+                odometerCropRect = odo?.let { r -> 
+                    val icrs = IcrsMath.legacyAnisotropicToIcrs(RectF(r.left, r.top, r.right, r.bottom), imgW, imgH)
+                    Rect(icrs.left, icrs.top, icrs.right, icrs.bottom)
+                }
+                otherTextCropRect = other?.let { r -> 
+                    val icrs = IcrsMath.legacyAnisotropicToIcrs(RectF(r.left, r.top, r.right, r.bottom), imgW, imgH)
+                    Rect(icrs.left, icrs.top, icrs.right, icrs.bottom)
+                }
+            } else {
+                odometerCropRect = odo
+                otherTextCropRect = other
+            }
             
             // Hydration handled by the "Show Landmarks" button
             discoveryResults = null 
@@ -284,7 +298,7 @@ fun ManageVehiclesScreen(
             OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text("License Plate") }, modifier = Modifier.fillMaxWidth())
             
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { scope.launch { if (isNewVehicle) { vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) } else { editingVehicle?.let { val updated = it.copy(name = name, make = make, model = model, year = year.toIntOrNull() ?: 0, licensePlate = licensePlate, referenceDashPhotoUrl = referencePhotoUrl, cleanedReferenceDashPhotoUrl = referencePhotoUrl, odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom, otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom, landmarkTextBlocksJson = landmarkTextBlocksJson); vehicleViewModel.updateVehicle(updated) } }; navController.popBackStack() } }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank() && referencePhotoUrl != null) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
+            Button(onClick = { scope.launch { if (isNewVehicle) { vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) } else { editingVehicle?.let { val updated = it.copy(name = name, make = make, model = model, year = year.toIntOrNull() ?: 0, licensePlate = licensePlate, referenceDashPhotoUrl = referencePhotoUrl, cleanedReferenceDashPhotoUrl = referencePhotoUrl, odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom, otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom, landmarkTextBlocksJson = landmarkTextBlocksJson, isIcrs = true); vehicleViewModel.updateVehicle(updated) } }; navController.popBackStack() } }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank() && referencePhotoUrl != null) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
         }
     }
 
@@ -356,11 +370,16 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                     
                     if (start != null && viewSize.x > 0 && originalSize.x > 0) {
                         val fitRect = calculateFitImageRect(viewSize.x, viewSize.y, originalSize.x, originalSize.y)
-                        val left = ((minOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                        val top = ((minOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                        val right = ((maxOf(start.x, end.x) - fitRect.left) / fitRect.width).coerceIn(0f, 1f)
-                        val bottom = ((maxOf(start.y, end.y) - fitRect.top) / fitRect.height).coerceIn(0f, 1f)
-                        currentDragRect = Rect(left, top, right, bottom)
+                        val lx1 = (start.x - fitRect.left) / fitRect.width
+                        val ly1 = (start.y - fitRect.top) / fitRect.height
+                        val lx2 = (end.x - fitRect.left) / fitRect.width
+                        val ly2 = (end.y - fitRect.top) / fitRect.height
+                        
+                        val imgW = originalSize.x.toInt(); val imgH = originalSize.y.toInt()
+                        val p1 = IcrsMath.legacyAnisotropicToIcrs(lx1, ly1, imgW, imgH)
+                        val p2 = IcrsMath.legacyAnisotropicToIcrs(lx2, ly2, imgW, imgH)
+                        
+                        currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
                     }
                 }, 
                 onDragEnd = { 
@@ -388,9 +407,19 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
             val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { scope.maxWidth.toPx() }; val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { scope.maxHeight.toPx() }
             val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
             Canvas(modifier = Modifier.fillMaxSize()) {
-                currentDragRect?.let { r -> drawRect(Color.Red, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f / scale)) }
-                odoRect?.let { r -> drawRect(Color.Blue, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f / scale)) }
-                otherRect?.let { r -> drawRect(Color.Green, Offset(fitRect.left + r.left * fitRect.width, fitRect.top + r.top * fitRect.height), androidx.compose.ui.geometry.Size(r.width * fitRect.width, r.height * fitRect.height), style = Stroke(4f / scale)) }
+                fun drawIcrsRect(rect: Rect, color: Color) {
+                    val s = minOf(originalSize.x, originalSize.y)
+                    val lx = (rect.left * s + (originalSize.x / 2f)) / originalSize.x
+                    val ly = (rect.top * s + (originalSize.y / 2f)) / originalSize.y
+                    val lw = (rect.width * s) / originalSize.x
+                    val lh = (rect.height * s) / originalSize.y
+                    
+                    drawRect(color, Offset(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height), androidx.compose.ui.geometry.Size(lw * fitRect.width, lh * fitRect.height), style = Stroke(4f / scale))
+                }
+                
+                currentDragRect?.let { drawIcrsRect(it, Color.Red) }
+                odoRect?.let { drawIcrsRect(it, Color.Blue) }
+                otherRect?.let { drawIcrsRect(it, Color.Green) }
             }
         }
     }

@@ -246,14 +246,21 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             val (px, py, pw, ph) = if (isIcrs) {
                 val p1 = IcrsMath.icrsToPixel(rawX, rawY, _width, _height)
                 val p2 = IcrsMath.icrsToPixel(rawX + rawW, rawY + rawH, _width, _height)
-                listOf(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
+                listOf(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
             } else {
-                listOf(rawX.toInt(), rawY.toInt(), rawW.toInt(), rawH.toInt())
+                listOf(rawX, rawY, rawW, rawH)
             }
             
-            absX = (px / 2) * 2; absY = (py / 2) * 2
-            val x2 = ((px + pw + 1) / 2) * 2; val y2 = ((py + ph + 1) / 2) * 2
-            absW = (x2 - absX).coerceIn(2, _width - absX); absH = (y2 - absY).coerceIn(2, _height - absY)
+            // Phase 126: Strict 2x2 Boundary Alignment and Clamping
+            // Ensures coordinates are always even and inside native buffer limits [0, width/height]
+            absX = (px.toInt().coerceIn(0, _width - 2) / 2) * 2
+            absY = (py.toInt().coerceIn(0, _height - 2) / 2) * 2
+            
+            val x2 = ((px + pw).toInt().coerceIn(absX + 2, _width) / 2) * 2
+            val y2 = ((py + ph).toInt().coerceIn(absY + 2, _height) / 2) * 2
+            
+            absW = x2 - absX
+            absH = y2 - absY
             
             val curMat = _mat
             val curUvMat = _uvMat

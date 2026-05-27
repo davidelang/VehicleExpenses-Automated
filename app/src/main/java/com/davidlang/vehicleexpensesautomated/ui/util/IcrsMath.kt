@@ -47,4 +47,13 @@ object IcrsMath {
         val py = ly * imgH
         return pixelToIcrs(px, py, imgW, imgH)
     }
+
+    /**
+     * Converts a legacy [0.0 - 1.0] top-left RectF into an ICRS centered RectF.
+     */
+    fun legacyAnisotropicToIcrs(legacy: RectF, imgW: Int, imgH: Int): RectF {
+        val p1 = legacyAnisotropicToIcrs(legacy.left, legacy.top, imgW, imgH)
+        val p2 = legacyAnisotropicToIcrs(legacy.right, legacy.bottom, imgW, imgH)
+        return RectF(p1.x, p1.y, p2.x, p2.y)
+    }
 }
