@@ -502,6 +502,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int maxW = mat->cols;
     int maxH = mat->rows;
 
+    if (L < 0 || R > maxW || T < 0 || B > maxH || L >= R || T >= B) {
+        LOGE("EXPAND_FATAL: Coordinate Overflow (%d,%d)-(%d,%d) for img %dx%d. Mapping failure likely in upstream ICRS conversion.", L, T, R, B, maxW, maxH);
+    }
+
     LOGE("EXPAND: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
 
     int safeL = std::max(0, std::min(L, maxW - 1));
