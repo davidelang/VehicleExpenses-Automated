@@ -353,9 +353,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
-                var maxIdx = 0; var maxVal = -1f; val searchLimit = 11.coerceAtMost(dictSize)
+                var maxIdx = 0; var maxVal = -1f; val searchLimit = dictSize
                 for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
                 if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
+
                     if (result.length < 4 || maxVal >= (0.60f * lastConf)) {
                         result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++; lastConf = maxVal
                     } else break
