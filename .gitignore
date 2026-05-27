@@ -48,6 +48,10 @@ Thumbs.db
 keystore.properties
 signing.properties
 
+# Multi-Agent Worktrees
+agent-*/
+master/
+
 # Generated files
 app/src/main/assets/*
 app/src/main/res/raw/*

@@ -72,8 +72,14 @@ fi
 # 5. Build Phase
 ./gradlew assembleDebug
 if [ $? -eq 0 ]; then
-    echo "Build successful. Updating 'builds' tag."
-    git tag -f builds
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ "$CURRENT_BRANCH" == "master" ]; then
+        TAG_NAME="builds"
+    else
+        TAG_NAME="${CURRENT_BRANCH}/builds"
+    fi
+    echo "Build successful. Updating '$TAG_NAME' tag."
+    git tag -f "$TAG_NAME"
     git describe
     exit 0
 else

@@ -36,8 +36,14 @@ else
 fi
 
 if [ "$OVERALL_SUCCESS" = true ]; then
-    echo "All deployments successful. Updating 'deployed' tag."
-    git tag -f deployed
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ "$CURRENT_BRANCH" == "master" ]; then
+        TAG_NAME="deployed"
+    else
+        TAG_NAME="${CURRENT_BRANCH}/deployed"
+    fi
+    echo "All deployments successful. Updating '$TAG_NAME' tag."
+    git tag -f "$TAG_NAME"
     exit 0
 else
     echo "One or more deployments failed. The 'deployed' tag was NOT updated."
