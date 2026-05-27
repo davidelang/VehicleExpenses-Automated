@@ -293,17 +293,15 @@ private suspend fun runPumpExperiment(
 
                 scales.forEach { scale ->
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val outerCrop = workspace.c[outerId]
-                    val innerCrop = workspace.c[innerId]
                     
-                    mlBlocksRaw.addAll(runDiscoveryML(innerCrop, context))
-                    val (raw, exp, tPd) = runDiscoveryPaddle(outerCrop, paddleEngine)
+                    mlBlocksRaw.addAll(runDiscoveryML(workspace, innerId, context))
+                    val (raw, exp, tPd) = runDiscoveryPaddle(workspace, outerId, paddleEngine)
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
                     branch.metadata["t_pd_scale_$scale"] = "${tPd}ms"
                     
-                    innerCrop.release()
-                    outerCrop.release()
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
                 }
                 val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
@@ -648,11 +646,11 @@ private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
     return java.nio.ByteBuffer.wrap(nv21)
 }
 
-private suspend fun runDiscoveryML(crop: BufferSet.Slice, context: Context): List<PumpHunk> {
-    val masterW = crop.width; val masterH = crop.height
-    Log.d(TAG, "runDiscoveryML: crop=${crop.width}x${crop.height}")
-    val nv21 = flattenToNv21(crop)
-    val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, crop.width, crop.height, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+private suspend fun runDiscoveryML(buffer: BufferSet, id: Int, context: Context): List<PumpHunk> {
+    val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
+    Log.d(TAG, "runDiscoveryML: crop=${masterW}x${masterH}")
+    val nv21 = flattenToNv21(buffer.c[id])
+    val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, masterW, masterH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
     val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
 
     val scaleW = result.imageWidth.toFloat()
@@ -667,13 +665,13 @@ private suspend fun runDiscoveryML(crop: BufferSet.Slice, context: Context): Lis
     }
 }
 
-private suspend fun runDiscoveryPaddle(crop: BufferSet.Slice, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, Long> {
-    val res = paddleEngine.detect(crop) ?: return Triple(emptyList(), emptyList(), 0L)
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, Long> {
+    val res = paddleEngine.detect(buffer.c[id]) ?: return Triple(emptyList(), emptyList(), 0L)
     val tInf = res.metadata["t_inference_ms"]?.toDouble()?.toLong() ?: 0L
 
-    val masterW = crop.width; val masterH = crop.height
+    val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
-    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, crop)
+    val blocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
     val hunksRaw = mutableListOf<PumpHunk>()
     val hunksExpanded = mutableListOf<PumpHunk>()
 
@@ -688,7 +686,7 @@ private suspend fun runDiscoveryPaddle(crop: BufferSet.Slice, paddleEngine: Nati
         val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), masterW, masterH)
         hunksRaw.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
 
-        val expandedRect = NativeImageUtils.expandByUniformity(crop.mat, rawRect)
+        val expandedRect = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
 
         val i1 = IcrsMath.pixelToIcrs(expandedRect.left.toFloat(), expandedRect.top.toFloat(), masterW, masterH)
         val i2 = IcrsMath.pixelToIcrs(expandedRect.right.toFloat(), expandedRect.bottom.toFloat(), masterW, masterH)
@@ -756,26 +754,24 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
          if (pW < 2 || pH < 2) return@map hunk
 
          val cropId = buffer.createCrop(l, t, r - l, b - t)
-         val crop = buffer.c[cropId]!!
          
          val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
          recBuffer.p.clear()
          val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
-         val recCrop = recBuffer.c[recCropId]!!
-         org.opencv.imgproc.Imgproc.resize(crop.mat, recCrop.mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+         org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
          
          val res = if (engine == "ML Kit") {
-             val nv21 = flattenToNv21(recCrop)
+             val nv21 = flattenToNv21(recBuffer.c[recCropId])
              val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
              val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
              // ML Kit 7-Segment Cleanup + Upside Down detection
              val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
              ocrRes.copy(debugText = cleaned)
          } else {
-             paddleEngine.recognize(recCrop)
+             paddleEngine.recognize(recBuffer.c[recCropId])
          }
          
-         recCrop.release(); crop.release()
+         recBuffer.c[recCropId].release(); buffer.c[cropId].release()
          PumpHunk(res.debugText, hunk.icrs)
      }
 }
