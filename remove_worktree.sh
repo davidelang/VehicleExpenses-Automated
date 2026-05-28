@@ -85,16 +85,18 @@ if [ -L "$BRANCH_NAME" ]; then
     rm "$BRANCH_NAME"
 fi
 
-# 5. Branch Deletion
+# 5. Branch & Tag Deletion
 if git merge-base --is-ancestor "$BRANCH_NAME" master; then
-    echo "Branch '$BRANCH_NAME' is merged. Deleting branch..."
+    echo "Branch '$BRANCH_NAME' is merged. Deleting branch and tag..."
     git branch -d "$BRANCH_NAME"
+    git tag -d "${BRANCH_NAME}-start" 2>/dev/null
 else
     if [ "$FORCE" = true ]; then
-        echo "Force deleting unmerged branch '$BRANCH_NAME'..."
+        echo "Force deleting unmerged branch '$BRANCH_NAME' and tag..."
         git branch -D "$BRANCH_NAME"
+        git tag -d "${BRANCH_NAME}-start" 2>/dev/null
     else
-        echo "Leaving unmerged branch '$BRANCH_NAME' intact."
+        echo "Leaving unmerged branch '$BRANCH_NAME' and its tag intact."
     fi
 fi
 
