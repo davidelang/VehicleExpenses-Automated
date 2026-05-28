@@ -9,6 +9,13 @@ if [ -z "$BRANCH_NAME" ]; then
     exit 1
 fi
 
+# 0. Safety Check: Don't name a branch agent-N
+if [[ "$BRANCH_NAME" =~ ^agent-[0-9]+$ ]]; then
+    echo "Error: Branch name cannot be '$BRANCH_NAME' (reserved for directory names)."
+    echo "Use a descriptive name like 'feature-x' instead."
+    exit 1
+fi
+
 # 1. Determine next available agent-N ID
 N=1
 while [ -d "agent-$N" ]; do
@@ -35,20 +42,27 @@ if [ $? -ne 0 ]; then
 fi
 
 # 3. Create convenience symlink for the branch
-ln -s "$AGENT_ID" "$BRANCH_NAME"
-echo "Created symlink: $BRANCH_NAME -> $AGENT_ID"
+if [ -e "$BRANCH_NAME" ]; then
+    echo "Warning: File/link '$BRANCH_NAME' already exists. Skipping symlink creation."
+else
+    ln -s "$AGENT_ID" "$BRANCH_NAME"
+    echo "Created symlink: $BRANCH_NAME -> $AGENT_ID"
+fi
 
 # 4. Setup Shared Rules (Hard Links - Read Only)
 echo "Setting up shared brain (read-only hard links)..."
 cd "$AGENT_ID"
 mkdir -p .gemini/policies
-ln ../.gemini/system.md .gemini/system.md
-ln ../.gemini/system_prompt.md .gemini/system_prompt.md
-ln ../.gemini/policies/plans.toml .gemini/policies/plans.toml
-ln ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
-mkdir .gemini/plans
+
+# Use -f to overwrite files checked out from master with actual hard links
+# to the container's version. This preserves rule consistency.
+ln -f ../.gemini/system.md .gemini/system.md
+ln -f ../.gemini/system_prompt.md .gemini/system_prompt.md
+ln -f ../.gemini/policies/plans.toml .gemini/policies/plans.toml
+ln -f ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
+mkdir -p .gemini/plans
 touch .gemini/plans/.gitkeep
-ln ../new_agent_prompt new_agent_prompt
+ln -f ../new_agent_prompt new_agent_prompt
 
 # Protect Shared Rules
 chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/*.toml new_agent_prompt
