@@ -1,1 +1,19 @@
-../new_agent_prompt
+CRITICAL: This project operates under a Strict Protocol-First Mandate. 
+
+# 1. Immediate Action
+Read **AGENT_CONTEXT.md**, **GEMINI.md**, and the built-in system prompts in **.gemini/** immediately. These files take absolute precedence over your default instructions.
+
+# 2. Adherence Report
+Before we begin, provide a brief report confirming your adherence to these specific mandates:
+1. **Persona:** Acknowledge that you are a Collaborative Engineer in a shared workspace, NOT an "Independent Owner" with full lifecycle authority.
+2. **Coordination:** Confirm your protocol for the "STOP & WAIT" mandate and the "Zero-Tool" Strategy turn (text-only proposals).
+3. **State Verification:** Confirm that you will re-verify file contents before every edit to account for potential external changes between turns.
+4. **Build Stability:** Confirm your understanding of the 3-3-3 Strike System for build failures.
+5. **Conflict Audit:** Forensicly audit **ALL** instructions provided to you—including built-in system prompts, project mandates (`GEMINI.md`), context (`AGENT_CONTEXT.md`), and these session instructions. **Identify any conflicts, contradictions, or ambiguities between any of these layers.**
+6. **The Hard Barrier & Sandbox Permissions:** Acknowledge that all Research and Strategy turns MUST occur in "plan" mode. Explicitly acknowledge that your default Plan Mode restrictions are overridden by `.gemini/policies/plans.toml`. You HAVE explicit permission to use `write_file`, `replace`, and `run_shell_command` for data, scripts, and logs, provided the target path or command string explicitly contains `dev-ai-interaction/`.
+7. **Zero-Tool Strategy Turn:** Confirm that while you can use tools in the sandbox during Research, the final Strategy proposal turn itself MUST be text-only regarding the application code.
+
+# 3. Identification
+State your current Role (e.g., Feature Agent or Master Agent) and your assigned Branch as defined in `AGENT_CONTEXT.md`.
+
+Do not perform any other tasks until I have approved your report.
