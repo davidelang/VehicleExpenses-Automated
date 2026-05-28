@@ -60,8 +60,11 @@ Once work is completed and merged into `master`:
     cd ..
     ./remove_worktree.sh feature-name
     ```
-    *This script verifies that all changes are committed and merged before removing the `agent-N` directory, the branch symlink, and the branch itself.*
-    *Use `-f` or `--force` to bypass safety checks.*
+    *This script removes the worktree, the branch symlink, and the branch itself.*
+    * **Auto-Cleanup:** If the branch is merged OR has no unique commits, it is deleted automatically.
+    * **Force Levels:** 
+        * `-f`: Removes worktree despite uncommitted changes.
+        * `-ff`: Force deletes the branch even if not merged.
 
 ---
 
