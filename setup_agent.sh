@@ -59,13 +59,17 @@ mkdir -p .gemini/policies
 ln -f ../.gemini/system.md .gemini/system.md
 ln -f ../.gemini/system_prompt.md .gemini/system_prompt.md
 ln -f ../.gemini/policies/plans.toml .gemini/policies/plans.toml
-ln -f ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
+
+# Copy auto-saved.toml as a physical file to allow agent-local write access
+cp ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
+chmod 644 .gemini/policies/auto-saved.toml
+
 mkdir -p .gemini/plans
 touch .gemini/plans/.gitkeep
 ln -f ../new_agent_prompt new_agent_prompt
 
-# Protect Shared Rules
-chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/*.toml new_agent_prompt
+# Protect Shared Rules (Excluding local state)
+chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml new_agent_prompt
 
 # 5. Setup Sandbox (Symlink)
 echo "Setting up sandbox symlink..."
