@@ -103,5 +103,6 @@ echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
 # 7. Optional: Start Gemini immediately if in an interactive terminal
 if [ -t 0 ]; then
     echo "Starting agent session..."
+    export GEMINI_PROJECT_ROOT=.
     exec ../gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions."
 fi

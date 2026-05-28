@@ -23,13 +23,15 @@ To assign a task to a new agent:
     *This automatically picks the next available `agent-N` directory, creates the worktree, and sets up a `feature-name` symlink for easy access.*
 
 3.  **Start the agent** (Recommended Process):
-    To avoid a known CLI crash (`EBADF`) when using interactive prompts, start the agent first, then paste the bootstrap instruction:
+    To ensure the agent is properly confined to its worktree and to avoid CLI crashes, use the `GEMINI_PROJECT_ROOT` variable:
     ```bash
     cd feature-name
-    ../gemini/bin/gemini
+    GEMINI_PROJECT_ROOT=. ../gemini/bin/gemini
     ```
     Once the agent is running, paste:
     > "Read new_agent_prompt and follow its instructions."
+
+    *Note: The Gemini CLI uses the terminal's Alternate Buffer for its interactive UI. If it crashes, your terminal scrollback might be temporarily hidden. Type `reset` or `clear` in your terminal to restore the main buffer.*
 
 ### 2.2. Critical Troubleshooting: EBADF Crash
 If the Gemini CLI crashes with `An unexpected critical error occurred:Error: ioctl(2) failed, EBADF`, it is likely due to a **Policy Violation Race Condition**.
