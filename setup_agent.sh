@@ -88,3 +88,5 @@ fi
 
 echo "Setup complete for $AGENT_ID."
 echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
+cd $AGENT_ID
+~/git/gemini/bin/gemini -i "read new_agent_prompt and follow it's instructions"
