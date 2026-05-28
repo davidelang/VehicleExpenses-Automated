@@ -1,16 +1,22 @@
 #!/bin/bash
 # setup_agent.sh: Automate creation of agent worktrees
-# Usage: ./setup_agent.sh agent-N branch-name
+# Usage: ./setup_agent.sh branch-name
 
-AGENT_ID=$1
-BRANCH_NAME=$2
+BRANCH_NAME=$1
 
-if [ -z "$AGENT_ID" ] || [ -z "$BRANCH_NAME" ]; then
-    echo "Usage: $0 agent-N branch-name"
+if [ -z "$BRANCH_NAME" ]; then
+    echo "Usage: $0 branch-name"
     exit 1
 fi
 
-# 1. Create Worktree & Branch
+# 1. Determine next available agent-N ID
+N=1
+while [ -d "agent-$N" ]; do
+    N=$((N + 1))
+done
+AGENT_ID="agent-$N"
+
+# 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
 # If the branch doesn't exist, create it with -b
 if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
@@ -28,7 +34,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 2. Setup Shared Rules (Hard Links - Read Only)
+# 3. Create convenience symlink for the branch
+ln -s "$AGENT_ID" "$BRANCH_NAME"
+echo "Created symlink: $BRANCH_NAME -> $AGENT_ID"
+
+# 4. Setup Shared Rules (Hard Links - Read Only)
 echo "Setting up shared brain (read-only hard links)..."
 cd "$AGENT_ID"
 mkdir -p .gemini/policies
@@ -43,11 +53,11 @@ ln ../new_agent_prompt new_agent_prompt
 # Protect Shared Rules
 chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/*.toml new_agent_prompt
 
-# 3. Setup Sandbox (Symlink)
+# 5. Setup Sandbox (Symlink)
 echo "Setting up sandbox symlink..."
 ln -s ../dev-ai-interaction dev-ai-interaction
 
-# 4. Initialize AGENT_CONTEXT.md
+# 6. Initialize AGENT_CONTEXT.md
 echo "Initializing AGENT_CONTEXT.md..."
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
     cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
@@ -63,4 +73,4 @@ EOF
 fi
 
 echo "Setup complete for $AGENT_ID."
-echo "Agent can begin work via: cd $AGENT_ID"
+echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"

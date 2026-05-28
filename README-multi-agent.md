@@ -6,70 +6,58 @@ This repository uses a **Container/Worktree** layout designed for multiple AI ag
 
 - **Root (`VehicleExpenses-automated/`)**: Checked out to the `orchestration` branch. Contains shared infrastructure (rules, build scripts, sandbox).
 - **`master/`**: A permanent worktree for the `master` branch. Used for oversight and merges.
-- **`agent-N/`**: Transient worktrees for feature development.
+- **`agent-N/`**: Transient worktrees for feature development (e.g., `agent-1`, `agent-2`).
 - **`dev-ai-interaction/`**: Shared sandbox repository.
 
 ---
 
+## 2. User Workflows
+
 ### 2.1. Creating a New Agent Environment
 To assign a task to a new agent:
 1.  Navigate to the project root.
-2.  Run the setup script:
+2.  Run the setup script with the feature branch name:
     ```bash
-    ./setup_agent.sh agent-1 feature-name
+    ./setup_agent.sh feature-name
     ```
-    *This creates the `agent-1/` directory, checks out the branch, and sets up the shared infrastructure.*
+    *This automatically picks the next available `agent-N` directory, creates the worktree, and sets up a `feature-name` symlink for easy access.*
+
 3.  **Start the agent** (Recommended Process):
     To avoid a known CLI crash (`EBADF`) when using interactive prompts, start the agent first, then paste the bootstrap instruction:
     ```bash
-    cd agent-1
+    cd feature-name
     ../gemini/bin/gemini
     ```
     Once the agent is running, paste:
     > "Read new_agent_prompt and follow its instructions."
 
 ---
-### 2.2. Sandbox Access Note
-Due to security restrictions in the Gemini CLI, the built-in `read_file` tool may be blocked from accessing the `dev-ai-interaction/` symlink because it resolves outside the worktree. 
 
-**If `read_file` fails on a sandbox path:** Instruct the agent to use `run_shell_command` with `cat` (e.g., `run_shell_command "cat dev-ai-interaction/plans/my-plan.md"`) instead. This bypasses the project-root security check.
+### 2.2. Merging and Cleanup
+Once work is completed and merged into `master`:
 
----
-### 2.3. Directory Structure Detail
-- **Shared Rules (Brain):** Files in `.gemini/` and `new_agent_prompt` are **hard links** to the orchestration root.
-    - **⚠️ WARNING:** These files are set to **Read-Only**. Because they are hard links, modifying one changes it for **EVERY** agent and the root.
-    - **To Update Rules:** You must explicitly change the file permissions in the root, edit the file, and then restore the read-only state.
-    - **Instructions for Agents:** Agents are strictly forbidden from attempting to change these files.
-- **Local Memory:** The `.gemini/plans` directory is unique to each worktree.
-...
-Once an agent has completed a task and cleaned up their history:
-1.  Navigate to the `master/` directory.
-2.  Review the agent's branch:
+1.  **Merge the branch** (from the `master/` directory):
     ```bash
+    cd master
     git diff master..feature-name
-    ```
-3.  Merge the branch:
-    ```bash
     git merge feature-name
-    ```
-4.  Update the `works` tag:
-    ```bash
     git tag -f works
     ```
 
-### 2.3. Cleaning Up / Deleting an Agent Worktree
-When a feature is merged and you want to reclaim the directory:
-```bash
-git worktree remove agent-1
-git branch -d feature-name
-```
-
-### 2.4. Re-using an Agent Directory
-You do **not** need to manually "clean" a directory to re-use it. Simply delete the worktree as shown in 2.3, and then run `setup_agent.sh` again with the same `agent-N` name but a new branch. The script will recreate the environment fresh.
+2.  **Remove the worktree and branch** (from the project root):
+    ```bash
+    cd ..
+    ./remove_worktree.sh feature-name
+    ```
+    *This script verifies that all changes are committed and merged before removing the `agent-N` directory, the branch symlink, and the branch itself.*
+    *Use `-f` or `--force` to bypass safety checks.*
 
 ---
 
-### 2.5. Operational Notes
-- **Shared Brain:** All agent directories symlink to `.gemini/` in the root. Changing a rule in the root immediately affects all agents.
-- **Build/Deploy:** Always run `./build_app` and `./deploy` from **inside** the specific agent directory. They are branch-aware and will manage your `branch/builds` and `branch/deployed` tags automatically.
-- **Git Describe:** The version string will automatically include your branch name and the number of commits since the branch started.
+### 2.3. Operational Notes
+- **Directory Naming:** Physical worktrees are named `agent-1`, `agent-2`, etc., to allow for re-use. Use the branch-name symlinks for navigation.
+- **Shared Brain:** All agent directories use **hard links** for rules in `.gemini/` and `new_agent_prompt`. 
+    - **⚠️ WARNING:** These files are set to **Read-Only**. Modifying them in one place changes them everywhere.
+    - **To Update Rules:** You must be in the orchestration root, `chmod 644 <file>`, edit, and `chmod 444 <file>` to restore protection.
+- **Sandbox Access:** If `read_file` is blocked by project-root checks, use `run_shell_command "cat dev-ai-interaction/..."` to read sandbox files.
+- **Build/Deploy:** Always run `./build_app` and `./deploy` from **inside** the specific agent directory/symlink. They are branch-aware.
