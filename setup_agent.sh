@@ -28,8 +28,8 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 2. Setup Shared Rules (Hard Links)
-echo "Setting up shared brain (hard links)..."
+# 2. Setup Shared Rules (Hard Links - Read Only)
+echo "Setting up shared brain (read-only hard links)..."
 cd "$AGENT_ID"
 mkdir -p .gemini/policies
 ln ../.gemini/system.md .gemini/system.md
@@ -39,6 +39,9 @@ ln ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
 mkdir .gemini/plans
 touch .gemini/plans/.gitkeep
 ln ../new_agent_prompt new_agent_prompt
+
+# Protect Shared Rules
+chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/*.toml new_agent_prompt
 
 # 3. Setup Sandbox (Symlink)
 echo "Setting up sandbox symlink..."
