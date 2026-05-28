@@ -20,7 +20,7 @@ else
     git worktree add "$AGENT_ID" -b "$BRANCH_NAME" master
     # Create an annotated tag for git describe to anchor on
     echo "Creating annotated tag ${BRANCH_NAME}-start for versioning..."
-    git tag -a "${BRANCH_NAME}-start" -m "Start of feature branch $BRANCH_NAME"
+    git tag -a "${BRANCH_NAME}-start" "$BRANCH_NAME" -m "Start of feature branch $BRANCH_NAME"
 fi
 
 if [ $? -ne 0 ]; then
