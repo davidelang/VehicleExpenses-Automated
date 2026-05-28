@@ -36,7 +36,10 @@ Due to security restrictions in the Gemini CLI, the built-in `read_file` tool ma
 
 ---
 ### 2.3. Directory Structure Detail
-- **Shared Rules:** Files in `.gemini/` and `new_agent_prompt` are **hard links** to the orchestration root. They are physically inside the worktree (satisfying security checks) but share the same disk data (maintaining a Shared Brain).
+- **Shared Rules (Brain):** Files in `.gemini/` and `new_agent_prompt` are **hard links** to the orchestration root.
+    - **⚠️ WARNING:** These files are set to **Read-Only**. Because they are hard links, modifying one changes it for **EVERY** agent and the root.
+    - **To Update Rules:** You must explicitly change the file permissions in the root, edit the file, and then restore the read-only state.
+    - **Instructions for Agents:** Agents are strictly forbidden from attempting to change these files.
 - **Local Memory:** The `.gemini/plans` directory is unique to each worktree.
 ...
 Once an agent has completed a task and cleaned up their history:
