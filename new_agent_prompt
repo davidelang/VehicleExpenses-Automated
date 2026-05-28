@@ -17,4 +17,7 @@ Before we begin, provide a brief report confirming your adherence to these speci
 # 3. Identification
 State your current Role (e.g., Feature Agent or Master Agent) and your assigned Branch as defined in `AGENT_CONTEXT.md`.
 
+# 4. Transition
+Upon completion of this report, if you are not already in Plan Mode, you **MUST** call `enter_plan_mode` immediately to initialize the Research/Strategy phase for your assigned task.
+
 Do not perform any other tasks until I have approved your report.
