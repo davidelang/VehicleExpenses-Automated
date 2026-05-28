@@ -31,7 +31,7 @@ fi
 if [ -d "$TARGET" ] && [ ! -L "$TARGET" ]; then
     # TARGET is the directory (agent-N)
     WORKTREE_DIR="$TARGET"
-    BRANCH_NAME=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD)
+    BRANCH_NAME=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
 elif [ -L "$TARGET" ]; then
     # TARGET is a symlink (the branch name)
     WORKTREE_DIR=$(readlink "$TARGET")
@@ -40,10 +40,11 @@ else
     # TARGET might be a branch name without a symlink
     BRANCH_NAME="$TARGET"
     WORKTREE_DIR=$(git worktree list --porcelain | grep -B 2 "branch refs/heads/$BRANCH_NAME" | grep "worktree" | awk '{print $2}')
-    if [ -z "$WORKTREE_DIR" ]; then
-        echo "Error: Could not find worktree for target '$TARGET'."
-        exit 1
-    fi
+fi
+
+if [ -z "$BRANCH_NAME" ] || [ -z "$WORKTREE_DIR" ]; then
+    echo "Error: Could not resolve branch or worktree for '$TARGET'."
+    exit 1
 fi
 
 # Convert WORKTREE_DIR to relative path if it's absolute and inside current dir
@@ -64,7 +65,9 @@ if git merge-base --is-ancestor "$BRANCH_NAME" master 2>/dev/null; then
 fi
 
 HAS_UNIQUE_COMMITS=true
-if [ "$(git rev-parse "$BRANCH_NAME" 2>/dev/null)" == "$(git merge-base "$BRANCH_NAME" master 2>/dev/null)" ]; then
+BRANCH_TIP=$(git rev-parse "$BRANCH_NAME" 2>/dev/null)
+MERGE_BASE=$(git merge-base "$BRANCH_NAME" master 2>/dev/null)
+if [ "$BRANCH_TIP" == "$MERGE_BASE" ]; then
     HAS_UNIQUE_COMMITS=false
 fi
 
@@ -102,13 +105,22 @@ if [ -L "$BRANCH_NAME" ]; then
 fi
 
 # 6. Branch & Tag Deletion
+DELETE_CMD="git branch -d"
+if [ $FORCE_LEVEL -ge 2 ]; then
+    DELETE_CMD="git branch -D"
+fi
+
 if [ "$IS_MERGED" = true ] || [ "$HAS_UNIQUE_COMMITS" = false ]; then
-    echo "Branch '$BRANCH_NAME' is merged or empty. Deleting branch and tag..."
-    git branch -d "$BRANCH_NAME"
+    echo "Branch '$BRANCH_NAME' is merged or empty. Attempting deletion..."
+    $DELETE_CMD "$BRANCH_NAME"
+    if [ $? -ne 0 ] && [ $FORCE_LEVEL -ge 1 ]; then
+        echo "Standard deletion failed. Force deleting branch..."
+        git branch -D "$BRANCH_NAME"
+    fi
     git tag -d "${BRANCH_NAME}-start" 2>/dev/null
 else
     if [ $FORCE_LEVEL -ge 2 ]; then
-        echo "Force deleting unmerged branch '$BRANCH_NAME' and tag..."
+        echo "Force deleting unmerged branch '$BRANCH_NAME'..."
         git branch -D "$BRANCH_NAME"
         git tag -d "${BRANCH_NAME}-start" 2>/dev/null
     else
