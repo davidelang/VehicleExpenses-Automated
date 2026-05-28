@@ -31,9 +31,18 @@ To assign a task to a new agent:
     Once the agent is running, paste:
     > "Read new_agent_prompt and follow its instructions."
 
+### 2.2. Critical Troubleshooting: EBADF Crash
+If the Gemini CLI crashes with `An unexpected critical error occurred:Error: ioctl(2) failed, EBADF`, it is likely due to a **Policy Violation Race Condition**.
+
+**The Cause:** The agent attempted to use a forbidden path traversal (e.g., `../`) in a command. The CLI correctly blocked the command, but the interactive UI crashed while trying to display the error.
+
+**The Fix:**
+1.  Restart the agent.
+2.  **Instruction:** Explicitly tell the agent: *"You just crashed due to an EBADF error. Do not use '..' in any path. Use the project-local './dev-ai-interaction/' symlink instead."*
+
 ---
 
-### 2.2. Merging and Cleanup
+### 2.3. Merging and Cleanup
 Once work is completed and merged into `master`:
 
 1.  **Merge the branch** (from the `master/` directory):
@@ -54,7 +63,7 @@ Once work is completed and merged into `master`:
 
 ---
 
-### 2.3. Operational Notes
+### 2.4. Operational Notes
 - **Directory Naming:** Physical worktrees are named `agent-1`, `agent-2`, etc., to allow for re-use. Use the branch-name symlinks for navigation.
 - **Shared Brain:** All agent directories use **hard links** for rules in `.gemini/` and `new_agent_prompt`. 
     - **⚠️ WARNING:** These files are set to **Read-Only**. Modifying them in one place changes them everywhere.
