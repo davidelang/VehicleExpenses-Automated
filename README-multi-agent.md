@@ -11,8 +11,6 @@ This repository uses a **Container/Worktree** layout designed for multiple AI ag
 
 ---
 
-## 2. User Workflows
-
 ### 2.1. Creating a New Agent Environment
 To assign a task to a new agent:
 1.  Navigate to the project root.
@@ -20,9 +18,23 @@ To assign a task to a new agent:
     ```bash
     ./setup_agent.sh agent-1 feature-name
     ```
-    *This creates the `agent-1/` directory, checks out the branch (creating it if needed), sets up symlinks to the shared brain/sandbox, and creates a versioning anchor tag.*
+    *This creates the `agent-1/` directory, checks out the branch, and sets up the shared infrastructure.*
 
-### 2.2. Merging Work to Master
+3.  **Start the agent** using the unified bootstrap command:
+    ```bash
+    cd agent-1
+    ../gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions."
+    ```
+    *This command tells the agent to perform a forensic audit of its rules and state its role before starting work.*
+
+---
+### 2.2. Directory Structure Detail
+- **Shared Rules:** Files in `.gemini/` and `new_agent_prompt` in the worktrees are symlinks to the orchestration root.
+- **Local Memory:** The `.gemini/plans` directory in each worktree is a **physical directory**. This satisfies Gemini's security checks while keeping internal session plans isolated to each agent.
+- **Shared Sandbox:** Access `dev-ai-interaction/` for cross-agent strategy and research.
+
+---
+### 2.3. Merging Work to Master
 Once an agent has completed a task and cleaned up their history:
 1.  Navigate to the `master/` directory.
 2.  Review the agent's branch:

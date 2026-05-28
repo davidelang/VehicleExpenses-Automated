@@ -29,11 +29,18 @@ if [ $? -ne 0 ]; then
 fi
 
 # 2. Setup Untracked Symlinks
-# Note: .gemini and build_app are tracked symlinks in the branch itself,
-# so we only need to link the sandbox which is outside the repo.
-echo "Setting up sandbox symlink..."
+echo "Setting up sandbox and shared brain symlinks..."
 cd "$AGENT_ID"
 ln -s ../dev-ai-interaction dev-ai-interaction
+
+# Create physical .gemini directory to satisfy security checks
+# while symlinking the rules for a Shared Brain.
+mkdir .gemini
+ln -s ../../.gemini/system.md .gemini/system.md
+ln -s ../../.gemini/system_prompt.md .gemini/system_prompt.md
+ln -s ../../.gemini/policies .gemini/policies
+mkdir .gemini/plans
+touch .gemini/plans/.gitkeep
 
 # 3. Initialize AGENT_CONTEXT.md
 echo "Initializing AGENT_CONTEXT.md..."
