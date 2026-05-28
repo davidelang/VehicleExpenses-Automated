@@ -23,10 +23,10 @@ To assign a task to a new agent:
     *This automatically picks the next available `agent-N` directory, creates the worktree, and sets up a `feature-name` symlink for easy access.*
 
 3.  **Start the agent** (Recommended Process):
-    To ensure the agent is properly confined to its worktree and to avoid CLI crashes, use the `GEMINI_PROJECT_ROOT` variable:
+    To ensure the agent is properly confined to its worktree and to avoid CLI crashes, use absolute paths for the root and the binary:
     ```bash
     cd feature-name
-    GEMINI_PROJECT_ROOT=. ../gemini/bin/gemini
+    GEMINI_PROJECT_ROOT=$(pwd) ~/git/gemini/bin/gemini
     ```
     Once the agent is running, paste:
     > "Read new_agent_prompt and follow its instructions."
