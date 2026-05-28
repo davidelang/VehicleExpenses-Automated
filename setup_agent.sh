@@ -58,11 +58,15 @@ echo "Setting up shared brain (read-only hard links)..."
 cd "$AGENT_ID"
 mkdir -p .gemini/policies
 
-# Use -f to overwrite files checked out from master with actual hard links
-# to the container's version. This preserves rule consistency.
+# Shared rules
 ln -f ../.gemini/system.md .gemini/system.md
 ln -f ../.gemini/system_prompt.md .gemini/system_prompt.md
 ln -f ../.gemini/policies/plans.toml .gemini/policies/plans.toml
+
+# Shared Mandates
+ln -f ../GEMINI.md GEMINI.md
+ln -f ../MASTER_AGENT_MANDATE.md MASTER_AGENT_MANDATE.md
+ln -f ../new_agent_prompt new_agent_prompt
 
 # Copy auto-saved.toml as a physical file to allow agent-local write access
 cp ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
@@ -70,10 +74,9 @@ chmod 644 .gemini/policies/auto-saved.toml
 
 mkdir -p .gemini/plans
 touch .gemini/plans/.gitkeep
-ln -f ../new_agent_prompt new_agent_prompt
 
-# Protect Shared Rules (Excluding local state)
-chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml new_agent_prompt
+# Protect Shared Rules
+chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml GEMINI.md MASTER_AGENT_MANDATE.md new_agent_prompt
 
 # 5. Setup Sandbox (Symlink)
 echo "Setting up sandbox symlink..."
@@ -100,6 +103,5 @@ echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
 # 7. Optional: Start Gemini immediately if in an interactive terminal
 if [ -t 0 ]; then
     echo "Starting agent session..."
-    cd $AGENT_ID
-    exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions."
+    exec ../gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions."
 fi
