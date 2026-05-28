@@ -28,21 +28,23 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 2. Setup Untracked Symlinks
-echo "Setting up sandbox and shared brain symlinks..."
+# 2. Setup Shared Rules (Hard Links)
+echo "Setting up shared brain (hard links)..."
 cd "$AGENT_ID"
-ln -s ../dev-ai-interaction dev-ai-interaction
-
-# Create physical .gemini directory to satisfy security checks
-# while symlinking the rules for a Shared Brain.
-mkdir .gemini
-ln -s ../../.gemini/system.md .gemini/system.md
-ln -s ../../.gemini/system_prompt.md .gemini/system_prompt.md
-ln -s ../../.gemini/policies .gemini/policies
+mkdir -p .gemini/policies
+ln ../.gemini/system.md .gemini/system.md
+ln ../.gemini/system_prompt.md .gemini/system_prompt.md
+ln ../.gemini/policies/plans.toml .gemini/policies/plans.toml
+ln ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
 mkdir .gemini/plans
 touch .gemini/plans/.gitkeep
+ln ../new_agent_prompt new_agent_prompt
 
-# 3. Initialize AGENT_CONTEXT.md
+# 3. Setup Sandbox (Symlink)
+echo "Setting up sandbox symlink..."
+ln -s ../dev-ai-interaction dev-ai-interaction
+
+# 4. Initialize AGENT_CONTEXT.md
 echo "Initializing AGENT_CONTEXT.md..."
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
     cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
