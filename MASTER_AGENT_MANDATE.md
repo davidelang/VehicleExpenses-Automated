@@ -9,6 +9,12 @@ You are the **Master Agent** operating in the `master/` worktree. Your primary r
 - **Proactivity Check:** Identify and block "silent improvements," refactors, or fixes that were not explicit line-items in the plan.
 - **Merge Integrity:** Resolve merge conflicts and ensure that the `master` branch remains in a compilable and "works" state.
 - **Tag Management:** Move the global `works` and `deployed` tags only after verifying integration success.
+- **Shared Brain Management:** You are the **only agent** authorized to modify the read-only infrastructure files (`.gemini/`, `GEMINI.md`, `new_agent_prompt`, etc.) in the orchestration root. 
+    - **Process:** When an update to the rules is required, you MUST:
+        1.  `run_shell_command "chmod 644 <file>"` to unlock it.
+        2.  Apply the change.
+        3.  `run_shell_command "chmod 444 <file>"` to re-protect it.
+        4.  Commit the change to both the `orchestration` and `master` branches to ensure synchronization.
 
 ## 2. The Verification Protocol
 
