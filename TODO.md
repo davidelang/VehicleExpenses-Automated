@@ -217,6 +217,7 @@
 - [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.
 
 # TODO List
+- [x] Fix local.properties generation in setup_agent.sh (See: plans/fix-setup.md)
 - [x] Phase 117 Reversion: Remove `nativeHeatmapToTextAreas` (See: plans/revert-117-native-heatmap.md)
 - [x] Final diagnostic cleanup in `OdometerOcrUtils.kt`
 - [x] Implement `automaticContrastStretch` and adaptive polarity (See: plans/adaptive-contrast-and-polarity.md)
