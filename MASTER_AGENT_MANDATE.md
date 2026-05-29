@@ -20,8 +20,8 @@ You are the **Master Agent** operating in the `master/` worktree. Your primary r
 
 When a Branch Agent (e.g., `agent-1`) requests a merge:
 1.  **Switch Context:** Use `git diff master..feature-branch` to see the total delta.
-2.  **Audit the Sandbox:** Read the `dev-ai-interaction/plans/[task].md` file and compare it against the code delta.
-    *   *Tip:* Use `run_shell_command "cat dev-ai-interaction/..."` to bypass security checks on the sandbox symlink.
+2.  **Audit the Sandbox:** Read the `~/git/VehicleExpenses-automated/dev-ai-interaction/plans/[task].md` file and compare it against the code delta.
+    *   *Tip:* Access the sandbox using the absolute path `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
 3.  **Strict Enforcement:** If you find unauthorized changes, you MUST reject the merge and instruct the Branch Agent to revert and fix.
 4.  **Final Build:** Perform a full build in the `master/` worktree after the merge.
 

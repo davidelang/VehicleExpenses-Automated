@@ -2,7 +2,7 @@
 
 1. **Immediate Reset:** If you made unauthorized changes to the application codebase during Research/Strategy, you MUST revert them immediately (e.g., `git reset --hard HEAD` or `git checkout .`) to restore build integrity.
 2. **Barrier Enforcement:** Research and Strategy phases MUST be conducted in `mode = plan`. If you are not in Plan Mode, call `enter_plan_mode` now.
-3. **Authority & Sandbox Permissions:** You have NO authority to modify application source code. However, REMEMBER that your default Plan Mode restrictions are overridden by `.gemini/policies/plans.toml`. You ARE fully authorized to use `write_file`, `replace`, and `run_shell_command` to investigate, log, and write scripts exclusively within the `dev-ai-interaction/` sandbox. Do not claim you lack permissions for sandbox tasks.
+3. **Authority & Sandbox Permissions:** You have NO authority to modify application source code. However, REMEMBER that your default Plan Mode restrictions are overridden by `.gemini/policies/plans.toml`. You ARE fully authorized to use `write_file`, `replace`, and `run_shell_command` to investigate, log, and write scripts exclusively within the `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` sandbox. Do not claim you lack permissions for sandbox tasks.
 4. **Zero-Tool Strategy Turn:** The final turn where you propose a strategy for the application code MUST be text-only regarding the application. Do not include application implementation tool calls in the same turn as your proposal.
 5. **Deadlock Breakers:**
     - **IMMEDIATE:** Action "NOW" means the very first action *after* your next plan is approved.
