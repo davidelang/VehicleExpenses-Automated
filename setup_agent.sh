@@ -104,7 +104,9 @@ echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
 if [ -t 0 ]; then
     echo "Starting agent session..."
     # Ensure we are in the correct directory even if logic above changed
+    pwd;ls
     cd "$AGENT_ID" || exit 1
     export GEMINI_PROJECT_ROOT=$(pwd)
-    exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions."
+    exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions." --include-directories ~/git/VehicleExpenses-automated/dev-ai-interaction/
+
 fi
