@@ -46,6 +46,26 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var sharedRecognizerNumeric: PaddlePredictor? = null
         
         private var isNativeLibLoaded = false
+        private var hasProbedTensor = false
+
+        private fun probeTensorClass(tensor: Any) {
+            if (hasProbedTensor) return
+            hasProbedTensor = true
+            try {
+                val cls = tensor.javaClass
+                Log.i("PaddleProbe", "Probing class: ${cls.name}")
+                cls.declaredFields.forEach { field ->
+                    field.isAccessible = true
+                    val value = try { field.get(tensor) } catch (e: Exception) { "error" }
+                    Log.i("PaddleProbe", "Field: ${field.name} (${field.type.name}) = $value")
+                }
+                cls.declaredMethods.forEach { method ->
+                    Log.i("PaddleProbe", "Method: ${method.name}(${method.parameterTypes.joinToString { it.name }}) -> ${method.returnType.name}")
+                }
+            } catch (e: Exception) {
+                Log.e("PaddleProbe", "Reflection failed", e)
+            }
+        }
 
         // Phase 125: Multi-Tier Predictor Array
         val TIER_SCALES = listOf(224, 608, 1024, 2560)
@@ -236,7 +256,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
+            
+            // Diagnostic Probe
+            probeTensorClass(outputTensor)
+            NativeImageUtils.nativeProbePaddleTensor(outputTensor)
+            
             val heatmap = outputTensor.floatData
+            
+            // Diagnostic Probe of Data
+            NativeImageUtils.nativeProbePaddleResult(heatmap)
+            
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
@@ -284,7 +313,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
+            
+            // Diagnostic Probe
+            probeTensorClass(outputTensor)
+            NativeImageUtils.nativeProbePaddleTensor(outputTensor)
+            
             val heatmap = outputTensor.floatData
+            
+            // Diagnostic Probe of Data
+            NativeImageUtils.nativeProbePaddleResult(heatmap)
             
             var minVal = Float.MAX_VALUE
             var maxVal = Float.MIN_VALUE

@@ -175,6 +175,20 @@ object NativeImageUtils {
         } else Pair(rect, rect)
     }
 
+    /**
+     * Diagnostic: Calculate checksum of a float array in C++.
+     */
+    fun nativeProbePaddleResult(data: FloatArray): Float {
+        return nativeProbePaddleResultJni(data)
+    }
+
+    /**
+     * Diagnostic: Probe the native pointer of a Paddle Tensor.
+     */
+    fun nativeProbePaddleTensor(tensor: Any): Float {
+        return nativeProbePaddleTensorJni(tensor)
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -186,5 +200,7 @@ object NativeImageUtils {
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeProbePaddleResultJni(data: FloatArray): Float
+    private external fun nativeProbePaddleTensorJni(tensor: Any): Float
 
 }
