@@ -51,6 +51,8 @@ signing.properties
 # Multi-Agent Worktrees
 agent-*/
 master/
+AGENT_CONTEXT.md
+**/AGENT_CONTEXT.md
 
 # Generated files
 app/src/main/assets/*
