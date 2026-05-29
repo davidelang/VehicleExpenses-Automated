@@ -19,6 +19,7 @@ Instructions in this file take absolute precedence. Speed achieved by bypassing 
 ## Multi-Agent Geography
 - **Orchestration Root (..):** Shared brain and sandbox root.
 - **Current Worktree (.):** Your project root. Do NOT traverse to `..`.
-- **Sandbox (./dev-ai-interaction):** Use the local symlink for research and logs.
+- **Sandbox (/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/):** Use the absolute path for research and logs.
 
 For detailed procedures, see: **docs/specs/OPERATIONAL_HANDBOOK.md**
+
