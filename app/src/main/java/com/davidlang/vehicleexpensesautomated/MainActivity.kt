@@ -43,7 +43,6 @@ import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
-import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPaddleDynamicScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
@@ -103,7 +102,6 @@ class MainActivity : ComponentActivity() {
                     "about" -> "About"
                     "experiment" -> "Alignment Experiment"
                     "experiment_pump" -> "Gas Pump Extraction Experiment"
-                    "experiment_dynamic" -> "Dynamic Detect Test"
                     else -> "Vehicle Expenses"
                 }
 
@@ -200,14 +198,6 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
-                            NavigationDrawerItem(
-                                label = { Text("Dynamic Detect Test") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("experiment_dynamic")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
                         }
                     }
                 ) {
@@ -240,7 +230,6 @@ class MainActivity : ComponentActivity() {
                                 composable("about") { AboutScreen() }
                                 composable("experiment") { ExperimentAlignmentScreen(navController = navController) }
                                 composable("experiment_pump") { ExperimentPumpScreen(navController = navController) }
-                                composable("experiment_dynamic") { ExperimentPaddleDynamicScreen(navController = navController) }
                             }
                         }
                     }
