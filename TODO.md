@@ -238,6 +238,7 @@
 - [x] Fix Active Algorithm, ASCII Expansion, and Contrast Tweak (See: plans/fix-algorithm-and-expand-ascii.md)
 - [x] Implement Variance-Based Expansion with Content Floor (See: plans/variance-expansion-with-floor.md)
 - [x] Standardize Sandbox Paths to Absolute (See: plans/standardize-sandbox-paths.md)
+- [x] Restore Lost Operational Mandates (See: plans/restore-mandates.md)
 - [ ] Height-Relative Expansion, Robust Mapping, and Raw Consolidation (See: plans/height-relative-expansion.md)
 - [ ] TODO: Investigate bimodal brightness-based stop logic for glare/shadow (e.g., look for brightness drop/climb)
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]
