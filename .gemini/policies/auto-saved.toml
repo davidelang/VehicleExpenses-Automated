@@ -2,7 +2,7 @@
 decision = "allow"
 priority = 950
 toolName = "write_file"
-argsPattern = '\\0\"file_path\":\"(/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/.*|dev-ai-interaction/.*|\\.gemini/plans/.*)\"\\0'
+argsPattern = '\\0\"file_path\":\"dev\-ai\-interaction/*\"\\0'
 modes = [ "default", "autoEdit", "yolo" ]
 
 [[rule]]
