@@ -73,5 +73,6 @@ Once work is completed and merged into `master`:
 - **Shared Brain:** All agent directories use **hard links** for rules in `.gemini/` and `new_agent_prompt`. 
     - **⚠️ WARNING:** These files are set to **Read-Only**. Modifying them in one place changes them everywhere.
     - **To Update Rules:** You must be in the orchestration root, `chmod 644 <file>`, edit, and `chmod 444 <file>` to restore protection.
-- **Sandbox Access:** If `read_file` is blocked by project-root checks, use `run_shell_command "cat dev-ai-interaction/..."` to read sandbox files.
+- **Sandbox Access:** Access the sandbox directly using the absolute path: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
 - **Build/Deploy:** Always run `./build_app` and `./deploy` from **inside** the specific agent directory/symlink. They are branch-aware.
+rectory/symlink. They are branch-aware.
