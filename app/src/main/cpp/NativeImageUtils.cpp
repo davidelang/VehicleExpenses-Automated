@@ -9,6 +9,7 @@
 #include <map>
 #include <cmath>
 #include <chrono>
+#include "paddle/paddle_api.h"
 #include "BufferSetHandle.h"
 #include <android/log.h>
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
@@ -709,23 +710,51 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     jclass cls = env->GetObjectClass(tensor);
     LOGI("[PADDLE_PROBE] Probing Tensor Object: %p", (void*)tensor);
     
-    // Attempt common field names for native pointer
-    jfieldID fid = env->GetFieldID(cls, "nativeInstance", "J");
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        fid = env->GetFieldID(cls, "cppPointer", "J");
-    }
+    // Confirmed field name from reflection
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
     
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
-        LOGE("[PADDLE_PROBE] Could not find native pointer field in Tensor class");
+        LOGE("[PADDLE_PROBE] Could not find 'cppTensorPointer' field in Tensor class");
         return -2.0f;
     }
     
     jlong nativePtr = env->GetLongField(tensor, fid);
     LOGI("[PADDLE_PROBE] Found Native Pointer: %p", (void*)nativePtr);
+
+    if (nativePtr == 0) {
+        LOGE("[PADDLE_PROBE] Native pointer is NULL");
+        return -3.0f;
+    }
+
+    // Dereference the unique_ptr<paddle::lite_api::Tensor>
+    // Based on Tensor.java, this long is a pointer to the std::unique_ptr
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) {
+        LOGE("[PADDLE_PROBE] Dereferenced unique_ptr is NULL");
+        return -4.0f;
+    }
+
+    paddle::lite_api::Tensor* nativeTensor = uptr->get();
+    auto shape = nativeTensor->shape();
+    const float* data = nativeTensor->data<float>();
+
+    int64_t len = 1;
+    for (auto d : shape) len *= d;
+
+    double sum = 0;
+    for (int64_t i = 0; i < len; ++i) {
+        sum += std::abs(data[i]);
+    }
+
+    // Log first 10 elements from NATIVE memory
+    std::string probe = "";
+    for (int i = 0; i < std::min((int)len, 10); ++i) {
+        probe += std::to_string(data[i]) + " ";
+    }
+    LOGI("[PADDLE_NATIVE_PROBE] Sum=%.3f Len=%lld Data=[%s]", (float)sum, (long long)len, probe.c_str());
     
-    return (float)nativePtr;
+    return (float)sum;
 }
 
 }
