@@ -20,6 +20,7 @@
 - [ ] Create `docs/reference/OCR_ENGINE_STRATEGY.md`
 - [ ] Create `docs/reference/ALIGNMENT_PIPELINE.md`
 - [x] **DONE: Revert Deskew Resolution to 2048x2048.** Add 2048 tier to `NativePaddleEngine` and revert target size in `OdometerOcrUtils`.
+- [ ] **ACTIVE: Fix NV21 Stability and Geometric Integrity.** Fix `nativeClear` to clear chroma to 128, rotate both Luma/Chroma, and fix `srcH` in `deskewMlKit`.
 - [ ] **Naming Cleanup:** Rename `NativePaddleEngine` to `NativeVisionSystem` and `fullBufferSet` to `dashboardPool` (or similar) to accurately reflect their purpose.
 - [ ] **Chain-of-Command Audit:** Repository-wide audit to eliminate variable-assignment anti-patterns (storing slices/handles in local vars) in the alignment experiment code.
 - [ ] **Migrate NDK directory to Git Subproject (`ndk/`)**

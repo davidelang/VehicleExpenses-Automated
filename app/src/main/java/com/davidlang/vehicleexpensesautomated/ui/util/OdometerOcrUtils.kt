@@ -106,7 +106,7 @@ object OdometerOcrUtils {
         
         // 3. ML Kit Path
         val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
+        val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale, srcH)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
@@ -130,7 +130,7 @@ object OdometerOcrUtils {
         )
     }
 
-    private suspend fun deskewMlKit(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
+    private suspend fun deskewMlKit(nv21: ByteBuffer, width: Int, height: Int, pScale: Float, srcH: Int): EngineResult {
         val tStart = System.currentTimeMillis()
         val img = InputImage.fromByteBuffer(nv21, width, height, 0, InputImage.IMAGE_FORMAT_NV21)
         val res = extractFromPhotoBitmapRaw(img)
@@ -141,7 +141,6 @@ object OdometerOcrUtils {
             val b = block.boundingBox
             block.copy(boundingBox = android.graphics.Rect((b.left * invScale).toInt(), (b.top * invScale).toInt(), (b.right * invScale).toInt(), (b.bottom * invScale).toInt()))
         }
-        val srcH = (height * invScale).toInt()
         return EngineResult(calculateWeightedAverage(scaledBlocks, srcH), listOf(tDetect), scaledBlocks)
     }
 

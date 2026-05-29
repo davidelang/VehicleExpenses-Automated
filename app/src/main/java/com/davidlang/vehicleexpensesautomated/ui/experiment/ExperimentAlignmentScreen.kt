@@ -313,9 +313,20 @@ private suspend fun runExperiment(
                     rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
                     rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
 
+                    // Rotate Luma (Y)
                     org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+                    
+                    // Rotate Chroma (UV)
+                    val srcUv = set.p.uvMat
+                    val dstUv = set.s.uvMat
+                    val uvScaleMat = rotMat.clone()
+                    // Shift translation for half-res UV plane
+                    uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
+                    uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
+                    org.opencv.imgproc.Imgproc.warpAffine(srcUv, dstUv, uvScaleMat, srcUv.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
+                    
                     set.flip()
-                    rotMat.release()
+                    rotMat.release(); uvScaleMat.release()
                     System.currentTimeMillis() - tRot0
                 }
 
