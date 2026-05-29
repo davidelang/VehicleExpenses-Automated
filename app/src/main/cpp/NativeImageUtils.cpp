@@ -678,5 +678,55 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     return (float)bestBucket / 2.0f;
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbePaddleResultJni(
+    JNIEnv* env, jobject thiz, jfloatArray data) {
+    
+    jsize len = env->GetArrayLength(data);
+    jfloat* ptr = env->GetFloatArrayElements(data, nullptr);
+    if (!ptr) return -1.0f;
+    
+    double sum = 0;
+    for (int i = 0; i < len; ++i) {
+        sum += std::abs(ptr[i]);
+    }
+    
+    // Log first 10 elements
+    std::string probe = "";
+    for (int i = 0; i < std::min((int)len, 10); ++i) {
+        probe += std::to_string(ptr[i]) + " ";
+    }
+    LOGI("[PADDLE_PROBE] Sum=%.3f Len=%d Data=[%s]", (float)sum, (int)len, probe.c_str());
+    
+    env->ReleaseFloatArrayElements(data, ptr, JNI_ABORT);
+    return (float)sum;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbePaddleTensorJni(
+    JNIEnv* env, jobject thiz, jobject tensor) {
+    
+    jclass cls = env->GetObjectClass(tensor);
+    LOGI("[PADDLE_PROBE] Probing Tensor Object: %p", (void*)tensor);
+    
+    // Attempt common field names for native pointer
+    jfieldID fid = env->GetFieldID(cls, "nativeInstance", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        fid = env->GetFieldID(cls, "cppPointer", "J");
+    }
+    
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("[PADDLE_PROBE] Could not find native pointer field in Tensor class");
+        return -2.0f;
+    }
+    
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    LOGI("[PADDLE_PROBE] Found Native Pointer: %p", (void*)nativePtr);
+    
+    return (float)nativePtr;
+}
+
 }
 
