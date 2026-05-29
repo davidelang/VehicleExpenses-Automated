@@ -82,6 +82,14 @@ chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml
 echo "Setting up sandbox symlink..."
 ln -s ../dev-ai-interaction dev-ai-interaction
 
+# 5b. Copy local.properties for Android builds
+echo "Setting up local.properties..."
+if [ -f "../master/local.properties" ]; then
+    cp ../master/local.properties local.properties
+elif [ -f "../local.properties" ]; then
+    cp ../local.properties local.properties
+fi
+
 # 6. Initialize AGENT_CONTEXT.md
 echo "Initializing AGENT_CONTEXT.md..."
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
@@ -104,8 +112,8 @@ echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
 if [ -t 0 ]; then
     echo "Starting agent session..."
     # Ensure we are in the correct directory even if logic above changed
-    pwd;ls
-    cd "$AGENT_ID" || exit 1
+    #pwd;ls
+    #cd "$AGENT_ID" || exit 1
     export GEMINI_PROJECT_ROOT=$(pwd)
     exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions." --include-directories ~/git/VehicleExpenses-automated/dev-ai-interaction/
 
