@@ -1,7 +1,7 @@
 ## Current Task: Remove Dynamic Detect Test
-- [ ] **ACTIVE:** Remove Dynamic Detect Test (linked to `dev-ai-interaction/plans/remove-dynamic-detect-test.md`)
-- [ ] Delete `ExperimentPaddleDynamicScreen.kt`.
-- [ ] Remove navigation and menu entries from `MainActivity.kt`.
+- [x] **DONE:** Remove Dynamic Detect Test (linked to `dev-ai-interaction/plans/remove-dynamic-detect-test.md`)
+- [x] Delete `ExperimentPaddleDynamicScreen.kt`.
+- [x] Remove navigation and menu entries from `MainActivity.kt`.
 
 ## Protocol & AI Alignment
 - [x] **DONE:** **Mandate Guardrail:** Explicitly anchor corrected mandates in TODO.md to prevent AI memory conflicts.
