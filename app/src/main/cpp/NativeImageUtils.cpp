@@ -757,5 +757,82 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProbe
     return (float)sum;
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmap(
+    JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jfloat minArea) {
+
+    // 1. Get Native Tensor
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    if (nativePtr == 0) return nullptr;
+
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return nullptr;
+
+    paddle::lite_api::Tensor* nativeTensor = uptr->get();
+    auto shape = nativeTensor->shape();
+    // Expecting [1, 1, H, W] or [1, H, W]
+    if (shape.size() < 3) return nullptr;
+
+    int h = (int)shape[shape.size() - 2];
+    int w = (int)shape[shape.size() - 1];
+    const float* data = nativeTensor->data<float>();
+    if (!data) return nullptr;
+
+    // 2. Thresholding
+    cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
+    cv::Mat mask;
+    cv::threshold(heatmap, mask, threshold, 255, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_8U);
+
+    // 3. Contour Discovery
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(mask, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+    // 4. Geometry Extraction
+    std::vector<float> results;
+    int count = 0;
+    for (const auto& cnt : contours) {
+        if (count >= 200) break; // Hard safety limit
+        
+        double area = cv::contourArea(cnt);
+        if (area < minArea) continue;
+
+        cv::RotatedRect rect = cv::minAreaRect(cnt);
+        cv::Point2f vertices[4];
+        rect.points(vertices);
+
+        // Calculate average confidence
+        cv::Rect bBox = rect.boundingRect();
+        bBox &= cv::Rect(0, 0, w, h);
+        
+        float avgConf = 0;
+        if (bBox.area() > 0) {
+            cv::Mat roi = heatmap(bBox);
+            cv::Scalar meanVal = cv::mean(roi);
+            avgConf = (float)meanVal[0];
+        }
+
+        // Pack [x1, y1, x2, y2, x3, y3, x4, y4, conf]
+        for (int i = 0; i < 4; ++i) {
+            results.push_back(vertices[i].x);
+            results.push_back(vertices[i].y);
+        }
+        results.push_back(avgConf);
+        count++;
+    }
+
+    // 5. Serialization
+    if (results.empty()) return nullptr;
+    jfloatArray jres = env->NewFloatArray(results.size());
+    env->SetFloatArrayRegion(jres, 0, results.size(), results.data());
+    return jres;
+}
+
 }
 

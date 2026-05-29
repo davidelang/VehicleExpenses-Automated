@@ -170,7 +170,8 @@ data class PumpBranch(
     val images: MutableMap<String, String> = mutableMapOf(),
     val pathResults: MutableMap<String, PathResult> = mutableMapOf(),
     val metadata: MutableMap<String, String> = mutableMapOf(),
-    val subBranches: MutableMap<String, PumpBranch> = mutableMapOf()
+    val subBranches: MutableMap<String, PumpBranch> = mutableMapOf(),
+    var discoveryDetails: JSONObject? = null
 ) {
     fun getBranch(name: String): PumpBranch = subBranches.getOrPut(name) { PumpBranch(name) }
     
@@ -181,6 +182,7 @@ data class PumpBranch(
             val p = JSONObject(); p.put("cost", v.cost); p.put("vol", v.vol); resObj.put(k, p) 
         }; root.put("results", resObj)
         val metaObj = JSONObject(); metadata.forEach { (k, v) -> metaObj.put(k, v) }; root.put("metadata", metaObj)
+        if (discoveryDetails != null) root.put("discovery_details", discoveryDetails)
         val subObj = JSONObject(); subBranches.forEach { (k, v) -> subObj.put(k, v.serializeToJson()) }; root.put("branches", subObj)
         return root
     }
@@ -262,6 +264,13 @@ private suspend fun runPumpExperiment(
                 masterBuffer.p.mat.copyTo(workspace.p.mat)
                 masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
 
+                val discoveryDetails = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>().apply {
+                    put("Paddle Raw", mutableMapOf())
+                    put("Paddle Expanded", mutableMapOf())
+                    put("Paddle Max Extent", mutableMapOf())
+                    put("Paddle Native", mutableMapOf())
+                }
+
                 // 1. Transform
                 val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                 if (flowName == flows.first()) {
@@ -291,19 +300,33 @@ private suspend fun runPumpExperiment(
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+                val pdHunksNativeTotal = mutableListOf<PumpHunk>()
 
                 scales.forEach { scale ->
                     val (outerId, innerId) = prepareScale(workspace, scale)
                     
                     mlBlocksRaw.addAll(runDiscoveryML(workspace, innerId, context))
-                    val (raw, exp, maxExt) = runDiscoveryPaddle(workspace, outerId, paddleEngine)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine)
+                    val raw = paddleResults[0]
+                    val exp = paddleResults[1]
+                    val maxExt = paddleResults[2]
+                    val native = paddleResults[3]
+
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
                     pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
                     
                     workspace.c[innerId].release()
                     workspace.c[outerId].release()
+                    
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
                 }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
                 val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
@@ -410,8 +433,7 @@ private fun pSerializePhotoResultToJson(
     isDegraded: Boolean, nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = "",
     root: PumpBranch,
-    originalHistogram: JSONArray,
-    discoveryDetails: JSONObject? = null
+    originalHistogram: JSONArray
 ): JSONObject {
     val rootJson = JSONObject()
     rootJson.apply {
@@ -431,8 +453,6 @@ private fun pSerializePhotoResultToJson(
             }
         }
         put("scale_telemetry", scaleTelemetry)
-
-        if (discoveryDetails != null) put("discovery_details", discoveryDetails)
         
         put("tree", root.serializeToJson())
         
@@ -666,8 +686,8 @@ private suspend fun runDiscoveryML(buffer: BufferSet, id: Int, context: Context)
     }
 }
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): Triple<List<PumpHunk>, List<PumpHunk>, List<PumpHunk>> {
-    val res = paddleEngine.detect(buffer.c[id]) ?: return Triple(emptyList(), emptyList(), emptyList())
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): List<List<PumpHunk>> {
+    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
     
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
@@ -680,6 +700,7 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
     val hunksRaw = mutableListOf<PumpHunk>()
     val hunksExpanded = mutableListOf<PumpHunk>()
     val hunksMaxExtent = mutableListOf<PumpHunk>()
+    val hunksNative = mutableListOf<PumpHunk>()
 
     consolidated.forEach { rect ->
         // Convert to absolute master pixels
@@ -707,7 +728,20 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         val y2 = IcrsMath.pixelToIcrs(maxExtentRect.right.toFloat(), maxExtentRect.bottom.toFloat(), masterW, masterH)
         hunksMaxExtent.add(PumpHunk("", RectF(y1.x, y1.y, y2.x, y2.y)))
     }
-    return Triple(hunksRaw, hunksExpanded, hunksMaxExtent)
+
+    // Capture Native Results (Phase 2 A/B)
+    res.nativeBoxes.forEach { box ->
+        var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
+        var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
+        for (i in 0 until 4) {
+            val x = box.points[i * 2]; val y = box.points[i * 2 + 1]
+            if (x < minX) minX = x; if (x > maxX) maxX = x
+            if (y < minY) minY = y; if (y > maxY) maxY = y
+        }
+        hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
+    }
+
+    return listOf(hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
 }
 
 
