@@ -19,6 +19,7 @@ This document provides the detailed procedural logic for the VehicleExpenses-aut
 - **Goal:** High-fidelity transcription of the approved plan.
 - **Exclusivity:** You MUST implement ONLY what was approved. Logic carry-overs or "Senior best practices" not in the plan are forbidden.
 - **Forensic Verification:** Before finishing, you MUST re-read the modified files to verify the implementation against the plan, and confirm `./build_app` success.
+- **Manual Testing Handoff:** If validation requires the user to manually trigger a test on a physical device to generate logs, you MUST explicitly instruct the user: *'Please run the test and WAIT. Do not perform any other actions or run subsequent tests until I confirm I have fetched the logs.'* Your very first action in the subsequent turn MUST be to fetch those logs so the user's test environment is freed immediately.
 - **Plan Mode Transition:** You MUST call `enter_plan_mode` at the end of every turn where a build was attempted or when implementation is complete.
 
 ## 2. Deployment & Versioning (CRITICAL)
