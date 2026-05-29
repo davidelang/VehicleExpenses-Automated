@@ -67,7 +67,7 @@ object OdometerOcrUtils {
         val t0 = System.currentTimeMillis()
         
         // 1. Unified Preparation (Bitmap or BufferSet.Slice)
-        val pTargetSize = 2500
+        val pTargetSize = 2048
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
         
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
@@ -238,7 +238,7 @@ object OdometerOcrUtils {
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
-        val pTargetSize = 2500
+        val pTargetSize = 2048
         val srcW: Int
         val srcH: Int
         when (input) {

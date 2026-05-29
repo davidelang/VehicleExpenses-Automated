@@ -19,6 +19,7 @@
 - [ ] Create `docs/reference/SYNC_PROTOCOL.md`
 - [ ] Create `docs/reference/OCR_ENGINE_STRATEGY.md`
 - [ ] Create `docs/reference/ALIGNMENT_PIPELINE.md`
+- [ ] **ACTIVE: Revert Deskew Resolution to 2048x2048.** Add 2048 tier to `NativePaddleEngine` and revert target size in `OdometerOcrUtils`.
 - [ ] **Naming Cleanup:** Rename `NativePaddleEngine` to `NativeVisionSystem` and `fullBufferSet` to `dashboardPool` (or similar) to accurately reflect their purpose.
 - [ ] **Chain-of-Command Audit:** Repository-wide audit to eliminate variable-assignment anti-patterns (storing slices/handles in local vars) in the alignment experiment code.
 - [ ] **Migrate NDK directory to Git Subproject (`ndk/`)**
@@ -238,6 +239,7 @@
 - [x] Fix Active Algorithm, ASCII Expansion, and Contrast Tweak (See: plans/fix-algorithm-and-expand-ascii.md)
 - [x] Implement Variance-Based Expansion with Content Floor (See: plans/variance-expansion-with-floor.md)
 - [x] Standardize Sandbox Paths to Absolute (See: plans/standardize-sandbox-paths.md)
+- [x] Restore Lost Operational Mandates (See: plans/restore-mandates.md)
 - [ ] Height-Relative Expansion, Robust Mapping, and Raw Consolidation (See: plans/height-relative-expansion.md)
 - [ ] TODO: Investigate bimodal brightness-based stop logic for glare/shadow (e.g., look for brightness drop/climb)
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]

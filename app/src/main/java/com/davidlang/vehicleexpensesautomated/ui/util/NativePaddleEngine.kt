@@ -48,7 +48,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var isNativeLibLoaded = false
 
         // Phase 125: Multi-Tier Predictor Array
-        val TIER_SCALES = listOf(224, 608, 1024, 2560)
+        val TIER_SCALES = listOf(224, 608, 1024, 2048, 2560)
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
         val sharedTierBuffers = mutableMapOf<Int, FloatArray>()
 
@@ -57,8 +57,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _bufferSetB: BufferSet? = null
         private var _deskewBufferSetLarge: BufferSet? = null
         private var _bufferLarge: FloatArray? = null
-        private var _sharedBmp2560: Bitmap? = null
-        private var _sharedCanvas2560: Canvas? = null
+        private var _sharedBmp2048: Bitmap? = null
+        private var _sharedCanvas2048: Canvas? = null
         private var _bufferSmall: FloatArray? = null
         private var _bufferRec: FloatArray? = null
         private var _sharedNv21Buffer: ByteArray? = null
@@ -78,8 +78,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bufferSetB: BufferSet get() = _bufferSetB!!
         val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
-        val sharedBmp2560: Bitmap get() = _sharedBmp2560!!
-        val sharedCanvas2560: Canvas get() = _sharedCanvas2560!!
+        val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
+        val sharedCanvas2048: Canvas get() = _sharedCanvas2048!!
         private val bufferSmall: FloatArray get() = _bufferSmall!!
         private val bufferRec: FloatArray get() = _bufferRec!!
         val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
@@ -103,12 +103,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             _bufferSetA = BufferSet(4000, 3072)
             _bufferSetB = BufferSet(4000, 3072)
-            _deskewBufferSetLarge = BufferSet(2560, 2560)
+            _deskewBufferSetLarge = BufferSet(2048, 2048)
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
 
-            _bufferLarge = FloatArray(1 * 2560 * 2560) // Native is now exclusively 1-channel (Mono)
-            _sharedBmp2560 = Bitmap.createBitmap(2560, 2560, Bitmap.Config.ALPHA_8); _sharedCanvas2560 = Canvas(_sharedBmp2560!!)
+            _bufferLarge = FloatArray(1 * 2048 * 2048) // Native is now exclusively 1-channel (Mono)
+            _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
 
             _bufferSmall = FloatArray(1 * 512 * 128)
             _bufferRec = FloatArray(1 * 320 * 48)
