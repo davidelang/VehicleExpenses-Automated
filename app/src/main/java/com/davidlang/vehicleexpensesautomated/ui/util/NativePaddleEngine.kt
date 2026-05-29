@@ -27,7 +27,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     override val name = "Paddle $variant Greedy"
     fun isV3() = variant == "V3"
     
-    data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val metadata: Map<String, String> = emptyMap())
+    data class DetectionBox(val points: FloatArray, val confidence: Float)
+    data class DetectionResult(
+        val heatmap: FloatArray, 
+        val width: Int, 
+        val height: Int, 
+        val metadata: Map<String, String> = emptyMap(),
+        val nativeBoxes: List<DetectionBox> = emptyList()
+    )
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
     var isAvailable = false
@@ -262,19 +269,48 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             NativeImageUtils.nativeProbePaddleTensor(outputTensor)
             
             val heatmap = outputTensor.floatData
-            
             // Diagnostic Probe of Data
             NativeImageUtils.nativeProbePaddleResult(heatmap)
-            
+
+            // Zero-Copy Native Post-Processing (Phase 2)
+            val tNativePost0 = System.nanoTime()
+            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
+            val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+
+            val nativeBoxes = mutableListOf<DetectionBox>()
+            if (nativeRes != null) {
+                val shortEdge = minOf(w, h).toDouble()
+                val centerX = w / 2.0
+                val centerY = h / 2.0
+                val scaleX = w.toDouble() / dims[3]
+                val scaleY = h.toDouble() / dims[2]
+
+                for (i in 0 until (nativeRes.size / 9)) {
+                    val offset = i * 9
+                    val icrsPoints = FloatArray(8)
+                    for (p in 0 until 4) {
+                        val px = nativeRes[offset + p * 2] * scaleX
+                        val py = nativeRes[offset + p * 2 + 1] * scaleY
+                        icrsPoints[p * 2] = ((px - centerX) / shortEdge).toFloat()
+                        icrsPoints[p * 2 + 1] = ((py - centerY) / shortEdge).toFloat()
+                    }
+                    val conf = nativeRes[offset + 8]
+                    nativeBoxes.add(DetectionBox(icrsPoints, conf))
+                }
+            }
+
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
                 "t_pop_tensor_ms" to "%.3f".format(tPop),
                 "t_jni_in_ms" to "%.3f".format(tJniIn),
                 "t_inference_ms" to "%.3f".format(tInfer),
-                "t_jni_out_ms" to "%.3f".format(tJniOut)
+                "t_jni_out_ms" to "%.3f".format(tJniOut),
+                "t_native_post_ms" to "%.3f".format(tNativePost),
+                "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)
+
         } catch (t: Throwable) { 
             Log.e("PaddleDetect", "Detection failed", t); return null 
         }
@@ -323,6 +359,33 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Diagnostic Probe of Data
             NativeImageUtils.nativeProbePaddleResult(heatmap)
             
+            // Zero-Copy Native Post-Processing (Phase 2)
+            val tNativePost0 = System.nanoTime()
+            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
+            val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+
+            val nativeBoxes = mutableListOf<DetectionBox>()
+            if (nativeRes != null) {
+                val shortEdge = minOf(w, h).toDouble()
+                val centerX = w / 2.0
+                val centerY = h / 2.0
+                val scaleX = w.toDouble() / dims[3]
+                val scaleY = h.toDouble() / dims[2]
+
+                for (i in 0 until (nativeRes.size / 9)) {
+                    val offset = i * 9
+                    val icrsPoints = FloatArray(8)
+                    for (p in 0 until 4) {
+                        val px = nativeRes[offset + p * 2] * scaleX
+                        val py = nativeRes[offset + p * 2 + 1] * scaleY
+                        icrsPoints[p * 2] = ((px - centerX) / shortEdge).toFloat()
+                        icrsPoints[p * 2 + 1] = ((py - centerY) / shortEdge).toFloat()
+                    }
+                    val conf = nativeRes[offset + 8]
+                    nativeBoxes.add(DetectionBox(icrsPoints, conf))
+                }
+            }
+            
             var minVal = Float.MAX_VALUE
             var maxVal = Float.MIN_VALUE
             for (v in heatmap) {
@@ -338,9 +401,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_in_ms" to "%.3f".format(tJniIn),
                 "t_inference_ms" to "%.3f".format(tInfer),
                 "t_jni_out_ms" to "%.3f".format(tJniOut),
+                "t_native_post_ms" to "%.3f".format(tNativePost),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Dynamic detection failed", t)
             return null
