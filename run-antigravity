@@ -10,6 +10,6 @@ echo "Launching Antigravity agent in $(pwd)..."
 echo "Sandbox path: $SANDBOX_DIR"
 
 exec /home/dlang/git/antigravity/agy \
-    -i "Read new_agent_prompt and follow its instructions." \
+    -i "Read the file ./new_agent_prompt located in your current workspace root directory, and follow its instructions." \
     --add-dir "$SANDBOX_DIR" \
     "$@"
