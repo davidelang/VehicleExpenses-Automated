@@ -467,7 +467,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = processOcrNumeric(input, sharedRecognizerNumeric, dictionaryV3, ALLOWED_DIGITS)
+        val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS)
         OcrResult(
             engineName = "Paddle Numeric Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
