@@ -23,8 +23,9 @@ import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
-class NativePaddleEngine(private val context: Context) : OcrEngine {
-    override val name = "Paddle V3 Greedy"
+class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
+    override val name = if (variant == "V3") "Paddle V3 Greedy" else "Paddle Numeric Greedy"
+    fun isV3() = variant == "V3"
     
     data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val metadata: Map<String, String> = emptyMap())
     private var initError: String? = null
@@ -198,6 +199,9 @@ class NativePaddleEngine(private val context: Context) : OcrEngine {
             Log.e("PaddleLite", "Failed to initialize engine instance", e)
         }
     }
+
+    private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
+    private val dictionary: List<String> get() = if (variant == "V3") dictionaryV3 else dictionaryNumeric
 
     fun detect(input: Any, targetW: Int? = null, targetH: Int? = null): DetectionResult? {
         val tPop0 = System.nanoTime()
