@@ -46,11 +46,11 @@ if [ $? -ne 0 ]; then
 fi
 
 # 3. Create convenience symlink for the branch
-if [ -e "$BRANCH_NAME" ]; then
-    echo "Warning: File/link '$BRANCH_NAME' already exists. Skipping symlink creation."
+if [ -e "${BRANCH_NAME}.wt" ]; then
+    echo "Warning: File/link '${BRANCH_NAME}.wt' already exists. Skipping symlink creation."
 else
-    ln -s "$AGENT_ID" "$BRANCH_NAME"
-    echo "Created symlink: $BRANCH_NAME -> $AGENT_ID"
+    ln -s "$AGENT_ID" "${BRANCH_NAME}.wt"
+    echo "Created symlink: ${BRANCH_NAME}.wt -> $AGENT_ID"
 fi
 
 # 4. Setup Shared Rules (Hard Links - Read Only)
@@ -106,7 +106,7 @@ EOF
 fi
 
 echo "Setup complete for $AGENT_ID."
-echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
+echo "Agent can begin work via: cd $AGENT_ID (or cd ${BRANCH_NAME}.wt)"
 
 # 7. Optional: Start Agent session immediately if in an interactive terminal
 if [ -t 0 ]; then
