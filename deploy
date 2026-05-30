@@ -1,5 +1,4 @@
 #!/bin/bash
-git describe --always
 
 # Usage: ./deploy [alias1 alias2 ...]
 # If no arguments are provided, it deploys to all connected devices.
@@ -32,6 +31,7 @@ else
             echo "Deployment to $TARGET ($DEVICE_ID) failed."
             OVERALL_SUCCESS=false
         fi
+        adb -s "$DEVICE_ID" logcat -c
     done
 fi
 
@@ -44,6 +44,7 @@ if [ "$OVERALL_SUCCESS" = true ]; then
     fi
     echo "All deployments successful. Updating '$TAG_NAME' tag."
     git tag -f "$TAG_NAME"
+    git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe --always
     exit 0
 else
     echo "One or more deployments failed. The 'deployed' tag was NOT updated."

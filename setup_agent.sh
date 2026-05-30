@@ -31,12 +31,12 @@ if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
 else
     # Create from current master
     git worktree add "$AGENT_ID" -b "$BRANCH_NAME" master
-    # Create an annotated tag for git describe to anchor on
+    # Create a lightweight tag for git describe to anchor on
     if git rev-parse "${BRANCH_NAME}-start" >/dev/null 2>&1; then
         echo "Versioning tag ${BRANCH_NAME}-start already exists. Skipping creation."
     else
-        echo "Creating annotated tag ${BRANCH_NAME}-start for versioning..."
-        git tag -a "${BRANCH_NAME}-start" "$BRANCH_NAME" -m "Start of feature branch $BRANCH_NAME"
+        echo "Creating lightweight tag ${BRANCH_NAME}-start for versioning..."
+        git tag "${BRANCH_NAME}-start" "$BRANCH_NAME"
     fi
 fi
 

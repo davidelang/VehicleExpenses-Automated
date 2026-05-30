@@ -80,7 +80,7 @@ if [ $? -eq 0 ]; then
     fi
     echo "Build successful. Updating '$TAG_NAME' tag."
     git tag -f "$TAG_NAME"
-    git describe
+    git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
     exit 0
 else
     echo "Build failed."
