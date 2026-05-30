@@ -138,6 +138,8 @@ object OdometerOcrUtils {
         Log.i("PaddleParallel", "  Paddle Kotlin: $paddleKtAngle")
         Log.i("PaddleParallel", "  Paddle C++:    $paddleCppAngle")
         
+        val (downsampled, dw, dh) = downsampleHeatmap(pdRes.heatmap, pdRes.heatmapWidth, pdRes.heatmapHeight, 512)
+        
         return DeskewResult(
             angle = mlRes.angle.coerceIn(-20f, 20f), 
             mlAngle = mlRes.angle,
@@ -148,10 +150,33 @@ object OdometerOcrUtils {
             paddleBlocks = pdRes.blocks,
             engines = results,
             metadata = mapOf("t_prep_ms" to tPrep.toString()),
-            paddleHeatmap = pdRes.heatmap,
-            paddleHeatmapWidth = pdRes.heatmapWidth,
-            paddleHeatmapHeight = pdRes.heatmapHeight
+            paddleHeatmap = downsampled,
+            paddleHeatmapWidth = dw,
+            paddleHeatmapHeight = dh
         )
+    }
+
+    fun downsampleHeatmap(heatmap: FloatArray?, w: Int, h: Int, maxEdge: Int): Triple<FloatArray, Int, Int> {
+        if (heatmap == null || heatmap.isEmpty() || w <= 0 || h <= 0) return Triple(FloatArray(0), 0, 0)
+        val scale = maxEdge.toFloat() / Math.max(w, h)
+        if (scale >= 1.0f) return Triple(heatmap, w, h)
+        
+        val dw = (w * scale).toInt().coerceAtLeast(1)
+        val dh = (h * scale).toInt().coerceAtLeast(1)
+        
+        val baseMat = Mat(h, w, CvType.CV_32F)
+        baseMat.put(0, 0, heatmap)
+        
+        val resizedMat = Mat()
+        Imgproc.resize(baseMat, resizedMat, org.opencv.core.Size(dw.toDouble(), dh.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        
+        val resizedFloats = FloatArray(dw * dh)
+        resizedMat.get(0, 0, resizedFloats)
+        
+        baseMat.release()
+        resizedMat.release()
+        
+        return Triple(resizedFloats, dw, dh)
     }
 
     private suspend fun deskewMlKit(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
