@@ -283,4 +283,4 @@
   - [ ] Implement mask-based mean confidence calculation for Paddle contours on the heatmap.
   - [ ] Propagate confidence scores during Paddle block clustering.
   - [ ] Capture the raw Paddle heatmap array and its dimensions.
-  - [ ] Export text blocks' confidence and the Paddle heatmap array to the JSON report.
+  - [ ] Export text blocks' confidence and the Paddle heatmap array (Base64 encoded) to the JSON report.

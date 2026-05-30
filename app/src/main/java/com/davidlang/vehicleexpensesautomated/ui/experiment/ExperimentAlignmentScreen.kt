@@ -646,11 +646,15 @@ private fun serializePhotoResultToJson(
         }
         put("deskew_data_paddle", pdArray)
 
-        val heatmapJson = JSONArray()
-        deskewResA?.paddleHeatmap?.forEach { value ->
-            heatmapJson.put(value.toDouble())
+        val heatmap = deskewResA?.paddleHeatmap
+        if (heatmap != null && heatmap.isNotEmpty()) {
+            val byteBuf = java.nio.ByteBuffer.allocate(heatmap.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            for (f in heatmap) {
+                byteBuf.putFloat(f)
+            }
+            val b64 = android.util.Base64.encodeToString(byteBuf.array(), android.util.Base64.NO_WRAP)
+            put("paddle_heatmap_b64", b64)
         }
-        put("paddle_heatmap", heatmapJson)
         put("paddle_heatmap_width", deskewResA?.paddleHeatmapWidth ?: 0)
         put("paddle_heatmap_height", deskewResA?.paddleHeatmapHeight ?: 0)
 
