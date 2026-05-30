@@ -1,5 +1,18 @@
 #!/bin/bash
+# works: Mark the current state as user-verified.
+# Usage: ./works
+
 git describe --always
-git push
-git tag -f works
-git push --tags -f
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" == "master" ]; then
+    TAG_NAME="works"
+else
+    TAG_NAME="${CURRENT_BRANCH}/works"
+fi
+
+echo "Updating '$TAG_NAME' tag..."
+git tag -f "$TAG_NAME"
+git push origin ":refs/tags/$TAG_NAME" 2>/dev/null
+git push origin "refs/tags/$TAG_NAME"
+echo "State verified and pushed."
