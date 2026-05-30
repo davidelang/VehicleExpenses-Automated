@@ -132,6 +132,7 @@ object OdometerOcrUtils {
             mlAngle = mlRes.angle,
             mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
+            paddleCppAngle = paddleCppAngle,
             mlBlocks = mlRes.blocks,
             paddleBlocks = pdRes.blocks,
             engines = results,
