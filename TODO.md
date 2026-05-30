@@ -221,7 +221,7 @@
 - [x] DONE: Fix memory and GEMINI.md discrepancies (Strike System, No-Deploy, Plan Mode transitions). (See: dev-ai-interaction/plans/protocol-alignment.md)
 
 # TODO: Gas Pump Field Extraction
-- [ ] Apply alignment experiment fixes (Chroma rotation & Bilinear resize parity) to pump experiment (See: dev-ai-interaction/plans/apply-alignment-fixes-to-pump.md)
+- [x] DONE: Apply alignment experiment fixes (Chroma rotation & Bilinear resize parity) to pump experiment (See: dev-ai-interaction/plans/apply-alignment-fixes-to-pump.md)
 - [x] DONE: Phase 1: Multi-Scale Discovery & Hunk Construction (See: dev-ai-interaction/plans/pump-multi-scale-discovery.md)
 - [x] DONE: Phase 1.1: ICRS Coordinate Migration (See: dev-ai-interaction/plans/pump-icrs-migration.md)
 - [x] DONE: Phase 2: Horizontal Stitching & Lane Grouping (See: dev-ai-interaction/plans/pump-lane-grouping.md)
