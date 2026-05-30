@@ -306,6 +306,12 @@ private suspend fun runPumpExperiment(
                     val (outerId, innerId) = prepareScale(workspace, scale)
                     
                     mlBlocksRaw.addAll(runDiscoveryML(workspace, innerId, context))
+                    val res = paddleEngine.detect(workspace.c[outerId])
+                    if (res != null) {
+                        branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
+                        branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
+                    }
+                    
                     val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine)
                     val raw = paddleResults[0]
                     val exp = paddleResults[1]
@@ -731,12 +737,16 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
 
     // Capture Native Results (Phase 2 A/B)
     res.nativeBoxes.forEach { box ->
+        // Points are in input Mat pixels (crop-relative)
+        val icrsPoints = box.points.toList().chunked(2).map { (px, py) ->
+            IcrsMath.pixelToIcrs(px, py, masterW, masterH)
+        }
+        
         var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
         var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
-        for (i in 0 until 4) {
-            val x = box.points[i * 2]; val y = box.points[i * 2 + 1]
-            if (x < minX) minX = x; if (x > maxX) maxX = x
-            if (y < minY) minY = y; if (y > maxY) maxY = y
+        icrsPoints.forEach { p ->
+            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
         }
         hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
     }
