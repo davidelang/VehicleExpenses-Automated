@@ -55,3 +55,4 @@ When running under the Antigravity agent CLI:
 - Map `run_shell_command` -> `run_command`
 - Map `write_file` -> `write_to_file`
 - Map `replace` -> `replace_file_content` or `multi_replace_file_content`
+- Map `invoke_agent` -> `invoke_subagent` (Note: Subagent execution/invocation is strictly blocked during Planning Mode).
