@@ -93,10 +93,10 @@ object OdometerOcrUtils {
             org.opencv.android.Utils.bitmapToMat(input, argbMat)
             val gray = Mat()
             Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
             argbMat.release(); gray.release()
         } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
         }
         
         bufferSet.c[innerId].release()
@@ -230,7 +230,11 @@ object OdometerOcrUtils {
         // Paddle V3 (Legacy Kotlin Math)
         val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
         val clusteredBoxes = clusterRects(rawBlocks.map { it.boundingBox })
-        val blocks = clusteredBoxes.map { b -> TextBlock("", b, 0f) }
+        val blocks = clusteredBoxes.map { b ->
+            val constituent = rawBlocks.filter { r -> android.graphics.Rect.intersects(b, r.boundingBox) }
+            val avgAngle = if (constituent.isNotEmpty()) constituent.map { it.angle }.average().toFloat() else 0f
+            TextBlock("", b, avgAngle)
+        }
         
         val srcH = (pHeight / pScale).toInt()
         val angleV3 = calculateWeightedAverage(blocks, srcH)
@@ -274,7 +278,7 @@ object OdometerOcrUtils {
         val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
         val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pWidth, pHeight))
         
-        Imgproc.resize(grayMat, roiMat, roiMat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+        Imgproc.resize(grayMat, roiMat, roiMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
         
         val resizedArgb = Mat()
         Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
