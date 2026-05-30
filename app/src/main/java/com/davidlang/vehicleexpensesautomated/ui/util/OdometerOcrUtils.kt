@@ -802,6 +802,14 @@ object OdometerOcrUtils {
             Log.i("PaddleParallel", "  Kotlin: ${kotlinRects.size} boxes in ${tKotlin}ms")
             Log.i("PaddleParallel", "  C++:    ${cppRects.size} boxes in ${nativePostMs ?: "N/A"}ms")
             Log.i("PaddleParallel", "  Matches: $matches (Avg IoU: $avgIou)")
+            // Coordinate diagnostic: dump first 3 rects from each side
+            val nDiag = kotlin.math.min(3, kotlin.math.max(kotlinRects.size, cppRects.size))
+            for (i in 0 until nDiag) {
+                val kt = if (i < kotlinRects.size) kotlinRects[i] else null
+                val cpp = if (i < cppRects.size) cppRects[i] else null
+                val rawCpp = if (i < nativeBoxes.size) nativeBoxes[i].points else null
+                Log.i("PaddleParallel", "  [$i] Kt=${kt?.let{"(${it.left},${it.top})-(${it.right},${it.bottom})"} ?: "N/A"}  Cpp=${cpp?.let{"(${it.left},${it.top})-(${it.right},${it.bottom})"} ?: "N/A"}  RawCpp=${rawCpp?.let{"(${it[0]},${it[1]})-(${it[4]},${it[5]})"} ?: "N/A"}")
+            }
         }
         
         return legacyBlocks
