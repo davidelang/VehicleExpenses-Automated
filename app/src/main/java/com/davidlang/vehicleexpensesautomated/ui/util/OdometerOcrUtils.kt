@@ -93,10 +93,10 @@ object OdometerOcrUtils {
             org.opencv.android.Utils.bitmapToMat(input, argbMat)
             val gray = Mat()
             Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
             argbMat.release(); gray.release()
         } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
         }
         
         bufferSet.c[innerId].release()
