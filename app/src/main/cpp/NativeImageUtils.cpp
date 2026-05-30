@@ -706,6 +706,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     const float* data = nativeTensor->data<float>();
     if (!data) return nullptr;
 
+    LOGI("nativeProcessHeatmap: shape=[%d dims], h=%d, w=%d, ptr=%p, first4=[%.4f,%.4f,%.4f,%.4f]",
+         (int)shape.size(), h, w, data, data[0], data[1], data[2], data[3]);
+
     // 2. Thresholding
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask;
@@ -728,6 +731,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         cv::RotatedRect rect = cv::minAreaRect(cnt);
         cv::Point2f vertices[4];
         rect.points(vertices);
+
+        if (count < 3) {
+            LOGI("nativeProcessHeatmap: box[%d] vertices=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) area=%.0f",
+                 count, vertices[0].x, vertices[0].y, vertices[1].x, vertices[1].y,
+                 vertices[2].x, vertices[2].y, vertices[3].x, vertices[3].y, area);
+        }
 
         // Calculate average confidence within the rotated rect's bounding box
         cv::Rect bBox = rect.boundingRect();
