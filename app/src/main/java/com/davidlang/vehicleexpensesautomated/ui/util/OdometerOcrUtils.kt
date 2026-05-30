@@ -233,7 +233,7 @@ object OdometerOcrUtils {
         val tAngleCpp = System.currentTimeMillis() - tAngleCpp0
 
         // Paddle V3 (Legacy Kotlin Math)
-        val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None", det.nativeBoxes, det.metadata["t_native_post_ms"])
+        val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None", algorithm = "Native", nativeBoxes = det.nativeBoxes, nativePostMs = det.metadata["t_native_post_ms"])
         val clusteredBoxes = clusterRects(rawBlocks.map { it.boundingBox })
         val blocks = clusteredBoxes.map { b -> TextBlock("", b, 0f) }
         
