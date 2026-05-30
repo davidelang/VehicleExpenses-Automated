@@ -938,7 +938,8 @@ private suspend fun runPaddleValleyIterative(
     experimentRecSet320x48: BufferSet,
     paddleEngine: NativePaddleEngine,
     report: MutableMap<String, OcrHarnessResult>, 
-    targetRefMap: MutableMap<String, RefinementTrace>
+    targetRefMap: MutableMap<String, RefinementTrace>,
+    isNumeric: Boolean = false
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
