@@ -175,6 +175,18 @@ object NativeImageUtils {
         } else Pair(rect, rect)
     }
 
+    /**
+     * Offload Paddle heatmap post-processing (threshold, contours, geometry) to C++.
+     * Returns a flattened array of bounding boxes: [x1, y1, x2, y2, x3, y3, x4, y4, confidence, ...]
+     */
+    fun processHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray? {
+        return nativeProcessHeatmap(tensor, threshold, minArea)
+    }
+
+    fun heatmapToAngle(heatmapArr: FloatArray, w: Int, h: Int, threshold: Float): Float {
+        return nativeHeatmapToAngle(heatmapArr, w, h, threshold)
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -186,5 +198,7 @@ object NativeImageUtils {
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
+    private external fun nativeHeatmapToAngle(heatmapArr: FloatArray, w: Int, h: Int, threshold: Float): Float
 
 }

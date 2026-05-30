@@ -9,7 +9,7 @@ Provide a brief report:
 4. **Geography & CRITICAL Confinement:** 
     - State your current **Role** and **Branch**.
     - **NEVER use `..` in any path.** 
-    - Use the local `./dev-ai-interaction` symlink for sandbox access.
+    - Use `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` for sandbox access.
     - **UI Warning:** Large shell outputs (e.g., recursive `ls`) can crash the terminal. Use `head`, `tail`, or specific paths.
 
 # 5. STOP & WAIT (CRITICAL)
