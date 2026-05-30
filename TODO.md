@@ -19,6 +19,10 @@
 - [ ] Create `docs/reference/SYNC_PROTOCOL.md`
 - [ ] Create `docs/reference/OCR_ENGINE_STRATEGY.md`
 - [ ] Create `docs/reference/ALIGNMENT_PIPELINE.md`
+- [x] **DONE: Revert Deskew Resolution to 2048x2048.** Add 2048 tier to `NativePaddleEngine` and revert target size in `OdometerOcrUtils`.
+- [x] **DONE: Fix NV21 Stability and Geometric Integrity.** Fix `nativeClear` to clear chroma to 128, rotate both Luma/Chroma, and fix `srcH` in `deskewMlKit`.
+- [x] **DONE: Revert srcH Geometry for Deskew Parity.** Revert `deskewMlKit` to use buffer-relative height for candidate filtering to match working version (24ab86a).
+- [x] **DONE: Restore Interpolation Parity and Implement Multi-Mode OCR.** Fixed 1-degree drift with `INTER_LINEAR` and implemented explicit `recognizeNumeric()` in `NativePaddleEngine`.
 - [ ] **Naming Cleanup:** Rename `NativePaddleEngine` to `NativeVisionSystem` and `fullBufferSet` to `dashboardPool` (or similar) to accurately reflect their purpose.
 - [ ] **Chain-of-Command Audit:** Repository-wide audit to eliminate variable-assignment anti-patterns (storing slices/handles in local vars) in the alignment experiment code.
 - [ ] **Migrate NDK directory to Git Subproject (`ndk/`)**
@@ -70,11 +74,27 @@
 - [x] **Phase 5: Vehicle-Specific Pool Swap (Complete)**
 - [x] **DONE:** Phase 6: Managed Sub-Crops & Flip Optimization
 - [ ] Phase 7: Final Migration & Decommissioning
+
 - **OCR Engine Stabilization (Active):**
-- [ ] **Phase 62: Robust Alignment & Contrast Stretching**
-- [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
-- [ ] **Robust Paddle Deskew (Refinement 2.2):** Resolve "0.0 degree" swamping in noisy dashboards. Implement Cluster-Based Voting. See handover: `dev-ai-interaction/plans/DESKEW_HANDOVER.md`
-- [ ] Add rotational gating (±20°) to deskew logic.
+  - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
+  - [x] **DONE: Restore Deskew Parity & Fix ML Kit Accuracy drop (Strategy Approved 2026-05-30)**
+    - [x] Revert `OdometerOcrUtils.kt` downscaling resize interpolation from `INTER_LINEAR` to `INTER_AREA`.
+    - [x] In `OdometerOcrUtils.kt`'s `deskewPaddleDual`, restore raw block angles to clustered blocks instead of forcing them to `0f`.
+  - [x] **DONE: Fix Paddle Numeric Greedy OCR Collapse (Approved 2026-05-30)**
+    - [x] Split characters in `app/src/main/assets/paddle/digits_only.txt` to be one per line.
+    - [x] Isolate processOcrNumeric and restore greedy digits constraint.
+    - [x] Remove numeric confidence-drop truncation from shared processOcr.
+  - [x] **DONE: Restore Paddle Numeric Accuracy via Constrained Argmax (Approved 2026-05-30)**
+    - [x] Remove `dictionaryNumeric` field and `digits_only.txt` load from `NativePaddleEngine.kt`
+    - [x] Add `ALLOWED_DIGITS` and `ALLOWED_DIGITS_DECIMAL` constants to companion object
+    - [x] Replace `searchLimit` scan in `processOcrNumeric` with constrained argmax over `allowedIndices`
+    - [x] Update `processOcrNumeric` signature to accept `allowedIndices: Set<Int>`
+    - [x] Update `recognizeNumeric` to pass `dictionaryV3, ALLOWED_DIGITS`
+  - [x] **DONE: Restore Paddle Numeric Parity via V3 Model Integration (Approved 2026-05-30)**
+    - [x] Update `recognizeNumeric` in `NativePaddleEngine.kt` to pass `sharedRecognizerV3` instead of `sharedRecognizerNumeric`.
+  - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
+  - [ ] **Robust Paddle Deskew (Refinement 2.2):** Resolve "0.0 degree" swamping in noisy dashboards. Implement Cluster-Based Voting. See handover: `dev-ai-interaction/plans/DESKEW_HANDOVER.md`
+  - [ ] Add rotational gating (±20°) to deskew logic.
 - [x] **DONE:** Implement `applyContrastStretch` using OpenCV histogram analysis.
 - [ ] Expand `runMultiStepOcr` refinement loop with S-75% and S-80% stages.
 - [x] **DONE:** Add `deskew_data` forensic logging to JSON reports.

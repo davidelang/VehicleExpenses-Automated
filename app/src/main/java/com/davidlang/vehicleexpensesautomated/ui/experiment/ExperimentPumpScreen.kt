@@ -214,7 +214,7 @@ private suspend fun runPumpExperiment(
     
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-    val paddleEngine = NativePaddleEngine(context, variant = "V3")
+    val paddleEngine = NativePaddleEngine(context)
 
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")

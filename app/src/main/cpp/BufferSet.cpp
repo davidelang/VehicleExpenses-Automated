@@ -90,7 +90,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeClear(
         if (validHandles.find(handle) == validHandles.end()) return;
     }
     if (handle != nullptr && handle->data != nullptr) {
-        std::memset(handle->data, 0, handle->width * handle->height);
+        size_t frameSize = handle->width * handle->height;
+        std::memset(handle->data, 0, frameSize);
+        std::memset(handle->data + frameSize, 128, handle->actualByteCount - frameSize);
     }
 }
 
