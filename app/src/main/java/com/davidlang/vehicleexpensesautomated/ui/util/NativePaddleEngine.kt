@@ -45,7 +45,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         
         private var isNativeLibLoaded = false
         private val dictionaryV3 = mutableListOf<String>()
-        private val dictionaryNumeric = mutableListOf<String>()
+
+        // Constrained argmax index sets for numeric recognition (1-based; 0 = CTC blank)
+        // Indices into en_dict.txt: 1-10 = "0"-"9", 93 = "."
+        val ALLOWED_DIGITS: Set<Int> = (1..10).toSet()
+        val ALLOWED_DIGITS_DECIMAL: Set<Int> = (1..10).toSet() + setOf(93)
 
         // Phase 125: Multi-Tier Predictor Array
         val TIER_SCALES = listOf(224, 608, 1024, 2048, 2560)
@@ -171,7 +175,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
                 
                 loadDictionary(context, "paddle/en_dict.txt", dictionaryV3)
-                loadDictionary(context, "paddle/digits_only.txt", dictionaryNumeric)
+                // digits_only.txt kept as asset but not loaded; numeric pipeline uses dictionaryV3 with ALLOWED_DIGITS
 
                 Log.i("PaddleLite", "Total Global Init: ${System.currentTimeMillis() - tStart}ms")
                 
@@ -201,7 +205,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
-    private val dictionary: List<String> get() = if (variant == "V3") dictionaryV3 else dictionaryNumeric
 
     fun detect(input: Any, targetW: Int? = null, targetH: Int? = null): DetectionResult? {
         val tPop0 = System.nanoTime()
@@ -357,7 +360,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
-    private suspend fun processOcrNumeric(input: Any, predictor: PaddlePredictor?, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
+    private suspend fun processOcrNumeric(input: Any, predictor: PaddlePredictor?, dictionary: List<String>, allowedIndices: Set<Int>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
 
@@ -403,10 +406,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
-                var maxIdx = 0; var maxVal = -1f; val searchLimit = (dictionary.size + 1).coerceAtMost(dictSize)
-                for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
+                // Constrained argmax: only consider CTC blank (0) + explicitly allowed indices.
+                // This causes genuine character collapse — e.g. "q","g","9" all map to "9"
+                // because index 10 ("9") has the highest probability among the allowed set.
+                var maxIdx = 0; var maxVal = data[i * dictSize + 0] // start with blank
+                for (j in allowedIndices) {
+                    if (j >= dictSize) continue
+                    val v = data[i * dictSize + j]
+                    if (v > maxVal) { maxVal = v; maxIdx = j }
+                }
                 if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
-
                     if (result.length < 4 || maxVal >= (0.60f * lastConf)) {
                         result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++; lastConf = maxVal
                     } else break
@@ -458,7 +467,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = processOcrNumeric(input, sharedRecognizerNumeric, dictionaryNumeric)
+        val res = processOcrNumeric(input, sharedRecognizerNumeric, dictionaryV3, ALLOWED_DIGITS)
         OcrResult(
             engineName = "Paddle Numeric Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
