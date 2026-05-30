@@ -263,16 +263,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
-            
-            // Diagnostic Probe
-            probeTensorClass(outputTensor)
-            NativeImageUtils.nativeProbePaddleTensor(outputTensor)
-            
             val heatmap = outputTensor.floatData
-            // Diagnostic Probe of Data
-            NativeImageUtils.nativeProbePaddleResult(heatmap)
 
             // Zero-Copy Native Post-Processing (Phase 2)
+
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
@@ -344,15 +338,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
-            
-            // Diagnostic Probe
-            probeTensorClass(outputTensor)
-            NativeImageUtils.nativeProbePaddleTensor(outputTensor)
-            
             val heatmap = outputTensor.floatData
-            
-            // Diagnostic Probe of Data
-            NativeImageUtils.nativeProbePaddleResult(heatmap)
             
             // Zero-Copy Native Post-Processing (Phase 2)
             val tNativePost0 = System.nanoTime()

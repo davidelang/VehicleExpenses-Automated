@@ -208,8 +208,6 @@ object NativeImageUtils {
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
-    private external fun nativeProbePaddleResultJni(data: FloatArray): Float
-    private external fun nativeProbePaddleTensorJni(tensor: Any): Float
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
 
 }
