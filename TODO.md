@@ -84,12 +84,14 @@
     - [x] Split characters in `app/src/main/assets/paddle/digits_only.txt` to be one per line.
     - [x] Isolate processOcrNumeric and restore greedy digits constraint.
     - [x] Remove numeric confidence-drop truncation from shared processOcr.
-  - [ ] **ACTIVE: Restore Paddle Numeric Accuracy via Constrained Argmax (Approved 2026-05-30)**
-    - [ ] Remove `dictionaryNumeric` field and `digits_only.txt` load from `NativePaddleEngine.kt`
-    - [ ] Add `ALLOWED_DIGITS` and `ALLOWED_DIGITS_DECIMAL` constants to companion object
-    - [ ] Replace `searchLimit` scan in `processOcrNumeric` with constrained argmax over `allowedIndices`
-    - [ ] Update `processOcrNumeric` signature to accept `allowedIndices: Set<Int>`
-    - [ ] Update `recognizeNumeric` to pass `dictionaryV3, ALLOWED_DIGITS`
+  - [x] **DONE: Restore Paddle Numeric Accuracy via Constrained Argmax (Approved 2026-05-30)**
+    - [x] Remove `dictionaryNumeric` field and `digits_only.txt` load from `NativePaddleEngine.kt`
+    - [x] Add `ALLOWED_DIGITS` and `ALLOWED_DIGITS_DECIMAL` constants to companion object
+    - [x] Replace `searchLimit` scan in `processOcrNumeric` with constrained argmax over `allowedIndices`
+    - [x] Update `processOcrNumeric` signature to accept `allowedIndices: Set<Int>`
+    - [x] Update `recognizeNumeric` to pass `dictionaryV3, ALLOWED_DIGITS`
+  - [ ] **ACTIVE: Restore Paddle Numeric Parity via V3 Model Integration (Approved 2026-05-30)**
+    - [ ] Update `recognizeNumeric` in `NativePaddleEngine.kt` to pass `sharedRecognizerV3` instead of `sharedRecognizerNumeric`.
   - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
   - [ ] **Robust Paddle Deskew (Refinement 2.2):** Resolve "0.0 degree" swamping in noisy dashboards. Implement Cluster-Based Voting. See handover: `dev-ai-interaction/plans/DESKEW_HANDOVER.md`
   - [ ] Add rotational gating (±20°) to deskew logic.
