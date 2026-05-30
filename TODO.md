@@ -267,7 +267,15 @@
 - [x] Implement Variance-Based Expansion with Content Floor (See: plans/variance-expansion-with-floor.md)
 - [x] Standardize Sandbox Paths to Absolute (See: plans/standardize-sandbox-paths.md)
 - [x] Restore Lost Operational Mandates (See: plans/restore-mandates.md)
+- [x] Investigate and Verify Native Paddle Result Access (See: plans/investigate-native-paddle-access.md)
+- [x] Fix Native Coordinate Scaling and Confidence Calculation
+- [x] Implement Zero-Copy Native Heatmap Processing (Offload contour discovery to C++)
+- [ ] Final Cleanup of Diagnostic Probes (See: plans/cleanup-diagnostic-probes.md) [IN PROGRESS]
+- [x] Paddle C++ Parallel Execution & Verification (See: dev-ai-interaction/plans/recover-paddle-c-parallel-abi-fix.md)
+- [x] Compare Paddle Contour and ML Kit Skew Angles (See: dev-ai-interaction/plans/compare-paddle-mlkit-angles.md)
+- [x] Add Paddle Kotlin & C++ Skew Angles to JSON Report (See: dev-ai-interaction/plans/add-angles-to-json.md)
 - [ ] Height-Relative Expansion, Robust Mapping, and Raw Consolidation (See: plans/height-relative-expansion.md)
 - [ ] TODO: Investigate bimodal brightness-based stop logic for glare/shadow (e.g., look for brightness drop/climb)
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]
+- [ ] Spec Documentation and PR Cleanup (See: dev-ai-interaction/plans/pr_cleanup_plan.md) [IN PROGRESS]
 
