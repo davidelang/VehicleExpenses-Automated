@@ -10,6 +10,7 @@
 - [x] **Deskew Angle Normalization:** Implement normalization to [-45, 45] range in `OdometerOcrUtils` to unify ML Kit and Paddle outputs.
 - [x] **BufferSet Rotation Logic Switch:** Switch the BufferSet pipeline to use Paddle Mono deskew results for rotation in `ExperimentAlignmentScreen`.
 - [ ] **Deskew Forensic Logging:** Add text-block-level logging to the deskew stage and unify coordinate systems for forensic analysis.
+- [x] **DONE: Fix Gradle Version Name Calculation:** Explicitly set `workingDir = project.rootDir` in `app/build.gradle.kts`'s `versionName` execution provider to prevent git branch resolution issues when built via Gradle daemon.
 - [ ] **ACTIVE: Isotropic Coordinate System (ICRS) Migration**
 - [x] **DONE:** Finalize `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
 - [ ] **Phase 1: Codebase Audit & Dependency Mapping.** Identify all usages of `0-1f` normalization and landmark comparisons.

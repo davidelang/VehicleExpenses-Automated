@@ -15,6 +15,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = providers.exec {
+            workingDir = project.rootDir
             commandLine(
                 "bash",
                 "-c",
