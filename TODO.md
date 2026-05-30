@@ -90,8 +90,8 @@
     - [x] Replace `searchLimit` scan in `processOcrNumeric` with constrained argmax over `allowedIndices`
     - [x] Update `processOcrNumeric` signature to accept `allowedIndices: Set<Int>`
     - [x] Update `recognizeNumeric` to pass `dictionaryV3, ALLOWED_DIGITS`
-  - [ ] **ACTIVE: Restore Paddle Numeric Parity via V3 Model Integration (Approved 2026-05-30)**
-    - [ ] Update `recognizeNumeric` in `NativePaddleEngine.kt` to pass `sharedRecognizerV3` instead of `sharedRecognizerNumeric`.
+  - [x] **DONE: Restore Paddle Numeric Parity via V3 Model Integration (Approved 2026-05-30)**
+    - [x] Update `recognizeNumeric` in `NativePaddleEngine.kt` to pass `sharedRecognizerV3` instead of `sharedRecognizerNumeric`.
   - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
   - [ ] **Robust Paddle Deskew (Refinement 2.2):** Resolve "0.0 degree" swamping in noisy dashboards. Implement Cluster-Based Voting. See handover: `dev-ai-interaction/plans/DESKEW_HANDOVER.md`
   - [ ] Add rotational gating (±20°) to deskew logic.
