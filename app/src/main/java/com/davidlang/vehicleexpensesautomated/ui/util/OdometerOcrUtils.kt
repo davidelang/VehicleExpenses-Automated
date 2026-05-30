@@ -67,7 +67,7 @@ object OdometerOcrUtils {
         val t0 = System.currentTimeMillis()
         
         // 1. Unified Preparation (Bitmap or BufferSet.Slice)
-        val pTargetSize = 2500
+        val pTargetSize = 2048
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
         
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
@@ -230,7 +230,11 @@ object OdometerOcrUtils {
         // Paddle V3 (Legacy Kotlin Math)
         val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
         val clusteredBoxes = clusterRects(rawBlocks.map { it.boundingBox })
-        val blocks = clusteredBoxes.map { b -> TextBlock("", b, 0f) }
+        val blocks = clusteredBoxes.map { b ->
+            val constituent = rawBlocks.filter { r -> android.graphics.Rect.intersects(b, r.boundingBox) }
+            val avgAngle = if (constituent.isNotEmpty()) constituent.map { it.angle }.average().toFloat() else 0f
+            TextBlock("", b, avgAngle)
+        }
         
         val srcH = (pHeight / pScale).toInt()
         val angleV3 = calculateWeightedAverage(blocks, srcH)
@@ -238,7 +242,7 @@ object OdometerOcrUtils {
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
-        val pTargetSize = 2500
+        val pTargetSize = 2048
         val srcW: Int
         val srcH: Int
         when (input) {
