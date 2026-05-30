@@ -7,6 +7,7 @@
 ## Protocol Precedence (CRITICAL)
 Instructions in this file take absolute precedence. Speed achieved by bypassing protocol is a **High-Severity Performance Failure**.
 - **Linear History:** No `git commit --amend`.
+- **Per-Branch Tagging:** All lifecycle tags (`builds`, `deployed`, `works`) MUST be prefixed with the branch name (e.g., `feature-x/builds`) unless on the `master` branch.
 
 ## The Bi-Modal Workflow
 1. **PLANNING (Phase 1 & 2):** Research and propose a plan. 

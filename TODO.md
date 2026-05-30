@@ -217,7 +217,7 @@
 - [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.
 
 # TODO List
-- [/] **IN PROGRESS:** Merge PR `remove-dynamic-detect-test` (See: dev-ai-interaction/plans/merge-remove-dynamic-detect-test.md)
+- [x] Merge PR `remove-dynamic-detect-test` and implement standardized tagging/cleanup.
 - [x] Fix local.properties generation in setup_agent.sh (See: plans/fix-setup.md)
 - [x] Implement PR-emulation handoff workflow (See: plans/pr-emulation-workflow.md)
 - [x] Phase 117 Reversion: Remove `nativeHeatmapToTextAreas` (See: plans/revert-117-native-heatmap.md)
