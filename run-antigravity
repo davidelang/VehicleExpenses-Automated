@@ -10,6 +10,6 @@ echo "Launching Antigravity agent in $(pwd)..."
 echo "Sandbox path: $SANDBOX_DIR"
 
 exec /home/dlang/git/antigravity/agy \
-    -i "Read the file ./new_agent_prompt located in your current workspace root directory, and follow its instructions." \
+    -i "You are in a multi-workspace environment. The primary workspace is the agent worktree (e.g., agent-N or master), and the second workspace is the sandbox (dev-ai-interaction). Read the file ./new_agent_prompt in the agent worktree root directory and follow its instructions." \
     --add-dir "$SANDBOX_DIR" \
     "$@"
