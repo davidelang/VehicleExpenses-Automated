@@ -30,3 +30,5 @@
 - [ ] Height-Relative Expansion, Robust Mapping, and Raw Consolidation (See: plans/height-relative-expansion.md)
 - [ ] TODO: Investigate bimodal brightness-based stop logic for glare/shadow (e.g., look for brightness drop/climb)
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]
+- [ ] Spec Documentation and PR Cleanup (See: dev-ai-interaction/plans/pr_cleanup_plan.md) [IN PROGRESS]
+
