@@ -360,6 +360,69 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    private suspend fun processOcrNumeric(input: Any, predictor: PaddlePredictor?, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
+        val tStart = System.currentTimeMillis()
+        if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
+
+        val w: Int; val h: Int; val srcMat: Mat
+        when (input) {
+            is BufferSet.Slice -> { w = input.width; h = input.height; srcMat = input.mat }
+            is Mat -> { w = input.cols(); h = input.rows(); srcMat = input }
+            else -> throw IllegalArgumentException("Unsupported input type for processOcr")
+        }
+
+        if (w * h > 320 * 48) {
+             Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
+             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
+        }
+
+        val tPop0 = System.nanoTime()
+        bufferRec.fill(0.0f)
+        val mean = 0.5f; val std = 0.5f
+        NativeImageUtils.populateMonoTensor(srcMat, bufferRec, 320, 48, mean, std)
+        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
+
+        try {
+            val tJniIn0 = System.nanoTime()
+            predictor.getInput(0).setData(bufferRec)
+            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+
+            val tInfer0 = System.nanoTime()
+            predictor.run()
+            val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+
+            val tJniOut0 = System.nanoTime()
+            val outputTensor = predictor.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+            val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+
+            val meta = mapOf(
+                "t_pop_tensor_ms" to "%.3f".format(tPop),
+                "t_jni_in_ms" to "%.3f".format(tJniIn),
+                "t_inference_ms" to "%.3f".format(tInfer),
+                "t_jni_out_ms" to "%.3f".format(tJniOut)
+            )
+
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder()
+            var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
+
+            for (i in 0 until seqLen) {
+                var maxIdx = 0; var maxVal = -1f; val searchLimit = (dictionary.size + 1).coerceAtMost(dictSize)
+                for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
+                if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
+
+                    if (result.length < 4 || maxVal >= (0.60f * lastConf)) {
+                        result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++; lastConf = maxVal
+                    } else break
+                }
+                lastIdx = maxIdx
+            }
+            val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, meta)
+        } catch (t: Throwable) { 
+            return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
+        }
+    }
+
     data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null, val metadata: Map<String, String> = emptyMap())
     
     override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
@@ -398,7 +461,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = processOcr(input, sharedRecognizerNumeric, dictionaryNumeric)
+        val res = processOcrNumeric(input, sharedRecognizerNumeric, dictionaryNumeric)
         OcrResult(
             engineName = "Paddle Numeric Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
