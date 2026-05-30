@@ -274,7 +274,7 @@ object OdometerOcrUtils {
         val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
         val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pWidth, pHeight))
         
-        Imgproc.resize(grayMat, roiMat, roiMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+        Imgproc.resize(grayMat, roiMat, roiMat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
         
         val resizedArgb = Mat()
         Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
