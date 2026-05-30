@@ -279,9 +279,23 @@ private suspend fun runPumpExperiment(
                     val matrixLocal = android.graphics.Matrix(); matrixLocal.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
                     val values = FloatArray(9); matrixLocal.getValues(values)
                     val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
-                    rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble()); rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
-                    org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_CUBIC, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-                    set.flip(); rotMat.release()
+                    rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
+                    rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
+                    
+                    // Rotate Luma (Y)
+                    org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+
+                    // Rotate Chroma (UV)
+                    val srcUv = set.p.uvMat
+                    val dstUv = set.s.uvMat
+                    val uvScaleMat = rotMat.clone()
+                    // Shift translation for half-res UV plane
+                    uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
+                    uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
+                    org.opencv.imgproc.Imgproc.warpAffine(srcUv, dstUv, uvScaleMat, srcUv.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
+
+                    set.flip()
+                    rotMat.release(); uvScaleMat.release()
                 }
                 pRotate(workspace, tilt)
 
@@ -773,7 +787,8 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
          val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
          recBuffer.p.clear()
          val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
-         org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+         val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+         org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
          
          val res = if (engine == "ML Kit") {
              val nv21 = flattenToNv21(recBuffer.c[recCropId])
@@ -986,7 +1001,7 @@ private suspend fun pRunMLKitIterative(
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
-                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_CUBIC
+                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                 org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
             }
         }
