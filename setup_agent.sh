@@ -108,13 +108,15 @@ fi
 echo "Setup complete for $AGENT_ID."
 echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
 
-# 7. Optional: Start Gemini immediately if in an interactive terminal
+# 7. Optional: Start Agent session immediately if in an interactive terminal
 if [ -t 0 ]; then
     echo "Starting agent session..."
-    # Ensure we are in the correct directory even if logic above changed
-    #pwd;ls
-    #cd "$AGENT_ID" || exit 1
-    export GEMINI_PROJECT_ROOT=$(pwd)
-    exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions." --include-directories ~/git/VehicleExpenses-automated/dev-ai-interaction/
-
+    if [ -f "../run-antigravity" ]; then
+        exec ../run-antigravity
+    elif [ -f "../run-gemini" ]; then
+        exec ../run-gemini
+    else
+        export GEMINI_PROJECT_ROOT=$(pwd)
+        exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions." --include-directories ~/git/VehicleExpenses-automated/dev-ai-interaction/
+    fi
 fi

@@ -1,0 +1,15 @@
+#!/bin/bash
+# run-antigravity
+# Run script for the Antigravity agent CLI.
+
+# Determine the absolute project root (the directory containing this script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+
+echo "Launching Antigravity agent in $(pwd)..."
+echo "Sandbox path: $SANDBOX_DIR"
+
+exec /home/dlang/git/antigravity/agy \
+    -i "Read new_agent_prompt and follow its instructions." \
+    --add-dir "$SANDBOX_DIR" \
+    "$@"
