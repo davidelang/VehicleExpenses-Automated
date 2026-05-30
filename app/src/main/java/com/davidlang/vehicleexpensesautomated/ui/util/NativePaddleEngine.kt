@@ -24,7 +24,7 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
 class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
-    override val name = "Paddle $variant Greedy"
+    override val name = if (variant == "V3") "Paddle V3 Greedy" else "Paddle Numeric Greedy"
     fun isV3() = variant == "V3"
     
     data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val metadata: Map<String, String> = emptyMap())
@@ -185,7 +185,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 detectorSmall = sharedDetectorSmall
                 recognizer = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
                 isAvailable = true
-                loadDictionary("paddle/en_dict.txt")
+                val dictPath = if (variant == "V3") "paddle/en_dict.txt" else "paddle/digits_only.txt"
+                loadDictionary(dictPath)
             }
         } catch (e: Throwable) {
             isAvailable = false; initError = e.message
