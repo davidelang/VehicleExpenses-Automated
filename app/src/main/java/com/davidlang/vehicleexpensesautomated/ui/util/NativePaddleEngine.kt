@@ -243,13 +243,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
-            val heatmap = outputTensor.floatData
 
-            // Zero-Copy Native Post-Processing (Phase 2)
-
+            // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
+            // to avoid tensor pointer invalidation from Java-side copy
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+
+            val heatmap = outputTensor.floatData
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
@@ -318,12 +319,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
-            val heatmap = outputTensor.floatData
             
-            // Zero-Copy Native Post-Processing (Phase 2)
+            // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
+            // to avoid tensor pointer invalidation from Java-side copy
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+
+            val heatmap = outputTensor.floatData
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
