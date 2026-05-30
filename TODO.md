@@ -6,6 +6,9 @@
 - **Rule 4:** Exclusive use of `./build_app` for commits/builds.
 
 ## Infrastructure & Protocol
+- [ ] **Infrastructure Fix: Resolve Git Symlink Ambiguities and Worktree Path Resolution**
+  - [ ] Convert `build_app` and `deploy` from symlinks to regular executable files (`100755`) on `master`.
+  - [ ] Modify `setup_agent.sh` to name convenience symlinks with `.wt` suffix to prevent branch-name collision with Git revisions.
 - [x] **Documentation Restructuring & Policy Enforcement**
 - [x] **Deskew Angle Normalization:** Implement normalization to [-45, 45] range in `OdometerOcrUtils` to unify ML Kit and Paddle outputs.
 - [x] **BufferSet Rotation Logic Switch:** Switch the BufferSet pipeline to use Paddle Mono deskew results for rotation in `ExperimentAlignmentScreen`.

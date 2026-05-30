@@ -1,1 +1,88 @@
-../build_app
+#!/bin/bash
+
+# Enhanced build_app: Explicit Integrity & Detailed Summaries
+# Usage: ./build_app ["Commit Message" | "@msg_file.txt"] [file1 file2 ...]
+
+if [ "$#" -ge 1 ]; then
+    MSG_ARG="$1"
+    shift
+
+    # 1. Parse Message Content
+    if [[ "$MSG_ARG" == @* ]]; then
+        MSG_FILE="${MSG_ARG#@}"
+        if [ -f "$MSG_FILE" ]; then
+            COMMIT_MSG=$(cat "$MSG_FILE")
+        else
+            echo "Error: Message file '$MSG_FILE' not found."
+            exit 1
+        fi
+    else
+        COMMIT_MSG="$MSG_ARG"
+    fi
+
+    # 2. Add Specified Files Explicitly
+    # No implicit adds or wildcards allowed.
+    ADDED_COUNT=0
+    for file in "$@"; do
+        if [ -e "$file" ]; then
+            git add "$file"
+            ADDED_COUNT=$((ADDED_COUNT + 1))
+        else
+            echo "Warning: File '$file' not found. Skipping."
+        fi
+    done
+
+    # 3. Commit Phase
+    # Check for staged changes (either from args above or pre-staged)
+    STAGED_CHANGES=$(git diff --cached --name-only)
+    if [ -n "$STAGED_CHANGES" ]; then
+        if [ -n "$COMMIT_MSG" ]; then
+            git commit -m "$COMMIT_MSG"
+            if [ $? -ne 0 ]; then
+                echo "Error: Git commit failed."
+                exit 1
+            fi
+        else
+            echo "Error: Staged changes exist but no commit message provided."
+            exit 1
+        fi
+    else
+        if [ "$ADDED_COUNT" -gt 0 ]; then
+            echo "Error: Files provided but nothing to commit (already matches repo?)."
+            exit 1
+        fi
+        echo "Info: No new changes to commit. Proceeding to integrity check."
+    fi
+else
+    echo "Info: No arguments provided. Skipping commit phase."
+fi
+
+# 4. Integrity Barrier: Strict 'git describe' protection
+# Ensure NO modified tracked files remain. Everything MUST be in git.
+DIRTY_FILES=$(git status --porcelain -uno)
+if [ -n "$DIRTY_FILES" ]; then
+    echo "CRITICAL ERROR: Uncommitted tracked files detected:"
+    echo "$DIRTY_FILES"
+    echo "------------------------------------------------------------------"
+    echo "Every modified file MUST be explicitly added to the build command."
+    echo "Compile aborted to ensure accurate 'git describe' versioning."
+    exit 1
+fi
+
+# 5. Build Phase
+./gradlew assembleDebug
+if [ $? -eq 0 ]; then
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ "$CURRENT_BRANCH" == "master" ]; then
+        TAG_NAME="builds"
+    else
+        TAG_NAME="${CURRENT_BRANCH}/builds"
+    fi
+    echo "Build successful. Updating '$TAG_NAME' tag."
+    git tag -f "$TAG_NAME"
+    git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
+    exit 0
+else
+    echo "Build failed."
+    exit 1
+fi

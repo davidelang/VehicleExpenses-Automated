@@ -1,1 +1,52 @@
-../deploy
+#!/bin/bash
+
+# Usage: ./deploy [alias1 alias2 ...]
+# If no arguments are provided, it deploys to all connected devices.
+
+declare -A DEVICE_MAP
+DEVICE_MAP=(
+    ["tablet"]="emulator-5554"
+    ["emulator"]="emulator-5554"
+    # Add future physical devices here
+)
+
+OVERALL_SUCCESS=true
+
+if [ "$#" -eq 0 ]; then
+    echo "Deploying to all connected devices..."
+    ./gradlew installDebug
+    if [ $? -ne 0 ]; then
+        echo "Deployment failed."
+        OVERALL_SUCCESS=false
+    fi
+else
+    for TARGET in "$@"; do
+        # Resolve alias if it exists, otherwise use the target as the literal device ID
+        DEVICE_ID="${DEVICE_MAP[$TARGET]:-$TARGET}"
+        
+        echo "Deploying to $TARGET ($DEVICE_ID)..."
+        ANDROID_SERIAL="$DEVICE_ID" ./gradlew installDebug
+        
+        if [ $? -ne 0 ]; then
+            echo "Deployment to $TARGET ($DEVICE_ID) failed."
+            OVERALL_SUCCESS=false
+        fi
+        adb -s "$DEVICE_ID" logcat -c
+    done
+fi
+
+if [ "$OVERALL_SUCCESS" = true ]; then
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ "$CURRENT_BRANCH" == "master" ]; then
+        TAG_NAME="deployed"
+    else
+        TAG_NAME="${CURRENT_BRANCH}/deployed"
+    fi
+    echo "All deployments successful. Updating '$TAG_NAME' tag."
+    git tag -f "$TAG_NAME"
+    git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe --always
+    exit 0
+else
+    echo "One or more deployments failed. The 'deployed' tag was NOT updated."
+    exit 1
+fi
