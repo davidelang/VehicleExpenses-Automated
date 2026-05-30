@@ -33,9 +33,9 @@ if [ -d "$TARGET" ] && [ ! -L "$TARGET" ]; then
     WORKTREE_DIR="$TARGET"
     BRANCH_NAME=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
 elif [ -L "$TARGET" ]; then
-    # TARGET is a symlink (the branch name)
+    # TARGET is a symlink (branch-name.wt or legacy branch-name)
     WORKTREE_DIR=$(readlink "$TARGET")
-    BRANCH_NAME="$TARGET"
+    BRANCH_NAME="${TARGET%.wt}"
 else
     # TARGET might be a branch name without a symlink
     BRANCH_NAME="$TARGET"
@@ -99,7 +99,10 @@ if [ $? -ne 0 ]; then
 fi
 
 # 5. Cleanup Symlinks
-if [ -L "$BRANCH_NAME" ]; then
+if [ -L "${BRANCH_NAME}.wt" ]; then
+    echo "Removing symlink '${BRANCH_NAME}.wt'..."
+    rm "${BRANCH_NAME}.wt"
+elif [ -L "$BRANCH_NAME" ]; then
     echo "Removing symlink '$BRANCH_NAME'..."
     rm "$BRANCH_NAME"
 fi
