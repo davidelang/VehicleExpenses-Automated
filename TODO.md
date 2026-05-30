@@ -77,13 +77,19 @@
 
 - **OCR Engine Stabilization (Active):**
   - [ ] **Phase 62: Robust Alignment & Contrast Stretching**
-  - [ ] **ACTIVE: Restore Deskew Parity & Fix ML Kit Accuracy drop (Strategy Approved 2026-05-30)**
+  - [x] **DONE: Restore Deskew Parity & Fix ML Kit Accuracy drop (Strategy Approved 2026-05-30)**
     - [x] Revert `OdometerOcrUtils.kt` downscaling resize interpolation from `INTER_LINEAR` to `INTER_AREA`.
     - [x] In `OdometerOcrUtils.kt`'s `deskewPaddleDual`, restore raw block angles to clustered blocks instead of forcing them to `0f`.
-  - [ ] **ACTIVE: Fix Paddle Numeric Greedy OCR Collapse (Approved 2026-05-30)**
+  - [x] **DONE: Fix Paddle Numeric Greedy OCR Collapse (Approved 2026-05-30)**
     - [x] Split characters in `app/src/main/assets/paddle/digits_only.txt` to be one per line.
     - [x] Isolate processOcrNumeric and restore greedy digits constraint.
     - [x] Remove numeric confidence-drop truncation from shared processOcr.
+  - [ ] **ACTIVE: Restore Paddle Numeric Accuracy via Constrained Argmax (Approved 2026-05-30)**
+    - [ ] Remove `dictionaryNumeric` field and `digits_only.txt` load from `NativePaddleEngine.kt`
+    - [ ] Add `ALLOWED_DIGITS` and `ALLOWED_DIGITS_DECIMAL` constants to companion object
+    - [ ] Replace `searchLimit` scan in `processOcrNumeric` with constrained argmax over `allowedIndices`
+    - [ ] Update `processOcrNumeric` signature to accept `allowedIndices: Set<Int>`
+    - [ ] Update `recognizeNumeric` to pass `dictionaryV3, ALLOWED_DIGITS`
   - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
   - [ ] **Robust Paddle Deskew (Refinement 2.2):** Resolve "0.0 degree" swamping in noisy dashboards. Implement Cluster-Based Voting. See handover: `dev-ai-interaction/plans/DESKEW_HANDOVER.md`
   - [ ] Add rotational gating (±20°) to deskew logic.
