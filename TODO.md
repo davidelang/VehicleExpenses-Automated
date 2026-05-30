@@ -83,6 +83,7 @@
   - [ ] **ACTIVE: Fix Paddle Numeric Greedy OCR Collapse (Approved 2026-05-30)**
     - [x] Split characters in `app/src/main/assets/paddle/digits_only.txt` to be one per line.
     - [x] Isolate processOcrNumeric and restore greedy digits constraint.
+    - [x] Remove numeric confidence-drop truncation from shared processOcr.
   - [ ] Implement Width-Weighted Median Deskewing in `OdometerOcrUtils.kt`.
   - [ ] **Robust Paddle Deskew (Refinement 2.2):** Resolve "0.0 degree" swamping in noisy dashboards. Implement Cluster-Based Voting. See handover: `dev-ai-interaction/plans/DESKEW_HANDOVER.md`
   - [ ] Add rotational gating (±20°) to deskew logic.
