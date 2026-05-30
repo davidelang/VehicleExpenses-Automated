@@ -23,12 +23,10 @@ import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
-class NativePaddleEngine(private val context: Context, private val variant: String = "V3") : OcrEngine {
-    override val name = if (variant == "V3") "Paddle V3 Greedy" else "Paddle Numeric Greedy"
-    fun isV3() = variant == "V3"
+class NativePaddleEngine(private val context: Context) : OcrEngine {
+    override val name = "Paddle V3 Greedy"
     
     data class DetectionResult(val heatmap: FloatArray, val width: Int, val height: Int, val metadata: Map<String, String> = emptyMap())
-    private val dictionary = mutableListOf<String>()
     private var initError: String? = null
     var isAvailable = false
         private set
@@ -36,7 +34,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     // Predictors anchored to instance lifecycle
     private var detectorLarge: PaddlePredictor? = null
     private var detectorSmall: PaddlePredictor? = null
-    private var recognizer: PaddlePredictor? = null
 
     companion object {
         var isAvailableGlobally = false; private set
@@ -46,6 +43,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var sharedRecognizerNumeric: PaddlePredictor? = null
         
         private var isNativeLibLoaded = false
+        private val dictionaryV3 = mutableListOf<String>()
+        private val dictionaryNumeric = mutableListOf<String>()
 
         // Phase 125: Multi-Tier Predictor Array
         val TIER_SCALES = listOf(224, 608, 1024, 2048, 2560)
@@ -141,7 +140,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             try {
                 System.loadLibrary("paddle_lite_jni")
                 val arch = if (Build.SUPPORTED_ABIS[0].contains("arm")) "armv8" else "x86_64"
-                val tLib = System.currentTimeMillis() - (tStart + tBuffers)
                 
                 fun copy(p: String): String {
                     val f = File(context.filesDir, p.replace("/", "_"))
@@ -171,10 +169,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 config.setModelFromFile(copy("paddle/rec_v3_mono_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
                 
+                loadDictionary(context, "paddle/en_dict.txt", dictionaryV3)
+                loadDictionary(context, "paddle/digits_only.txt", dictionaryNumeric)
+
                 Log.i("PaddleLite", "Total Global Init: ${System.currentTimeMillis() - tStart}ms")
                 
                 isAvailableGlobally = true
             } catch (e: Exception) { Log.e("PaddleLite", "Failed Global Init", e) }
+        }
+
+        private fun loadDictionary(context: Context, assetPath: String, target: MutableList<String>) {
+            target.clear()
+            context.assets.open(assetPath).bufferedReader().use { reader -> 
+                reader.forEachLine { target.add(it) } 
+            }
         }
     }
     
@@ -183,25 +191,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             if (isAvailableGlobally) {
                 detectorLarge = sharedDetectorLarge
                 detectorSmall = sharedDetectorSmall
-                recognizer = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
                 isAvailable = true
-                val dictPath = if (variant == "V3") "paddle/en_dict.txt" else "paddle/digits_only.txt"
-                loadDictionary(dictPath)
             }
         } catch (e: Throwable) {
             isAvailable = false; initError = e.message
             Log.e("PaddleLite", "Failed to initialize engine instance", e)
         }
     }
-
-    private fun loadDictionary(assetPath: String) {
-        dictionary.clear()
-        context.assets.open(assetPath).bufferedReader().use { reader -> 
-            reader.forEachLine { dictionary.add(it) } 
-        }
-    }
-    
-    fun getDictionary(): List<String> = dictionary
 
     fun detect(input: Any, targetW: Int? = null, targetH: Int? = null): DetectionResult? {
         val tPop0 = System.nanoTime()
@@ -259,18 +255,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     fun detectMat(srcMat: Mat): DetectionResult? {
         if (!isAvailable) return null
         val predictor = detectorLarge ?: return null
-        
-        val w = srcMat.cols()
-        val h = srcMat.rows()
+        val t0 = System.currentTimeMillis()
+        val w = srcMat.cols(); val h = srcMat.rows()
         
         val tPop0 = System.nanoTime()
         val floatData = FloatArray(w * h)
-        val mean = 0.485f
-        val std = 0.229f
-        
-        NativeImageUtils.populateMonoTensor(srcMat, floatData, w, h, mean, std)
+        NativeImageUtils.populateMonoTensor(srcMat, floatData, w, h, 0.485f, 0.229f)
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
-        
+
         try {
             val tJniIn0 = System.nanoTime()
             val inputTensor = predictor.getInput(0)
@@ -283,18 +275,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
-            val outputTensor = predictor.getOutput(0)
-            val dims = outputTensor.shape()
+            val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
             val heatmap = outputTensor.floatData
-            
-            var minVal = Float.MAX_VALUE
-            var maxVal = Float.MIN_VALUE
-            for (v in heatmap) {
-                if (v < minVal) minVal = v
-                if (v > maxVal) maxVal = v
-            }
-            Log.i("PaddleDetect", "detectMat Out: dims=${dims.joinToString("x")} size=${heatmap.size} min=$minVal max=$maxVal")
-            
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
@@ -311,15 +293,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
-    suspend fun runConstrainedStatic(input: Any, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
+    private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
-        if (recognizer == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
+        if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
 
         val w: Int; val h: Int; val srcMat: Mat
         when (input) {
             is BufferSet.Slice -> { w = input.width; h = input.height; srcMat = input.mat }
             is Mat -> { w = input.cols(); h = input.rows(); srcMat = input }
-            else -> throw IllegalArgumentException("Unsupported input type for runConstrainedStatic")
+            else -> throw IllegalArgumentException("Unsupported input type for processOcr")
         }
 
         if (w * h > 320 * 48) {
@@ -335,15 +317,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         try {
             val tJniIn0 = System.nanoTime()
-            recognizer!!.getInput(0).setData(bufferRec)
+            predictor.getInput(0).setData(bufferRec)
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
-            recognizer!!.run()
+            predictor.run()
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
-            val outputTensor = recognizer!!.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
+            val outputTensor = predictor.getOutput(0); val data = outputTensor.floatData; val dims = outputTensor.shape()
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
@@ -375,10 +357,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null, val metadata: Map<String, String> = emptyMap())
+    
     override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
-        val predictor = recognizer ?: return@withContext OcrResult(engineName = name, debugText = "Predictor null")
-
         val w: Int; val h: Int
         when (input) {
             is Bitmap -> { w = input.width; h = input.height }
@@ -389,9 +370,33 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = runConstrainedStatic(input, dictionary)
+        val res = processOcr(input, sharedRecognizerV3, dictionaryV3)
         OcrResult(
-            engineName = name,
+            engineName = "Paddle V3 Greedy",
+            executionTimeMs = System.currentTimeMillis() - t0,
+            debugText = res.text,
+            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h))),
+            imageWidth = w,
+            imageHeight = h,
+            metadata = res.metadata
+        )
+    }
+
+    suspend fun recognizeNumeric(input: Any): OcrResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val w: Int; val h: Int
+        when (input) {
+            is Bitmap -> { w = input.width; h = input.height }
+            is BufferSet.Slice -> { w = input.width; h = input.height }
+            is Mat -> { w = input.cols(); h = input.rows() }
+            else -> throw IllegalArgumentException("Unsupported input type for recognizeNumeric")
+        }
+
+        if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
+
+        val res = processOcr(input, sharedRecognizerNumeric, dictionaryNumeric)
+        OcrResult(
+            engineName = "Paddle Numeric Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
             debugText = res.text,
             textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h))),
