@@ -31,12 +31,12 @@ if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
 else
     # Create from current master
     git worktree add "$AGENT_ID" -b "$BRANCH_NAME" master
-    # Create an annotated tag for git describe to anchor on
+    # Create a lightweight tag for git describe to anchor on
     if git rev-parse "${BRANCH_NAME}-start" >/dev/null 2>&1; then
         echo "Versioning tag ${BRANCH_NAME}-start already exists. Skipping creation."
     else
-        echo "Creating annotated tag ${BRANCH_NAME}-start for versioning..."
-        git tag -a "${BRANCH_NAME}-start" "$BRANCH_NAME" -m "Start of feature branch $BRANCH_NAME"
+        echo "Creating lightweight tag ${BRANCH_NAME}-start for versioning..."
+        git tag "${BRANCH_NAME}-start" "$BRANCH_NAME"
     fi
 fi
 
@@ -82,6 +82,14 @@ chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml
 echo "Setting up sandbox symlink..."
 ln -s ../dev-ai-interaction dev-ai-interaction
 
+# 5b. Copy local.properties for Android builds
+echo "Setting up local.properties..."
+if [ -f "../master/local.properties" ]; then
+    cp ../master/local.properties local.properties
+elif [ -f "../local.properties" ]; then
+    cp ../local.properties local.properties
+fi
+
 # 6. Initialize AGENT_CONTEXT.md
 echo "Initializing AGENT_CONTEXT.md..."
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
@@ -100,11 +108,15 @@ fi
 echo "Setup complete for $AGENT_ID."
 echo "Agent can begin work via: cd $AGENT_ID (or cd $BRANCH_NAME)"
 
-# 7. Optional: Start Gemini immediately if in an interactive terminal
+# 7. Optional: Start Agent session immediately if in an interactive terminal
 if [ -t 0 ]; then
     echo "Starting agent session..."
-    # Ensure we are in the correct directory even if logic above changed
-    cd "$AGENT_ID" || exit 1
-    export GEMINI_PROJECT_ROOT=$(pwd)
-    exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions."
+    if [ -f "../run-antigravity" ]; then
+        exec ../run-antigravity
+    elif [ -f "../run-gemini" ]; then
+        exec ../run-gemini
+    else
+        export GEMINI_PROJECT_ROOT=$(pwd)
+        exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions." --include-directories ~/git/VehicleExpenses-automated/dev-ai-interaction/
+    fi
 fi
