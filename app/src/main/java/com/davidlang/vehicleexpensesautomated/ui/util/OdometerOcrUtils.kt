@@ -227,14 +227,30 @@ object OdometerOcrUtils {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
         val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return EngineResult(0f, emptyList())
         
+        // Parallel Angle Calculation
+        val tAngleCpp0 = System.currentTimeMillis()
+        val cppAngle = NativeImageUtils.heatmapToAngle(det.heatmap, det.width, det.height, 0.20f)
+        val tAngleCpp = System.currentTimeMillis() - tAngleCpp0
+
         // Paddle V3 (Legacy Kotlin Math)
-        val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None")
+        val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, "None", det.nativeBoxes, det.metadata["t_native_post_ms"])
         val clusteredBoxes = clusterRects(rawBlocks.map { it.boundingBox })
         val blocks = clusteredBoxes.map { b -> TextBlock("", b, 0f) }
         
         val srcH = (pHeight / pScale).toInt()
+        val tAngleKt0 = System.currentTimeMillis()
         val angleV3 = calculateWeightedAverage(blocks, srcH)
-        return EngineResult(angleV3, emptyList(), blocks, det.metadata)
+        val tAngleKt = System.currentTimeMillis() - tAngleKt0
+
+        Log.i("PaddleParallel", "Angle Comparison:")
+        Log.i("PaddleParallel", "  Kotlin: $angleV3 (in ${tAngleKt}ms)")
+        Log.i("PaddleParallel", "  C++:    $cppAngle (in ${tAngleCpp}ms)")
+
+        val newMeta = det.metadata.toMutableMap()
+        newMeta["paddle_cpp_angle"] = cppAngle.toString()
+        newMeta["t_angle_cpp_ms"] = tAngleCpp.toString()
+        
+        return EngineResult(angleV3, emptyList(), blocks, newMeta)
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
@@ -742,9 +758,53 @@ object OdometerOcrUtils {
      */
     fun processPaddleHeatmap(
         heatmap: FloatArray, w: Int, h: Int, scale: Float, 
-        sourceBuffer: Any, algorithm: String = "Native"
+        sourceBuffer: Any, algorithm: String = "Native",
+        nativeBoxes: List<NativePaddleEngine.DetectionBox>? = null,
+        nativePostMs: String? = null
     ): List<TextBlock> {
-        return processPaddleHeatmapLegacy(heatmap, w, h, scale)
+        val t0 = System.currentTimeMillis()
+        val legacyBlocks = processPaddleHeatmapLegacy(heatmap, w, h, scale)
+        val tKotlin = System.currentTimeMillis() - t0
+        
+        if (nativeBoxes != null) {
+            val invScale = 1.0f / scale
+            var totalIou = 0f
+            var matches = 0
+            
+            val cppRects = nativeBoxes.map { box ->
+                val points = box.points
+                val minX = kotlin.math.min(kotlin.math.min(points[0], points[2]), kotlin.math.min(points[4], points[6])) * invScale
+                val minY = kotlin.math.min(kotlin.math.min(points[1], points[3]), kotlin.math.min(points[5], points[7])) * invScale
+                val maxX = kotlin.math.max(kotlin.math.max(points[0], points[2]), kotlin.math.max(points[4], points[6])) * invScale
+                val maxY = kotlin.math.max(kotlin.math.max(points[1], points[3]), kotlin.math.max(points[5], points[7])) * invScale
+                android.graphics.Rect(minX.toInt(), minY.toInt(), maxX.toInt(), maxY.toInt())
+            }
+            val kotlinRects = legacyBlocks.map { it.boundingBox }
+            
+            for (kRect in kotlinRects) {
+                var maxIou = 0f
+                for (cRect in cppRects) {
+                    val interL = kotlin.math.max(kRect.left, cRect.left)
+                    val interT = kotlin.math.max(kRect.top, cRect.top)
+                    val interR = kotlin.math.min(kRect.right, cRect.right)
+                    val interB = kotlin.math.min(kRect.bottom, cRect.bottom)
+                    val interArea = kotlin.math.max(0, interR - interL) * kotlin.math.max(0, interB - interT)
+                    val unionArea = kRect.width() * kRect.height() + cRect.width() * cRect.height() - interArea
+                    val iou = if (unionArea > 0) interArea.toFloat() / unionArea.toFloat() else 0f
+                    if (iou > maxIou) maxIou = iou
+                }
+                if (maxIou > 0.5f) matches++
+                totalIou += maxIou
+            }
+            val avgIou = if (kotlinRects.isNotEmpty()) totalIou / kotlinRects.size else 0f
+            
+            Log.i("PaddleParallel", "Heatmap Comparison:")
+            Log.i("PaddleParallel", "  Kotlin: ${kotlinRects.size} boxes in ${tKotlin}ms")
+            Log.i("PaddleParallel", "  C++:    ${cppRects.size} boxes in ${nativePostMs ?: "N/A"}ms")
+            Log.i("PaddleParallel", "  Matches: $matches (Avg IoU: $avgIou)")
+        }
+        
+        return legacyBlocks
     }
 
     private fun processPaddleHeatmapLegacy(
