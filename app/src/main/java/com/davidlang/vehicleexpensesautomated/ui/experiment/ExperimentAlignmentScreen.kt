@@ -624,6 +624,7 @@ private fun serializePhotoResultToJson(
                 putSafe("w", block.boundingBox.width().toDouble() / safeS, "")
                 putSafe("h", block.boundingBox.height().toDouble() / safeS, "")
                 putSafe("angle", block.angle.toDouble(), "")
+                putSafe("confidence", block.confidence.toDouble(), "")
                 put("is_icrs", true)
             })
         }
@@ -639,10 +640,19 @@ private fun serializePhotoResultToJson(
                 putSafe("w", block.boundingBox.width().toDouble() / safeS, "")
                 putSafe("h", block.boundingBox.height().toDouble() / safeS, "")
                 putSafe("angle", block.angle.toDouble(), "")
+                putSafe("confidence", block.confidence.toDouble(), "")
                 put("is_icrs", true)
             })
         }
         put("deskew_data_paddle", pdArray)
+
+        val heatmapJson = JSONArray()
+        deskewResA?.paddleHeatmap?.forEach { value ->
+            heatmapJson.put(value.toDouble())
+        }
+        put("paddle_heatmap", heatmapJson)
+        put("paddle_heatmap_width", deskewResA?.paddleHeatmapWidth ?: 0)
+        put("paddle_heatmap_height", deskewResA?.paddleHeatmapHeight ?: 0)
 
         val landmarksArray = JSONArray()
         photoResult.pathways["set_a"]?.discoveryResult?.textBlocks?.forEach { block -> 

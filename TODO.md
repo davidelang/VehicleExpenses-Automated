@@ -279,4 +279,9 @@
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]
 - [ ] Spec Documentation and PR Cleanup (See: dev-ai-interaction/plans/pr_cleanup_plan.md) [IN PROGRESS]
 - [ ] Restore Correct Coordinate Scaling (No-Stretch) for Native and Legacy Paddle (See: dev-ai-interaction/plans/restore-coordinate-scaling.md) [ACTIVE]
-
+- [ ] **Paddle & ML Kit Deskew Confidence & Heatmap Export:**
+  - [ ] Retrieve ML Kit confidence from element levels and assign it to TextBlocks.
+  - [ ] Implement mask-based mean confidence calculation for Paddle contours on the heatmap.
+  - [ ] Propagate confidence scores during Paddle block clustering.
+  - [ ] Capture the raw Paddle heatmap array and its dimensions.
+  - [ ] Export text blocks' confidence and the Paddle heatmap array to the JSON report.

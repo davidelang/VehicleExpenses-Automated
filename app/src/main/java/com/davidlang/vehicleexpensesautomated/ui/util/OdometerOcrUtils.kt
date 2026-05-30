@@ -49,7 +49,15 @@ object OdometerOcrUtils {
         }
     }
 
-    data class EngineResult(val angle: Float, val timesMs: List<Long>, val blocks: List<TextBlock> = emptyList(), val metadata: Map<String, String> = emptyMap())
+    data class EngineResult(
+        val angle: Float, 
+        val timesMs: List<Long>, 
+        val blocks: List<TextBlock> = emptyList(), 
+        val metadata: Map<String, String> = emptyMap(),
+        val heatmap: FloatArray? = null,
+        val heatmapWidth: Int = 0,
+        val heatmapHeight: Int = 0
+    )
     data class DeskewResult(
         val angle: Float, 
         val mlAngle: Float, 
@@ -60,7 +68,10 @@ object OdometerOcrUtils {
         val paddleBlocks: List<TextBlock> = emptyList(), 
         
         val engines: Map<String, EngineResult> = emptyMap(),
-        val metadata: Map<String, String> = emptyMap()
+        val metadata: Map<String, String> = emptyMap(),
+        val paddleHeatmap: FloatArray? = null,
+        val paddleHeatmapWidth: Int = 0,
+        val paddleHeatmapHeight: Int = 0
     )
 
     suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
@@ -136,7 +147,10 @@ object OdometerOcrUtils {
             mlBlocks = mlRes.blocks,
             paddleBlocks = pdRes.blocks,
             engines = results,
-            metadata = mapOf("t_prep_ms" to tPrep.toString())
+            metadata = mapOf("t_prep_ms" to tPrep.toString()),
+            paddleHeatmap = pdRes.heatmap,
+            paddleHeatmapWidth = pdRes.heatmapWidth,
+            paddleHeatmapHeight = pdRes.heatmapHeight
         )
     }
 
@@ -260,7 +274,12 @@ object OdometerOcrUtils {
             } else {
                 0f
             }
-            TextBlock("", b, avgAngle)
+            val maxConfidence = if (matchingBlocks.isNotEmpty()) {
+                matchingBlocks.map { it.confidence }.maxOrNull() ?: 0.0f
+            } else {
+                0.0f
+            }
+            TextBlock("", b, avgAngle, confidence = maxConfidence)
         }
         
         val srcH = (pHeight / pScale).toInt()
@@ -276,7 +295,7 @@ object OdometerOcrUtils {
         newMeta["paddle_cpp_angle"] = cppAngle.toString()
         newMeta["t_angle_cpp_ms"] = tAngleCpp.toString()
         
-        return EngineResult(angleV3, emptyList(), blocks, newMeta)
+        return EngineResult(angleV3, emptyList(), blocks, newMeta, heatmap = det.heatmap, heatmapWidth = det.width, heatmapHeight = det.height)
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
@@ -340,7 +359,8 @@ object OdometerOcrUtils {
                         val hunk = element.text
                         val box = element.boundingBox
                         if (box != null) {
-                            blocks.add(TextBlock(hunk, box, line.angle))
+                            val confidence = element.confidence ?: 0f
+                            blocks.add(TextBlock(hunk, box, line.angle, confidence = confidence))
                             text.append(hunk).append(" ")
                         }
                     }
@@ -902,7 +922,43 @@ object OdometerOcrUtils {
                 )
                 
                 val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
-                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints))
+                val rect = rotatedRect.boundingRect()
+                val rx = rect.x.coerceIn(0, w - 1)
+                val ry = rect.y.coerceIn(0, h - 1)
+                val rw = rect.width.coerceAtMost(w - rx)
+                val rh = rect.height.coerceAtMost(h - ry)
+                
+                var confidence = 0.0f
+                if (rw > 0 && rh > 0) {
+                    val subMask = Mat.zeros(rh, rw, CvType.CV_8U)
+                    val shiftedContourPoints = contour.toArray().map { org.opencv.core.Point(it.x - rx, it.y - ry) }
+                    val localContour = org.opencv.core.MatOfPoint(*shiftedContourPoints.toTypedArray())
+                    Imgproc.drawContours(subMask, listOf(localContour), -1, org.opencv.core.Scalar(255.0), -1)
+                    
+                    var sum = 0.0
+                    var count = 0
+                    val maskBytes = ByteArray(rw * rh)
+                    subMask.get(0, 0, maskBytes)
+                    
+                    for (dy in 0 until rh) {
+                        val cy = ry + dy
+                        for (dx in 0 until rw) {
+                            val cx = rx + dx
+                            val maskVal = maskBytes[dy * rw + dx].toInt() and 0xFF
+                            if (maskVal > 0) {
+                                sum += heatmap[cy * w + cx]
+                                count++
+                            }
+                        }
+                    }
+                    if (count > 0) {
+                        confidence = (sum / count).toFloat()
+                    }
+                    localContour.release()
+                    subMask.release()
+                }
+                
+                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints, confidence = confidence))
             }
         } finally {
             mask.release(); hierarchy.release(); contours.forEach { it.release() }
