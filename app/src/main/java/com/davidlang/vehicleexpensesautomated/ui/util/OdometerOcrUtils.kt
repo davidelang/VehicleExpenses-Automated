@@ -117,6 +117,15 @@ object OdometerOcrUtils {
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
         
         bufferSet.c[outerId].release()
+
+        val mlAngle = mlRes.angle
+        val paddleKtAngle = pdRes.angle
+        val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
+
+        Log.i("PaddleParallel", "Angle Consensus Triple:")
+        Log.i("PaddleParallel", "  ML Kit: $mlAngle")
+        Log.i("PaddleParallel", "  Paddle Kotlin: $paddleKtAngle")
+        Log.i("PaddleParallel", "  Paddle C++:    $paddleCppAngle")
         
         return DeskewResult(
             angle = mlRes.angle.coerceIn(-20f, 20f), 
@@ -236,7 +245,22 @@ object OdometerOcrUtils {
         // Pass resizedMat instead of "None" so processPaddleHeatmap can resolve the scaleX factor
         val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, resizedMat, algorithm = "Native", nativeBoxes = det.nativeBoxes, nativePostMs = det.metadata["t_native_post_ms"])
         val clusteredBoxes = clusterRects(rawBlocks.map { it.boundingBox })
-        val blocks = clusteredBoxes.map { b -> TextBlock("", b, 0f) }
+        val blocks = clusteredBoxes.map { b ->
+            val matchingBlocks = rawBlocks.filter { rb ->
+                val interL = kotlin.math.max(b.left, rb.boundingBox.left)
+                val interT = kotlin.math.max(b.top, rb.boundingBox.top)
+                val interR = kotlin.math.min(b.right, rb.boundingBox.right)
+                val interB = kotlin.math.min(b.bottom, rb.boundingBox.bottom)
+                val interArea = kotlin.math.max(0, interR - interL) * kotlin.math.max(0, interB - interT)
+                interArea > 0
+            }
+            val avgAngle = if (matchingBlocks.isNotEmpty()) {
+                matchingBlocks.map { it.angle }.average().toFloat()
+            } else {
+                0f
+            }
+            TextBlock("", b, avgAngle)
+        }
         
         val srcH = (pHeight / pScale).toInt()
         val tAngleKt0 = System.currentTimeMillis()
