@@ -787,7 +787,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     // 2. Thresholding
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask;
-    cv::threshold(heatmap, mask, threshold, 255, cv::THRESH_BINARY);
+    cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
     mask.convertTo(mask, CV_8U);
 
     // 3. Contour Discovery
@@ -807,18 +807,23 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         cv::Point2f vertices[4];
         rect.points(vertices);
 
-        // Calculate average confidence
+        // Calculate average confidence within the rotated rect's bounding box
         cv::Rect bBox = rect.boundingRect();
-        bBox &= cv::Rect(0, 0, w, h);
+        // Clamp to heatmap dimensions
+        int bx1 = std::max(0, bBox.x);
+        int by1 = std::max(0, bBox.y);
+        int bx2 = std::min(w, bBox.x + bBox.width);
+        int by2 = std::min(h, bBox.y + bBox.height);
         
         float avgConf = 0;
-        if (bBox.area() > 0) {
-            cv::Mat roi = heatmap(bBox);
+        if (bx2 > bx1 && by2 > by1) {
+            cv::Mat roi = heatmap(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
             cv::Scalar meanVal = cv::mean(roi);
             avgConf = (float)meanVal[0];
         }
 
         // Pack [x1, y1, x2, y2, x3, y3, x4, y4, conf]
+        // These are raw heatmap pixel coordinates
         for (int i = 0; i < 4; ++i) {
             results.push_back(vertices[i].x);
             results.push_back(vertices[i].y);
