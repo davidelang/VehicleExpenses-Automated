@@ -192,7 +192,7 @@ private suspend fun runExperiment(
     
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-    val paddleEngine = NativePaddleEngine(context, variant = "Numeric")
+    val paddleEngine = NativePaddleEngine(context)
 
     val cachedRefs = vehicles.map { vehicle ->
         val bmp = OdometerOcrUtils.decodeBitmapSafely(context, vehicle.referenceDashPhotoUrl!!) 
@@ -469,11 +469,11 @@ private suspend fun runExperiment(
                         // --- Sequential Execution (Phase 116 Restoration & Fixes) ---
                         // Path A
                         runMLKitIterative("Set A ML", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, experimentRecSet320x48, hA, refinementTracesA)
-                        runPaddleValleyIterative("Set A Paddle", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hA, refinementTracesA)
+                        runPaddleValleyIterative("Set A Paddle", NativePaddleEngine.bufferSetA, imgW, imgH, winnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hA, refinementTracesA, isNumeric = true)
 
                         // Path B
                         runMLKitIterative("Set B ML", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, experimentRecSet320x48, hB, refinementTracesB)
-                        runPaddleValleyIterative("Set B Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hB, refinementTracesB)
+                        runPaddleValleyIterative("Set B Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hB, refinementTracesB, isNumeric = true)
                     }
                     
                     val allResults = refinementTracesA.values.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
@@ -1009,8 +1009,8 @@ private suspend fun runPaddleValleyIterative(
             odoBuffer.c[rSrcId].release()
             experimentRecSet320x48.c[rCrId].release()
             
-            val ocrR = paddleEngine.runConstrainedStatic(experimentRecSet320x48.p, paddleEngine.getDictionary())
-            if (ocrR.text.isNotBlank()) { odoB.append(ocrR.text).append(" "); fBoxes.add(box) }
+            val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+            if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
             ocrR.metadata.forEach { (k, v) -> jMeta.addProperty(k, v) }
         }
         
