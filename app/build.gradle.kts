@@ -18,7 +18,7 @@ android {
             commandLine(
                 "bash",
                 "-c",
-                "BRANCH_NAME=\${'$'}(git rev-parse --abbrev-ref HEAD) && (git describe --tags --match \"\${'$'}{BRANCH_NAME}-start\" 2>/dev/null || git describe --always)"
+                "BRANCH_NAME=${'$'}(git rev-parse --abbrev-ref HEAD) && (git describe --tags --match \"${'$'}{BRANCH_NAME}-start\" 2>/dev/null || git describe --always)"
             )
         }.standardOutput.asText.get().trim()
         buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
