@@ -632,37 +632,50 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     cv::Mat heatmap(h, w, CV_32F, heatmapData);
     cv::Mat mask = heatmap > threshold;
 
-    std::vector<std::vector<cv::Point>> contours;
-    std::vector<cv::Vec4i> hierarchy;
-    cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    cv::Mat labels, stats, centroids;
+    int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
 
-    if (contours.empty()) {
+    if (numLabels <= 1) {
         env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
         return 0.0f;
     }
 
     // Weighted Consensus Voting (0.5 degree buckets)
     std::map<int, double> buckets;
-    for (const auto& contour : contours) {
-        if (cv::contourArea(contour) < 10) continue;
-        cv::RotatedRect rrect = cv::minAreaRect(contour);
-        float angle = calculateAngle(rrect);
-        
-        // Calculate Confidence: Mean heatmap value inside the contour
-        cv::Rect bounds = rrect.boundingRect();
-        bounds &= cv::Rect(0, 0, heatmap.cols, heatmap.rows);
-        float confidence = 0.0f;
-        if (bounds.width > 0 && bounds.height > 0) {
-            cv::Mat mask = cv::Mat::zeros(bounds.size(), CV_8U);
-            std::vector<std::vector<cv::Point>> polys = {{contour}};
-            for (auto& p : polys[0]) p -= bounds.tl();
-            cv::fillPoly(mask, polys, cv::Scalar(255));
-            cv::Scalar mean = cv::mean(heatmap(bounds), mask);
-            confidence = (float)mean[0];
+    for (int l = 1; l < numLabels; ++l) {
+        int area = stats.at<int>(l, cv::CC_STAT_AREA);
+        if (area < 10) continue;
+
+        int left = stats.at<int>(l, cv::CC_STAT_LEFT);
+        int top = stats.at<int>(l, cv::CC_STAT_TOP);
+        int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
+        int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+
+        cv::Mat points(area, 1, CV_32SC2);
+        int idx = 0;
+        double sumHeatmap = 0.0;
+        for (int y = top; y < top + height; ++y) {
+            for (int x = left; x < left + width; ++x) {
+                if (labels.at<int>(y, x) == l) {
+                    if (idx < area) {
+                        points.at<cv::Point>(idx++) = cv::Point(x, y);
+                    }
+                    sumHeatmap += (double)heatmap.at<float>(y, x);
+                }
+            }
         }
 
+        if (idx < area) {
+            points = points.rowRange(0, idx);
+        }
+        if (points.empty()) continue;
+
+        cv::RotatedRect rrect = cv::minAreaRect(points);
+        float angle = calculateAngle(rrect);
+        double confidence = sumHeatmap / (double)idx;
+
         int bucketIdx = (int)std::round(angle * 2.0f);
-        double weight = (double)cv::arcLength(contour, true) * (double)confidence;
+        double weight = (double)cv::arcLength(points, true) * confidence;
         buckets[bucketIdx] += weight;
     }
 
@@ -698,7 +711,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 
     paddle::lite_api::Tensor* nativeTensor = uptr->get();
     auto shape = nativeTensor->shape();
-    // Expecting [1, 1, H, W] or [1, H, W]
     if (shape.size() < 3) return nullptr;
 
     int h = (int)shape[shape.size() - 2];
@@ -715,38 +727,61 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
     mask.convertTo(mask, CV_8U);
 
-    // 3. Contour Discovery
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+    // 3. Connected Components with Stats (ABI-Safe replacement for findContours)
+    cv::Mat labels, stats, centroids;
+    int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
 
     // 4. Geometry Extraction
     std::vector<float> results;
     int count = 0;
-    for (const auto& cnt : contours) {
+    for (int l = 1; l < numLabels; ++l) { // Start from 1 (skip background label 0)
         if (count >= 200) break; // Hard safety limit
         
-        double area = cv::contourArea(cnt);
+        int area = stats.at<int>(l, cv::CC_STAT_AREA);
         if (area < minArea) continue;
 
-        cv::RotatedRect rect = cv::minAreaRect(cnt);
+        int left = stats.at<int>(l, cv::CC_STAT_LEFT);
+        int top = stats.at<int>(l, cv::CC_STAT_TOP);
+        int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
+        int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+
+        // Populate a flat cv::Mat of points instead of std::vector to guarantee ABI Parity
+        cv::Mat points(area, 1, CV_32SC2);
+        int idx = 0;
+        for (int y = top; y < top + height; ++y) {
+            for (int x = left; x < left + width; ++x) {
+                if (labels.at<int>(y, x) == l) {
+                    if (idx < area) {
+                        points.at<cv::Point>(idx++) = cv::Point(x, y);
+                    }
+                }
+            }
+        }
+
+        // If for some reason we gathered fewer points than expected, truncate Mat
+        if (idx < area) {
+            points = points.rowRange(0, idx);
+        }
+
+        if (points.empty()) continue;
+
+        cv::RotatedRect rect = cv::minAreaRect(points);
         cv::Point2f vertices[4];
         rect.points(vertices);
 
         if (count < 3) {
-            LOGI("nativeProcessHeatmap: box[%d] vertices=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) area=%.0f",
-                 count, vertices[0].x, vertices[0].y, vertices[1].x, vertices[1].y,
+            LOGI("nativeProcessHeatmap: box[%d] label=%d vertices=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) area=%d",
+                 count, l, vertices[0].x, vertices[0].y, vertices[1].x, vertices[1].y,
                  vertices[2].x, vertices[2].y, vertices[3].x, vertices[3].y, area);
         }
 
-        // Calculate average confidence within the rotated rect's bounding box
-        cv::Rect bBox = rect.boundingRect();
-        // Clamp to heatmap dimensions
-        int bx1 = std::max(0, bBox.x);
-        int by1 = std::max(0, bBox.y);
-        int bx2 = std::min(w, bBox.x + bBox.width);
-        int by2 = std::min(h, bBox.y + bBox.height);
+        // Calculate average confidence within the bounding box
+        float avgConf = 0.0f;
+        int bx1 = std::max(0, left);
+        int by1 = std::max(0, top);
+        int bx2 = std::min(w, left + width);
+        int by2 = std::min(h, top + height);
         
-        float avgConf = 0;
         if (bx2 > bx1 && by2 > by1) {
             cv::Mat roi = heatmap(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
             cv::Scalar meanVal = cv::mean(roi);
@@ -754,7 +789,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         }
 
         // Pack [x1, y1, x2, y2, x3, y3, x4, y4, conf]
-        // These are raw heatmap pixel coordinates
         for (int i = 0; i < 4; ++i) {
             results.push_back(vertices[i].x);
             results.push_back(vertices[i].y);

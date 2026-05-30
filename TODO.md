@@ -24,7 +24,7 @@
 - [x] Fix Native Coordinate Scaling and Confidence Calculation
 - [x] Implement Zero-Copy Native Heatmap Processing (Offload contour discovery to C++)
 - [ ] Final Cleanup of Diagnostic Probes (See: plans/cleanup-diagnostic-probes.md) [IN PROGRESS]
-- [ ] Paddle C++ Parallel Execution & Verification (See: dev-ai-interaction/plans/recover-paddle-c-parallel.md) [IN PROGRESS]
+- [ ] Paddle C++ Parallel Execution & Verification (See: dev-ai-interaction/plans/recover-paddle-c-parallel-abi-fix.md) [IN PROGRESS]
 - [ ] Height-Relative Expansion, Robust Mapping, and Raw Consolidation (See: plans/height-relative-expansion.md)
 - [ ] TODO: Investigate bimodal brightness-based stop logic for glare/shadow (e.g., look for brightness drop/climb)
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]
