@@ -14,7 +14,13 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = providers.exec { commandLine("git", "describe", "--always") }.standardOutput.asText.get().trim()
+        versionName = providers.exec {
+            commandLine(
+                "bash",
+                "-c",
+                "BRANCH_NAME=\${'$'}(git rev-parse --abbrev-ref HEAD) && (git describe --tags --match \"\${'$'}{BRANCH_NAME}-start\" 2>/dev/null || git describe --always)"
+            )
+        }.standardOutput.asText.get().trim()
         buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
 
         externalNativeBuild {
