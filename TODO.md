@@ -14,6 +14,7 @@
   - [x] Update `performHunkRecognition` ML Kit path to use full `recBuffer.p.nv21`.
   - [x] Release `mlDiscoveryBuffers` at the end of the experiment.
   - [x] Commit changes via `./build_app` and verify compile success.
+  - [ ] Fix coordinate mapping regression in ML Kit discovery path by removing redundant scaling.
 
 ## Infrastructure & Protocol
 - [ ] **Infrastructure Fix: Resolve Git Symlink Ambiguities and Worktree Path Resolution**
