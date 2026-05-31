@@ -606,19 +606,19 @@ private fun serializePhotoResultToJson(
         
         // Add A/B Parity Checksums and timing metrics
         deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) -> 
-            deskewObj.putSafe(k, v)
+            deskewObj.put(k, v)
         }
         deskewResA?.engines?.get("ML Kit")?.metadata?.forEach { (k, v) -> 
-            deskewObj.putSafe(k, v)
+            deskewObj.put(k, v)
         }
         deskewResA?.metadata?.forEach { (k, v) ->
-            deskewObj.putSafe(k, v)
+            deskewObj.put(k, v)
         }
         // Also put ML Kit times explicitly
         val mlTimes = deskewResA?.engines?.get("ML Kit")?.timesMs
         if (mlTimes != null && mlTimes.size >= 2) {
-            deskewObj.putSafe("t_ml_prep_ms", mlTimes[0].toDouble())
-            deskewObj.putSafe("t_ml_detect_ms", mlTimes[1].toDouble())
+            deskewObj.put("t_ml_prep_ms", mlTimes[0])
+            deskewObj.put("t_ml_detect_ms", mlTimes[1])
         }
         put("deskew", deskewObj)
 
