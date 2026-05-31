@@ -229,6 +229,18 @@ private suspend fun runPumpExperiment(
     val experimentDetSet512x128 = BufferSet(512, 128)
     val masterBuffer = BufferSet(1, 1)
 
+    // ML Kit Discovery Buffers (only needed for ML Kit detection/OCR processing)
+    val mlDiscoveryBuffers = mapOf(
+        224 to BufferSet(224, 224),
+        608 to BufferSet(608, 608),
+        1024 to BufferSet(1024, 1024),
+        2560 to BufferSet(2560, 2560)
+    )
+    mlDiscoveryBuffers.values.forEach {
+        it.p.clearChroma()
+        it.s.clearChroma()
+    }
+
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     val flows = listOf("Set A")
@@ -316,10 +328,50 @@ private suspend fun runPumpExperiment(
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
 
+                val processedScales = mutableSetOf<Int>()
                 scales.forEach { scale ->
-                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
                     
-                    mlBlocksRaw.addAll(runDiscoveryML(workspace, innerId, context))
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+                    
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+                    
+                    if (!processedScales.contains(chosenScale)) {
+                        processedScales.add(chosenScale)
+                        chosenBuffer.p.clear() // clears luma and resets chroma to 128
+                        val recCropId = chosenBuffer.createCrop(0, 0, targetW, targetH)
+                        val interp = if (srcW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                        org.opencv.imgproc.Imgproc.resize(workspace.p.mat, chosenBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                        
+                        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                            chosenBuffer.p.nv21,
+                            chosenBuffer.p.width,
+                            chosenBuffer.p.height,
+                            0,
+                            com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                        )
+                        val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+                        chosenBuffer.c[recCropId].release()
+                        
+                        val hunks = result.textBlocks.map { block ->
+                            val ml = block.boundingBox.left.toFloat()
+                            val mt = block.boundingBox.top.toFloat()
+                            val mr = block.boundingBox.right.toFloat()
+                            val mb = block.boundingBox.bottom.toFloat()
+                            val i1 = IcrsMath.pixelToIcrs(ml, mt, targetW, targetH)
+                            val i2 = IcrsMath.pixelToIcrs(mr, mb, targetW, targetH)
+                            PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
+                        }
+                        mlBlocksRaw.addAll(hunks)
+                    }
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
                     val res = paddleEngine.detect(workspace.c[outerId])
                     if (res != null) {
                         branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
@@ -446,6 +498,7 @@ private suspend fun runPumpExperiment(
     experimentRecSet320x48.release()
     experimentDetSet512x128.release()
     masterBuffer.release()
+    mlDiscoveryBuffers.values.forEach { it.release() }
 }
 
 private fun pSerializePhotoResultToJson(
@@ -669,42 +722,7 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
     return Pair(outerId, innerId)
 }
 
-private fun flattenToNv21(slice: BufferSet.Slice): java.nio.ByteBuffer {
-    val w = slice.width; val h = slice.height
-    val ySize = w * h; val uvSize = (w / 2) * (h / 2) * 2
-    val nv21 = ByteArray(ySize + uvSize)
-    
-    // Copy Y plane
-    val yData = ByteArray(ySize)
-    slice.mat.get(0, 0, yData)
-    System.arraycopy(yData, 0, nv21, 0, ySize)
-    
-    // Copy UV plane (interleaved)
-    val uvData = ByteArray(uvSize)
-    slice.uvMat.get(0, 0, uvData)
-    System.arraycopy(uvData, 0, nv21, ySize, uvSize)
-    
-    return java.nio.ByteBuffer.wrap(nv21)
-}
 
-private suspend fun runDiscoveryML(buffer: BufferSet, id: Int, context: Context): List<PumpHunk> {
-    val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
-    Log.d(TAG, "runDiscoveryML: crop=${masterW}x${masterH}")
-    val nv21 = flattenToNv21(buffer.c[id])
-    val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, masterW, masterH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
-    val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
-
-    val scaleW = result.imageWidth.toFloat()
-    val scaleH = result.imageHeight.toFloat()
-
-    return result.textBlocks.map { block ->
-        val ml = block.boundingBox.left * masterW / scaleW; val mt = block.boundingBox.top * masterH / scaleH
-        val mr = block.boundingBox.right * masterW / scaleW; val mb = block.boundingBox.bottom * masterH / scaleH
-        val i1 = IcrsMath.pixelToIcrs(ml, mt, masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(mr, mb, masterW, masterH)
-        PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
-    }
-}
 
 private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): List<List<PumpHunk>> {
     val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
@@ -835,9 +853,14 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
          org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
          
          val res = if (engine == "ML Kit") {
-             val nv21 = flattenToNv21(recBuffer.c[recCropId])
-             val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(nv21, targetW, targetH, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
-             val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+              val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                  recBuffer.p.nv21,
+                  recBuffer.p.width,
+                  recBuffer.p.height,
+                  0,
+                  com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+              )
+              val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
              // ML Kit 7-Segment Cleanup + Upside Down detection
              val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
              ocrRes.copy(debugText = cleaned)
