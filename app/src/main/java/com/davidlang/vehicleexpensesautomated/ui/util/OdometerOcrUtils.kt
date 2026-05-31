@@ -365,7 +365,6 @@ object OdometerOcrUtils {
         }
         return resAngle
     }
-    }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {
         val pTargetSize = 2048
