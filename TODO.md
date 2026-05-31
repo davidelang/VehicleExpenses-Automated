@@ -5,6 +5,17 @@
 - **Rule 3:** Mandatory User Approval for resets past `builds`.
 - **Rule 4:** Exclusive use of `./build_app` for commits/builds.
 
+## Active Execution: Fix Pump Experiment NV21 Crops
+- [x] **EXECUTE:** Fix Pump Experiment NV21 Crops to resolve SIGSEGV.
+  - [x] Add long-lived square `mlDiscoveryBuffers` at startup in `ExperimentPumpScreen.kt` (only for ML Kit).
+  - [x] In discovery scale loop, select smallest-fit buffer and skip processed scales.
+  - [x] Rewrite ML Kit discovery execution directly in scale loop using full NV21 buffer.
+  - [x] Delete `runDiscoveryML` and `flattenToNv21`.
+  - [x] Update `performHunkRecognition` ML Kit path to use full `recBuffer.p.nv21`.
+  - [x] Release `mlDiscoveryBuffers` at the end of the experiment.
+  - [x] Commit changes via `./build_app` and verify compile success.
+  - [x] Fix coordinate mapping regression in ML Kit discovery path by removing redundant scaling.
+
 ## Infrastructure & Protocol
 - [x] **DONE: Infrastructure Fix: Resolve Git Symlink Ambiguities and Worktree Path Resolution**
   - [x] Convert `build_app` and `deploy` from symlinks to regular executable files (`100755`) on `master`.
