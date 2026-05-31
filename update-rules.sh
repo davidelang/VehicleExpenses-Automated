@@ -41,6 +41,20 @@ git checkout master -- "${FILES[@]}"
 echo "Ensuring read-only protection for policies and core mandates..."
 chmod -w .gemini/policies/plans.toml .gemini/policies/auto-saved.toml GEMINI.md .gemini/system.md .gemini/system_prompt.md 2>/dev/null
 
+# 5b. Ignore local modifications to shared infrastructure in the worktree index
+echo "Configuring index to ignore local infrastructure file modifications..."
+SKIP_FILES=(
+    ".gemini/system.md"
+    ".gemini/system_prompt.md"
+    ".gemini/policies/plans.toml"
+    ".gemini/policies/auto-saved.toml"
+    "GEMINI.md"
+    "MASTER_AGENT_MANDATE.md"
+    "new_agent_prompt"
+    "agent_reminder"
+)
+git update-index --skip-worktree "${SKIP_FILES[@]}" 2>/dev/null
+
 # 6. Isolate local instance metadata
 if git ls-files --error-unmatch AGENT_CONTEXT.md >/dev/null 2>&1; then
     echo "Isolating AGENT_CONTEXT.md (removing from local branch index)..."
