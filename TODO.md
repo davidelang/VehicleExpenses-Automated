@@ -16,6 +16,18 @@
   - [x] Commit changes via `./build_app` and verify compile success.
   - [x] Fix coordinate mapping regression in ML Kit discovery path by removing redundant scaling.
 
+## Active Execution: Refine Paddle OCR Bounding Box Expansion & Alignment
+- [ ] **EXECUTE:** Refine Paddle OCR Bounding Box Expansion & Alignment.
+  - [ ] Modify `NativeImageUtils.cpp`'s `nativeExpandByValley`:
+    - [ ] Calculate horizontal look-ahead `lookAhead` after first vertical expansion using the expanded vertical height.
+    - [ ] Reduce the look-ahead multiplier to `0.5`.
+    - [ ] Update the horizontal walk loop to record the latest limit (`maxX = walkR` / `minX = walkL`) on content and retract to it at the end of the walk.
+    - [ ] Perform a second vertical expansion pass using the final expanded horizontal bounds `minX` and `maxX`.
+  - [ ] Modify `OdometerOcrUtils.kt`'s coordinate scale-up rounding:
+    - [ ] Update `processPaddleHeatmap` to round `minX`/`minY` down (`Math.floor`) and `maxX`/`maxY` up (`Math.ceil`).
+    - [ ] Update `processPaddleHeatmapLegacy` to round left/top boundaries down (`Math.floor`) and right/bottom up (`Math.ceil`).
+  - [ ] Run `./build_app` to verify compile and link success.
+
 ## Infrastructure & Protocol
 - [x] **DONE: Infrastructure Fix: Resolve Git Symlink Ambiguities and Worktree Path Resolution**
   - [x] Convert `build_app` and `deploy` from symlinks to regular executable files (`100755`) on `master`.

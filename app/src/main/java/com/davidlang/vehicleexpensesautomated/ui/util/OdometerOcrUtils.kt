@@ -818,11 +818,11 @@ object OdometerOcrUtils {
         if (nativeBoxes != null) {
             return nativeBoxes.map { box ->
                 val points = box.points
-                val minX = minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) * invScale
-                val minY = minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) * invScale
-                val maxX = maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) * invScale
-                val maxY = maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) * invScale
-                val bounds = android.graphics.Rect(minX.toInt(), minY.toInt(), maxX.toInt(), maxY.toInt())
+                val minX = Math.floor(minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) * invScale.toDouble()).toInt()
+                val minY = Math.floor(minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) * invScale.toDouble()).toInt()
+                val maxX = Math.ceil(maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) * invScale.toDouble()).toInt()
+                val maxY = Math.ceil(maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) * invScale.toDouble()).toInt()
+                val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
                 
                 val scaledPoints = FloatArray(8)
                 for (i in 0 until 8) {
@@ -879,10 +879,10 @@ object OdometerOcrUtils {
                 
                 // Map raw heatmap coordinates directly using invScale (no stretch mapping needed).
                 val bounds = android.graphics.Rect(
-                    (rotatedRect.boundingRect().x * invScale).toInt(),
-                    (rotatedRect.boundingRect().y * invScale).toInt(),
-                    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
-                    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
+                    Math.floor(rotatedRect.boundingRect().x * invScale).toInt(),
+                    Math.floor(rotatedRect.boundingRect().y * invScale).toInt(),
+                    Math.ceil((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
+                    Math.ceil((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
                 )
                 
                 val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }

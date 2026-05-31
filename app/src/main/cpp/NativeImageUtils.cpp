@@ -425,7 +425,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.0;
-    double lookAhead = (maxY - minY) * 4.0;
 
     auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
         double sum = 0;
@@ -452,7 +451,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         return (avg < 15.0 || avg < valleyThreshold);
     };
 
-    // 3. Vertical Expansion (Simple Stop)
+    // 3. First Vertical Expansion Pass (Simple Stop)
     while (minY > 0 && (sY - minY) < vL) {
         if (isValley((int)minX, (int)maxX, (int)minY - 1, true)) break;
         minY -= 1.0;
@@ -461,6 +460,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (isValley((int)minX, (int)maxX, (int)maxY + 1, true)) break;
         maxY += 1.0;
     }
+
+    // Recalculate horizontal lookAhead based on the newly expanded vertical height
+    double lookAhead = (maxY - minY) * 0.5;
 
     // 4. Horizontal Expansion (Jump and Collapse)
     double walkL = minX;
@@ -485,6 +487,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         } else {
             if ((walkR - lastGoodR) > lookAhead) break;
         }
+    }
+
+    // Collapse boundaries exactly back to the last detected content columns (retraction)
+    minX = lastGoodL;
+    maxX = lastGoodR;
+
+    // 5. Second Vertical Expansion Pass (using newly expanded horizontal bounds)
+    while (minY > 0 && (sY - minY) < vL) {
+        if (isValley((int)minX, (int)maxX, (int)minY - 1, true)) break;
+        minY -= 1.0;
+    }
+    while (maxY < maxH - 1 && (maxY - sYY) < vL) {
+        if (isValley((int)minX, (int)maxX, (int)maxY + 1, true)) break;
+        maxY += 1.0;
     }
 
     jintArray result = env->NewIntArray(4);
