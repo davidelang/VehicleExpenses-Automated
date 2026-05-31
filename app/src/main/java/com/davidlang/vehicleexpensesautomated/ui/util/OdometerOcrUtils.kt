@@ -801,17 +801,7 @@ object OdometerOcrUtils {
     ): List<TextBlock> {
         val t0 = System.currentTimeMillis()
 
-        // Resolve scaleX / scaleY by checking target dimensions in sourceBuffer (Mat or Slice)
-        var alignedW = w
-        var alignedH = h
-        when (sourceBuffer) {
-            is Mat -> { alignedW = sourceBuffer.cols(); alignedH = sourceBuffer.rows() }
-            is BufferSet.Slice -> { alignedW = sourceBuffer.width; alignedH = sourceBuffer.height }
-        }
-        val scaleX = alignedW.toDouble() / w.toDouble()
-        val scaleY = alignedH.toDouble() / h.toDouble()
-
-        val legacyBlocks = processPaddleHeatmapLegacy(heatmap, w, h, scale, scaleX, scaleY)
+        val legacyBlocks = processPaddleHeatmapLegacy(heatmap, w, h, scale)
         val tKotlin = System.currentTimeMillis() - t0
         
         if (nativeBoxes != null) {
@@ -869,8 +859,7 @@ object OdometerOcrUtils {
      * Fixed scaling logic: includes scaleX/scaleY (from 608 to target resized space) before multiplying by invScale.
      */
     private fun processPaddleHeatmapLegacy(
-        heatmap: FloatArray, w: Int, h: Int, scale: Float,
-        scaleX: Double = 1.0, scaleY: Double = 1.0
+        heatmap: FloatArray, w: Int, h: Int, scale: Float
     ): List<TextBlock> {
         val invScale = 1.0 / scale.toDouble()
         val maskThreshold = 0.20f
@@ -904,16 +893,15 @@ object OdometerOcrUtils {
                 rotatedRect.points(points)
                 p2f.release() 
                 
-                // Correctly map 608 coordinates to resized target image space using scaleX/scaleY,
-                // and then map back to original image space using invScale.
+                // Map raw heatmap coordinates directly using invScale (no stretch mapping needed).
                 val bounds = android.graphics.Rect(
-                    (rotatedRect.boundingRect().x * scaleX * invScale).toInt(),
-                    (rotatedRect.boundingRect().y * scaleY * invScale).toInt(),
-                    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * scaleX * invScale).toInt(),
-                    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * scaleY * invScale).toInt()
+                    (rotatedRect.boundingRect().x * invScale).toInt(),
+                    (rotatedRect.boundingRect().y * invScale).toInt(),
+                    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
+                    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
                 )
                 
-                val normalizedPoints = points.map { org.opencv.core.Point(it.x * scaleX * invScale, it.y * scaleY * invScale) }
+                val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
                 results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints))
             }
         } finally {

@@ -259,15 +259,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
-                val scaleX = w.toDouble() / dims[3]
-                val scaleY = h.toDouble() / dims[2]
-
                 for (i in 0 until (nativeRes.size / 9)) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
                     for (p in 0 until 4) {
-                        matPixels[p * 2] = (nativeRes[offset + p * 2] * scaleX).toFloat()
-                        matPixels[p * 2 + 1] = (nativeRes[offset + p * 2 + 1] * scaleY).toFloat()
+                        matPixels[p * 2] = nativeRes[offset + p * 2]
+                        matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
                     }
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
@@ -331,15 +328,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
-                val scaleX = w.toDouble() / dims[3]
-                val scaleY = h.toDouble() / dims[2]
-
                 for (i in 0 until (nativeRes.size / 9)) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
                     for (p in 0 until 4) {
-                        matPixels[p * 2] = (nativeRes[offset + p * 2] * scaleX).toFloat()
-                        matPixels[p * 2 + 1] = (nativeRes[offset + p * 2 + 1] * scaleY).toFloat()
+                        matPixels[p * 2] = nativeRes[offset + p * 2]
+                        matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
                     }
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
