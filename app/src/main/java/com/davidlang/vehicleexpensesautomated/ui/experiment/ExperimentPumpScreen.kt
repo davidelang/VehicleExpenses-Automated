@@ -359,13 +359,11 @@ private suspend fun runPumpExperiment(
                         val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
                         chosenBuffer.c[recCropId].release()
                         
-                        val scaleW = result.imageWidth.toFloat()
-                        val scaleH = result.imageHeight.toFloat()
                         val hunks = result.textBlocks.map { block ->
-                            val ml = block.boundingBox.left * targetW / scaleW
-                            val mt = block.boundingBox.top * targetH / scaleH
-                            val mr = block.boundingBox.right * targetW / scaleW
-                            val mb = block.boundingBox.bottom * targetH / scaleH
+                            val ml = block.boundingBox.left.toFloat()
+                            val mt = block.boundingBox.top.toFloat()
+                            val mr = block.boundingBox.right.toFloat()
+                            val mb = block.boundingBox.bottom.toFloat()
                             val i1 = IcrsMath.pixelToIcrs(ml, mt, targetW, targetH)
                             val i2 = IcrsMath.pixelToIcrs(mr, mb, targetW, targetH)
                             PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
