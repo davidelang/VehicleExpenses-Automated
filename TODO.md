@@ -284,9 +284,9 @@
     - [x] Refactor experiment screen to use array-driven loop over pipeline configurations.
     - [x] Reuse bufferSetA as read-only and bufferSetB as a sequential working buffer.
     - [x] Generate HTML headers/rows and JSON report pathways dynamically.
-  - [ ] **Phase 2: Scale to 5 Test Pathways (Without New Algorithms)**
-    - [ ] Scale pipelines array to 5 paths (A, B, C, D, E) mapping to existing algorithms.
-    - [ ] Verify HTML table scaling and JSON pathways structure (set_a through set_e).
+  - [x] **Phase 2: Scale to 5 Test Pathways (Without New Algorithms)**
+    - [x] Scale pipelines array to 5 paths (A, B, C, D, E) mapping to existing algorithms.
+    - [x] Verify HTML table scaling and JSON pathways structure (set_a through set_e).
   - [ ] **Phase 3: Implement and Apply Top Performers**
     - [ ] Add calculateWeightedAverageCustom with custom weighting functions.
     - [ ] Compute quadratic area-weighted and confidence-area-weighted angles in deskewPaddleDual.
