@@ -29,11 +29,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     
     data class DetectionBox(val points: FloatArray, val confidence: Float)
     data class DetectionResult(
-        val heatmap: FloatArray, 
+        val heatmap: FloatArray? = null, 
         val width: Int, 
         val height: Int, 
         val metadata: Map<String, String> = emptyMap(),
-        val nativeBoxes: List<DetectionBox> = emptyList()
+        val nativeBoxes: List<DetectionBox> = emptyList(),
+        val outputTensor: Any? = null
     )
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
@@ -214,7 +215,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
-    fun detect(input: Any, targetW: Int? = null, targetH: Int? = null): DetectionResult? {
+    fun detect(input: Any, targetW: Int? = null, targetH: Int? = null, copyHeatmap: Boolean = true): DetectionResult? {
         val tPop0 = System.nanoTime()
         val w: Int; val h: Int; val srcMat: Mat
         when (input) {
@@ -255,8 +256,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
-            val heatmap = outputTensor.floatData
-
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
                 for (i in 0 until (nativeRes.size / 9)) {
@@ -271,6 +270,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
             }
 
+            val tCopy0 = System.nanoTime()
+            val heatmap = if (copyHeatmap) outputTensor.floatData else null
+            val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
+
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
@@ -279,9 +282,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_inference_ms" to "%.3f".format(tInfer),
                 "t_jni_out_ms" to "%.3f".format(tJniOut),
                 "t_native_post_ms" to "%.3f".format(tNativePost),
+                "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
 
         } catch (t: Throwable) { 
             Log.e("PaddleDetect", "Detection failed", t); return null 
@@ -292,7 +296,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
      * Dynamic-sized detection for arbitrary Mat crops (e.g. Pump Experiment).
      * Resizes the internal Paddle predictor to match the input Mat dimensions exactly.
      */
-    fun detectMat(srcMat: Mat): DetectionResult? {
+    fun detectMat(srcMat: Mat, copyHeatmap: Boolean = true): DetectionResult? {
         if (!isAvailable) return null
         val predictor = detectorLarge ?: return null
         val t0 = System.currentTimeMillis()
@@ -324,8 +328,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
-            val heatmap = outputTensor.floatData
-
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
                 for (i in 0 until (nativeRes.size / 9)) {
@@ -339,14 +341,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
             }
-            
-            var minVal = Float.MAX_VALUE
-            var maxVal = Float.MIN_VALUE
-            for (v in heatmap) {
-                if (v < minVal) minVal = v
-                if (v > maxVal) maxVal = v
-            }
-            Log.i("PaddleDetect", "detectMat Out: dims=${dims.joinToString("x")} size=${heatmap.size} min=$minVal max=$maxVal")
+            val tCopy0 = System.nanoTime()
+            val heatmap = if (copyHeatmap) outputTensor.floatData else null
+            val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
+
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
             val meta = mapOf(
@@ -355,9 +353,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_inference_ms" to "%.3f".format(tInfer),
                 "t_jni_out_ms" to "%.3f".format(tJniOut),
                 "t_native_post_ms" to "%.3f".format(tNativePost),
+                "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Dynamic detection failed", t)
             return null
