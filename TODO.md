@@ -6,14 +6,14 @@
 - **Rule 4:** Exclusive use of `./build_app` for commits/builds.
 
 ## Active Execution: Fix Pump Experiment NV21 Crops
-- [ ] **EXECUTE:** Fix Pump Experiment NV21 Crops to resolve SIGSEGV.
-  - [ ] Add long-lived square `mlDiscoveryBuffers` at startup in `ExperimentPumpScreen.kt` (only for ML Kit).
-  - [ ] In discovery scale loop, select smallest-fit buffer and skip processed scales.
-  - [ ] Rewrite ML Kit discovery execution directly in scale loop using full NV21 buffer.
-  - [ ] Delete `runDiscoveryML` and `flattenToNv21`.
-  - [ ] Update `performHunkRecognition` ML Kit path to use full `recBuffer.p.nv21`.
-  - [ ] Release `mlDiscoveryBuffers` at the end of the experiment.
-  - [ ] Commit changes via `./build_app` and verify compile success.
+- [x] **EXECUTE:** Fix Pump Experiment NV21 Crops to resolve SIGSEGV.
+  - [x] Add long-lived square `mlDiscoveryBuffers` at startup in `ExperimentPumpScreen.kt` (only for ML Kit).
+  - [x] In discovery scale loop, select smallest-fit buffer and skip processed scales.
+  - [x] Rewrite ML Kit discovery execution directly in scale loop using full NV21 buffer.
+  - [x] Delete `runDiscoveryML` and `flattenToNv21`.
+  - [x] Update `performHunkRecognition` ML Kit path to use full `recBuffer.p.nv21`.
+  - [x] Release `mlDiscoveryBuffers` at the end of the experiment.
+  - [x] Commit changes via `./build_app` and verify compile success.
 
 ## Infrastructure & Protocol
 - [ ] **Infrastructure Fix: Resolve Git Symlink Ambiguities and Worktree Path Resolution**
