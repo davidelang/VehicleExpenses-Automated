@@ -84,28 +84,19 @@ To guarantee absolute memory safety and layout parity, we completely removed `cv
    cv::RotatedRect rect = cv::minAreaRect(points);
    ```
 
-### 2.2 Unified Dynamic Scaling Math
-To resolve the scaling disparity, we modified the Kotlin post-processing harness to dynamically calculate `scaleX` and `scaleY` using the dimensions of the `sourceBuffer` (either a `Mat` or a `BufferSet.Slice` representation of the resized/padded image):
+### 2.2 Unified Raw Resolution Mapping (No Stretch)
+Since `NativeImageUtils.nativePopulateMonoTensor` copies the input image row-by-row directly into the top-left corner of the larger square predictor tensor (e.g. `608x608`) without any resizing or anisotropic stretching, the coordinates returned in the heatmap are already in the Mat's unstretched pixel space.
 
-```kotlin
-var alignedW = w
-var alignedH = h
-when (sourceBuffer) {
-    is Mat -> { alignedW = sourceBuffer.cols(); alignedH = sourceBuffer.rows() }
-    is BufferSet.Slice -> { alignedW = sourceBuffer.width; alignedH = sourceBuffer.height }
-}
-val scaleX = alignedW.toDouble() / w.toDouble()
-val scaleY = alignedH.toDouble() / h.toDouble()
-```
+Therefore, no dynamic `scaleX` and `scaleY` stretch mapping is required. The raw coordinates are mapped back to the original photo's raw resolution using only the standard `invScale` factor (where `invScale = 1.0 / pScale`):
 
-The legacy contour points are then mapped back to the original image coordinate frame:
 ```kotlin
 val bounds = android.graphics.Rect(
-    (rotatedRect.boundingRect().x * scaleX * invScale).toInt(),
-    (rotatedRect.boundingRect().y * scaleY * invScale).toInt(),
-    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * scaleX * invScale).toInt(),
-    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * scaleY * invScale).toInt()
+    (rotatedRect.boundingRect().x * invScale).toInt(),
+    (rotatedRect.boundingRect().y * invScale).toInt(),
+    ((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width) * invScale).toInt(),
+    ((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height) * invScale).toInt()
 )
+val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
 ```
 
 ---
