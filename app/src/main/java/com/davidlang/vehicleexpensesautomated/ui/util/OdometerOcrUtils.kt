@@ -56,7 +56,8 @@ object OdometerOcrUtils {
         val metadata: Map<String, String> = emptyMap(),
         val heatmap: FloatArray? = null,
         val heatmapWidth: Int = 0,
-        val heatmapHeight: Int = 0
+        val heatmapHeight: Int = 0,
+        val cppBlocks: List<TextBlock> = emptyList()
     )
     data class DeskewResult(
         val angle: Float, 
@@ -66,7 +67,7 @@ object OdometerOcrUtils {
         val paddleCppAngle: Float = 0f,
         val mlBlocks: List<TextBlock> = emptyList(), 
         val paddleBlocks: List<TextBlock> = emptyList(), 
-        
+        val paddleCppBlocks: List<TextBlock> = emptyList(),
         val engines: Map<String, EngineResult> = emptyMap(),
         val metadata: Map<String, String> = emptyMap(),
         val paddleHeatmap: FloatArray? = null,
@@ -148,6 +149,7 @@ object OdometerOcrUtils {
             paddleCppAngle = paddleCppAngle,
             mlBlocks = mlRes.blocks,
             paddleBlocks = pdRes.blocks,
+            paddleCppBlocks = pdRes.cppBlocks,
             engines = results,
             metadata = mapOf("t_prep_ms" to tPrep.toString()),
             paddleHeatmap = downsampled,
@@ -319,8 +321,50 @@ object OdometerOcrUtils {
         val newMeta = det.metadata.toMutableMap()
         newMeta["paddle_cpp_angle"] = cppAngle.toString()
         newMeta["t_angle_cpp_ms"] = tAngleCpp.toString()
+        newMeta["t_angle_kt_ms"] = tAngleKt.toString()
         
-        return EngineResult(angleV3, emptyList(), blocks, newMeta, heatmap = det.heatmap, heatmapWidth = det.width, heatmapHeight = det.height)
+        val invScale = 1.0f / pScale
+        val cppBlocks = det.nativeBoxes.map { box ->
+            val points = box.points
+            val minX = minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) * invScale
+            val minY = minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) * invScale
+            val maxX = maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) * invScale
+            val maxY = maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) * invScale
+            val bounds = android.graphics.Rect(minX.toInt(), minY.toInt(), maxX.toInt(), maxY.toInt())
+            
+            val scaledPoints = FloatArray(8)
+            for (i in 0 until 8) {
+                scaledPoints[i] = points[i] * invScale
+            }
+            val angle = calculateBoxAngle(scaledPoints)
+            TextBlock("", bounds, angle, confidence = box.confidence)
+        }
+        
+        return EngineResult(angleV3, emptyList(), blocks, newMeta, heatmap = det.heatmap, heatmapWidth = det.width, heatmapHeight = det.height, cppBlocks = cppBlocks)
+    }
+
+    fun calculateBoxAngle(points: FloatArray): Float {
+        if (points.size < 8) return 0f
+        var minAbsAngle = 180f
+        var resAngle = 0f
+        for (i in 0 until 4) {
+            val x1 = points[i * 2]
+            val y1 = points[i * 2 + 1]
+            val x2 = points[((i + 1) % 4) * 2]
+            val y2 = points[((i + 1) % 4) * 2 + 1]
+            val dx = x2 - x1
+            val dy = y2 - y1
+            val ang = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
+            var normAng = ang
+            while (normAng <= -45f) normAng += 90f
+            while (normAng > 45f) normAng -= 90f
+            if (Math.abs(normAng) < minAbsAngle) {
+                minAbsAngle = Math.abs(normAng)
+                resAngle = normAng
+            }
+        }
+        return resAngle
+    }
     }
 
     private fun prepDeskewBuffer(input: Any, targetBitmap: Bitmap): Triple<Int, Int, Float> {

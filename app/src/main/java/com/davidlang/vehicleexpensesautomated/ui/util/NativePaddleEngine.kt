@@ -255,7 +255,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
+            val tCopy0 = System.nanoTime()
             val heatmap = outputTensor.floatData
+            val tCopy = (System.nanoTime() - tCopy0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
@@ -282,6 +284,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_inference_ms" to "%.3f".format(tInfer),
                 "t_jni_out_ms" to "%.3f".format(tJniOut),
                 "t_native_post_ms" to "%.3f".format(tNativePost),
+                "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
             return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)
@@ -327,7 +330,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
+            val tCopy0 = System.nanoTime()
             val heatmap = outputTensor.floatData
+            val tCopy = (System.nanoTime() - tCopy0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             if (nativeRes != null) {
@@ -361,6 +366,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_inference_ms" to "%.3f".format(tInfer),
                 "t_jni_out_ms" to "%.3f".format(tJniOut),
                 "t_native_post_ms" to "%.3f".format(tNativePost),
+                "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
             return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)

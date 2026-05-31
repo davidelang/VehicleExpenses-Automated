@@ -604,9 +604,21 @@ private fun serializePhotoResultToJson(
         val paddleKtAngle = deskewResA?.engines?.get("Paddle V3")?.angle ?: 0f
         deskewObj.putSafe("paddle_kt_angle", paddleKtAngle.toDouble())
         
-        // Add A/B Parity Checksums (Phase 117 Patch 3)
+        // Add A/B Parity Checksums and timing metrics
         deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) -> 
-            if (k.contains("chk") || k.contains("count")) deskewObj.put(k, v)
+            deskewObj.putSafe(k, v)
+        }
+        deskewResA?.engines?.get("ML Kit")?.metadata?.forEach { (k, v) -> 
+            deskewObj.putSafe(k, v)
+        }
+        deskewResA?.metadata?.forEach { (k, v) ->
+            deskewObj.putSafe(k, v)
+        }
+        // Also put ML Kit times explicitly
+        val mlTimes = deskewResA?.engines?.get("ML Kit")?.timesMs
+        if (mlTimes != null && mlTimes.size >= 2) {
+            deskewObj.putSafe("t_ml_prep_ms", mlTimes[0].toDouble())
+            deskewObj.putSafe("t_ml_detect_ms", mlTimes[1].toDouble())
         }
         put("deskew", deskewObj)
 
@@ -645,6 +657,22 @@ private fun serializePhotoResultToJson(
             })
         }
         put("deskew_data_paddle", pdArray)
+
+        val pdCppArray = JSONArray()
+        deskewResA?.paddleCppBlocks?.forEach { block ->
+            pdCppArray.put(JSONObject().apply {
+                put("text", block.text)
+                val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), safeW, safeH)
+                putSafe("cx", icrs.x.toDouble(), "")
+                putSafe("cy", icrs.y.toDouble(), "")
+                putSafe("w", block.boundingBox.width().toDouble() / safeS, "")
+                putSafe("h", block.boundingBox.height().toDouble() / safeS, "")
+                putSafe("angle", block.angle.toDouble(), "")
+                putSafe("confidence", block.confidence.toDouble(), "")
+                put("is_icrs", true)
+            })
+        }
+        put("deskew_data_paddle_cpp", pdCppArray)
 
         val heatmap = deskewResA?.paddleHeatmap
         if (heatmap != null && heatmap.isNotEmpty()) {
