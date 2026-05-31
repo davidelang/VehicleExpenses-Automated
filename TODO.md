@@ -291,3 +291,5 @@
     - [x] Add calculateWeightedAverageCustom with custom weighting functions.
     - [x] Compute quadratic area-weighted and confidence-area-weighted angles in deskewPaddleDual.
     - [x] Map the 5 pathways to the 5 distinct deskew consensus algorithms.
+  - [ ] **Phase 4: Fix Deskew Timing Discrepancy (Isolated Algorithm Timings)** [ACTIVE]
+    - [ ] Assign `tDeskewTotal` using `pipeline.getDeskewTime(deskewResA)` in ExperimentAlignmentScreen.kt.

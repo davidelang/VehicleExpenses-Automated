@@ -276,7 +276,10 @@ object OdometerOcrUtils {
 
     private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
+        
+        val tDet0 = System.currentTimeMillis()
         val det = paddleEngine.detect(resizedMat, pWidth, pHeight) ?: return EngineResult(0f, emptyList())
+        val tDetOnly = System.currentTimeMillis() - tDet0
         
         // Parallel Angle Calculation
         val tAngleCpp0 = System.currentTimeMillis()
@@ -284,7 +287,7 @@ object OdometerOcrUtils {
         val tAngleCpp = System.currentTimeMillis() - tAngleCpp0
 
         // Paddle V3 (Legacy Kotlin Math)
-        // Pass resizedMat instead of "None" so processPaddleHeatmap can resolve the scaleX factor
+        val tPost0 = System.currentTimeMillis()
         val rawBlocks = processPaddleHeatmap(det.heatmap, det.width, det.height, pScale, resizedMat, algorithm = "Native", nativeBoxes = det.nativeBoxes, nativePostMs = det.metadata["t_native_post_ms"])
         val clusteredBoxes = clusterRects(rawBlocks.map { it.boundingBox })
         val blocks = clusteredBoxes.map { b ->
@@ -308,6 +311,7 @@ object OdometerOcrUtils {
             }
             TextBlock("", b, avgAngle, confidence = maxConfidence)
         }
+        val tKtPostProcessOnly = System.currentTimeMillis() - tPost0
         
         val srcH = (pHeight / pScale).toInt()
         val tAngleKt0 = System.currentTimeMillis()
@@ -315,8 +319,13 @@ object OdometerOcrUtils {
         val tAngleKt = System.currentTimeMillis() - tAngleKt0
 
         // Custom weight consensus calculations
+        val tAngleArea0 = System.currentTimeMillis()
         val angleAreaWeighted = calculateWeightedAverageCustom(blocks, srcH, weightMode = WEIGHT_MODE_AREA_WEIGHTED)
+        val tAngleArea = System.currentTimeMillis() - tAngleArea0
+
+        val tAngleConf0 = System.currentTimeMillis()
         val angleConfAreaWeighted = calculateWeightedAverageCustom(blocks, srcH, weightMode = WEIGHT_MODE_CONF_AREA_WEIGHTED)
+        val tAngleConf = System.currentTimeMillis() - tAngleConf0
 
         Log.i("PaddleParallel", "Angle Comparison:")
         Log.i("PaddleParallel", "  Kotlin Standard:      $angleV3 (in ${tAngleKt}ms)")
@@ -330,6 +339,10 @@ object OdometerOcrUtils {
         newMeta["paddle_conf_area_weighted_angle"] = angleConfAreaWeighted.toString()
         newMeta["t_angle_cpp_ms"] = tAngleCpp.toString()
         newMeta["t_angle_kt_ms"] = tAngleKt.toString()
+        newMeta["t_isolated_std_ms"] = (tDetOnly + tKtPostProcessOnly + tAngleKt).toString()
+        newMeta["t_isolated_area_weighted_ms"] = (tDetOnly + tKtPostProcessOnly + tAngleArea).toString()
+        newMeta["t_isolated_conf_area_weighted_ms"] = (tDetOnly + tKtPostProcessOnly + tAngleConf).toString()
+        newMeta["t_isolated_cpp_ms"] = (tDetOnly + tAngleCpp).toString()
         
         val invScale = 1.0f / pScale
         val cppBlocks = det.nativeBoxes.map { box ->

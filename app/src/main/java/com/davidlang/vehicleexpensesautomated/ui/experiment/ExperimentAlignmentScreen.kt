@@ -175,6 +175,7 @@ data class ReferenceCache(
 data class PipelineConfig(
     val key: String,
     val displayName: String,
+    val getDeskewTime: (OdometerOcrUtils.DeskewResult) -> Long,
     val getAngle: (OdometerOcrUtils.DeskewResult) -> Float
 )
 
@@ -255,11 +256,31 @@ private suspend fun runExperiment(
     val experimentDetSet512x128 = BufferSet(512, 128)
 
     val pipelines = listOf(
-        PipelineConfig("set_a", "Set A") { it.mlAngle },
-        PipelineConfig("set_b", "Set B") { it.engines["Paddle V3"]?.angle ?: 0f },
-        PipelineConfig("set_c", "Set C") { it.engines["Paddle V3"]?.metadata?.get("paddle_area_weighted_angle")?.toFloatOrNull() ?: 0f },
-        PipelineConfig("set_d", "Set D") { it.engines["Paddle V3"]?.metadata?.get("paddle_conf_area_weighted_angle")?.toFloatOrNull() ?: 0f },
-        PipelineConfig("set_e", "Set E") { it.paddleCppAngle }
+        PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
+        
+        PipelineConfig("set_b", "Set B", { 
+            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
+            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_std_ms")?.toLongOrNull() ?: 0L
+            tPrep + tIso
+        }) { it.engines["Paddle V3"]?.angle ?: 0f },
+        
+        PipelineConfig("set_c", "Set C", { 
+            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
+            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_area_weighted_ms")?.toLongOrNull() ?: 0L
+            tPrep + tIso
+        }) { it.engines["Paddle V3"]?.metadata?.get("paddle_area_weighted_angle")?.toFloatOrNull() ?: 0f },
+        
+        PipelineConfig("set_d", "Set D", { 
+            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
+            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_conf_area_weighted_ms")?.toLongOrNull() ?: 0L
+            tPrep + tIso
+        }) { it.engines["Paddle V3"]?.metadata?.get("paddle_conf_area_weighted_angle")?.toFloatOrNull() ?: 0f },
+        
+        PipelineConfig("set_e", "Set E", { 
+            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
+            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_cpp_ms")?.toLongOrNull() ?: 0L
+            tPrep + tIso
+        }) { it.paddleCppAngle }
     )
     val harnessEngineNames = pipelines.flatMap { listOf("${it.displayName} ML", "${it.displayName} Paddle") }
     val pipelineNames = pipelines.map { it.displayName }
@@ -456,7 +477,7 @@ private suspend fun runExperiment(
                     val photoPathway = PhotoPathwayResult(
                         winnerName = globalWinnerRef?.vehicle?.name ?: "No match",
                         bestOdometer = "", // filled dynamically downstream
-                        tDeskewTotal = deskewResA.mlTimeMs + deskewResA.paddleTimeMs,
+                        tDeskewTotal = pipeline.getDeskewTime(deskewResA),
                         tDiscoveryTotal = tDiscoveryTotal,
                         deskewedBase64 = alignedBase64,
                         discoveryResult = ocr,
