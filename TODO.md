@@ -287,7 +287,7 @@
   - [x] **Phase 2: Scale to 5 Test Pathways (Without New Algorithms)**
     - [x] Scale pipelines array to 5 paths (A, B, C, D, E) mapping to existing algorithms.
     - [x] Verify HTML table scaling and JSON pathways structure (set_a through set_e).
-  - [ ] **Phase 3: Implement and Apply Top Performers**
-    - [ ] Add calculateWeightedAverageCustom with custom weighting functions.
-    - [ ] Compute quadratic area-weighted and confidence-area-weighted angles in deskewPaddleDual.
-    - [ ] Map the 5 pathways to the 5 distinct deskew consensus algorithms.
+  - [x] **Phase 3: Implement and Apply Top Performers**
+    - [x] Add calculateWeightedAverageCustom with custom weighting functions.
+    - [x] Compute quadratic area-weighted and confidence-area-weighted angles in deskewPaddleDual.
+    - [x] Map the 5 pathways to the 5 distinct deskew consensus algorithms.

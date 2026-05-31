@@ -314,12 +314,20 @@ object OdometerOcrUtils {
         val angleV3 = calculateWeightedAverage(blocks, srcH)
         val tAngleKt = System.currentTimeMillis() - tAngleKt0
 
+        // Custom weight consensus calculations
+        val angleAreaWeighted = calculateWeightedAverageCustom(blocks, srcH, weightMode = WEIGHT_MODE_AREA_WEIGHTED)
+        val angleConfAreaWeighted = calculateWeightedAverageCustom(blocks, srcH, weightMode = WEIGHT_MODE_CONF_AREA_WEIGHTED)
+
         Log.i("PaddleParallel", "Angle Comparison:")
-        Log.i("PaddleParallel", "  Kotlin: $angleV3 (in ${tAngleKt}ms)")
-        Log.i("PaddleParallel", "  C++:    $cppAngle (in ${tAngleCpp}ms)")
+        Log.i("PaddleParallel", "  Kotlin Standard:      $angleV3 (in ${tAngleKt}ms)")
+        Log.i("PaddleParallel", "  Kotlin Area-Weighted: $angleAreaWeighted")
+        Log.i("PaddleParallel", "  Kotlin Conf-Weighted: $angleConfAreaWeighted")
+        Log.i("PaddleParallel", "  C++:                  $cppAngle (in ${tAngleCpp}ms)")
 
         val newMeta = det.metadata.toMutableMap()
         newMeta["paddle_cpp_angle"] = cppAngle.toString()
+        newMeta["paddle_area_weighted_angle"] = angleAreaWeighted.toString()
+        newMeta["paddle_conf_area_weighted_angle"] = angleConfAreaWeighted.toString()
         newMeta["t_angle_cpp_ms"] = tAngleCpp.toString()
         newMeta["t_angle_kt_ms"] = tAngleKt.toString()
         
@@ -495,6 +503,78 @@ object OdometerOcrUtils {
         val bestBucket = buckets.maxByOrNull { bucket -> 
             bucket.value.sumOf { 
                 kotlin.math.sqrt(kotlin.math.max(it.boundingBox.width(), it.boundingBox.height()).toDouble()) 
+            }
+        }
+        
+        val finalAngle = bestBucket?.key ?: 0f
+        return if (finalAngle.isFinite()) finalAngle else 0f
+    }
+
+    const val WEIGHT_MODE_SQRT_LENGTH = 0
+    const val WEIGHT_MODE_AREA_WEIGHTED = 1
+    const val WEIGHT_MODE_CONF_AREA_WEIGHTED = 2
+
+    fun calculateWeightedAverageCustom(
+        candidates: List<TextBlock>, 
+        imgHeight: Int, 
+        weightMode: Int = WEIGHT_MODE_SQRT_LENGTH,
+        filterAr: Float? = null
+    ): Float {
+        var validCandidates = candidates.filter { 
+            it.boundingBox.height() > 0 && it.boundingBox.width() > 0 && it.angle.isFinite()
+        }
+        if (validCandidates.isEmpty()) return 0f
+
+        if (filterAr != null) {
+            validCandidates = validCandidates.filter {
+                val w = it.boundingBox.width().toFloat()
+                val h = it.boundingBox.height().toFloat()
+                val longest = maxOf(w, h)
+                val shortest = minOf(w, h)
+                (longest / maxOf(1e-5f, shortest)) >= filterAr
+            }
+            if (validCandidates.isEmpty()) return 0f
+        }
+
+        val thicknesses = validCandidates.map { 
+            minOf(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat() 
+        }
+        val roundedThicknesses = thicknesses.map { Math.round(it / 0.005f) * 0.005f }
+        val counts = roundedThicknesses.groupingBy { it }.eachCount()
+        val threshold = maxOf(2, (validCandidates.size * 0.15).toInt())
+        val peaks = counts.filter { it.value >= threshold }.keys
+        
+        val floor = if (peaks.isNotEmpty()) {
+            peaks.minOrNull()!! * 0.7f
+        } else {
+            val sortedT = thicknesses.sorted()
+            sortedT[sortedT.size / 2] * 0.5f
+        }
+
+        val ceiling = if (peaks.isNotEmpty()) {
+            peaks.maxOrNull()!! * 1.5f
+        } else {
+            val sortedT = thicknesses.sorted()
+            sortedT[sortedT.size / 2] * 2.0f
+        }
+
+        val filtered = validCandidates.filter { 
+            val t = minOf(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat()
+            t >= floor && t <= ceiling
+        }
+
+        if (filtered.isEmpty()) return 0f
+
+        val buckets = filtered.groupBy { Math.round(normalizeAngle(it.angle) * 2) / 2.0f }
+        
+        val bestBucket = buckets.maxByOrNull { bucket -> 
+            bucket.value.sumOf { block ->
+                val longest = maxOf(block.boundingBox.width(), block.boundingBox.height()).toDouble()
+                when (weightMode) {
+                    WEIGHT_MODE_AREA_WEIGHTED -> longest * longest
+                    WEIGHT_MODE_CONF_AREA_WEIGHTED -> block.confidence.toDouble() * longest * longest
+                    else -> kotlin.math.sqrt(longest)
+                }
             }
         }
         

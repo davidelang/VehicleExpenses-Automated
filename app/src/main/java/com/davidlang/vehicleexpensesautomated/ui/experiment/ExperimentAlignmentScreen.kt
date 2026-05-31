@@ -257,9 +257,9 @@ private suspend fun runExperiment(
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A") { it.mlAngle },
         PipelineConfig("set_b", "Set B") { it.engines["Paddle V3"]?.angle ?: 0f },
-        PipelineConfig("set_c", "Set C") { it.mlAngle },
-        PipelineConfig("set_d", "Set D") { it.engines["Paddle V3"]?.angle ?: 0f },
-        PipelineConfig("set_e", "Set E") { it.mlAngle }
+        PipelineConfig("set_c", "Set C") { it.engines["Paddle V3"]?.metadata?.get("paddle_area_weighted_angle")?.toFloatOrNull() ?: 0f },
+        PipelineConfig("set_d", "Set D") { it.engines["Paddle V3"]?.metadata?.get("paddle_conf_area_weighted_angle")?.toFloatOrNull() ?: 0f },
+        PipelineConfig("set_e", "Set E") { it.paddleCppAngle }
     )
     val harnessEngineNames = pipelines.flatMap { listOf("${it.displayName} ML", "${it.displayName} Paddle") }
     val pipelineNames = pipelines.map { it.displayName }
