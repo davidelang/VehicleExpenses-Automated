@@ -488,6 +488,7 @@ private suspend fun runExperiment(
                 }
                 
                 // Build vehicleResultsMap
+                val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
                 cachedRefs.forEach { ref ->
                     val isWinner = (ref.vehicle.id == globalWinnerId)
                     val pathMap = vehiclePathways[ref.vehicle.id] ?: emptyMap()
