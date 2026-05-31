@@ -242,7 +242,12 @@
 - [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.
 
 # TODO List
-- [ ] **Refactor:** Access output tensor directly inside nativeHeatmapToAngle to bypass JNI copy overhead (Set E optimization). [ACTIVE]
+- [x] **Refactor:** Access output tensor directly inside nativeHeatmapToAngle to bypass JNI copy overhead (Set E optimization).
+- [x] **Phase 5: Decommission Deskew Pathways (B, C, D) & Unify to Set A & E**
+  - [x] Create `docs/obsolete/DESKEW_CONVERGENCE_ALGORITHMS.md` detailing algorithms B, C, D, including the 145 ground-truth accuracy table and suffix explanation.
+  - [x] Modify `ExperimentAlignmentScreen.kt` to only keep `set_a` and `set_e` in the pipelines.
+  - [x] Simplify `deskewPaddleDual` in `OdometerOcrUtils.kt` to use the zero-copy native tensor JNI call.
+  - [x] Remove deprecated Kotlin consensus helpers in `OdometerOcrUtils.kt`.
 - [ ] **BUG:** `PXL_20220821_051055938.dng`: Investigate/Fix trailing '1' in Set C/D caused by excessive jump out without retracting back.
 - [ ] **BUG:** `PXL_20250802_215947597.jpg`: Investigate/Fix trailing '0' in Set C/D/E caused by OCR thinking there are two blocks of text (needs investigation).
 - [x] Merge PR `remove-dynamic-detect-test` and implement standardized tagging/cleanup.

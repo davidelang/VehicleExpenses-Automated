@@ -258,24 +258,6 @@ private suspend fun runExperiment(
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
         
-        PipelineConfig("set_b", "Set B", { 
-            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
-            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_std_ms")?.toLongOrNull() ?: 0L
-            tPrep + tIso
-        }) { it.engines["Paddle V3"]?.angle ?: 0f },
-        
-        PipelineConfig("set_c", "Set C", { 
-            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
-            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_area_weighted_ms")?.toLongOrNull() ?: 0L
-            tPrep + tIso
-        }) { it.engines["Paddle V3"]?.metadata?.get("paddle_area_weighted_angle")?.toFloatOrNull() ?: 0f },
-        
-        PipelineConfig("set_d", "Set D", { 
-            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
-            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_conf_area_weighted_ms")?.toLongOrNull() ?: 0L
-            tPrep + tIso
-        }) { it.engines["Paddle V3"]?.metadata?.get("paddle_conf_area_weighted_angle")?.toFloatOrNull() ?: 0f },
-        
         PipelineConfig("set_e", "Set E", { 
             val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
             val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_cpp_ms")?.toLongOrNull() ?: 0L
