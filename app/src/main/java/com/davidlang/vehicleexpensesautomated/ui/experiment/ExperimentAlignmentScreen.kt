@@ -249,7 +249,7 @@ private suspend fun runExperiment(
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
     
     var partCount = 1
-    val maxSizeBytes = 2 * 1024 * 1024 // 2MB parts
+    val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
     var currentSize = 0
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)

@@ -17,15 +17,16 @@
   - [x] Fix coordinate mapping regression in ML Kit discovery path by removing redundant scaling.
 
 ## Active Execution: Refine Paddle OCR Bounding Box Expansion & Alignment
-- [ ] **EXECUTE:** Refine Paddle OCR Bounding Box Expansion & Alignment.
-  - [ ] Modify `NativeImageUtils.cpp`'s `nativeExpandByValley`:
-    - [ ] Calculate horizontal look-ahead `lookAhead` after first vertical expansion using the expanded vertical height.
-    - [ ] Reduce the look-ahead multiplier to `0.5`.
-    - [ ] Update the horizontal walk loop to record the latest limit (`maxX = walkR` / `minX = walkL`) on content and retract to it at the end of the walk.
-    - [ ] Perform a second vertical expansion pass using the final expanded horizontal bounds `minX` and `maxX`.
-  - [ ] Modify `OdometerOcrUtils.kt`'s coordinate scale-up rounding:
-    - [ ] Update `processPaddleHeatmap` to round `minX`/`minY` down (`Math.floor`) and `maxX`/`maxY` up (`Math.ceil`).
-    - [ ] Update `processPaddleHeatmapLegacy` to round left/top boundaries down (`Math.floor`) and right/bottom up (`Math.ceil`).
+- [/] **EXECUTE:** Refine Paddle OCR Bounding Box Expansion & Alignment.
+  - [x] Modify `NativeImageUtils.cpp`'s `nativeExpandByValley`:
+    - [x] Calculate horizontal look-ahead `lookAhead` after first vertical expansion using the expanded vertical height.
+    - [x] Reduce the look-ahead multiplier to `0.5`.
+    - [x] Update the horizontal walk loop to record the latest limit (`maxX = walkR` / `minX = walkL`) on content and retract to it at the end of the walk.
+    - [x] Perform a second vertical expansion pass using the final expanded horizontal bounds `minX` and `maxX`.
+  - [x] Modify `OdometerOcrUtils.kt`'s coordinate scale-up rounding:
+    - [x] Update `processPaddleHeatmap` to round `minX`/`minY` down (`Math.floor`) and `maxX`/`maxY` up (`Math.ceil`).
+    - [x] Update `processPaddleHeatmapLegacy` to round left/top boundaries down (`Math.floor`) and right/bottom up (`Math.ceil`).
+  - [x] Change HTML size limit in `ExperimentAlignmentScreen.kt` and `ExperimentPumpScreen.kt` from 2MB to 5MB.
   - [ ] Run `./build_app` to verify compile and link success.
 
 ## Infrastructure & Protocol
