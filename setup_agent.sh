@@ -78,6 +78,9 @@ touch .gemini/plans/.gitkeep
 # Protect Shared Rules
 chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml GEMINI.md MASTER_AGENT_MANDATE.md new_agent_prompt
 
+# Ignore local modifications to shared infrastructure in the worktree index to prevent dirty build statuses
+git update-index --skip-worktree .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml GEMINI.md MASTER_AGENT_MANDATE.md new_agent_prompt .gemini/policies/auto-saved.toml agent_reminder 2>/dev/null
+
 # 5. Setup Sandbox (Symlink)
 echo "Setting up sandbox symlink..."
 ln -s ../dev-ai-interaction dev-ai-interaction
