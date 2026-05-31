@@ -301,3 +301,10 @@
     - [x] Map the 5 pathways to the 5 distinct deskew consensus algorithms.
   - [x] **Phase 4: Fix Deskew Timing Discrepancy (Isolated Algorithm Timings)**
     - [x] Assign `tDeskewTotal` using `pipeline.getDeskewTime(deskewResA)` in ExperimentAlignmentScreen.kt.
+
+- [ ] **Alignment Experiment Debug & Heatmap Cleanup (Approved 2026-05-30):**
+  - [ ] Simplify `NativePaddleEngine.kt` (Remove `heatmap` array from `DetectionResult` and avoid `outputTensor.floatData` heap copy).
+  - [ ] Streamline `OdometerOcrUtils.kt` (Remove `heatmap` fields, delete `processPaddleHeatmapLegacy` and `downsampleHeatmap`, and map `nativeBoxes` directly).
+  - [ ] Simplify `ExperimentAlignmentScreen.kt` (Map `detRes.nativeBoxes` to `processPaddleHeatmap`, remove JSON heatmap base64 dumping, and simplify Set E pipeline timing to `paddleTimeMs`).
+  - [ ] Verify compile success with `./build_app`.
+

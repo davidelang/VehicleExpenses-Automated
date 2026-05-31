@@ -258,11 +258,7 @@ private suspend fun runExperiment(
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
         
-        PipelineConfig("set_e", "Set E", { 
-            val tPrep = it.engines["ML Kit"]?.timesMs?.firstOrNull() ?: 0L
-            val tIso = it.engines["Paddle V3"]?.metadata?.get("t_isolated_cpp_ms")?.toLongOrNull() ?: 0L
-            tPrep + tIso
-        }) { it.paddleCppAngle }
+        PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
     val harnessEngineNames = pipelines.flatMap { listOf("${it.displayName} ML", "${it.displayName} Paddle") }
     val pipelineNames = pipelines.map { it.displayName }
@@ -665,17 +661,7 @@ private fun serializePhotoResultToJson(
         }
         put("deskew_data_paddle_cpp", pdCppArray)
 
-        val heatmap = deskewResA?.paddleHeatmap
-        if (heatmap != null && heatmap.isNotEmpty()) {
-            val byteBuf = java.nio.ByteBuffer.allocate(heatmap.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-            for (f in heatmap) {
-                byteBuf.putFloat(f)
-            }
-            val b64 = android.util.Base64.encodeToString(byteBuf.array(), android.util.Base64.NO_WRAP)
-            put("paddle_heatmap_b64", b64)
-        }
-        put("paddle_heatmap_width", deskewResA?.paddleHeatmapWidth ?: 0)
-        put("paddle_heatmap_height", deskewResA?.paddleHeatmapHeight ?: 0)
+
 
         val landmarksArray = JSONArray()
         photoResult.pathways["set_a"]?.discoveryResult?.textBlocks?.forEach { block -> 
@@ -1010,8 +996,8 @@ private suspend fun runPaddleValleyIterative(
         
         val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes = paddleEngine.detect(experimentDetSet512x128.p)
-        val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle") else emptyList<TextBlock>()
+        val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+        val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
         
         val frags = rawB.map { NativeImageUtils.expandByValley(odoBuffer.p.mat, it.boundingBox) }
