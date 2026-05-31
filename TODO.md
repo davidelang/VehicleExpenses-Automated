@@ -279,9 +279,15 @@
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]
 - [ ] Spec Documentation and PR Cleanup (See: dev-ai-interaction/plans/pr_cleanup_plan.md) [IN PROGRESS]
 - [ ] Restore Correct Coordinate Scaling (No-Stretch) for Native and Legacy Paddle (See: dev-ai-interaction/plans/restore-coordinate-scaling.md) [ACTIVE]
-- [ ] **Paddle & ML Kit Deskew Confidence & Heatmap Export:**
-  - [ ] Retrieve ML Kit confidence from element levels and assign it to TextBlocks.
-  - [ ] Implement mask-based mean confidence calculation for Paddle contours on the heatmap.
-  - [ ] Propagate confidence scores during Paddle block clustering.
-  - [ ] Capture the raw Paddle heatmap array and its dimensions.
-  - [ ] Export text blocks' confidence and the Paddle heatmap array (Base64 encoded) to the JSON report.
+- [ ] **Arbitrary Deskew Pathways Implementation (Phased Refactor):**
+  - [x] **Phase 1: Support Arbitrary Test Pathways (Structure Only)**
+    - [x] Refactor experiment screen to use array-driven loop over pipeline configurations.
+    - [x] Reuse bufferSetA as read-only and bufferSetB as a sequential working buffer.
+    - [x] Generate HTML headers/rows and JSON report pathways dynamically.
+  - [ ] **Phase 2: Scale to 5 Test Pathways (Without New Algorithms)**
+    - [ ] Scale pipelines array to 5 paths (A, B, C, D, E) mapping to existing algorithms.
+    - [ ] Verify HTML table scaling and JSON pathways structure (set_a through set_e).
+  - [ ] **Phase 3: Implement and Apply Top Performers**
+    - [ ] Add calculateWeightedAverageCustom with custom weighting functions.
+    - [ ] Compute quadratic area-weighted and confidence-area-weighted angles in deskewPaddleDual.
+    - [ ] Map the 5 pathways to the 5 distinct deskew consensus algorithms.
