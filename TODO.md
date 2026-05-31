@@ -242,6 +242,14 @@
 - [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.
 
 # TODO List
+- [x] **Refactor:** Access output tensor directly inside nativeHeatmapToAngle to bypass JNI copy overhead (Set E optimization).
+- [x] **Phase 5: Decommission Deskew Pathways (B, C, D) & Unify to Set A & E**
+  - [x] Create `docs/obsolete/DESKEW_CONVERGENCE_ALGORITHMS.md` detailing algorithms B, C, D, including the 145 ground-truth accuracy table and suffix explanation.
+  - [x] Modify `ExperimentAlignmentScreen.kt` to only keep `set_a` and `set_e` in the pipelines.
+  - [x] Simplify `deskewPaddleDual` in `OdometerOcrUtils.kt` to use the zero-copy native tensor JNI call.
+  - [x] Remove deprecated Kotlin consensus helpers in `OdometerOcrUtils.kt`.
+- [ ] **BUG:** `PXL_20220821_051055938.dng`: Investigate/Fix trailing '1' in Set C/D caused by excessive jump out without retracting back.
+- [ ] **BUG:** `PXL_20250802_215947597.jpg`: Investigate/Fix trailing '0' in Set C/D/E caused by OCR thinking there are two blocks of text (needs investigation).
 - [x] Merge PR `remove-dynamic-detect-test` and implement standardized tagging/cleanup.
 - [x] Fix local.properties generation in setup_agent.sh (See: plans/fix-setup.md)
 - [x] Implement PR-emulation handoff workflow (See: plans/pr-emulation-workflow.md)
@@ -279,4 +287,24 @@
 - [ ] ICRS Migration and Legacy Decommissioning: Phase 1 Bridge & Safety (See: plans/icrs-migration-and-decommissioning.md) [IN PROGRESS]
 - [ ] Spec Documentation and PR Cleanup (See: dev-ai-interaction/plans/pr_cleanup_plan.md) [IN PROGRESS]
 - [ ] Restore Correct Coordinate Scaling (No-Stretch) for Native and Legacy Paddle (See: dev-ai-interaction/plans/restore-coordinate-scaling.md) [ACTIVE]
+- [ ] **Arbitrary Deskew Pathways Implementation (Phased Refactor):**
+  - [x] **Phase 1: Support Arbitrary Test Pathways (Structure Only)**
+    - [x] Refactor experiment screen to use array-driven loop over pipeline configurations.
+    - [x] Reuse bufferSetA as read-only and bufferSetB as a sequential working buffer.
+    - [x] Generate HTML headers/rows and JSON report pathways dynamically.
+  - [x] **Phase 2: Scale to 5 Test Pathways (Without New Algorithms)**
+    - [x] Scale pipelines array to 5 paths (A, B, C, D, E) mapping to existing algorithms.
+    - [x] Verify HTML table scaling and JSON pathways structure (set_a through set_e).
+  - [x] **Phase 3: Implement and Apply Top Performers**
+    - [x] Add calculateWeightedAverageCustom with custom weighting functions.
+    - [x] Compute quadratic area-weighted and confidence-area-weighted angles in deskewPaddleDual.
+    - [x] Map the 5 pathways to the 5 distinct deskew consensus algorithms.
+  - [x] **Phase 4: Fix Deskew Timing Discrepancy (Isolated Algorithm Timings)**
+    - [x] Assign `tDeskewTotal` using `pipeline.getDeskewTime(deskewResA)` in ExperimentAlignmentScreen.kt.
+
+- [x] **Alignment Experiment Debug & Heatmap Cleanup (Approved 2026-05-30):**
+  - [x] Simplify `NativePaddleEngine.kt` (Remove `heatmap` array from `DetectionResult` and avoid `outputTensor.floatData` heap copy).
+  - [x] Streamline `OdometerOcrUtils.kt` (Remove `heatmap` fields, delete `processPaddleHeatmapLegacy` and `downsampleHeatmap`, and map `nativeBoxes` directly).
+  - [x] Simplify `ExperimentAlignmentScreen.kt` (Map `detRes.nativeBoxes` to `processPaddleHeatmap`, remove JSON heatmap base64 dumping, and simplify Set E pipeline timing to `paddleTimeMs`).
+  - [x] Verify compile success with `./build_app`.
 

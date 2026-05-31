@@ -183,8 +183,8 @@ object NativeImageUtils {
         return nativeProcessHeatmap(tensor, threshold, minArea)
     }
 
-    fun heatmapToAngle(heatmapArr: FloatArray, w: Int, h: Int, threshold: Float): Float {
-        return nativeHeatmapToAngle(heatmapArr, w, h, threshold)
+    fun heatmapToAngle(tensor: Any, threshold: Float): Float {
+        return nativeHeatmapToAngle(tensor, threshold)
     }
 
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
@@ -199,6 +199,6 @@ object NativeImageUtils {
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
-    private external fun nativeHeatmapToAngle(heatmapArr: FloatArray, w: Int, h: Int, threshold: Float): Float
+    private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
 
 }

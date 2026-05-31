@@ -624,19 +624,37 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngle(
-    JNIEnv* env, jobject thiz, jfloatArray heatmapArr, jint w, jint h, jfloat threshold) {
+    JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold) {
 
-    jfloat* heatmapData = env->GetFloatArrayElements(heatmapArr, nullptr);
-    if (!heatmapData) return 0.0f;
+    // 1. Get Native Tensor
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return 0.0f;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    if (nativePtr == 0) return 0.0f;
 
-    cv::Mat heatmap(h, w, CV_32F, heatmapData);
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return 0.0f;
+
+    paddle::lite_api::Tensor* nativeTensor = uptr->get();
+    auto shape = nativeTensor->shape();
+    if (shape.size() < 3) return 0.0f;
+
+    int h = (int)shape[shape.size() - 2];
+    int w = (int)shape[shape.size() - 1];
+    const float* data = nativeTensor->data<float>();
+    if (!data) return 0.0f;
+
+    cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask = heatmap > threshold;
 
     cv::Mat labels, stats, centroids;
     int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
 
     if (numLabels <= 1) {
-        env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
         return 0.0f;
     }
 
@@ -688,7 +706,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         }
     }
 
-    env->ReleaseFloatArrayElements(heatmapArr, heatmapData, JNI_ABORT);
     return (float)bestBucket / 2.0f;
 }
 
