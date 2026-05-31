@@ -33,7 +33,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val width: Int, 
         val height: Int, 
         val metadata: Map<String, String> = emptyMap(),
-        val nativeBoxes: List<DetectionBox> = emptyList()
+        val nativeBoxes: List<DetectionBox> = emptyList(),
+        val outputTensor: Any? = null
     )
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
@@ -284,7 +285,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
 
         } catch (t: Throwable) { 
             Log.e("PaddleDetect", "Detection failed", t); return null 
@@ -363,7 +364,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Dynamic detection failed", t)
             return null

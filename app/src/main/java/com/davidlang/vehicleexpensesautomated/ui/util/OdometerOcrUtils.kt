@@ -283,7 +283,7 @@ object OdometerOcrUtils {
         
         // Parallel Angle Calculation
         val tAngleCpp0 = System.currentTimeMillis()
-        val cppAngle = NativeImageUtils.heatmapToAngle(det.heatmap, det.width, det.height, 0.20f)
+        val cppAngle = if (det.outputTensor != null) NativeImageUtils.heatmapToAngle(det.outputTensor, 0.20f) else 0f
         val tAngleCpp = System.currentTimeMillis() - tAngleCpp0
 
         // Paddle V3 (Legacy Kotlin Math)
