@@ -242,6 +242,8 @@
 - [ ] Offload Valley Expansion algorithm to C++ to eliminate JNI per-pixel overhead.
 
 # TODO List
+- [ ] **BUG:** `PXL_20220821_051055938.dng`: Investigate/Fix trailing '1' in Set C/D caused by excessive jump out without retracting back.
+- [ ] **BUG:** `PXL_20250802_215947597.jpg`: Investigate/Fix trailing '0' in Set C/D/E caused by OCR thinking there are two blocks of text (needs investigation).
 - [x] Merge PR `remove-dynamic-detect-test` and implement standardized tagging/cleanup.
 - [x] Fix local.properties generation in setup_agent.sh (See: plans/fix-setup.md)
 - [x] Implement PR-emulation handoff workflow (See: plans/pr-emulation-workflow.md)
