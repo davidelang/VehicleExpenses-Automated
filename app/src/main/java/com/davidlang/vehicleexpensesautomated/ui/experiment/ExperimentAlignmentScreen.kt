@@ -370,7 +370,7 @@ private suspend fun runExperiment(
                         ocrFirst = ocr
                     }
                     
-                    val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle }, "Paddle")
+                    val primaryVetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, cachedRefs.map { it.vehicle }, "ML Kit")
                     primaryVetoResultsMap[pipeline.key] = primaryVetoResults
                     
                     val winnerId = primaryVetoResults.entries.find { !it.value.isVetoed }?.key
@@ -379,7 +379,7 @@ private suspend fun runExperiment(
                         primaryVetoResultsGlobal = primaryVetoResults
                     }
                     
-                    val winnerRef = cachedRefs.find { it.vehicle.id == winnerId }
+                    val globalWinnerRef = cachedRefs.find { it.vehicle.id == globalWinnerId }
                     
                     var alignedBase64 = ""
                     val hMap = mutableMapOf<String, OcrHarnessResult>()
@@ -388,16 +388,16 @@ private suspend fun runExperiment(
                     var alignResTimeMs = 0L
                     val alignResMetadata = mutableMapOf<String, String>()
                     
-                    if (winnerRef != null) {
-                        val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, winnerRef.curatedLandmarks)
+                    if (globalWinnerRef != null) {
+                        val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, globalWinnerRef.curatedLandmarks)
                         
                         val alignRes = ImageAlignmentUtils.anchorAlign(
                             NativePaddleEngine.bufferSetB,
-                            winnerRef.curatedLandmarks,
+                            globalWinnerRef.curatedLandmarks,
                             queryLandmarksPrimary,
-                            winnerRef.vehicle,
-                            winnerRef.width,
-                            winnerRef.height,
+                            globalWinnerRef.vehicle,
+                            globalWinnerRef.width,
+                            globalWinnerRef.height,
                             imgW,
                             imgH,
                             null
@@ -421,14 +421,14 @@ private suspend fun runExperiment(
                         tSnapAlign += tSnap
                         
                         // Refinement Loop (Always executed to provide diagnostic data)
-                        if (winnerRef.vehicle.id >= 0) {
+                        if (globalWinnerRef.vehicle.id >= 0) {
                             // Diagnostic High-Quality Crop (Save to disk using native snapshot)
-                            val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-                            val t = winnerRef.vehicle.odometerCropTop ?: 0f
-                            val r = winnerRef.vehicle.odometerCropRight ?: 1f
-                            val b = winnerRef.vehicle.odometerCropBottom ?: 1f
+                            val l = globalWinnerRef.vehicle.odometerCropLeft ?: 0f
+                            val t = globalWinnerRef.vehicle.odometerCropTop ?: 0f
+                            val r = globalWinnerRef.vehicle.odometerCropRight ?: 1f
+                            val b = globalWinnerRef.vehicle.odometerCropBottom ?: 1f
                             
-                            val icrsRect = if (winnerRef.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), imgW, imgH)
+                            val icrsRect = if (globalWinnerRef.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), imgW, imgH)
                             val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, imgW, imgH)
                             val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, imgW, imgH)
                             val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
@@ -445,13 +445,13 @@ private suspend fun runExperiment(
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
-                            runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces)
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, winnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true)
+                            runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces)
+                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true)
                         }
                     }
                     
                     val photoPathway = PhotoPathwayResult(
-                        winnerName = winnerRef?.vehicle?.name ?: "No match",
+                        winnerName = globalWinnerRef?.vehicle?.name ?: "No match",
                         bestOdometer = "", // filled dynamically downstream
                         tDeskewTotal = deskewResA.mlTimeMs + deskewResA.paddleTimeMs,
                         tDiscoveryTotal = tDiscoveryTotal,
@@ -465,8 +465,8 @@ private suspend fun runExperiment(
                     val alignmentTrace = AlignmentTraceResult(alignResSuccess, alignResTimeMs, alignedBase64, alignResMetadata)
                     val vehiclePathway = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, hMap)
                     
-                    if (winnerRef != null) {
-                        val map = vehiclePathways.getOrPut(winnerRef.vehicle.id) { mutableMapOf() }
+                    if (globalWinnerRef != null) {
+                        val map = vehiclePathways.getOrPut(globalWinnerRef.vehicle.id) { mutableMapOf() }
                         map[pipeline.key] = vehiclePathway
                     }
                 }
