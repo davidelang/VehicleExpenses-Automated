@@ -1149,7 +1149,7 @@ private suspend fun runPaddleValleyIterative(
         val jMeta = com.google.gson.JsonObject()
 
         valleyResults.forEachIndexed { vIdx, res -> 
-            res.second.forEach { (k, v) -> jMeta.addProperty("${k}_${vIdx}", v) }
+            res.second.forEach { (k, v) -> jMeta.addProperty("${k}_${bIdx}", v) }
         }
         
         cons.forEachIndexed { bIdx, box ->
@@ -1169,7 +1169,7 @@ private suspend fun runPaddleValleyIterative(
             
             val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
-            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${vIdx}", v) }
+            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${bIdx}", v) }
         }
         
         val odoStr = odoB.toString().trim()
