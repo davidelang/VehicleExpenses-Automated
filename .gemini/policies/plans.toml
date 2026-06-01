@@ -17,7 +17,7 @@ modes = ["plan"]
 # ONLY allow write_file and replace if they target the dev-ai-interaction/ sandbox or local plans
 [[rule]]
 toolName = ["write_file", "replace"]
-argsPattern = ".*\"file_path\":\"(/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/|dev-ai-interaction/|\\.gemini/plans/).*"
+argsPattern = ".*\"file_path\"\\s*:\\s*\"(/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/|dev-ai-interaction/|\\.gemini/plans/).*"
 decision = "allow"
 priority = 850
 modes = ["plan"]
@@ -32,7 +32,7 @@ modes = ["plan"]
 # Allow shell commands ONLY if they are executed with the working directory explicitly set inside the sandbox.
 [[rule]]
 toolName = "run_shell_command"
-argsPattern = ".*\"dir_path\":\"(/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction[^\"]*|.*dev-ai-interaction[^\"]*)\".*"
+argsPattern = ".*\"dir_path\"\\s*:\\s*\"(/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction[^\"]*|.*dev-ai-interaction[^\"]*)\".*"
 decision = "allow"
 priority = 800
 modes = ["plan"]
