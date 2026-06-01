@@ -425,7 +425,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double minX = L, maxX = R, minY = T, maxY = B;
     double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
     double hL = (maxX - minX) * 12.0; 
-    double vL = (maxY - minY) * 3.0;
+    double vL = (maxY - minY) * 1.5;
 
     double contentThreshold = std::max(20.0, hillBrightness * (double)thresholdFactor);
     int minContentPixels = 2; // Require at least 2 bright pixels to consider it content
@@ -433,7 +433,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int minRunLength = 3; // Require a contiguous stroke of at least 3 pixels
 
     auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
-        int currentRun = 0;
+        int currentRun = 0, maxRun = 0;
         if (horizontal) {
             if (fixed < 0 || fixed >= maxH) return true;
             const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
@@ -442,11 +442,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             for (int i = startIdx; i < endIdx; ++i) {
                 if (rowPtr[i] > contentThreshold) {
                     currentRun++;
-                    if (currentRun >= minRunLength) return false; // Found a stroke!
+                    if (currentRun > maxRun) maxRun = currentRun;
                 } else {
                     currentRun = 0;
                 }
             }
+            // Vertical expansion: Row must be between 10px and 30% of width
+            return (maxRun < 10 || maxRun > (maxW * 0.30));
         } else {
             if (fixed < 0 || fixed >= maxW) return true;
             int startIdx = std::max(0, start);
@@ -454,13 +456,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             for (int i = startIdx; i < endIdx; ++i) {
                 if (mat->at<uint8_t>(i, fixed) > contentThreshold) {
                     currentRun++;
-                    if (currentRun >= minRunLength) return false; // Found a stroke!
+                    if (currentRun > maxRun) maxRun = currentRun;
                 } else {
                     currentRun = 0;
                 }
             }
+            // Horizontal expansion: Column must be between 5px and 90% of height
+            return (maxRun < 5 || maxRun > (maxH * 0.90));
         }
-        return true; // No strokes found, IT IS a valley
     };
 
     // 3. First Vertical Expansion Pass (Simple Stop)
@@ -474,7 +477,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     }
 
     // Recalculate horizontal lookAhead based on the newly expanded vertical height
-    double lookAhead = (maxY - minY) * 0.75;
+    double lookAhead = (maxY - minY) * 0.5;
 
     // 4. Horizontal Expansion (Jump and Collapse)
     double walkL = minX;
@@ -543,11 +546,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double minX = L, maxX = R, minY = T, maxY = B;
     double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
     double hL = (maxX - minX) * 12.0; 
-    double vL = (maxY - minY) * 3.0;
+    double vL = (maxY - minY) * 1.5;
 
     std::ostringstream oss;
     auto isValleyDiag = [&](int start, int end, int fixed, bool horizontal, int* outMaxRun, int* outPeak) -> bool {
         int currentRun = 0, maxRun = 0, peak = 0;
+        bool isValley = true;
         if (horizontal) {
             if (fixed < 0 || fixed >= maxH) return true;
             const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
@@ -563,6 +567,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                     currentRun = 0;
                 }
             }
+            isValley = (maxRun < 10 || maxRun > (maxW * 0.30));
         } else {
             if (fixed < 0 || fixed >= maxW) return true;
             int startIdx = std::max(0, start);
@@ -577,10 +582,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                     currentRun = 0;
                 }
             }
+            isValley = (maxRun < 5 || maxRun > (maxH * 0.90));
         }
         if (outMaxRun) *outMaxRun = maxRun;
         if (outPeak) *outPeak = peak;
-        return (maxRun < minRunLength);
+        return isValley;
     };
 
     auto trace = [&](const char* code, int coord, int maxRun, int peak) {
@@ -608,7 +614,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         maxY += 1.0;
     }
 
-    double lookAhead = (maxY - minY) * 0.75;
+    double lookAhead = (maxY - minY) * 0.5;
 
     // 4. Horizontal Expansion (Jump and Collapse)
     double walkL = minX;
