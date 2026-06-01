@@ -988,7 +988,7 @@ private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     val totalPixels = mat.rows() * mat.cols()
 
     val maxVal = bins.maxOrNull() ?: 1.0f
-    val maxIdx = bins.indexOf(maxVal)
+    val maxIdx = bins.indices.maxByOrNull { bins[it] } ?: 0
     val thr = maxVal * 0.05f
 
     var lowIdx = 0
@@ -1152,7 +1152,7 @@ private suspend fun runPaddleValleyIterative(
             res.second.forEach { (k, v) -> jMeta.addProperty("${k}_${idx}", v) }
         }
         
-        cons.forEach { box ->
+        cons.forEachIndexed { idx, box ->
             val sL = box.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
             val sT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
             val sR = box.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
