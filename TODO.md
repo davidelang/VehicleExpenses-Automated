@@ -6,17 +6,17 @@
 - **Rule 4:** Exclusive use of `./build_app` for commits/builds.
 
 ## Active Execution: Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments
-- [ ] **EXECUTE:** Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments.
-  - [ ] Modify `OdometerOcrUtils.kt`:
-    - [ ] Subtract 4.0 from minimum coordinates and add 1.0 to maximum coordinates in `processPaddleHeatmap` `nativeBoxes` mapping.
-    - [ ] Subtract 4.0 from minimum bounds and add 1.0 to maximum bounds in `processPaddleHeatmapLegacy`.
-  - [ ] Modify `NativeImageUtils.cpp`:
-    - [ ] Change `vL` multiplier to `3.0` inside `nativeExpandByValley`.
-    - [ ] Change `lookAhead` multiplier to `1.0` inside `nativeExpandByValley`.
-  - [ ] Modify `ground_truth_odo.json`:
-    - [ ] Flag row 45 odometer value with trailing `?` ("206175?").
-    - [ ] Flag row 141 odometer value with trailing `?` ("219941?").
-  - [ ] Run `./build_app` to compile and commit the changes.
+- [x] **EXECUTE:** Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments.
+  - [x] Modify `OdometerOcrUtils.kt`:
+    - [x] Subtract 4.0 from minimum coordinates and add 4.0 to maximum coordinates in `processPaddleHeatmap` `nativeBoxes` mapping.
+    - [x] Subtract 4.0 from minimum bounds and add 4.0 to maximum bounds in `processPaddleHeatmapLegacy`.
+  - [x] Modify `NativeImageUtils.cpp`:
+    - [x] Change `vL` multiplier to `3.0` inside `nativeExpandByValley`.
+    - [x] Change `lookAhead` multiplier to `1.0` inside `nativeExpandByValley`.
+  - [x] Modify `ground_truth_odo.json`:
+    - [x] Flag row 45 odometer value with trailing `?` ("206175?").
+    - [x] Flag row 141 odometer value with trailing `?` ("219941?").
+  - [x] Run `./build_app` to compile and commit the changes.
 
 
 ## Active Execution: Fix Pump Experiment NV21 Crops
