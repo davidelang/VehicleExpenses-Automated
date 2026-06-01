@@ -8,8 +8,8 @@
 ## Active Execution: Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments
 - [ ] **EXECUTE:** Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments.
   - [ ] Modify `OdometerOcrUtils.kt`:
-    - [ ] Subtract 1.0 from minimum coordinates and add 1.0 to maximum coordinates in `processPaddleHeatmap` `nativeBoxes` mapping.
-    - [ ] Subtract 1.0 from minimum bounds and add 1.0 to maximum bounds in `processPaddleHeatmapLegacy`.
+    - [ ] Subtract 4.0 from minimum coordinates and add 1.0 to maximum coordinates in `processPaddleHeatmap` `nativeBoxes` mapping.
+    - [ ] Subtract 4.0 from minimum bounds and add 1.0 to maximum bounds in `processPaddleHeatmapLegacy`.
   - [ ] Modify `NativeImageUtils.cpp`:
     - [ ] Change `vL` multiplier to `3.0` inside `nativeExpandByValley`.
     - [ ] Change `lookAhead` multiplier to `1.0` inside `nativeExpandByValley`.
