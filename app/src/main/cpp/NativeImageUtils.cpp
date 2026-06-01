@@ -1045,9 +1045,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     return jres;
 }
 
-}
-
-
 JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandByCharacterAware(
     JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
@@ -1197,3 +1194,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     env->SetIntArrayRegion(result, 0, 4, dims);
     return result;
 }
+}
+
+
