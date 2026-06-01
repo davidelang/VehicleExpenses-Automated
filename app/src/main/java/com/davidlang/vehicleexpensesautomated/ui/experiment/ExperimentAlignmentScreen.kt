@@ -509,7 +509,7 @@ private suspend fun runExperiment(
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
                             // For Set F and G, only run the "Raw" stage
-                            val iterativeStages = if (pipeline.key in listOf("set_f", "set_g", "set_h")) listOf("Raw") else listOf("Raw", "80% Stretch Only")
+                            val iterativeStages = if (pipeline.key in listOf("set_f", "set_g")) listOf("Raw") else listOf("Raw", "80%")
 
                             runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
                             runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h"))
@@ -542,15 +542,14 @@ private suspend fun runExperiment(
                     finalWinnerName = winnerRef.vehicle.name
                 }
                 
-                // Extract odometer consensus across all pathways
-                val allResults = vehiclePathways.values.flatMap { it.values }.flatMap { it.refinementTraces.values }.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                if (allResults.isNotEmpty()) {
-                    bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
-                }
-                
-                // Update bestOdometer in all PhotoPathwayResults
-                val updatedPathways = pathways.mapValues { (_, pathRes) ->
-                    pathRes.copy(bestOdometer = bestOdometer)
+                // Update bestOdometer in all PhotoPathwayResults independently
+                val updatedPathways = pathways.mapValues { (pathKey, pathRes) ->
+                    val pathResults = vehiclePathways.values.mapNotNull { it[pathKey] }
+                    val pathAllOdos = pathResults.flatMap { it.refinementTraces.values }.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
+                    val pathBestOdo = if (pathAllOdos.isNotEmpty()) {
+                        pathAllOdos.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
+                    } else "FAILED"
+                    pathRes.copy(bestOdometer = pathBestOdo)
                 }
                 
                 // Build vehicleResultsMap
@@ -987,44 +986,19 @@ private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)
     val totalPixels = mat.rows() * mat.cols()
-    
-    val smoothed = FloatArray(64)
-    for (i in 0..63) {
-        val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
-        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
-    }
-    val dropOffThreshold = totalPixels * 0.003
-    var pLow = 0.5
-    for (i in 1..61) {
-        if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
-            var peakConfirmed = false
-            for (j in i+1..62) {
-                if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
-                if (smoothed[j] > smoothed[i]) break
-            }
-            if (peakConfirmed) { pLow = i.toDouble(); break }
-        }
-    }
-    var pHigh = 62.5
-    for (i in 62 downTo 2) {
-        if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
-            var peakConfirmed = false
-            for (j in i-1 downTo 1) {
-                if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
-                if (smoothed[j] > smoothed[i]) break
-            }
-            if (peakConfirmed) { pHigh = i.toDouble(); break }
-        }
-    }
-    
-    var intensityLow = pLow * 4.0
-    var intensityHigh = pHigh * 4.0
-    if (intensityHigh - intensityLow < 20.0) {
-        var sum = 0.0
-        for (i in 0..63) { sum += bins[i]; if (sum >= totalPixels * 0.02) { intensityLow = i * 4.0; break } }
-        sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= totalPixels * 0.02) { intensityHigh = i * 4.0; break } }
-    }
-    
+
+    val maxVal = bins.maxOrNull() ?: 1.0f
+    val maxIdx = bins.indexOf(maxVal)
+    val thr = maxVal * 0.05f
+
+    var lowIdx = 0
+    for (i in maxIdx downTo 0) { if (bins[i] < thr) { lowIdx = i; break } }
+    var highIdx = 63
+    for (i in maxIdx..63) { if (bins[i] < thr) { highIdx = i; break } }
+
+    val intensityLow = lowIdx * 4.0
+    val intensityHigh = highIdx * 4.0
+
     var p80 = 0.0
     var sum = 0.0
     for (i in 0..63) {
@@ -1036,7 +1010,7 @@ private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     return HistStats(intensityLow, intensityHigh, p80)
 }
 
-private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<HistMarker> = emptyList()): String {
+private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<HistMarker> = emptyList(), skipEnds: Boolean = false): String {
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)
@@ -1048,8 +1022,11 @@ private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<Hi
     val paint = android.graphics.Paint()
     
     paint.color = android.graphics.Color.BLACK
-    for (i in 0..63) {
-        val h = (bins[i] / maxVal) * 100
+    val startBin = if (skipEnds) 1 else 0
+    val endBin = if (skipEnds) 62 else 63
+    val localMax = if (skipEnds) (startBin..endBin).map { bins[it] }.maxOrNull() ?: 1.0f else maxVal
+    for (i in startBin..endBin) {
+        val h = (bins[i] / localMax) * 100
         canvas.drawRect(i * 4f, 110f - h, (i + 1) * 4f, 110f, paint)
     }
     
@@ -1106,7 +1083,7 @@ private suspend fun runPaddleValleyIterative(
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>,
     isNumeric: Boolean = false,
-    stages: List<String> = listOf("Raw", "80% Stretch Only"),
+    stages: List<String> = listOf("Raw", "80%"),
     extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false
 ) {
     val tH0 = System.currentTimeMillis()
@@ -1192,7 +1169,7 @@ private suspend fun runPaddleValleyIterative(
             
             val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
-            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty(k, v) }
+            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${idx}", v) }
         }
         
         val odoStr = odoB.toString().trim()
@@ -1230,7 +1207,7 @@ private suspend fun runMLKitIterative(
     experimentRecSet320x48: BufferSet,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>,
-    stages: List<String> = listOf("Raw", "80% Stretch Only")
+    stages: List<String> = listOf("Raw", "80%")
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
