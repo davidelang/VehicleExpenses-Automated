@@ -480,11 +480,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
                     val char = dictionary[maxIdx - 1]
-                    Log.i("PaddleOCR", "Decoded: \x27$char\x27 Conf: %.3f (Prev: %.3f) Len: %d".format(maxVal, lastConf, result.length))
+                    Log.i("PaddleOCR", "Decoded: '$char' Conf: %.3f (Prev: %.3f) Len: %d".format(maxVal, lastConf, result.length))
                     if (result.length < 5 || maxVal >= (0.30f * lastConf)) {
                         result.append(char); totalConf += maxVal; charCount++; lastConf = maxVal
                     } else {
-                        Log.w("PaddleOCR", "Pruning: Confidence drop too high for \x27$char\x27")
+                        Log.w("PaddleOCR", "Pruning: Confidence drop too high for '$char'")
                         break
                     }
                 }
