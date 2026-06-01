@@ -426,29 +426,34 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 3.0;
 
+    double contentThreshold = std::max(20.0, hillBrightness * (double)thresholdFactor);
+    int minContentPixels = 2; // Require at least 2 bright pixels to consider it content
+
     auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
-        double sum = 0;
-        int count = 0;
+        int contentPixels = 0;
         if (horizontal) {
             if (fixed < 0 || fixed >= maxH) return true;
             const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
             int startIdx = std::max(0, start);
             int endIdx = std::min(maxW, end);
             for (int i = startIdx; i < endIdx; ++i) {
-                sum += rowPtr[i];
-                count++;
+                if (rowPtr[i] > contentThreshold) {
+                    contentPixels++;
+                    if (contentPixels >= minContentPixels) return false; // Found content, NOT a valley
+                }
             }
         } else {
             if (fixed < 0 || fixed >= maxW) return true;
             int startIdx = std::max(0, start);
             int endIdx = std::min(maxH, end);
             for (int i = startIdx; i < endIdx; ++i) {
-                sum += mat->at<uint8_t>(i, fixed);
-                count++;
+                if (mat->at<uint8_t>(i, fixed) > contentThreshold) {
+                    contentPixels++;
+                    if (contentPixels >= minContentPixels) return false; // Found content, NOT a valley
+                }
             }
         }
-        double avg = (count > 0) ? (sum / count) : 0.0;
-        return (avg < 15.0 || avg < valleyThreshold);
+        return true; // No content found, IT IS a valley
     };
 
     // 3. First Vertical Expansion Pass (Simple Stop)
