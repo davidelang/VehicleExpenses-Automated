@@ -529,7 +529,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jintArray result = env->NewIntArray(4);
     jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
     env->SetIntArrayRegion(result, 0, 4, dims);
-    LOGI("CHAR_AWARE: Final: (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
     return result;
 }
 
@@ -844,7 +843,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         (jint)maxExtentL, (jint)maxExtentT, (jint)maxExtentR, (jint)maxExtentB
     };
     env->SetIntArrayRegion(result, 0, 8, dims);
-    LOGI("CHAR_AWARE: Final: (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
     return result;
 }
 
@@ -1050,7 +1048,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandByCharacterAware(
     JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
-    LOGI(\"CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d\", L, T, R, B, maxW, maxH);
+    LOGI("CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d\", L, T, R, B, maxW, maxH);
     
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
@@ -1160,7 +1158,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     while (curL > 0) {
         int p = getBlockDensity(curL - digitWidth, curL);
         LOGI("CHAR_AWARE: Probe L: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curL - digitWidth, curL, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
-        LOGI("CHAR_AWARE: Probe R: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curR, curR + digitWidth, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
         if (p >= 0.5 * mass1 && p <= 1.5 * mass8) {
             curL -= digitWidth;
             lastGoodL = curL;
@@ -1171,7 +1168,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int curR = (int)strictR;
     while (curR < maxW) {
         int p = getBlockDensity(curR, curR + digitWidth);
-        LOGI("CHAR_AWARE: Probe L: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curL - digitWidth, curL, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
         LOGI("CHAR_AWARE: Probe R: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curR, curR + digitWidth, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
         if (p >= 0.5 * mass1 && p <= 1.5 * mass8) {
             curR += digitWidth;
