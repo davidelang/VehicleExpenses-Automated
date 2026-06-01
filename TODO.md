@@ -8,6 +8,6 @@
     - [x] Update `.gemini/policies/plans.toml` with whitespace tolerance.
     - [x] Update `.gemini/policies/auto-saved.toml` to cleanup mode-based restrictions.
     - [x] Commit and sync rules across all worktrees.
-- [/] Refine update-rules.sh Robustness
-    - [ ] Update `update-rules.sh` to break links and handle read-only targets.
-    - [ ] Re-run sync and verify inodes.
+- [x] Refine update-rules.sh Robustness
+    - [x] Update `update-rules.sh` to break links and handle read-only targets.
+    - [x] Re-run sync and verify inodes.
