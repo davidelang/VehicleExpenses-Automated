@@ -393,12 +393,23 @@ private suspend fun runExperiment(
                     if (pipeline.key == "set_f") {
                         OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
                     } else if (pipeline.key == "set_g") {
-                        extraImages["hist1"] = generateGatedHistogramB64(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
-                        val original80Value = getGatedThreshold(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
+                        val stats = getHistStats(NativePaddleEngine.bufferSetB.p.mat)
+                        extraImages["hist1"] = generateGatedHistogramB64(NativePaddleEngine.bufferSetB.p.mat, listOf(
+                            HistMarker(stats.intensityLow, Color.YELLOW),
+                            HistMarker(stats.intensityHigh, Color.YELLOW),
+                            HistMarker(stats.p80, Color.MAGENTA)
+                        ))
                         
                         OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetB.p.mat)
                         
-                        extraImages["hist2"] = generateGatedHistogramB64(NativePaddleEngine.bufferSetB.p.mat, 0.80f, markValue = original80Value)
+                        // After stretch, original 80% maps to a new value.
+                        val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
+                        val beta = -stats.intensityLow * alpha
+                        val mappedP80 = stats.p80 * alpha + beta
+                        
+                        extraImages["hist2"] = generateGatedHistogramB64(NativePaddleEngine.bufferSetB.p.mat, listOf(
+                            HistMarker(mappedP80, Color.CYAN)
+                        ))
                     }
 
                     // Independent deskew for preprocessed buffers
@@ -564,7 +575,7 @@ private suspend fun runExperiment(
                     originalLineNumber, file.name, imgW, imgH, meta.isDegraded, originalBase64,
                     photoResult!!, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(),
                     harnessEngineNames, (tMl + tPd), tDiscoveryTotalCombined,
-                    tilt, deskewResA, pipelines, meta.diagnostic
+                    tilt, deskewResA, pipelines, meta.diagnostic, photoResult.pathways["set_g"]?.harnessResults?.get("Set G (Hist Stretch) Paddle")?.extraImages ?: emptyMap()
                 )
                 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
@@ -837,7 +848,8 @@ private fun buildHtmlRowDynamic(
     tilt: Float,
     deskewRes: OdometerOcrUtils.DeskewResult,
     pipelines: List<PipelineConfig>,
-    diagnostic: String = ""
+    diagnostic: String = "",
+    extraImages: Map<String, String> = emptyMap()
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
@@ -849,7 +861,13 @@ private fun buildHtmlRowDynamic(
     appendLine("<br><small>$resHtml</small>$diagHtml")
     appendLine("<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms")
     appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
-    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'>")
+    
+    // For Set G, show histograms in first column
+    if (extraImages.containsKey("hist1")) {
+        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (Yellow=Stretch, Magenta=80%)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (Cyan=Original 80%)</small></td></tr></table>")
+    }
+    appendLine("</td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     
@@ -959,58 +977,85 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
 
 private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
-private fun getGatedThreshold(mat: org.opencv.core.Mat, floorPercentile: Float): Int {
+private data class HistMarker(val value: Double, val color: Int)
+
+private data class HistStats(val intensityLow: Double, val intensityHigh: Double, val p80: Double)
+
+private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     val hist = org.opencv.core.Mat()
-    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+    val bins = FloatArray(64); hist.get(0, 0, bins)
     val totalPixels = mat.rows() * mat.cols()
-    var sum = 0.0
-    var floorBin = 0
-    for (i in 0..255) {
-        sum += hist.get(i, 0)[0]
-        if (sum >= totalPixels * floorPercentile) {
-            floorBin = i
-            break
+    
+    val smoothed = FloatArray(64)
+    for (i in 0..63) {
+        val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
+        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+    }
+    val dropOffThreshold = totalPixels * 0.003
+    var pLow = 0.5
+    for (i in 1..61) {
+        if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
+            var peakConfirmed = false
+            for (j in i+1..62) {
+                if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+                if (smoothed[j] > smoothed[i]) break
+            }
+            if (peakConfirmed) { pLow = i.toDouble(); break }
         }
     }
+    var pHigh = 62.5
+    for (i in 62 downTo 2) {
+        if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
+            var peakConfirmed = false
+            for (j in i-1 downTo 1) {
+                if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+                if (smoothed[j] > smoothed[i]) break
+            }
+            if (peakConfirmed) { pHigh = i.toDouble(); break }
+        }
+    }
+    
+    var intensityLow = pLow * 4.0
+    var intensityHigh = pHigh * 4.0
+    if (intensityHigh - intensityLow < 20.0) {
+        var sum = 0.0
+        for (i in 0..63) { sum += bins[i]; if (sum >= totalPixels * 0.02) { intensityLow = i * 4.0; break } }
+        sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= totalPixels * 0.02) { intensityHigh = i * 4.0; break } }
+    }
+    
+    var p80 = 0.0
+    var sum = 0.0
+    for (i in 0..63) {
+        sum += bins[i]
+        if (sum >= totalPixels * 0.80) { p80 = i * 4.0; break }
+    }
+    
     hist.release()
-    return floorBin
+    return HistStats(intensityLow, intensityHigh, p80)
 }
 
-private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float, markValue: Int? = null): String {
+private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<HistMarker> = emptyList()): String {
     val hist = org.opencv.core.Mat()
-    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
-    val bins = FloatArray(256); hist.get(0, 0, bins)
-    val totalPixels = mat.rows() * mat.cols()
-    var sum = 0.0
-    var floorBin = 0
-    for (i in 0..255) {
-        sum += bins[i]
-        if (sum >= totalPixels * floorPercentile) {
-            floorBin = i
-            break
-        }
-    }
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+    val bins = FloatArray(64); hist.get(0, 0, bins)
 
     val maxVal = bins.maxOrNull() ?: 1.0f
     val bmp = Bitmap.createBitmap(256, 120, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bmp)
     canvas.drawColor(android.graphics.Color.WHITE)
     val paint = android.graphics.Paint()
+    
     paint.color = android.graphics.Color.BLACK
-    for (i in 0..255) {
+    for (i in 0..63) {
         val h = (bins[i] / maxVal) * 100
-        canvas.drawLine(i.toFloat(), 110f, i.toFloat(), 110f - h, paint)
+        canvas.drawRect(i * 4f, 110f - h, (i + 1) * 4f, 110f, paint)
     }
     
-    // Draw the 80% line (original gated value)
-    paint.color = android.graphics.Color.MAGENTA
-    paint.strokeWidth = 2f
-    canvas.drawLine(floorBin.toFloat(), 0f, floorBin.toFloat(), 120f, paint)
-    
-    // Draw the marker line (where the original 80% ended up)
-    if (markValue != null) {
-        paint.color = android.graphics.Color.CYAN
-        canvas.drawLine(markValue.toFloat(), 0f, markValue.toFloat(), 120f, paint)
+    markers.forEach { marker ->
+        paint.color = marker.color
+        paint.strokeWidth = 2f
+        canvas.drawLine(marker.value.toFloat(), 0f, marker.value.toFloat(), 120f, paint)
     }
 
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
@@ -1169,7 +1214,7 @@ private suspend fun runPaddleValleyIterative(
         jsonStages.add(stage, sObj)
     }
     
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
+    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal, extraImages)
     report[displayName] = result
     targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
 }

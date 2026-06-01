@@ -1,3 +1,10 @@
+## Active Execution: Refined Histogram Visuals
+- [ ] **EXECUTE:** Refine Set G histogram visuals (64-bins, Yellow markers, 1st Column).
+  - [ ] Update \`generateGatedHistogramB64\` to 64 bins and support multi-color markers.
+  - [ ] Modify \`buildHtmlRowDynamic\` to show histograms in the first column.
+  - [ ] Update \`runExperiment\` to calculate Floor/Ceiling/80% bins for Set G.
+  - [ ] Verify with \`./build_app\`.
+
 ## Active Execution: Set F/G and Row Numbers
 - [x] **DONE:** Implement Set F/G and subset row number preservation.
   - [x] Refactor subsets to Maps in \`ExperimentAlignmentScreen.kt\`.
