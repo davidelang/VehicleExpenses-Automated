@@ -68,6 +68,20 @@ private val GOLDEN_SUBSET = listOf(
     "PXL_20221128_172727575.jpg"
 )
 
+private val FAILING_SUBSET = listOf(
+    "PXL_20221121_021330418.jpg", // Row 5
+    "PXL_20221228_164725812.dng", // Row 12
+    "PXL_20230430_042448627.dng", // Row 22
+    "PXL_20231221_212942380.jpg", // Row 40
+    "PXL_20231223_074744139.jpg", // Row 41
+    "PXL_20240114_162249446.jpg", // Row 45
+    "PXL_20240414_010409990.jpg", // Row 50
+    "PXL_20240717_235836312.jpg", // Row 55
+    "PXL_20251111_071548876.jpg", // Row 124
+    "PXL_20260214_204037399.jpg", // Row 131
+    "PXL_20260413_083458977.jpg"  // Row 141
+)
+
 @Immutable
 data class PhotoResultSummary(
     val photoName: String,
@@ -149,6 +163,19 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
                 isRunning = false; status = "Complete! Limited Report saved." 
             } 
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Limited Experiment (Golden Subset)") }
+        Button(onClick = { 
+            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
+            scope.launch { 
+                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                val subset = allFiles.filter { it.name in FAILING_SUBSET }
+                totalPhotos = subset.size
+                isRunning = true; resultsList.clear()
+                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, FAILING_SUBSET) { res, p -> 
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName 
+                }
+                isRunning = false; status = "Complete! Failing Subset Report saved." 
+            } 
+        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Failing Subset") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->

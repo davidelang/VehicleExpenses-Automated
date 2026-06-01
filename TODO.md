@@ -1,3 +1,9 @@
+## Active Execution: Add Failing Cases Subset Button
+- [x] **DONE:** Add button to run failing subset on Alignment Experiment screen.
+  - [x] Define \`FAILING_SUBSET\` list in \`ExperimentAlignmentScreen.kt\`.
+  - [x] Add "Run Failing Subset" button to the UI.
+  - [x] Verify with \`./build_app\`.
+
 ## Active Execution: Fix horizontal streak gating and instrument pruning
 - [x] **DONE:** Implement 10-column horizontal streak gating and instrument recognition pruning.
   - [x] Increase horizontal streak requirement to 10 columns in \`NativeImageUtils.cpp\`.
