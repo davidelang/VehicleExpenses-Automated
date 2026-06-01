@@ -5,6 +5,20 @@
 - **Rule 3:** Mandatory User Approval for resets past `builds`.
 - **Rule 4:** Exclusive use of `./build_app` for commits/builds.
 
+## Active Execution: Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments
+- [ ] **EXECUTE:** Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments.
+  - [ ] Modify `OdometerOcrUtils.kt`:
+    - [ ] Subtract 1.0 from minimum coordinates and add 1.0 to maximum coordinates in `processPaddleHeatmap` `nativeBoxes` mapping.
+    - [ ] Subtract 1.0 from minimum bounds and add 1.0 to maximum bounds in `processPaddleHeatmapLegacy`.
+  - [ ] Modify `NativeImageUtils.cpp`:
+    - [ ] Change `vL` multiplier to `3.0` inside `nativeExpandByValley`.
+    - [ ] Change `lookAhead` multiplier to `1.0` inside `nativeExpandByValley`.
+  - [ ] Modify `ground_truth_odo.json`:
+    - [ ] Flag row 45 odometer value with trailing `?` ("206175?").
+    - [ ] Flag row 141 odometer value with trailing `?` ("219941?").
+  - [ ] Run `./build_app` to compile and commit the changes.
+
+
 ## Active Execution: Fix Pump Experiment NV21 Crops
 - [x] **EXECUTE:** Fix Pump Experiment NV21 Crops to resolve SIGSEGV.
   - [x] Add long-lived square `mlDiscoveryBuffers` at startup in `ExperimentPumpScreen.kt` (only for ML Kit).
