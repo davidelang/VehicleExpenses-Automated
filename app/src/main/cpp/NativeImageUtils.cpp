@@ -424,7 +424,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double minX = L, maxX = R, minY = T, maxY = B;
     double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
     double hL = (maxX - minX) * 12.0; 
-    double vL = (maxY - minY) * 1.0;
+    double vL = (maxY - minY) * 3.0;
 
     auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
         double sum = 0;
@@ -462,7 +462,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     }
 
     // Recalculate horizontal lookAhead based on the newly expanded vertical height
-    double lookAhead = (maxY - minY) * 0.5;
+    double lookAhead = (maxY - minY) * 1.0;
 
     // 4. Horizontal Expansion (Jump and Collapse)
     double walkL = minX;
