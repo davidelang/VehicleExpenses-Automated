@@ -1,3 +1,10 @@
+## Active Execution: Recognition Tuning & Deep Expansion Diag
+- [ ] **EXECUTE:** Tune recognition pruning and enhance expansion diagnostics.
+  - [ ] Relax \`processOcrNumeric\` pruning (len<5, 0.30 ratio) and add confidence logging.
+  - [ ] Implement dimensional gating in C++ (3px-30%w / 2px-90%h) and lower threshold to 15.0.
+  - [ ] Expose \`valley_image_width\` in JSON report.
+  - [ ] Verify results with \`./build_app\` and forensic analysis.
+
 ## Active Execution: Dimensional Stroke Gating\n- [x] **DONE:** Implement dimensional stroke gating (Row: 10px-30%w, Col: 5px-90%h).\n  - [x] Refine \`isValley\` and \`isValleyDiag\` with directional min/max run length constraints.\n  - [x] Reduce \`vL\` to 1.5x and \`lookAhead\` to 0.5x height.\n\n## Active Execution: Per-Line Forensic Expansion Profiling\n- [x] **EXECUTE:** Implement per-line forensic expansion profiling via cloned diagnostic function.\n  - [x] Implement \`nativeExpandByValleyDiagnostic\` in C++ with per-line tracing.\n  - [x] Add Kotlin wrapper in \`NativeImageUtils.kt\`.\n  - [x] Integrate diagnostic call into \`ExperimentAlignmentScreen.kt\` and inject into JSON metadata.\n\n## Active Execution: Fix horizontal retraction and look-ahead
 - [x] **EXECUTE:** Fix horizontal retraction and set look-ahead to 0.75x height.
   - [x] Refactor horizontal walk in `NativeImageUtils.cpp` to separate probe from result.

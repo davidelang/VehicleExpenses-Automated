@@ -427,7 +427,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double hL = (maxX - minX) * 12.0; 
     double vL = (maxY - minY) * 1.5;
 
-    double contentThreshold = std::max(20.0, hillBrightness * (double)thresholdFactor);
+    double contentThreshold = std::max(15.0, hillBrightness * (double)thresholdFactor);
     int minContentPixels = 2; // Require at least 2 bright pixels to consider it content
 
     int minRunLength = 3; // Require a contiguous stroke of at least 3 pixels
@@ -447,8 +447,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                     currentRun = 0;
                 }
             }
-            // Vertical expansion: Row must be between 10px and 30% of width
-            return (maxRun < 10 || maxRun > (maxW * 0.30));
+            // Vertical expansion: Row must be between 3px and 30% of width
+            return (maxRun < 3 || maxRun > (maxW * 0.30));
         } else {
             if (fixed < 0 || fixed >= maxW) return true;
             int startIdx = std::max(0, start);
@@ -461,8 +461,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                     currentRun = 0;
                 }
             }
-            // Horizontal expansion: Column must be between 5px and 90% of height
-            return (maxRun < 5 || maxRun > (maxH * 0.90));
+            // Horizontal expansion: Column must be between 2px and 90% of height
+            return (maxRun < 2 || maxRun > (maxH * 0.90));
         }
     };
 
@@ -540,7 +540,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
     cv::Scalar meanVal = cv::mean((*mat)(roi));
     double hillBrightness = meanVal[0];
-    double contentThreshold = std::max(20.0, hillBrightness * (double)thresholdFactor);
+    double contentThreshold = std::max(15.0, hillBrightness * (double)thresholdFactor);
     int minRunLength = 3; 
 
     double minX = L, maxX = R, minY = T, maxY = B;
@@ -567,7 +567,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                     currentRun = 0;
                 }
             }
-            isValley = (maxRun < 10 || maxRun > (maxW * 0.30));
+            // Vertical expansion: Row must be between 3px and 30% of width
+            isValley = (maxRun < 3 || maxRun > (maxW * 0.30));
         } else {
             if (fixed < 0 || fixed >= maxW) return true;
             int startIdx = std::max(0, start);
@@ -582,7 +583,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                     currentRun = 0;
                 }
             }
-            isValley = (maxRun < 5 || maxRun > (maxH * 0.90));
+            // Horizontal expansion: Column must be between 2px and 90% of height
+            isValley = (maxRun < 2 || maxRun > (maxH * 0.90));
         }
         if (outMaxRun) *outMaxRun = maxRun;
         if (outPeak) *outPeak = peak;

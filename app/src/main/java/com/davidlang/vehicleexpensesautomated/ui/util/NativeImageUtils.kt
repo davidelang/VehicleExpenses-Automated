@@ -178,6 +178,7 @@ object NativeImageUtils {
                 "valley_threshold" to summary[12].toString(),
                 "valley_run" to summary[13].toString(),
                 "valley_lookahead" to (summary[14] / 100f).toString(),
+                "valley_image_width" to summary[15].toString(),
                 "valley_trace" to trace
             )
             return Pair(finalRect, meta)
