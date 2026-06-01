@@ -1,3 +1,8 @@
+## Active Execution: Fix UnsatisfiedLinkError
+- [x] **DONE:** Fix \`UnsatisfiedLinkError\` by moving \`nativeExpandByCharacterAware\` inside \`extern \"C\"\`.
+  - [x] Move function definition in \`NativeImageUtils.cpp\`.
+  - [x] Verify with \`./build_app\`.
+
 ## Active Execution: Character-Aware Expansion & Pipeline Refinement
 - [x] **DONE:** Implement Character-Aware expansion (Set H) and refine pipeline (Set G, Remove 78%).
   - [x] Add \`ocr_probs\` metadata to \`NativePaddleEngine.kt\`.
