@@ -1,14 +1,14 @@
 #!/bin/bash
 # update-rules.sh
-# Synchronizes infrastructure, policies, and mandates from the master branch.
-# Can be run from any agent worktree.
+# Synchronizes infrastructure, policies, and mandates across all agent worktrees.
+# This script should be run from the worktree containing the source of truth (usually master).
 
-# 1. Identify the repository root (handle physical directories and symlinks)
+# 1. Identify the repository root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_DIR="$(pwd)"
+SOURCE_DIR="$(pwd)"
 
 echo "--- Rule Update Sync Starting ---"
-echo "Target: $TARGET_DIR"
+echo "Source: $SOURCE_DIR"
 
 # 2. Check if we are in a Git worktree
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -33,33 +33,48 @@ FILES=(
     "docs/specs/OPERATIONAL_HANDBOOK.md"
 )
 
-# 4. Pull updates from master branch
-echo "Pulling shared infrastructure from 'master' branch..."
-git checkout master -- "${FILES[@]}"
+# 4. Push updates to all other worktrees
+CURRENT_WT=$(git rev-parse --show-toplevel)
+# Get absolute paths of all worktrees from git
+WORKTREES=$(git worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-)
 
-# 5. Restore read-only protection to infrastructure (if applicable)
-echo "Ensuring read-only protection for policies and core mandates..."
-chmod -w .gemini/policies/plans.toml .gemini/policies/auto-saved.toml GEMINI.md .gemini/system.md .gemini/system_prompt.md 2>/dev/null
+for WT in $WORKTREES; do
+    if [ "$WT" == "$CURRENT_WT" ]; then
+        continue
+    fi
 
-# 5b. Ignore local modifications to shared infrastructure in the worktree index
-echo "Configuring index to ignore local infrastructure file modifications..."
-SKIP_FILES=(
-    ".gemini/system.md"
-    ".gemini/system_prompt.md"
-    ".gemini/policies/plans.toml"
-    ".gemini/policies/auto-saved.toml"
-    "GEMINI.md"
-    "MASTER_AGENT_MANDATE.md"
-    "new_agent_prompt"
-    "agent_reminder"
-)
-git update-index --skip-worktree "${SKIP_FILES[@]}" 2>/dev/null
+    echo ">>> Syncing rules to worktree: $WT"
+    
+    # Ensure target directories exist and copy files
+    for FILE in "${FILES[@]}"; do
+        if [ -f "$SOURCE_DIR/$FILE" ]; then
+            TARGET_FILE="$WT/$FILE"
+            TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
+            mkdir -p "$TARGET_DIR_PATH"
+            cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        fi
+    done
 
-# 6. Isolate local instance metadata
-if git ls-files --error-unmatch AGENT_CONTEXT.md >/dev/null 2>&1; then
-    echo "Isolating AGENT_CONTEXT.md (removing from local branch index)..."
-    git rm --cached AGENT_CONTEXT.md
-fi
+    # Commit changes in the target worktree
+    (
+        cd "$WT" || exit
+        
+        # Clean up any legacy protections first to ensure git can see/modify them
+        # Re-enable index tracking if it was skipped
+        git update-index --no-skip-worktree "${FILES[@]}" 2>/dev/null
+        # Restore write permissions
+        chmod +w "${FILES[@]}" 2>/dev/null
+
+        git add "${FILES[@]}" 2>/dev/null
+        
+        if ! git diff --staged --quiet; then
+            echo "Changes detected in $WT, committing..."
+            git commit -m "chore: Synchronize agent rules and infrastructure"
+        else
+            echo "No changes needed for $WT."
+        fi
+    )
+done
 
 echo "--- Rule Update Sync Complete ---"
-echo "Status: CLEAN. Agent rules are now aligned with master."
+echo "Status: All worktrees are now synchronized with $SOURCE_DIR."

@@ -53,33 +53,12 @@ else
     echo "Created symlink: ${BRANCH_NAME}.wt -> $AGENT_ID"
 fi
 
-# 4. Setup Shared Rules (Hard Links - Read Only)
-echo "Setting up shared brain (read-only hard links)..."
+# 4. Setup Agent Workspace Folders
+echo "Setting up workspace metadata folders..."
 cd "$AGENT_ID"
 mkdir -p .gemini/policies
-
-# Shared rules
-ln -f ../.gemini/system.md .gemini/system.md
-ln -f ../.gemini/system_prompt.md .gemini/system_prompt.md
-ln -f ../.gemini/policies/plans.toml .gemini/policies/plans.toml
-
-# Shared Mandates
-ln -f ../GEMINI.md GEMINI.md
-ln -f ../MASTER_AGENT_MANDATE.md MASTER_AGENT_MANDATE.md
-ln -f ../new_agent_prompt new_agent_prompt
-
-# Copy auto-saved.toml as a physical file to allow agent-local write access
-cp ../.gemini/policies/auto-saved.toml .gemini/policies/auto-saved.toml
-chmod 644 .gemini/policies/auto-saved.toml
-
 mkdir -p .gemini/plans
 touch .gemini/plans/.gitkeep
-
-# Protect Shared Rules
-chmod 444 .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml GEMINI.md MASTER_AGENT_MANDATE.md new_agent_prompt
-
-# Ignore local modifications to shared infrastructure in the worktree index to prevent dirty build statuses
-git update-index --skip-worktree .gemini/system.md .gemini/system_prompt.md .gemini/policies/plans.toml GEMINI.md MASTER_AGENT_MANDATE.md new_agent_prompt .gemini/policies/auto-saved.toml agent_reminder 2>/dev/null
 
 # 5. Setup Sandbox (Symlink)
 echo "Setting up sandbox symlink..."
