@@ -429,8 +429,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double contentThreshold = std::max(20.0, hillBrightness * (double)thresholdFactor);
     int minContentPixels = 2; // Require at least 2 bright pixels to consider it content
 
+    int minRunLength = 3; // Require a contiguous stroke of at least 3 pixels
+
     auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
-        int contentPixels = 0;
+        int currentRun = 0;
         if (horizontal) {
             if (fixed < 0 || fixed >= maxH) return true;
             const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
@@ -438,8 +440,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             int endIdx = std::min(maxW, end);
             for (int i = startIdx; i < endIdx; ++i) {
                 if (rowPtr[i] > contentThreshold) {
-                    contentPixels++;
-                    if (contentPixels >= minContentPixels) return false; // Found content, NOT a valley
+                    currentRun++;
+                    if (currentRun >= minRunLength) return false; // Found a stroke!
+                } else {
+                    currentRun = 0;
                 }
             }
         } else {
@@ -448,12 +452,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             int endIdx = std::min(maxH, end);
             for (int i = startIdx; i < endIdx; ++i) {
                 if (mat->at<uint8_t>(i, fixed) > contentThreshold) {
-                    contentPixels++;
-                    if (contentPixels >= minContentPixels) return false; // Found content, NOT a valley
+                    currentRun++;
+                    if (currentRun >= minRunLength) return false; // Found a stroke!
+                } else {
+                    currentRun = 0;
                 }
             }
         }
-        return true; // No content found, IT IS a valley
+        return true; // No strokes found, IT IS a valley
     };
 
     // 3. First Vertical Expansion Pass (Simple Stop)
