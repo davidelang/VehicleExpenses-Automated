@@ -1,10 +1,10 @@
 ## Active Execution: Character-Aware Expansion & Pipeline Refinement
-- [ ] **EXECUTE:** Implement Character-Aware expansion (Set H) and refine pipeline (Set G, Remove 78%).
-  - [ ] Add \`ocr_probs\` metadata to \`NativePaddleEngine.kt\`.
-  - [ ] Implement \`nativeExpandByCharacterAware\` in C++ with density-based probing.
-  - [ ] Add Set G (Raw Angle + 80% Early) and Set H (Char-Aware) to pipelines.
-  - [ ] Remove 78% stretch from all experiment sets.
-  - [ ] Verify with \`./build_app\` and forensic analysis.
+- [x] **DONE:** Implement Character-Aware expansion (Set H) and refine pipeline (Set G, Remove 78%).
+  - [x] Add \`ocr_probs\` metadata to \`NativePaddleEngine.kt\`.
+  - [x] Implement \`nativeExpandByCharacterAware\` in C++ with density-based probing.
+  - [x] Add Set G (Raw Angle + 80% Early) and Set H (Char-Aware) to pipelines.
+  - [x] Remove 78% stretch from all experiment sets.
+  - [x] Verify with \`./build_app\` and forensic analysis.
 
 ## Active Execution: Refined Histogram Visuals
 - [ ] **EXECUTE:** Refine Set G histogram visuals (64-bins, Yellow markers, 1st Column).
