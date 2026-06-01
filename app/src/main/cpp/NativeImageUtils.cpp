@@ -473,7 +473,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     }
 
     // Recalculate horizontal lookAhead based on the newly expanded vertical height
-    double lookAhead = (maxY - minY) * 1.0;
+    double lookAhead = (maxY - minY) * 0.75;
 
     // 4. Horizontal Expansion (Jump and Collapse)
     double walkL = minX;
@@ -481,7 +481,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     while (walkL > 0 && (sX - walkL) < hL) {
         walkL -= 1.0;
         if (!isValley((int)minY, (int)maxY, (int)walkL, false)) {
-            minX = walkL;
             lastGoodL = walkL;
         } else {
             if ((lastGoodL - walkL) > lookAhead) break;
@@ -493,7 +492,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     while (walkR < maxW - 1 && (walkR - sXX) < hL) {
         walkR += 1.0;
         if (!isValley((int)minY, (int)maxY, (int)walkR, false)) {
-            maxX = walkR;
             lastGoodR = walkR;
         } else {
             if ((walkR - lastGoodR) > lookAhead) break;

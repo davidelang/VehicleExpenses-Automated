@@ -1,3 +1,8 @@
+## Active Execution: Fix horizontal retraction and look-ahead
+- [x] **EXECUTE:** Fix horizontal retraction and set look-ahead to 0.75x height.
+  - [x] Refactor horizontal walk in `NativeImageUtils.cpp` to separate probe from result.
+  - [x] Update `lookAhead` to `(maxY - minY) * 0.75`.
+
 ## Protocol & AI Alignment\n- [x] **DONE:** **Mandate Guardrail:** Explicitly anchor corrected mandates in TODO.md to prevent AI memory conflicts.\n- **Rule 1:** Strict linear history (NO `git commit --amend`).\n- **Rule 2:** 3-3-3 Strike System for build failures.\n- **Rule 3:** Mandatory User Approval for resets past `builds`.\n- **Rule 4:** Exclusive use of `./build_app` for commits/builds.\n\n## Active Execution: Contiguous Stroke Detection in `isValley`
 - [x] **EXECUTE:** Implement contiguous stroke detection in `isValley`.
   - [x] Refactor `isValley` in `NativeImageUtils.cpp` to require at least 3 consecutive bright pixels.
