@@ -410,6 +410,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     int maxW = mat->cols;
     int maxH = mat->rows;
+    LOGI("CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
 
     // 1. Clamp input rect to valid image boundaries
     int safeL = std::max(0, std::min(L, maxW - 1));
@@ -541,6 +542,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     int maxW = mat->cols;
     int maxH = mat->rows;
+    LOGI("CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
 
     int safeL = std::max(0, std::min(L, maxW - 1));
     int safeT = std::max(0, std::min(T, maxH - 1));
@@ -726,6 +728,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     int maxW = mat->cols;
     int maxH = mat->rows;
+    LOGI("CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
 
     if (L < 0 || R > maxW || T < 0 || B > maxH || L >= R || T >= B) {
         LOGE("EXPAND_FATAL: Coordinate Overflow (%d,%d)-(%d,%d) for img %dx%d. Mapping failure likely in upstream ICRS conversion.", L, T, R, B, maxW, maxH);
@@ -1048,13 +1051,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandByCharacterAware(
     JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
-    LOGI("CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
+    
     
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
     int maxW = mat->cols;
     int maxH = mat->rows;
+    LOGI("CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
 
     int safeL = std::max(0, std::min(L, maxW - 1));
     int safeT = std::max(0, std::min(T, maxH - 1));
