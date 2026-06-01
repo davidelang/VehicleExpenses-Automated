@@ -51,6 +51,8 @@ for WT in $WORKTREES; do
             TARGET_FILE="$WT/$FILE"
             TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
             mkdir -p "$TARGET_DIR_PATH"
+            # Break hard links and overwrite read-only files
+            rm -f "$TARGET_FILE"
             cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
         fi
     done
