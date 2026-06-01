@@ -4,6 +4,7 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <string>
+#include <sstream>
 #include <vector>
 #include <algorithm>
 #include <map>
@@ -516,6 +517,180 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
     env->SetIntArrayRegion(result, 0, 4, dims);
     return result;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandByValleyDiagnostic(
+    JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
+    
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    int maxW = mat->cols;
+    int maxH = mat->rows;
+
+    int safeL = std::max(0, std::min(L, maxW - 1));
+    int safeT = std::max(0, std::min(T, maxH - 1));
+    int safeR = std::max(safeL + 1, std::min(R, maxW));
+    int safeB = std::max(safeT + 1, std::min(B, maxH));
+
+    cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
+    cv::Scalar meanVal = cv::mean((*mat)(roi));
+    double hillBrightness = meanVal[0];
+    double contentThreshold = std::max(20.0, hillBrightness * (double)thresholdFactor);
+    int minRunLength = 3; 
+
+    double minX = L, maxX = R, minY = T, maxY = B;
+    double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
+    double hL = (maxX - minX) * 12.0; 
+    double vL = (maxY - minY) * 3.0;
+
+    std::ostringstream oss;
+    auto isValleyDiag = [&](int start, int end, int fixed, bool horizontal, int* outMaxRun, int* outPeak) -> bool {
+        int currentRun = 0, maxRun = 0, peak = 0;
+        if (horizontal) {
+            if (fixed < 0 || fixed >= maxH) return true;
+            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxW, end);
+            for (int i = startIdx; i < endIdx; ++i) {
+                uint8_t val = rowPtr[i];
+                if (val > peak) peak = val;
+                if (val > contentThreshold) {
+                    currentRun++;
+                    if (currentRun > maxRun) maxRun = currentRun;
+                } else {
+                    currentRun = 0;
+                }
+            }
+        } else {
+            if (fixed < 0 || fixed >= maxW) return true;
+            int startIdx = std::max(0, start);
+            int endIdx = std::min(maxH, end);
+            for (int i = startIdx; i < endIdx; ++i) {
+                uint8_t val = mat->at<uint8_t>(i, fixed);
+                if (val > peak) peak = val;
+                if (val > contentThreshold) {
+                    currentRun++;
+                    if (currentRun > maxRun) maxRun = currentRun;
+                } else {
+                    currentRun = 0;
+                }
+            }
+        }
+        if (outMaxRun) *outMaxRun = maxRun;
+        if (outPeak) *outPeak = peak;
+        return (maxRun < minRunLength);
+    };
+
+    auto trace = [&](const char* code, int coord, int maxRun, int peak) {
+        if (oss.tellp() > 0) oss << ",";
+        oss << code << ":" << coord << ":" << maxRun << ":" << peak;
+    };
+
+    // 3. First Vertical Expansion Pass
+    while (minY > 0 && (sY - minY) < vL) {
+        int mr = 0, pk = 0;
+        if (isValleyDiag((int)minX, (int)maxX, (int)minY - 1, true, &mr, &pk)) {
+            trace("VT", (int)minY - 1, mr, pk);
+            break;
+        }
+        trace("VT", (int)minY - 1, mr, pk);
+        minY -= 1.0;
+    }
+    while (maxY < maxH - 1 && (maxY - sYY) < vL) {
+        int mr = 0, pk = 0;
+        if (isValleyDiag((int)minX, (int)maxX, (int)maxY + 1, true, &mr, &pk)) {
+            trace("VB", (int)maxY + 1, mr, pk);
+            break;
+        }
+        trace("VB", (int)maxY + 1, mr, pk);
+        maxY += 1.0;
+    }
+
+    double lookAhead = (maxY - minY) * 0.75;
+
+    // 4. Horizontal Expansion (Jump and Collapse)
+    double walkL = minX;
+    double lastGoodL = minX;
+    while (walkL > 0 && (sX - walkL) < hL) {
+        walkL -= 1.0;
+        int mr = 0, pk = 0;
+        if (!isValleyDiag((int)minY, (int)maxY, (int)walkL, false, &mr, &pk)) {
+            lastGoodL = walkL;
+            trace("HL", (int)walkL, mr, pk);
+        } else {
+            trace("HL", (int)walkL, mr, pk);
+            if ((lastGoodL - walkL) > lookAhead) break;
+        }
+    }
+
+    double walkR = maxX;
+    double lastGoodR = maxX;
+    while (walkR < maxW - 1 && (walkR - sXX) < hL) {
+        walkR += 1.0;
+        int mr = 0, pk = 0;
+        if (!isValleyDiag((int)minY, (int)maxY, (int)walkR, false, &mr, &pk)) {
+            lastGoodR = walkR;
+            trace("HR", (int)walkR, mr, pk);
+        } else {
+            trace("HR", (int)walkR, mr, pk);
+            if ((walkR - lastGoodR) > lookAhead) break;
+        }
+    }
+
+    int probedL = (int)walkL, probedR = (int)walkR;
+    minX = lastGoodL;
+    maxX = lastGoodR;
+
+    // 5. Second Vertical Expansion Pass
+    double walkT = minY;
+    double lastGoodT = minY;
+    while (walkT > 0 && (sY - walkT) < vL) {
+        walkT -= 1.0;
+        int mr = 0, pk = 0;
+        if (!isValleyDiag((int)minX, (int)maxX, (int)walkT, true, &mr, &pk)) {
+            lastGoodT = walkT;
+            trace("VT2", (int)walkT, mr, pk);
+        } else {
+            trace("VT2", (int)walkT, mr, pk);
+            break; // Standard vertical pass still uses simple stop for now, but we trace it
+        }
+    }
+    double walkB = maxY;
+    double lastGoodB = maxY;
+    while (walkB < maxH - 1 && (walkB - sYY) < vL) {
+        walkB += 1.0;
+        int mr = 0, pk = 0;
+        if (!isValleyDiag((int)minX, (int)maxX, (int)walkB, true, &mr, &pk)) {
+            lastGoodB = walkB;
+            trace("VB2", (int)walkB, mr, pk);
+        } else {
+            trace("VB2", (int)walkB, mr, pk);
+            break;
+        }
+    }
+    int probedT = (int)walkT, probedB = (int)walkB;
+    minY = lastGoodT;
+    maxY = lastGoodB;
+
+    // Return results
+    jintArray summary = env->NewIntArray(16);
+    jint s[16] = {
+        (jint)L, (jint)T, (jint)R, (jint)B,
+        (jint)probedL, (jint)probedT, (jint)probedR, (jint)probedB,
+        (jint)minX, (jint)minY, (jint)maxX, (jint)maxY,
+        (jint)contentThreshold, (jint)minRunLength, (jint)(lookAhead * 100), (jint)maxW
+    };
+    env->SetIntArrayRegion(summary, 0, 16, s);
+
+    jstring traceStr = env->NewStringUTF(oss.str().c_str());
+    jclass objClass = env->FindClass("java/lang/Object");
+    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
+    env->SetObjectArrayElement(resultArr, 0, summary);
+    env->SetObjectArrayElement(resultArr, 1, traceStr);
+
+    return resultArr;
 }
 
 JNIEXPORT jintArray JNICALL

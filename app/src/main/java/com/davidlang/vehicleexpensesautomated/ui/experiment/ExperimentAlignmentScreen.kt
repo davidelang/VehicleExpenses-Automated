@@ -1000,11 +1000,17 @@ private suspend fun runPaddleValleyIterative(
         val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
         
-        val frags = rawB.map { NativeImageUtils.expandByValley(odoBuffer.p.mat, it.boundingBox) }
+        val valleyResults = rawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
+        val frags = valleyResults.map { it.first }
+        
         val cons = clusterRects(frags).sortedBy { it.left }
         val odoB = StringBuilder()
         val fBoxes = mutableListOf<android.graphics.Rect>()
         val jMeta = com.google.gson.JsonObject()
+
+        valleyResults.forEachIndexed { idx, res -> 
+            res.second.forEach { (k, v) -> jMeta.addProperty("${k}_${idx}", v) }
+        }
         
         cons.forEach { box ->
             val sL = box.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)

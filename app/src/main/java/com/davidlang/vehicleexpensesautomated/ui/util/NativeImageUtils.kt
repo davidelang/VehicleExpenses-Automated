@@ -165,6 +165,26 @@ object NativeImageUtils {
         } else rect
     }
 
+    fun expandByValleyDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
+        val res = nativeExpandByValleyDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        if (res != null && res.size == 2) {
+            val summary = res[0] as IntArray
+            val trace = res[1] as String
+            val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
+            val meta = mapOf(
+                "valley_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
+                "valley_probed" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
+                "valley_retracted" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
+                "valley_threshold" to summary[12].toString(),
+                "valley_run" to summary[13].toString(),
+                "valley_lookahead" to (summary[14] / 100f).toString(),
+                "valley_trace" to trace
+            )
+            return Pair(finalRect, meta)
+        }
+        return Pair(rect, emptyMap())
+    }
+
     fun expandByUniformity(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, android.graphics.Rect> {
         val res = nativeExpandByUniformity(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
         return if (res != null && res.size == 8) {
@@ -197,6 +217,7 @@ object NativeImageUtils {
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float

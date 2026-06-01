@@ -1,4 +1,4 @@
-## Active Execution: Fix horizontal retraction and look-ahead
+## Active Execution: Per-Line Forensic Expansion Profiling\n- [x] **EXECUTE:** Implement per-line forensic expansion profiling via cloned diagnostic function.\n  - [x] Implement \`nativeExpandByValleyDiagnostic\` in C++ with per-line tracing.\n  - [x] Add Kotlin wrapper in \`NativeImageUtils.kt\`.\n  - [x] Integrate diagnostic call into \`ExperimentAlignmentScreen.kt\` and inject into JSON metadata.\n\n## Active Execution: Fix horizontal retraction and look-ahead
 - [x] **EXECUTE:** Fix horizontal retraction and set look-ahead to 0.75x height.
   - [x] Refactor horizontal walk in `NativeImageUtils.cpp` to separate probe from result.
   - [x] Update `lookAhead` to `(maxY - minY) * 0.75`.
