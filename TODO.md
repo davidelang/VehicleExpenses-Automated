@@ -1,3 +1,10 @@
+## Active Execution: Fix horizontal streak gating and instrument pruning
+- [x] **DONE:** Implement 10-column horizontal streak gating and instrument recognition pruning.
+  - [x] Increase horizontal streak requirement to 10 columns in \`NativeImageUtils.cpp\`.
+  - [x] Remove 2px inclusive padding from \`NativeImageUtils.cpp\`.
+  - [x] Add explicit branch logging to pruning logic in \`NativePaddleEngine.kt\`.
+  - [x] Verify with \`./build_app\` and forensic analysis.
+
 ## Active Execution: Recognition Tuning & Deep Expansion Diag
 - [x] **DONE:** Tune recognition pruning and enhance expansion diagnostics.
   - [x] Relax \`processOcrNumeric\` pruning (len<5, 0.30 ratio) and add confidence logging.
