@@ -1,7 +1,7 @@
 ## Active Execution: Remove Redundant ML Kit OCR
-- [ ] **EXECUTE:** Disable ML Kit OCR for all sets except Set A.
-  - [ ] Wrap \`runMLKitIterative\` in condition in \`ExperimentAlignmentScreen.kt\`.
-  - [ ] Verify with \`./build_app\`.
+- [x] **DONE:** Disable ML Kit OCR for all sets except Set A.
+  - [x] Wrap \`runMLKitIterative\` in condition in \`ExperimentAlignmentScreen.kt\`.
+  - [x] Verify with \`./build_app\`.
 
 ## Active Execution: Set H Forensic Tracing and Histogram Refinement
 - [x] **DONE:** Refine histograms (flattening logic), decouple JSON results, and add expansion tracing.
