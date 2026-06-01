@@ -405,7 +405,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_out_ms" to "%.3f".format(tJniOut)
             )
 
-            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder()
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
@@ -417,7 +417,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 lastIdx = maxIdx
             }
             val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, meta)
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()))
         } catch (t: Throwable) { 
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }
@@ -465,7 +465,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_out_ms" to "%.3f".format(tJniOut)
             )
 
-            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder()
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
@@ -484,17 +484,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val isSafe = result.length < 5
                     val pass = isSafe || maxVal >= ratioThr
                     Log.i("PaddleOCR", "Decoded: '$char' Len: %d Conf: %.3f Thr: %.3f Safe: $isSafe Pass: $pass".format(result.length, maxVal, ratioThr))
+                    if (probs.isNotEmpty()) probs.append(" ")
                     if (pass) {
                         result.append(char); totalConf += maxVal; charCount++; lastConf = maxVal
+                        probs.append("%s(%.3f)".format(char, maxVal))
                     } else {
                         Log.w("PaddleOCR", "Pruning: Confidence drop too high for '$char' (Ratio: %.3f < %.3f)".format(maxVal, ratioThr))
+                        probs.append("%s(%.3f!)".format(char, maxVal))
                         break
                     }
                 }
                 lastIdx = maxIdx
             }
             val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, meta)
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()))
         } catch (t: Throwable) { 
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }

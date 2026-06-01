@@ -286,8 +286,9 @@ private suspend fun runExperiment(
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
         PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
-        PipelineConfig("set_f", "Set F (Stretch 80%)", { it.paddleTimeMs }) { it.paddleCppAngle },
-        PipelineConfig("set_g", "Set G (Hist Stretch)", { it.paddleTimeMs }) { it.paddleCppAngle }
+        PipelineConfig("set_f", "Set F (Stretch 80% Early)", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_g", "Set G (Raw Angle + 80% Early)", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_h", "Set H (Char-Aware Expansion)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
     val harnessEngineNames = pipelines.flatMap { listOf("${it.displayName} ML", "${it.displayName} Paddle") }
     val pipelineNames = pipelines.map { it.displayName }
@@ -508,10 +509,10 @@ private suspend fun runExperiment(
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
                             // For Set F and G, only run the "Raw" stage
-                            val iterativeStages = if (pipeline.key == "set_f" || pipeline.key == "set_g") listOf("Raw") else listOf("Raw", "80% Stretch Only", "78% Stretch")
+                            val iterativeStages = if (pipeline.key in listOf("set_f", "set_g", "set_h")) listOf("Raw") else listOf("Raw", "80% Stretch Only")
 
                             runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages)
+                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h"))
                         }
                     }
                     
@@ -575,7 +576,7 @@ private suspend fun runExperiment(
                     originalLineNumber, file.name, imgW, imgH, meta.isDegraded, originalBase64,
                     photoResult!!, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(),
                     harnessEngineNames, (tMl + tPd), tDiscoveryTotalCombined,
-                    tilt, deskewResA, pipelines, meta.diagnostic, photoResult.pathways["set_g"]?.harnessResults?.get("Set G (Hist Stretch) Paddle")?.extraImages ?: emptyMap()
+                    tilt, deskewResA, pipelines, meta.diagnostic, photoResult.pathways["set_g"]?.harnessResults?.get("Set G (Raw Angle + 80% Early) Paddle")?.extraImages ?: emptyMap()
                 )
                 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
@@ -849,7 +850,7 @@ private fun buildHtmlRowDynamic(
     deskewRes: OdometerOcrUtils.DeskewResult,
     pipelines: List<PipelineConfig>,
     diagnostic: String = "",
-    extraImages: Map<String, String> = emptyMap()
+    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
@@ -1105,8 +1106,8 @@ private suspend fun runPaddleValleyIterative(
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>,
     isNumeric: Boolean = false,
-    stages: List<String> = listOf("Raw", "80% Stretch Only", "78% Stretch"),
-    extraImages: Map<String, String> = emptyMap()
+    stages: List<String> = listOf("Raw", "80% Stretch Only"),
+    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
@@ -1150,7 +1151,7 @@ private suspend fun runPaddleValleyIterative(
         }
         
         if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
-        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
+        
         
         val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
         val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
@@ -1162,7 +1163,7 @@ private suspend fun runPaddleValleyIterative(
         val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
         
-        val valleyResults = rawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
+        val valleyResults = rawB.map { if (useCharAware) Pair(NativeImageUtils.expandByCharacterAware(odoBuffer.p.mat, it.boundingBox), emptyMap<String, String>()) else NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
         val frags = valleyResults.map { it.first }
         
         val cons = clusterRects(frags).sortedBy { it.left }
@@ -1229,7 +1230,7 @@ private suspend fun runMLKitIterative(
     experimentRecSet320x48: BufferSet,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>,
-    stages: List<String> = listOf("Raw", "80% Stretch Only", "78% Stretch")
+    stages: List<String> = listOf("Raw", "80% Stretch Only")
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
@@ -1267,7 +1268,7 @@ private suspend fun runMLKitIterative(
         }
         
         if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
-        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
+        
         
         experimentRecSet320x48.p.clear()
         val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())

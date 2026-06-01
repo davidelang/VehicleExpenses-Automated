@@ -186,6 +186,13 @@ object NativeImageUtils {
         return Pair(rect, emptyMap())
     }
 
+    fun expandByCharacterAware(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
+        val res = nativeExpandByCharacterAware(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        return if (res != null && res.size == 4) {
+            android.graphics.Rect(res[0], res[1], res[2], res[3])
+        } else rect
+    }
+
     fun expandByUniformity(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, android.graphics.Rect> {
         val res = nativeExpandByUniformity(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
         return if (res != null && res.size == 8) {
@@ -219,7 +226,8 @@ object NativeImageUtils {
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
-    external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
 
