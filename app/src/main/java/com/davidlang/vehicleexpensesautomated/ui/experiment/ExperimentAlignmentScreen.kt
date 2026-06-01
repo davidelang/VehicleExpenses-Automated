@@ -511,7 +511,9 @@ private suspend fun runExperiment(
                             // For Set F and G, only run the "Raw" stage
                             val iterativeStages = if (pipeline.key in listOf("set_f", "set_g")) listOf("Raw") else listOf("Raw", "80%")
 
-                            runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
+                            if (pipeline.key == "set_a") {
+                                runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
+                            }
                             runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h"))
                         }
                     }
