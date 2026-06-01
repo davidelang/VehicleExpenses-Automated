@@ -461,8 +461,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                     currentRun = 0;
                 }
             }
-            // Horizontal expansion: Column must be between 2px and 90% of height
-            return (maxRun < 2 || maxRun > (maxH * 0.90));
+            // Horizontal expansion: Column must be between 2px and 80% of height
+            return (maxRun < 2 || maxRun > (maxH * 0.80));
         }
     };
 
@@ -479,27 +479,37 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     // Recalculate horizontal lookAhead based on the newly expanded vertical height
     double lookAhead = (maxY - minY) * 0.5;
 
-    // 4. Horizontal Expansion (Jump and Collapse)
+    // 4. Horizontal Expansion (Jump and Collapse) with 3-column streak
     double walkL = minX;
     double lastGoodL = minX;
+    int streakL = 0;
     while (walkL > 0 && (sX - walkL) < hL) {
         walkL -= 1.0;
         if (!isValley((int)minY, (int)maxY, (int)walkL, false)) {
-            lastGoodL = walkL;
+            streakL++;
+            if (streakL >= 3) {
+                lastGoodL = walkL;
+            }
         } else {
-            if ((lastGoodL - walkL) > lookAhead) break;
+            streakL = 0;
         }
+        if ((lastGoodL - walkL) > lookAhead) break;
     }
 
     double walkR = maxX;
     double lastGoodR = maxX;
+    int streakR = 0;
     while (walkR < maxW - 1 && (walkR - sXX) < hL) {
         walkR += 1.0;
         if (!isValley((int)minY, (int)maxY, (int)walkR, false)) {
-            lastGoodR = walkR;
+            streakR++;
+            if (streakR >= 3) {
+                lastGoodR = walkR;
+            }
         } else {
-            if ((walkR - lastGoodR) > lookAhead) break;
+            streakR = 0;
         }
+        if ((walkR - lastGoodR) > lookAhead) break;
     }
 
     // Collapse boundaries exactly back to the last detected content columns (retraction)
@@ -515,6 +525,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (isValley((int)minX, (int)maxX, (int)maxY + 1, true)) break;
         maxY += 1.0;
     }
+
+    // Add 2px inclusive padding
+    minX = std::max(0.0, minX - 2.0);
+    minY = std::max(0.0, minY - 2.0);
+    maxX = std::min((double)maxW, maxX + 2.0);
+    maxY = std::min((double)maxH, maxY + 2.0);
 
     jintArray result = env->NewIntArray(4);
     jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
@@ -618,16 +634,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     double lookAhead = (maxY - minY) * 0.5;
 
-    // 4. Horizontal Expansion (Jump and Collapse)
+    // 4. Horizontal Expansion (Jump and Collapse) with 3-column streak
     double walkL = minX;
     double lastGoodL = minX;
+    int streakL = 0;
     while (walkL > 0 && (sX - walkL) < hL) {
         walkL -= 1.0;
         int mr = 0, pk = 0;
         if (!isValleyDiag((int)minY, (int)maxY, (int)walkL, false, &mr, &pk)) {
-            lastGoodL = walkL;
+            streakL++;
+            if (streakL >= 3) lastGoodL = walkL;
             trace("HL", (int)walkL, mr, pk);
         } else {
+            streakL = 0;
             trace("HL", (int)walkL, mr, pk);
             if ((lastGoodL - walkL) > lookAhead) break;
         }
@@ -635,13 +654,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     double walkR = maxX;
     double lastGoodR = maxX;
+    int streakR = 0;
     while (walkR < maxW - 1 && (walkR - sXX) < hL) {
         walkR += 1.0;
         int mr = 0, pk = 0;
         if (!isValleyDiag((int)minY, (int)maxY, (int)walkR, false, &mr, &pk)) {
-            lastGoodR = walkR;
+            streakR++;
+            if (streakR >= 3) lastGoodR = walkR;
             trace("HR", (int)walkR, mr, pk);
         } else {
+            streakR = 0;
             trace("HR", (int)walkR, mr, pk);
             if ((walkR - lastGoodR) > lookAhead) break;
         }
@@ -681,6 +703,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int probedT = (int)walkT, probedB = (int)walkB;
     minY = lastGoodT;
     maxY = lastGoodB;
+
+    // Add 2px inclusive padding
+    minX = std::max(0.0, minX - 2.0);
+    minY = std::max(0.0, minY - 2.0);
+    maxX = std::min((double)maxW, maxX + 2.0);
+    maxY = std::min((double)maxH, maxY + 2.0);
 
     // Return results
     jintArray summary = env->NewIntArray(16);
