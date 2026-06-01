@@ -44,36 +44,27 @@ If the Gemini CLI crashes with `An unexpected critical error occurred:Error: ioc
 
 ---
 
-### 2.3. Handoff and Cleanup (PR Workflow)
-Once work is completed in an agent worktree, follow this handoff protocol to merge into `master`:
+### 2.3. Merging and Cleanup
+Once work is completed and merged into `master`:
 
-#### Step A: Commit Cleanup (Feature Agent)
-1. **Plan:** Propose a cleanup plan (e.g., `plans/cleanup.md`) that groups your messy "strike" commits into logical, compiling chunks. Ideally, target a single clean commit per feature.
-2. **Backup:** Tag your current messy state: `git tag backup-<branch-name>`.
-3. **Squash/Restructure:** 
-   - **Path 1 (Structured):** Use `git reset --soft master` and commit your changes in the approved logical chunks. Verify each step compiles with `./build_app`.
-   - **Path 2 (Atomic Squash):** Use `git commit-tree` to create a single pristine commit from your current tree.
-4. **Verify Integrity:** Run `git diff HEAD backup-<branch-name>`. It MUST be empty. This guarantees your tested code is identical to your cleaned code.
+1.  **Merge the branch** (from the `master/` directory):
+    ```bash
+    cd master
+    git diff master..feature-name
+    git merge feature-name
+    git tag -f works
+    ```
 
-#### Step B: Generate PR (Feature Agent)
-Run the generation script, providing all plan documents used during the task:
-```bash
-./generate_pr.sh plans/initial-plan.md plans/cleanup.md
-```
-*This creates a Pull Request document in `dev-ai-interaction/PRs/PR-<branch-name>.md`.*
-
-#### Step C: Review and Merge (Master Agent)
-1. **Request Review:** Tell the user to notify the Master Agent: *"Please review PR-<branch-name>"*.
-2. **Review:** The Master Agent (in the `master/` worktree) reads the PR document and performs a forensic audit: `git diff master..<branch-name>`.
-3. **Merge:** If approved, the Master Agent merges:
-   ```bash
-   git merge --no-ff <branch-name> -m "Merge PR: <branch-name>"
-   ./build_app
-   git tag -f works
-   ```
-
-### 2.4. Removing the Agent Environment
-Once the branch is merged into `master`, the worktree and branch can be removed from the root directory:
+2.  **Remove the worktree and branch** (from the project root):
+    ```bash
+    cd ..
+    ./remove_worktree.sh feature-name
+    ```
+    *This script removes the worktree, the branch symlink, and the branch itself.*
+    * **Auto-Cleanup:** If the branch is merged OR has no unique commits, it is deleted automatically.
+    * **Force Levels:** 
+        * `-f`: Removes worktree despite uncommitted changes.
+        * `-ff`: Force deletes the branch even if not merged.
 
 ---
 
@@ -82,5 +73,6 @@ Once the branch is merged into `master`, the worktree and branch can be removed 
 - **Shared Brain:** All agent directories use **hard links** for rules in `.gemini/` and `new_agent_prompt`. 
     - **⚠️ WARNING:** These files are set to **Read-Only**. Modifying them in one place changes them everywhere.
     - **To Update Rules:** You must be in the orchestration root, `chmod 644 <file>`, edit, and `chmod 444 <file>` to restore protection.
-- **Sandbox Access:** If `read_file` is blocked by project-root checks, use `run_shell_command "cat dev-ai-interaction/..."` to read sandbox files.
+- **Sandbox Access:** Access the sandbox directly using the absolute path: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
 - **Build/Deploy:** Always run `./build_app` and `./deploy` from **inside** the specific agent directory/symlink. They are branch-aware.
+rectory/symlink. They are branch-aware.

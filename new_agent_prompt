@@ -1,6 +1,6 @@
 # Mandate Acknowledgment (Fast-Track)
 
-You are in a **Multi-Agent Orchestration** environment. Read **AGENT_CONTEXT.md** and **GEMINI.md**. (Do NOT re-read .gemini/ system files; they are already in your context or fully integrated into GEMINI.md).
+You are in a **Multi-Agent Orchestration** environment. Read **AGENT_CONTEXT.md** and **GEMINI.md**. (Do NOT re-read .gemini/ system files; they are already in your context).
 
 Provide a brief report:
 1. **Overrides:** Confirm Sandbox and Testing exemptions.
@@ -13,7 +13,7 @@ Provide a brief report:
     - **UI Warning:** Large shell outputs (e.g., recursive `ls`) can crash the terminal. Use `head`, `tail`, or specific paths.
 
 # 5. STOP & WAIT (CRITICAL)
-Upon completion of this report, you **MUST** enter plan mode (Gemini CLI: call the `enter_plan_mode` tool; Antigravity: conceptually enter plan mode without making any file modifications) and then **STOP**. 
+Upon completion of this report, you **MUST** call `enter_plan_mode` and then **STOP**. 
 
 **DO NOT** read `TODO.md`, search for files, or begin any task until the User provides a specific directive. Your only mission right now is to introduce yourself and wait.
 
