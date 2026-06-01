@@ -1,11 +1,11 @@
 ## Active Execution: Set H Forensic Tracing and Histogram Refinement
-- [ ] **EXECUTE:** Refine histograms (flattening logic), decouple JSON results, and add expansion tracing.
-  - [ ] Rename "80% Stretch Only" to "80%" throughout.
-  - [ ] Decouple odometer consensus per-pathway in \`ExperimentAlignmentScreen.kt\`.
-  - [ ] Correct Set H configuration and avoid redundant double-stretching in F/G.
-  - [ ] Implement histogram flattening logic and skip ends in visuals.
-  - [ ] Add \`LOGI\` traces to \`nativeExpandByCharacterAware\` in C++.
-  - [ ] Verify with \`./build_app\` and forensic analysis.
+- [x] **DONE:** Refine histograms (flattening logic), decouple JSON results, and add expansion tracing.
+  - [x] Rename "80% Stretch Only" to "80%" throughout.
+  - [x] Decouple odometer consensus per-pathway in \`ExperimentAlignmentScreen.kt\`.
+  - [x] Correct Set H configuration and avoid redundant double-stretching in F/G.
+  - [x] Implement histogram flattening logic and skip ends in visuals.
+  - [x] Add \`LOGI\` traces to \`nativeExpandByCharacterAware\` in C++.
+  - [x] Verify with \`./build_app\` and forensic analysis.
 
 ## Active Execution: Fix UnsatisfiedLinkError
 - [x] **DONE:** Fix \`UnsatisfiedLinkError\` by moving \`nativeExpandByCharacterAware\` inside \`extern \"C\"\`.
