@@ -54,32 +54,33 @@ import kotlin.math.min
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 
-private val GOLDEN_SUBSET = listOf(
-    "PXL_20220701_020707365.dng",
-    "PXL_20220821_051055938.dng",
-    "PXL_20221029_002946498.dng",
-    "PXL_20221020_215546513.dng",
-    "PXL_20221221_205939873.dng",
-    "PXL_20221228_164725812.dng",
-    "PXL_20221222_211445685.dng",
-    "PXL_20230113_231330881.dng",
-    "PXL_20221121_021330418.jpg",
-    "PXL_20221126_210323823.jpg",
-    "PXL_20221128_172727575.jpg"
+private val GOLDEN_SUBSET = mapOf(
+    "PXL_20220701_020707365.dng" to 1,
+    "PXL_20220821_051055938.dng" to 2,
+    "PXL_20221029_002946498.dng" to 4,
+    "PXL_20221020_215546513.dng" to 3,
+    "PXL_20221221_205939873.dng" to 9,
+    "PXL_20221228_164725812.dng" to 12,
+    "PXL_20221222_211445685.dng" to 10,
+    "PXL_20230113_231330881.dng" to 14,
+    "PXL_20221121_021330418.jpg" to 5,
+    "PXL_20221126_210323823.jpg" to 7,
+    "PXL_20221128_172727575.jpg" to 8
 )
 
-private val FAILING_SUBSET = listOf(
-    "PXL_20221121_021330418.jpg", // Row 5
-    "PXL_20221228_164725812.dng", // Row 12
-    "PXL_20230430_042448627.dng", // Row 22
-    "PXL_20231221_212942380.jpg", // Row 40
-    "PXL_20231223_074744139.jpg", // Row 41
-    "PXL_20240114_162249446.jpg", // Row 45
-    "PXL_20240414_010409990.jpg", // Row 50
-    "PXL_20240717_235836312.jpg", // Row 55
-    "PXL_20251111_071548876.jpg", // Row 124
-    "PXL_20260214_204037399.jpg", // Row 131
-    "PXL_20260413_083458977.jpg"  // Row 141
+private val FAILING_SUBSET = mapOf(
+    "PXL_20221121_021330418.jpg" to 5,
+    "PXL_20221228_164725812.dng" to 12,
+    "PXL_20230430_042448627.dng" to 22,
+    "PXL_20231221_212942380.jpg" to 40,
+    "PXL_20231223_074744139.jpg" to 41,
+    "PXL_20240114_162249446.jpg" to 45,
+    "PXL_20240414_010409990.jpg" to 50,
+    "PXL_20240717_235836312.jpg" to 55,
+    "PXL_20240722_200247194.jpg" to 56,
+    "PXL_20251111_071548876.jpg" to 124,
+    "PXL_20260214_204037399.jpg" to 131,
+    "PXL_20260413_083458977.jpg" to 141
 )
 
 @Immutable
@@ -154,7 +155,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch { 
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-                val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
+                val subset = allFiles.filter { it.name in GOLDEN_SUBSET.keys }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
                 runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, GOLDEN_SUBSET) { res, p -> 
@@ -167,7 +168,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch { 
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-                val subset = allFiles.filter { it.name in FAILING_SUBSET }
+                val subset = allFiles.filter { it.name in FAILING_SUBSET.keys }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
                 runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, FAILING_SUBSET) { res, p -> 
@@ -213,15 +214,15 @@ private suspend fun runExperiment(
     vehicles: List<Vehicle>, 
     context: Context, 
     onLog: (String) -> Unit, 
-    subsetNames: List<String>?, 
+    subsetMap: Map<String, Int>?, 
     onProgress: (PhotoResultSummary, Float) -> Unit
 ) = withContext(Dispatchers.IO) {
     val allPhotos = experimentDir.listFiles { f -> 
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") 
     }?.sortedBy { it.name } ?: return@withContext
     
-    val photos = if (subsetNames != null) {
-        allPhotos.filter { it.name in subsetNames }
+    val photos = if (subsetMap != null) {
+        allPhotos.filter { it.name in subsetMap.keys }
     } else allPhotos
     
     val total = photos.size
@@ -284,8 +285,9 @@ private suspend fun runExperiment(
 
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
-        
-        PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle }
+        PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_f", "Set F (Stretch 80%)", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_g", "Set G (Hist Stretch)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
     val harnessEngineNames = pipelines.flatMap { listOf("${it.displayName} ML", "${it.displayName} Paddle") }
     val pipelineNames = pipelines.map { it.displayName }
@@ -299,13 +301,14 @@ private suspend fun runExperiment(
     var currentFile = startNewFile()
     
     photos.forEachIndexed { index, file ->
+        val originalLineNumber = subsetMap?.get(file.name) ?: (index + 1)
         // Phase 116 Emergency Fix: Initialize photoResult early with "No Match" state
         // to prevent serializePhotoResultToJson crashes on failed identification.
         var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
         var finalWinnerName = "No match"
         var bestOdometer = "FAILED"
         try {
-            withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
+            withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name} (#$originalLineNumber)") }
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             
             // Sequential A/B Ingestion
@@ -329,7 +332,7 @@ private suspend fun runExperiment(
             )
 
             try {
-                // Step 2 (Deskew): Calculate tilt independently for both pipelines
+                // Step 2 (Deskew): Calculate tilt independently for Set A/E
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
 
                 val tilt = deskewResA.angle
@@ -380,11 +383,30 @@ private suspend fun runExperiment(
                 var ocrFirst: OcrResult? = null
 
                 pipelines.forEach { pipeline ->
-                    val angle = pipeline.getAngle(deskewResA)
-                    
                     // Reset work buffer Set B by copying from ingested original Set A
                     NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
                     NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
+
+                    val extraImages = mutableMapOf<String, String>()
+
+                    // Early Preprocessing for Set F and G
+                    if (pipeline.key == "set_f") {
+                        OdometerOcrUtils.applyContrastStretch(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
+                    } else if (pipeline.key == "set_g") {
+                        extraImages["hist1"] = generateGatedHistogramB64(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
+                        val original80Value = getGatedThreshold(NativePaddleEngine.bufferSetB.p.mat, 0.80f)
+                        
+                        OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetB.p.mat)
+                        
+                        extraImages["hist2"] = generateGatedHistogramB64(NativePaddleEngine.bufferSetB.p.mat, 0.80f, markValue = original80Value)
+                    }
+
+                    // Independent deskew for preprocessed buffers
+                    val currentDeskewRes = if (pipeline.key == "set_f" || pipeline.key == "set_g") {
+                        OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetB.p)
+                    } else deskewResA
+
+                    val angle = pipeline.getAngle(currentDeskewRes)
                     
                     // Rotate work buffer Set B
                     rotate(NativePaddleEngine.bufferSetB, angle)
@@ -474,15 +496,18 @@ private suspend fun runExperiment(
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
-                            runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces)
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true)
+                            // For Set F and G, only run the "Raw" stage
+                            val iterativeStages = if (pipeline.key == "set_f" || pipeline.key == "set_g") listOf("Raw") else listOf("Raw", "80% Stretch Only", "78% Stretch")
+
+                            runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
+                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages)
                         }
                     }
                     
                     val photoPathway = PhotoPathwayResult(
                         winnerName = globalWinnerRef?.vehicle?.name ?: "No match",
                         bestOdometer = "", // filled dynamically downstream
-                        tDeskewTotal = pipeline.getDeskewTime(deskewResA),
+                        tDeskewTotal = pipeline.getDeskewTime(currentDeskewRes),
                         tDiscoveryTotal = tDiscoveryTotal,
                         deskewedBase64 = alignedBase64,
                         discoveryResult = ocr,
@@ -536,7 +561,7 @@ private suspend fun runExperiment(
                 photoResult = ProcessedPhotoResult(file.name, updatedPathways, vehicleResultsMap, primaryVetoResultsGlobal)
                 
                 val rowHtml = buildHtmlRowDynamic(
-                    index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64,
+                    originalLineNumber, file.name, imgW, imgH, meta.isDegraded, originalBase64,
                     photoResult!!, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(),
                     harnessEngineNames, (tMl + tPd), tDiscoveryTotalCombined,
                     tilt, deskewResA, pipelines, meta.diagnostic
@@ -546,7 +571,7 @@ private suspend fun runExperiment(
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
                 val photoJson = serializePhotoResultToJson(
-                    index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, 
+                    originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded, 
                     meta.diagnostic, photoResult!!, vehicles, deskewResA, tSnapOrig, tSnapAlign
                 )
                 val comma = if (index < total - 1) "," else ""
@@ -934,6 +959,63 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
 
 private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
+private fun getGatedThreshold(mat: org.opencv.core.Mat, floorPercentile: Float): Int {
+    val hist = org.opencv.core.Mat()
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+    val totalPixels = mat.rows() * mat.cols()
+    var sum = 0.0
+    var floorBin = 0
+    for (i in 0..255) {
+        sum += hist.get(i, 0)[0]
+        if (sum >= totalPixels * floorPercentile) {
+            floorBin = i
+            break
+        }
+    }
+    hist.release()
+    return floorBin
+}
+
+private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float, markValue: Int? = null): String {
+    val hist = org.opencv.core.Mat()
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
+    val bins = FloatArray(256); hist.get(0, 0, bins)
+    val totalPixels = mat.rows() * mat.cols()
+    var sum = 0.0
+    var floorBin = 0
+    for (i in 0..255) {
+        sum += bins[i]
+        if (sum >= totalPixels * floorPercentile) {
+            floorBin = i
+            break
+        }
+    }
+
+    val maxVal = bins.maxOrNull() ?: 1.0f
+    val bmp = Bitmap.createBitmap(256, 120, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    val paint = android.graphics.Paint()
+    paint.color = android.graphics.Color.BLACK
+    for (i in 0..255) {
+        val h = (bins[i] / maxVal) * 100
+        canvas.drawLine(i.toFloat(), 110f, i.toFloat(), 110f - h, paint)
+    }
+    
+    // Draw the 80% line (original gated value)
+    paint.color = android.graphics.Color.MAGENTA
+    paint.strokeWidth = 2f
+    canvas.drawLine(floorBin.toFloat(), 0f, floorBin.toFloat(), 120f, paint)
+    
+    // Draw the marker line (where the original 80% ended up)
+    if (markValue != null) {
+        paint.color = android.graphics.Color.CYAN
+        canvas.drawLine(markValue.toFloat(), 0f, markValue.toFloat(), 120f, paint)
+    }
+
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
+}
+
 private suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
     val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)
     val landmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
@@ -977,11 +1059,19 @@ private suspend fun runPaddleValleyIterative(
     paddleEngine: NativePaddleEngine,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>,
-    isNumeric: Boolean = false
+    isNumeric: Boolean = false,
+    stages: List<String> = listOf("Raw", "80% Stretch Only", "78% Stretch"),
+    extraImages: Map<String, String> = emptyMap()
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
+
+    // For Set G, show histograms
+    if (extraImages.containsKey("hist1")) {
+        htmlOutput.append("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (80%=Magenta)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (80% mapped to Cyan)</small></td></tr></table>")
+    }
+
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
     
@@ -999,12 +1089,12 @@ private suspend fun runPaddleValleyIterative(
     val startX = p1.x.toInt().coerceIn(0, mWidth - 1)
     val startY = p1.y.toInt().coerceIn(0, mHeight - 1)
     
-    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
+    val stagesList = stages
     var lastThumb = ""
     var tSnTotal = 0L
     val steps = mutableListOf<OcrStepResult>()
     
-    stages.forEach { stage ->
+    stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
         when (masterBuffer) {
             is BufferSet -> {
@@ -1093,7 +1183,8 @@ private suspend fun runMLKitIterative(
     vehicleBufferSets: Map<Int, BufferSet>,
     experimentRecSet320x48: BufferSet,
     report: MutableMap<String, OcrHarnessResult>, 
-    targetRefMap: MutableMap<String, RefinementTrace>
+    targetRefMap: MutableMap<String, RefinementTrace>,
+    stages: List<String> = listOf("Raw", "80% Stretch Only", "78% Stretch")
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
@@ -1115,12 +1206,12 @@ private suspend fun runMLKitIterative(
     val sX = p1.x.toInt().coerceIn(0, mWidth - 1)
     val sY = p1.y.toInt().coerceIn(0, mHeight - 1)
     
-    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
+    val stagesList = stages
     var lastThumb = ""
     var tSnTotal = 0L
     val steps = mutableListOf<OcrStepResult>()
     
-    stages.forEach { stage ->
+    stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
         when (masterBuffer) {
             is BufferSet -> {

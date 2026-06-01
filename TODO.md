@@ -1,3 +1,10 @@
+## Active Execution: Set F/G and Row Numbers
+- [x] **DONE:** Implement Set F/G and subset row number preservation.
+  - [x] Refactor subsets to Maps in \`ExperimentAlignmentScreen.kt\`.
+  - [x] Add Set F (80% early) and Set G (Hist early).
+  - [x] Implement gated histogram visualization for Set G.
+  - [x] Verify with \`./build_app\`.
+
 ## Active Execution: Add Failing Cases Subset Button
 - [x] **DONE:** Add button to run failing subset on Alignment Experiment screen.
   - [x] Define \`FAILING_SUBSET\` list in \`ExperimentAlignmentScreen.kt\`.
