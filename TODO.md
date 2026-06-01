@@ -5,6 +5,11 @@
 - **Rule 3:** Mandatory User Approval for resets past `builds`.
 - **Rule 4:** Exclusive use of `./build_app` for commits/builds.
 
+## Active Execution: Fix `isValley` logic to check for peak pixels
+- [ ] **EXECUTE:** Fix `isValley` logic to check for peak pixels instead of average brightness.
+  - [ ] Refactor `isValley` in `NativeImageUtils.cpp` to use a content pixel count threshold.
+  - [ ] Verify compile success with `./build_app`.
+
 ## Active Execution: Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments
 - [x] **EXECUTE:** Expand Red Box Pre-Scaling & C++ Valley Expansion Adjustments.
   - [x] Modify `OdometerOcrUtils.kt`:
