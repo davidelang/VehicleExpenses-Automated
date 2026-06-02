@@ -804,6 +804,82 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
 }
 
 
+
+private suspend fun runBinTrialsPaddle(
+    odoBuffer: BufferSet,
+    experimentDetSet512x128: BufferSet,
+    experimentRecSet320x48: BufferSet,
+    paddleEngine: NativePaddleEngine,
+    rawBins: FloatArray,
+    useCharAware: Boolean
+): Pair<String, Map<String, String>> {
+    val midpoints = findValleyMidpoints(rawBins)
+    val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
+    val trialsMeta = mutableMapOf<String, String>()
+    
+    midpoints.forEachIndexed { vIdx, binIdx ->
+        val threshold = binIdx * 4.0
+        val trialMat = odoBuffer.p.mat.clone()
+        org.opencv.imgproc.Imgproc.threshold(trialMat, trialMat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        
+        val detSc = kotlin.math.min(512f / trialMat.cols(), 128f / trialMat.rows())
+        val fw = (trialMat.cols() * detSc).toInt().coerceAtMost(512)
+        val fh = (trialMat.rows() * detSc).toInt().coerceAtMost(128)
+        val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+        org.opencv.imgproc.Imgproc.resize(trialMat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+        val tRawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+        experimentDetSet512x128.c[dCrId].release()
+        
+        val tFrags = tRawB.map { 
+            if (useCharAware) NativeImageUtils.expandByCharacterAware(trialMat, it.boundingBox)
+            else NativeImageUtils.expandByValleyDiagnostic(trialMat, it.boundingBox).first
+        }
+        
+        val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
+        val tOdoB = StringBuilder()
+        var tCf = 0f
+        var tCnt = 0
+        
+        tCons.forEach { tBox ->
+            val sL = tBox.left.coerceIn(0, trialMat.cols() - 1)
+            val sT = tBox.top.coerceIn(0, trialMat.rows() - 1)
+            val sR = tBox.right.coerceIn(sL + 1, trialMat.cols())
+            val sB = tBox.bottom.coerceIn(sT + 1, trialMat.rows())
+            if (sR > sL && sB > sT) {
+                val bRecMat = trialMat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT))
+                experimentRecSet320x48.p.clear()
+                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
+                val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
+                val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
+                val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
+                org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+                if (ocrR.debugText.isNotBlank()) tOdoB.append(ocrR.debugText).append(" ")
+                tCf += ocrR.confidence * ocrR.debugText.length
+                tCnt += ocrR.debugText.length
+                experimentRecSet320x48.c[rCrId].release()
+                bRecMat.release()
+            }
+        }
+        
+        val tResText = tOdoB.toString().trim()
+        val tAvg = if (tCnt > 0) tCf / tCnt else 0f
+        
+        val curMat = odoBuffer.p.mat.clone()
+        trialMat.copyTo(odoBuffer.p.mat)
+        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
+        curMat.copyTo(odoBuffer.p.mat)
+        curMat.release()
+        
+        trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b> (Conf: ${"%.2f".format(tAvg)})<br><img src='data:image/jpeg;base64,$tB64'></div>")
+        trialsMeta["trial_$vIdx"] = "$threshold|$tResText|$tAvg"
+        trialMat.release()
+    }
+    trialsHtml.append("</div>")
+    return Pair(trialsHtml.toString(), trialsMeta)
+}
+
 private fun findValleyMidpoints(bins: FloatArray): List<Int> {
     if (bins.isEmpty()) return emptyList()
     val binCount = bins.size
