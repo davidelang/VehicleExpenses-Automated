@@ -1218,6 +1218,11 @@ private suspend fun runPaddleValleyIterative(
             val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
             stageMeta["before_hist"] = h1
             stageMeta["after_hist"] = h2
+        } else if (stage == "Bin-Trials") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware)
+            stageMeta["trials_html"] = tHtml
+            stageMeta.putAll(tMeta)
         }
         
         
@@ -1266,7 +1271,6 @@ private suspend fun runPaddleValleyIterative(
         val odoStr = odoB.toString().trim()
         allOdo.add(odoStr)
         val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, jMeta.asMap().mapValues { it.value.asString } + stageMeta))
         
         val anns = mutableListOf<SnapshotAnnotation>()
         rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
@@ -1275,12 +1279,20 @@ private suspend fun runPaddleValleyIterative(
         val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         lastThumb = sB64
         tSnTotal += ts
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
+        val hT = if (stageMeta.containsKey("before_hist")) {
+            "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
+        } else ""
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${stageMeta["trials_html"] ?: ""}<br>$odoStr</div>")
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", odoStr)
         sObj.addProperty("time", tL)
         jMeta.entrySet().forEach { e -> sObj.add(e.key, e.value) }
+        stageMeta.forEach { (k, v) -> sObj.addProperty(k, v) }
         jsonStages.add(stage, sObj)
+        val finalMeta = mutableMapOf<String, String>()
+        jMeta.entrySet().forEach { e -> finalMeta[e.key] = e.value.asString }
+        finalMeta.putAll(stageMeta)
+        steps.add(OcrStepResult(stage, "", lastThumb, odoStr, emptyList(), emptyList(), null, null, finalMeta))
     }
     
     val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, OdometerOcrUtils.pickBestOdometer(steps), lastThumb, System.currentTimeMillis() - tH0, tSnTotal, extraImages)
