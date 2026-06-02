@@ -886,6 +886,11 @@ private suspend fun runBinTrialsPaddle(
         trialsMeta["trial_${vIdx}_red_area"] = redArea.toString()
         trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString()
         
+        val redBoxesStr = tRawB.joinToString(";") { "${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
+        val orangeBoxesStr = tCons.joinToString(";") { "${it.left},${it.top},${it.right},${it.bottom}" }
+        if (redBoxesStr.isNotEmpty()) trialsMeta["trial_${vIdx}_red_boxes"] = redBoxesStr
+        if (orangeBoxesStr.isNotEmpty()) trialsMeta["trial_${vIdx}_orange_boxes"] = orangeBoxesStr
+        
         trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b> (Conf: ${"%.2f".format(tAvg)})<br><small>$tProbs</small><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|$tAvg"
         if (tProbs.isNotEmpty()) trialsMeta["trial_${vIdx}_probs"] = tProbs
@@ -934,6 +939,7 @@ private suspend fun runBinTrialsMLKit(
         val snX = trialMat.cols().toFloat() / ew.toFloat()
         val snY = trialMat.rows().toFloat() / eh.toFloat()
         var orangeArea = 0
+        val mlBoxes = mutableListOf<String>()
         vText.textBlocks.forEach { b -> 
             b.boundingBox?.let {
                 val l = (it.left * snX).toInt()
@@ -942,8 +948,10 @@ private suspend fun runBinTrialsMLKit(
                 val bot = (it.bottom * snY).toInt()
                 anns.add(SnapshotAnnotation(l, t, r, bot, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2))
                 orangeArea += (r - l) * (bot - t)
+                mlBoxes.add("$l,$t,$r,$bot")
             }
         }
+        val orangeBoxesStr = mlBoxes.joinToString(";")
         
         val curMat = odoBuffer.p.mat.clone()
         trialMat.copyTo(odoBuffer.p.mat)
@@ -951,6 +959,7 @@ private suspend fun runBinTrialsMLKit(
         curMat.copyTo(odoBuffer.p.mat)
         curMat.release()
         trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString()
+        if (orangeBoxesStr.isNotEmpty()) trialsMeta["trial_${vIdx}_orange_boxes"] = orangeBoxesStr
         
         trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|1.0"
