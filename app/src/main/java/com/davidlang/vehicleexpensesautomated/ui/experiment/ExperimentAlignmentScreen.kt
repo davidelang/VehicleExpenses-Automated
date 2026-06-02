@@ -1035,7 +1035,7 @@ private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
     }
     
     hist.release()
-    return HistStats(intensityLow, intensityHigh, p80, bins)
+    return OdometerOcrUtils.HistStats(intensityLow, intensityHigh, p80, bins)
 }
 
 private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
