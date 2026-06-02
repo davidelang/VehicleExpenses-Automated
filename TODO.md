@@ -11,6 +11,6 @@
 - [x] Refine update-rules.sh Robustness
     - [x] Update `update-rules.sh` to break links and handle read-only targets.
     - [x] Re-run sync and verify inodes.
-- [/] Cleanup Reports on Device
-    - [ ] Modify `fetch_latest_reports.py` to remove old reports from device.
-    - [ ] Commit changes.
+- [x] Cleanup Reports on Device
+    - [x] Modify `fetch_latest_reports.py` to remove old reports from device.
+    - [x] Commit changes.
