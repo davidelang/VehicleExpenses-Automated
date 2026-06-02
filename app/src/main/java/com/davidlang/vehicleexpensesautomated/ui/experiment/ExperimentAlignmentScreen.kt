@@ -483,7 +483,7 @@ private suspend fun runExperiment(
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
                             // For Set F and G, only run the "Raw" stage
-                            val iterativeStages = listOf("Raw", "80%", "Hist", "Bin-Trials", "Bin")
+                            val iterativeStages = listOf("Raw", "Bin-Trials", "Bin")
 
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
@@ -811,12 +811,23 @@ private suspend fun runBinTrialsPaddle(
     experimentRecSet320x48: BufferSet,
     paddleEngine: NativePaddleEngine,
     rawBins: FloatArray,
-    useCharAware: Boolean
+    useCharAware: Boolean,
+    rawResult: String? = null,
+    rawProbs: String? = null
 ): Pair<String, Map<String, String>> {
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
-    
+    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val base64: String, val avgConf: Float)
+    val trialsList = mutableListOf<TrialData>()
+
+    if (rawResult != null) {
+        val rProbs = mutableListOf<Float>()
+        val regex = Regex("\\((0\\.\\d+|1\\.0+)\\)")
+        regex.findAll(rawProbs ?: "").forEach { rProbs.add(it.groupValues[1].toFloatOrNull() ?: 0f) }
+        trialsList.add(TrialData(-1.0, rawResult, rProbs.sum(), if (rProbs.isNotEmpty()) rProbs.minOrNull() ?: 0f else 0f, rawProbs ?: "", "", 0f))
+    }
+
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
         odoBuffer.s.clear()
@@ -836,65 +847,52 @@ private suspend fun runBinTrialsPaddle(
             if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(trialMat, it.boundingBox).first
             else NativeImageUtils.expandByValleyDiagnostic(trialMat, it.boundingBox, 0.40f).first
         }
-
-        
         val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
-        val tOdoB = StringBuilder()
-        val tProbsB = StringBuilder()
-        var tCf = 0f
-        var tCnt = 0
+        val tOdoB = StringBuilder(); val tProbsB = StringBuilder(); var tCf = 0f; var tCnt = 0
         
         tCons.forEach { tBox ->
-            val sL = tBox.left.coerceIn(0, trialMat.cols() - 1)
-            val sT = tBox.top.coerceIn(0, trialMat.rows() - 1)
-            val sR = tBox.right.coerceIn(sL + 1, trialMat.cols())
-            val sB = tBox.bottom.coerceIn(sT + 1, trialMat.rows())
+            val sL = tBox.left.coerceIn(0, trialMat.cols() - 1); val sT = tBox.top.coerceIn(0, trialMat.rows() - 1); val sR = tBox.right.coerceIn(sL + 1, trialMat.cols()); val sB = tBox.bottom.coerceIn(sT + 1, trialMat.rows())
             if (sR > sL && sB > sT) {
-                val bRecMat = trialMat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT))
-                experimentRecSet320x48.p.clear()
-                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
-                val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
-                val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
-                val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
-                org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                val bRecMat = trialMat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT)); experimentRecSet320x48.p.clear()
+                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows()); val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2; val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
+                val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh); org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                 val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
-                if (ocrR.debugText.isNotBlank()) {
-                    tOdoB.append(ocrR.debugText).append(" ")
-                    ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") }
-                }
-                tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length
-                tCnt += ocrR.debugText.length
-                experimentRecSet320x48.c[rCrId].release()
-                bRecMat.release()
+                if (ocrR.debugText.isNotBlank()) { tOdoB.append(ocrR.debugText).append(" "); ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") } }
+                tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length; tCnt += ocrR.debugText.length; experimentRecSet320x48.c[rCrId].release(); bRecMat.release()
             }
         }
-        
-        val tResText = tOdoB.toString().trim()
-        val tProbs = tProbsB.toString().trim()
-        val tAvg = if (tCnt > 0) tCf / tCnt else 0f
+        val tText = tOdoB.toString().trim(); val tProbsStr = tProbsB.toString().trim(); val tAvg = if (tCnt > 0) tCf / tCnt else 0f
+        val tProbs = mutableListOf<Float>(); val regex = Regex("\\((0\\.\\d+|1\\.0+)\\)"); regex.findAll(tProbsStr).forEach { tProbs.add(it.groupValues[1].toFloatOrNull() ?: 0f) }
+        val minP = if (tProbs.isNotEmpty()) tProbs.minOrNull() ?: 0f else 0f
         
         val anns = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
         tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
-        
         val (tB64, _) = OcrUtils.takeSnapshot(trialMat, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
         
-        val redArea = tRawB.sumOf { it.boundingBox.width() * it.boundingBox.height() }
-        val orangeArea = tCons.sumOf { it.width() * it.height() }
-        trialsMeta["trial_${vIdx}_red_area"] = redArea.toString()
-        trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString()
-        
-        val redBoxesStr = tRawB.joinToString(";") { "${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
-        val orangeBoxesStr = tCons.joinToString(";") { "${it.left},${it.top},${it.right},${it.bottom}" }
-        if (redBoxesStr.isNotEmpty()) trialsMeta["trial_${vIdx}_red_boxes"] = redBoxesStr
-        if (orangeBoxesStr.isNotEmpty()) trialsMeta["trial_${vIdx}_orange_boxes"] = orangeBoxesStr
-        
-        trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b> (Conf: ${"%.2f".format(tAvg)})<br><small>$tProbs</small><br><img src='data:image/jpeg;base64,$tB64'></div>")
-        trialsMeta["trial_$vIdx"] = "$threshold|$tResText|$tAvg"
-        if (tProbs.isNotEmpty()) trialsMeta["trial_${vIdx}_probs"] = tProbs
-        
+        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tB64, tAvg))
+        trialsMeta["trial_${vIdx}_red_area"] = (tRawB.sumOf { it.boundingBox.width() * it.boundingBox.height() }).toString()
+        trialsMeta["trial_${vIdx}_orange_area"] = (tCons.sumOf { it.width() * it.height() }).toString()
+        trialsMeta["trial_${vIdx}_red_boxes"] = tRawB.joinToString(";") { "${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
+        trialsMeta["trial_${vIdx}_orange_boxes"] = tCons.joinToString(";") { "${it.left},${it.top},${it.right},${it.bottom}" }
     }
-    trialsHtml.append("</div>")
+    
+    val highQual = trialsList.filter { it.minProb >= 0.90f }
+    val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
+    
+    trialsList.forEachIndexed { idx, t ->
+        if (t.thresh < 0) return@forEachIndexed
+        val isWinner = (t == winner)
+        val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
+        val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><img src=\"data:image/jpeg;base64,${t.base64}\"></div>")
+        trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"; if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
+    }
+    
+    val winnerMeta = if (winner != null) {
+        mapOf("best_threshold" to winner.thresh.toString(), "best_text" to winner.text, "selection_logic" to (if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)"))
+    } else emptyMap()
+    trialsMeta.putAll(winnerMeta)
     return Pair(trialsHtml.toString(), trialsMeta)
 }
 
@@ -902,65 +900,45 @@ private suspend fun runBinTrialsPaddle(
 private suspend fun runBinTrialsMLKit(
     odoBuffer: BufferSet,
     experimentRecSet320x48: BufferSet,
-    rawBins: FloatArray
+    rawBins: FloatArray,
+    rawResult: String? = null
 ): Pair<String, Map<String, String>> {
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
-    
+    data class TrialData(val thresh: Double, val text: String, val base64: String)
+    val trialsList = mutableListOf<TrialData>()
+    if (rawResult != null) trialsList.add(TrialData(-1.0, rawResult, ""))
+
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
-        odoBuffer.s.clear()
-        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-        val trialMat = odoBuffer.s.mat
-        
-        experimentRecSet320x48.p.clear()
+        odoBuffer.s.clear(); org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        val trialMat = odoBuffer.s.mat; experimentRecSet320x48.p.clear()
         val rSc = kotlin.math.min(320f / trialMat.cols(), 48f / trialMat.rows())
-        val ew = ((trialMat.cols() * rSc + 1).toInt() / 2) * 2
-        val eh = ((trialMat.rows() * rSc + 1).toInt() / 2) * 2
-        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
-        org.opencv.imgproc.Imgproc.resize(trialMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        
+        val ew = ((trialMat.cols() * rSc + 1).toInt() / 2) * 2; val eh = ((trialMat.rows() * rSc + 1).toInt() / 2) * 2
+        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh); org.opencv.imgproc.Imgproc.resize(trialMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
         val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
         experimentRecSet320x48.c[rCrId].release()
-        
         val tOdoB = StringBuilder()
-        vText.textBlocks.forEach { blk -> 
-            blk.lines.forEach { line -> 
-                val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, false).filter { it.isDigit() }
-                if (cleaned.isNotBlank()) tOdoB.append(cleaned) 
-            } 
-        }
+        vText.textBlocks.forEach { blk -> blk.lines.forEach { line -> val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, false).filter { it.isDigit() }; if (cleaned.isNotBlank()) tOdoB.append(cleaned) } }
         val tResText = tOdoB.toString()
-        
-        val anns = mutableListOf<SnapshotAnnotation>()
-        val snX = trialMat.cols().toFloat() / ew.toFloat()
-        val snY = trialMat.rows().toFloat() / eh.toFloat()
-        var orangeArea = 0
-        val mlBoxes = mutableListOf<String>()
-        vText.textBlocks.forEach { b -> 
-            b.boundingBox?.let {
-                val l = (it.left * snX).toInt()
-                val t = (it.top * snY).toInt()
-                val r = (it.right * snX).toInt()
-                val bot = (it.bottom * snY).toInt()
-                anns.add(SnapshotAnnotation(l, t, r, bot, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2))
-                orangeArea += (r - l) * (bot - t)
-                mlBoxes.add("$l,$t,$r,$bot")
-            }
-        }
-        val orangeBoxesStr = mlBoxes.joinToString(";")
-        
+        val anns = mutableListOf<SnapshotAnnotation>(); val snX = trialMat.cols().toFloat() / ew.toFloat(); val snY = trialMat.rows().toFloat() / eh.toFloat()
+        var orangeArea = 0; val mlBoxes = mutableListOf<String>()
+        vText.textBlocks.forEach { b -> b.boundingBox?.let { val l = (it.left * snX).toInt(); val t = (it.top * snY).toInt(); val r = (it.right * snX).toInt(); val bot = (it.bottom * snY).toInt(); anns.add(SnapshotAnnotation(l, t, r, bot, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)); orangeArea += (r - l) * (bot - t); mlBoxes.add("$l,$t,$r,$bot") } }
         val (tB64, _) = OcrUtils.takeSnapshot(trialMat, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
-        trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString()
-        if (orangeBoxesStr.isNotEmpty()) trialsMeta["trial_${vIdx}_orange_boxes"] = orangeBoxesStr
-        
-        trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b><br><img src='data:image/jpeg;base64,$tB64'></div>")
-        trialsMeta["trial_$vIdx"] = "$threshold|$tResText|1.0"
-        
+        trialsList.add(TrialData(threshold, tResText, tB64))
+        trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString(); if (mlBoxes.isNotEmpty()) trialsMeta["trial_${vIdx}_orange_boxes"] = mlBoxes.joinToString(";")
     }
-    trialsHtml.append("</div>")
+    val winner = trialsList.maxByOrNull { it.text.length }
+    trialsList.forEachIndexed { idx, t ->
+        if (t.thresh < 0) return@forEachIndexed
+        val isWinner = (t == winner); val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"; val status = if (isWinner) "<b>[SELECTED]</b> " else "[REJECTED]"
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b><br><img src=\"data:image/jpeg;base64,${t.base64}\"></div>")
+        trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|1.0"
+    }
+    val winnerMeta = if (winner != null) mapOf("best_threshold" to winner.thresh.toString(), "best_text" to winner.text, "selection_logic" to "Max Length (ML Kit)") else emptyMap()
+    trialsMeta.putAll(winnerMeta)
     return Pair(trialsHtml.toString(), trialsMeta)
 }
 
@@ -1304,55 +1282,24 @@ private suspend fun runPaddleValleyIterative(
             stageMeta["after_hist"] = h2
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware)
+            val rawStep = steps.find { it.stageName == "Raw" }; val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware, rawStep?.text, rawStep?.metadata?.get("ocr_probs"))
             trialsHtmlStr = tHtml
             stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)
-        } else if (stage == "Bin") {
+                } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
             if (binTrialsMeta != null) {
-                val trialIndices = binTrialsMeta.keys.filter { it.matches(Regex("trial_\\d+")) }.map { it.substringAfter("trial_").toInt() }
-                var bestThresh = 0.0
-                var bestSum = -1.0f
-                var bestValidThresh = 0.0
-                var bestValidSum = -1.0f
-                
-                trialIndices.forEach { idx ->
-                    val valStr = binTrialsMeta["trial_$idx"] ?: return@forEach
-                    val parts = valStr.split("|")
-                    if (parts.size < 3) return@forEach
-                    val thresh = parts[0].toDoubleOrNull() ?: 0.0
-                    val text = parts[1]
-                    if (text.isEmpty()) return@forEach
-                    
-                    val probsStr = binTrialsMeta["trial_${idx}_probs"] ?: ""
-                    val probs = mutableListOf<Float>()
-                    val regex = Regex("\\((0\\.\\d+|1\\.0+)\\)")
-                    regex.findAll(probsStr).forEach { matchResult ->
-                        probs.add(matchResult.groupValues[1].toFloatOrNull() ?: 0f)
-                    }
-                    val minProb = if (probs.isNotEmpty()) probs.minOrNull() ?: 0f else 0f
-                    val sumProb = probs.sum()
-                    
-                    if (sumProb > bestSum) {
-                        bestSum = sumProb
-                        bestThresh = thresh
-                    }
-                    if (minProb >= 0.90f && sumProb > bestValidSum) {
-                        bestValidSum = sumProb
-                        bestValidThresh = thresh
-                    }
+                val targetThresh = binTrialsMeta["best_threshold"]?.toDoubleOrNull() ?: -1.0
+                if (targetThresh >= 0.0) {
+                    org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.p.mat, targetThresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                    stageMeta["selected_threshold"] = targetThresh.toString()
+                    stageMeta["selection_logic"] = binTrialsMeta["selection_logic"] ?: "Pre-calculated"
+                } else {
+                    stageMeta["selection_logic"] = "RAW Selected"
                 }
-                
-                val targetThresh = if (bestValidSum > -1.0f) bestValidThresh else bestThresh
-                org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.p.mat, targetThresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-                stageMeta["selected_threshold"] = targetThresh.toString()
-                stageMeta["selection_logic"] = if (bestValidSum > -1.0f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)"
             }
         }
-        
-        
-        val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
+val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
         val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
         val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
         
@@ -1487,37 +1434,24 @@ private suspend fun runMLKitIterative(
             stageMeta["after_hist"] = h2
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins)
+            val rawStep = steps.find { it.stageName == "Raw" }; val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins, rawStep?.text)
             trialsHtmlStr = tHtml
             stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)
-        } else if (stage == "Bin") {
+                } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
             if (binTrialsMeta != null) {
-                val trialIndices = binTrialsMeta.keys.filter { it.matches(Regex("trial_\\d+")) }.map { it.substringAfter("trial_").toInt() }
-                var bestThresh = 0.0
-                var bestLength = -1
-                
-                trialIndices.forEach { idx ->
-                    val valStr = binTrialsMeta["trial_$idx"] ?: return@forEach
-                    val parts = valStr.split("|")
-                    if (parts.size < 3) return@forEach
-                    val thresh = parts[0].toDoubleOrNull() ?: 0.0
-                    val text = parts[1]
-                    if (text.length > bestLength) {
-                        bestLength = text.length
-                        bestThresh = thresh
-                    }
+                val targetThresh = binTrialsMeta["best_threshold"]?.toDoubleOrNull() ?: -1.0
+                if (targetThresh >= 0.0) {
+                    org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.p.mat, targetThresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                    stageMeta["selected_threshold"] = targetThresh.toString()
+                    stageMeta["selection_logic"] = binTrialsMeta["selection_logic"] ?: "Pre-calculated"
+                } else {
+                    stageMeta["selection_logic"] = "RAW Selected"
                 }
-                
-                org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.p.mat, bestThresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-                stageMeta["selected_threshold"] = bestThresh.toString()
-                stageMeta["selection_logic"] = "Max Length (ML Kit)"
             }
         }
-        
-        
-        experimentRecSet320x48.p.clear()
+experimentRecSet320x48.p.clear()
         val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())
         val ew = ((odoBuffer.p.mat.cols() * rSc + 1).toInt() / 2) * 2
         val eh = ((odoBuffer.p.mat.rows() * rSc + 1).toInt() / 2) * 2
