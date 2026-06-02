@@ -887,7 +887,7 @@ private suspend fun runBinTrialsMLKit(
     rawBins: FloatArray
 ): Pair<String, Map<String, String>> {
     val midpoints = findValleyMidpoints(rawBins)
-    val trialsHtml = StringBuilder("<div style=''border:1px solid #ccc; padding:4px; margin-top:4px;''><b>Bin-Trials:</b><br>")
+    val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
     
     midpoints.forEachIndexed { vIdx, binIdx ->
@@ -921,7 +921,7 @@ private suspend fun runBinTrialsMLKit(
         curMat.copyTo(odoBuffer.p.mat)
         curMat.release()
         
-        trialsHtml.append("<div style=''margin-bottom:8px; border-bottom:1px dashed #eee;''>T=${threshold.toInt()}: <b>$tResText</b><br><img src=''data:image/jpeg;base64,$tB64''></div>")
+        trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|1.0"
         trialMat.release()
     }
