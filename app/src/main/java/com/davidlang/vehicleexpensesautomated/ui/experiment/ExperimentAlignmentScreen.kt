@@ -1010,27 +1010,26 @@ private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
 
     val smoothed = FloatArray(64)
     for (i in 0..63) {
-        val start = (i - 1).coerceAtLeast(0)
-        val end = (i + 1).coerceAtMost(63)
+        val start = (i - 2).coerceAtLeast(0)
+        val end = (i + 2).coerceAtMost(63)
         smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
     }
 
-    // Low Limit: Climb to first peak, then drop to valley or 10%
+    // Low Limit: Climb to first peak, then drop to valley
     var lowPeakIdx = 0
     while (lowPeakIdx < 62 && smoothed[lowPeakIdx + 1] >= smoothed[lowPeakIdx]) lowPeakIdx++
-    val lowPeakVal = smoothed[lowPeakIdx]
     var lowIdx = lowPeakIdx
-    while (lowIdx < 63 && smoothed[lowIdx + 1] <= smoothed[lowIdx] && smoothed[lowIdx + 1] > lowPeakVal * 0.10f) lowIdx++
+    while (lowIdx < 63 && smoothed[lowIdx + 1] <= smoothed[lowIdx]) lowIdx++
 
-    // High Limit: Climb to first peak from right, then drop to valley or 10%
+    // High Limit: Climb to first peak from right, then drop to valley
     var highPeakIdx = 63
     while (highPeakIdx > 1 && smoothed[highPeakIdx - 1] >= smoothed[highPeakIdx]) highPeakIdx--
-    val highPeakVal = smoothed[highPeakIdx]
     var highIdx = highPeakIdx
-    while (highIdx > 0 && smoothed[highIdx - 1] <= smoothed[highIdx] && smoothed[highIdx - 1] > highPeakVal * 0.10f) highIdx--
+    while (highIdx > 0 && smoothed[highIdx - 1] <= smoothed[highIdx]) highIdx--
 
     val intensityLow = lowIdx * 4.0
     val intensityHigh = highIdx * 4.0
+    Log.i("HIST_REFINEMENT", "Limits: Low=%d (Peak=%d), High=%d (Peak=%d)".format(lowIdx, lowPeakIdx, highIdx, highPeakIdx))
 
     var p80 = 0.0
     var sum = 0.0
