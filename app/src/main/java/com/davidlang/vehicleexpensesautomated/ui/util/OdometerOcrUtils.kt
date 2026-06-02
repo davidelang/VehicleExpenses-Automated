@@ -526,6 +526,12 @@ object OdometerOcrUtils {
         hist.release()
     }
 
+    fun applyContrastStretch(mat: Mat, intensityLow: Double, intensityHigh: Double) {
+        val alpha = if (intensityHigh > intensityLow) 255.0 / (intensityHigh - intensityLow) else 1.0
+        val beta = -intensityLow * alpha
+        mat.convertTo(mat, CvType.CV_8U, alpha, beta)
+    }
+
     fun automaticContrastStretch(mat: Mat): FloatArray {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))

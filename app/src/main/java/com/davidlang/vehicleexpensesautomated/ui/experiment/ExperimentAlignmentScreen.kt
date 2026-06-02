@@ -289,7 +289,7 @@ private suspend fun runExperiment(
         PipelineConfig("set_g", "Set G (Raw Angle + 80% Early)", { it.paddleTimeMs }) { it.paddleCppAngle },
         PipelineConfig("set_h", "Set H (Char-Aware Expansion)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
-    val harnessEngineNames = pipelines.flatMap { listOf("${it.displayName} ML", "${it.displayName} Paddle") }
+    val harnessEngineNames = listOf("Set A ML") + pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
 
     fun startNewFile(): File {
@@ -518,7 +518,7 @@ private suspend fun runExperiment(
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
                             // For Set F and G, only run the "Raw" stage
-                            val iterativeStages = if (pipeline.key in listOf("set_f", "set_g")) listOf("Raw") else listOf("Raw", "80%")
+                            val iterativeStages = if (pipeline.key in listOf("set_f", "set_g")) listOf("Raw") else listOf("Raw", "80%", "Hist")
 
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
@@ -935,6 +935,11 @@ private fun buildHtmlRowDynamic(
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
                     appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
+                    
+                    if (step.metadata.containsKey("before_hist")) {
+                        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["after_hist"]}'><br><small>After</small></td></tr></table>")
+                    }
+
                     val rawText = step.metadata["raw_text"]
                     if (rawText != null) {
                         appendLine("<br><small>Raw: $rawText</small>")
@@ -1122,11 +1127,6 @@ private suspend fun runPaddleValleyIterative(
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
 
-    // For Set G, show histograms
-    if (extraImages.containsKey("hist1")) {
-        htmlOutput.append("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (80%=Magenta)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (80% mapped to Cyan)</small></td></tr></table>")
-    }
-
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
     
@@ -1151,6 +1151,7 @@ private suspend fun runPaddleValleyIterative(
     
     stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
+        val stageMeta = mutableMapOf<String, String>()
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
@@ -1159,7 +1160,18 @@ private suspend fun runPaddleValleyIterative(
             }
         }
         
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
+        if (stage.contains("80%")) {
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
+        } else if (stage == "Hist") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.intensityLow, Color.YELLOW), HistMarker(stats.intensityHigh, Color.YELLOW), HistMarker(stats.p80, Color.MAGENTA)))
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, stats.intensityLow, stats.intensityHigh)
+            val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
+            val beta = -stats.intensityLow * alpha
+            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
+            stageMeta["before_hist"] = h1
+            stageMeta["after_hist"] = h2
+        }
         
         
         val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
@@ -1207,7 +1219,7 @@ private suspend fun runPaddleValleyIterative(
         val odoStr = odoB.toString().trim()
         allOdo.add(odoStr)
         val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, jMeta.asMap().mapValues { it.value.asString }))
+        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, jMeta.asMap().mapValues { it.value.asString } + stageMeta))
         
         val anns = mutableListOf<SnapshotAnnotation>()
         rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
@@ -1268,6 +1280,7 @@ private suspend fun runMLKitIterative(
     
     stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
+        val stageMeta = mutableMapOf<String, String>()
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
@@ -1276,7 +1289,18 @@ private suspend fun runMLKitIterative(
             }
         }
         
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
+        if (stage.contains("80%")) {
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
+        } else if (stage == "Hist") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.intensityLow, Color.YELLOW), HistMarker(stats.intensityHigh, Color.YELLOW), HistMarker(stats.p80, Color.MAGENTA)))
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, stats.intensityLow, stats.intensityHigh)
+            val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
+            val beta = -stats.intensityLow * alpha
+            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
+            stageMeta["before_hist"] = h1
+            stageMeta["after_hist"] = h2
+        }
         
         
         experimentRecSet320x48.p.clear()
@@ -1301,7 +1325,7 @@ private suspend fun runMLKitIterative(
         val odoStr = odoB.toString()
         allOdo.add(odoStr)
         val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, emptyMap()))
+        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, stageMeta))
         
         val anns = mutableListOf<SnapshotAnnotation>()
         val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
