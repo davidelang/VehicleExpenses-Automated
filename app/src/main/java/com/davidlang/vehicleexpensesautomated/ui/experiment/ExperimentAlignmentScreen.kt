@@ -1306,6 +1306,7 @@ private suspend fun runPaddleValleyIterative(
             val stats = getHistStats(odoBuffer.p.mat)
             val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware)
             trialsHtmlStr = tHtml
+            stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)
         } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
@@ -1488,6 +1489,7 @@ private suspend fun runMLKitIterative(
             val stats = getHistStats(odoBuffer.p.mat)
             val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins)
             trialsHtmlStr = tHtml
+            stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)
         } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
