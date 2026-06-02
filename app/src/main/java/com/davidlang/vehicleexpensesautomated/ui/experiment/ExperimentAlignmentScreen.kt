@@ -483,7 +483,7 @@ private suspend fun runExperiment(
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
                             // For Set F and G, only run the "Raw" stage
-                            val iterativeStages = if (pipeline.key in listOf("set_f", "set_g")) listOf("Raw") else listOf("Raw", "80%", "Hist")
+                            val iterativeStages = listOf("Raw", "80%", "Hist", "Bin-Trials")
 
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
