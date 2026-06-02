@@ -819,8 +819,9 @@ private suspend fun runBinTrialsPaddle(
     
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
-        val trialMat = odoBuffer.p.mat.clone()
-        org.opencv.imgproc.Imgproc.threshold(trialMat, trialMat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        odoBuffer.s.clear()
+        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        val trialMat = odoBuffer.s.mat
         
         val detSc = kotlin.math.min(512f / trialMat.cols(), 128f / trialMat.rows())
         val fw = (trialMat.cols() * detSc).toInt().coerceAtMost(512)
@@ -832,9 +833,10 @@ private suspend fun runBinTrialsPaddle(
         experimentDetSet512x128.c[dCrId].release()
         
         val tFrags = tRawB.map { 
-            if (useCharAware) NativeImageUtils.expandByCharacterAware(trialMat, it.boundingBox)
-            else NativeImageUtils.expandByValleyDiagnostic(trialMat, it.boundingBox).first
+            if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(trialMat, it.boundingBox).first
+            else NativeImageUtils.expandByValleyDiagnostic(trialMat, it.boundingBox, 0.40f).first
         }
+
         
         val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
         val tOdoB = StringBuilder()
@@ -875,11 +877,7 @@ private suspend fun runBinTrialsPaddle(
         tRawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
         tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         
-        val curMat = odoBuffer.p.mat.clone()
-        trialMat.copyTo(odoBuffer.p.mat)
-        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
-        curMat.copyTo(odoBuffer.p.mat)
-        curMat.release()
+        val (tB64, _) = OcrUtils.takeSnapshot(trialMat, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
         
         val redArea = tRawB.sumOf { it.boundingBox.width() * it.boundingBox.height() }
         val orangeArea = tCons.sumOf { it.width() * it.height() }
@@ -894,7 +892,7 @@ private suspend fun runBinTrialsPaddle(
         trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b> (Conf: ${"%.2f".format(tAvg)})<br><small>$tProbs</small><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|$tAvg"
         if (tProbs.isNotEmpty()) trialsMeta["trial_${vIdx}_probs"] = tProbs
-        trialMat.release()
+        
     }
     trialsHtml.append("</div>")
     return Pair(trialsHtml.toString(), trialsMeta)
@@ -912,8 +910,9 @@ private suspend fun runBinTrialsMLKit(
     
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
-        val trialMat = odoBuffer.p.mat.clone()
-        org.opencv.imgproc.Imgproc.threshold(trialMat, trialMat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        odoBuffer.s.clear()
+        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        val trialMat = odoBuffer.s.mat
         
         experimentRecSet320x48.p.clear()
         val rSc = kotlin.math.min(320f / trialMat.cols(), 48f / trialMat.rows())
@@ -953,17 +952,13 @@ private suspend fun runBinTrialsMLKit(
         }
         val orangeBoxesStr = mlBoxes.joinToString(";")
         
-        val curMat = odoBuffer.p.mat.clone()
-        trialMat.copyTo(odoBuffer.p.mat)
-        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
-        curMat.copyTo(odoBuffer.p.mat)
-        curMat.release()
+        val (tB64, _) = OcrUtils.takeSnapshot(trialMat, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
         trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString()
         if (orangeBoxesStr.isNotEmpty()) trialsMeta["trial_${vIdx}_orange_boxes"] = orangeBoxesStr
         
         trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|1.0"
-        trialMat.release()
+        
     }
     trialsHtml.append("</div>")
     return Pair(trialsHtml.toString(), trialsMeta)
@@ -1310,7 +1305,7 @@ private suspend fun runPaddleValleyIterative(
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
             val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware)
-            stageMeta["trials_html"] = tHtml
+            val trialsHtmlStr = tHtml
             stageMeta.putAll(tMeta)
         } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
@@ -1412,7 +1407,7 @@ private suspend fun runPaddleValleyIterative(
         val hT = if (stageMeta.containsKey("before_hist")) {
             "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
         } else ""
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${stageMeta["trials_html"] ?: ""}<br>$odoStr</div>")
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${trialsHtmlStr}<br>$odoStr</div>")
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", odoStr)
         sObj.addProperty("time", tL)
@@ -1492,7 +1487,7 @@ private suspend fun runMLKitIterative(
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
             val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins)
-            stageMeta["trials_html"] = tHtml
+            val trialsHtmlStr = tHtml
             stageMeta.putAll(tMeta)
         } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
@@ -1556,7 +1551,7 @@ private suspend fun runMLKitIterative(
         val hT = if (stageMeta.containsKey("before_hist")) {
             "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
         } else ""
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${stageMeta["trials_html"] ?: ""}<br>$odoStr</div>")
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${trialsHtmlStr}<br>$odoStr</div>")
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", odoStr)
         sObj.addProperty("time", tL)
