@@ -1,3 +1,8 @@
+## Active Execution: Bin-Trials (Sub-Step 4.1)
+- [ ] **EXECUTE:** Pipeline cleanup (Remove Sets F/G).
+  - [ ] Delete \`set_f\` and \`set_g\` from pipelines in \`ExperimentAlignmentScreen.kt\`.
+  - [ ] Remove early preprocessing and independent deskew logic.
+  - [ ] Verify with \`./build_app\`.
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
 - [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
   - [x] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
