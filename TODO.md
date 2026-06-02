@@ -1,9 +1,9 @@
 ## Active Execution: Histogram Hill-Stopping Refinement
-- [ ] **EXECUTE:** Refine histogram stopping logic (Valley detection).
-  - [ ] Implement 5-bin smoothing in \`getHistStats\`.
-  - [ ] Implement Hill-Valley detection (Stop at climb after first peak).
-  - [ ] Add \`LOGI\` traces for limits and peaks.
-  - [ ] Verify with \`./build_app\`.
+- [x] **DONE:** Refine histogram stopping logic (Valley detection).
+  - [x] Implement 5-bin smoothing in \`getHistStats\`.
+  - [x] Implement Hill-Valley detection (Stop at climb after first peak).
+  - [x] Add \`LOGI\` traces for limits and peaks.
+  - [x] Verified with \`./build_app\`.
 
 ## Active Execution: Adaptive Histogram Refinement
 - [x] **DONE:** Implement first-peak collapsing histogram logic and fixed visual scaling.
