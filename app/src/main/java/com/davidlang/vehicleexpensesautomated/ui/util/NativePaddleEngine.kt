@@ -522,7 +522,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             engineName = "Paddle V3 Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
             debugText = res.text,
-            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h))),
+            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
             imageWidth = w,
             imageHeight = h,
             metadata = res.metadata
@@ -546,7 +546,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             engineName = "Paddle Numeric Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
             debugText = res.text,
-            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h))),
+            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
             imageWidth = w,
             imageHeight = h,
             metadata = res.metadata
