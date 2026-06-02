@@ -871,11 +871,20 @@ private suspend fun runBinTrialsPaddle(
         val tProbs = tProbsB.toString().trim()
         val tAvg = if (tCnt > 0) tCf / tCnt else 0f
         
+        val anns = mutableListOf<SnapshotAnnotation>()
+        tRawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        
         val curMat = odoBuffer.p.mat.clone()
         trialMat.copyTo(odoBuffer.p.mat)
-        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
         curMat.copyTo(odoBuffer.p.mat)
         curMat.release()
+        
+        val redArea = tRawB.sumOf { it.boundingBox.width() * it.boundingBox.height() }
+        val orangeArea = tCons.sumOf { it.width() * it.height() }
+        trialsMeta["trial_${vIdx}_red_area"] = redArea.toString()
+        trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString()
         
         trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b> (Conf: ${"%.2f".format(tAvg)})<br><small>$tProbs</small><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|$tAvg"
@@ -921,11 +930,27 @@ private suspend fun runBinTrialsMLKit(
         }
         val tResText = tOdoB.toString()
         
+        val anns = mutableListOf<SnapshotAnnotation>()
+        val snX = trialMat.cols().toFloat() / ew.toFloat()
+        val snY = trialMat.rows().toFloat() / eh.toFloat()
+        var orangeArea = 0
+        vText.textBlocks.forEach { b -> 
+            b.boundingBox?.let {
+                val l = (it.left * snX).toInt()
+                val t = (it.top * snY).toInt()
+                val r = (it.right * snX).toInt()
+                val bot = (it.bottom * snY).toInt()
+                anns.add(SnapshotAnnotation(l, t, r, bot, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2))
+                orangeArea += (r - l) * (bot - t)
+            }
+        }
+        
         val curMat = odoBuffer.p.mat.clone()
         trialMat.copyTo(odoBuffer.p.mat)
-        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
         curMat.copyTo(odoBuffer.p.mat)
         curMat.release()
+        trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString()
         
         trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|1.0"
