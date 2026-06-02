@@ -40,6 +40,33 @@ import org.opencv.imgproc.Imgproc
 import java.util.Collections
 
 object OdometerOcrUtils {
+    data class HistMarker(val value: Double, val color: Int)
+    data class HistStats(val intensityLow: Double, val intensityHigh: Double, val p80: Double, val rawBins: FloatArray)
+    fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
+        val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
+        for (frag in fragments) {
+            val matchingClusters = mutableListOf<Int>()
+            for ((idx, cluster) in clusters.withIndex()) {
+                if (cluster.any { c ->
+                    val overlapTop = kotlin.math.max(frag.top, c.top); val overlapBottom = kotlin.math.min(frag.bottom, c.bottom)
+                    val overlapHeight = overlapBottom - overlapTop
+                    overlapHeight > 0 && overlapHeight >= kotlin.math.min(frag.height(), c.height()) * 0.20
+                }) matchingClusters.add(idx)
+            }
+            if (matchingClusters.isEmpty()) clusters.add(mutableListOf(frag))
+            else {
+                val firstIdx = matchingClusters[0]; clusters[firstIdx].add(frag)
+                for (k in matchingClusters.size - 1 downTo 1) { 
+                    clusters[firstIdx].addAll(clusters[matchingClusters[k]])
+                    clusters.removeAt(matchingClusters[k]) 
+                }
+            }
+        }
+        return clusters.map { cluster -> 
+            android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) 
+        }
+    }
+
 
     init {
         if (!OpenCVLoader.initLocal()) {
@@ -196,43 +223,7 @@ object OdometerOcrUtils {
         return merged
     }
 
-    fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
-        if (fragments.isEmpty()) return emptyList()
-        val merged = mutableListOf<android.graphics.Rect>()
-        val remaining = fragments.toMutableList()
-
-        while (remaining.isNotEmpty()) {
-            var current = remaining.removeAt(0)
-            var changed = true
-            while (changed) {
-                changed = false
-                val iterator = remaining.iterator()
-                while (iterator.hasNext()) {
-                    val next = iterator.next()
-                    val intersection = android.graphics.Rect(
-                        kotlin.math.max(current.left, next.left),
-                        kotlin.math.max(current.top, next.top),
-                        kotlin.math.min(current.right, next.right),
-                        kotlin.math.min(current.bottom, next.bottom)
-                    )
-                    
-                    // Merge if any overlap exists OR one is nested
-                    if ((intersection.width() > 0 && intersection.height() > 0) || current.contains(next) || next.contains(current)) {
-                        current = android.graphics.Rect(
-                            kotlin.math.min(current.left, next.left),
-                            kotlin.math.min(current.top, next.top),
-                            kotlin.math.max(current.right, next.right),
-                            kotlin.math.max(current.bottom, next.bottom)
-                        )
-                        iterator.remove()
-                        changed = true
-                    }
-                }
-            }
-            merged.add(current)
-        }
-        return merged
-    }
+    
 
     private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())

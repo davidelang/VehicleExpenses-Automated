@@ -996,11 +996,9 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
 
 private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
-private data class HistMarker(val value: Double, val color: Int)
 
-private data class HistStats(val intensityLow: Double, val intensityHigh: Double, val p80: Double, val rawBins: FloatArray)
 
-private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
+private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)
@@ -1040,7 +1038,7 @@ private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     return HistStats(intensityLow, intensityHigh, p80, bins)
 }
 
-private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<HistMarker> = emptyList(), skipEnds: Boolean = false): String {
+private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)
@@ -1078,27 +1076,7 @@ private suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair
 private fun JSONObject.putSafe(key: String, value: Double, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 private fun JSONObject.putSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
-private fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
-    val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
-    for (frag in fragments) {
-        val matchingClusters = mutableListOf<Int>()
-        for ((idx, cluster) in clusters.withIndex()) {
-            if (cluster.any { c ->
-                val overlapTop = kotlin.math.max(frag.top, c.top); val overlapBottom = kotlin.math.min(frag.bottom, c.bottom)
-                val overlapHeight = overlapBottom - overlapTop
-                overlapHeight > 0 && overlapHeight >= kotlin.math.min(frag.height(), c.height()) * 0.20
-            }) matchingClusters.add(idx)
-        }
-        if (matchingClusters.isEmpty()) clusters.add(mutableListOf(frag))
-        else {
-            val firstIdx = matchingClusters[0]; clusters[firstIdx].add(frag)
-            for (k in matchingClusters.size - 1 downTo 1) { clusters[firstIdx].addAll(clusters[matchingClusters[k]]); clusters.removeAt(matchingClusters[k]) }
-        }
-    }
-    return clusters.map { cluster -> 
-        android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) 
-    }
-}
+
 
 private suspend fun runPaddleValleyIterative(
     displayName: String, 
@@ -1157,11 +1135,11 @@ private suspend fun runPaddleValleyIterative(
             OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
         } else if (stage == "Hist") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.intensityLow, Color.YELLOW), HistMarker(stats.intensityHigh, Color.YELLOW), HistMarker(stats.p80, Color.MAGENTA)))
+            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.intensityLow, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.intensityHigh, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.p80, Color.MAGENTA)))
             OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, stats.intensityLow, stats.intensityHigh)
             val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
             val beta = -stats.intensityLow * alpha
-            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
+            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
             stageMeta["before_hist"] = h1
             stageMeta["after_hist"] = h2
         }
@@ -1180,7 +1158,7 @@ private suspend fun runPaddleValleyIterative(
         val valleyResults = rawB.map { if (useCharAware) Pair(NativeImageUtils.expandByCharacterAware(odoBuffer.p.mat, it.boundingBox), emptyMap<String, String>()) else NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
         val frags = valleyResults.map { it.first }
         
-        val cons = clusterRects(frags).sortedBy { it.left }
+        val cons = OdometerOcrUtils.clusterRects(frags).sortedBy { it.left }
         val odoB = StringBuilder()
         val fBoxes = mutableListOf<android.graphics.Rect>()
         val jMeta = com.google.gson.JsonObject()
@@ -1286,11 +1264,11 @@ private suspend fun runMLKitIterative(
             OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
         } else if (stage == "Hist") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.intensityLow, Color.YELLOW), HistMarker(stats.intensityHigh, Color.YELLOW), HistMarker(stats.p80, Color.MAGENTA)))
+            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.intensityLow, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.intensityHigh, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.p80, Color.MAGENTA)))
             OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, stats.intensityLow, stats.intensityHigh)
             val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
             val beta = -stats.intensityLow * alpha
-            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
+            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
             stageMeta["before_hist"] = h1
             stageMeta["after_hist"] = h2
         }
