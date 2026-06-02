@@ -803,6 +803,37 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
     return root
 }
 
+
+private fun findValleyMidpoints(bins: FloatArray): List<Int> {
+    if (bins.isEmpty()) return emptyList()
+    val binCount = bins.size
+    val smoothed = FloatArray(binCount)
+    for (i in 0 until binCount) {
+        val start = (i - 1).coerceAtLeast(0)
+        val end = (i + 1).coerceAtMost(binCount - 1)
+        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+    }
+
+    val midpoints = mutableListOf<Int>()
+    var i = 1
+    while (i < binCount - 1) {
+        if (smoothed[i] <= smoothed[i - 1] && smoothed[i] <= smoothed[i + 1]) {
+            val startIdx = i
+            while (i < binCount - 1 && smoothed[i + 1] == smoothed[startIdx]) { i++ }
+            val endIdx = i
+            
+            val risesLeft = smoothed[startIdx - 1] > smoothed[startIdx]
+            val risesRight = if (endIdx < binCount - 1) smoothed[endIdx + 1] > smoothed[endIdx] else false
+            
+            if (risesLeft && risesRight) {
+                midpoints.add((startIdx + endIdx) / 2)
+            }
+        }
+        i++
+    }
+    return midpoints.distinct()
+}
+
 private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>, harnessEngines: List<String>, pipelineNames: List<String>): String = buildString {
     appendLine("<html><head><title>Deep Trace - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")

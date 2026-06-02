@@ -1,7 +1,8 @@
-## Active Execution: Bin-Trials (Sub-Step 4.1)
-- [ ] **EXECUTE:** Pipeline cleanup (Remove Sets F/G).
-  - [ ] Delete \`set_f\` and \`set_g\` from pipelines in \`ExperimentAlignmentScreen.kt\`.
-  - [ ] Remove early preprocessing and independent deskew logic.
+## Active Execution: Bin-Trials (Sub-Step 4.1 & 4.2)
+- [x] **DONE:** Pipeline cleanup (Remove Sets F/G).
+- [ ] **EXECUTE:** Add "Bin-Trials" stage and 3-bin valley utility.
+  - [ ] Add "Bin-Trials" to iterative stages.
+  - [ ] Implement \`findValleyMidpoints\` (3-bin smoothing).
   - [ ] Verify with \`./build_app\`.
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
 - [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
