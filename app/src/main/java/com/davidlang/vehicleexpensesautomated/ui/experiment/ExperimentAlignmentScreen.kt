@@ -1282,7 +1282,7 @@ private suspend fun runPaddleValleyIterative(
     
     stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
-        val stageMeta = mutableMapOf<String, String>()
+        val stageMeta = mutableMapOf<String, String>(); var trialsHtmlStr = ""
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
@@ -1305,7 +1305,7 @@ private suspend fun runPaddleValleyIterative(
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
             val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware)
-            val trialsHtmlStr = tHtml
+            trialsHtmlStr = tHtml
             stageMeta.putAll(tMeta)
         } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
@@ -1464,7 +1464,7 @@ private suspend fun runMLKitIterative(
     
     stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
-        val stageMeta = mutableMapOf<String, String>()
+        val stageMeta = mutableMapOf<String, String>(); var trialsHtmlStr = ""
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
@@ -1487,7 +1487,7 @@ private suspend fun runMLKitIterative(
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
             val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins)
-            val trialsHtmlStr = tHtml
+            trialsHtmlStr = tHtml
             stageMeta.putAll(tMeta)
         } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
