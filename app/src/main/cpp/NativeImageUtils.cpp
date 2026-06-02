@@ -1206,3 +1206,173 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 }
 
 
+
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandByCharacterAwareDiagnostic(
+    JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
+    
+    
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr; // Note: In diagnostic we still return nullptr on empty
+
+    int maxW = mat->cols;
+    int maxH = mat->rows;
+    LOGI("CHAR_AWARE: Start (%d,%d)-(%d,%d) img=%dx%d", L, T, R, B, maxW, maxH);
+
+    int safeL = std::max(0, std::min(L, maxW - 1));
+    int safeT = std::max(0, std::min(T, maxH - 1));
+    int safeR = std::max(safeL + 1, std::min(R, maxW));
+    int safeB = std::max(safeT + 1, std::min(B, maxH));
+
+    cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
+    cv::Scalar meanVal = cv::mean((*mat)(roi));
+    double hillBrightness = meanVal[0];
+    double contentThreshold = std::max(15.0, hillBrightness * (double)thresholdFactor);
+
+    std::ostringstream oss;
+    double minX = L, maxX = R, minY = T, maxY = B;
+    double sX = minX, sXX = maxX, sY = minY, sYY = maxY;
+    double hL = (maxX - minX) * 12.0; 
+    double vL = (maxY - minY) * 1.5;
+
+    auto getMaxRun = [&](int start, int end, int fixed, bool horizontal) -> int {
+        int currentRun = 0, maxRun = 0;
+        if (horizontal) {
+            if (fixed < 0 || fixed >= maxH) return 0;
+            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
+            for (int i = std::max(0, start); i < std::min(maxW, end); ++i) {
+                if (rowPtr[i] > contentThreshold) {
+                    currentRun++;
+                    if (currentRun > maxRun) maxRun = currentRun;
+                } else currentRun = 0;
+            }
+        } else {
+            if (fixed < 0 || fixed >= maxW) return 0;
+            for (int i = std::max(0, start); i < std::min(maxH, end); ++i) {
+                if (mat->at<uint8_t>(i, fixed) > contentThreshold) {
+                    currentRun++;
+                    if (currentRun > maxRun) maxRun = currentRun;
+                } else currentRun = 0;
+            }
+        }
+        return maxRun;
+    };
+
+    auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
+        int mr = getMaxRun(start, end, fixed, horizontal);
+        if (horizontal) return (mr < 3 || mr > (maxW * 0.30));
+        return (mr < 2 || mr > (maxH * 0.80));
+    };
+
+    // 1. Vertical Expansion (Current logic)
+    while (minY > 0 && (sY - minY) < vL) {
+        if (isValley((int)minX, (int)maxX, (int)minY - 1, true)) break;
+        minY -= 1.0;
+    }
+    while (maxY < maxH - 1 && (maxY - sYY) < vL) {
+        if (isValley((int)minX, (int)maxX, (int)maxY + 1, true)) break;
+        maxY += 1.0;
+    }
+
+    // 2. Strict Horizontal Walk (To first valley)
+    double strictL = minX, strictR = maxX;
+    while (strictL > 0 && !isValley((int)minY, (int)maxY, (int)strictL - 1, false)) strictL -= 1.0;
+    while (strictR < maxW - 1 && !isValley((int)minY, (int)maxY, (int)strictR + 1, false)) strictR += 1.0;
+
+    // 3. Analyze Content for Digit Width and Stroke Mass
+    int boxH = (int)(maxY - minY);
+    std::vector<int> colMaxRuns;
+    for (int x = (int)strictL; x <= (int)strictR; ++x) {
+        colMaxRuns.push_back(getMaxRun((int)minY, (int)maxY, x, false));
+    }
+
+    // Find minStrokeWidth (narrowest sequence of columns with run > 50% height)
+    int minStrokeW = 999, currentStrokeW = 0;
+    for (int mr : colMaxRuns) {
+        if (mr > boxH * 0.5) currentStrokeW++;
+        else {
+            if (currentStrokeW > 0 && currentStrokeW < minStrokeW) minStrokeW = currentStrokeW;
+            currentStrokeW = 0;
+        }
+    }
+    if (minStrokeW == 999) minStrokeW = std::max(2, (int)(boxH * 0.15));
+    
+    // Estimate digitWidth (horizontal pitch)
+    int digitWidth = (int)(boxH * 0.7); // Fallback
+    
+    oss << "Analysis:W=" << digitWidth << " minS=" << minStrokeW << " "; LOGI("CHAR_AWARE: Analysis: strict=(%d-%d) boxH=%d minStrokeW=%d digitWidth=%d", (int)strictL, (int)strictR, boxH, minStrokeW, digitWidth);
+    double mass1 = minStrokeW * boxH;
+    double mass8 = 2.5 * mass1;
+
+    auto getBlockDensity = [&](int startX, int endX) -> int {
+        int count = 0;
+        for (int x = std::max(0, startX); x < std::min(maxW, endX); ++x) {
+            for (int y = (int)minY; y < (int)maxY; ++y) {
+                if (mat->at<uint8_t>(y, x) > contentThreshold) count++;
+            }
+        }
+        return count;
+    };
+
+    // 4. Density Probes (Left and Right)
+    double lastGoodL = strictL, lastGoodR = strictR;
+    
+    // Probe Left
+    int curL = (int)strictL;
+    while (curL > 0) {
+        int p = getBlockDensity(curL - digitWidth, curL);
+        oss << "ProbeL:" << (curL - digitWidth) << "-" << curL << "=" << p << ","; LOGI("CHAR_AWARE: Probe L: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curL - digitWidth, curL, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
+        if (p >= 0.5 * mass1 && p <= 1.5 * mass8) {
+            curL -= digitWidth;
+            lastGoodL = curL;
+        } else break;
+    }
+    
+    // Probe Right
+    int curR = (int)strictR;
+    while (curR < maxW) {
+        int p = getBlockDensity(curR, curR + digitWidth);
+        oss << "ProbeR:" << curR << "-" << (curR + digitWidth) << "=" << p << ","; LOGI("CHAR_AWARE: Probe R: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curR, curR + digitWidth, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
+        if (p >= 0.5 * mass1 && p <= 1.5 * mass8) {
+            curR += digitWidth;
+            lastGoodR = curR;
+        } else break;
+    }
+
+    // 5. Retraction (with 10-column streak)
+    minX = lastGoodL;
+    maxX = lastGoodR;
+    
+    int streakL = 0;
+    for (int x = (int)lastGoodL; x < (int)strictL; ++x) {
+        if (!isValley((int)minY, (int)maxY, x, false)) streakL++;
+        else streakL = 0;
+        if (streakL >= 10) { minX = x - 9; break; }
+    }
+    
+    int streakR = 0;
+    for (int x = (int)lastGoodR; x > (int)strictR; --x) {
+        if (!isValley((int)minY, (int)maxY, x, false)) streakR++;
+        else streakR = 0;
+        if (streakR >= 10) { maxX = x + 9; break; }
+    }
+
+    jintArray summary = env->NewIntArray(16);
+    jint s[16] = {
+        (jint)L, (jint)T, (jint)R, (jint)B,
+        (jint)strictL, (jint)minY, (jint)strictR, (jint)maxY, // probed bounds
+        (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, // final bounds
+        (jint)contentThreshold, (jint)digitWidth, (jint)minStrokeW, (jint)maxW
+    };
+    env->SetIntArrayRegion(summary, 0, 16, s);
+
+    jstring traceStr = env->NewStringUTF(oss.str().c_str());
+    jclass objClass = env->FindClass("java/lang/Object");
+    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
+    env->SetObjectArrayElement(resultArr, 0, summary);
+    env->SetObjectArrayElement(resultArr, 1, traceStr);
+
+    LOGI("CHAR_AWARE: Final: (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
+    return resultArr;
+}

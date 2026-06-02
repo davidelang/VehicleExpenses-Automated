@@ -483,7 +483,7 @@ private suspend fun runExperiment(
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
                             // For Set F and G, only run the "Raw" stage
-                            val iterativeStages = listOf("Raw", "80%", "Hist", "Bin-Trials")
+                            val iterativeStages = listOf("Raw", "80%", "Hist", "Bin-Trials", "Bin")
 
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
@@ -1312,6 +1312,47 @@ private suspend fun runPaddleValleyIterative(
             val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware)
             stageMeta["trials_html"] = tHtml
             stageMeta.putAll(tMeta)
+        } else if (stage == "Bin") {
+            val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
+            if (binTrialsMeta != null) {
+                val trialIndices = binTrialsMeta.keys.filter { it.matches(Regex("trial_\\d+")) }.map { it.substringAfter("trial_").toInt() }
+                var bestThresh = 0.0
+                var bestSum = -1.0
+                var bestValidThresh = 0.0
+                var bestValidSum = -1.0
+                
+                trialIndices.forEach { idx ->
+                    val valStr = binTrialsMeta["trial_$idx"] ?: return@forEach
+                    val parts = valStr.split("|")
+                    if (parts.size < 3) return@forEach
+                    val thresh = parts[0].toDoubleOrNull() ?: 0.0
+                    val text = parts[1]
+                    if (text.isEmpty()) return@forEach
+                    
+                    val probsStr = binTrialsMeta["trial_${idx}_probs"] ?: ""
+                    val probs = mutableListOf<Float>()
+                    val regex = Regex("\\((0\\.\\d+|1\\.0+)\\)")
+                    regex.findAll(probsStr).forEach { matchResult ->
+                        probs.add(matchResult.groupValues[1].toFloatOrNull() ?: 0f)
+                    }
+                    val minProb = if (probs.isNotEmpty()) probs.minOrNull() ?: 0f else 0f
+                    val sumProb = probs.sum()
+                    
+                    if (sumProb > bestSum) {
+                        bestSum = sumProb
+                        bestThresh = thresh
+                    }
+                    if (minProb >= 0.90f && sumProb > bestValidSum) {
+                        bestValidSum = sumProb
+                        bestValidThresh = thresh
+                    }
+                }
+                
+                val targetThresh = if (bestValidSum > -1.0) bestValidThresh else bestThresh
+                org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.p.mat, targetThresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                stageMeta["selected_threshold"] = targetThresh.toString()
+                stageMeta["selection_logic"] = if (bestValidSum > -1.0) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)"
+            }
         }
         
         
@@ -1325,7 +1366,7 @@ private suspend fun runPaddleValleyIterative(
         val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
         
-        val valleyResults = rawB.map { if (useCharAware) Pair(NativeImageUtils.expandByCharacterAware(odoBuffer.p.mat, it.boundingBox), emptyMap<String, String>()) else NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
+        val valleyResults = rawB.map { if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox) else NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
         val frags = valleyResults.map { it.first }
         
         val cons = OdometerOcrUtils.clusterRects(frags).sortedBy { it.left }
@@ -1453,6 +1494,29 @@ private suspend fun runMLKitIterative(
             val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins)
             stageMeta["trials_html"] = tHtml
             stageMeta.putAll(tMeta)
+        } else if (stage == "Bin") {
+            val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
+            if (binTrialsMeta != null) {
+                val trialIndices = binTrialsMeta.keys.filter { it.matches(Regex("trial_\\d+")) }.map { it.substringAfter("trial_").toInt() }
+                var bestThresh = 0.0
+                var bestLength = -1
+                
+                trialIndices.forEach { idx ->
+                    val valStr = binTrialsMeta["trial_$idx"] ?: return@forEach
+                    val parts = valStr.split("|")
+                    if (parts.size < 3) return@forEach
+                    val thresh = parts[0].toDoubleOrNull() ?: 0.0
+                    val text = parts[1]
+                    if (text.length > bestLength) {
+                        bestLength = text.length
+                        bestThresh = thresh
+                    }
+                }
+                
+                org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.p.mat, bestThresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                stageMeta["selected_threshold"] = bestThresh.toString()
+                stageMeta["selection_logic"] = "Max Length (ML Kit)"
+            }
         }
         
         

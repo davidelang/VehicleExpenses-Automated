@@ -186,6 +186,26 @@ object NativeImageUtils {
         return Pair(rect, emptyMap())
     }
 
+    fun expandByCharacterAwareDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
+        val res = nativeExpandByCharacterAwareDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        if (res != null && res.size == 2) {
+            val summary = res[0] as IntArray
+            val trace = res[1] as String
+            val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
+            val meta = mapOf(
+                "charaware_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
+                "charaware_strict" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
+                "charaware_final" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
+                "charaware_threshold" to summary[12].toString(),
+                "charaware_digitW" to summary[13].toString(),
+                "charaware_minStrokeW" to summary[14].toString(),
+                "charaware_trace" to trace
+            )
+            return Pair(finalRect, meta)
+        }
+        return Pair(rect, emptyMap())
+    }
+
     fun expandByCharacterAware(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
         val res = nativeExpandByCharacterAware(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
         return if (res != null && res.size == 4) {
@@ -226,7 +246,8 @@ object NativeImageUtils {
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
-    private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeExpandByCharacterAware\(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float\): IntArray\?
+    private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
