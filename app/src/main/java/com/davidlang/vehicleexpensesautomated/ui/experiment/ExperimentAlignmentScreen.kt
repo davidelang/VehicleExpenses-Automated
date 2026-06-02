@@ -838,6 +838,7 @@ private suspend fun runBinTrialsPaddle(
         
         val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
         val tOdoB = StringBuilder()
+        val tProbsB = StringBuilder()
         var tCf = 0f
         var tCnt = 0
         
@@ -855,7 +856,10 @@ private suspend fun runBinTrialsPaddle(
                 val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
                 org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                 val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
-                if (ocrR.debugText.isNotBlank()) tOdoB.append(ocrR.debugText).append(" ")
+                if (ocrR.debugText.isNotBlank()) {
+                    tOdoB.append(ocrR.debugText).append(" ")
+                    ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") }
+                }
                 tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length
                 tCnt += ocrR.debugText.length
                 experimentRecSet320x48.c[rCrId].release()
@@ -864,6 +868,7 @@ private suspend fun runBinTrialsPaddle(
         }
         
         val tResText = tOdoB.toString().trim()
+        val tProbs = tProbsB.toString().trim()
         val tAvg = if (tCnt > 0) tCf / tCnt else 0f
         
         val curMat = odoBuffer.p.mat.clone()
@@ -872,8 +877,9 @@ private suspend fun runBinTrialsPaddle(
         curMat.copyTo(odoBuffer.p.mat)
         curMat.release()
         
-        trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b> (Conf: ${"%.2f".format(tAvg)})<br><img src='data:image/jpeg;base64,$tB64'></div>")
+        trialsHtml.append("<div style='margin-bottom:8px; border-bottom:1px dashed #eee;'>T=${threshold.toInt()}: <b>$tResText</b> (Conf: ${"%.2f".format(tAvg)})<br><small>$tProbs</small><br><img src='data:image/jpeg;base64,$tB64'></div>")
         trialsMeta["trial_$vIdx"] = "$threshold|$tResText|$tAvg"
+        if (tProbs.isNotEmpty()) trialsMeta["trial_${vIdx}_probs"] = tProbs
         trialMat.release()
     }
     trialsHtml.append("</div>")
