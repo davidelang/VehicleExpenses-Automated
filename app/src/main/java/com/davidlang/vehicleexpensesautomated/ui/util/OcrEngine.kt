@@ -90,6 +90,7 @@ data class RefinementTrace(
 data class SingleVehiclePathwayResult(
     val alignmentTrace: AlignmentTraceResult?,
     val refinementTraces: Map<String, RefinementTrace>,
+    val disambiguatedLandmarks: List<TextBlock> = emptyList(),
     val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
 )
 

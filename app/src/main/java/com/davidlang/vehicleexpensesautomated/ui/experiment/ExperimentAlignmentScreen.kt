@@ -445,6 +445,7 @@ private suspend fun runExperiment(
                     
                     var alignedBase64 = ""
                     val hMap = mutableMapOf<String, OcrHarnessResult>()
+                    var landmarksForAudit: List<TextBlock> = emptyList()
                     val refinementTraces = mutableMapOf<String, RefinementTrace>()
                     var alignResSuccess = false
                     var alignResTimeMs = 0L
@@ -452,6 +453,7 @@ private suspend fun runExperiment(
                     
                     if (globalWinnerRef != null) {
                         val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, globalWinnerRef.curatedLandmarks)
+                        landmarksForAudit = queryLandmarksPrimary.filter { it.instanceId >= 0 }
                         
                         val alignRes = ImageAlignmentUtils.anchorAlign(
                             NativePaddleEngine.bufferSetB,
@@ -530,7 +532,7 @@ private suspend fun runExperiment(
                     pathways[pipeline.key] = photoPathway
                     
                     val alignmentTrace = AlignmentTraceResult(alignResSuccess, alignResTimeMs, alignedBase64, alignResMetadata)
-                    val vehiclePathway = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, hMap)
+                    val vehiclePathway = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, landmarksForAudit, hMap)
                     
                     if (globalWinnerRef != null) {
                         val map = vehiclePathways.getOrPut(globalWinnerRef.vehicle.id) { mutableMapOf() }
@@ -813,6 +815,16 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
             refinementJson.put(strat, sObj)
         }
         put("refinement", refinementJson)
+        val landArray = JSONArray()
+        res.disambiguatedLandmarks.forEach { l ->
+            val lObj = JSONObject()
+            lObj.put("name", l.text)
+            lObj.put("cx", l.boundingBox.centerX())
+            lObj.put("cy", l.boundingBox.centerY())
+            lObj.put("instance_id", l.instanceId)
+            landArray.put(lObj)
+        }
+        put("disambiguated_landmarks", landArray)
     }
     return root
 }
