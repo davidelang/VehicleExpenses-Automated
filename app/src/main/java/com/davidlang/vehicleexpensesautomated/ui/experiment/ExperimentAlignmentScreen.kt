@@ -1317,9 +1317,9 @@ private suspend fun runPaddleValleyIterative(
             if (binTrialsMeta != null) {
                 val trialIndices = binTrialsMeta.keys.filter { it.matches(Regex("trial_\\d+")) }.map { it.substringAfter("trial_").toInt() }
                 var bestThresh = 0.0
-                var bestSum = -1.0
+                var bestSum = -1.0f
                 var bestValidThresh = 0.0
-                var bestValidSum = -1.0
+                var bestValidSum = -1.0f
                 
                 trialIndices.forEach { idx ->
                     val valStr = binTrialsMeta["trial_$idx"] ?: return@forEach
@@ -1348,10 +1348,10 @@ private suspend fun runPaddleValleyIterative(
                     }
                 }
                 
-                val targetThresh = if (bestValidSum > -1.0) bestValidThresh else bestThresh
+                val targetThresh = if (bestValidSum > -1.0f) bestValidThresh else bestThresh
                 org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.p.mat, targetThresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
                 stageMeta["selected_threshold"] = targetThresh.toString()
-                stageMeta["selection_logic"] = if (bestValidSum > -1.0) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)"
+                stageMeta["selection_logic"] = if (bestValidSum > -1.0f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)"
             }
         }
         
