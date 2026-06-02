@@ -856,7 +856,7 @@ private suspend fun runBinTrialsPaddle(
                 org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                 val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
                 if (ocrR.debugText.isNotBlank()) tOdoB.append(ocrR.debugText).append(" ")
-                tCf += ocrR.confidence * ocrR.debugText.length
+                tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length
                 tCnt += ocrR.debugText.length
                 experimentRecSet320x48.c[rCrId].release()
                 bRecMat.release()
