@@ -1,3 +1,10 @@
+## Active Execution: Decomposed Step 3
+- [ ] **STEP 3:** Implement multi-angle deskew capture.
+  - [ ] Initialize variables in \`runExperiment\`.
+  - [ ] Capture deskew results for \`set_f\` and \`set_g\` in loop.
+  - [ ] Update \`serializePhotoResultToJson\` signature, call site, and JSON keys.
+  - [ ] Verify with \`./build_app\`.
+
 ## Active Execution: Decomposed Forensic Instrumentation
 - [ ] **STEP 1:** Remove misleading consensus logic and clean up JSON.
   - [ ] Remove \`bestOdometer\` from \`OcrEngine.kt\`.

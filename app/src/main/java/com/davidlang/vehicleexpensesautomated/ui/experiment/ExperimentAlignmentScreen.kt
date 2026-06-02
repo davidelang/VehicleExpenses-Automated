@@ -371,6 +371,8 @@ private suspend fun runExperiment(
                     System.currentTimeMillis() - tRot0
                 }
 
+                var deskewRes80: OdometerOcrUtils.DeskewResult? = null
+                var deskewResHist: OdometerOcrUtils.DeskewResult? = null
                 val pathways = mutableMapOf<String, PhotoPathwayResult>()
                 val vehiclePathways = mutableMapOf<Int, MutableMap<String, SingleVehiclePathwayResult>>()
                 val primaryVetoResultsMap = mutableMapOf<String, Map<Int, VetoResult>>()
@@ -414,7 +416,10 @@ private suspend fun runExperiment(
 
                     // Independent deskew for preprocessed buffers
                     val currentDeskewRes = if (pipeline.key == "set_f" || pipeline.key == "set_g") {
-                        OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetB.p)
+                        val res = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetB.p)
+                        if (pipeline.key == "set_f") deskewRes80 = res
+                        if (pipeline.key == "set_g") deskewResHist = res
+                        res
                     } else deskewResA
 
                     val angle = pipeline.getAngle(currentDeskewRes)
@@ -578,7 +583,7 @@ private suspend fun runExperiment(
 
                 val photoJson = serializePhotoResultToJson(
                     originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded, 
-                    meta.diagnostic, photoResult!!, vehicles, deskewResA, tSnapOrig, tSnapAlign
+                    meta.diagnostic, photoResult!!, vehicles, deskewResA, deskewRes80, deskewResHist, tSnapOrig, tSnapAlign
                 )
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
@@ -616,6 +621,8 @@ private fun serializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean, 
     nativeProbe: String, photoResult: ProcessedPhotoResult, vehicles: List<Vehicle>, 
     deskewResA: OdometerOcrUtils.DeskewResult? = null,
+    deskewRes80: OdometerOcrUtils.DeskewResult? = null,
+    deskewResHist: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapAlign: Long = 0
 ): JSONObject {
     val root = JSONObject()
@@ -646,6 +653,8 @@ private fun serializePhotoResultToJson(
         val deskewObj = JSONObject()
         deskewObj.putSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
         deskewObj.putSafe("paddle_cpp_angle", (deskewResA?.paddleCppAngle ?: 0f).toDouble())
+        deskewObj.putSafe("paddle_angle_80", (deskewRes80?.paddleCppAngle ?: 0f).toDouble())
+        deskewObj.putSafe("paddle_angle_hist", (deskewResHist?.paddleCppAngle ?: 0f).toDouble())
         val paddleKtAngle = deskewResA?.engines?.get("Paddle V3")?.angle ?: 0f
         deskewObj.putSafe("paddle_kt_angle", paddleKtAngle.toDouble())
         
