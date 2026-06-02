@@ -880,6 +880,55 @@ private suspend fun runBinTrialsPaddle(
     return Pair(trialsHtml.toString(), trialsMeta)
 }
 
+
+private suspend fun runBinTrialsMLKit(
+    odoBuffer: BufferSet,
+    experimentRecSet320x48: BufferSet,
+    rawBins: FloatArray
+): Pair<String, Map<String, String>> {
+    val midpoints = findValleyMidpoints(rawBins)
+    val trialsHtml = StringBuilder("<div style=\x27border:1px solid #ccc; padding:4px; margin-top:4px;\x27><b>Bin-Trials:</b><br>")
+    val trialsMeta = mutableMapOf<String, String>()
+    
+    midpoints.forEachIndexed { vIdx, binIdx ->
+        val threshold = binIdx * 4.0
+        val trialMat = odoBuffer.p.mat.clone()
+        org.opencv.imgproc.Imgproc.threshold(trialMat, trialMat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        
+        experimentRecSet320x48.p.clear()
+        val rSc = kotlin.math.min(320f / trialMat.cols(), 48f / trialMat.rows())
+        val ew = ((trialMat.cols() * rSc + 1).toInt() / 2) * 2
+        val eh = ((trialMat.rows() * rSc + 1).toInt() / 2) * 2
+        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
+        org.opencv.imgproc.Imgproc.resize(trialMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        
+        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+        val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
+        experimentRecSet320x48.c[rCrId].release()
+        
+        val tOdoB = StringBuilder()
+        vText.textBlocks.forEach { blk -> 
+            blk.lines.forEach { line -> 
+                val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, false).filter { it.isDigit() }
+                if (cleaned.isNotBlank()) tOdoB.append(cleaned) 
+            } 
+        }
+        val tResText = tOdoB.toString()
+        
+        val curMat = odoBuffer.p.mat.clone()
+        trialMat.copyTo(odoBuffer.p.mat)
+        val (tB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 200, 0, emptyList(), null, NativePaddleEngine.bufferSetA)
+        curMat.copyTo(odoBuffer.p.mat)
+        curMat.release()
+        
+        trialsHtml.append("<div style=\x27margin-bottom:8px; border-bottom:1px dashed #eee;\x27>T=${threshold.toInt()}: <b>$tResText</b><br><img src=\x27data:image/jpeg;base64,$tB64\x27></div>")
+        trialsMeta["trial_$vIdx"] = "$threshold|$tResText|1.0"
+        trialMat.release()
+    }
+    trialsHtml.append("</div>")
+    return Pair(trialsHtml.toString(), trialsMeta)
+}
+
 private fun findValleyMidpoints(bins: FloatArray): List<Int> {
     if (bins.isEmpty()) return emptyList()
     val binCount = bins.size
@@ -1359,6 +1408,11 @@ private suspend fun runMLKitIterative(
             val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
             stageMeta["before_hist"] = h1
             stageMeta["after_hist"] = h2
+        } else if (stage == "Bin-Trials") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins)
+            stageMeta["trials_html"] = tHtml
+            stageMeta.putAll(tMeta)
         }
         
         
@@ -1384,7 +1438,6 @@ private suspend fun runMLKitIterative(
         val odoStr = odoB.toString()
         allOdo.add(odoStr)
         val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, stageMeta))
         
         val anns = mutableListOf<SnapshotAnnotation>()
         val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
@@ -1396,11 +1449,16 @@ private suspend fun runMLKitIterative(
         val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         lastThumb = sB64
         tSnTotal += ts
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
+        val hT = if (stageMeta.containsKey("before_hist")) {
+            "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
+        } else ""
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${stageMeta["trials_html"] ?: ""}<br>$odoStr</div>")
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", odoStr)
         sObj.addProperty("time", tL)
+        stageMeta.forEach { (k, v) -> sObj.addProperty(k, v) }
         jsonStages.add(stage, sObj)
+        steps.add(OcrStepResult(stage, "", lastThumb, odoStr, emptyList(), emptyList(), null, null, stageMeta))
     }
     
     val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, OdometerOcrUtils.pickBestOdometer(steps), lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
