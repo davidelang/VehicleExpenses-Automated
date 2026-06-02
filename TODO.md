@@ -1,3 +1,10 @@
+## Active Execution: Adaptive Histogram Refinement
+- [x] **DONE:** Implement first-peak collapsing histogram logic and fixed visual scaling.
+  - [x] Refactor \`getHistStats\` with smoothing and ends-in peak detection.
+  - [x] Pass \`skipEnds = true\` to "After Hist" generation.
+  - [x] Add \`raw_hist\` CSV to Set G metadata.
+  - [x] Verified with \`./build_app\`.
+
 ## Active Execution: Decomposed Step 3
 - [ ] **STEP 3:** Implement multi-angle deskew capture.
   - [ ] Initialize variables in \`runExperiment\`.

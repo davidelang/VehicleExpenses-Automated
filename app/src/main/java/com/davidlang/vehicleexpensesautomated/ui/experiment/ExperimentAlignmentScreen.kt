@@ -402,6 +402,9 @@ private suspend fun runExperiment(
                             HistMarker(stats.p80, Color.MAGENTA)
                         ))
                         
+                        // Export raw histogram CSV
+                        extraImages["raw_hist"] = stats.rawBins.joinToString(",")
+                        
                         OdometerOcrUtils.automaticContrastStretch(NativePaddleEngine.bufferSetB.p.mat)
                         
                         // After stretch, original 80% maps to a new value.
@@ -411,7 +414,7 @@ private suspend fun runExperiment(
                         
                         extraImages["hist2"] = generateGatedHistogramB64(NativePaddleEngine.bufferSetB.p.mat, listOf(
                             HistMarker(mappedP80, Color.CYAN)
-                        ))
+                        ), skipEnds = true)
                     }
 
                     // Independent deskew for preprocessed buffers
@@ -997,7 +1000,7 @@ private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
 private data class HistMarker(val value: Double, val color: Int)
 
-private data class HistStats(val intensityLow: Double, val intensityHigh: Double, val p80: Double)
+private data class HistStats(val intensityLow: Double, val intensityHigh: Double, val p80: Double, val rawBins: FloatArray)
 
 private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     val hist = org.opencv.core.Mat()
@@ -1005,14 +1008,26 @@ private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     val bins = FloatArray(64); hist.get(0, 0, bins)
     val totalPixels = mat.rows() * mat.cols()
 
-    val maxVal = bins.maxOrNull() ?: 1.0f
-    val maxIdx = bins.indices.maxByOrNull { bins[it] } ?: 0
-    val thr = maxVal * 0.05f
+    val smoothed = FloatArray(64)
+    for (i in 0..63) {
+        val start = (i - 1).coerceAtLeast(0)
+        val end = (i + 1).coerceAtMost(63)
+        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+    }
 
-    var lowIdx = 0
-    for (i in maxIdx downTo 0) { if (bins[i] < thr) { lowIdx = i; break } }
-    var highIdx = 63
-    for (i in maxIdx..63) { if (bins[i] < thr) { highIdx = i; break } }
+    // Low Limit: Climb to first peak, then drop to valley or 10%
+    var lowPeakIdx = 0
+    while (lowPeakIdx < 62 && smoothed[lowPeakIdx + 1] >= smoothed[lowPeakIdx]) lowPeakIdx++
+    val lowPeakVal = smoothed[lowPeakIdx]
+    var lowIdx = lowPeakIdx
+    while (lowIdx < 63 && smoothed[lowIdx + 1] <= smoothed[lowIdx] && smoothed[lowIdx + 1] > lowPeakVal * 0.10f) lowIdx++
+
+    // High Limit: Climb to first peak from right, then drop to valley or 10%
+    var highPeakIdx = 63
+    while (highPeakIdx > 1 && smoothed[highPeakIdx - 1] >= smoothed[highPeakIdx]) highPeakIdx--
+    val highPeakVal = smoothed[highPeakIdx]
+    var highIdx = highPeakIdx
+    while (highIdx > 0 && smoothed[highIdx - 1] <= smoothed[highIdx] && smoothed[highIdx - 1] > highPeakVal * 0.10f) highIdx--
 
     val intensityLow = lowIdx * 4.0
     val intensityHigh = highIdx * 4.0
@@ -1025,7 +1040,7 @@ private fun getHistStats(mat: org.opencv.core.Mat): HistStats {
     }
     
     hist.release()
-    return HistStats(intensityLow, intensityHigh, p80)
+    return HistStats(intensityLow, intensityHigh, p80, bins)
 }
 
 private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<HistMarker> = emptyList(), skipEnds: Boolean = false): String {
