@@ -107,7 +107,6 @@ data class SingleVehicleResult(
 
 data class PhotoPathwayResult(
     val winnerName: String,
-    val bestOdometer: String,
     val tDeskewTotal: Long,
     val tDiscoveryTotal: Long,
     val deskewedBase64: String,

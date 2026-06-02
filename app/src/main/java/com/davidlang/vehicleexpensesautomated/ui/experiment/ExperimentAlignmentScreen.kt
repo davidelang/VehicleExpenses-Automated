@@ -87,8 +87,7 @@ private val FAILING_SUBSET = mapOf(
 data class PhotoResultSummary(
     val photoName: String,
     val matchedVehicle: String,
-    val finalConfidence: Float,
-    val odometer: String?
+    val finalConfidence: Float
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -307,7 +306,7 @@ private suspend fun runExperiment(
         // to prevent serializePhotoResultToJson crashes on failed identification.
         var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
         var finalWinnerName = "No match"
-        var bestOdometer = "FAILED"
+        
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name} (#$originalLineNumber)") }
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
@@ -520,7 +519,7 @@ private suspend fun runExperiment(
                     
                     val photoPathway = PhotoPathwayResult(
                         winnerName = globalWinnerRef?.vehicle?.name ?: "No match",
-                        bestOdometer = "", // filled dynamically downstream
+                        
                         tDeskewTotal = pipeline.getDeskewTime(currentDeskewRes),
                         tDiscoveryTotal = tDiscoveryTotal,
                         deskewedBase64 = alignedBase64,
@@ -544,15 +543,7 @@ private suspend fun runExperiment(
                     finalWinnerName = winnerRef.vehicle.name
                 }
                 
-                // Update bestOdometer in all PhotoPathwayResults independently
-                val updatedPathways = pathways.mapValues { (pathKey, pathRes) ->
-                    val pathResults = vehiclePathways.values.mapNotNull { it[pathKey] }
-                    val pathAllOdos = pathResults.flatMap { it.refinementTraces.values }.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                    val pathBestOdo = if (pathAllOdos.isNotEmpty()) {
-                        pathAllOdos.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
-                    } else "FAILED"
-                    pathRes.copy(bestOdometer = pathBestOdo)
-                }
+                val updatedPathways = pathways
                 
                 // Build vehicleResultsMap
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
@@ -590,7 +581,7 @@ private suspend fun runExperiment(
                 val comma = if (index < total - 1) "," else ""
                 jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
-                val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
+                val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f)
 
                 // Ensure UI update is dispatched BEFORE we move to cleanup
                 withContext(Dispatchers.Main) { 
@@ -647,7 +638,7 @@ private fun serializePhotoResultToJson(
 
         // Top-level Metrics (Source from Set A as default)
         put("winner", photoResult.pathways["set_a"]?.winnerName ?: "No match")
-        put("odometer", photoResult.pathways["set_a"]?.bestOdometer ?: "FAILED")
+        
         
         // Deskew Data (Source from Path A)
         val deskewObj = JSONObject()
@@ -769,7 +760,7 @@ private fun serializePathwayToJson(res: PhotoPathwayResult): JSONObject {
     val root = JSONObject()
     root.apply {
         put("winner", res.winnerName)
-        put("odometer", res.bestOdometer)
+        
         put("t_deskew_ms", res.tDeskewTotal)
         put("t_discovery_ms", res.tDiscoveryTotal)
         put("discovery_debug", res.discoveryResult.debugText)
@@ -779,7 +770,11 @@ private fun serializePathwayToJson(res: PhotoPathwayResult): JSONObject {
             val hObj = JSONObject()
             hObj.put("total_ms", hRes.totalTimeMs)
             hObj.put("snapshot_ms", hRes.tSnapshotMs)
+            hObj.put("odometer", hRes.odometerValue)
             hObj.put("stages", JSONObject(hRes.jsonSection.toString()))
+            val extraObj = JSONObject()
+            hRes.extraImages.forEach { (ek, ev) -> extraObj.put(ek, ev) }
+            hObj.put("extraImages", extraObj)
             harnessTimings.put(engine, hObj)
         }
         put("harness", harnessTimings)
@@ -1194,7 +1189,7 @@ private suspend fun runPaddleValleyIterative(
         jsonStages.add(stage, sObj)
     }
     
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal, extraImages)
+    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, OdometerOcrUtils.pickBestOdometer(steps), lastThumb, System.currentTimeMillis() - tH0, tSnTotal, extraImages)
     report[displayName] = result
     targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
 }
@@ -1290,7 +1285,7 @@ private suspend fun runMLKitIterative(
         jsonStages.add(stage, sObj)
     }
     
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
+    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, OdometerOcrUtils.pickBestOdometer(steps), lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
     report[displayName] = result
     targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
 }

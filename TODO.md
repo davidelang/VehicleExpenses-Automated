@@ -1,3 +1,12 @@
+## Active Execution: Decomposed Forensic Instrumentation
+- [ ] **STEP 1:** Remove misleading consensus logic and clean up JSON.
+  - [ ] Remove \`bestOdometer\` from \`OcrEngine.kt\`.
+  - [ ] Delete global consensus logic and top-level odometer JSON in \`ExperimentAlignmentScreen.kt\`.
+  - [ ] Fix harness-level odometer and \`extraImages\` serialization.
+  - [ ] Verify with \`./build_app\`.
+- [ ] **STEP 2:** Implement post-disambiguation landmark auditing.
+- [ ] **STEP 3:** Implement multi-angle deskew capture.
+
 ## Active Execution: Remove Redundant ML Kit OCR
 - [x] **DONE:** Disable ML Kit OCR for all sets except Set A.
   - [x] Wrap \`runMLKitIterative\` in condition in \`ExperimentAlignmentScreen.kt\`.
