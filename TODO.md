@@ -1,10 +1,10 @@
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
-- [ ] **EXECUTE:** Implement iterative crop-level histogram stretching and report de-cluttering.
-  - [ ] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
-  - [ ] Redefine \`harnessEngineNames\` to remove redundant ML columns.
-  - [ ] Cleanup duplicate histogram appends in harness loops.
-  - [ ] Implement "Hist" iterative stage with crop-level visuals.
-  - [ ] Verify with \`./build_app\`.
+- [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
+  - [x] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
+  - [x] Redefine \`harnessEngineNames\` to remove redundant ML columns.
+  - [x] Cleanup duplicate histogram appends in harness loops.
+  - [x] Implement "Hist" iterative stage with crop-level visuals.
+  - [x] Verified with \`./build_app\`.
 
 ## Active Execution: Histogram Hill-Stopping Refinement
 - [x] **DONE:** Refine histogram stopping logic (Valley detection).
