@@ -1098,10 +1098,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         return maxRun;
     };
 
-    auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
+    auto isValley = [&](int start, int end, int fixed, bool horizontal, int boxH = 0) -> bool {
         int mr = getMaxRun(start, end, fixed, horizontal);
         if (horizontal) return (mr < 3 || mr > (maxW * 0.30));
-        return (mr < 2 || mr > (maxH * 0.80));
+        // Use 15% of box height as valley threshold for horizontal walks
+        int thresh = (boxH > 0) ? std::max(2, (int)(boxH * 0.15)) : 2;
+        return (mr < thresh || mr > (maxH * 0.80));
     };
 
     // 1. Vertical Expansion (Current logic)
@@ -1115,12 +1117,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     }
 
     // 2. Strict Horizontal Walk (To first valley)
+    int boxH = (int)(maxY - minY);
     double strictL = minX, strictR = maxX;
-    while (strictL > 0 && !isValley((int)minY, (int)maxY, (int)strictL - 1, false)) strictL -= 1.0;
-    while (strictR < maxW - 1 && !isValley((int)minY, (int)maxY, (int)strictR + 1, false)) strictR += 1.0;
+    while (strictL > 0 && !isValley((int)minY, (int)maxY, (int)strictL - 1, false, boxH)) strictL -= 1.0;
+    while (strictR < maxW - 1 && !isValley((int)minY, (int)maxY, (int)strictR + 1, false, boxH)) strictR += 1.0;
 
     // 3. Analyze Content for Digit Width and Stroke Mass
-    int boxH = (int)(maxY - minY);
+    // int boxH = (int)(maxY - minY); // already calculated above
     std::vector<int> colMaxRuns;
     for (int x = (int)strictL; x <= (int)strictR; ++x) {
         colMaxRuns.push_back(getMaxRun((int)minY, (int)maxY, x, false));
@@ -1141,6 +1144,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int digitWidth = (int)(boxH * 0.7); // Fallback
     
     LOGI("CHAR_AWARE: Analysis: strict=(%d-%d) boxH=%d minStrokeW=%d digitWidth=%d", (int)strictL, (int)strictR, boxH, minStrokeW, digitWidth);
+    
+    /* DISABLING EXPANSION FOR ISOLATION
     double mass1 = minStrokeW * boxH;
     double mass8 = 2.5 * mass1;
 
@@ -1196,6 +1201,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         else streakR = 0;
         if (streakR >= 10) { maxX = x + 9; break; }
     }
+    */
+
+    minX = strictL;
+    maxX = strictR;
 
     jintArray result = env->NewIntArray(4);
     jint dims[4] = {(jint)minX, (jint)minY, (jint)maxX, (jint)maxY};
@@ -1259,10 +1268,22 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         return maxRun;
     };
 
-    auto isValley = [&](int start, int end, int fixed, bool horizontal) -> bool {
+    auto isValley = [&](int start, int end, int fixed, bool horizontal, int boxH = 0) -> bool {
         int mr = getMaxRun(start, end, fixed, horizontal);
         if (horizontal) return (mr < 3 || mr > (maxW * 0.30));
-        return (mr < 2 || mr > (maxH * 0.80));
+        // Use 15% of box height as valley threshold for horizontal walks
+        int thresh = (boxH > 0) ? std::max(2, (int)(boxH * 0.15)) : 2;
+        return (mr < thresh || mr > (maxH * 0.80));
+    };
+
+    auto getColumnProfile = [&](int x, int startY, int endY) -> std::string {
+        if (x < 0 || x >= maxW) return "OUT_OF_BOUNDS";
+        std::string profile = "";
+        for (int y = startY; y < endY; ++y) {
+            if (y < 0 || y >= maxH) profile += "?";
+            else profile += (mat->at<uint8_t>(y, x) > contentThreshold) ? "#" : ".";
+        }
+        return profile;
     };
 
     // 1. Vertical Expansion (Current logic)
@@ -1276,12 +1297,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     }
 
     // 2. Strict Horizontal Walk (To first valley)
+    int boxH = (int)(maxY - minY);
     double strictL = minX, strictR = maxX;
-    while (strictL > 0 && !isValley((int)minY, (int)maxY, (int)strictL - 1, false)) strictL -= 1.0;
-    while (strictR < maxW - 1 && !isValley((int)minY, (int)maxY, (int)strictR + 1, false)) strictR += 1.0;
+    while (strictL > 0 && !isValley((int)minY, (int)maxY, (int)strictL - 1, false, boxH)) strictL -= 1.0;
+    while (strictR < maxW - 1 && !isValley((int)minY, (int)maxY, (int)strictR + 1, false, boxH)) strictR += 1.0;
+
+    oss << "StopL[" << (int)strictL << "]:" << getColumnProfile((int)strictL, (int)minY, (int)maxY) << " ";
+    oss << "StopR[" << (int)strictR << "]:" << getColumnProfile((int)strictR, (int)minY, (int)maxY) << " ";
 
     // 3. Analyze Content for Digit Width and Stroke Mass
-    int boxH = (int)(maxY - minY);
+    // int boxH = (int)(maxY - minY); // already calculated above
     std::vector<int> colMaxRuns;
     for (int x = (int)strictL; x <= (int)strictR; ++x) {
         colMaxRuns.push_back(getMaxRun((int)minY, (int)maxY, x, false));
@@ -1301,10 +1326,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     // Estimate digitWidth (horizontal pitch)
     int digitWidth = (int)(boxH * 0.7); // Fallback
     
-    oss << "Analysis:W=" << digitWidth << " minS=" << minStrokeW << " "; LOGI("CHAR_AWARE: Analysis: strict=(%d-%d) boxH=%d minStrokeW=%d digitWidth=%d", (int)strictL, (int)strictR, boxH, minStrokeW, digitWidth);
-    double mass1 = minStrokeW * boxH;
-    double mass8 = 2.5 * mass1;
-
     auto getBlockDensity = [&](int startX, int endX) -> int {
         int count = 0;
         for (int x = std::max(0, startX); x < std::min(maxW, endX); ++x) {
@@ -1315,48 +1336,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         return count;
     };
 
+    int totalMass = getBlockDensity((int)strictL, (int)strictR);
+    oss << "Analysis:W=" << digitWidth << " minS=" << minStrokeW << " mass=" << totalMass << " "; LOGI("CHAR_AWARE: Analysis: strict=(%d-%d) boxH=%d minStrokeW=%d digitWidth=%d", (int)strictL, (int)strictR, boxH, minStrokeW, digitWidth);
+    
+    /* DISABLING EXPANSION FOR ISOLATION
+    double mass1 = minStrokeW * boxH;
+    double mass8 = 2.5 * mass1;
+
     // 4. Density Probes (Left and Right)
     double lastGoodL = strictL, lastGoodR = strictR;
-    
-    // Probe Left
-    int curL = (int)strictL;
-    while (curL > 0) {
-        int p = getBlockDensity(curL - digitWidth, curL);
-        oss << "ProbeL:" << (curL - digitWidth) << "-" << curL << "=" << p << ","; LOGI("CHAR_AWARE: Probe L: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curL - digitWidth, curL, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
-        if (p >= 0.5 * mass1 && p <= 1.5 * mass8) {
-            curL -= digitWidth;
-            lastGoodL = curL;
-        } else break;
-    }
-    
-    // Probe Right
-    int curR = (int)strictR;
-    while (curR < maxW) {
-        int p = getBlockDensity(curR, curR + digitWidth);
-        oss << "ProbeR:" << curR << "-" << (curR + digitWidth) << "=" << p << ","; LOGI("CHAR_AWARE: Probe R: [%d to %d] pixels=%d range=(%.0f to %.0f) MATCH=%d", curR, curR + digitWidth, p, 0.5 * mass1, 1.5 * mass8, (p >= 0.5 * mass1 && p <= 1.5 * mass8));
-        if (p >= 0.5 * mass1 && p <= 1.5 * mass8) {
-            curR += digitWidth;
-            lastGoodR = curR;
-        } else break;
-    }
-
-    // 5. Retraction (with 10-column streak)
-    minX = lastGoodL;
-    maxX = lastGoodR;
-    
-    int streakL = 0;
-    for (int x = (int)lastGoodL; x < (int)strictL; ++x) {
-        if (!isValley((int)minY, (int)maxY, x, false)) streakL++;
-        else streakL = 0;
-        if (streakL >= 10) { minX = x - 9; break; }
-    }
-    
-    int streakR = 0;
+...
     for (int x = (int)lastGoodR; x > (int)strictR; --x) {
         if (!isValley((int)minY, (int)maxY, x, false)) streakR++;
         else streakR = 0;
         if (streakR >= 10) { maxX = x + 9; break; }
     }
+    */
+
+    minX = strictL;
+    maxX = strictR;
 
     jintArray summary = env->NewIntArray(16);
     jint s[16] = {
