@@ -1,10 +1,11 @@
-## Active Execution: Isolate Strict Walk & Column Profiling
-- [ ] **EXECUTE:** Isolate strict expansion walk and implement column profiling.
-  - [ ] Refactor `isValley` in `NativeImageUtils.cpp` to use a height-aware ratio (0.15 * boxH) for horizontal walks.
-  - [ ] Implement vertical column bit-map profiling in `nativeExpandByCharacterAwareDiagnostic`.
-  - [ ] Comment out Section 4 (Density Probes) and Section 5 (Retraction) to isolate the strict walk.
-  - [ ] Return pixel mass in the diagnostic metadata.
-  - [ ] Verify with `./build_app` and forensic analysis of Row 5.
+## Active Execution: Set H First-Principles Profiling
+- [ ] **EXECUTE:** Implement first-principles character profiling for Set H.
+  - [ ] Implement bidirectional snapping walk in `NativeImageUtils.cpp`.
+  - [ ] Implement internal blob segmentation and mass reporting.
+  - [ ] Implement inter-blob distance calculations (centers and right-edges).
+  - [ ] Implement horizontal run-length histogram analysis (stroke width peaks).
+  - [ ] Update diagnostic trace with blob list and histogram data.
+  - [ ] Verify with `./build_app` and forensic analysis.
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
 - [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
   - [x] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
