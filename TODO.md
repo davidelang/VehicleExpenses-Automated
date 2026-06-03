@@ -1,10 +1,13 @@
-## Active Execution: Visual Slots & Discrete Histograms
-- [ ] **EXECUTE:** Implement red-box histograms and yellow visual slots.
-  - [ ] Implement `nativeCalculateHistograms` in C++ (Horizontal and Vertical).
-  - [ ] Update `nativeExpandByCharacterAwareDiagnostic` to return slot coordinates.
-  - [ ] Update JNI bindings in `NativeImageUtils.kt`.
-  - [ ] Update `ExperimentAlignmentScreen.kt` to draw yellow slots and generate red-box histogram HTML.
+## Active Execution: Visual Slots & Discrete Histograms v2
+- [ ] **EXECUTE:** Implement stroke-based mass profiling and right-anchored visual slots.
+  - [ ] Implement `nativeCalculateHistograms` in C++.
+  - [ ] Refactor `nativeExpandByCharacterAwareDiagnostic` to use `OneStrokeMass` baseline (0.5x to 4.0x).
+  - [ ] Implement Right-Edge Anchoring for virtual slotting in C++.
+  - [ ] Update `generateDualHistogramB64` in Kotlin to include scale tics (25/100px).
+  - [ ] Consolidate redundant red boxes in `runBinTrialsPaddle` before expanding.
+  - [ ] Generate labeled histogram blocks for every red and orange box.
   - [ ] Verify with `./build_app`.
+
 
 ## Active Execution: Visual Diagnostics & Uniform Scaling
 - [x] **DONE:** Fix implementation of visual histograms and uniform 320x48 snapshots.
