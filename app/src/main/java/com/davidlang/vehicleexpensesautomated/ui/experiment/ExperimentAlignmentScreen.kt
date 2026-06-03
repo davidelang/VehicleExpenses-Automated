@@ -817,19 +817,8 @@ private suspend fun runBinTrialsPaddle(
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
-    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val base64: String, val avgConf: Float)
+    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val avgConf: Float)
     val trialsList = mutableListOf<TrialData>()
-
-    // Fetch RAW from history
-    val rawStep = steps.find { it.stageName == "Raw" }
-    if (rawStep != null) {
-        val rText = rawStep.text?.trim() ?: ""
-        val rProbsStr = rawStep.metadata["ocr_probs"] ?: ""
-        val rProbs = mutableListOf<Float>()
-        val regex = Regex("[(]([0-9][.][0-9]+|1[.][0-9]+)[)]")
-        regex.findAll(rProbsStr).forEach { rProbs.add(it.groupValues[1].toFloatOrNull() ?: 0f) }
-        trialsList.add(TrialData(-1.0, rText, rProbs.sum(), if (rProbs.isNotEmpty()) rProbs.minOrNull() ?: 0f else 0f, rProbsStr, rawStep.thumbB64, 0f))
-    }
 
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
@@ -878,29 +867,23 @@ private suspend fun runBinTrialsPaddle(
         tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
         val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
+        val histB64 = if (useCharAware && valleyResults.isNotEmpty()) generateRunLengthHistogramB64(valleyResults[0].second["charaware_run_hist"]) else ""
         
-        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tAvg))
-        trialsMeta["trial_${vIdx}_plain"] = tPlainB64
-        
-        if (useCharAware && valleyResults.isNotEmpty()) {
-            val histStr = valleyResults[0].second["charaware_run_hist"]
-            trialsMeta["trial_${vIdx}_hist"] = generateRunLengthHistogramB64(histStr)
-        }
+        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histB64, tAvg))
     }
     
     val highQual = trialsList.filter { it.minProb >= 0.90f }
     val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
     
     trialsList.forEachIndexed { idx, t ->
-        if (idx == 0 && t.thresh < 0) return@forEachIndexed
         val isWinner = (t == winner)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
         
-        val plainImg = if (trialsMeta.containsKey("trial_${idx}_plain")) "<img src='data:image/jpeg;base64,${trialsMeta["trial_${idx}_plain"]}'><br>" else ""
-        val histImg = if (trialsMeta.containsKey("trial_${idx}_hist")) "<br><small>Run-Length Histogram:</small><br><img src='data:image/jpeg;base64,${trialsMeta["trial_${idx}_hist"]}'>" else ""
+        val plainImg = if (t.plainB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainB64}'><br>" else ""
+        val histImg = if (t.histB64.isNotEmpty()) "<br><small>Run-Length Histogram:</small><br><img src='data:image/jpeg;base64,${t.histB64}'>" else ""
         
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.base64}\">$histImg</div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.annotatedB64}\">$histImg</div>")
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"; if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
     }
     
@@ -908,9 +891,9 @@ private suspend fun runBinTrialsPaddle(
         mapOf(
             "best_threshold" to winner.thresh.toString(),
             "best_text" to winner.text,
-            "best_thumb" to winner.base64,
+            "best_thumb" to winner.annotatedB64,
             "best_probs" to winner.probsStr,
-            "selection_logic" to (if (winner.thresh < 0) "RAW Selected" else if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)")
+            "selection_logic" to (if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)")
         )
     } else emptyMap()
     trialsMeta.putAll(winnerMeta)
@@ -1409,13 +1392,12 @@ private suspend fun runPaddleValleyIterative(
 
             val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
             currentThumb = sB64
-            if (stage == "Raw") {
+            if (stage == "Raw" || stage.contains("80%")) {
                 val (plainB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
                 stageMeta["plain_thumb"] = plainB64
-            }
-            if (useCharAware && valleyResults.isNotEmpty()) {
-                val histStr = valleyResults[0].second["charaware_run_hist"]
-                stageMeta["run_hist"] = generateRunLengthHistogramB64(histStr)
+                if (useCharAware && valleyResults.isNotEmpty()) {
+                    stageMeta["run_hist"] = generateRunLengthHistogramB64(valleyResults[0].second["charaware_run_hist"])
+                }
             }
             tSnTotal += ts
             jMeta.entrySet().forEach { e -> stageMeta[e.key] = e.value.asString }
