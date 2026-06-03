@@ -1109,6 +1109,33 @@ private fun buildHtmlRowDynamic(
     appendLine("</td></tr>")
 }
 
+private fun generateRunLengthHistogramB64(histStr: String?): String {
+    if (histStr.isNullOrEmpty()) return ""
+    val counts = histStr.split(",").map { it.toIntOrNull() ?: 0 }
+    if (counts.size < 256) return ""
+    
+    val maxVal = counts.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val bmp = Bitmap.createBitmap(256, 120, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    val paint = android.graphics.Paint()
+    
+    paint.color = android.graphics.Color.BLUE
+    for (i in 0..255) {
+        val h = (counts[i].toFloat() / maxVal) * 100
+        canvas.drawRect(i.toFloat(), 110f - h, (i + 1).toFloat(), 110f, paint)
+    }
+    
+    // Draw base line
+    paint.color = android.graphics.Color.BLACK
+    paint.strokeWidth = 1f
+    canvas.drawLine(0f, 110f, 255f, 110f, paint)
+
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80)
+    bmp.recycle()
+    return b64
+}
+
 private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, targetBuffer: Bitmap? = null): String {
     if (bitmap.isRecycled) return ""
     val scale = targetWidth.toFloat() / bitmap.width; val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)

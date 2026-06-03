@@ -1279,12 +1279,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
+    jintArray histogramArr = env->NewIntArray(256);
+    jint h[256] = {0};
+    for (const auto& pair : runHist) {
+        if (pair.first >= 0 && pair.first < 256) h[pair.first] = pair.second;
+    }
+    env->SetIntArrayRegion(histogramArr, 0, 256, h);
+
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(3, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
+    env->SetObjectArrayElement(resultArr, 2, histogramArr);
 
-    LOGI("CHAR_AWARE: Final: (%d,%d)-(%d,%d)", (int)minX, (int)minY, (int)maxX, (int)maxY);
     return resultArr;
-}
+    }

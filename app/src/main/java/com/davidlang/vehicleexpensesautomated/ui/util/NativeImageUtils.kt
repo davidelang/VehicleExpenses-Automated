@@ -188,18 +188,20 @@ object NativeImageUtils {
 
     fun expandByCharacterAwareDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
         val res = nativeExpandByCharacterAwareDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        if (res != null && res.size == 2) {
+        if (res != null && res.size == 3) {
             val summary = res[0] as IntArray
             val trace = res[1] as String
+            val runHist = res[2] as IntArray
             val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
-            val meta = mapOf(
+            val meta = mutableMapOf(
                 "charaware_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
                 "charaware_strict" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
                 "charaware_final" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
                 "charaware_threshold" to summary[12].toString(),
                 "charaware_digitW" to summary[13].toString(),
                 "charaware_minStrokeW" to summary[14].toString(),
-                "charaware_trace" to trace
+                "charaware_trace" to trace,
+                "charaware_run_hist" to runHist.joinToString(",")
             )
             return Pair(finalRect, meta)
         }
