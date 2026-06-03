@@ -817,7 +817,7 @@ private suspend fun runBinTrialsPaddle(
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
-    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val avgConf: Float)
+    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val redHistB64: String, val orangeHistB64: String, val avgConf: Float)
     val trialsList = mutableListOf<TrialData>()
 
     midpoints.forEachIndexed { vIdx, binIdx ->
@@ -846,7 +846,7 @@ private suspend fun runBinTrialsPaddle(
         valleyResults.forEachIndexed { vI, res ->
             res.second.forEach { (k, v) -> trialsMeta["trial_${vIdx}_frag_${vI}_$k"] = v }
         }
-        
+
         tCons.forEach { tBox ->
             val sL = tBox.left.coerceIn(0, trialMat.cols() - 1); val sT = tBox.top.coerceIn(0, trialMat.rows() - 1); val sR = tBox.right.coerceIn(sL + 1, trialMat.cols()); val sB = tBox.bottom.coerceIn(sT + 1, trialMat.rows())
             if (sR > sL && sB > sT) {
@@ -865,11 +865,39 @@ private suspend fun runBinTrialsPaddle(
         val anns = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
         tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        
+        if (useCharAware && valleyResults.isNotEmpty()) {
+            valleyResults.forEach { res ->
+                val slotsStr = res.second["charaware_slots"]
+                if (!slotsStr.isNullOrEmpty()) {
+                    val pts = slotsStr.split(",").mapNotNull { it.toIntOrNull() }
+                    for (i in 0 until pts.size step 4) {
+                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.YELLOW, 1))
+                    }
+                }
+            }
+        }
+
         val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
         val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        val histB64 = if (useCharAware && valleyResults.isNotEmpty()) generateRunLengthHistogramB64(valleyResults[0].second["charaware_run_hist"]) else ""
         
-        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histB64, tAvg))
+        var histB64 = ""; var redHistB64 = ""; var orangeHistB64 = ""
+        if (useCharAware && valleyResults.isNotEmpty()) {
+            histB64 = generateRunLengthHistogramB64(valleyResults[0].second["charaware_run_hist"])
+            val rBoxes = tRawB.map { it.boundingBox }
+            if (rBoxes.isNotEmpty()) {
+                val rHists = NativeImageUtils.calculateHistograms(trialMat, rBoxes)
+                if (rHists != null) redHistB64 = generateDualHistogramB64(rHists.first, rHists.second)
+            }
+            if (tCons.isNotEmpty()) {
+                val oHists = NativeImageUtils.calculateHistograms(trialMat, tCons)
+                if (oHists != null) orangeHistB64 = generateDualHistogramB64(oHists.first, oHists.second)
+            }
+        }
+        
+        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histB64, redHistB64, orangeHistB64, tAvg))
+        trialsMeta["trial_${vIdx}_plain"] = tPlainB64
+        if (histB64.isNotEmpty()) trialsMeta["trial_${vIdx}_hist"] = histB64
     }
     
     val highQual = trialsList.filter { it.minProb >= 0.90f }
@@ -881,9 +909,11 @@ private suspend fun runBinTrialsPaddle(
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
         
         val plainImg = if (t.plainB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainB64}'><br>" else ""
-        val histImg = if (t.histB64.isNotEmpty()) "<br><small>Run-Length Histogram:</small><br><img src='data:image/jpeg;base64,${t.histB64}'>" else ""
+        val histImg = if (t.histB64.isNotEmpty()) "<br><small>Snapped Box Horizontal Hist:</small><br><img src='data:image/jpeg;base64,${t.histB64}'>" else ""
+        val redHistImg = if (t.redHistB64.isNotEmpty()) "<br><small>Red Boxes H/V Hist:</small><br><img src='data:image/jpeg;base64,${t.redHistB64}'>" else ""
+        val orangeHistImg = if (t.orangeHistB64.isNotEmpty()) "<br><small>Orange Box H/V Hist:</small><br><img src='data:image/jpeg;base64,${t.orangeHistB64}'>" else ""
         
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.annotatedB64}\">$histImg</div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.annotatedB64}\">$histImg$redHistImg$orangeHistImg</div>")
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"; if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
     }
     
@@ -1102,6 +1132,41 @@ private fun buildHtmlRowDynamic(
     val freq = allReadings.groupBy { it }.mapValues { it.value.size }.toList().sortedByDescending { it.second }
     freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/48)<br>") }
     appendLine("</td></tr>")
+}
+
+private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
+    if (hHist == null || vHist == null || hHist.size < 256 || vHist.size < 256) return ""
+    
+    val maxH = hHist.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val maxV = vHist.maxOrNull()?.coerceAtLeast(1) ?: 1
+    
+    val bmp = Bitmap.createBitmap(256 * 2 + 10, 120, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    val paint = android.graphics.Paint()
+    
+    // Draw H Hist (Blue)
+    paint.color = android.graphics.Color.BLUE
+    for (i in 0..255) {
+        val h = (hHist[i].toFloat() / maxH) * 100
+        canvas.drawRect(i.toFloat(), 110f - h, (i + 1).toFloat(), 110f, paint)
+    }
+    
+    // Draw V Hist (Red)
+    paint.color = android.graphics.Color.RED
+    for (i in 0..255) {
+        val h = (vHist[i].toFloat() / maxV) * 100
+        canvas.drawRect((i + 266).toFloat(), 110f - h, (i + 267).toFloat(), 110f, paint)
+    }
+    
+    paint.color = android.graphics.Color.BLACK
+    paint.strokeWidth = 1f
+    canvas.drawLine(0f, 110f, 255f, 110f, paint)
+    canvas.drawLine(266f, 110f, 521f, 110f, paint)
+
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80)
+    bmp.recycle()
+    return b64
 }
 
 private fun generateRunLengthHistogramB64(histStr: String?): String {

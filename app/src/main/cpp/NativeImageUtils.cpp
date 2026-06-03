@@ -1281,11 +1281,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     oss << "Pitch=" << medianPitch << " AvgM=" << avgBlobMass << " ";
 
     // Log individual slot masses within the snapped box based on medianPitch
+    std::vector<cv::Rect> slots;
     if (medianPitch > 0) {
         for (int x = (int)minX; x < (int)maxX; x += medianPitch) {
             int slotIdx = (x - (int)minX) / medianPitch;
+            int ex = std::min((int)maxX, x + medianPitch);
+            slots.push_back(cv::Rect(x, (int)minY, ex - x, (int)maxY - (int)minY));
             long m = 0;
-            for (int sx = x; sx < std::min((int)maxX, x + medianPitch); ++sx) {
+            for (int sx = x; sx < ex; ++sx) {
                 for (int sy = (int)minY; sy < (int)maxY; ++sy) {
                     if (mat->at<uint8_t>(sy, sx) > contentThreshold) m++;
                 }
@@ -1315,6 +1318,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             // Lower threshold to 0.20x to include '1' digits
             bool match = (pm >= 0.20 * avgBlobMass && pm <= 2.5 * avgBlobMass);
             oss << "ProbeL[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
+            slots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
             if (match) {
                 // Tighten to content inside window
                 int contentL = pR, contentR = pL;
@@ -1337,6 +1341,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
             bool match = (pm >= 0.20 * avgBlobMass && pm <= 2.5 * avgBlobMass);
             oss << "ProbeR[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
+            slots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
             if (match) {
                 int contentL = pR, contentR = pL;
                 for (int x = pL; x < pR; ++x) {
@@ -1358,6 +1363,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         oss << sortedHist[i].first << "(" << sortedHist[i].second << ") ";
     }
 
+    // Create an array for the evaluated slots [L, T, R, B, L, T, R, B...]
+    jintArray slotsArr = env->NewIntArray(slots.size() * 4);
+    if (slots.size() > 0) {
+        jint* sData = new jint[slots.size() * 4];
+        for (size_t i = 0; i < slots.size(); ++i) {
+            sData[i*4 + 0] = slots[i].x;
+            sData[i*4 + 1] = slots[i].y;
+            sData[i*4 + 2] = slots[i].x + slots[i].width;
+            sData[i*4 + 3] = slots[i].y + slots[i].height;
+        }
+        env->SetIntArrayRegion(slotsArr, 0, slots.size() * 4, sData);
+        delete[] sData;
+    }
+
     jintArray summary = env->NewIntArray(16);
     jint s[16] = {
         (jint)L, (jint)T, (jint)R, (jint)B,
@@ -1376,10 +1395,86 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(3, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(4, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
     env->SetObjectArrayElement(resultArr, 2, histogramArr);
+    env->SetObjectArrayElement(resultArr, 3, slotsArr);
 
     return resultArr;
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistograms(
+    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects) {
+    
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    jsize len = env->GetArrayLength(rects);
+    if (len % 4 != 0 || len == 0) return nullptr;
+
+    jint* rData = env->GetIntArrayElements(rects, nullptr);
+    
+    // Find union of all rects
+    int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
+    for (int i = 0; i < len; i += 4) {
+        minL = std::min(minL, (int)rData[i]);
+        minT = std::min(minT, (int)rData[i+1]);
+        maxR = std::max(maxR, (int)rData[i+2]);
+        maxB = std::max(maxB, (int)rData[i+3]);
     }
+    env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
+
+    minL = std::max(0, std::min(minL, mat->cols - 1));
+    minT = std::max(0, std::min(minT, mat->rows - 1));
+    maxR = std::max(minL + 1, std::min(maxR, mat->cols));
+    maxB = std::max(minT + 1, std::min(maxB, mat->rows));
+
+    cv::Rect roi(minL, minT, maxR - minL, maxB - minT);
+    cv::Scalar meanVal = cv::mean((*mat)(roi));
+    double contentThreshold = std::max(15.0, meanVal[0] * 0.40); // Standard threshold for binary conversion
+
+    std::map<int, int> horizHist;
+    for (int y = minT; y < maxB; ++y) {
+        const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = minL; x < maxR; ++x) {
+            if (rowPtr[x] > contentThreshold) run++;
+            else { if (run > 0) horizHist[run]++; run = 0; }
+        }
+        if (run > 0) horizHist[run]++;
+    }
+
+    std::map<int, int> vertHist;
+    for (int x = minL; x < maxR; ++x) {
+        int run = 0;
+        for (int y = minT; y < maxB; ++y) {
+            if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
+            else { if (run > 0) vertHist[run]++; run = 0; }
+        }
+        if (run > 0) vertHist[run]++;
+    }
+
+    jintArray hArr = env->NewIntArray(256);
+    jint hData[256] = {0};
+    for (const auto& pair : horizHist) {
+        if (pair.first >= 0 && pair.first < 256) hData[pair.first] = pair.second;
+    }
+    env->SetIntArrayRegion(hArr, 0, 256, hData);
+
+    jintArray vArr = env->NewIntArray(256);
+    jint vData[256] = {0};
+    for (const auto& pair : vertHist) {
+        if (pair.first >= 0 && pair.first < 256) vData[pair.first] = pair.second;
+    }
+    env->SetIntArrayRegion(vArr, 0, 256, vData);
+
+    jclass objClass = env->FindClass("java/lang/Object");
+    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
+    env->SetObjectArrayElement(resultArr, 0, hArr);
+    env->SetObjectArrayElement(resultArr, 1, vArr);
+
+    return resultArr;
+}
+}

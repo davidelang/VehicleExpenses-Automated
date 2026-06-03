@@ -188,10 +188,12 @@ object NativeImageUtils {
 
     fun expandByCharacterAwareDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
         val res = nativeExpandByCharacterAwareDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        if (res != null && res.size == 3) {
+        if (res != null && res.size == 4) {
             val summary = res[0] as IntArray
             val trace = res[1] as String
             val runHist = res[2] as IntArray
+            val slotsArr = res[3] as IntArray
+            
             val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
             val meta = mutableMapOf(
                 "charaware_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
@@ -201,12 +203,31 @@ object NativeImageUtils {
                 "charaware_digitW" to summary[13].toString(),
                 "charaware_minStrokeW" to summary[14].toString(),
                 "charaware_trace" to trace,
-                "charaware_run_hist" to runHist.joinToString(",")
+                "charaware_run_hist" to runHist.joinToString(","),
+                "charaware_slots" to slotsArr.joinToString(",")
             )
             return Pair(finalRect, meta)
         }
         return Pair(rect, emptyMap())
     }
+
+    fun calculateHistograms(mat: Mat, rects: List<android.graphics.Rect>): Pair<IntArray, IntArray>? {
+        if (rects.isEmpty()) return null
+        val flatRects = IntArray(rects.size * 4)
+        rects.forEachIndexed { i, r ->
+            flatRects[i * 4] = r.left
+            flatRects[i * 4 + 1] = r.top
+            flatRects[i * 4 + 2] = r.right
+            flatRects[i * 4 + 3] = r.bottom
+        }
+        val res = nativeCalculateHistograms(mat.nativeObj, flatRects)
+        if (res != null && res.size == 2) {
+            return Pair(res[0] as IntArray, res[1] as IntArray)
+        }
+        return null
+    }
+
+    private external fun nativeCalculateHistograms(matPtr: Long, rects: IntArray): Array<Any>?
 
     fun expandByCharacterAware(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
         val res = nativeExpandByCharacterAware(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)

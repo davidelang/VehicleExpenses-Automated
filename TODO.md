@@ -1,8 +1,9 @@
-## Active Execution: Set H Character Mass Profiling
-- [ ] **EXECUTE:** Implement per-character slot mass logging and refine thresholds.
-  - [ ] Apply 10% "Frame-Cut" to horizontal valley detection in `NativeImageUtils.cpp`.
-  - [ ] Implement "Virtual Slotting" to log individual masses (`SlotM[idx]`) for every character in the initial block.
-  - [ ] Lower the probe MATCH threshold to 0.20x to include '1's.
+## Active Execution: Visual Slots & Discrete Histograms
+- [ ] **EXECUTE:** Implement red-box histograms and yellow visual slots.
+  - [ ] Implement `nativeCalculateHistograms` in C++ (Horizontal and Vertical).
+  - [ ] Update `nativeExpandByCharacterAwareDiagnostic` to return slot coordinates.
+  - [ ] Update JNI bindings in `NativeImageUtils.kt`.
+  - [ ] Update `ExperimentAlignmentScreen.kt` to draw yellow slots and generate red-box histogram HTML.
   - [ ] Verify with `./build_app`.
 
 ## Active Execution: Visual Diagnostics & Uniform Scaling
