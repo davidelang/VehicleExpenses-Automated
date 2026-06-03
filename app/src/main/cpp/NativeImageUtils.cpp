@@ -1476,5 +1476,4 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     env->SetObjectArrayElement(resultArr, 1, vArr);
 
     return resultArr;
-}
-}
+    }
