@@ -871,24 +871,31 @@ private suspend fun runBinTrialsPaddle(
         val anns = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
         tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
-        val (tB64, _) = OcrUtils.takeSnapshot(trialMat, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
+        val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         
-        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tB64, tAvg))
-        trialsMeta["trial_${vIdx}_red_area"] = (tRawB.sumOf { it.boundingBox.width() * it.boundingBox.height() }).toString()
-        trialsMeta["trial_${vIdx}_orange_area"] = (tCons.sumOf { it.width() * it.height() }).toString()
-        trialsMeta["trial_${vIdx}_red_boxes"] = tRawB.joinToString(";") { "${it.boundingBox.left},${it.boundingBox.top},${it.boundingBox.right},${it.boundingBox.bottom}" }
-        trialsMeta["trial_${vIdx}_orange_boxes"] = tCons.joinToString(";") { "${it.left},${it.top},${it.right},${it.bottom}" }
+        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tAvg))
+        trialsMeta["trial_${vIdx}_plain"] = tPlainB64
+        
+        if (useCharAware && valleyResults.isNotEmpty()) {
+            val histStr = valleyResults[0].second["charaware_run_hist"]
+            trialsMeta["trial_${vIdx}_hist"] = generateRunLengthHistogramB64(histStr)
+        }
     }
     
     val highQual = trialsList.filter { it.minProb >= 0.90f }
     val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
     
     trialsList.forEachIndexed { idx, t ->
-        if (t.thresh < 0) return@forEachIndexed
+        if (idx == 0 && t.thresh < 0) return@forEachIndexed
         val isWinner = (t == winner)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><img src=\"data:image/jpeg;base64,${t.base64}\"></div>")
+        
+        val plainImg = if (trialsMeta.containsKey("trial_${idx}_plain")) "<img src='data:image/jpeg;base64,${trialsMeta["trial_${idx}_plain"]}'><br>" else ""
+        val histImg = if (trialsMeta.containsKey("trial_${idx}_hist")) "<br><small>Run-Length Histogram:</small><br><img src='data:image/jpeg;base64,${trialsMeta["trial_${idx}_hist"]}'>" else ""
+        
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.base64}\">$histImg</div>")
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"; if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
     }
     
@@ -1397,6 +1404,14 @@ private suspend fun runPaddleValleyIterative(
 
             val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
             currentThumb = sB64
+            if (stage == "Raw") {
+                val (plainB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+                stageMeta["plain_thumb"] = plainB64
+            }
+            if (useCharAware && valleyResults.isNotEmpty()) {
+                val histStr = valleyResults[0].second["charaware_run_hist"]
+                stageMeta["run_hist"] = generateRunLengthHistogramB64(histStr)
+            }
             tSnTotal += ts
             jMeta.entrySet().forEach { e -> stageMeta[e.key] = e.value.asString }
             }
@@ -1404,11 +1419,13 @@ private suspend fun runPaddleValleyIterative(
         allOdo.add(currentOdoStr)
         lastThumb = currentThumb
 
+        val plainImg = if (stageMeta.containsKey("plain_thumb")) "<img src='data:image/jpeg;base64,${stageMeta["plain_thumb"]}'><br>" else ""
+        val histImg = if (stageMeta.containsKey("run_hist")) "<br><small>Run-Length Histogram:</small><br><img src='data:image/jpeg;base64,${stageMeta["run_hist"]}'>" else ""
         val hT = if (stageMeta.containsKey("before_hist")) {
         "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
         } else ""
 
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg<img src='data:image/jpeg;base64,$lastThumb'>$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
 
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", currentOdoStr)
