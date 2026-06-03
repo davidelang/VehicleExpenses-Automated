@@ -846,12 +846,17 @@ private suspend fun runBinTrialsPaddle(
         val tRawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[dCrId].release()
         
-        val tFrags = tRawB.map { 
-            if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(trialMat, it.boundingBox).first
-            else NativeImageUtils.expandByValleyDiagnostic(trialMat, it.boundingBox, 0.40f).first
+        val valleyResults = tRawB.map { 
+            if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(trialMat, it.boundingBox)
+            else NativeImageUtils.expandByValleyDiagnostic(trialMat, it.boundingBox, 0.40f)
         }
+        val tFrags = valleyResults.map { it.first }
         val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
         val tOdoB = StringBuilder(); val tProbsB = StringBuilder(); var tCf = 0f; var tCnt = 0
+        
+        valleyResults.forEachIndexed { vI, res ->
+            res.second.forEach { (k, v) -> trialsMeta["trial_${vIdx}_frag_${vI}_$k"] = v }
+        }
         
         tCons.forEach { tBox ->
             val sL = tBox.left.coerceIn(0, trialMat.cols() - 1); val sT = tBox.top.coerceIn(0, trialMat.rows() - 1); val sR = tBox.right.coerceIn(sL + 1, trialMat.cols()); val sB = tBox.bottom.coerceIn(sT + 1, trialMat.rows())
