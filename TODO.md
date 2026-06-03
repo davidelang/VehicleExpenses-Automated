@@ -1,9 +1,10 @@
-## Active Execution: Bin-Trials (Sub-Step 4.1 & 4.2)
-- [x] **DONE:** Pipeline cleanup (Remove Sets F/G).
-- [ ] **EXECUTE:** Add "Bin-Trials" stage and 3-bin valley utility.
-  - [ ] Add "Bin-Trials" to iterative stages.
-  - [ ] Implement \`findValleyMidpoints\` (3-bin smoothing).
-  - [ ] Verify with \`./build_app\`.
+## Active Execution: Isolate Strict Walk & Column Profiling
+- [ ] **EXECUTE:** Isolate strict expansion walk and implement column profiling.
+  - [ ] Refactor `isValley` in `NativeImageUtils.cpp` to use a height-aware ratio (0.15 * boxH) for horizontal walks.
+  - [ ] Implement vertical column bit-map profiling in `nativeExpandByCharacterAwareDiagnostic`.
+  - [ ] Comment out Section 4 (Density Probes) and Section 5 (Retraction) to isolate the strict walk.
+  - [ ] Return pixel mass in the diagnostic metadata.
+  - [ ] Verify with `./build_app` and forensic analysis of Row 5.
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
 - [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
   - [x] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
