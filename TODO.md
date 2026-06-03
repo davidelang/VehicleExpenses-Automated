@@ -1,9 +1,10 @@
-## Active Execution: Set H Character-Aware Probing
-- [ ] **EXECUTE:** Implement "Jump-and-Probe" expansion for Set H.
-  - [ ] Calculate `medianPitch` and `avgCharacterMass` from initial blobs in `NativeImageUtils.cpp`.
-  - [ ] Implement bidirectional jump-and-probe while-loops.
-  - [ ] Update diagnostic trace with probe results and match decisions.
-  - [ ] Verify with `./build_app` and forensic analysis.
+## Active Execution: Set H Character Mass Profiling
+- [ ] **EXECUTE:** Implement per-character slot mass logging and refine thresholds.
+  - [ ] Apply 10% "Frame-Cut" to horizontal valley detection in `NativeImageUtils.cpp`.
+  - [ ] Implement "Virtual Slotting" to log individual masses for every character in the initial block.
+  - [ ] Lower the probe MATCH threshold to 0.20x to include '1's.
+  - [ ] Update diagnostic trace with `SlotM[index]=mass` data.
+  - [ ] Verify with `./build_app` and analyze the 146-image report.
 
 ## Active Execution: Visual Diagnostics & Uniform Scaling
 - [x] **DONE:** Fix implementation of visual histograms and uniform 320x48 snapshots.

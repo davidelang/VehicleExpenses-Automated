@@ -1173,7 +1173,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     };
 
     auto isValley = [&](int x, int minY, int maxY) -> bool {
-        return getMaxRun((int)minY, (int)maxY, x, false) < 5;
+        // Apply 10% frame-cut to ignore horizontal frame lines when detecting character gaps
+        int h = maxY - minY;
+        int cut = std::max(1, (int)(h * 0.10));
+        return getMaxRun((int)minY + cut, (int)maxY - cut, x, false) < 5;
     };
 
     double minX = L, maxX = R, minY = T, maxY = B;
@@ -1227,7 +1230,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     for (int x = 0; x < (int)colMaxRuns.size(); ++x) {
         int mr = colMaxRuns[x];
-        bool valley = mr < 5;
+        // Use the same frame-cut for internal blob splitting as well? 
+        // Let's use the local isValley lambda to be consistent.
+        bool valley = isValley(x + (int)minX, (int)minY, (int)maxY);
         if (!inBlob && !valley) {
             inBlob = true; blobStart = x + (int)minX; currentMass = 0; currentMaxRun = 0;
         }
@@ -1266,8 +1271,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             std::sort(centers.begin(), centers.end());
             std::sort(rights.begin(), rights.end());
             
-            // Heuristic: pick the one with tighter clustering? For now, pick rights for Honda-like, centers for others.
-            // Honda has very consistent rights.
             int mid = centers.size() / 2;
             medianPitch = centers[mid];
             
@@ -1276,6 +1279,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         }
     }
     oss << "Pitch=" << medianPitch << " AvgM=" << avgBlobMass << " ";
+
+    // Log individual slot masses within the snapped box based on medianPitch
+    if (medianPitch > 0) {
+        for (int x = (int)minX; x < (int)maxX; x += medianPitch) {
+            int slotIdx = (x - (int)minX) / medianPitch;
+            long m = 0;
+            for (int sx = x; sx < std::min((int)maxX, x + medianPitch); ++sx) {
+                for (int sy = (int)minY; sy < (int)maxY; ++sy) {
+                    if (mat->at<uint8_t>(sy, sx) > contentThreshold) m++;
+                }
+            }
+            oss << "SlotM[" << slotIdx << "]=" << m << " ";
+        }
+    }
 
     // 4. Bidirectional Jump-and-Probe
     auto getBoxMass = [&](int startX, int endX, int minY, int maxY) -> long {
@@ -1295,7 +1312,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             int pL = curL - medianPitch;
             int pR = curL;
             long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
-            bool match = (pm >= 0.4 * avgBlobMass && pm <= 2.5 * avgBlobMass);
+            // Lower threshold to 0.20x to include '1' digits
+            bool match = (pm >= 0.20 * avgBlobMass && pm <= 2.5 * avgBlobMass);
             oss << "ProbeL[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
             if (match) {
                 // Tighten to content inside window
@@ -1317,7 +1335,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             int pL = curR;
             int pR = curR + medianPitch;
             long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
-            bool match = (pm >= 0.4 * avgBlobMass && pm <= 2.5 * avgBlobMass);
+            bool match = (pm >= 0.20 * avgBlobMass && pm <= 2.5 * avgBlobMass);
             oss << "ProbeR[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
             if (match) {
                 int contentL = pR, contentR = pL;
