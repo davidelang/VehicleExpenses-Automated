@@ -14,3 +14,8 @@
 - [x] Cleanup Reports on Device
     - [x] Modify `fetch_latest_reports.py` to remove old reports from device.
     - [x] Commit changes.
+- [/] Enforce Git Reset and Validation Rigor
+    - [ ] Update `.gemini/policies/auto-saved.toml` to restrict `git reset`.
+    - [ ] Update `GEMINI.md` to mandate forensic audits.
+    - [ ] Update `.gemini/system.md` to reflect new rigor.
+    - [ ] Commit and sync rules across all worktrees.
