@@ -817,7 +817,7 @@ private suspend fun runBinTrialsPaddle(
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
-    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val redHistB64: String, val orangeHistB64: String, val avgConf: Float)
+    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val avgConf: Float)
     val trialsList = mutableListOf<TrialData>()
 
     midpoints.forEachIndexed { vIdx, binIdx ->
@@ -832,8 +832,13 @@ private suspend fun runBinTrialsPaddle(
         val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(trialMat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-        val tRawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+        val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[dCrId].release()
+        
+        // Consolidate red boxes: if Box A contains Box B, remove B.
+        val tRawB = tFullB.filter { b1 ->
+            tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
+        }
         
         val valleyResults = tRawB.map { 
             if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(trialMat, it.boundingBox)
@@ -866,14 +871,29 @@ private suspend fun runBinTrialsPaddle(
         tRawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
         tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         
+        val histsHtml = StringBuilder()
         if (useCharAware && valleyResults.isNotEmpty()) {
             valleyResults.forEach { res ->
                 val slotsStr = res.second["charaware_slots"]
                 if (!slotsStr.isNullOrEmpty()) {
                     val pts = slotsStr.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.YELLOW, 1))
+                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.YELLOW, 2))
                     }
+                }
+            }
+            tRawB.forEachIndexed { rIdx, rb ->
+                val h = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
+                if (h != null) {
+                    val b64 = generateDualHistogramB64(h.first, h.second)
+                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}):</small><br><img src='data:image/jpeg;base64,$b64'>")
+                }
+            }
+            tCons.forEachIndexed { oIdx, ob ->
+                val h = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
+                if (h != null) {
+                    val b64 = generateDualHistogramB64(h.first, h.second)
+                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}):</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
             }
         }
@@ -881,23 +901,8 @@ private suspend fun runBinTrialsPaddle(
         val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
         val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         
-        var histB64 = ""; var redHistB64 = ""; var orangeHistB64 = ""
-        if (useCharAware && valleyResults.isNotEmpty()) {
-            histB64 = generateRunLengthHistogramB64(valleyResults[0].second["charaware_run_hist"])
-            val rBoxes = tRawB.map { it.boundingBox }
-            if (rBoxes.isNotEmpty()) {
-                val rHists = NativeImageUtils.calculateHistograms(trialMat, rBoxes)
-                if (rHists != null) redHistB64 = generateDualHistogramB64(rHists.first, rHists.second)
-            }
-            if (tCons.isNotEmpty()) {
-                val oHists = NativeImageUtils.calculateHistograms(trialMat, tCons)
-                if (oHists != null) orangeHistB64 = generateDualHistogramB64(oHists.first, oHists.second)
-            }
-        }
-        
-        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histB64, redHistB64, orangeHistB64, tAvg))
+        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histsHtml.toString(), tAvg))
         trialsMeta["trial_${vIdx}_plain"] = tPlainB64
-        if (histB64.isNotEmpty()) trialsMeta["trial_${vIdx}_hist"] = histB64
     }
     
     val highQual = trialsList.filter { it.minProb >= 0.90f }
@@ -907,13 +912,8 @@ private suspend fun runBinTrialsPaddle(
         val isWinner = (t == winner)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
-        
         val plainImg = if (t.plainB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainB64}'><br>" else ""
-        val histImg = if (t.histB64.isNotEmpty()) "<br><small>Snapped Box Horizontal Hist:</small><br><img src='data:image/jpeg;base64,${t.histB64}'>" else ""
-        val redHistImg = if (t.redHistB64.isNotEmpty()) "<br><small>Red Boxes H/V Hist:</small><br><img src='data:image/jpeg;base64,${t.redHistB64}'>" else ""
-        val orangeHistImg = if (t.orangeHistB64.isNotEmpty()) "<br><small>Orange Box H/V Hist:</small><br><img src='data:image/jpeg;base64,${t.orangeHistB64}'>" else ""
-        
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.annotatedB64}\">$histImg$redHistImg$orangeHistImg</div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.annotatedB64}\">${t.histB64}</div>")
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"; if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
     }
     
@@ -929,8 +929,6 @@ private suspend fun runBinTrialsPaddle(
     trialsMeta.putAll(winnerMeta)
     return Pair(trialsHtml.toString(), trialsMeta)
 }
-
-
 private suspend fun runBinTrialsMLKit(
     odoBuffer: BufferSet,
     experimentRecSet320x48: BufferSet,
@@ -1140,7 +1138,7 @@ private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String
     val maxH = hHist.maxOrNull()?.coerceAtLeast(1) ?: 1
     val maxV = vHist.maxOrNull()?.coerceAtLeast(1) ?: 1
     
-    val bmp = Bitmap.createBitmap(256 * 2 + 10, 120, Bitmap.Config.ARGB_8888)
+    val bmp = Bitmap.createBitmap(256 * 2 + 10, 130, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bmp)
     canvas.drawColor(android.graphics.Color.WHITE)
     val paint = android.graphics.Paint()
@@ -1159,10 +1157,18 @@ private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String
         canvas.drawRect((i + 266).toFloat(), 110f - h, (i + 267).toFloat(), 110f, paint)
     }
     
+    // Draw base line and scale tics
     paint.color = android.graphics.Color.BLACK
     paint.strokeWidth = 1f
     canvas.drawLine(0f, 110f, 255f, 110f, paint)
     canvas.drawLine(266f, 110f, 521f, 110f, paint)
+    
+    for (i in 0..255 step 25) {
+        val isLong = (i % 100 == 0)
+        val ticH = if (isLong) 10f else 5f
+        canvas.drawLine(i.toFloat(), 110f, i.toFloat(), 110f + ticH, paint)
+        canvas.drawLine((i + 266).toFloat(), 110f, (i + 266).toFloat(), 110f + ticH, paint)
+    }
 
     val b64 = OcrUtils.bitmapToBase64(bmp, 80)
     bmp.recycle()

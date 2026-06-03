@@ -1,12 +1,11 @@
-## Active Execution: Visual Slots & Discrete Histograms v2
-- [ ] **EXECUTE:** Implement stroke-based mass profiling and right-anchored visual slots.
-  - [ ] Implement `nativeCalculateHistograms` in C++.
-  - [ ] Refactor `nativeExpandByCharacterAwareDiagnostic` to use `OneStrokeMass` baseline (0.5x to 4.0x).
-  - [ ] Implement Right-Edge Anchoring for virtual slotting in C++.
-  - [ ] Update `generateDualHistogramB64` in Kotlin to include scale tics (25/100px).
-  - [ ] Consolidate redundant red boxes in `runBinTrialsPaddle` before expanding.
-  - [ ] Generate labeled histogram blocks for every red and orange box.
-  - [ ] Verify with `./build_app`.
+## Active Execution: Visual Slots & Discrete Histograms v4 (Correction)
+- [ ] **EXECUTE:** Fix implementation of visual slots and histograms.
+  - [ ] Implement `OneStrokeMass` baseline (0.5x to 4.0x) and Right-Edge Anchoring in `NativeImageUtils.cpp`.
+  - [ ] Implement containment-based red box consolidation in `runBinTrialsPaddle`.
+  - [ ] Implement 25px/100px scale tics in `generateDualHistogramB64`.
+  - [ ] Remove duplicate histogram from HTML report.
+  - [ ] Verified file content on disk after edits.
+  - [ ] Verify build with `./build_app`.
 
 
 ## Active Execution: Visual Diagnostics & Uniform Scaling
