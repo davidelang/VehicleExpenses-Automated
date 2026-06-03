@@ -1,10 +1,17 @@
+## Active Execution: Set H Character-Aware Probing
+- [ ] **EXECUTE:** Implement "Jump-and-Probe" expansion for Set H.
+  - [ ] Calculate `medianPitch` and `avgCharacterMass` from initial blobs in `NativeImageUtils.cpp`.
+  - [ ] Implement bidirectional jump-and-probe while-loops.
+  - [ ] Update diagnostic trace with probe results and match decisions.
+  - [ ] Verify with `./build_app` and forensic analysis.
+
 ## Active Execution: Visual Diagnostics & Uniform Scaling
-- [ ] **EXECUTE:** Fix implementation of visual histograms and uniform 320x48 snapshots.
-  - [ ] Refactor `TrialData` in `runBinTrialsPaddle` to store visual data (plain, annotated, histogram).
-  - [ ] Eliminate redundant RAW entry from `runBinTrialsPaddle`.
-  - [ ] Standardize all snapshots to 320x48.
-  - [ ] Update HTML generation loop to use the direct data mapping.
-  - [ ] Verify with `./build_app`.
+- [x] **DONE:** Fix implementation of visual histograms and uniform 320x48 snapshots.
+  - [x] Refactor `TrialData` in `runBinTrialsPaddle` to store visual data (plain, annotated, histogram).
+  - [x] Eliminate redundant RAW entry from `runBinTrialsPaddle`.
+  - [x] Standardize all snapshots to 320x48.
+  - [x] Update HTML generation loop to use the direct data mapping.
+  - [x] Verified build success with `./build_app`.
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
 - [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
   - [x] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
