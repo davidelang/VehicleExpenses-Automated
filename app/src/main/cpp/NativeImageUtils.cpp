@@ -1250,16 +1250,86 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         oss << "[" << b.startX << "-" << b.endX << " m=" << b.mass << " mr=" << b.maxRun << "] ";
     }
 
-    if (blobs.size() > 1) {
-        oss << "Centers: ";
-        for (size_t i = 0; i < blobs.size() - 1; ++i) {
-            int c1 = (blobs[i].startX + blobs[i].endX) / 2;
-            int c2 = (blobs[i+1].startX + blobs[i+1].endX) / 2;
-            oss << (c2 - c1) << ",";
+    int medianPitch = 0;
+    long avgBlobMass = 0;
+    if (blobs.size() > 0) {
+        std::vector<int> centers, rights;
+        long totalMass = 0;
+        for (size_t i = 0; i < blobs.size(); ++i) totalMass += blobs[i].mass;
+        avgBlobMass = totalMass / blobs.size();
+
+        if (blobs.size() > 1) {
+            for (size_t i = 0; i < blobs.size() - 1; ++i) {
+                centers.push_back(((blobs[i+1].startX + blobs[i+1].endX)/2) - ((blobs[i].startX + blobs[i].endX)/2));
+                rights.push_back(blobs[i+1].endX - blobs[i].endX);
+            }
+            std::sort(centers.begin(), centers.end());
+            std::sort(rights.begin(), rights.end());
+            
+            // Heuristic: pick the one with tighter clustering? For now, pick rights for Honda-like, centers for others.
+            // Honda has very consistent rights.
+            int mid = centers.size() / 2;
+            medianPitch = centers[mid];
+            
+            oss << "Centers: "; for (int c : centers) oss << c << ",";
+            oss << " Rights: "; for (int r : rights) oss << r << ",";
         }
-        oss << " Rights: ";
-        for (size_t i = 0; i < blobs.size() - 1; ++i) {
-            oss << (blobs[i+1].endX - blobs[i].endX) << ",";
+    }
+    oss << "Pitch=" << medianPitch << " AvgM=" << avgBlobMass << " ";
+
+    // 4. Bidirectional Jump-and-Probe
+    auto getBoxMass = [&](int startX, int endX, int minY, int maxY) -> long {
+        long m = 0;
+        for (int x = std::max(0, startX); x < std::min(maxW, endX); ++x) {
+            for (int y = std::max(0, minY); y < std::min(maxH, maxY); ++y) {
+                if (mat->at<uint8_t>(y, x) > contentThreshold) m++;
+            }
+        }
+        return m;
+    };
+
+    if (medianPitch > 0 && avgBlobMass > 0) {
+        // Probe Left
+        int curL = (int)minX;
+        while (curL - medianPitch >= 0) {
+            int pL = curL - medianPitch;
+            int pR = curL;
+            long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
+            bool match = (pm >= 0.4 * avgBlobMass && pm <= 2.5 * avgBlobMass);
+            oss << "ProbeL[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
+            if (match) {
+                // Tighten to content inside window
+                int contentL = pR, contentR = pL;
+                for (int x = pL; x < pR; ++x) {
+                    if (!isValley(x, (int)minY, (int)maxY)) {
+                        contentL = std::min(contentL, x);
+                        contentR = std::max(contentR, x);
+                    }
+                }
+                minX = contentL;
+                curL = pL;
+            } else break;
+        }
+
+        // Probe Right
+        int curR = (int)maxX;
+        while (curR + medianPitch <= maxW) {
+            int pL = curR;
+            int pR = curR + medianPitch;
+            long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
+            bool match = (pm >= 0.4 * avgBlobMass && pm <= 2.5 * avgBlobMass);
+            oss << "ProbeR[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
+            if (match) {
+                int contentL = pR, contentR = pL;
+                for (int x = pL; x < pR; ++x) {
+                    if (!isValley(x, (int)minY, (int)maxY)) {
+                        contentL = std::min(contentL, x);
+                        contentR = std::max(contentR, x);
+                    }
+                }
+                maxX = contentR + 1;
+                curR = pR;
+            } else break;
         }
     }
 
