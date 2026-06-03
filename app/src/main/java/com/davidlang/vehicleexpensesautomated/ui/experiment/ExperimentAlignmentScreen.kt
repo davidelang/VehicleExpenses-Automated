@@ -1360,17 +1360,19 @@ private suspend fun runPaddleValleyIterative(
             
             val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
+            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${bIdx}", v) }
+            }
+
             currentOdoStr = odoB.toString().trim()
             val anns = mutableListOf<SnapshotAnnotation>()
             rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
             fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
-            
+
             val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
             currentThumb = sB64
             tSnTotal += ts
             jMeta.entrySet().forEach { e -> stageMeta[e.key] = e.value.asString }
-        }
-
+            }
         val tL = System.currentTimeMillis() - tS0
         allOdo.add(currentOdoStr)
         lastThumb = currentThumb
