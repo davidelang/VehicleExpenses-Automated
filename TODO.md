@@ -1,11 +1,11 @@
-## Active Execution: Set H First-Principles Profiling
-- [ ] **EXECUTE:** Implement first-principles character profiling for Set H.
-  - [ ] Implement bidirectional snapping walk in `NativeImageUtils.cpp`.
-  - [ ] Implement internal blob segmentation and mass reporting.
-  - [ ] Implement inter-blob distance calculations (centers and right-edges).
-  - [ ] Implement horizontal run-length histogram analysis (stroke width peaks).
-  - [ ] Update diagnostic trace with blob list and histogram data.
-  - [ ] Verify with `./build_app` and forensic analysis.
+## Active Execution: Visual Diagnostics & Uniform Scaling
+- [ ] **EXECUTE:** Implement per-step visual histograms and uniform 320x48 snapshots.
+  - [ ] Update `nativeExpandByCharacterAwareDiagnostic` in C++ to return the 256-bin run-length histogram.
+  - [ ] Update `NativeImageUtils.kt` to handle the histogram data from JNI.
+  - [ ] Implement `generateRunLengthHistogramB64` in `ExperimentAlignmentScreen.kt`.
+  - [ ] Standardize iterative snapshots to 320x48 and include plain/annotated side-by-side pairs.
+  - [ ] Update HTML report to show the histogram and `T=#` label for EVERY step/trial.
+  - [ ] Verify with `./build_app`.
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
 - [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
   - [x] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
