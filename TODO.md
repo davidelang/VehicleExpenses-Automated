@@ -1,11 +1,10 @@
 ## Active Execution: Visual Diagnostics & Uniform Scaling
-- [x] **DONE:** Implement per-step visual histograms and uniform 320x48 snapshots.
-  - [x] Update `nativeExpandByCharacterAwareDiagnostic` in C++ to return the 256-bin run-length histogram.
-  - [x] Update `NativeImageUtils.kt` to handle the histogram data from JNI.
-  - [x] Implement `generateRunLengthHistogramB64` in `ExperimentAlignmentScreen.kt`.
-  - [x] Standardize iterative snapshots to 320x48 and include plain/annotated side-by-side pairs.
-  - [x] Update HTML report to show the histogram and `T=#` label for EVERY step/trial.
-  - [x] Verified build success with `./build_app`.
+- [ ] **EXECUTE:** Fix implementation of visual histograms and uniform 320x48 snapshots.
+  - [ ] Refactor `TrialData` in `runBinTrialsPaddle` to store visual data (plain, annotated, histogram).
+  - [ ] Eliminate redundant RAW entry from `runBinTrialsPaddle`.
+  - [ ] Standardize all snapshots to 320x48.
+  - [ ] Update HTML generation loop to use the direct data mapping.
+  - [ ] Verify with `./build_app`.
 ## Active Execution: Iterative Hist Stage & Report De-Cluttering
 - [x] **DONE:** Implement iterative crop-level histogram stretching and report de-cluttering.
   - [x] Add \`applyContrastStretch(mat, low, high)\` to \`OdometerOcrUtils.kt\`.
