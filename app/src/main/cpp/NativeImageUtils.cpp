@@ -112,9 +112,7 @@ std::string renderHistogramB64(const std::map<int, int>& hHist, const std::map<i
         cv::line(canvas, cv::Point(x2, height - 25), cv::Point(x2, height - 25 + ticH), cv::Scalar(0,0,0), 2);
     }
     
-    std::vector<uint8_t> buf;
-    cv::imencode(".png", canvas, buf);
-    return base64_encode(buf.data(), buf.size());
+    return matToBase64(canvas);
 }
 
 // Refactored helper: only calculates angle, no longer returns struct
