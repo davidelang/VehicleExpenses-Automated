@@ -874,14 +874,28 @@ private suspend fun runBinTrialsPaddle(
         val histsHtml = StringBuilder()
         if (useCharAware && valleyResults.isNotEmpty()) {
             valleyResults.forEach { res ->
-                val slotsStr = res.second["charaware_slots"]
-                if (!slotsStr.isNullOrEmpty()) {
-                    val pts = slotsStr.split(",").mapNotNull { it.toIntOrNull() }
+                val mSlots = res.second["charaware_matched_slots"]
+                if (!mSlots.isNullOrEmpty()) {
+                    val pts = mSlots.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.YELLOW, 2))
+                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.WHITE, 1))
+                    }
+                }
+                val fSlots = res.second["charaware_failed_slots"]
+                if (!fSlots.isNullOrEmpty()) {
+                    val pts = fSlots.split(",").mapNotNull { it.toIntOrNull() }
+                    for (i in 0 until pts.size step 4) {
+                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.BLUE, 1))
                     }
                 }
             }
+
+            valleyResults.firstOrNull()?.second?.let { meta ->
+                val sW = meta["charaware_stroke_width"] ?: "0"
+                val p = meta["charaware_digitW"] ?: "0"
+                histsHtml.append("<br><b>Stroke Width:</b> $sW px | <b>Character Width (Pitch):</b> $p px")
+            }
+            
             tRawB.forEachIndexed { rIdx, rb ->
                 val h = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
                 if (h != null) {

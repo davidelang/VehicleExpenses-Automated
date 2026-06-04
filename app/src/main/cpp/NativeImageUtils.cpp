@@ -1201,84 +1201,92 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         while (maxX < maxW && !isValley((int)maxX, (int)minY, (int)maxY)) maxX += 1.0;
     }
 
-    std::vector<int> colMaxRuns;
-    for (int x = (int)minX; x < (int)maxX; ++x) {
-        colMaxRuns.push_back(getMaxRun((int)minY, (int)maxY, x, false));
-    }
-
-    struct Blob { int startX, endX; long mass; int maxRun; };
-    std::vector<Blob> blobs;
-    bool inBlob = false;
-    int blobStart = 0;
-    long currentMass = 0;
-    int currentMaxRun = 0;
-
     std::map<int, int> runHist;
     for (int y = (int)minY; y < (int)maxY; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
         int run = 0;
         for (int x = (int)minX; x < (int)maxX; ++x) {
             if (rowPtr[x] > contentThreshold) run++;
-            else { if (run > 0) runHist[run]++; run = 0; }
+            else { if (run > 0) runHist[std::min(255, run)]++; run = 0; }
         }
-        if (run > 0) runHist[run]++;
+        if (run > 0) runHist[std::min(255, run)]++;
     }
-
-    for (int x = 0; x < (int)colMaxRuns.size(); ++x) {
-        int mr = colMaxRuns[x];
-        bool valley = isValley(x + (int)minX, (int)minY, (int)maxY);
-        if (!inBlob && !valley) {
-            inBlob = true; blobStart = x + (int)minX; currentMass = 0; currentMaxRun = 0;
-        }
-        if (inBlob) {
-            if (valley) {
-                blobs.push_back({blobStart, x + (int)minX, currentMass, currentMaxRun});
-                inBlob = false;
-            } else {
-                currentMaxRun = std::max(currentMaxRun, mr);
-                for (int y = (int)minY; y < (int)maxY; ++y) {
-                    if (mat->at<uint8_t>(y, x + (int)minX) > contentThreshold) currentMass++;
-                }
-            }
-        }
-    }
-    if (inBlob) blobs.push_back({blobStart, (int)maxX, currentMass, currentMaxRun});
 
     std::vector<std::pair<int, int>> sortedHist(runHist.begin(), runHist.end());
     std::sort(sortedHist.begin(), sortedHist.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-    
     int strokeWidth = 10;
     for (const auto& p : sortedHist) { if (p.first > 3) { strokeWidth = p.first; break; } }
     long oneStrokeMass = strokeWidth * (maxY - minY);
     oss << "StrokeW=" << strokeWidth << " OneStrokeM=" << oneStrokeMass << " ";
 
-    int medianPitch = 0;
-    bool rightAnchored = false;
+    std::vector<int> colMaxRuns;
+    for (int x = (int)minX; x < (int)maxX; ++x) {
+        colMaxRuns.push_back(getMaxRun((int)minY, (int)maxY, x, false));
+    }
+    struct Blob { int startX, endX; long mass; int maxRun; };
+    std::vector<Blob> blobs; bool inBlob = false; int blobStart = 0; long currentMass = 0; int currentMaxRun = 0;
+    for (int x = 0; x < (int)colMaxRuns.size(); ++x) {
+        int mr = colMaxRuns[x]; bool valley = isValley(x + (int)minX, (int)minY, (int)maxY);
+        if (!inBlob && !valley) { inBlob = true; blobStart = x + (int)minX; currentMass = 0; currentMaxRun = 0; }
+        if (inBlob) {
+            if (valley) { blobs.push_back({blobStart, x + (int)minX, currentMass, currentMaxRun}); inBlob = false; }
+            else {
+                currentMaxRun = std::max(currentMaxRun, mr);
+                for (int y = (int)minY; y < (int)maxY; ++y) { if (mat->at<uint8_t>(y, x + (int)minX) > contentThreshold) currentMass++; }
+            }
+        }
+    }
+    if (inBlob) blobs.push_back({blobStart, (int)maxX, currentMass, currentMaxRun});
+
+    int medianPitch = 0; bool rightAnchored = false;
     if (blobs.size() > 1) {
         std::vector<int> centers, rights;
         for (size_t i = 0; i < blobs.size() - 1; ++i) {
             centers.push_back(((blobs[i+1].startX + blobs[i+1].endX)/2) - ((blobs[i].startX + blobs[i].endX)/2));
             rights.push_back(blobs[i+1].endX - blobs[i].endX);
         }
-        std::sort(centers.begin(), centers.end());
-        std::sort(rights.begin(), rights.end());
+        std::sort(centers.begin(), centers.end()); std::sort(rights.begin(), rights.end());
         int rRange = rights.back() - rights.front();
         if (rRange < 15) rightAnchored = true;
         medianPitch = rightAnchored ? rights[rights.size()/2] : centers[centers.size()/2];
         oss << "Pitch=" << medianPitch << " Anchor=" << (rightAnchored ? "RIGHT" : "CENTER") << " ";
     }
 
-    std::vector<cv::Rect> slots;
+    // Grid Alignment Phase Shift
+    int bestShift = 0;
+    if (medianPitch > 0) {
+        long minBoundaryDensity = 9999999;
+        for (int shift = -10; shift <= 10; ++shift) {
+            long currentDensity = 0;
+            if (rightAnchored) {
+                for (int x = (int)maxX + shift; x > (int)minX; x -= medianPitch) {
+                    currentDensity += getMaxRun((int)minY, (int)maxY, x, false);
+                }
+            } else {
+                int startC = (blobs[0].startX + blobs[0].endX) / 2;
+                int startX = startC - (medianPitch / 2) + shift;
+                for (int x = startX; x < (int)maxX; x += medianPitch) {
+                    currentDensity += getMaxRun((int)minY, (int)maxY, x, false);
+                }
+            }
+            if (currentDensity < minBoundaryDensity) {
+                minBoundaryDensity = currentDensity;
+                bestShift = shift;
+            }
+        }
+    }
+
+    std::vector<cv::Rect> matchedSlots, failedSlots;
     if (medianPitch > 0 && blobs.size() > 0) {
         if (rightAnchored) {
-            for (int x = (int)maxX; x > (int)minX; x -= medianPitch) {
-                slots.push_back(cv::Rect(x - medianPitch, (int)minY, medianPitch, (int)maxY - (int)minY));
+            for (int x = (int)maxX + bestShift; x > (int)minX; x -= medianPitch) {
+                matchedSlots.push_back(cv::Rect(x - medianPitch, (int)minY, medianPitch, (int)maxY - (int)minY));
             }
         } else {
             int startC = (blobs[0].startX + blobs[0].endX) / 2;
-            int startX = startC - (medianPitch / 2);
+            int startX = startC - (medianPitch / 2) + bestShift;
             for (int x = startX; x < (int)maxX; x += medianPitch) {
-                slots.push_back(cv::Rect(x, (int)minY, medianPitch, (int)maxY - (int)minY));
+                matchedSlots.push_back(cv::Rect(x, (int)minY, medianPitch, (int)maxY - (int)minY));
             }
         }
     }
@@ -1294,35 +1302,41 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     };
 
     if (medianPitch > 0 && oneStrokeMass > 0) {
-        int curL = (int)minX;
+        int curL = (int)minX + bestShift;
         while (curL - medianPitch >= 0) {
             int pL = curL - medianPitch, pR = curL;
             long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
             bool match = (pm >= 0.5 * oneStrokeMass && pm <= 4.0 * oneStrokeMass);
             oss << "ProbeL[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
-            slots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
             if (match) {
                 int contentL = pR, contentR = pL;
                 for (int x = pL; x < pR; ++x) {
                     if (!isValley(x, (int)minY, (int)maxY)) { contentL = std::min(contentL, x); contentR = std::max(contentR, x); }
                 }
                 minX = contentL; curL = pL;
-            } else break;
+                matchedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+            } else {
+                failedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+                break;
+            }
         }
-        int curR = (int)maxX;
+        int curR = (int)maxX + bestShift;
         while (curR + medianPitch <= maxW) {
             int pL = curR, pR = curR + medianPitch;
             long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
             bool match = (pm >= 0.5 * oneStrokeMass && pm <= 4.0 * oneStrokeMass);
             oss << "ProbeR[" << pL << "-" << pR << "]:m=" << pm << (match ? " (MATCH) " : " (STOP) ");
-            slots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
             if (match) {
                 int contentL = pR, contentR = pL;
                 for (int x = pL; x < pR; ++x) {
                     if (!isValley(x, (int)minY, (int)maxY)) { contentL = std::min(contentL, x); contentR = std::max(contentR, x); }
                 }
                 maxX = contentR + 1; curR = pR;
-            } else break;
+                matchedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+            } else {
+                failedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+                break;
+            }
         }
     }
 
@@ -1331,32 +1345,41 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         oss << sortedHist[i].first << "(" << sortedHist[i].second << ") ";
     }
 
-    jintArray slotsArr = env->NewIntArray(slots.size() * 4);
-    if (slots.size() > 0) {
-        jint* sData = new jint[slots.size() * 4];
-        for (size_t i = 0; i < slots.size(); ++i) {
-            sData[i*4+0] = slots[i].x; sData[i*4+1] = slots[i].y; sData[i*4+2] = slots[i].x + slots[i].width; sData[i*4+3] = slots[i].y + slots[i].height;
+    auto packSlots = [&](const std::vector<cv::Rect>& v) -> jintArray {
+        jintArray arr = env->NewIntArray(v.size() * 4);
+        if (!v.empty()) {
+            jint* data = new jint[v.size() * 4];
+            for (size_t i = 0; i < v.size(); ++i) {
+                data[i*4+0] = v[i].x; data[i*4+1] = v[i].y; data[i*4+2] = v[i].x + v[i].width; data[i*4+3] = v[i].y + v[i].height;
+            }
+            env->SetIntArrayRegion(arr, 0, v.size() * 4, data);
+            delete[] data;
         }
-        env->SetIntArrayRegion(slotsArr, 0, slots.size() * 4, sData);
-        delete[] sData;
-    }
+        return arr;
+    };
+
+    jintArray matchedArr = packSlots(matchedSlots);
+    jintArray failedArr = packSlots(failedSlots);
 
     jintArray summary = env->NewIntArray(16);
-    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)strokeWidth, (jint)oneStrokeMass, (jint)maxW };
+    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)strokeWidth, (jint)oneStrokeMass, (jint)medianPitch };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
-    jintArray histogramArr = env->NewIntArray(256);
-    jint h[256] = {0};
-    for (const auto& pair : runHist) { if (pair.first >= 0 && pair.first < 256) h[pair.first] = pair.second; }
-    env->SetIntArrayRegion(histogramArr, 0, 256, h);
+    jintArray histogramArr = env->NewIntArray(128);
+    jint h[128] = {0};
+    for (int i = 0; i < 256; i += 2) {
+        h[i/2] = runHist[i] + runHist[i+1];
+    }
+    env->SetIntArrayRegion(histogramArr, 0, 128, h);
 
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(4, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(5, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
     env->SetObjectArrayElement(resultArr, 2, histogramArr);
-    env->SetObjectArrayElement(resultArr, 3, slotsArr);
+    env->SetObjectArrayElement(resultArr, 3, matchedArr);
+    env->SetObjectArrayElement(resultArr, 4, failedArr);
 
     return resultArr;
 }
@@ -1392,25 +1415,27 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         int run = 0;
         for (int x = minL; x < maxR; ++x) {
             if (rowPtr[x] > contentThreshold) run++;
-            else { if (run > 0) horizHist[run]++; run = 0; }
+            else { if (run > 0) horizHist[std::min(255, run)]++; run = 0; }
         }
-        if (run > 0) horizHist[run]++;
+        if (run > 0) horizHist[std::min(255, run)]++;
     }
     for (int x = minL; x < maxR; ++x) {
         int run = 0;
         for (int y = minT; y < maxB; ++y) {
             if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
-            else { if (run > 0) vertHist[run]++; run = 0; }
+            else { if (run > 0) vertHist[std::min(255, run)]++; run = 0; }
         }
-        if (run > 0) vertHist[run]++;
+        if (run > 0) vertHist[std::min(255, run)]++;
     }
 
-    jintArray hArr = env->NewIntArray(256), vArr = env->NewIntArray(256);
-    jint hData[256] = {0}, vData[256] = {0};
-    for (const auto& pair : horizHist) { if (pair.first >= 0 && pair.first < 256) hData[pair.first] = pair.second; }
-    for (const auto& pair : vertHist) { if (pair.first >= 0 && pair.first < 256) vData[pair.first] = pair.second; }
-    env->SetIntArrayRegion(hArr, 0, 256, hData);
-    env->SetIntArrayRegion(vArr, 0, 256, vData);
+    jintArray hArr = env->NewIntArray(128), vArr = env->NewIntArray(128);
+    jint hData[128] = {0}, vData[128] = {0};
+    for (int i = 0; i < 256; i += 2) {
+        hData[i/2] = horizHist[i] + horizHist[i+1];
+        vData[i/2] = vertHist[i] + vertHist[i+1];
+    }
+    env->SetIntArrayRegion(hArr, 0, 128, hData);
+    env->SetIntArrayRegion(vArr, 0, 128, vData);
 
     jclass objClass = env->FindClass("java/lang/Object");
     jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
