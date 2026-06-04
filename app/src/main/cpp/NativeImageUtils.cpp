@@ -1289,6 +1289,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     long oneStrokeMass = vSW * (maxY - minY);
     oss << "vSW=" << vSW << " hSW=" << hSW << " OneStrokeM=" << oneStrokeMass << " ";
 
+    std::vector<std::pair<int, int>> sortedHist(horizRunHist.begin(), horizRunHist.end());
+    std::sort(sortedHist.begin(), sortedHist.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+
     // Forensic Filter Images
     cv::Mat core(mat->rows, mat->cols, CV_8UC1, cv::Scalar(0));
     cv::Mat temp; cv::threshold((*mat), temp, contentThreshold, 255, cv::THRESH_BINARY);
