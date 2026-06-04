@@ -286,4 +286,57 @@ object NativeImageUtils {
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
 
+    // --------------------------------------------------------
+    // SET H MODULAR PIPELINE — New granular JNI bindings.
+    // No existing functions were modified.
+    // --------------------------------------------------------
+
+    /** Filters connected components in-place on a binary Mat (CV_8UC1).
+     *  mode 0=PassA, 1=PassB, 2=PassC. Pass odoBuffer.s.mat after binarizing from .p. */
+    fun filterComponents(mat: Mat, vSW: Float, hSW: Float, mode: Int) {
+        nativeFilterComponents(mat.nativeObj, vSW, hSW, mode)
+    }
+
+    /** Histogram + vSW/hSW peak estimation with explicit thresholdFactor on odoBuffer.p.mat.
+     *  Returns Pair(Pair(hArr, vArr), metaArr) where metaArr=[vSW,hSW,0,contentThreshold]. */
+    fun calculateHistogramWithThreshold(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
+        if (rects.isEmpty()) return null
+        val flatRects = IntArray(rects.size * 4)
+        rects.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
+        val res = nativeCalculateHistogramWithThreshold(mat.nativeObj, flatRects, thresholdFactor)
+        if (res != null && res.size == 3) return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
+        return null
+    }
+
+    /** Vertical walk + bidirectional snapping on odoBuffer.p.mat.
+     *  Returns the initial bounds rect for use by calculatePitch. */
+    fun expandBounds(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float): android.graphics.Rect {
+        val res = nativeExpandBounds(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
+    }
+
+    /** Valley detection + pitch/anchorMode/bestShift on odoBuffer.p.mat within the given bounds.
+     *  Returns IntArray[3] = [pitch, anchorMode(1=right/0=center), bestShift], or null. */
+    fun calculatePitch(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float): IntArray? {
+        return nativeCalculatePitch(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, thresholdFactor)
+    }
+
+    /** Character-aware horizontal expansion using pitch + vSW mass check on odoBuffer.p.mat.
+     *  Returns Triple(finalBoundsRect, matchedSlots flat IntArray, failedSlots flat IntArray), or null. */
+    fun alignGrid(mat: Mat, bounds: android.graphics.Rect, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Triple<android.graphics.Rect, IntArray, IntArray>? {
+        val res = nativeAlignGrid(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, pitch, bestShift, anchorMode, vSW, hSW, thresholdFactor)
+        if (res != null && res.size == 3) {
+            val fb = res[0] as IntArray
+            return Triple(android.graphics.Rect(fb[0], fb[1], fb[2], fb[3]), res[1] as IntArray, res[2] as IntArray)
+        }
+        return null
+    }
+
+    private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
+    private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
+    private external fun nativeExpandBounds(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float): IntArray?
+    private external fun nativeCalculatePitch(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float): IntArray?
+    private external fun nativeAlignGrid(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
+
 }
+

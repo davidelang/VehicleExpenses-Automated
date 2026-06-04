@@ -1542,3 +1542,389 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 
     return resultArr;
 }
+
+// ============================================================
+// SET H MODULAR PIPELINE — NEW GRANULAR JNI FUNCTIONS
+// These are brand-new additions. No existing functions were modified.
+// All logical operations (histograms, bounds walks, pitch, grid)
+// take odoBuffer.p.mat. filterComponents takes a pre-binarized
+// odoBuffer.s.mat as the scratchpad.
+// ============================================================
+
+// Helper: compute contentThreshold from matPtr ROI using thresholdFactor.
+// If thresholdFactor > 1.0, treat it as an absolute threshold value.
+// Otherwise compute dynamically: max(15.0, meanVal * thresholdFactor).
+static double computeThreshold(const cv::Mat& mat, int L, int T, int R, int B, float thresholdFactor) {
+    if (thresholdFactor > 1.0f) return (double)thresholdFactor;
+    int safeL = std::max(0, std::min(L, mat.cols - 1));
+    int safeT = std::max(0, std::min(T, mat.rows - 1));
+    int safeR = std::max(safeL + 1, std::min(R, mat.cols));
+    int safeB = std::max(safeT + 1, std::min(B, mat.rows));
+    cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
+    cv::Scalar meanVal = cv::mean(mat(roi));
+    return std::max(15.0, meanVal[0] * (double)thresholdFactor);
+}
+
+// 1. nativeFilterComponents
+// Filters connected components in-place on a binary Mat (CV_8UC1).
+// mode 0 = Pass A (w < 0.5*vSW AND h < 0.5*hSW)
+// mode 1 = Pass B (w < 0.5*vSW only)
+// mode 2 = Pass C (h < 0.5*hSW only)
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFilterComponents(
+    JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW, jint mode) {
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
+    filterComponents(*mat, vSW, hSW, (int)mode);
+}
+
+// 2. nativeCalculateHistogramWithThreshold
+// Computes horizontal/vertical run-length histograms and vSW/hSW peaks
+// on odoBuffer.p.mat using the provided thresholdFactor.
+// Returns jobjectArray[3]: hArr(256), vArr(256), metaArr(4=[vSW,hSW,0,threshold])
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramWithThreshold(
+    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    jsize len = env->GetArrayLength(rects);
+    if (len % 4 != 0 || len == 0) return nullptr;
+
+    jint* rData = env->GetIntArrayElements(rects, nullptr);
+    int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
+    for (int i = 0; i < len; i += 4) {
+        minL = std::min(minL, (int)rData[i]);
+        minT = std::min(minT, (int)rData[i+1]);
+        maxR = std::max(maxR, (int)rData[i+2]);
+        maxB = std::max(maxB, (int)rData[i+3]);
+    }
+    env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
+
+    minL = std::max(0, std::min(minL, mat->cols - 1));
+    minT = std::max(0, std::min(minT, mat->rows - 1));
+    maxR = std::max(minL + 1, std::min(maxR, mat->cols));
+    maxB = std::max(minT + 1, std::min(maxB, mat->rows));
+
+    double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
+
+    std::map<int,int> horizHist, vertHist;
+    for (int y = minT; y < maxB; ++y) {
+        const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = minL; x < maxR; ++x) {
+            if (rowPtr[x] > contentThreshold) run++;
+            else { if (run > 0) horizHist[std::min(255,run)]++; run = 0; }
+        }
+        if (run > 0) horizHist[std::min(255,run)]++;
+    }
+    for (int x = minL; x < maxR; ++x) {
+        int run = 0;
+        for (int y = minT; y < maxB; ++y) {
+            if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
+            else { if (run > 0) vertHist[std::min(255,run)]++; run = 0; }
+        }
+        if (run > 0) vertHist[std::min(255,run)]++;
+    }
+
+    auto getPeakCapped = [](const std::map<int,int>& h, int maxVal) -> int {
+        int bestIdx = 10, bestVal = -1;
+        for (auto const& [k, v] : h) {
+            if (k > 3 && k <= maxVal && v > bestVal) { bestVal = v; bestIdx = k; }
+        }
+        return bestIdx;
+    };
+    int vSWv = getPeakCapped(horizHist, std::max(15, (int)((maxR - minL) * 0.35)));
+    int hSWv = getPeakCapped(vertHist,  std::max(15, (int)((maxB - minT) * 0.35)));
+
+    jintArray hArr = env->NewIntArray(256);
+    jintArray vArr = env->NewIntArray(256);
+    jint hData[256] = {0}, vData[256] = {0};
+    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < 256) hData[p.first] = p.second; }
+    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < 256) vData[p.first] = p.second; }
+    env->SetIntArrayRegion(hArr, 0, 256, hData);
+    env->SetIntArrayRegion(vArr, 0, 256, vData);
+
+    jintArray metaArr = env->NewIntArray(4);
+    jint m[4] = { (jint)vSWv, (jint)hSWv, 0, (jint)contentThreshold };
+    env->SetIntArrayRegion(metaArr, 0, 4, m);
+
+    jclass objClass2 = env->FindClass("java/lang/Object");
+    jobjectArray resultArr2 = env->NewObjectArray(3, objClass2, nullptr);
+    env->SetObjectArrayElement(resultArr2, 0, hArr);
+    env->SetObjectArrayElement(resultArr2, 1, vArr);
+    env->SetObjectArrayElement(resultArr2, 2, metaArr);
+    return resultArr2;
+}
+
+// 3. nativeExpandBounds
+// Vertical walk + bidirectional horizontal snapping on odoBuffer.p.mat.
+// Produces the initial [minX, minY, maxX, maxY] used as input to nativeCalculatePitch.
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandBounds(
+    JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    int maxW = mat->cols, maxH = mat->rows;
+    double contentThreshold = computeThreshold(*mat, L, T, R, B, thresholdFactor);
+
+    auto getMaxRunEB = [&](int start, int end, int fixed, bool horizontal) -> int {
+        int currentRun = 0, maxRun = 0;
+        if (horizontal) {
+            if (fixed < 0 || fixed >= maxH) return 0;
+            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
+            for (int i = std::max(0, start); i < std::min(maxW, end); ++i) {
+                if (rowPtr[i] > contentThreshold) { currentRun++; if (currentRun > maxRun) maxRun = currentRun; }
+                else currentRun = 0;
+            }
+        } else {
+            if (fixed < 0 || fixed >= maxW) return 0;
+            for (int i = std::max(0, start); i < std::min(maxH, end); ++i) {
+                if (mat->at<uint8_t>(i, fixed) > contentThreshold) { currentRun++; if (currentRun > maxRun) maxRun = currentRun; }
+                else currentRun = 0;
+            }
+        }
+        return maxRun;
+    };
+
+    auto isValleyEB = [&](int x, int mnY, int mxY) -> bool {
+        int h = mxY - mnY;
+        int cut = std::max(1, (int)(h * 0.10));
+        return getMaxRunEB(mnY + cut, mxY - cut, x, false) < 5;
+    };
+
+    double minX = L, maxX = R, minY = T, maxY = B;
+    double vL = (maxY - minY) * 1.5;
+
+    while (minY > 0 && (T - minY) < vL) {
+        if (getMaxRunEB((int)minX, (int)maxX, (int)minY - 1, true) < 3) break;
+        minY -= 1.0;
+    }
+    while (maxY < maxH - 1 && (maxY - B) < vL) {
+        if (getMaxRunEB((int)minX, (int)maxX, (int)maxY + 1, true) < 3) break;
+        maxY += 1.0;
+    }
+
+    if (isValleyEB((int)minX, (int)minY, (int)maxY)) {
+        while (minX < maxX && isValleyEB((int)minX, (int)minY, (int)maxY)) minX += 1.0;
+    } else {
+        while (minX > 0 && !isValleyEB((int)minX - 1, (int)minY, (int)maxY)) minX -= 1.0;
+    }
+    if (isValleyEB((int)maxX - 1, (int)minY, (int)maxY)) {
+        while (maxX > minX && isValleyEB((int)maxX - 1, (int)minY, (int)maxY)) maxX -= 1.0;
+    } else {
+        while (maxX < maxW && !isValleyEB((int)maxX, (int)minY, (int)maxY)) maxX += 1.0;
+    }
+
+    jintArray result = env->NewIntArray(4);
+    jint dims[4] = { (jint)minX, (jint)minY, (jint)maxX, (jint)maxY };
+    env->SetIntArrayRegion(result, 0, 4, dims);
+    return result;
+}
+
+// 4. nativeCalculatePitch
+// Identifies valleys within [minX,minY,maxX,maxY] on odoBuffer.p.mat,
+// clusters blobs, estimates display pitch via median blob-to-blob spacing,
+// and finds the best phase shift for the grid.
+// Returns jintArray[3]: [pitch, anchorMode(1=right/0=center), bestShift]
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculatePitch(
+    JNIEnv* env, jobject thiz, jlong matPtr, jint minX, jint minY, jint maxX, jint maxY, jfloat thresholdFactor) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    int maxW = mat->cols, maxH = mat->rows;
+    double contentThreshold = computeThreshold(*mat, minX, minY, maxX, maxY, thresholdFactor);
+
+    auto getMaxRunCP = [&](int start, int end, int fixed, bool horizontal) -> int {
+        int currentRun = 0, maxRun = 0;
+        if (horizontal) {
+            if (fixed < 0 || fixed >= maxH) return 0;
+            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
+            for (int i = std::max(0, start); i < std::min(maxW, end); ++i) {
+                if (rowPtr[i] > contentThreshold) { currentRun++; if (currentRun > maxRun) maxRun = currentRun; }
+                else currentRun = 0;
+            }
+        } else {
+            if (fixed < 0 || fixed >= maxW) return 0;
+            for (int i = std::max(0, start); i < std::min(maxH, end); ++i) {
+                if (mat->at<uint8_t>(i, fixed) > contentThreshold) { currentRun++; if (currentRun > maxRun) maxRun = currentRun; }
+                else currentRun = 0;
+            }
+        }
+        return maxRun;
+    };
+
+    auto isValleyCP = [&](int x, int mnY, int mxY) -> bool {
+        int h = mxY - mnY;
+        int cut = std::max(1, (int)(h * 0.10));
+        return getMaxRunCP(mnY + cut, mxY - cut, x, false) < 5;
+    };
+
+    struct Blob { int startX, endX; };
+    std::vector<Blob> blobs;
+    bool inBlob = false; int blobStart = 0;
+    for (int x = (int)minX; x < (int)maxX; ++x) {
+        bool valley = isValleyCP(x, (int)minY, (int)maxY);
+        if (!inBlob && !valley) { inBlob = true; blobStart = x; }
+        if (inBlob && valley)  { blobs.push_back({blobStart, x}); inBlob = false; }
+    }
+    if (inBlob) blobs.push_back({blobStart, (int)maxX});
+
+    int medianPitch = 0, anchorMode = 0, bestShift = 0;
+    if (blobs.size() > 1) {
+        std::vector<int> centers, rights;
+        for (size_t i = 0; i < blobs.size() - 1; ++i) {
+            centers.push_back(((blobs[i+1].startX + blobs[i+1].endX)/2) - ((blobs[i].startX + blobs[i].endX)/2));
+            rights.push_back(blobs[i+1].endX - blobs[i].endX);
+        }
+        std::sort(centers.begin(), centers.end());
+        std::sort(rights.begin(), rights.end());
+        int rRange = rights.back() - rights.front();
+        anchorMode = (rRange < 15) ? 1 : 0;
+        medianPitch = anchorMode ? rights[rights.size()/2] : centers[centers.size()/2];
+
+        if (medianPitch > 0) {
+            long minBoundaryDensity = 9999999;
+            for (int shift = -10; shift <= 10; ++shift) {
+                long currentDensity = 0;
+                if (anchorMode) {
+                    for (int x = (int)maxX + shift; x > (int)minX; x -= medianPitch)
+                        currentDensity += getMaxRunCP((int)minY, (int)maxY, x, false);
+                } else {
+                    int startC = (blobs[0].startX + blobs[0].endX) / 2;
+                    int startX2 = startC - (medianPitch / 2) + shift;
+                    for (int x = startX2; x < (int)maxX; x += medianPitch)
+                        currentDensity += getMaxRunCP((int)minY, (int)maxY, x, false);
+                }
+                if (currentDensity < minBoundaryDensity) {
+                    minBoundaryDensity = currentDensity;
+                    bestShift = shift;
+                }
+            }
+        }
+    }
+
+    jintArray result = env->NewIntArray(3);
+    jint r[3] = { (jint)medianPitch, (jint)anchorMode, (jint)bestShift };
+    env->SetIntArrayRegion(result, 0, 3, r);
+    return result;
+}
+
+// 5. nativeAlignGrid
+// Character-aware horizontal expansion using pitch + vSW mass check.
+// Probes adjacent character slots outward from the initial bounds.
+// A slot matches if its pixel mass is between 0.5x and 4x the oneStrokeMass.
+// Returns jobjectArray[3]:
+//   [0] jintArray finalBounds [minX, minY, maxX, maxY]
+//   [1] jintArray matchedSlots [l,t,r,b, ...]
+//   [2] jintArray failedSlots  [l,t,r,b, ...]
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAlignGrid(
+    JNIEnv* env, jobject thiz, jlong matPtr,
+    jint minX, jint minY, jint maxX, jint maxY,
+    jint pitch, jint bestShift, jint anchorMode,
+    jfloat vSW, jfloat hSW, jfloat thresholdFactor) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    int maxW = mat->cols, maxH = mat->rows;
+    double contentThreshold = computeThreshold(*mat, minX, minY, maxX, maxY, thresholdFactor);
+
+    auto isValleyAG = [&](int x, int mnY, int mxY) -> bool {
+        int h = mxY - mnY;
+        int cut = std::max(1, (int)(h * 0.10));
+        int curRun = 0, mxRun = 0;
+        if (x < 0 || x >= maxW) return true;
+        for (int i = std::max(0, mnY + cut); i < std::min(maxH, mxY - cut); ++i) {
+            if (mat->at<uint8_t>(i, x) > contentThreshold) { curRun++; if (curRun > mxRun) mxRun = curRun; }
+            else curRun = 0;
+        }
+        return mxRun < 5;
+    };
+
+    auto getBoxMass = [&](int startX, int endX, int mnY, int mxY) -> long {
+        long m = 0;
+        for (int x = std::max(0, startX); x < std::min(maxW, endX); ++x)
+            for (int y = std::max(0, mnY); y < std::min(maxH, mxY); ++y)
+                if (mat->at<uint8_t>(y, x) > contentThreshold) m++;
+        return m;
+    };
+
+    long oneStrokeMass = (long)vSW * (maxY - minY);
+    double curMinX = minX, curMaxX = maxX;
+    std::vector<cv::Rect> matchedSlots, failedSlots;
+
+    if (pitch > 0 && oneStrokeMass > 0) {
+        int curL = (int)curMinX + bestShift;
+        while (curL - pitch >= 0) {
+            int pL = curL - pitch, pR = curL;
+            long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
+            bool match = (pm >= 0.5 * oneStrokeMass && pm <= 4.0 * oneStrokeMass);
+            if (match) {
+                int contentL = pR, contentR = pL;
+                for (int x = pL; x < pR; ++x) {
+                    if (!isValleyAG(x, (int)minY, (int)maxY)) {
+                        contentL = std::min(contentL, x);
+                        contentR = std::max(contentR, x);
+                    }
+                }
+                curMinX = contentL; curL = pL;
+                matchedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+            } else {
+                failedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+                break;
+            }
+        }
+        int curR = (int)curMaxX + bestShift;
+        while (curR + pitch <= maxW) {
+            int pL = curR, pR = curR + pitch;
+            long pm = getBoxMass(pL, pR, (int)minY, (int)maxY);
+            bool match = (pm >= 0.5 * oneStrokeMass && pm <= 4.0 * oneStrokeMass);
+            if (match) {
+                int contentL = pR, contentR = pL;
+                for (int x = pL; x < pR; ++x) {
+                    if (!isValleyAG(x, (int)minY, (int)maxY)) {
+                        contentL = std::min(contentL, x);
+                        contentR = std::max(contentR, x);
+                    }
+                }
+                curMaxX = contentR + 1; curR = pR;
+                matchedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+            } else {
+                failedSlots.push_back(cv::Rect(pL, (int)minY, pR - pL, (int)maxY - (int)minY));
+                break;
+            }
+        }
+    }
+
+    auto packSlotsAG = [&](const std::vector<cv::Rect>& v) -> jintArray {
+        jintArray arr = env->NewIntArray(v.size() * 4);
+        if (!v.empty()) {
+            jint* data = new jint[v.size() * 4];
+            for (size_t i = 0; i < v.size(); ++i) {
+                data[i*4+0] = v[i].x; data[i*4+1] = v[i].y;
+                data[i*4+2] = v[i].x + v[i].width; data[i*4+3] = v[i].y + v[i].height;
+            }
+            env->SetIntArrayRegion(arr, 0, v.size() * 4, data);
+            delete[] data;
+        }
+        return arr;
+    };
+
+    jintArray finalBoundsArr = env->NewIntArray(4);
+    jint fb[4] = { (jint)curMinX, (jint)minY, (jint)curMaxX, (jint)maxY };
+    env->SetIntArrayRegion(finalBoundsArr, 0, 4, fb);
+
+    jclass objClassAG = env->FindClass("java/lang/Object");
+    jobjectArray resultArrAG = env->NewObjectArray(3, objClassAG, nullptr);
+    env->SetObjectArrayElement(resultArrAG, 0, finalBoundsArr);
+    env->SetObjectArrayElement(resultArrAG, 1, packSlotsAG(matchedSlots));
+    env->SetObjectArrayElement(resultArrAG, 2, packSlotsAG(failedSlots));
+    return resultArrAG;
+}
