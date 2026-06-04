@@ -1227,13 +1227,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         }
         if (run > 0) redVHist[std::min(255, run)]++;
     }
-    auto getPeak = [](const std::map<int, int>& h) -> int {
+    auto getPeak = [](const std::map<int, int>& h, int maxVal) -> int {
         int bestIdx = 10, bestVal = -1;
-        for (auto const& [k, v] : h) { if (k > 3 && v > bestVal) { bestVal = v; bestIdx = k; } }
+        for (auto const& [k, v] : h) {
+            if (k > 3 && k <= maxVal && v > bestVal) {
+                bestVal = v;
+                bestIdx = k;
+            }
+        }
         return bestIdx;
     };
-    int vSW_red = getPeak(redHHist);
-    int hSW_red = getPeak(redVHist);
+    int vSW_red = getPeak(redHHist, std::max(15, (int)((R - L) * 0.35)));
+    int hSW_red = getPeak(redVHist, std::max(15, (int)((B - T) * 0.35)));
 
     while (minY > 0 && (T - minY) < vL) {
         if (getMaxRun((int)minX, (int)maxX, (int)minY - 1, true) < 3) break;
@@ -1274,8 +1279,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (run > 0) vertRunHist[std::min(255, run)]++;
     }
 
-    int vSW = getPeak(horizRunHist); 
-    int hSW = getPeak(vertRunHist);  
+    int vSW = getPeak(horizRunHist, std::max(15, (int)((maxX - minX) * 0.35))); 
+    int hSW = getPeak(vertRunHist, std::max(15, (int)((maxY - minY) * 0.35)));  
     long oneStrokeMass = vSW * (maxY - minY);
     oss << "vSW=" << vSW << " hSW=" << hSW << " OneStrokeM=" << oneStrokeMass << " ";
 
@@ -1442,7 +1447,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jintArray failedArr = packSlots(failedSlots);
 
     jintArray summary = env->NewIntArray(16);
-    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)vSW, (jint)hSW, (jint)medianPitch };
+    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)vSW_red, (jint)hSW_red, (jint)medianPitch };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
     jstring imgAB64 = env->NewStringUTF(matToBase64(passA).c_str());
