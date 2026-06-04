@@ -1,11 +1,10 @@
 # TODO
 
-## Active Execution: Update Histograms and Metadata Labels
-- [ ] **EXECUTE:** Implement bin-5 histograms, fix run caps, and add Pitch to box labels.
-  - [ ] Update `NativeImageUtils.cpp`: Return full 256-element arrays across JNI.
-  - [ ] Update `NativeImageUtils.kt`: Adapt JNI signatures and metadata storage.
-  - [ ] Update `ExperimentAlignmentScreen.kt`: Implement Kotlin-side bin-5 rendering and box metadata labels.
-  - [ ] **VERIFY:** Confirm bin-5 histogram display and accurate box labels in HTML.
+## Active Execution: Revert Binning and Restore Diagnostic Images
+- [ ] **EXECUTE:** Restore Pass A/B/C images and revert histogram binning to 2.
+  - [ ] Update `ExperimentAlignmentScreen.kt`: Revert `binSize` to 2 in `generateDualHistogramB64`.
+  - [ ] Update `ExperimentAlignmentScreen.kt`: Restore Pass A, B, C images in the HTML report.
+  - [ ] **VERIFY:** Confirm Pass A/B/C visibility and bin-2 histogram display in HTML.
   - [ ] Verify build with `./build_app`.
 
 - [x] Refactor Agent Workspace Syncing

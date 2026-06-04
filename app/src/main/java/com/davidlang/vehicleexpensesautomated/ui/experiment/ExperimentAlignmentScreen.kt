@@ -893,6 +893,14 @@ private suspend fun runBinTrialsPaddle(
             valleyResults.firstOrNull()?.second?.let { meta ->
                 val p = meta["charaware_pitch"] ?: "0"
                 histsHtml.append("<br><b>Overall Pitch (from 1st Red Box):</b> $p px")
+
+                val imgA = meta["charaware_img_a"] ?: ""
+                val imgB = meta["charaware_img_b"] ?: ""
+                val imgC = meta["charaware_img_c"] ?: ""
+                
+                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed):</small><br><img src='data:image/jpeg;base64,$imgA'>")
+                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed):</small><br><img src='data:image/jpeg;base64,$imgB'>")
+                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed):</small><br><img src='data:image/jpeg;base64,$imgC'>")
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
@@ -1182,8 +1190,8 @@ private fun generateRunLengthHistogramB64(histStr: String?): String {
 private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
     if (hHist == null || vHist == null || hHist.size < 256 || vHist.size < 256) return ""
     
-    val binSize = 5
-    val numBins = (256 + binSize - 1) / binSize // 52 bins
+    val binSize = 2
+    val numBins = (256 + binSize - 1) / binSize // 128 bins
     
     val bH = IntArray(numBins)
     val bV = IntArray(numBins)
