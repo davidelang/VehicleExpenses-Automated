@@ -891,39 +891,29 @@ private suspend fun runBinTrialsPaddle(
             }
 
             valleyResults.firstOrNull()?.second?.let { meta ->
-                val vSW = meta["charaware_v_stroke"] ?: "0"
-                val hSW = meta["charaware_h_stroke"] ?: "0"
                 val p = meta["charaware_pitch"] ?: "0"
-                histsHtml.append("<br><b>vSW:</b> $vSW px | <b>hSW:</b> $hSW px | <b>Pitch:</b> $p px")
-                
-                val hHistStr = meta["charaware_h_hist"] ?: ""
-                val vHistStr = meta["charaware_v_hist"] ?: ""
-                val hHist = if (hHistStr.isNotEmpty()) hHistStr.split(",").mapNotNull { it.toIntOrNull() }.toIntArray() else null
-                val vHist = if (vHistStr.isNotEmpty()) vHistStr.split(",").mapNotNull { it.toIntOrNull() }.toIntArray() else null
-                val hist = generateDualHistogramB64(hHist, vHist)
-                if (hist.isNotEmpty()) histsHtml.append("<br><small>H(Blue)/V(Red) Binned Histograms:</small><br><img src='data:image/jpeg;base64,$hist'>")
-                
-                val imgA = meta["charaware_img_a"] ?: ""
-                val imgB = meta["charaware_img_b"] ?: ""
-                val imgC = meta["charaware_img_c"] ?: ""
-                
-                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed):</small><br><img src='data:image/jpeg;base64,$imgA'>")
-                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed):</small><br><img src='data:image/jpeg;base64,$imgB'>")
-                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed):</small><br><img src='data:image/jpeg;base64,$imgC'>")
+                histsHtml.append("<br><b>Overall Pitch (from 1st Red Box):</b> $p px")
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
                 val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64'>")
+                    val pitch = valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
+                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
             }
             tCons.forEachIndexed { oIdx, ob ->
                 val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64'>")
+                    // Borrow pitch from the first intersecting red box
+                    val firstIntersect = tRawB.find { it.boundingBox.intersects(ob.left, ob.top, ob.right, ob.bottom) }
+                    val pitch = if (firstIntersect != null) {
+                        val rIdx = tRawB.indexOf(firstIntersect)
+                        valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
+                    } else "0"
+                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
             }
         }
@@ -1190,10 +1180,20 @@ private fun generateRunLengthHistogramB64(histStr: String?): String {
 }
 
 private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
-    if (hHist == null || vHist == null || hHist.size < 128 || vHist.size < 128) return ""
+    if (hHist == null || vHist == null || hHist.size < 256 || vHist.size < 256) return ""
     
-    val maxH = hHist.maxOrNull()?.coerceAtLeast(1) ?: 1
-    val maxV = vHist.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val binSize = 5
+    val numBins = (256 + binSize - 1) / binSize // 52 bins
+    
+    val bH = IntArray(numBins)
+    val bV = IntArray(numBins)
+    for (i in 0..255) {
+        bH[i / binSize] += hHist[i]
+        bV[i / binSize] += vHist[i]
+    }
+    
+    val maxH = bH.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val maxV = bV.maxOrNull()?.coerceAtLeast(1) ?: 1
     
     val bmp = Bitmap.createBitmap(522, 130, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bmp)
@@ -1201,19 +1201,20 @@ private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String
     val paint = android.graphics.Paint()
     
     val halfW = 256
+    val barW = (256.0f / numBins).coerceAtLeast(1.0f)
     
     // Draw H Hist (Blue)
     paint.color = android.graphics.Color.BLUE
-    for (i in 0..127) {
-        val h = (hHist[i].toFloat() / maxH) * 100
-        canvas.drawRect((i * 2).toFloat(), 110f - h, (i * 2 + 2).toFloat(), 110f, paint)
+    for (i in 0 until numBins) {
+        val h = (bH[i].toFloat() / maxH) * 100
+        canvas.drawRect(i * barW, 110f - h, (i + 1) * barW, 110f, paint)
     }
     
     // Draw V Hist (Red)
     paint.color = android.graphics.Color.RED
-    for (i in 0..127) {
-        val h = (vHist[i].toFloat() / maxV) * 100
-        canvas.drawRect((halfW + 5 + i * 2).toFloat(), 110f - h, (halfW + 5 + i * 2 + 2).toFloat(), 110f, paint)
+    for (i in 0 until numBins) {
+        val h = (bV[i].toFloat() / maxV) * 100
+        canvas.drawRect(halfW + 5 + i * barW, 110f - h, halfW + 5 + (i + 1) * barW, 110f, paint)
     }
     
     // Draw base line and scale tics

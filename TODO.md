@@ -1,11 +1,11 @@
 # TODO
 
-## Active Execution: Fix Histograms via Kotlin Renderer Reversion
-- [ ] **EXECUTE:** Restore reliable histogram rendering by reverting to Kotlin-side canvas drawing.
-  - [ ] Update `NativeImageUtils.cpp`: Remove C++ rendering, return raw `hArr`/`vArr` (128 elements).
-  - [ ] Update `NativeImageUtils.kt`: Handle the raw array return in JNI, store in metadata map.
-  - [ ] Update `ExperimentAlignmentScreen.kt`: Implement 128-bucket `generateDualHistogramB64` and update HTML loops.
-  - [ ] **VERIFY:** Confirm histogram visibility in generated HTML reports.
+## Active Execution: Update Histograms and Metadata Labels
+- [ ] **EXECUTE:** Implement bin-5 histograms, fix run caps, and add Pitch to box labels.
+  - [ ] Update `NativeImageUtils.cpp`: Return full 256-element arrays across JNI.
+  - [ ] Update `NativeImageUtils.kt`: Adapt JNI signatures and metadata storage.
+  - [ ] Update `ExperimentAlignmentScreen.kt`: Implement Kotlin-side bin-5 rendering and box metadata labels.
+  - [ ] **VERIFY:** Confirm bin-5 histogram display and accurate box labels in HTML.
   - [ ] Verify build with `./build_app`.
 
 - [x] Refactor Agent Workspace Syncing

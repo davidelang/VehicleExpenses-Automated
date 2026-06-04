@@ -1395,15 +1395,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         oss << sortedHist[i].first << "(" << sortedHist[i].second << ") ";
     }
 
-    jintArray hArr = env->NewIntArray(128);
-    jintArray vArr = env->NewIntArray(128);
-    jint hData[128] = {0}, vData[128] = {0};
-    for (int i = 0; i < 256; i += 2) {
-        hData[i/2] = horizRunHist[i] + horizRunHist[i+1];
-        vData[i/2] = vertRunHist[i] + vertRunHist[i+1];
-    }
-    env->SetIntArrayRegion(hArr, 0, 128, hData);
-    env->SetIntArrayRegion(vArr, 0, 128, vData);
+    jintArray hArr = env->NewIntArray(256);
+    jintArray vArr = env->NewIntArray(256);
+    jint hData[256] = {0}, vData[256] = {0};
+    for (const auto& pair : horizRunHist) { if (pair.first >= 0 && pair.first < 256) hData[pair.first] = pair.second; }
+    for (const auto& pair : vertRunHist) { if (pair.first >= 0 && pair.first < 256) vData[pair.first] = pair.second; }
+    env->SetIntArrayRegion(hArr, 0, 256, hData);
+    env->SetIntArrayRegion(vArr, 0, 256, vData);
 
     auto packSlots = [&](const std::vector<cv::Rect>& v) -> jintArray {
         jintArray arr = env->NewIntArray(v.size() * 4);
@@ -1497,15 +1495,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     int vSW = getPeak(horizHist);
     int hSW = getPeak(vertHist);
 
-    jintArray hArr = env->NewIntArray(128);
-    jintArray vArr = env->NewIntArray(128);
-    jint hData[128] = {0}, vData[128] = {0};
-    for (int i = 0; i < 256; i += 2) {
-        hData[i/2] = horizHist[i] + horizHist[i+1];
-        vData[i/2] = vertHist[i] + vertHist[i+1];
-    }
-    env->SetIntArrayRegion(hArr, 0, 128, hData);
-    env->SetIntArrayRegion(vArr, 0, 128, vData);
+    jintArray hArr = env->NewIntArray(256);
+    jintArray vArr = env->NewIntArray(256);
+    jint hData[256] = {0}, vData[256] = {0};
+    for (const auto& pair : horizHist) { if (pair.first >= 0 && pair.first < 256) hData[pair.first] = pair.second; }
+    for (const auto& pair : vertHist) { if (pair.first >= 0 && pair.first < 256) vData[pair.first] = pair.second; }
+    env->SetIntArrayRegion(hArr, 0, 256, hData);
+    env->SetIntArrayRegion(vArr, 0, 256, vData);
 
     jintArray metaArr = env->NewIntArray(4);
     jint m[4] = { (jint)vSW, (jint)hSW, 0, (jint)contentThreshold };
