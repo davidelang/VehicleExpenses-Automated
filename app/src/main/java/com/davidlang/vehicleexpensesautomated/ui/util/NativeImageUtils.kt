@@ -188,12 +188,15 @@ object NativeImageUtils {
 
     fun expandByCharacterAwareDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
         val res = nativeExpandByCharacterAwareDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        if (res != null && res.size == 5) {
+        if (res != null && res.size == 8) {
             val summary = res[0] as IntArray
             val trace = res[1] as String
-            val runHist = res[2] as IntArray
+            val histB64 = res[2] as String
             val matchedSlots = res[3] as IntArray
             val failedSlots = res[4] as IntArray
+            val imgA = res[5] as String
+            val imgB = res[6] as String
+            val imgC = res[7] as String
             
             val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
             val meta = mutableMapOf(
@@ -201,13 +204,16 @@ object NativeImageUtils {
                 "charaware_strict" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
                 "charaware_final" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
                 "charaware_threshold" to summary[12].toString(),
-                "charaware_stroke_width" to summary[13].toString(),
-                "charaware_one_stroke_mass" to summary[14].toString(),
-                "charaware_digitW" to summary[15].toString(),
+                "charaware_v_stroke" to summary[13].toString(),
+                "charaware_h_stroke" to summary[14].toString(),
+                "charaware_pitch" to summary[15].toString(),
                 "charaware_trace" to trace,
-                "charaware_run_hist" to runHist.joinToString(","),
+                "charaware_hist_b64" to histB64,
                 "charaware_matched_slots" to matchedSlots.joinToString(","),
-                "charaware_failed_slots" to failedSlots.joinToString(",")
+                "charaware_failed_slots" to failedSlots.joinToString(","),
+                "charaware_img_a" to imgA,
+                "charaware_img_b" to imgB,
+                "charaware_img_c" to imgC
             )
             return Pair(finalRect, meta)
         }

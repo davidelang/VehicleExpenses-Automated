@@ -62,6 +62,25 @@ std::string matToBase64(const cv::Mat& mat, int quality = 80) {
     return base64_encode(buf.data(), buf.size());
 }
 
+void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(mat, labels, stats, centroids, 8);
+    for (int i = 1; i < nLabels; ++i) {
+        int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        bool remove = false;
+        if (mode == 0) remove = (w < 0.5 * vSW && h < 0.5 * hSW);
+        else if (mode == 1) remove = (w < 0.5 * vSW);
+        else if (mode == 2) remove = (h < 0.5 * hSW);
+        
+        if (remove) {
+            cv::Rect rect(stats.at<int>(i, cv::CC_STAT_LEFT), stats.at<int>(i, cv::CC_STAT_TOP), w, h);
+            cv::Mat mask = (labels(rect) == i);
+            mat(rect).setTo(0, mask);
+        }
+    }
+}
+
 std::string renderHistogramB64(const std::map<int, int>& hHist, const std::map<int, int>& vHist, int width, int height) {
     // Render dual histograms into a single BGR canvas. Blue for H, Red for V.
     cv::Mat canvas(height, width, CV_8UC3, cv::Scalar(255, 255, 255));
@@ -1241,23 +1260,43 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         while (maxX < maxW && !isValley((int)maxX, (int)minY, (int)maxY)) maxX += 1.0;
     }
 
-    std::map<int, int> runHist;
+    std::map<int, int> horizRunHist, vertRunHist;
     for (int y = (int)minY; y < (int)maxY; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
         int run = 0;
         for (int x = (int)minX; x < (int)maxX; ++x) {
             if (rowPtr[x] > contentThreshold) run++;
-            else { if (run > 0) runHist[std::min(255, run)]++; run = 0; }
+            else { if (run > 0) horizRunHist[std::min(255, run)]++; run = 0; }
         }
-        if (run > 0) runHist[std::min(255, run)]++;
+        if (run > 0) horizRunHist[std::min(255, run)]++;
+    }
+    for (int x = (int)minX; x < (int)maxX; ++x) {
+        int run = 0;
+        for (int y = (int)minY; y < (int)maxY; ++y) {
+            if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
+            else { if (run > 0) vertRunHist[std::min(255, run)]++; run = 0; }
+        }
+        if (run > 0) vertRunHist[std::min(255, run)]++;
     }
 
-    std::vector<std::pair<int, int>> sortedHist(runHist.begin(), runHist.end());
-    std::sort(sortedHist.begin(), sortedHist.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-    int strokeWidth = 10;
-    for (const auto& p : sortedHist) { if (p.first > 3) { strokeWidth = p.first; break; } }
-    long oneStrokeMass = strokeWidth * (maxY - minY);
-    oss << "StrokeW=" << strokeWidth << " OneStrokeM=" << oneStrokeMass << " ";
+    auto getPeak = [](const std::map<int, int>& h) -> int {
+        int bestIdx = 10, bestVal = -1;
+        for (auto const& [k, v] : h) { if (k > 3 && v > bestVal) { bestVal = v; bestIdx = k; } }
+        return bestIdx;
+    };
+    int vSW = getPeak(horizRunHist); 
+    int hSW = getPeak(vertRunHist);  
+    long oneStrokeMass = vSW * (maxY - minY);
+    oss << "vSW=" << vSW << " hSW=" << hSW << " OneStrokeM=" << oneStrokeMass << " ";
+
+    // Forensic Filter Images
+    cv::Mat core(mat->rows, mat->cols, CV_8UC1, cv::Scalar(0));
+    cv::Mat temp; cv::threshold((*mat), temp, contentThreshold, 255, cv::THRESH_BINARY);
+    temp.copyTo(core);
+    cv::Mat passA = core.clone(), passB = core.clone(), passC = core.clone();
+    filterComponents(passA, (float)vSW, (float)hSW, 0);
+    filterComponents(passB, (float)vSW, (float)hSW, 1);
+    filterComponents(passC, (float)vSW, (float)hSW, 2);
 
     std::vector<int> colMaxRuns;
     for (int x = (int)minX; x < (int)maxX; ++x) {
@@ -1402,24 +1441,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jintArray failedArr = packSlots(failedSlots);
 
     jintArray summary = env->NewIntArray(16);
-    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)strokeWidth, (jint)oneStrokeMass, (jint)medianPitch };
+    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)vSW, (jint)hSW, (jint)medianPitch };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
-    jintArray histogramArr = env->NewIntArray(128);
-    jint h[128] = {0};
-    for (int i = 0; i < 256; i += 2) {
-        h[i/2] = runHist[i] + runHist[i+1];
-    }
-    env->SetIntArrayRegion(histogramArr, 0, 128, h);
-
+    jstring histB64 = env->NewStringUTF(renderHistogramB64(horizRunHist, vertRunHist, 521, 150).c_str());
+    jstring imgAB64 = env->NewStringUTF(matToBase64(passA).c_str());
+    jstring imgBB64 = env->NewStringUTF(matToBase64(passB).c_str());
+    jstring imgCB64 = env->NewStringUTF(matToBase64(passC).c_str());
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
+
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(5, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(8, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
-    env->SetObjectArrayElement(resultArr, 2, histogramArr);
-    env->SetObjectArrayElement(resultArr, 3, matchedArr);
-    env->SetObjectArrayElement(resultArr, 4, failedArr);
+    env->SetObjectArrayElement(resultArr, 2, histB64);
+    env->SetObjectArrayElement(resultArr, 3, packSlots(matchedSlots));
+    env->SetObjectArrayElement(resultArr, 4, packSlots(failedSlots));
+    env->SetObjectArrayElement(resultArr, 5, imgAB64);
+    env->SetObjectArrayElement(resultArr, 6, imgBB64);
+    env->SetObjectArrayElement(resultArr, 7, imgCB64);
 
     return resultArr;
 }

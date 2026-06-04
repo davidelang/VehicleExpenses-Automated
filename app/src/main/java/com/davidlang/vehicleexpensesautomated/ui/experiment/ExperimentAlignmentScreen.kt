@@ -891,11 +891,23 @@ private suspend fun runBinTrialsPaddle(
             }
 
             valleyResults.firstOrNull()?.second?.let { meta ->
-                val sW = meta["charaware_stroke_width"] ?: "0"
-                val p = meta["charaware_digitW"] ?: "0"
-                histsHtml.append("<br><b>Stroke Width:</b> $sW px | <b>Character Width (Pitch):</b> $p px")
+                val vSW = meta["charaware_v_stroke"] ?: "0"
+                val hSW = meta["charaware_h_stroke"] ?: "0"
+                val p = meta["charaware_pitch"] ?: "0"
+                histsHtml.append("<br><b>vSW:</b> $vSW px | <b>hSW:</b> $hSW px | <b>Pitch:</b> $p px")
+                
+                val hist = meta["charaware_hist_b64"] ?: ""
+                if (hist.isNotEmpty()) histsHtml.append("<br><small>H(Blue)/V(Red) Binned Histograms:</small><br><img src='data:image/jpeg;base64,$hist'>")
+                
+                val imgA = meta["charaware_img_a"] ?: ""
+                val imgB = meta["charaware_img_b"] ?: ""
+                val imgC = meta["charaware_img_c"] ?: ""
+                
+                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed):</small><br><img src='data:image/jpeg;base64,$imgA'>")
+                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed):</small><br><img src='data:image/jpeg;base64,$imgB'>")
+                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed):</small><br><img src='data:image/jpeg;base64,$imgC'>")
             }
-            
+
             tRawB.forEachIndexed { rIdx, rb ->
                 val b64 = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
                 if (!b64.isNullOrEmpty()) {
