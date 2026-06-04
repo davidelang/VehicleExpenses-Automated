@@ -54,10 +54,11 @@ std::string base64_encode(unsigned char const* bytes_to_encode, unsigned int in_
     return ret;
 }
 
-std::string matToBase64(const cv::Mat& mat) {
+std::string matToBase64(const cv::Mat& mat, int quality = 95) {
     if (mat.empty()) return "";
     std::vector<uint8_t> buf;
-    cv::imencode(".png", mat, buf);
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
+    cv::imencode(".jpg", mat, buf, params);
     return base64_encode(buf.data(), buf.size());
 }
 
@@ -91,24 +92,24 @@ std::string renderHistogramB64(const std::map<int, int>& hHist, const std::map<i
         int valH = 0;
         if (hHist.count(i*2)) valH += hHist.at(i*2);
         if (hHist.count(i*2+1)) valH += hHist.at(i*2+1);
-        float hLine = (float)valH / maxH * (height - 35);
-        cv::rectangle(canvas, cv::Point(i*2, height - 25 - (int)hLine), cv::Point(i*2+1, height - 25), cv::Scalar(255, 0, 0), -1);
+        float hLine = (float)valH / maxH * (height - 40);
+        cv::rectangle(canvas, cv::Point(i*2, height - 30 - (int)hLine), cv::Point(i*2+1, height - 30), cv::Scalar(255, 0, 0), -1);
 
         int valV = 0;
         if (vHist.count(i*2)) valV += vHist.at(i*2);
         if (vHist.count(i*2+1)) valV += vHist.at(i*2+1);
-        float vLine = (float)valV / maxV * (height - 35);
-        cv::rectangle(canvas, cv::Point(halfW + 5 + i*2, height - 25 - (int)vLine), cv::Point(halfW + 5 + i*2 + 1, height - 25), cv::Scalar(0, 0, 255), -1);
+        float vLine = (float)valV / maxV * (height - 40);
+        cv::rectangle(canvas, cv::Point(halfW + 5 + i*2, height - 30 - (int)vLine), cv::Point(halfW + 5 + i*2 + 1, height - 30), cv::Scalar(0, 0, 255), -1);
     }
     
-    cv::line(canvas, cv::Point(0, height - 25), cv::Point(width, height - 25), cv::Scalar(0,0,0), 1);
+    cv::line(canvas, cv::Point(0, height - 30), cv::Point(width, height - 30), cv::Scalar(0,0,0), 1);
     for (int i = 0; i <= 256; i += 25) {
         bool isLong = (i % 100 == 0);
         int ticH = isLong ? 15 : 8;
-        int x1 = (int)(i * 255.0f / 256.0f); // Map 256px range to buckets
+        int x1 = (int)(i * 255.0f / 256.0f); 
         int x2 = halfW + 5 + x1;
-        cv::line(canvas, cv::Point(x1, height - 25), cv::Point(x1, height - 25 + ticH), cv::Scalar(0,0,0), 2);
-        cv::line(canvas, cv::Point(x2, height - 25), cv::Point(x2, height - 25 + ticH), cv::Scalar(0,0,0), 2);
+        cv::line(canvas, cv::Point(x1, height - 30), cv::Point(x1, height - 30 + ticH), cv::Scalar(0,0,0), 2);
+        cv::line(canvas, cv::Point(x2, height - 30), cv::Point(x2, height - 30 + ticH), cv::Scalar(0,0,0), 2);
     }
     
     return matToBase64(canvas);

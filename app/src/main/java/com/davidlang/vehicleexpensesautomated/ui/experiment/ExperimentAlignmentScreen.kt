@@ -897,29 +897,29 @@ private suspend fun runBinTrialsPaddle(
                 histsHtml.append("<br><b>vSW:</b> $vSW px | <b>hSW:</b> $hSW px | <b>Pitch:</b> $p px")
                 
                 val hist = meta["charaware_hist_b64"] ?: ""
-                if (hist.isNotEmpty()) histsHtml.append("<br><small>H(Blue)/V(Red) Binned Histograms:</small><br><img src='data:image/png;base64,$hist'>")
+                if (hist.isNotEmpty()) histsHtml.append("<br><small>H(Blue)/V(Red) Binned Histograms:</small><br><img src='data:image/jpeg;base64,$hist' width='600' height='180'>")
                 
                 val imgA = meta["charaware_img_a"] ?: ""
                 val imgB = meta["charaware_img_b"] ?: ""
                 val imgC = meta["charaware_img_c"] ?: ""
                 
-                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed):</small><br><img src='data:image/png;base64,$imgA'>")
-                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed):</small><br><img src='data:image/png;base64,$imgB'>")
-                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed):</small><br><img src='data:image/png;base64,$imgC'>")
+                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed):</small><br><img src='data:image/jpeg;base64,$imgA'>")
+                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed):</small><br><img src='data:image/jpeg;base64,$imgB'>")
+                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed):</small><br><img src='data:image/jpeg;base64,$imgC'>")
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
                 val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
                 if (hRes != null) {
                     val b64 = hRes.first; val meta = hRes.second
-                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/png;base64,$b64'>")
+                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64' width='600' height='180'>")
                 }
             }
             tCons.forEachIndexed { oIdx, ob ->
                 val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
                 if (hRes != null) {
                     val b64 = hRes.first; val meta = hRes.second
-                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/png;base64,$b64'>")
+                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64' width='600' height='180'>")
                 }
             }
         }
@@ -938,8 +938,8 @@ private suspend fun runBinTrialsPaddle(
         val isWinner = (t == winner)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
-        val plainImg = if (t.plainB64.isNotEmpty()) "<img src='data:image/png;base64,${t.plainB64}'><br>" else ""
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/png;base64,${t.annotatedB64}\">${t.histB64}</div>")
+        val plainImg = if (t.plainB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainB64}'><br>" else ""
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.annotatedB64}\">${t.histB64}</div>")
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"; if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
     }
     
@@ -996,7 +996,7 @@ private suspend fun runBinTrialsMLKit(
     trialsList.forEachIndexed { idx, t ->
         if (t.thresh < 0) return@forEachIndexed
         val isWinner = (t == winner); val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"; val status = if (isWinner) "<b>[SELECTED]</b> " else "[REJECTED]"
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b><br><img src=\"data:image/png;base64,${t.base64}\"></div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b><br><img src=\"data:image/jpeg;base64,${t.base64}\"></div>")
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|1.0"
     }
     val winnerMeta = if (winner != null) {
@@ -1082,11 +1082,11 @@ private fun buildHtmlRowDynamic(
     appendLine("<br><small>$resHtml</small>$diagHtml")
     appendLine("<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms")
     appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
-    appendLine("<br><img src='data:image/png;base64,$originalBase64'>")
+    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'>")
     
     // For Set G, show histograms in first column
     if (extraImages.containsKey("hist1")) {
-        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/png;base64,${extraImages["hist1"]}'><br><small>Before Hist (Yellow=Stretch, Magenta=80%)</small></td><td style='border:none; padding:1px;'><img src='data:image/png;base64,${extraImages["hist2"]}'><br><small>After Hist (Cyan=Original 80%)</small></td></tr></table>")
+        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (Yellow=Stretch, Magenta=80%)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (Cyan=Original 80%)</small></td></tr></table>")
     }
     appendLine("</td>")
     
@@ -1098,7 +1098,7 @@ private fun buildHtmlRowDynamic(
         val pathRes = photoResult.pathways[pipeline.key]
         val alignedB64 = pathRes?.deskewedBase64 ?: ""
         if (alignedB64.isNotEmpty()) {
-            appendLine("<img src='data:image/png;base64,$alignedB64'><br>")
+            appendLine("<img src='data:image/jpeg;base64,$alignedB64'><br>")
             vRes?.pathResults?.get(pipeline.key)?.alignmentTrace?.let { trace ->
                 val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
                 val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
@@ -1134,10 +1134,10 @@ private fun buildHtmlRowDynamic(
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/png;base64,${step.thumbB64}'>")
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
                     
                     if (step.metadata.containsKey("before_hist")) {
-                        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/png;base64,${step.metadata["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/png;base64,${step.metadata["after_hist"]}'><br><small>After</small></td></tr></table>")
+                        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["after_hist"]}'><br><small>After</small></td></tr></table>")
                     }
 
                     val rawText = step.metadata["raw_text"]
@@ -1460,13 +1460,13 @@ private suspend fun runPaddleValleyIterative(
         allOdo.add(currentOdoStr)
         lastThumb = currentThumb
 
-        val plainImg = if (stageMeta.containsKey("plain_thumb")) "<img src='data:image/png;base64,${stageMeta["plain_thumb"]}'><br>" else ""
-        val histImg = if (stageMeta.containsKey("run_hist")) "<br><small>Run-Length Histogram:</small><br><img src='data:image/png;base64,${stageMeta["run_hist"]}'>" else ""
+        val plainImg = if (stageMeta.containsKey("plain_thumb")) "<img src='data:image/jpeg;base64,${stageMeta["plain_thumb"]}'><br>" else ""
+        val histImg = if (stageMeta.containsKey("run_hist")) "<br><small>Run-Length Histogram:</small><br><img src='data:image/jpeg;base64,${stageMeta["run_hist"]}'>" else ""
         val hT = if (stageMeta.containsKey("before_hist")) {
-        "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/png;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/png;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
+        "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
         } else ""
 
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg<img src='data:image/png;base64,$lastThumb'>$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg<img src='data:image/jpeg;base64,$lastThumb'>$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
 
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", currentOdoStr)
@@ -1598,10 +1598,10 @@ private suspend fun runMLKitIterative(
         lastThumb = currentThumb
         
         val hT = if (stageMeta.containsKey("before_hist")) {
-            "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/png;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/png;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
+            "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
         } else ""
         
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/png;base64,$lastThumb'>$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
         
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", currentOdoStr)
