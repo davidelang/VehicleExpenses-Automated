@@ -1,11 +1,12 @@
 # TODO
 
 ## Active Execution: Use Red Box Stats for Filtering
-- [ ] **EXECUTE:** Refactor noise filtering to use unexpanded Red Box vSW/hSW.
-  - [ ] Update `NativeImageUtils.cpp`: Calculate Red Box vSW/hSW first and use for Pass A/B/C.
-  - [ ] Update `ExperimentAlignmentScreen.kt`: Display filter limits (w<X, h<Y) in diagnostic labels.
+- [/] **EXECUTE:** Refactor noise filtering to use unexpanded Red Box vSW/hSW.
+  - [x] Update `NativeImageUtils.cpp`: Implement `maxVal` cap in `getPeak` lambda to prevent vertical stroke peaks.
+  - [x] Update `NativeImageUtils.cpp`: Return `vSW_red` and `hSW_red` at indices 13 and 14 of `s[16]`.
   - [ ] **VERIFY:** Confirm Pass A/B/C filtering effectiveness and label accuracy in HTML.
   - [ ] Verify build with `./build_app`.
+
 
 - [x] Refactor Agent Workspace Syncing
 - [x] Fix Sandbox Policy Permissions
