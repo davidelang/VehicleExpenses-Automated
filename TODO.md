@@ -1,11 +1,11 @@
 # TODO
 
-## Active Execution: Native Histogram & Dual Metadata (Feature 1.3)
-- [ ] **EXECUTE:** Implement dual metadata labels for Red and Orange boxes.
-  - [ ] Refactor `nativeCalculateHistogramB64` in C++ to return a 2-element ObjectArray (B64, meta).
-  - [ ] Update Kotlin JNI binding to handle `Array<Any>?`.
-  - [ ] Update HTML report to show metadata labels for both Red and Orange box histograms.
-  - [ ] **VERIFY:** Explicitly read files to confirm dual label logic.
+## Active Execution: Fix Histograms via Kotlin Renderer Reversion
+- [ ] **EXECUTE:** Restore reliable histogram rendering by reverting to Kotlin-side canvas drawing.
+  - [ ] Update `NativeImageUtils.cpp`: Remove C++ rendering, return raw `hArr`/`vArr` (128 elements).
+  - [ ] Update `NativeImageUtils.kt`: Handle the raw array return in JNI, store in metadata map.
+  - [ ] Update `ExperimentAlignmentScreen.kt`: Implement 128-bucket `generateDualHistogramB64` and update HTML loops.
+  - [ ] **VERIFY:** Confirm histogram visibility in generated HTML reports.
   - [ ] Verify build with `./build_app`.
 
 - [x] Refactor Agent Workspace Syncing
