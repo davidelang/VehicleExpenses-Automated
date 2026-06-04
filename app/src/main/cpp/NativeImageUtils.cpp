@@ -54,6 +54,46 @@ std::string base64_encode(unsigned char const* bytes_to_encode, unsigned int in_
     return ret;
 }
 
+std::string matToBase64(const cv::Mat& mat, int quality = 80) {
+    if (mat.empty()) return "";
+    std::vector<uint8_t> buf;
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
+    cv::imencode(".jpg", mat, buf, params);
+    return base64_encode(buf.data(), buf.size());
+}
+
+std::string renderHistogramB64(const std::map<int, int>& hHist, const std::map<int, int>& vHist, int width, int height) {
+    // Render dual histograms into a single BGR canvas. Blue for H, Red for V.
+    cv::Mat canvas(height, width, CV_8UC3, cv::Scalar(255, 255, 255));
+    int maxH = 1, maxV = 1;
+    for (auto const& [k, v] : hHist) if (v > maxH) maxH = v;
+    for (auto const& [k, v] : vHist) if (v > maxV) maxV = v;
+
+    int halfW = width / 2;
+    for (int i = 0; i < 128; ++i) {
+        int valH = hHist.count(i*2) ? hHist.at(i*2) : 0;
+        valH += hHist.count(i*2+1) ? hHist.at(i*2+1) : 0;
+        float hLine = (float)valH / maxH * (height - 35);
+        cv::rectangle(canvas, cv::Point(i*2, height - 25 - (int)hLine), cv::Point(i*2+1, height - 25), cv::Scalar(255, 0, 0), -1);
+
+        int valV = vHist.count(i*2) ? vHist.at(i*2) : 0;
+        valV += vHist.count(i*2+1) ? vHist.at(i*2+1) : 0;
+        float vLine = (float)valV / maxV * (height - 35);
+        cv::rectangle(canvas, cv::Point(halfW + 10 + i*2, height - 25 - (int)vLine), cv::Point(halfW + 10 + i*2 + 1, height - 25), cv::Scalar(0, 0, 255), -1);
+    }
+    
+    cv::line(canvas, cv::Point(0, height - 25), cv::Point(width, height - 25), cv::Scalar(0,0,0), 1);
+    for (int i = 0; i <= 256; i += 25) {
+        bool isLong = (i % 100 == 0);
+        int ticH = isLong ? 15 : 8;
+        int x1 = (int)(i * (float)(halfW - 5) / 256.0f);
+        int x2 = halfW + 10 + (int)(i * (float)(halfW - 5) / 256.0f);
+        cv::line(canvas, cv::Point(x1, height - 25), cv::Point(x1, height - 25 + ticH), cv::Scalar(0,0,0), 2);
+        cv::line(canvas, cv::Point(x2, height - 25), cv::Point(x2, height - 25 + ticH), cv::Scalar(0,0,0), 2);
+    }
+    return matToBase64(canvas);
+}
+
 // Refactored helper: only calculates angle, no longer returns struct
 float calculateAngle(const cv::RotatedRect& rect) {
     cv::Point2f pts[4];
@@ -1384,15 +1424,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     return resultArr;
 }
 
-extern "C" JNIEXPORT jobjectArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistograms(
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramB64(
     JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects) {
     
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return env->NewStringUTF("");
 
     jsize len = env->GetArrayLength(rects);
-    if (len % 4 != 0 || len == 0) return nullptr;
+    if (len % 4 != 0 || len == 0) return env->NewStringUTF("");
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
     int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
@@ -1428,17 +1468,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         if (run > 0) vertHist[std::min(255, run)]++;
     }
 
-    jintArray hArr = env->NewIntArray(128), vArr = env->NewIntArray(128);
-    jint hData[128] = {0}, vData[128] = {0};
-    for (int i = 0; i < 256; i += 2) {
-        hData[i/2] = horizHist[i] + horizHist[i+1];
-        vData[i/2] = vertHist[i] + vertHist[i+1];
-    }
-    env->SetIntArrayRegion(hArr, 0, 128, hData);
-    env->SetIntArrayRegion(vArr, 0, 128, vData);
-
-    jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
-    env->SetObjectArrayElement(resultArr, 0, hArr); env->SetObjectArrayElement(resultArr, 1, vArr);
-    return resultArr;
+    std::string b64 = renderHistogramB64(horizHist, vertHist, 521, 150);
+    return env->NewStringUTF(b64.c_str());
 }

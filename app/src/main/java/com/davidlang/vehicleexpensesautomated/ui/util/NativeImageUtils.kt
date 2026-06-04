@@ -214,7 +214,7 @@ object NativeImageUtils {
         return Pair(rect, emptyMap())
     }
 
-    fun calculateHistograms(mat: Mat, rects: List<android.graphics.Rect>): Pair<IntArray, IntArray>? {
+    fun calculateHistograms(mat: Mat, rects: List<android.graphics.Rect>): String? {
         if (rects.isEmpty()) return null
         val flatRects = IntArray(rects.size * 4)
         rects.forEachIndexed { i, r ->
@@ -223,14 +223,10 @@ object NativeImageUtils {
             flatRects[i * 4 + 2] = r.right
             flatRects[i * 4 + 3] = r.bottom
         }
-        val res = nativeCalculateHistograms(mat.nativeObj, flatRects)
-        if (res != null && res.size == 2) {
-            return Pair(res[0] as IntArray, res[1] as IntArray)
-        }
-        return null
+        return nativeCalculateHistogramB64(mat.nativeObj, flatRects)
     }
 
-    private external fun nativeCalculateHistograms(matPtr: Long, rects: IntArray): Array<Any>?
+    private external fun nativeCalculateHistogramB64(matPtr: Long, rects: IntArray): String?
 
     fun expandByCharacterAware(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
         val res = nativeExpandByCharacterAware(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)

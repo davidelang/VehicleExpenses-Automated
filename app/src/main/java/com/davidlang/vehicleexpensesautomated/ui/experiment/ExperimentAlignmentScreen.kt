@@ -897,16 +897,14 @@ private suspend fun runBinTrialsPaddle(
             }
             
             tRawB.forEachIndexed { rIdx, rb ->
-                val h = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
-                if (h != null) {
-                    val b64 = generateDualHistogramB64(h.first, h.second)
+                val b64 = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
+                if (!b64.isNullOrEmpty()) {
                     histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}):</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
             }
             tCons.forEachIndexed { oIdx, ob ->
-                val h = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
-                if (h != null) {
-                    val b64 = generateDualHistogramB64(h.first, h.second)
+                val b64 = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
+                if (!b64.isNullOrEmpty()) {
                     histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}):</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
             }
@@ -1144,49 +1142,6 @@ private fun buildHtmlRowDynamic(
     val freq = allReadings.groupBy { it }.mapValues { it.value.size }.toList().sortedByDescending { it.second }
     freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/48)<br>") }
     appendLine("</td></tr>")
-}
-
-private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
-    if (hHist == null || vHist == null || hHist.size < 256 || vHist.size < 256) return ""
-    
-    val maxH = hHist.maxOrNull()?.coerceAtLeast(1) ?: 1
-    val maxV = vHist.maxOrNull()?.coerceAtLeast(1) ?: 1
-    
-    val bmp = Bitmap.createBitmap(256 * 2 + 10, 130, Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bmp)
-    canvas.drawColor(android.graphics.Color.WHITE)
-    val paint = android.graphics.Paint()
-    
-    // Draw H Hist (Blue)
-    paint.color = android.graphics.Color.BLUE
-    for (i in 0..255) {
-        val h = (hHist[i].toFloat() / maxH) * 100
-        canvas.drawRect(i.toFloat(), 110f - h, (i + 1).toFloat(), 110f, paint)
-    }
-    
-    // Draw V Hist (Red)
-    paint.color = android.graphics.Color.RED
-    for (i in 0..255) {
-        val h = (vHist[i].toFloat() / maxV) * 100
-        canvas.drawRect((i + 266).toFloat(), 110f - h, (i + 267).toFloat(), 110f, paint)
-    }
-    
-    // Draw base line and scale tics
-    paint.color = android.graphics.Color.BLACK
-    paint.strokeWidth = 1f
-    canvas.drawLine(0f, 110f, 255f, 110f, paint)
-    canvas.drawLine(266f, 110f, 521f, 110f, paint)
-    
-    for (i in 0..255 step 25) {
-        val isLong = (i % 100 == 0)
-        val ticH = if (isLong) 10f else 5f
-        canvas.drawLine(i.toFloat(), 110f, i.toFloat(), 110f + ticH, paint)
-        canvas.drawLine((i + 266).toFloat(), 110f, (i + 266).toFloat(), 110f + ticH, paint)
-    }
-
-    val b64 = OcrUtils.bitmapToBase64(bmp, 80)
-    bmp.recycle()
-    return b64
 }
 
 private fun generateRunLengthHistogramB64(histStr: String?): String {
