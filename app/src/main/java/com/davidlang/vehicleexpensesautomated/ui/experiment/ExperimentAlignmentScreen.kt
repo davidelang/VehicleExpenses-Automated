@@ -840,10 +840,68 @@ private suspend fun runBinTrialsPaddle(
             tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
         }
         
-        val valleyResults = tRawB.map { 
-            if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(trialMat, it.boundingBox)
-            else NativeImageUtils.expandByValleyDiagnostic(trialMat, it.boundingBox, 0.40f)
+        // Set H Modular Pipeline:
+        // Detection still runs on trialMat (odoBuffer.s.mat), but all expansion/histogram
+        // operations run on odoBuffer.p.mat. odoBuffer.s is re-used as a scratchpad
+        // for Pass A/B/C cleaning thumbnails only.
+        val thresholdFactor = threshold.toFloat()
+
+        // Step 3: Histogram on odoBuffer.p within each red box
+        // (thresholdFactor > 1.0 → treated as absolute threshold inside JNI)
+        val tValleyResults = tRawB.map { rb ->
+            val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.p.mat, listOf(rb.boundingBox), thresholdFactor)
+            val vSW_red = hRes?.second?.get(0)?.toFloat() ?: 10f
+            val hSW_red = hRes?.second?.get(1)?.toFloat() ?: 10f
+
+            // Step 4: Generate Pass A/B/C cleaning thumbnails using odoBuffer.s as scratchpad
+            val vLimit = String.format("%.1f", vSW_red * 0.5f)
+            val hLimit = String.format("%.1f", hSW_red * 0.5f)
+            val cleanB64s = (0..2).map { mode ->
+                odoBuffer.s.clear()
+                org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                NativeImageUtils.filterComponents(odoBuffer.s.mat, vSW_red, hSW_red, mode)
+                OcrUtils.takeSnapshot(odoBuffer.s.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA).first
+            }
+            // Restore odoBuffer.s.mat to the binarized trialMat for detection downstream
+            odoBuffer.s.clear()
+            org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+
+            // Step 5: Bounds expansion on odoBuffer.p
+            val initialBounds = NativeImageUtils.expandBounds(odoBuffer.p.mat, rb.boundingBox, thresholdFactor)
+
+            // Step 5: Pitch detection on odoBuffer.p within initial bounds
+            val pitchData = NativeImageUtils.calculatePitch(odoBuffer.p.mat, initialBounds, thresholdFactor)
+            val pitch    = pitchData?.get(0) ?: 0
+            val anchorMode = pitchData?.get(1) ?: 0
+            val bestShift  = pitchData?.get(2) ?: 0
+
+            // Step 7: Character-aware grid alignment on odoBuffer.p
+            val gridResult = if (pitch > 0) NativeImageUtils.alignGrid(
+                odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
+                vSW_red, hSW_red, thresholdFactor
+            ) else null
+
+            val finalBounds = gridResult?.first ?: initialBounds
+            val matchedSlots = gridResult?.second ?: IntArray(0)
+            val failedSlots  = gridResult?.third  ?: IntArray(0)
+
+            Pair(finalBounds, mapOf(
+                "charaware_pitch"         to pitch.toString(),
+                "charaware_v_stroke"      to vSW_red.toInt().toString(),
+                "charaware_h_stroke"      to hSW_red.toInt().toString(),
+                "charaware_matched_slots" to matchedSlots.joinToString(","),
+                "charaware_failed_slots"  to failedSlots.joinToString(","),
+                "charaware_img_a"         to cleanB64s[0],
+                "charaware_img_b"         to cleanB64s[1],
+                "charaware_img_c"         to cleanB64s[2],
+                "charaware_vlimit"        to vLimit,
+                "charaware_hlimit"        to hLimit
+            ))
         }
+
+        val valleyResults = if (useCharAware) tValleyResults
+            else tRawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f) }
+
         val tFrags = valleyResults.map { it.first }
         val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
         val tOdoB = StringBuilder(); val tProbsB = StringBuilder(); var tCf = 0f; var tCnt = 0
@@ -894,11 +952,8 @@ private suspend fun runBinTrialsPaddle(
                 val p = meta["charaware_pitch"] ?: "0"
                 histsHtml.append("<br><b>Overall Pitch (from 1st Red Box):</b> $p px")
 
-                val vSW = meta["charaware_v_stroke"]?.toFloatOrNull() ?: 0f
-                val hSW = meta["charaware_h_stroke"]?.toFloatOrNull() ?: 0f
-                val vLimit = String.format("%.1f", vSW * 0.5f)
-                val hLimit = String.format("%.1f", hSW * 0.5f)
-
+                val vLimit = meta["charaware_vlimit"] ?: "?"
+                val hLimit = meta["charaware_hlimit"] ?: "?"
                 val imgA = meta["charaware_img_a"] ?: ""
                 val imgB = meta["charaware_img_b"] ?: ""
                 val imgC = meta["charaware_img_c"] ?: ""
@@ -909,7 +964,7 @@ private suspend fun runBinTrialsPaddle(
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
-                val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
+                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.p.mat, listOf(rb.boundingBox), thresholdFactor)
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
                     val pitch = valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
@@ -917,10 +972,9 @@ private suspend fun runBinTrialsPaddle(
                 }
             }
             tCons.forEachIndexed { oIdx, ob ->
-                val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
+                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.p.mat, listOf(ob), thresholdFactor)
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                    // Borrow pitch from the first intersecting red box
                     val firstIntersect = tRawB.find { it.boundingBox.intersects(ob.left, ob.top, ob.right, ob.bottom) }
                     val pitch = if (firstIntersect != null) {
                         val rIdx = tRawB.indexOf(firstIntersect)
@@ -930,6 +984,7 @@ private suspend fun runBinTrialsPaddle(
                 }
             }
         }
+
 
         val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
         val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
