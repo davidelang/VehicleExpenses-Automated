@@ -896,8 +896,12 @@ private suspend fun runBinTrialsPaddle(
                 val p = meta["charaware_pitch"] ?: "0"
                 histsHtml.append("<br><b>vSW:</b> $vSW px | <b>hSW:</b> $hSW px | <b>Pitch:</b> $p px")
                 
-                val hist = meta["charaware_hist_b64"] ?: ""
-                if (hist.isNotEmpty()) histsHtml.append("<br><small>H(Blue)/V(Red) Binned Histograms:</small><br><img src='data:image/jpeg;base64,$hist' width='600' height='180'>")
+                val hHistStr = meta["charaware_h_hist"] ?: ""
+                val vHistStr = meta["charaware_v_hist"] ?: ""
+                val hHist = if (hHistStr.isNotEmpty()) hHistStr.split(",").mapNotNull { it.toIntOrNull() }.toIntArray() else null
+                val vHist = if (vHistStr.isNotEmpty()) vHistStr.split(",").mapNotNull { it.toIntOrNull() }.toIntArray() else null
+                val hist = generateDualHistogramB64(hHist, vHist)
+                if (hist.isNotEmpty()) histsHtml.append("<br><small>H(Blue)/V(Red) Binned Histograms:</small><br><img src='data:image/jpeg;base64,$hist'>")
                 
                 val imgA = meta["charaware_img_a"] ?: ""
                 val imgB = meta["charaware_img_b"] ?: ""
@@ -911,15 +915,15 @@ private suspend fun runBinTrialsPaddle(
             tRawB.forEachIndexed { rIdx, rb ->
                 val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
                 if (hRes != null) {
-                    val b64 = hRes.first; val meta = hRes.second
-                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64' width='600' height='180'>")
+                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
+                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
             }
             tCons.forEachIndexed { oIdx, ob ->
                 val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
                 if (hRes != null) {
-                    val b64 = hRes.first; val meta = hRes.second
-                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64' width='600' height='180'>")
+                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
+                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
             }
         }
@@ -1179,6 +1183,51 @@ private fun generateRunLengthHistogramB64(histStr: String?): String {
     paint.color = android.graphics.Color.BLACK
     paint.strokeWidth = 1f
     canvas.drawLine(0f, 110f, 255f, 110f, paint)
+
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80)
+    bmp.recycle()
+    return b64
+}
+
+private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
+    if (hHist == null || vHist == null || hHist.size < 128 || vHist.size < 128) return ""
+    
+    val maxH = hHist.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val maxV = vHist.maxOrNull()?.coerceAtLeast(1) ?: 1
+    
+    val bmp = Bitmap.createBitmap(522, 130, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    val paint = android.graphics.Paint()
+    
+    val halfW = 256
+    
+    // Draw H Hist (Blue)
+    paint.color = android.graphics.Color.BLUE
+    for (i in 0..127) {
+        val h = (hHist[i].toFloat() / maxH) * 100
+        canvas.drawRect((i * 2).toFloat(), 110f - h, (i * 2 + 2).toFloat(), 110f, paint)
+    }
+    
+    // Draw V Hist (Red)
+    paint.color = android.graphics.Color.RED
+    for (i in 0..127) {
+        val h = (vHist[i].toFloat() / maxV) * 100
+        canvas.drawRect((halfW + 5 + i * 2).toFloat(), 110f - h, (halfW + 5 + i * 2 + 2).toFloat(), 110f, paint)
+    }
+    
+    // Draw base line and scale tics
+    paint.color = android.graphics.Color.BLACK
+    paint.strokeWidth = 1f
+    canvas.drawLine(0f, 110f, 255f, 110f, paint)
+    canvas.drawLine((halfW + 5).toFloat(), 110f, 521f, 110f, paint)
+    
+    for (i in 0..255 step 25) {
+        val isLong = (i % 100 == 0)
+        val ticH = if (isLong) 10f else 5f
+        canvas.drawLine(i.toFloat(), 110f, i.toFloat(), 110f + ticH, paint)
+        canvas.drawLine((halfW + 5 + i).toFloat(), 110f, (halfW + 5 + i).toFloat(), 110f + ticH, paint)
+    }
 
     val b64 = OcrUtils.bitmapToBase64(bmp, 80)
     bmp.recycle()

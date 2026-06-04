@@ -81,40 +81,6 @@ void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
     }
 }
 
-std::string renderHistogramB64(const std::map<int, int>& hHist, const std::map<int, int>& vHist, int width, int height) {
-    cv::Mat canvas(height, width, CV_8UC3, cv::Scalar(255, 255, 255));
-    int maxH = 1, maxV = 1;
-    for (auto const& [k, v] : hHist) if (v > maxH) maxH = v;
-    for (auto const& [k, v] : vHist) if (v > maxV) maxV = v;
-
-    int halfW = width / 2;
-    for (int i = 0; i < 128; ++i) {
-        int valH = 0;
-        if (hHist.count(i*2)) valH += hHist.at(i*2);
-        if (hHist.count(i*2+1)) valH += hHist.at(i*2+1);
-        float hLine = (float)valH / maxH * (height - 40);
-        cv::rectangle(canvas, cv::Point(i*2, height - 30 - (int)hLine), cv::Point(i*2+1, height - 30), cv::Scalar(255, 0, 0), -1);
-
-        int valV = 0;
-        if (vHist.count(i*2)) valV += vHist.at(i*2);
-        if (vHist.count(i*2+1)) valV += vHist.at(i*2+1);
-        float vLine = (float)valV / maxV * (height - 40);
-        cv::rectangle(canvas, cv::Point(halfW + 5 + i*2, height - 30 - (int)vLine), cv::Point(halfW + 5 + i*2 + 1, height - 30), cv::Scalar(0, 0, 255), -1);
-    }
-    
-    cv::line(canvas, cv::Point(0, height - 30), cv::Point(width, height - 30), cv::Scalar(0,0,0), 1);
-    for (int i = 0; i <= 256; i += 25) {
-        bool isLong = (i % 100 == 0);
-        int ticH = isLong ? 15 : 8;
-        int x1 = (int)(i * 255.0f / 256.0f); 
-        int x2 = halfW + 5 + x1;
-        cv::line(canvas, cv::Point(x1, height - 30), cv::Point(x1, height - 30 + ticH), cv::Scalar(0,0,0), 2);
-        cv::line(canvas, cv::Point(x2, height - 30), cv::Point(x2, height - 30 + ticH), cv::Scalar(0,0,0), 2);
-    }
-    
-    return matToBase64(canvas);
-}
-
 // Refactored helper: only calculates angle, no longer returns struct
 float calculateAngle(const cv::RotatedRect& rect) {
     cv::Point2f pts[4];
@@ -1429,6 +1395,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         oss << sortedHist[i].first << "(" << sortedHist[i].second << ") ";
     }
 
+    jintArray hArr = env->NewIntArray(128);
+    jintArray vArr = env->NewIntArray(128);
+    jint hData[128] = {0}, vData[128] = {0};
+    for (int i = 0; i < 256; i += 2) {
+        hData[i/2] = horizRunHist[i] + horizRunHist[i+1];
+        vData[i/2] = vertRunHist[i] + vertRunHist[i+1];
+    }
+    env->SetIntArrayRegion(hArr, 0, 128, hData);
+    env->SetIntArrayRegion(vArr, 0, 128, vData);
+
     auto packSlots = [&](const std::vector<cv::Rect>& v) -> jintArray {
         jintArray arr = env->NewIntArray(v.size() * 4);
         if (!v.empty()) {
@@ -1449,22 +1425,22 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)vSW, (jint)hSW, (jint)medianPitch };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
-    jstring histB64 = env->NewStringUTF(renderHistogramB64(horizRunHist, vertRunHist, 521, 150).c_str());
     jstring imgAB64 = env->NewStringUTF(matToBase64(passA).c_str());
     jstring imgBB64 = env->NewStringUTF(matToBase64(passB).c_str());
     jstring imgCB64 = env->NewStringUTF(matToBase64(passC).c_str());
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
 
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(8, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(9, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
-    env->SetObjectArrayElement(resultArr, 2, histB64);
-    env->SetObjectArrayElement(resultArr, 3, packSlots(matchedSlots));
-    env->SetObjectArrayElement(resultArr, 4, packSlots(failedSlots));
-    env->SetObjectArrayElement(resultArr, 5, imgAB64);
-    env->SetObjectArrayElement(resultArr, 6, imgBB64);
-    env->SetObjectArrayElement(resultArr, 7, imgCB64);
+    env->SetObjectArrayElement(resultArr, 2, hArr);
+    env->SetObjectArrayElement(resultArr, 3, vArr);
+    env->SetObjectArrayElement(resultArr, 4, matchedArr);
+    env->SetObjectArrayElement(resultArr, 5, failedArr);
+    env->SetObjectArrayElement(resultArr, 6, imgAB64);
+    env->SetObjectArrayElement(resultArr, 7, imgBB64);
+    env->SetObjectArrayElement(resultArr, 8, imgCB64);
 
     return resultArr;
 }
@@ -1521,15 +1497,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     int vSW = getPeak(horizHist);
     int hSW = getPeak(vertHist);
 
+    jintArray hArr = env->NewIntArray(128);
+    jintArray vArr = env->NewIntArray(128);
+    jint hData[128] = {0}, vData[128] = {0};
+    for (int i = 0; i < 256; i += 2) {
+        hData[i/2] = horizHist[i] + horizHist[i+1];
+        vData[i/2] = vertHist[i] + vertHist[i+1];
+    }
+    env->SetIntArrayRegion(hArr, 0, 128, hData);
+    env->SetIntArrayRegion(vArr, 0, 128, vData);
+
     jintArray metaArr = env->NewIntArray(4);
     jint m[4] = { (jint)vSW, (jint)hSW, 0, (jint)contentThreshold };
     env->SetIntArrayRegion(metaArr, 0, 4, m);
 
-    jstring b64 = env->NewStringUTF(renderHistogramB64(horizHist, vertHist, 521, 150).c_str());
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
-    env->SetObjectArrayElement(resultArr, 0, b64);
-    env->SetObjectArrayElement(resultArr, 1, metaArr);
+    jobjectArray resultArr = env->NewObjectArray(3, objClass, nullptr);
+    env->SetObjectArrayElement(resultArr, 0, hArr);
+    env->SetObjectArrayElement(resultArr, 1, vArr);
+    env->SetObjectArrayElement(resultArr, 2, metaArr);
 
     return resultArr;
 }

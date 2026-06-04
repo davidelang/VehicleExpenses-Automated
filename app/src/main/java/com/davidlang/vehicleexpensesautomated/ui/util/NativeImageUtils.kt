@@ -188,15 +188,16 @@ object NativeImageUtils {
 
     fun expandByCharacterAwareDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
         val res = nativeExpandByCharacterAwareDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        if (res != null && res.size == 8) {
+        if (res != null && res.size == 9) {
             val summary = res[0] as IntArray
             val trace = res[1] as String
-            val histB64 = res[2] as String
-            val matchedSlots = res[3] as IntArray
-            val failedSlots = res[4] as IntArray
-            val imgA = res[5] as String
-            val imgB = res[6] as String
-            val imgC = res[7] as String
+            val hArr = res[2] as IntArray
+            val vArr = res[3] as IntArray
+            val matchedSlots = res[4] as IntArray
+            val failedSlots = res[5] as IntArray
+            val imgA = res[6] as String
+            val imgB = res[7] as String
+            val imgC = res[8] as String
             
             val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
             val meta = mutableMapOf(
@@ -208,7 +209,8 @@ object NativeImageUtils {
                 "charaware_h_stroke" to summary[14].toString(),
                 "charaware_pitch" to summary[15].toString(),
                 "charaware_trace" to trace,
-                "charaware_hist_b64" to histB64,
+                "charaware_h_hist" to hArr.joinToString(","),
+                "charaware_v_hist" to vArr.joinToString(","),
                 "charaware_matched_slots" to matchedSlots.joinToString(","),
                 "charaware_failed_slots" to failedSlots.joinToString(","),
                 "charaware_img_a" to imgA,
@@ -220,7 +222,7 @@ object NativeImageUtils {
         return Pair(rect, emptyMap())
     }
 
-    fun calculateHistograms(mat: Mat, rects: List<android.graphics.Rect>): Pair<String, IntArray>? {
+    fun calculateHistograms(mat: Mat, rects: List<android.graphics.Rect>): Pair<Pair<IntArray, IntArray>, IntArray>? {
         if (rects.isEmpty()) return null
         val flatRects = IntArray(rects.size * 4)
         rects.forEachIndexed { i, r ->
@@ -230,8 +232,8 @@ object NativeImageUtils {
             flatRects[i * 4 + 3] = r.bottom
         }
         val res = nativeCalculateHistogramB64(mat.nativeObj, flatRects)
-        if (res != null && res.size == 2) {
-            return Pair(res[0] as String, res[1] as IntArray)
+        if (res != null && res.size == 3) {
+            return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
         }
         return null
     }
