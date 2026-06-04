@@ -1468,15 +1468,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     return resultArr;
 }
 
-extern "C" JNIEXPORT jstring JNICALL
+extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramB64(
     JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects) {
     
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return env->NewStringUTF("");
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
     jsize len = env->GetArrayLength(rects);
-    if (len % 4 != 0 || len == 0) return env->NewStringUTF("");
+    if (len % 4 != 0 || len == 0) return nullptr;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
     int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
@@ -1512,6 +1512,23 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         if (run > 0) vertHist[std::min(255, run)]++;
     }
 
-    std::string b64 = renderHistogramB64(horizHist, vertHist, 521, 150);
-    return env->NewStringUTF(b64.c_str());
+    auto getPeak = [](const std::map<int, int>& h) -> int {
+        int bestIdx = 10, bestVal = -1;
+        for (auto const& [k, v] : h) { if (k > 3 && v > bestVal) { bestVal = v; bestIdx = k; } }
+        return bestIdx;
+    };
+    int vSW = getPeak(horizHist);
+    int hSW = getPeak(vertHist);
+
+    jintArray metaArr = env->NewIntArray(4);
+    jint m[4] = { (jint)vSW, (jint)hSW, 0, (jint)contentThreshold };
+    env->SetIntArrayRegion(metaArr, 0, 4, m);
+
+    jstring b64 = env->NewStringUTF(renderHistogramB64(horizHist, vertHist, 521, 150).c_str());
+    jclass objClass = env->FindClass("java/lang/Object");
+    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
+    env->SetObjectArrayElement(resultArr, 0, b64);
+    env->SetObjectArrayElement(resultArr, 1, metaArr);
+
+    return resultArr;
 }

@@ -1,11 +1,11 @@
 # TODO
 
-## Active Execution: Native Histogram Rendering (Feature 1.2)
-- [ ] **EXECUTE:** Fix Base64 encoder logic and switch to PNG.
-  - [ ] Rewrite `base64_encode` in C++ to use independent loop variables.
-  - [ ] Update `matToBase64` to use lossless PNG encoding.
-  - [ ] Update Kotlin HTML tags to `image/png` MIME type.
-  - [ ] **VERIFY:** Explicitly read `NativeImageUtils.cpp` to confirm the `k` index fix.
+## Active Execution: Native Histogram & Dual Metadata (Feature 1.3)
+- [ ] **EXECUTE:** Implement dual metadata labels for Red and Orange boxes.
+  - [ ] Refactor `nativeCalculateHistogramB64` in C++ to return a 2-element ObjectArray (B64, meta).
+  - [ ] Update Kotlin JNI binding to handle `Array<Any>?`.
+  - [ ] Update HTML report to show metadata labels for both Red and Orange box histograms.
+  - [ ] **VERIFY:** Explicitly read files to confirm dual label logic.
   - [ ] Verify build with `./build_app`.
 
 - [x] Refactor Agent Workspace Syncing

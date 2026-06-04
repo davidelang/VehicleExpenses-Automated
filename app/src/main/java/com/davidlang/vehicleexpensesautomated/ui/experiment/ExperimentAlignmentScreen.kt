@@ -909,15 +909,17 @@ private suspend fun runBinTrialsPaddle(
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
-                val b64 = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
-                if (!b64.isNullOrEmpty()) {
-                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}):</small><br><img src='data:image/png;base64,$b64'>")
+                val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(rb.boundingBox))
+                if (hRes != null) {
+                    val b64 = hRes.first; val meta = hRes.second
+                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/png;base64,$b64'>")
                 }
             }
             tCons.forEachIndexed { oIdx, ob ->
-                val b64 = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
-                if (!b64.isNullOrEmpty()) {
-                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}):</small><br><img src='data:image/png;base64,$b64'>")
+                val hRes = NativeImageUtils.calculateHistograms(trialMat, listOf(ob))
+                if (hRes != null) {
+                    val b64 = hRes.first; val meta = hRes.second
+                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]}:</small><br><img src='data:image/png;base64,$b64'>")
                 }
             }
         }
