@@ -1208,6 +1208,33 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     double minX = L, maxX = R, minY = T, maxY = B;
     double vL = (maxY - minY) * 1.5;
 
+    // Calculate RED BOX stats first (unexpanded)
+    std::map<int, int> redHHist, redVHist;
+    for (int y = (int)T; y < (int)B; ++y) {
+        const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = (int)L; x < (int)R; ++x) {
+            if (rowPtr[x] > contentThreshold) run++;
+            else { if (run > 0) redHHist[std::min(255, run)]++; run = 0; }
+        }
+        if (run > 0) redHHist[std::min(255, run)]++;
+    }
+    for (int x = (int)L; x < (int)R; ++x) {
+        int run = 0;
+        for (int y = (int)T; y < (int)B; ++y) {
+            if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
+            else { if (run > 0) redVHist[std::min(255, run)]++; run = 0; }
+        }
+        if (run > 0) redVHist[std::min(255, run)]++;
+    }
+    auto getPeak = [](const std::map<int, int>& h) -> int {
+        int bestIdx = 10, bestVal = -1;
+        for (auto const& [k, v] : h) { if (k > 3 && v > bestVal) { bestVal = v; bestIdx = k; } }
+        return bestIdx;
+    };
+    int vSW_red = getPeak(redHHist);
+    int hSW_red = getPeak(redVHist);
+
     while (minY > 0 && (T - minY) < vL) {
         if (getMaxRun((int)minX, (int)maxX, (int)minY - 1, true) < 3) break;
         minY -= 1.0;
@@ -1247,11 +1274,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (run > 0) vertRunHist[std::min(255, run)]++;
     }
 
-    auto getPeak = [](const std::map<int, int>& h) -> int {
-        int bestIdx = 10, bestVal = -1;
-        for (auto const& [k, v] : h) { if (k > 3 && v > bestVal) { bestVal = v; bestIdx = k; } }
-        return bestIdx;
-    };
     int vSW = getPeak(horizRunHist); 
     int hSW = getPeak(vertRunHist);  
     long oneStrokeMass = vSW * (maxY - minY);
@@ -1265,9 +1287,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     cv::Mat temp; cv::threshold((*mat), temp, contentThreshold, 255, cv::THRESH_BINARY);
     temp.copyTo(core);
     cv::Mat passA = core.clone(), passB = core.clone(), passC = core.clone();
-    filterComponents(passA, (float)vSW, (float)hSW, 0);
-    filterComponents(passB, (float)vSW, (float)hSW, 1);
-    filterComponents(passC, (float)vSW, (float)hSW, 2);
+    filterComponents(passA, (float)vSW_red, (float)hSW_red, 0);
+    filterComponents(passB, (float)vSW_red, (float)hSW_red, 1);
+    filterComponents(passC, (float)vSW_red, (float)hSW_red, 2);
 
     std::vector<int> colMaxRuns;
     for (int x = (int)minX; x < (int)maxX; ++x) {

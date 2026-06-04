@@ -894,13 +894,18 @@ private suspend fun runBinTrialsPaddle(
                 val p = meta["charaware_pitch"] ?: "0"
                 histsHtml.append("<br><b>Overall Pitch (from 1st Red Box):</b> $p px")
 
+                val vSW = meta["charaware_v_stroke"]?.toFloatOrNull() ?: 0f
+                val hSW = meta["charaware_h_stroke"]?.toFloatOrNull() ?: 0f
+                val vLimit = String.format("%.1f", vSW * 0.5f)
+                val hLimit = String.format("%.1f", hSW * 0.5f)
+
                 val imgA = meta["charaware_img_a"] ?: ""
                 val imgB = meta["charaware_img_b"] ?: ""
                 val imgC = meta["charaware_img_c"] ?: ""
                 
-                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed):</small><br><img src='data:image/jpeg;base64,$imgA'>")
-                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed):</small><br><img src='data:image/jpeg;base64,$imgB'>")
-                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed):</small><br><img src='data:image/jpeg;base64,$imgC'>")
+                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed - w&lt;${vLimit} AND h&lt;${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgA'>")
+                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed - w&lt;${vLimit}):</small><br><img src='data:image/jpeg;base64,$imgB'>")
+                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed - h&lt;${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgC'>")
             }
 
             tRawB.forEachIndexed { rIdx, rb ->

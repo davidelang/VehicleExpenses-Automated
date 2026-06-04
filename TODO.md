@@ -1,10 +1,10 @@
 # TODO
 
-## Active Execution: Revert Binning and Restore Diagnostic Images
-- [ ] **EXECUTE:** Restore Pass A/B/C images and revert histogram binning to 2.
-  - [ ] Update `ExperimentAlignmentScreen.kt`: Revert `binSize` to 2 in `generateDualHistogramB64`.
-  - [ ] Update `ExperimentAlignmentScreen.kt`: Restore Pass A, B, C images in the HTML report.
-  - [ ] **VERIFY:** Confirm Pass A/B/C visibility and bin-2 histogram display in HTML.
+## Active Execution: Use Red Box Stats for Filtering
+- [ ] **EXECUTE:** Refactor noise filtering to use unexpanded Red Box vSW/hSW.
+  - [ ] Update `NativeImageUtils.cpp`: Calculate Red Box vSW/hSW first and use for Pass A/B/C.
+  - [ ] Update `ExperimentAlignmentScreen.kt`: Display filter limits (w<X, h<Y) in diagnostic labels.
+  - [ ] **VERIFY:** Confirm Pass A/B/C filtering effectiveness and label accuracy in HTML.
   - [ ] Verify build with `./build_app`.
 
 - [x] Refactor Agent Workspace Syncing
