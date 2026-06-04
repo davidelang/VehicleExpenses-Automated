@@ -1,11 +1,11 @@
 # TODO
 
-## Active Execution: Native Histogram Rendering (Feature 1)
-- [ ] **EXECUTE:** Implement native C++ histogram rendering (no ARGB_8888).
-  - [ ] Implement `matToBase64` and `renderHistogramB64` in C++.
-  - [ ] Update JNI to `nativeCalculateHistogramB64` returning a Base64 string.
-  - [ ] Update Kotlin to call native renderer and display at 1:1 scale.
-  - [ ] **VERIFY:** Explicitly read files to confirm logic and 2px tic marks.
+## Active Execution: Native Histogram Rendering (Feature 1.2)
+- [ ] **EXECUTE:** Fix Base64 encoder logic and switch to PNG.
+  - [ ] Rewrite `base64_encode` in C++ to use independent loop variables.
+  - [ ] Update `matToBase64` to use lossless PNG encoding.
+  - [ ] Update Kotlin HTML tags to `image/png` MIME type.
+  - [ ] **VERIFY:** Explicitly read `NativeImageUtils.cpp` to confirm the `k` index fix.
   - [ ] Verify build with `./build_app`.
 
 - [x] Refactor Agent Workspace Syncing
