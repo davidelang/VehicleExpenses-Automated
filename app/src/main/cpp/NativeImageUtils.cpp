@@ -82,7 +82,6 @@ void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
 }
 
 std::string renderHistogramB64(const std::map<int, int>& hHist, const std::map<int, int>& vHist, int width, int height) {
-    // Render dual histograms into a single BGR canvas. Blue for H, Red for V.
     cv::Mat canvas(height, width, CV_8UC3, cv::Scalar(255, 255, 255));
     int maxH = 1, maxV = 1;
     for (auto const& [k, v] : hHist) if (v > maxH) maxH = v;
@@ -90,27 +89,32 @@ std::string renderHistogramB64(const std::map<int, int>& hHist, const std::map<i
 
     int halfW = width / 2;
     for (int i = 0; i < 128; ++i) {
-        int valH = hHist.count(i*2) ? hHist.at(i*2) : 0;
-        valH += hHist.count(i*2+1) ? hHist.at(i*2+1) : 0;
+        int valH = 0;
+        if (hHist.count(i*2)) valH += hHist.at(i*2);
+        if (hHist.count(i*2+1)) valH += hHist.at(i*2+1);
         float hLine = (float)valH / maxH * (height - 35);
         cv::rectangle(canvas, cv::Point(i*2, height - 25 - (int)hLine), cv::Point(i*2+1, height - 25), cv::Scalar(255, 0, 0), -1);
 
-        int valV = vHist.count(i*2) ? vHist.at(i*2) : 0;
-        valV += vHist.count(i*2+1) ? vHist.at(i*2+1) : 0;
+        int valV = 0;
+        if (vHist.count(i*2)) valV += vHist.at(i*2);
+        if (vHist.count(i*2+1)) valV += vHist.at(i*2+1);
         float vLine = (float)valV / maxV * (height - 35);
-        cv::rectangle(canvas, cv::Point(halfW + 10 + i*2, height - 25 - (int)vLine), cv::Point(halfW + 10 + i*2 + 1, height - 25), cv::Scalar(0, 0, 255), -1);
+        cv::rectangle(canvas, cv::Point(halfW + 5 + i*2, height - 25 - (int)vLine), cv::Point(halfW + 5 + i*2 + 1, height - 25), cv::Scalar(0, 0, 255), -1);
     }
     
     cv::line(canvas, cv::Point(0, height - 25), cv::Point(width, height - 25), cv::Scalar(0,0,0), 1);
     for (int i = 0; i <= 256; i += 25) {
         bool isLong = (i % 100 == 0);
         int ticH = isLong ? 15 : 8;
-        int x1 = (int)(i * (float)(halfW - 5) / 256.0f);
-        int x2 = halfW + 10 + (int)(i * (float)(halfW - 5) / 256.0f);
+        int x1 = (int)(i * 255.0f / 256.0f); // Map 256px range to buckets
+        int x2 = halfW + 5 + x1;
         cv::line(canvas, cv::Point(x1, height - 25), cv::Point(x1, height - 25 + ticH), cv::Scalar(0,0,0), 2);
         cv::line(canvas, cv::Point(x2, height - 25), cv::Point(x2, height - 25 + ticH), cv::Scalar(0,0,0), 2);
     }
-    return matToBase64(canvas);
+    
+    std::vector<uint8_t> buf;
+    cv::imencode(".png", canvas, buf);
+    return base64_encode(buf.data(), buf.size());
 }
 
 // Refactored helper: only calculates angle, no longer returns struct
@@ -761,25 +765,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     // Return results
     jintArray summary = env->NewIntArray(16);
-    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)vSW, (jint)hSW, (jint)medianPitch };
+    jint s[16] = {
+        (jint)L, (jint)T, (jint)R, (jint)B,
+        (jint)probedL, (jint)probedT, (jint)probedR, (jint)probedB,
+        (jint)minX, (jint)minY, (jint)maxX, (jint)maxY,
+        (jint)contentThreshold, (jint)minRunLength, (jint)(lookAhead * 100), (jint)maxW
+    };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
-    jstring histB64 = env->NewStringUTF(renderHistogramB64(horizRunHist, vertRunHist, 521, 150).c_str());
-    jstring imgAB64 = env->NewStringUTF(matToBase64(passA).c_str());
-    jstring imgBB64 = env->NewStringUTF(matToBase64(passB).c_str());
-    jstring imgCB64 = env->NewStringUTF(matToBase64(passC).c_str());
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
-
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(8, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
-    env->SetObjectArrayElement(resultArr, 2, histB64);
-    env->SetObjectArrayElement(resultArr, 3, packSlots(matchedSlots));
-    env->SetObjectArrayElement(resultArr, 4, packSlots(failedSlots));
-    env->SetObjectArrayElement(resultArr, 5, imgAB64);
-    env->SetObjectArrayElement(resultArr, 6, imgBB64);
-    env->SetObjectArrayElement(resultArr, 7, imgCB64);
 
     return resultArr;
 }
