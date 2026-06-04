@@ -761,19 +761,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 
     // Return results
     jintArray summary = env->NewIntArray(16);
-    jint s[16] = {
-        (jint)L, (jint)T, (jint)R, (jint)B,
-        (jint)probedL, (jint)probedT, (jint)probedR, (jint)probedB,
-        (jint)minX, (jint)minY, (jint)maxX, (jint)maxY,
-        (jint)contentThreshold, (jint)minRunLength, (jint)(lookAhead * 100), (jint)maxW
-    };
+    jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)vSW, (jint)hSW, (jint)medianPitch };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
+    jstring histB64 = env->NewStringUTF(renderHistogramB64(horizRunHist, vertRunHist, 521, 150).c_str());
+    jstring imgAB64 = env->NewStringUTF(matToBase64(passA).c_str());
+    jstring imgBB64 = env->NewStringUTF(matToBase64(passB).c_str());
+    jstring imgCB64 = env->NewStringUTF(matToBase64(passC).c_str());
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
+
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(2, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(8, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
+    env->SetObjectArrayElement(resultArr, 2, histB64);
+    env->SetObjectArrayElement(resultArr, 3, packSlots(matchedSlots));
+    env->SetObjectArrayElement(resultArr, 4, packSlots(failedSlots));
+    env->SetObjectArrayElement(resultArr, 5, imgAB64);
+    env->SetObjectArrayElement(resultArr, 6, imgBB64);
+    env->SetObjectArrayElement(resultArr, 7, imgCB64);
 
     return resultArr;
 }
