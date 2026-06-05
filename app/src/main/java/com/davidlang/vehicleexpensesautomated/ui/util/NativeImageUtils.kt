@@ -309,11 +309,38 @@ object NativeImageUtils {
     }
 
     /** Vertical walk + bidirectional snapping on odoBuffer.p.mat.
-     *  vSW/hSW set minimum thickness thresholds so thin noise lines are ignored.
      *  Returns the initial bounds rect for use by calculatePitch. */
-    fun expandBounds(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): android.graphics.Rect {
-        val res = nativeExpandBounds(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor, vSW, hSW)
+    fun expandBounds(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float): android.graphics.Rect {
+        val res = nativeExpandBounds(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
         return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
+    }
+
+    /** Decoupled H-variants for Set H with stroke-width aware logic */
+    fun calculateHistogramWithThresholdH(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
+        if (rects.isEmpty()) return null
+        val flatRects = IntArray(rects.size * 4)
+        rects.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
+        val res = nativeCalculateHistogramWithThresholdH(mat.nativeObj, flatRects, thresholdFactor)
+        if (res != null && res.size == 3) return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
+        return null
+    }
+
+    fun expandBoundsH(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): android.graphics.Rect {
+        val res = nativeExpandBoundsH(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor, vSW, hSW)
+        return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
+    }
+
+    fun calculatePitchH(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray? {
+        return nativeCalculatePitchH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, thresholdFactor, vSW, hSW)
+    }
+
+    fun alignGridH(mat: Mat, bounds: android.graphics.Rect, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Triple<android.graphics.Rect, IntArray, IntArray>? {
+        val res = nativeAlignGridH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, pitch, bestShift, anchorMode, vSW, hSW, thresholdFactor)
+        if (res != null && res.size == 3) {
+            val fb = res[0] as IntArray
+            return Triple(android.graphics.Rect(fb[0], fb[1], fb[2], fb[3]), res[1] as IntArray, res[2] as IntArray)
+        }
+        return null
     }
 
     /** Valley detection + pitch/anchorMode/bestShift on odoBuffer.p.mat within the given bounds.
@@ -335,9 +362,14 @@ object NativeImageUtils {
 
     private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
     private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
-    private external fun nativeExpandBounds(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeExpandBounds(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float): IntArray?
     private external fun nativeCalculatePitch(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float): IntArray?
     private external fun nativeAlignGrid(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
+
+    private external fun nativeCalculateHistogramWithThresholdH(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
+    private external fun nativeExpandBoundsH(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
 
 }
 

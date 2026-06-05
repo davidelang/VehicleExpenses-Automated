@@ -819,7 +819,7 @@ private suspend fun runBinTrialsPaddle(
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
-    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val avgConf: Float)
+    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val avgConf: Float, val metadata: Map<String, String>)
     val trialsList = mutableListOf<TrialData>()
 
     midpoints.forEachIndexed { vIdx, binIdx ->
@@ -834,8 +834,6 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
         odoBuffer.flip()
-        // Now: odoBuffer.p.mat = binarized at T=threshold (CV_8UC1, 0/255)
-        //      odoBuffer.s.mat = original grayscale (preserved for next iteration)
         val trialMat = odoBuffer.p.mat
         
         val detSc = kotlin.math.min(512f / trialMat.cols(), 128f / trialMat.rows())
@@ -847,33 +845,24 @@ private suspend fun runBinTrialsPaddle(
         val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[dCrId].release()
         
-        // Consolidate red boxes: if Box A contains Box B, remove B.
         val tRawB = tFullB.filter { b1 ->
             tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
         }
         
-        // Set H Modular Pipeline:
-        // odoBuffer.p.mat is now the BINARIZED image (after the flip above).
-        // odoBuffer.s.mat is the scratchpad for Pass A/B/C cleaning thumbnails.
-        // thresholdFactor > 1.0 → JNI computeThreshold treats it as absolute (128.0 → use pixel > 128).
-        // Since the image is already binary (0/255), use 128.0 as the absolute cut-off.
         val thresholdFactor = 128.0f
 
-        // Step 3: Histogram on binary odoBuffer.p within each red box using defined crop
         val tValleyResults = tRawB.map { rb ->
             val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
             val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-            val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            // Use decoupled SW-capped histogram for Set H
+            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             val vSW_red = hRes?.second?.get(0)?.toFloat() ?: 10f
             val hSW_red = hRes?.second?.get(1)?.toFloat() ?: 10f
             odoBuffer.crop[redBoxCropId].release()
 
-            // Step 4: Clean primary image in-place: remove narrow (mode 1) then short (mode 2) components.
-            // This tests whether noise removal improves downstream detect/histogram/pitch accuracy.
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
 
-            // Step 4b: Re-detect on cleaned primary image to get fresh red boxes.
             val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
             org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
@@ -883,25 +872,25 @@ private suspend fun runBinTrialsPaddle(
                 tFullB2.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
             }.firstOrNull() ?: rb
 
-            // Step 4c: Re-histogram on cleaned image using first clean red box.
             val cleanCropId = odoBuffer.createCrop(cleanRb.boundingBox.left, cleanRb.boundingBox.top, cleanRb.boundingBox.width(), cleanRb.boundingBox.height())
             val cleanCropRect = android.graphics.Rect(0, 0, odoBuffer.crop[cleanCropId].width, odoBuffer.crop[cleanCropId].height)
-            val hRes2 = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[cleanCropId].mat, listOf(cleanCropRect), thresholdFactor)
+            // Use decoupled SW-capped histogram for Set H
+            val hRes2 = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[cleanCropId].mat, listOf(cleanCropRect), thresholdFactor)
             val vSW_clean = hRes2?.second?.get(0)?.toFloat() ?: vSW_red
             val hSW_clean = hRes2?.second?.get(1)?.toFloat() ?: hSW_red
             odoBuffer.crop[cleanCropId].release()
 
-            // Step 5: Bounds expansion on cleaned odoBuffer.p using clean red box and stroke widths
-            val initialBounds = NativeImageUtils.expandBounds(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
+            // Use decoupled expandBoundsH for Set H
+            val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
 
-            // Step 6: Pitch detection on cleaned odoBuffer.p within initial bounds
-            val pitchData = NativeImageUtils.calculatePitch(odoBuffer.p.mat, initialBounds, thresholdFactor)
+            // Use decoupled calculatePitchH for Set H
+            val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW_clean, hSW_clean)
             val pitch      = pitchData?.get(0) ?: 0
             val anchorMode = pitchData?.get(1) ?: 0
             val bestShift  = pitchData?.get(2) ?: 0
 
-            // Step 7: Character-aware grid alignment on cleaned odoBuffer.p
-            val gridResult = if (pitch > 0) NativeImageUtils.alignGrid(
+            // Use decoupled alignGridH for Set H
+            val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
                 odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
                 vSW_clean, hSW_clean, thresholdFactor
             ) else null
@@ -923,7 +912,6 @@ private suspend fun runBinTrialsPaddle(
             ))
         }
 
-
         val valleyResults = if (useCharAware) tValleyResults
             else tRawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f) }
 
@@ -933,6 +921,11 @@ private suspend fun runBinTrialsPaddle(
         
         valleyResults.forEachIndexed { vI, res ->
             res.second.forEach { (k, v) -> trialsMeta["trial_${vIdx}_frag_${vI}_$k"] = v }
+        }
+
+        val trialMetaMap = mutableMapOf<String, String>()
+        tValleyResults.forEachIndexed { vI, res ->
+            res.second.forEach { (k, v) -> trialMetaMap["${k}_$vI"] = v }
         }
 
         tCons.forEach { tBox ->
@@ -989,7 +982,7 @@ private suspend fun runBinTrialsPaddle(
             tRawB.forEachIndexed { rIdx, rb ->
                 val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
                 val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
                     val pitch = valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
@@ -1000,7 +993,7 @@ private suspend fun runBinTrialsPaddle(
             tCons.forEachIndexed { oIdx, ob ->
                 val orangeBoxCropId = odoBuffer.createCrop(ob.left, ob.top, ob.width(), ob.height())
                 val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[orangeBoxCropId].width, odoBuffer.crop[orangeBoxCropId].height)
-                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[orangeBoxCropId].mat, listOf(cropRect), thresholdFactor)
+                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[orangeBoxCropId].mat, listOf(cropRect), thresholdFactor)
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
                     val firstIntersect = tRawB.find { it.boundingBox.intersects(ob.left, ob.top, ob.right, ob.bottom) }
@@ -1017,7 +1010,7 @@ private suspend fun runBinTrialsPaddle(
         val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
         val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         
-        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histsHtml.toString(), tAvg))
+        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histsHtml.toString(), tAvg, trialMetaMap))
         trialsMeta["trial_${vIdx}_plain"] = tPlainB64
 
         // Restore: flip back so .p = grayscale again for the next iteration's binarization step.
@@ -1048,13 +1041,15 @@ private suspend fun runBinTrialsPaddle(
     }
     
     val winnerMeta = if (winner != null) {
-        mapOf(
+        mutableMapOf(
             "best_threshold" to winner.thresh.toString(),
             "best_text" to winner.text,
             "best_thumb" to winner.annotatedB64,
             "best_probs" to winner.probsStr,
             "selection_logic" to (if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)")
-        )
+        ).apply {
+            putAll(winner.metadata)
+        }
     } else emptyMap()
     trialsMeta.putAll(winnerMeta)
     return Pair(trialsHtml.toString(), trialsMeta)
@@ -1545,18 +1540,18 @@ private suspend fun runPaddleValleyIterative(
             trialsHtmlStr = tHtml
             stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)
+            currentOdoStr = tMeta["best_text"] ?: "---"
+            currentThumb = tMeta["best_thumb"] ?: lastThumb
         } else if (stage == "Bin") {
             val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
             if (binTrialsMeta != null) {
                 currentOdoStr = binTrialsMeta["best_text"] ?: "---"
                 currentThumb = binTrialsMeta["best_thumb"] ?: lastThumb
-                stageMeta["selection_logic"] = binTrialsMeta["selection_logic"] ?: "Heuristic"
-                if (binTrialsMeta.containsKey("best_threshold")) stageMeta["selected_threshold"] = binTrialsMeta["best_threshold"]!!
-                if (binTrialsMeta.containsKey("best_probs")) stageMeta["ocr_probs"] = binTrialsMeta["best_probs"]!!
+                stageMeta.putAll(binTrialsMeta)
             }
         }
         
-        if (stage != "Bin") {
+        if (stage != "Bin" && stage != "Bin-Trials") {
             val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
         val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
         val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
