@@ -822,9 +822,16 @@ private suspend fun runBinTrialsPaddle(
 
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
+
+        // Step 1: Binarize into .s, then flip so .p = binary, .s = grayscale (scratchpad).
+        // The grayscale is preserved in .s so the next iteration can binarize from it again
+        // by flipping back at the end.
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-        val trialMat = odoBuffer.s.mat
+        odoBuffer.flip()
+        // Now: odoBuffer.p.mat = binarized at T=threshold (CV_8UC1, 0/255)
+        //      odoBuffer.s.mat = original grayscale (preserved for next iteration)
+        val trialMat = odoBuffer.p.mat
         
         val detSc = kotlin.math.min(512f / trialMat.cols(), 128f / trialMat.rows())
         val fw = (trialMat.cols() * detSc).toInt().coerceAtMost(512)
@@ -841,41 +848,38 @@ private suspend fun runBinTrialsPaddle(
         }
         
         // Set H Modular Pipeline:
-        // Detection still runs on trialMat (odoBuffer.s.mat), but all expansion/histogram
-        // operations run on odoBuffer.p.mat. odoBuffer.s is re-used as a scratchpad
-        // for Pass A/B/C cleaning thumbnails only.
-        val thresholdFactor = threshold.toFloat()
+        // odoBuffer.p.mat is now the BINARIZED image (after the flip above).
+        // odoBuffer.s.mat is the scratchpad for Pass A/B/C cleaning thumbnails.
+        // thresholdFactor > 1.0 → JNI computeThreshold treats it as absolute (128.0 → use pixel > 128).
+        // Since the image is already binary (0/255), use 128.0 as the absolute cut-off.
+        val thresholdFactor = 128.0f
 
-        // Step 3: Histogram on odoBuffer.p within each red box
-        // (thresholdFactor > 1.0 → treated as absolute threshold inside JNI)
+        // Step 3: Histogram on binary odoBuffer.p within each red box
         val tValleyResults = tRawB.map { rb ->
             val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.p.mat, listOf(rb.boundingBox), thresholdFactor)
             val vSW_red = hRes?.second?.get(0)?.toFloat() ?: 10f
             val hSW_red = hRes?.second?.get(1)?.toFloat() ?: 10f
 
-            // Step 4: Generate Pass A/B/C cleaning thumbnails using odoBuffer.s as scratchpad
+            // Step 4: Generate Pass A/B/C cleaning thumbnails on odoBuffer.s (scratchpad).
+            // Copy binary .p into .s, apply filter in-place, snapshot, repeat for each pass.
             val vLimit = String.format("%.1f", vSW_red * 0.5f)
             val hLimit = String.format("%.1f", hSW_red * 0.5f)
             val cleanB64s = (0..2).map { mode ->
-                odoBuffer.s.clear()
-                org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                odoBuffer.p.mat.copyTo(odoBuffer.s.mat)
                 NativeImageUtils.filterComponents(odoBuffer.s.mat, vSW_red, hSW_red, mode)
                 OcrUtils.takeSnapshot(odoBuffer.s.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA).first
             }
-            // Restore odoBuffer.s.mat to the binarized trialMat for detection downstream
-            odoBuffer.s.clear()
-            org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
 
-            // Step 5: Bounds expansion on odoBuffer.p
+            // Step 5: Bounds expansion on binary odoBuffer.p
             val initialBounds = NativeImageUtils.expandBounds(odoBuffer.p.mat, rb.boundingBox, thresholdFactor)
 
-            // Step 5: Pitch detection on odoBuffer.p within initial bounds
+            // Step 6: Pitch detection on binary odoBuffer.p within initial bounds
             val pitchData = NativeImageUtils.calculatePitch(odoBuffer.p.mat, initialBounds, thresholdFactor)
             val pitch    = pitchData?.get(0) ?: 0
             val anchorMode = pitchData?.get(1) ?: 0
             val bestShift  = pitchData?.get(2) ?: 0
 
-            // Step 7: Character-aware grid alignment on odoBuffer.p
+            // Step 7: Character-aware grid alignment on binary odoBuffer.p
             val gridResult = if (pitch > 0) NativeImageUtils.alignGrid(
                 odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
                 vSW_red, hSW_red, thresholdFactor
@@ -991,6 +995,9 @@ private suspend fun runBinTrialsPaddle(
         
         trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histsHtml.toString(), tAvg))
         trialsMeta["trial_${vIdx}_plain"] = tPlainB64
+
+        // Restore: flip back so .p = grayscale again for the next iteration's binarization step.
+        odoBuffer.flip()
     }
     
     val highQual = trialsList.filter { it.minProb >= 0.90f }
