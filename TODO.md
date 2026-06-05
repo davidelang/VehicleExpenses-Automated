@@ -1,21 +1,12 @@
 # TODO
 
-## Active Execution: Set E Stability & Set H Crop Histograms
-- [x] **EXECUTE:** Fix grayscale contamination in binarization trials & implement ROI crops for histograms
-  - [x] `ExperimentAlignmentScreen.kt`: Update `runBinTrialsPaddle` signature to take `masterBuffer` and `vehicleId`
-  - [x] `ExperimentAlignmentScreen.kt`: Pull fresh raw grayscale crop from `masterBuffer` at the start of each trial iteration
-  - [x] `ExperimentAlignmentScreen.kt`: Binarize and flip raw grayscale at the winner threshold upon loop completion to set the winning state correctly
-  - [x] `ExperimentAlignmentScreen.kt`: Define ROI crops for red (and orange) boxes to run histograms on crops instead of full mats
-  - [x] **BUILD:** Verify compile and run via `./build_app`
-
-
-
-
-- [x] Refactor Agent Workspace Syncing
-- [x] Fix Sandbox Policy Permissions
-- [x] Refine update-rules.sh Robustness
-- [x] Cleanup Reports on Device
-- [x] Enforce Git Reset and Validation Rigor
-- [x] Visual Diagnostics & Uniform Scaling
-- [x] Character-Aware Expansion & Pipeline Refinement (Set H)
-- [x] Fix Pump Experiment NV21 Crops
+## Active Execution: Clean Primary Image Before Detect/Histogram/Pitch
+- [ ] **EXECUTE:** Replace Step 4 cleaning thumbnail block with in-place clean + re-detect + re-histogram
+  - [ ] `ExperimentAlignmentScreen.kt`: Apply modes 1 & 2 in-place on `odoBuffer.p.mat`
+  - [ ] `ExperimentAlignmentScreen.kt`: Re-detect on cleaned image → `tRawB2`
+  - [ ] `ExperimentAlignmentScreen.kt`: Re-histogram on cleaned image → `vSW_clean`, `hSW_clean`
+  - [ ] `ExperimentAlignmentScreen.kt`: Steps 5-7 use cleaned image and fresh metrics throughout
+  - [ ] `ExperimentAlignmentScreen.kt`: Remove `cleanB64s`, `charaware_img_a/b/c` from metadata and HTML
+- [ ] **BUILD:** Run `./build_app`
+- [ ] **TEST:** Hand off to user for manual validation
+- [ ] **VALIDATE:** Review logs to confirm no crash and improved pitch detection

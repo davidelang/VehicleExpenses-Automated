@@ -868,29 +868,42 @@ private suspend fun runBinTrialsPaddle(
             val hSW_red = hRes?.second?.get(1)?.toFloat() ?: 10f
             odoBuffer.crop[redBoxCropId].release()
 
-            // Step 4: Generate Pass A/B/C cleaning thumbnails on odoBuffer.s (scratchpad).
-            // Copy binary .p into .s, apply filter in-place, snapshot, repeat for each pass.
-            val vLimit = String.format("%.1f", vSW_red * 0.5f)
-            val hLimit = String.format("%.1f", hSW_red * 0.75f)
-            val cleanB64s = (0..2).map { mode ->
-                odoBuffer.p.mat.copyTo(odoBuffer.s.mat)
-                NativeImageUtils.filterComponents(odoBuffer.s.mat, vSW_red, hSW_red, mode)
-                OcrUtils.takeSnapshot(odoBuffer.s.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA).first
-            }
+            // Step 4: Clean primary image in-place: remove narrow (mode 1) then short (mode 2) components.
+            // This tests whether noise removal improves downstream detect/histogram/pitch accuracy.
+            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
+            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
 
-            // Step 5: Bounds expansion on binary odoBuffer.p
-            val initialBounds = NativeImageUtils.expandBounds(odoBuffer.p.mat, rb.boundingBox, thresholdFactor)
+            // Step 4b: Re-detect on cleaned primary image to get fresh red boxes.
+            val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            val tFullB2 = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
+            experimentDetSet512x128.c[dCrId2].release()
+            val cleanRb = tFullB2.filter { b1 ->
+                tFullB2.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
+            }.firstOrNull() ?: rb
 
-            // Step 6: Pitch detection on binary odoBuffer.p within initial bounds
+            // Step 4c: Re-histogram on cleaned image using first clean red box.
+            val cleanCropId = odoBuffer.createCrop(cleanRb.boundingBox.left, cleanRb.boundingBox.top, cleanRb.boundingBox.width(), cleanRb.boundingBox.height())
+            val cleanCropRect = android.graphics.Rect(0, 0, odoBuffer.crop[cleanCropId].width, odoBuffer.crop[cleanCropId].height)
+            val hRes2 = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[cleanCropId].mat, listOf(cleanCropRect), thresholdFactor)
+            val vSW_clean = hRes2?.second?.get(0)?.toFloat() ?: vSW_red
+            val hSW_clean = hRes2?.second?.get(1)?.toFloat() ?: hSW_red
+            odoBuffer.crop[cleanCropId].release()
+
+            // Step 5: Bounds expansion on cleaned odoBuffer.p using clean red box
+            val initialBounds = NativeImageUtils.expandBounds(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor)
+
+            // Step 6: Pitch detection on cleaned odoBuffer.p within initial bounds
             val pitchData = NativeImageUtils.calculatePitch(odoBuffer.p.mat, initialBounds, thresholdFactor)
-            val pitch    = pitchData?.get(0) ?: 0
+            val pitch      = pitchData?.get(0) ?: 0
             val anchorMode = pitchData?.get(1) ?: 0
             val bestShift  = pitchData?.get(2) ?: 0
 
-            // Step 7: Character-aware grid alignment on binary odoBuffer.p
+            // Step 7: Character-aware grid alignment on cleaned odoBuffer.p
             val gridResult = if (pitch > 0) NativeImageUtils.alignGrid(
                 odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
-                vSW_red, hSW_red, thresholdFactor
+                vSW_clean, hSW_clean, thresholdFactor
             ) else null
 
             val finalBounds = gridResult?.first ?: initialBounds
@@ -899,17 +912,17 @@ private suspend fun runBinTrialsPaddle(
 
             Pair(finalBounds, mapOf(
                 "charaware_pitch"         to pitch.toString(),
-                "charaware_v_stroke"      to vSW_red.toInt().toString(),
-                "charaware_h_stroke"      to hSW_red.toInt().toString(),
+                "charaware_v_stroke"      to vSW_clean.toInt().toString(),
+                "charaware_h_stroke"      to hSW_clean.toInt().toString(),
+                "charaware_v_stroke_raw"  to vSW_red.toInt().toString(),
+                "charaware_h_stroke_raw"  to hSW_red.toInt().toString(),
                 "charaware_matched_slots" to matchedSlots.joinToString(","),
                 "charaware_failed_slots"  to failedSlots.joinToString(","),
-                "charaware_img_a"         to cleanB64s[0],
-                "charaware_img_b"         to cleanB64s[1],
-                "charaware_img_c"         to cleanB64s[2],
-                "charaware_vlimit"        to vLimit,
-                "charaware_hlimit"        to hLimit
+                "charaware_vlimit"        to String.format("%.1f", vSW_clean * 0.5f),
+                "charaware_hlimit"        to String.format("%.1f", hSW_clean * 0.75f)
             ))
         }
+
 
         val valleyResults = if (useCharAware) tValleyResults
             else tRawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f) }
@@ -962,17 +975,15 @@ private suspend fun runBinTrialsPaddle(
 
             valleyResults.firstOrNull()?.second?.let { meta ->
                 val p = meta["charaware_pitch"] ?: "0"
-                histsHtml.append("<br><b>Overall Pitch (from 1st Red Box):</b> $p px")
+                histsHtml.append("<br><b>Overall Pitch (from 1st Red Box, post-clean):</b> $p px")
 
                 val vLimit = meta["charaware_vlimit"] ?: "?"
                 val hLimit = meta["charaware_hlimit"] ?: "?"
-                val imgA = meta["charaware_img_a"] ?: ""
-                val imgB = meta["charaware_img_b"] ?: ""
-                val imgC = meta["charaware_img_c"] ?: ""
-                
-                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed - w&lt;${vLimit} AND h&lt;=${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgA'>")
-                if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed - w&lt;${vLimit}):</small><br><img src='data:image/jpeg;base64,$imgB'>")
-                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed - h&lt;=${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgC'>")
+                val vRaw = meta["charaware_v_stroke_raw"] ?: "?"
+                val hRaw = meta["charaware_h_stroke_raw"] ?: "?"
+                val vClean = meta["charaware_v_stroke"] ?: "?"
+                val hClean = meta["charaware_h_stroke"] ?: "?"
+                histsHtml.append("<br><small>Cleaned: narrow w&lt;${vLimit}, short h&lt;=${hLimit} | vSW raw=$vRaw → clean=$vClean | hSW raw=$hRaw → clean=$hClean</small>")
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
