@@ -1228,7 +1228,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (run > 0) redVHist[std::min(255, run)]++;
     }
     auto getPeak = [](const std::map<int, int>& h, int maxVal) -> int {
-        int bestIdx = 10, bestVal = -1;
+        int bestIdx = -1, bestVal = -1;
         for (auto const& [k, v] : h) {
             if (k > 3 && k <= maxVal && v > bestVal) {
                 bestVal = v;
@@ -1515,7 +1515,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     }
 
     auto getPeak = [](const std::map<int, int>& h) -> int {
-        int bestIdx = 10, bestVal = -1;
+        int bestIdx = -1, bestVal = -1;
         for (auto const& [k, v] : h) { if (k > 3 && v > bestVal) { bestVal = v; bestIdx = k; } }
         return bestIdx;
     };
@@ -1629,7 +1629,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     }
 
     auto getPeakCapped = [](const std::map<int,int>& h, int maxVal) -> int {
-        int bestIdx = 10, bestVal = -1;
+        int bestIdx = -1, bestVal = -1;
         for (auto const& [k, v] : h) {
             if (k > 3 && k <= maxVal && v > bestVal) { bestVal = v; bestIdx = k; }
         }
@@ -1774,20 +1774,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         if (run > 0) vertHist[std::min(255,run)]++;
     }
 
-    // Height-bounded peak search: [4, H * 0.30] where H = maxB - minT
+    // Height-bounded peak search decoupled caps
     int H = maxB - minT;
-    int maxStroke = std::max(15, (int)(H * 0.30f));
+    int maxStrokeV = std::max(35, (int)(H * 0.50f)); // For vSWv (horizontal runs)
+    int maxStrokeH = std::max(20, (int)(H * 0.40f)); // For hSWv (vertical runs)
     int minStroke = 4;
 
     auto getPeakCappedH = [](const std::map<int,int>& h, int minVal, int maxVal) -> int {
-        int bestIdx = 10, bestVal = -1;
+        int bestIdx = -1, bestVal = -1;
         for (auto const& [k, v] : h) {
             if (k >= minVal && k <= maxVal && v > bestVal) { bestVal = v; bestIdx = k; }
         }
         return bestIdx;
     };
-    int vSWv = getPeakCappedH(horizHist, minStroke, maxStroke);
-    int hSWv = getPeakCappedH(vertHist,  minStroke, maxStroke);
+    int vSWv = getPeakCappedH(horizHist, minStroke, maxStrokeV);
+    int hSWv = getPeakCappedH(vertHist,  minStroke, maxStrokeH);
 
     jintArray hArr = env->NewIntArray(256);
     jintArray vArr = env->NewIntArray(256);
