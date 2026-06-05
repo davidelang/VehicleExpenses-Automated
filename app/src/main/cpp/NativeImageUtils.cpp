@@ -69,9 +69,9 @@ void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
         int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
         bool remove = false;
-        if (mode == 0) remove = (w < 0.5 * vSW && h < 0.5 * hSW);
+        if (mode == 0) remove = (w < 0.5 * vSW && h <= 0.75 * hSW);
         else if (mode == 1) remove = (w < 0.5 * vSW);
-        else if (mode == 2) remove = (h < 0.5 * hSW);
+        else if (mode == 2) remove = (h <= 0.75 * hSW);
         
         if (remove) {
             cv::Rect rect(stats.at<int>(i, cv::CC_STAT_LEFT), stats.at<int>(i, cv::CC_STAT_TOP), w, h);
@@ -1567,9 +1567,9 @@ static double computeThreshold(const cv::Mat& mat, int L, int T, int R, int B, f
 
 // 1. nativeFilterComponents
 // Filters connected components in-place on a binary Mat (CV_8UC1).
-// mode 0 = Pass A (w < 0.5*vSW AND h < 0.5*hSW)
+// mode 0 = Pass A (w < 0.5*vSW AND h <= 0.75*hSW)
 // mode 1 = Pass B (w < 0.5*vSW only)
-// mode 2 = Pass C (h < 0.5*hSW only)
+// mode 2 = Pass C (h <= 0.75*hSW only)
 extern "C" JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFilterComponents(
     JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW, jint mode) {

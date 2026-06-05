@@ -871,7 +871,7 @@ private suspend fun runBinTrialsPaddle(
             // Step 4: Generate Pass A/B/C cleaning thumbnails on odoBuffer.s (scratchpad).
             // Copy binary .p into .s, apply filter in-place, snapshot, repeat for each pass.
             val vLimit = String.format("%.1f", vSW_red * 0.5f)
-            val hLimit = String.format("%.1f", hSW_red * 0.5f)
+            val hLimit = String.format("%.1f", hSW_red * 0.75f)
             val cleanB64s = (0..2).map { mode ->
                 odoBuffer.p.mat.copyTo(odoBuffer.s.mat)
                 NativeImageUtils.filterComponents(odoBuffer.s.mat, vSW_red, hSW_red, mode)
@@ -970,9 +970,9 @@ private suspend fun runBinTrialsPaddle(
                 val imgB = meta["charaware_img_b"] ?: ""
                 val imgC = meta["charaware_img_c"] ?: ""
                 
-                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed - w&lt;${vLimit} AND h&lt;${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgA'>")
+                if (imgA.isNotEmpty()) histsHtml.append("<br><small>Pass A (Specks Removed - w&lt;${vLimit} AND h&lt;=${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgA'>")
                 if (imgB.isNotEmpty()) histsHtml.append("<br><small>Pass B (Narrow Removed - w&lt;${vLimit}):</small><br><img src='data:image/jpeg;base64,$imgB'>")
-                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed - h&lt;${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgC'>")
+                if (imgC.isNotEmpty()) histsHtml.append("<br><small>Pass C (Thin Removed - h&lt;=${hLimit}):</small><br><img src='data:image/jpeg;base64,$imgC'>")
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
