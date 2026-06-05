@@ -11,6 +11,8 @@
 Instructions in this file take absolute precedence. Speed achieved by bypassing protocol is a **High-Severity Performance Failure**.
 - **Linear History:** No `git commit --amend`.
 - **Per-Branch Tagging:** All lifecycle tags (`builds`, `deployed`, `works`) MUST be prefixed with the branch name (e.g., `feature-x/builds`) unless on the `master` branch.
+- **Spec vs. Reference Precedence:** Documents under `docs/specs/` are strict specifications (hard requirements). If the codebase deviates from a spec, the code is wrong. Documents under `docs/reference/` are informative references; if the code deviates from reference documentation, the document is wrong.
+
 
 ## The Bi-Modal Workflow (Research -> Strategy -> Execution)
 

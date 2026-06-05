@@ -847,18 +847,14 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
         odoBuffer.flip()
-        val trialMat = odoBuffer.p.mat
         
-        // Capture pre-cleaned Mat clone
-        val preCleanMat = trialMat.clone()
-        
-        val detSc = kotlin.math.min(512f / trialMat.cols(), 128f / trialMat.rows())
-        val fw = (trialMat.cols() * detSc).toInt().coerceAtMost(512)
-        val fh = (trialMat.rows() * detSc).toInt().coerceAtMost(128)
+        val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
+        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
+        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
         
         experimentDetSet512x128.p.clear()
         val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-        org.opencv.imgproc.Imgproc.resize(trialMat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
         val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[dCrId].release()
@@ -869,68 +865,98 @@ private suspend fun runBinTrialsPaddle(
         
         val thresholdFactor = 128.0f
 
-        val tValleyResults = tRawB.map { rb ->
-            val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-            // Use decoupled SW-capped histogram for Set H
-            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-            val vSW_red = hRes?.second?.get(0)?.toFloat()?.let { if (it <= 0) 15f else it } ?: 15f
-            val hSW_red = hRes?.second?.get(1)?.toFloat()?.let { if (it <= 0) 15f else it } ?: 15f
-            odoBuffer.crop[redBoxCropId].release()
+        val annsPre = mutableListOf<SnapshotAnnotation>()
+        tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
 
-            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
-            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
+        val (tPlainPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tAnnotatedPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
 
-            experimentDetSet512x128.p.clear()
-            val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-            val tFullB2 = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
-            experimentDetSet512x128.c[dCrId2].release()
-            val cleanRb = tFullB2.filter { b1 ->
-                tFullB2.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
-            }.firstOrNull() ?: rb
-
-            val cleanCropId = odoBuffer.createCrop(cleanRb.boundingBox.left, cleanRb.boundingBox.top, cleanRb.boundingBox.width(), cleanRb.boundingBox.height())
-            val cleanCropRect = android.graphics.Rect(0, 0, odoBuffer.crop[cleanCropId].width, odoBuffer.crop[cleanCropId].height)
-            // Use decoupled SW-capped histogram for Set H
-            val hRes2 = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[cleanCropId].mat, listOf(cleanCropRect), thresholdFactor)
-            val vSW_clean = hRes2?.second?.get(0)?.toFloat()?.let { if (it <= 0) vSW_red else it } ?: vSW_red
-            val hSW_clean = hRes2?.second?.get(1)?.toFloat()?.let { if (it <= 0) hSW_red else it } ?: hSW_red
-            odoBuffer.crop[cleanCropId].release()
-
-            // Use decoupled expandBoundsH for Set H
-            val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
-
-            // Use decoupled calculatePitchH for Set H
-            val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW_clean, hSW_clean)
-            val pitch      = pitchData?.get(0) ?: 0
-            val anchorMode = pitchData?.get(1) ?: 0
-            val bestShift  = pitchData?.get(2) ?: 0
-
-            // Use decoupled alignGridH for Set H
-            val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
-                odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
-                vSW_clean, hSW_clean, thresholdFactor
-            ) else null
-
-            val finalBounds = gridResult?.first ?: initialBounds
-            val matchedSlots = gridResult?.second ?: IntArray(0)
-            val failedSlots  = gridResult?.third  ?: IntArray(0)
-
-            Pair(finalBounds, mapOf(
-                "charaware_pitch"         to pitch.toString(),
-                "charaware_v_stroke"      to vSW_clean.toInt().toString(),
-                "charaware_h_stroke"      to hSW_clean.toInt().toString(),
-                "charaware_v_stroke_raw"  to vSW_red.toInt().toString(),
-                "charaware_h_stroke_raw"  to hSW_red.toInt().toString(),
-                "charaware_matched_slots" to matchedSlots.joinToString(","),
-                "charaware_failed_slots"  to failedSlots.joinToString(","),
-                "charaware_vlimit"        to String.format("%.1f", vSW_clean * 0.5f),
-                "charaware_hlimit"        to String.format("%.1f", hSW_clean * 0.75f)
+        if (tRawB.isEmpty()) {
+            trialsList.add(TrialData(
+                threshold, "ERR: Peak detection failed (No bounding box detected)", 0f, 0f, "",
+                tAnnotatedPreB64, tPlainPreB64, "", "",
+                "Peak detection failed (No bounding box detected).", 0f, emptyMap()
             ))
+            return@forEachIndexed
         }
 
+        val rb = tRawB.first()
+        val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+        val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+        val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+        val vSW_red = hRes?.second?.get(0)?.toFloat() ?: -1f
+        val hSW_red = hRes?.second?.get(1)?.toFloat() ?: -1f
+        odoBuffer.crop[redBoxCropId].release()
+
+        if (vSW_red <= 0f || hSW_red <= 0f) {
+            trialsList.add(TrialData(
+                threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
+                tAnnotatedPreB64, tPlainPreB64, "", "",
+                "Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).", 0f, emptyMap()
+            ))
+            return@forEachIndexed
+        }
+
+        NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
+        NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
+
+        experimentDetSet512x128.p.clear()
+        val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+        val tFullB2 = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
+        experimentDetSet512x128.c[dCrId2].release()
+        val cleanRb = tFullB2.filter { b1 ->
+            tFullB2.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
+        }.firstOrNull() ?: rb
+
+        val cleanCropId = odoBuffer.createCrop(cleanRb.boundingBox.left, cleanRb.boundingBox.top, cleanRb.boundingBox.width(), cleanRb.boundingBox.height())
+        val cleanCropRect = android.graphics.Rect(0, 0, odoBuffer.crop[cleanCropId].width, odoBuffer.crop[cleanCropId].height)
+        val hRes2 = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[cleanCropId].mat, listOf(cleanCropRect), thresholdFactor)
+        val vSW_clean = hRes2?.second?.get(0)?.toFloat() ?: -1f
+        val hSW_clean = hRes2?.second?.get(1)?.toFloat() ?: -1f
+        odoBuffer.crop[cleanCropId].release()
+
+        if (vSW_clean <= 0f || hSW_clean <= 0f) {
+            val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+            val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
+
+            trialsList.add(TrialData(
+                threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean)", 0f, 0f, "",
+                tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
+                "Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean).", 0f, emptyMap()
+            ))
+            return@forEachIndexed
+        }
+
+        val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
+        val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW_clean, hSW_clean)
+        val pitch      = pitchData?.get(0) ?: 0
+        val anchorMode = pitchData?.get(1) ?: 0
+        val bestShift  = pitchData?.get(2) ?: 0
+
+        val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
+            odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
+            vSW_clean, hSW_clean, thresholdFactor
+        ) else null
+
+        val finalBounds = gridResult?.first ?: initialBounds
+        val matchedSlots = gridResult?.second ?: IntArray(0)
+        val failedSlots  = gridResult?.third  ?: IntArray(0)
+
+        val trialMetaMap = mapOf(
+            "charaware_pitch"         to pitch.toString(),
+            "charaware_v_stroke"      to vSW_clean.toInt().toString(),
+            "charaware_h_stroke"      to hSW_clean.toInt().toString(),
+            "charaware_v_stroke_raw"  to vSW_red.toInt().toString(),
+            "charaware_h_stroke_raw"  to hSW_red.toInt().toString(),
+            "charaware_matched_slots" to matchedSlots.joinToString(","),
+            "charaware_failed_slots"  to failedSlots.joinToString(","),
+            "charaware_vlimit"        to String.format("%.1f", vSW_clean * 0.5f),
+            "charaware_hlimit"        to String.format("%.1f", hSW_clean * 0.75f)
+        )
+
+        val tValleyResults = tRawB.map { Pair(finalBounds, trialMetaMap) }
         val valleyResults = if (useCharAware) tValleyResults
             else tRawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f) }
 
@@ -942,29 +968,37 @@ private suspend fun runBinTrialsPaddle(
             res.second.forEach { (k, v) -> trialsMeta["trial_${vIdx}_frag_${vI}_$k"] = v }
         }
 
-        val trialMetaMap = mutableMapOf<String, String>()
-        tValleyResults.forEachIndexed { vI, res ->
-            res.second.forEach { (k, v) -> trialMetaMap["${k}_$vI"] = v }
-        }
-
         tCons.forEach { tBox ->
-            val sL = tBox.left.coerceIn(0, trialMat.cols() - 1); val sT = tBox.top.coerceIn(0, trialMat.rows() - 1); val sR = tBox.right.coerceIn(sL + 1, trialMat.cols()); val sB = tBox.bottom.coerceIn(sT + 1, trialMat.rows())
+            val sL = tBox.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
+            val sT = tBox.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
+            val sR = tBox.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
+            val sB = tBox.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
             if (sR > sL && sB > sT) {
-                val bRecMat = trialMat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT)); experimentRecSet320x48.p.clear()
-                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows()); val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2; val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
-                val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh); org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                val bRecMat = odoBuffer.p.mat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT))
+                experimentRecSet320x48.p.clear()
+                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
+                val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
+                val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
+                val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
+                org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                 val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
-                if (ocrR.debugText.isNotBlank()) { tOdoB.append(ocrR.debugText).append(" "); ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") } }
-                tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length; tCnt += ocrR.debugText.length; experimentRecSet320x48.c[rCrId].release(); bRecMat.release()
+                if (ocrR.debugText.isNotBlank()) {
+                    tOdoB.append(ocrR.debugText).append(" ")
+                    ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") }
+                }
+                tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length
+                tCnt += ocrR.debugText.length
+                experimentRecSet320x48.c[rCrId].release()
+                bRecMat.release()
             }
         }
         val tText = tOdoB.toString().trim(); val tProbsStr = tProbsB.toString().trim(); val tAvg = if (tCnt > 0) tCf / tCnt else 0f
         val tProbs = mutableListOf<Float>(); val regex = Regex("\\((0\\.\\d+|1\\.0+)\\)"); regex.findAll(tProbsStr).forEach { tProbs.add(it.groupValues[1].toFloatOrNull() ?: 0f) }
         val minP = if (tProbs.isNotEmpty()) tProbs.minOrNull() ?: 0f else 0f
         
-        val anns = mutableListOf<SnapshotAnnotation>()
-        tRawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
-        tCons.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        val annsPost = mutableListOf<SnapshotAnnotation>()
+        tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         
         val histsHtml = StringBuilder()
         if (useCharAware && valleyResults.isNotEmpty()) {
@@ -973,14 +1007,14 @@ private suspend fun runBinTrialsPaddle(
                 if (!mSlots.isNullOrEmpty()) {
                     val pts = mSlots.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.WHITE, 1))
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.WHITE, 1))
                     }
                 }
                 val fSlots = res.second["charaware_failed_slots"]
                 if (!fSlots.isNullOrEmpty()) {
                     val pts = fSlots.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) anns.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.BLUE, 1))
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.BLUE, 1))
                     }
                 }
             }
@@ -1026,11 +1060,8 @@ private suspend fun runBinTrialsPaddle(
             }
         }
 
-        val (tPlainPreB64, _) = OcrUtils.takeSnapshot(preCleanMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-        val (tAnnotatedPreB64, _) = OcrUtils.takeSnapshot(preCleanMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        val (tPlainPostB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-        val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        preCleanMat.release()
+        val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPost, null, NativePaddleEngine.bufferSetA)
         
         trialsList.add(TrialData(
             threshold, tText, tProbs.sum(), minP, tProbsStr,
@@ -1041,9 +1072,6 @@ private suspend fun runBinTrialsPaddle(
         trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
         trialsMeta["trial_${vIdx}_plain_post"] = tPlainPostB64
         trialsMeta["trial_${vIdx}_annotated_post"] = tAnnotatedPostB64
-
-        // Restore: flip back so .p = grayscale again for the next iteration's binarization step.
-        odoBuffer.flip()
     }
     
     val highQual = trialsList.filter { it.minProb >= 0.90f }
@@ -1085,6 +1113,10 @@ private suspend fun runBinTrialsPaddle(
             "selection_logic" to (if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)")
         ).apply {
             putAll(winner.metadata)
+            put("best_plain_pre", winner.plainPreB64)
+            put("best_annotated_pre", winner.annotatedPreB64)
+            put("best_plain_post", winner.plainPostB64)
+            put("best_annotated_post", winner.annotatedPostB64)
         }
     } else emptyMap()
     trialsMeta.putAll(winnerMeta)
@@ -1269,7 +1301,23 @@ private fun buildHtmlRowDynamic(
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
+                    
+                    if (step.stageName == "Bin" && step.metadata.containsKey("best_plain_pre")) {
+                        val preCleanPlain = step.metadata["best_plain_pre"] ?: ""
+                        val preCleanAnnot = step.metadata["best_annotated_pre"] ?: ""
+                        val postCleanPlain = step.metadata["best_plain_post"] ?: ""
+                        val postCleanAnnot = step.metadata["best_annotated_post"] ?: ""
+                        
+                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>")
+                        appendLine("<b>Pre-Cleaned (Binarized Only):</b><br>")
+                        if (preCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
+                        if (preCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
+                        appendLine("<b>Post-Cleaned (OCR Input):</b><br>")
+                        if (postCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
+                        if (postCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
+                    } else {
+                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
+                    }
                     
                     if (step.metadata.containsKey("before_hist")) {
                         appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["after_hist"]}'><br><small>After</small></td></tr></table>")
@@ -1657,7 +1705,23 @@ private suspend fun runPaddleValleyIterative(
         "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
         } else ""
 
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg<img src='data:image/jpeg;base64,$lastThumb'>$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        if (stage == "Bin" && stageMeta.containsKey("best_plain_pre")) {
+            val preCleanPlain = stageMeta["best_plain_pre"] ?: ""
+            val preCleanAnnot = stageMeta["best_annotated_pre"] ?: ""
+            val postCleanPlain = stageMeta["best_plain_post"] ?: ""
+            val postCleanAnnot = stageMeta["best_annotated_post"] ?: ""
+            
+            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>")
+            htmlOutput.append("<b>Pre-Cleaned (Binarized Only):</b><br>")
+            if (preCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
+            if (preCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
+            htmlOutput.append("<b>Post-Cleaned (OCR Input):</b><br>")
+            if (postCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
+            if (postCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
+            htmlOutput.append("$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        } else {
+            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg<img src='data:image/jpeg;base64,$lastThumb'>$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        }
 
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", currentOdoStr)
