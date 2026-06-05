@@ -1,12 +1,13 @@
 # TODO
 
 ## Active Execution: Set E Stability & Set H Crop Histograms
-- [ ] **EXECUTE:** Fix grayscale contamination in binarization trials & implement ROI crops for histograms
-  - [ ] `ExperimentAlignmentScreen.kt`: Update `runBinTrialsPaddle` signature to take `masterBuffer` and `vehicleId`
-  - [ ] `ExperimentAlignmentScreen.kt`: Pull fresh raw grayscale crop from `masterBuffer` at the start of each trial iteration
-  - [ ] `ExperimentAlignmentScreen.kt`: Binarize and flip raw grayscale at the winner threshold upon loop completion to set the winning state correctly
-  - [ ] `ExperimentAlignmentScreen.kt`: Define ROI crops for red (and orange) boxes to run histograms on crops instead of full mats
-  - [ ] **BUILD:** Verify compile and run via `./build_app`
+- [x] **EXECUTE:** Fix grayscale contamination in binarization trials & implement ROI crops for histograms
+  - [x] `ExperimentAlignmentScreen.kt`: Update `runBinTrialsPaddle` signature to take `masterBuffer` and `vehicleId`
+  - [x] `ExperimentAlignmentScreen.kt`: Pull fresh raw grayscale crop from `masterBuffer` at the start of each trial iteration
+  - [x] `ExperimentAlignmentScreen.kt`: Binarize and flip raw grayscale at the winner threshold upon loop completion to set the winning state correctly
+  - [x] `ExperimentAlignmentScreen.kt`: Define ROI crops for red (and orange) boxes to run histograms on crops instead of full mats
+  - [x] **BUILD:** Verify compile and run via `./build_app`
+
 
 
 
