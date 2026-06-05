@@ -1,15 +1,15 @@
 # TODO
 
 ## Active Execution: Modular JNI Pipeline (Set H Experiment)
-- [ ] **EXECUTE:** Add 5 new granular JNI functions (zero changes to existing functions).
-  - [ ] `NativeImageUtils.cpp`: Add `nativeFilterComponents` (in-place component filtering on binary Mat)
-  - [ ] `NativeImageUtils.cpp`: Add `nativeCalculateHistogramWithThreshold` (histogram + vSW/hSW with explicit threshold)
-  - [ ] `NativeImageUtils.cpp`: Add `nativeExpandBounds` (vertical walk + initial snapping for pitch detection input)
-  - [ ] `NativeImageUtils.cpp`: Add `nativeCalculatePitch` (valley detection + pitch/anchorMode/bestShift)
-  - [ ] `NativeImageUtils.cpp`: Add `nativeAlignGrid` (character-aware horizontal expansion using pitch + vSW mass check)
-  - [ ] `NativeImageUtils.kt`: Bind all 5 new JNI functions
-  - [ ] `ExperimentAlignmentScreen.kt`: Replace Set H bin-trials orchestration to use the new modular functions
-  - [ ] **BUILD:** Verify with `./build_app`
+- [x] **EXECUTE:** Add 5 new granular JNI functions (zero changes to existing functions).
+  - [x] `NativeImageUtils.cpp`: Add `nativeFilterComponents` (in-place component filtering on binary Mat)
+  - [x] `NativeImageUtils.cpp`: Add `nativeCalculateHistogramWithThreshold` (histogram + vSW/hSW with explicit threshold)
+  - [x] `NativeImageUtils.cpp`: Add `nativeExpandBounds` (vertical walk + initial snapping for pitch detection input)
+  - [x] `NativeImageUtils.cpp`: Add `nativeCalculatePitch` (valley detection + pitch/anchorMode/bestShift)
+  - [x] `NativeImageUtils.cpp`: Add `nativeAlignGrid` (character-aware horizontal expansion using pitch + vSW mass check)
+  - [x] `NativeImageUtils.kt`: Bind all 5 new JNI functions
+  - [x] `ExperimentAlignmentScreen.kt`: Replace Set H bin-trials orchestration to use the new modular functions
+  - [x] **BUILD:** SUCCESSFUL — tweak-odo-ocr/builds @ a7047806
 
 
 - [x] Refactor Agent Workspace Syncing
