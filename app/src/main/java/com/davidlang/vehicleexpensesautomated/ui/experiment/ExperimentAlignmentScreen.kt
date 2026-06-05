@@ -877,10 +877,6 @@ private suspend fun runBinTrialsPaddle(
         val sumProb: Float,
         val minProb: Float,
         val probsStr: String,
-        val annotatedPreB64: String,
-        val plainPreB64: String,
-        val annotatedPostB64: String,
-        val plainPostB64: String,
         val histB64: String,
         val avgConf: Float,
         val metadata: Map<String, String>,
@@ -922,19 +918,13 @@ private suspend fun runBinTrialsPaddle(
         val annsPre = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
 
-        val (tPlainPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-        val (tAnnotatedPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
-
         if (tRawB.isEmpty()) {
             val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (No bounding box detected)", 0f, 0f, "",
-                tAnnotatedPreB64, tPlainPreB64, "", "",
                 "Peak detection failed (No bounding box detected).", 0f, emptyMap(),
                 "", annStr
             ))
-            trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
-            trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
             trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
         }
@@ -951,12 +941,9 @@ private suspend fun runBinTrialsPaddle(
             val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
-                tAnnotatedPreB64, tPlainPreB64, "", "",
                 "Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).", 0f, emptyMap(),
                 "", annStr
             ))
-            trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
-            trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
             trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
         }
@@ -982,21 +969,14 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.crop[cleanCropId].release()
 
         if (vSW_clean <= 0f || hSW_clean <= 0f) {
-            val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-            val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
             val post1bpp = matToPbmP4Base64(odoBuffer.p.mat)
             val annStr = serializeAnnotations(annsPre)
 
             trialsList.add(TrialData(
                 threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean)", 0f, 0f, "",
-                tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
                 "Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean).", 0f, emptyMap(),
                 post1bpp, annStr
             ))
-            trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
-            trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
-            trialsMeta["trial_${vIdx}_plain_post"] = tPlainPostB64
-            trialsMeta["trial_${vIdx}_annotated_post"] = tAnnotatedPostB64
             trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
             trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
@@ -1133,21 +1113,14 @@ private suspend fun runBinTrialsPaddle(
             }
         }
 
-        val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-        val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPost, null, NativePaddleEngine.bufferSetA)
         val post1bpp = matToPbmP4Base64(odoBuffer.p.mat)
         val annStr = serializeAnnotations(annsPost)
         
         trialsList.add(TrialData(
             threshold, tText, tProbs.sum(), minP, tProbsStr,
-            tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
             histsHtml.toString(), tAvg, trialMetaMap,
             post1bpp, annStr
         ))
-        trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
-        trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
-        trialsMeta["trial_${vIdx}_plain_post"] = tPlainPostB64
-        trialsMeta["trial_${vIdx}_annotated_post"] = tAnnotatedPostB64
         trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
         trialsMeta["trial_${vIdx}_annotations"] = annStr
     }
@@ -1171,12 +1144,7 @@ private suspend fun runBinTrialsPaddle(
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
         
-        val preCleanPlain = if (t.plainPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPreB64}'><br>" else ""
-        val preCleanAnnot = if (t.annotatedPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPreB64}'><br>" else ""
-        val postCleanPlain = if (t.plainPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPostB64}'><br>" else ""
-        val postCleanAnnot = if (t.annotatedPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPostB64}'><br>" else ""
-        
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><b>Pre-Cleaned (Binarized Only):</b><br>$preCleanPlain$preCleanAnnot<b>Post-Cleaned (OCR Input):</b><br>$postCleanPlain$postCleanAnnot${t.histB64}</div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>${t.histB64}</div>")
         
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"
         if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
@@ -1186,15 +1154,11 @@ private suspend fun runBinTrialsPaddle(
         mutableMapOf(
             "best_threshold" to winner.thresh.toString(),
             "best_text" to winner.text,
-            "best_thumb" to winner.annotatedPostB64,
+            "best_thumb" to "",
             "best_probs" to winner.probsStr,
             "selection_logic" to (if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)")
         ).apply {
             putAll(winner.metadata)
-            put("best_plain_pre", winner.plainPreB64)
-            put("best_annotated_pre", winner.annotatedPreB64)
-            put("best_plain_post", winner.plainPostB64)
-            put("best_annotated_post", winner.annotatedPostB64)
             put("best_post_1bpp", winner.post1bppB64)
             put("best_annotations", winner.annotationsStr)
         }
@@ -1382,21 +1346,9 @@ private fun buildHtmlRowDynamic(
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
                     
-                    if (step.stageName == "Bin" && step.metadata.containsKey("best_plain_pre")) {
-                        val preCleanPlain = step.metadata["best_plain_pre"] ?: ""
-                        val preCleanAnnot = step.metadata["best_annotated_pre"] ?: ""
-                        val postCleanPlain = step.metadata["best_plain_post"] ?: ""
-                        val postCleanAnnot = step.metadata["best_annotated_post"] ?: ""
-                        
-                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>")
-                        appendLine("<b>Pre-Cleaned (Binarized Only):</b><br>")
-                        if (preCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
-                        if (preCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
-                        appendLine("<b>Post-Cleaned (OCR Input):</b><br>")
-                        if (postCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
-                        if (postCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
-                    } else {
-                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
+                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>")
+                    if (step.thumbB64.isNotEmpty()) {
+                        appendLine("<img src='data:image/jpeg;base64,${step.thumbB64}'>")
                     }
                     
                     if (step.metadata.containsKey("before_hist")) {
@@ -1785,23 +1737,8 @@ private suspend fun runPaddleValleyIterative(
         "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
         } else ""
 
-        if (stage == "Bin" && stageMeta.containsKey("best_plain_pre")) {
-            val preCleanPlain = stageMeta["best_plain_pre"] ?: ""
-            val preCleanAnnot = stageMeta["best_annotated_pre"] ?: ""
-            val postCleanPlain = stageMeta["best_plain_post"] ?: ""
-            val postCleanAnnot = stageMeta["best_annotated_post"] ?: ""
-            
-            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>")
-            htmlOutput.append("<b>Pre-Cleaned (Binarized Only):</b><br>")
-            if (preCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
-            if (preCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
-            htmlOutput.append("<b>Post-Cleaned (OCR Input):</b><br>")
-            if (postCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
-            if (postCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
-            htmlOutput.append("$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
-        } else {
-            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg<img src='data:image/jpeg;base64,$lastThumb'>$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
-        }
+        val thumbImg = if (lastThumb.isNotEmpty()) "<img src='data:image/jpeg;base64,$lastThumb'>" else ""
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg$thumbImg$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
 
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", currentOdoStr)
