@@ -819,7 +819,20 @@ private suspend fun runBinTrialsPaddle(
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
     val trialsMeta = mutableMapOf<String, String>()
-    data class TrialData(val thresh: Double, val text: String, val sumProb: Float, val minProb: Float, val probsStr: String, val annotatedB64: String, val plainB64: String, val histB64: String, val avgConf: Float, val metadata: Map<String, String>)
+    data class TrialData(
+        val thresh: Double,
+        val text: String,
+        val sumProb: Float,
+        val minProb: Float,
+        val probsStr: String,
+        val annotatedPreB64: String,
+        val plainPreB64: String,
+        val annotatedPostB64: String,
+        val plainPostB64: String,
+        val histB64: String,
+        val avgConf: Float,
+        val metadata: Map<String, String>
+    )
     val trialsList = mutableListOf<TrialData>()
 
     midpoints.forEachIndexed { vIdx, binIdx ->
@@ -836,9 +849,14 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.flip()
         val trialMat = odoBuffer.p.mat
         
+        // Capture pre-cleaned Mat clone
+        val preCleanMat = trialMat.clone()
+        
         val detSc = kotlin.math.min(512f / trialMat.cols(), 128f / trialMat.rows())
         val fw = (trialMat.cols() * detSc).toInt().coerceAtMost(512)
         val fh = (trialMat.rows() * detSc).toInt().coerceAtMost(128)
+        
+        experimentDetSet512x128.p.clear()
         val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(trialMat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
@@ -856,13 +874,14 @@ private suspend fun runBinTrialsPaddle(
             val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
             // Use decoupled SW-capped histogram for Set H
             val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-            val vSW_red = hRes?.second?.get(0)?.toFloat() ?: 10f
-            val hSW_red = hRes?.second?.get(1)?.toFloat() ?: 10f
+            val vSW_red = hRes?.second?.get(0)?.toFloat()?.let { if (it <= 0) 15f else it } ?: 15f
+            val hSW_red = hRes?.second?.get(1)?.toFloat()?.let { if (it <= 0) 15f else it } ?: 15f
             odoBuffer.crop[redBoxCropId].release()
 
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
 
+            experimentDetSet512x128.p.clear()
             val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
             org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
@@ -876,8 +895,8 @@ private suspend fun runBinTrialsPaddle(
             val cleanCropRect = android.graphics.Rect(0, 0, odoBuffer.crop[cleanCropId].width, odoBuffer.crop[cleanCropId].height)
             // Use decoupled SW-capped histogram for Set H
             val hRes2 = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[cleanCropId].mat, listOf(cleanCropRect), thresholdFactor)
-            val vSW_clean = hRes2?.second?.get(0)?.toFloat() ?: vSW_red
-            val hSW_clean = hRes2?.second?.get(1)?.toFloat() ?: hSW_red
+            val vSW_clean = hRes2?.second?.get(0)?.toFloat()?.let { if (it <= 0) vSW_red else it } ?: vSW_red
+            val hSW_clean = hRes2?.second?.get(1)?.toFloat()?.let { if (it <= 0) hSW_red else it } ?: hSW_red
             odoBuffer.crop[cleanCropId].release()
 
             // Use decoupled expandBoundsH for Set H
@@ -1007,11 +1026,21 @@ private suspend fun runBinTrialsPaddle(
             }
         }
 
-        val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-        val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
+        val (tPlainPreB64, _) = OcrUtils.takeSnapshot(preCleanMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tAnnotatedPreB64, _) = OcrUtils.takeSnapshot(preCleanMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
+        val (tPlainPostB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
+        preCleanMat.release()
         
-        trialsList.add(TrialData(threshold, tText, tProbs.sum(), minP, tProbsStr, tAnnotatedB64, tPlainB64, histsHtml.toString(), tAvg, trialMetaMap))
-        trialsMeta["trial_${vIdx}_plain"] = tPlainB64
+        trialsList.add(TrialData(
+            threshold, tText, tProbs.sum(), minP, tProbsStr,
+            tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
+            histsHtml.toString(), tAvg, trialMetaMap
+        ))
+        trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
+        trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
+        trialsMeta["trial_${vIdx}_plain_post"] = tPlainPostB64
+        trialsMeta["trial_${vIdx}_annotated_post"] = tAnnotatedPostB64
 
         // Restore: flip back so .p = grayscale again for the next iteration's binarization step.
         odoBuffer.flip()
@@ -1035,16 +1064,23 @@ private suspend fun runBinTrialsPaddle(
         val isWinner = (t == winner)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
-        val plainImg = if (t.plainB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainB64}'><br>" else ""
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>$plainImg<img src=\"data:image/jpeg;base64,${t.annotatedB64}\">${t.histB64}</div>")
-        trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"; if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
+        
+        val preCleanPlain = if (t.plainPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPreB64}'><br>" else ""
+        val preCleanAnnot = if (t.annotatedPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPreB64}'><br>" else ""
+        val postCleanPlain = if (t.plainPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPostB64}'><br>" else ""
+        val postCleanAnnot = if (t.annotatedPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPostB64}'><br>" else ""
+        
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><b>Pre-Cleaned (Binarized Only):</b><br>$preCleanPlain$preCleanAnnot<b>Post-Cleaned (OCR Input):</b><br>$postCleanPlain$postCleanAnnot${t.histB64}</div>")
+        
+        trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"
+        if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
     }
     
     val winnerMeta = if (winner != null) {
         mutableMapOf(
             "best_threshold" to winner.thresh.toString(),
             "best_text" to winner.text,
-            "best_thumb" to winner.annotatedB64,
+            "best_thumb" to winner.annotatedPostB64,
             "best_probs" to winner.probsStr,
             "selection_logic" to (if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)")
         ).apply {
