@@ -803,7 +803,59 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
     return root
 }
 
+private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
+    val cols = mat.cols()
+    val rows = mat.rows()
+    val totalPixels = cols * rows
+    val data = ByteArray(totalPixels)
+    mat.get(0, 0, data)
+    
+    val packedSize = (totalPixels + 7) / 8
+    val packed = ByteArray(packedSize)
+    
+    var byteIdx = 0
+    var bitIdx = 0
+    var currentByte = 0
+    
+    for (i in 0 until totalPixels) {
+        val pixelVal = data[i].toInt() and 0xFF
+        val bit = if (pixelVal <= 127) 1 else 0
+        currentByte = (currentByte shl 1) or bit
+        bitIdx++
+        if (bitIdx == 8) {
+            packed[byteIdx++] = currentByte.toByte()
+            currentByte = 0
+            bitIdx = 0
+        }
+    }
+    if (bitIdx > 0) {
+        currentByte = currentByte shl (8 - bitIdx)
+        packed[byteIdx++] = currentByte.toByte()
+    }
+    
+    val header = "P4\n$cols $rows\n".toByteArray(Charsets.US_ASCII)
+    val fullData = ByteArray(header.size + packed.size)
+    System.arraycopy(header, 0, fullData, 0, header.size)
+    System.arraycopy(packed, 0, fullData, header.size, packed.size)
+    
+    return android.util.Base64.encodeToString(fullData, android.util.Base64.NO_WRAP)
+}
 
+private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
+    val arr = org.json.JSONArray()
+    anns.forEach { ann ->
+        val obj = org.json.JSONObject()
+        obj.put("x1", ann.x1)
+        obj.put("y1", ann.y1)
+        obj.put("x2", ann.x2)
+        obj.put("y2", ann.y2)
+        obj.put("shape", ann.shape.name)
+        obj.put("color", ann.color)
+        obj.put("strokeWidth", ann.strokeWidth)
+        arr.put(obj)
+    }
+    return arr.toString()
+}
 
 private suspend fun runBinTrialsPaddle(
     odoBuffer: BufferSet,
@@ -831,7 +883,9 @@ private suspend fun runBinTrialsPaddle(
         val plainPostB64: String,
         val histB64: String,
         val avgConf: Float,
-        val metadata: Map<String, String>
+        val metadata: Map<String, String>,
+        val post1bppB64: String,
+        val annotationsStr: String
     )
     val trialsList = mutableListOf<TrialData>()
 
@@ -872,11 +926,16 @@ private suspend fun runBinTrialsPaddle(
         val (tAnnotatedPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
 
         if (tRawB.isEmpty()) {
+            val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (No bounding box detected)", 0f, 0f, "",
                 tAnnotatedPreB64, tPlainPreB64, "", "",
-                "Peak detection failed (No bounding box detected).", 0f, emptyMap()
+                "Peak detection failed (No bounding box detected).", 0f, emptyMap(),
+                "", annStr
             ))
+            trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
+            trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
+            trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
         }
 
@@ -889,11 +948,16 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.crop[redBoxCropId].release()
 
         if (vSW_red <= 0f || hSW_red <= 0f) {
+            val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
                 tAnnotatedPreB64, tPlainPreB64, "", "",
-                "Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).", 0f, emptyMap()
+                "Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).", 0f, emptyMap(),
+                "", annStr
             ))
+            trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
+            trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
+            trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
         }
 
@@ -920,12 +984,21 @@ private suspend fun runBinTrialsPaddle(
         if (vSW_clean <= 0f || hSW_clean <= 0f) {
             val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
             val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
+            val post1bpp = matToPbmP4Base64(odoBuffer.p.mat)
+            val annStr = serializeAnnotations(annsPre)
 
             trialsList.add(TrialData(
                 threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean)", 0f, 0f, "",
                 tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
-                "Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean).", 0f, emptyMap()
+                "Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean).", 0f, emptyMap(),
+                post1bpp, annStr
             ))
+            trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
+            trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
+            trialsMeta["trial_${vIdx}_plain_post"] = tPlainPostB64
+            trialsMeta["trial_${vIdx}_annotated_post"] = tAnnotatedPostB64
+            trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
+            trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
         }
 
@@ -1062,16 +1135,21 @@ private suspend fun runBinTrialsPaddle(
 
         val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
         val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPost, null, NativePaddleEngine.bufferSetA)
+        val post1bpp = matToPbmP4Base64(odoBuffer.p.mat)
+        val annStr = serializeAnnotations(annsPost)
         
         trialsList.add(TrialData(
             threshold, tText, tProbs.sum(), minP, tProbsStr,
             tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
-            histsHtml.toString(), tAvg, trialMetaMap
+            histsHtml.toString(), tAvg, trialMetaMap,
+            post1bpp, annStr
         ))
         trialsMeta["trial_${vIdx}_plain_pre"] = tPlainPreB64
         trialsMeta["trial_${vIdx}_annotated_pre"] = tAnnotatedPreB64
         trialsMeta["trial_${vIdx}_plain_post"] = tPlainPostB64
         trialsMeta["trial_${vIdx}_annotated_post"] = tAnnotatedPostB64
+        trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
+        trialsMeta["trial_${vIdx}_annotations"] = annStr
     }
     
     val highQual = trialsList.filter { it.minProb >= 0.90f }
@@ -1117,6 +1195,8 @@ private suspend fun runBinTrialsPaddle(
             put("best_annotated_pre", winner.annotatedPreB64)
             put("best_plain_post", winner.plainPostB64)
             put("best_annotated_post", winner.annotatedPostB64)
+            put("best_post_1bpp", winner.post1bppB64)
+            put("best_annotations", winner.annotationsStr)
         }
     } else emptyMap()
     trialsMeta.putAll(winnerMeta)
