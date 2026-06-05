@@ -1661,15 +1661,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 // 3. nativeExpandBounds
 // Vertical walk + bidirectional horizontal snapping on odoBuffer.p.mat.
 // Produces the initial [minX, minY, maxX, maxY] used as input to nativeCalculatePitch.
+// vSW/hSW are used to set minimum thickness thresholds so thin noise lines are ignored.
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandBounds(
-    JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor) {
+    JNIEnv* env, jobject thiz, jlong matPtr, jint L, jint T, jint R, jint B, jfloat thresholdFactor, jfloat vSW, jfloat hSW) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
     int maxW = mat->cols, maxH = mat->rows;
     double contentThreshold = computeThreshold(*mat, L, T, R, B, thresholdFactor);
+
+    // Minimum pixel counts derived from stroke widths
+    int minVertRun   = std::max(1, (int)(hSW * 0.5f)); // column must have this vertical run to be non-valley
+    int minHorizDepth = std::max(1, (int)(vSW * 0.5f)); // must have this many consecutive non-valley columns (horizontal lookahead)
+    int minVertDepth  = std::max(1, (int)(hSW * 0.5f)); // must have this many consecutive content rows (vertical lookahead)
 
     auto getMaxRunEB = [&](int start, int end, int fixed, bool horizontal) -> int {
         int currentRun = 0, maxRun = 0;
@@ -1690,33 +1696,74 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         return maxRun;
     };
 
+    // Rule 1: column is a valley if its vertical run < hSW*0.5 (font-aware threshold)
     auto isValleyEB = [&](int x, int mnY, int mxY) -> bool {
         int h = mxY - mnY;
         int cut = std::max(1, (int)(h * 0.10));
-        return getMaxRunEB(mnY + cut, mxY - cut, x, false) < 5;
+        return getMaxRunEB(mnY + cut, mxY - cut, x, false) < minVertRun;
     };
 
+    // Rule 2: directional depth — require minHorizDepth consecutive non-valley columns
+    // starting at x, stepping in direction dir (+1=right, -1=left)
     double minX = L, maxX = R, minY = T, maxY = B;
+
+    auto hasDepthInDir = [&](int x, int dir, int count) -> bool {
+        for (int i = 0; i < count; ++i) {
+            int cx = x + i * dir;
+            if (cx < 0 || cx >= maxW) return false;
+            if (isValleyEB(cx, (int)minY, (int)maxY)) return false;
+        }
+        return true;
+    };
+
+    // Rule 3: vertical depth — require minVertDepth consecutive content rows
+    // starting at y, stepping in direction dir (+1=down, -1=up)
+    auto hasDepthVertDir = [&](int y, int dir, int count) -> bool {
+        for (int i = 0; i < count; ++i) {
+            int cy = y + i * dir;
+            if (cy < 0 || cy >= maxH) return false;
+            if (getMaxRunEB((int)minX, (int)maxX, cy, true) < minHorizDepth) return false;
+        }
+        return true;
+    };
+
     double vL = (maxY - minY) * 1.5;
 
+    // Vertical walk: only expand into rows that have enough vertical depth (Rule 3)
     while (minY > 0 && (T - minY) < vL) {
-        if (getMaxRunEB((int)minX, (int)maxX, (int)minY - 1, true) < 3) break;
+        int nextRow = (int)minY - 1;
+        if (getMaxRunEB((int)minX, (int)maxX, nextRow, true) < minHorizDepth) break;
+        if (!hasDepthVertDir(nextRow, -1, minVertDepth)) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1 && (maxY - B) < vL) {
-        if (getMaxRunEB((int)minX, (int)maxX, (int)maxY + 1, true) < 3) break;
+        int nextRow = (int)maxY + 1;
+        if (getMaxRunEB((int)minX, (int)maxX, nextRow, true) < minHorizDepth) break;
+        if (!hasDepthVertDir(nextRow, 1, minVertDepth)) break;
         maxY += 1.0;
     }
 
-    if (isValleyEB((int)minX, (int)minY, (int)maxY)) {
-        while (minX < maxX && isValleyEB((int)minX, (int)minY, (int)maxY)) minX += 1.0;
+    // Horizontal snap: a column is "solid" if non-valley (Rule 1) AND has depth in travel direction (Rule 2)
+    auto isSolidInDir = [&](int x, int dir) -> bool {
+        return !isValleyEB(x, (int)minY, (int)maxY) && hasDepthInDir(x, dir, minHorizDepth);
+    };
+
+    // Left edge
+    if (!isSolidInDir((int)minX, 1)) {
+        // In valley or thin content — retract right until solid content looking right
+        while (minX < maxX && !isSolidInDir((int)minX, 1)) minX += 1.0;
     } else {
-        while (minX > 0 && !isValleyEB((int)minX - 1, (int)minY, (int)maxY)) minX -= 1.0;
+        // In solid content — expand left while solid looking left
+        while (minX > 0 && isSolidInDir((int)minX - 1, -1)) minX -= 1.0;
     }
-    if (isValleyEB((int)maxX - 1, (int)minY, (int)maxY)) {
-        while (maxX > minX && isValleyEB((int)maxX - 1, (int)minY, (int)maxY)) maxX -= 1.0;
+
+    // Right edge
+    if (!isSolidInDir((int)maxX - 1, -1)) {
+        // In valley or thin content — retract left until solid content looking left
+        while (maxX > minX && !isSolidInDir((int)maxX - 1, -1)) maxX -= 1.0;
     } else {
-        while (maxX < maxW && !isValleyEB((int)maxX, (int)minY, (int)maxY)) maxX += 1.0;
+        // In solid content — expand right while solid looking right
+        while (maxX < maxW && isSolidInDir((int)maxX, 1)) maxX += 1.0;
     }
 
     jintArray result = env->NewIntArray(4);
@@ -1724,6 +1771,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     env->SetIntArrayRegion(result, 0, 4, dims);
     return result;
 }
+
 
 // 4. nativeCalculatePitch
 // Identifies valleys within [minX,minY,maxX,maxY] on odoBuffer.p.mat,

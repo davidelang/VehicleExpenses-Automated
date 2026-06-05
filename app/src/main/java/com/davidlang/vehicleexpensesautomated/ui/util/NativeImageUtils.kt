@@ -309,9 +309,10 @@ object NativeImageUtils {
     }
 
     /** Vertical walk + bidirectional snapping on odoBuffer.p.mat.
+     *  vSW/hSW set minimum thickness thresholds so thin noise lines are ignored.
      *  Returns the initial bounds rect for use by calculatePitch. */
-    fun expandBounds(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float): android.graphics.Rect {
-        val res = nativeExpandBounds(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+    fun expandBounds(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): android.graphics.Rect {
+        val res = nativeExpandBounds(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor, vSW, hSW)
         return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
     }
 
@@ -334,7 +335,7 @@ object NativeImageUtils {
 
     private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
     private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
-    private external fun nativeExpandBounds(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float): IntArray?
+    private external fun nativeExpandBounds(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeCalculatePitch(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float): IntArray?
     private external fun nativeAlignGrid(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
 

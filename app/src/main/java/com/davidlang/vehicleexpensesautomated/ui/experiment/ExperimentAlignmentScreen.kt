@@ -891,8 +891,8 @@ private suspend fun runBinTrialsPaddle(
             val hSW_clean = hRes2?.second?.get(1)?.toFloat() ?: hSW_red
             odoBuffer.crop[cleanCropId].release()
 
-            // Step 5: Bounds expansion on cleaned odoBuffer.p using clean red box
-            val initialBounds = NativeImageUtils.expandBounds(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor)
+            // Step 5: Bounds expansion on cleaned odoBuffer.p using clean red box and stroke widths
+            val initialBounds = NativeImageUtils.expandBounds(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
 
             // Step 6: Pitch detection on cleaned odoBuffer.p within initial bounds
             val pitchData = NativeImageUtils.calculatePitch(odoBuffer.p.mat, initialBounds, thresholdFactor)
