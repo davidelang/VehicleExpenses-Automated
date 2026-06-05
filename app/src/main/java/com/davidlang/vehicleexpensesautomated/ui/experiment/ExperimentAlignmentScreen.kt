@@ -950,11 +950,24 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.crop[redBoxCropId].release()
 
         if (vSW_red <= 0f || hSW_red <= 0f) {
+            val histsHtml = StringBuilder()
+            tRawB.forEachIndexed { rIdx, rb ->
+                val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+                if (hRes != null) {
+                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
+                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
+                }
+                odoBuffer.crop[redBoxCropId].release()
+            }
+            histsHtml.append("<br>Raw peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).")
+
             val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
                 tAnnotatedPreB64, tPlainPreB64, "", "",
-                "Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).", 0f, emptyMap(),
+                histsHtml.toString(), 0f, emptyMap(),
                 "", annStr
             ))
             trialsMeta["trial_${vIdx}_annotations"] = annStr
@@ -982,6 +995,32 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.crop[cleanCropId].release()
 
         if (vSW_clean <= 0f || hSW_clean <= 0f) {
+            val histsHtml = StringBuilder()
+            
+            // 1. Red Box Histograms
+            tRawB.forEachIndexed { rIdx, rb ->
+                val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+                if (hRes != null) {
+                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
+                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0:</small><br><img src='data:image/jpeg;base64,$b64'>")
+                }
+                odoBuffer.crop[redBoxCropId].release()
+            }
+            
+            // 2. Cleaned Crop (Orange Box) Histogram
+            val orangeBoxCropId = odoBuffer.createCrop(cleanRb.boundingBox.left, cleanRb.boundingBox.top, cleanRb.boundingBox.width(), cleanRb.boundingBox.height())
+            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[orangeBoxCropId].width, odoBuffer.crop[orangeBoxCropId].height)
+            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[orangeBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            if (hRes != null) {
+                val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
+                histsHtml.append("<br><small>Orange Box (Cleaned Crop) [${cleanRb.boundingBox.left},${cleanRb.boundingBox.top} - ${cleanRb.boundingBox.right},${cleanRb.boundingBox.bottom}] (${cleanRb.boundingBox.width()}x${cleanRb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
+            }
+            odoBuffer.crop[orangeBoxCropId].release()
+
+            histsHtml.append("<br>Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean).")
+
             val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
             val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
             val post1bpp = matToPbmP4Base64(odoBuffer.p.mat)
@@ -990,7 +1029,7 @@ private suspend fun runBinTrialsPaddle(
             trialsList.add(TrialData(
                 threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean)", 0f, 0f, "",
                 tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
-                "Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean).", 0f, emptyMap(),
+                histsHtml.toString(), 0f, emptyMap(),
                 post1bpp, annStr
             ))
             trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
