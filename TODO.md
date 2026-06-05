@@ -1,15 +1,13 @@
 # TODO
 
-## Active Execution: Modular JNI Pipeline (Set H Experiment)
-- [x] **EXECUTE:** Add 5 new granular JNI functions (zero changes to existing functions).
-  - [x] `NativeImageUtils.cpp`: Add `nativeFilterComponents` (in-place component filtering on binary Mat)
-  - [x] `NativeImageUtils.cpp`: Add `nativeCalculateHistogramWithThreshold` (histogram + vSW/hSW with explicit threshold)
-  - [x] `NativeImageUtils.cpp`: Add `nativeExpandBounds` (vertical walk + initial snapping for pitch detection input)
-  - [x] `NativeImageUtils.cpp`: Add `nativeCalculatePitch` (valley detection + pitch/anchorMode/bestShift)
-  - [x] `NativeImageUtils.cpp`: Add `nativeAlignGrid` (character-aware horizontal expansion using pitch + vSW mass check)
-  - [x] `NativeImageUtils.kt`: Bind all 5 new JNI functions
-  - [x] `ExperimentAlignmentScreen.kt`: Replace Set H bin-trials orchestration to use the new modular functions
-  - [x] **BUILD:** SUCCESSFUL — tweak-odo-ocr/builds @ a7047806
+## Active Execution: Set E Stability & Set H Crop Histograms
+- [ ] **EXECUTE:** Fix grayscale contamination in binarization trials & implement ROI crops for histograms
+  - [ ] `ExperimentAlignmentScreen.kt`: Update `runBinTrialsPaddle` signature to take `masterBuffer` and `vehicleId`
+  - [ ] `ExperimentAlignmentScreen.kt`: Pull fresh raw grayscale crop from `masterBuffer` at the start of each trial iteration
+  - [ ] `ExperimentAlignmentScreen.kt`: Binarize and flip raw grayscale at the winner threshold upon loop completion to set the winning state correctly
+  - [ ] `ExperimentAlignmentScreen.kt`: Define ROI crops for red (and orange) boxes to run histograms on crops instead of full mats
+  - [ ] **BUILD:** Verify compile and run via `./build_app`
+
 
 
 - [x] Refactor Agent Workspace Syncing

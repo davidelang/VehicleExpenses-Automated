@@ -807,6 +807,8 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
 
 private suspend fun runBinTrialsPaddle(
     odoBuffer: BufferSet,
+    masterBuffer: BufferSet,
+    vehicleId: Int,
     experimentDetSet512x128: BufferSet,
     experimentRecSet320x48: BufferSet,
     paddleEngine: NativePaddleEngine,
@@ -823,9 +825,12 @@ private suspend fun runBinTrialsPaddle(
     midpoints.forEachIndexed { vIdx, binIdx ->
         val threshold = binIdx * 4.0
 
-        // Step 1: Binarize into .s, then flip so .p = binary, .s = grayscale (scratchpad).
-        // The grayscale is preserved in .s so the next iteration can binarize from it again
-        // by flipping back at the end.
+        // Step 1: Pull fresh raw grayscale crop from masterBuffer to odoBuffer.p
+        odoBuffer.p.clear()
+        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+
+        // Step 2: Binarize into .s, then flip so .p = binary, .s = original grayscale (scratchpad).
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
         odoBuffer.flip()
@@ -854,11 +859,14 @@ private suspend fun runBinTrialsPaddle(
         // Since the image is already binary (0/255), use 128.0 as the absolute cut-off.
         val thresholdFactor = 128.0f
 
-        // Step 3: Histogram on binary odoBuffer.p within each red box
+        // Step 3: Histogram on binary odoBuffer.p within each red box using defined crop
         val tValleyResults = tRawB.map { rb ->
-            val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.p.mat, listOf(rb.boundingBox), thresholdFactor)
+            val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             val vSW_red = hRes?.second?.get(0)?.toFloat() ?: 10f
             val hSW_red = hRes?.second?.get(1)?.toFloat() ?: 10f
+            odoBuffer.crop[redBoxCropId].release()
 
             // Step 4: Generate Pass A/B/C cleaning thumbnails on odoBuffer.s (scratchpad).
             // Copy binary .p into .s, apply filter in-place, snapshot, repeat for each pass.
@@ -968,15 +976,20 @@ private suspend fun runBinTrialsPaddle(
             }
 
             tRawB.forEachIndexed { rIdx, rb ->
-                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.p.mat, listOf(rb.boundingBox), thresholdFactor)
+                val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
                     val pitch = valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
                     histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
+                odoBuffer.crop[redBoxCropId].release()
             }
             tCons.forEachIndexed { oIdx, ob ->
-                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.p.mat, listOf(ob), thresholdFactor)
+                val orangeBoxCropId = odoBuffer.createCrop(ob.left, ob.top, ob.width(), ob.height())
+                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[orangeBoxCropId].width, odoBuffer.crop[orangeBoxCropId].height)
+                val hRes = NativeImageUtils.calculateHistogramWithThreshold(odoBuffer.crop[orangeBoxCropId].mat, listOf(cropRect), thresholdFactor)
                 if (hRes != null) {
                     val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
                     val firstIntersect = tRawB.find { it.boundingBox.intersects(ob.left, ob.top, ob.right, ob.bottom) }
@@ -986,9 +999,9 @@ private suspend fun runBinTrialsPaddle(
                     } else "0"
                     histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64'>")
                 }
+                odoBuffer.crop[orangeBoxCropId].release()
             }
         }
-
 
         val (tPlainB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
         val (tAnnotatedB64, _) = OcrUtils.takeSnapshot(trialMat, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
@@ -1003,6 +1016,17 @@ private suspend fun runBinTrialsPaddle(
     val highQual = trialsList.filter { it.minProb >= 0.90f }
     val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
     
+    // Set winning binarization state
+    if (winner != null) {
+        odoBuffer.p.clear()
+        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+
+        odoBuffer.s.clear()
+        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, winner.thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        odoBuffer.flip()
+    }
+
     trialsList.forEachIndexed { idx, t ->
         val isWinner = (t == winner)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
@@ -1506,7 +1530,7 @@ private suspend fun runPaddleValleyIterative(
             stageMeta["after_hist"] = h2
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware, steps)
+            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, masterBuffer as BufferSet, winnerRef.vehicle.id, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware, steps)
             trialsHtmlStr = tHtml
             stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)
