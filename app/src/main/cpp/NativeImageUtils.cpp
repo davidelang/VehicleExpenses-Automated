@@ -1888,6 +1888,42 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFindA
     return result;
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlackOutLargeComponentsH(
+    JNIEnv* env, jobject thiz, jlong matPtr, jfloat maxWidth) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
+
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+
+    std::vector<int> largeLabels;
+    for (int i = 1; i < nLabels; ++i) {
+        int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        if ((float)w > maxWidth) {
+            largeLabels.push_back(i);
+        }
+    }
+
+    if (!largeLabels.empty()) {
+        std::vector<bool> isLarge(nLabels, false);
+        for (int label : largeLabels) {
+            isLarge[label] = true;
+        }
+        for (int r = 0; r < mat->rows; ++r) {
+            auto* rowPtr = mat->ptr<uint8_t>(r);
+            const auto* labelPtr = labels.ptr<int>(r);
+            for (int c = 0; c < mat->cols; ++c) {
+                int label = labelPtr[c];
+                if (label > 0 && isLarge[label]) {
+                    rowPtr[c] = 0;
+                }
+            }
+        }
+    }
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculatePitchH(
     JNIEnv* env, jobject thiz, jlong matPtr, jint minX, jint minY, jint maxX, jint maxY, jfloat thresholdFactor, jfloat vSW, jfloat hSW) {

@@ -1,10 +1,8 @@
 # TODO
 
-## Active Execution: Pass A/B/C Image Elimination & Reusable JSON Buffer
-- [x] Completely remove Pass A/B/C image generation, filtering, and base64-encoding from `NativeImageUtils.cpp` (nativeExpandByCharacterAwareDiagnostic) and shrink returned array size from 9 to 6.
-- [x] Update `NativeImageUtils.kt` to handle 6 elements and remove `charaware_img_a/b/c` metadata properties.
-- [x] Implement JSON helper functions (`appendJsonValue`, `appendJsonObject`, `appendJsonArray`, `escapeJsonString`) in `ExperimentAlignmentScreen.kt`.
-- [x] Integrate pre-allocated 16MB StringBuilder in `ExperimentAlignmentScreen.kt`'s `runExperimentAlignment`.
-- [x] Implement JSON helper functions in `ExperimentPumpScreen.kt`.
-- [x] Integrate pre-allocated 16MB StringBuilder in `ExperimentPumpScreen.kt`'s `runExperimentPump`.
-- [x] Verify `./build_app` compilation success.
+## Active Execution: Set I Blackout of Large Connected Components
+- [ ] Implement `nativeBlackOutLargeComponentsH` in `NativeImageUtils.cpp` to zero out pixels of components with width > 25% of the crop width.
+- [ ] Add JNI declaration and Kotlin wrapper `blackOutLargeComponentsH` in `NativeImageUtils.kt`.
+- [ ] Update `runBinTrialsPaddle` in `ExperimentAlignmentScreen.kt` to call `blackOutLargeComponentsH` for Set I, retrieve remaining components, and build the enclosing orangebox.
+- [ ] Draw filtered components in blue and the enclosing orangebox in orange for visualization.
+- [ ] Verify `./build_app` compilation success.

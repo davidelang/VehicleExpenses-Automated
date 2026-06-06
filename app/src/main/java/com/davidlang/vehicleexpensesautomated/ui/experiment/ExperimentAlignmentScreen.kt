@@ -1151,6 +1151,7 @@ private suspend fun runBinTrialsPaddle(
         )
 
         val valleyResults = if (pipelineKey == "set_i") {
+            NativeImageUtils.blackOutLargeComponentsH(odoBuffer.p.mat, 0.25f * odoBuffer.p.mat.cols())
             val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
             compRects.map { Pair(it, trialMetaMap) }
         } else {
@@ -1181,7 +1182,29 @@ private suspend fun runBinTrialsPaddle(
         }
 
         val tFrags = valleyResults.map { it.first }
-        val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
+        val tCons = if (pipelineKey == "set_i") {
+            if (tFrags.isNotEmpty()) {
+                var minL = Int.MAX_VALUE
+                var minT = Int.MAX_VALUE
+                var maxR = Int.MIN_VALUE
+                var maxB = Int.MIN_VALUE
+                for (rect in tFrags) {
+                    if (rect.left < minL) minL = rect.left
+                    if (rect.top < minT) minT = rect.top
+                    if (rect.right > maxR) maxR = rect.right
+                    if (rect.bottom > maxB) maxB = rect.bottom
+                }
+                val orangeL = minL.coerceIn(0, odoBuffer.p.mat.cols() - 1)
+                val orangeT = minT.coerceIn(0, odoBuffer.p.mat.rows() - 1)
+                val orangeR = maxR.coerceIn(orangeL + 1, odoBuffer.p.mat.cols())
+                val orangeB = maxB.coerceIn(orangeT + 1, odoBuffer.p.mat.rows())
+                listOf(android.graphics.Rect(orangeL, orangeT, orangeR, orangeB))
+            } else {
+                emptyList()
+            }
+        } else {
+            OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
+        }
         val tOdoB = StringBuilder(); val tProbsB = StringBuilder(); var tCf = 0f; var tCnt = 0
         
         valleyResults.forEachIndexed { vI, res ->
@@ -1220,6 +1243,7 @@ private suspend fun runBinTrialsPaddle(
         tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
         if (pipelineKey == "set_i") {
             tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
+            tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         } else {
             tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         }

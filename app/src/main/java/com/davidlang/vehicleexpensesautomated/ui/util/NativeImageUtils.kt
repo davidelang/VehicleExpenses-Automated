@@ -335,6 +335,10 @@ object NativeImageUtils {
         return list
     }
 
+    fun blackOutLargeComponentsH(mat: Mat, maxWidth: Float) {
+        nativeBlackOutLargeComponentsH(mat.nativeObj, maxWidth)
+    }
+
     fun calculatePitchH(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray? {
         return nativeCalculatePitchH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, thresholdFactor, vSW, hSW)
     }
@@ -376,6 +380,7 @@ object NativeImageUtils {
     private external fun nativeFindAllComponentsH(matPtr: Long, vSW: Float, hSW: Float): IntArray?
     private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
+    private external fun nativeBlackOutLargeComponentsH(matPtr: Long, maxWidth: Float)
 
 }
 
