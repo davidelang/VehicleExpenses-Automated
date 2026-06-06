@@ -1048,7 +1048,8 @@ private suspend fun runBinTrialsPaddle(
             vSW_clean, hSW_clean, thresholdFactor
         ) else null
 
-        val finalBounds = gridResult?.first ?: initialBounds
+        // Disable additional expansion of the orangebox after the component based expansion for Row H
+        val finalBounds = if (useCharAware) initialBounds else (gridResult?.first ?: initialBounds)
         val matchedSlots = gridResult?.second ?: IntArray(0)
         val failedSlots  = gridResult?.third  ?: IntArray(0)
 
