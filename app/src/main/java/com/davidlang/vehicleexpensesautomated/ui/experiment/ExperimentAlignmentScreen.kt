@@ -1153,6 +1153,7 @@ private suspend fun runBinTrialsPaddle(
 
         val valleyResults = if (pipelineKey == "set_j") {
             NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.25f * odoBuffer.p.mat.cols())
+            NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
             val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
             compRects.map { Pair(it, trialMetaMap) }
         } else {

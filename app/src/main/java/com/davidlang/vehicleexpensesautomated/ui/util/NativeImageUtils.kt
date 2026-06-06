@@ -345,6 +345,10 @@ object NativeImageUtils {
         return null
     }
 
+    fun blackOutRollingDigitsH(mat: Mat, vSW: Float, hSW: Float) {
+        nativeBlackOutRollingDigitsH(mat.nativeObj, vSW, hSW)
+    }
+
     private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
     private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
 
@@ -354,6 +358,7 @@ object NativeImageUtils {
     private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
     private external fun nativeBlackOutLargeAndSmallComponentsH(matPtr: Long, vSW: Float, hSW: Float, maxWidth: Float)
+    private external fun nativeBlackOutRollingDigitsH(matPtr: Long, vSW: Float, hSW: Float)
 
 }
 

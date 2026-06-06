@@ -2173,3 +2173,152 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAlign
     env->SetObjectArrayElement(resultArr, 2, failArr);
     return resultArr;
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlackOutRollingDigitsH(
+    JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
+
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+    if (nLabels <= 2) return; // Need at least 2 foreground components to have a pair
+
+    // 1. Compute heights and find median height
+    std::vector<int> heights;
+    for (int i = 1; i < nLabels; ++i) {
+        heights.push_back(stats.at<int>(i, cv::CC_STAT_HEIGHT));
+    }
+    std::sort(heights.begin(), heights.end());
+    float hMed = heights[heights.size() / 2];
+
+    // Helper functions for centers
+    auto getCenterX = [&](int label) -> float {
+        return stats.at<int>(label, cv::CC_STAT_LEFT) + stats.at<int>(label, cv::CC_STAT_WIDTH) / 2.0f;
+    };
+    auto getCenterY = [&](int label) -> float {
+        return stats.at<int>(label, cv::CC_STAT_TOP) + stats.at<int>(label, cv::CC_STAT_HEIGHT) / 2.0f;
+    };
+
+    // 2. Identify vertically aligned pairs
+    std::vector<std::pair<int, int>> alignedPairs;
+    std::vector<bool> isPairMember(nLabels, false);
+
+    for (int i = 1; i < nLabels; ++i) {
+        for (int j = i + 1; j < nLabels; ++j) {
+            float cx_i = getCenterX(i);
+            float cx_j = getCenterX(j);
+            if (std::abs(cx_i - cx_j) <= 0.5f * vSW) {
+                alignedPairs.push_back({i, j});
+                isPairMember[i] = true;
+                isPairMember[j] = true;
+            }
+        }
+    }
+
+    // 3. Collect line candidates (excluding members of aligned pairs and height outliers)
+    std::vector<std::pair<float, float>> linePts;
+    for (int i = 1; i < nLabels; ++i) {
+        if (!isPairMember[i]) {
+            int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+            if (std::abs(h - hMed) <= 0.5f * hSW) {
+                float cx = getCenterX(i);
+                float cy = getCenterY(i);
+                linePts.push_back({cx, cy});
+            }
+        }
+    }
+
+    // 4. Fit best-fit line Y = m*X + c
+    float m = 0.0f;
+    float c = 0.0f;
+    if (linePts.size() >= 2) {
+        double sumX = 0, sumXX = 0, sumXY = 0;
+        double sumY_fit = 0;
+        int N = linePts.size();
+        for (auto const& pt : linePts) {
+            sumX += pt.first;
+            sumY_fit += pt.second;
+            sumXX += pt.first * pt.first;
+            sumXY += pt.first * pt.second;
+        }
+        double denom = (N * sumXX - sumX * sumX);
+        if (std::abs(denom) > 1e-5) {
+            m = (float)((N * sumXY - sumX * sumY_fit) / denom);
+            c = (float)((sumY_fit - m * sumX) / N);
+        } else {
+            m = 0.0f;
+            c = (float)(sumY_fit / N);
+        }
+    } else {
+        // Fallback: horizontal line at average of all component Y-centers
+        float totalY = 0.0f;
+        for (int i = 1; i < nLabels; ++i) {
+            totalY += getCenterY(i);
+        }
+        m = 0.0f;
+        c = totalY / (nLabels - 1);
+    }
+
+    // Helper for boundary distance to line
+    auto getLineDistance = [&](int label, float x) -> float {
+        float yLine = m * x + c;
+        int minY = stats.at<int>(label, cv::CC_STAT_TOP);
+        int maxY = minY + stats.at<int>(label, cv::CC_STAT_HEIGHT);
+
+        if (yLine < (float)minY) return (float)minY - yLine;
+        if (yLine > (float)maxY) return yLine - (float)maxY;
+        return 0.0f;
+    };
+
+    // 5. Resolve aligned pairs and blank the loser
+    std::vector<int> toBlank;
+    for (auto const& pair : alignedPairs) {
+        int i = pair.first;
+        int j = pair.second;
+
+        float x_i = getCenterX(i);
+        float x_j = getCenterX(j);
+        float avgX = (x_i + x_j) / 2.0f;
+
+        float dist_i = getLineDistance(i, avgX);
+        float dist_j = getLineDistance(j, avgX);
+
+        int loser = -1;
+        if (dist_i < dist_j) {
+            loser = j;
+        } else if (dist_j < dist_i) {
+            loser = i;
+        } else {
+            // Tie breaker: distance of center to line
+            float yLine = m * avgX + c;
+            float cy_i = getCenterY(i);
+            float cy_j = getCenterY(j);
+            if (std::abs(cy_i - yLine) < std::abs(cy_j - yLine)) {
+                loser = j;
+            } else {
+                loser = i;
+            }
+        }
+        toBlank.push_back(loser);
+    }
+
+    // Blank out losing components
+    if (!toBlank.empty()) {
+        std::vector<bool> isLoser(nLabels, false);
+        for (int label : toBlank) {
+            isLoser[label] = true;
+        }
+        for (int r = 0; r < mat->rows; ++r) {
+            auto* rowPtr = mat->ptr<uint8_t>(r);
+            const auto* labelPtr = labels.ptr<int>(r);
+            for (int c = 0; c < mat->cols; ++c) {
+                int label = labelPtr[c];
+                if (label > 0 && isLoser[label]) {
+                    rowPtr[c] = 0;
+                }
+            }
+        }
+    }
+}
