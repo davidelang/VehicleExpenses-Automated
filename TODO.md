@@ -6,4 +6,4 @@
 - [x] Remove unused JNI wrappers (`expandBounds`, `calculatePitch`, `alignGrid`, `expandBoundsH`, `calculatePitchH`, `alignGridH`, `blackOutLargeComponentsH`) in `NativeImageUtils.kt`.
 - [x] Remove unused native implementations in `NativeImageUtils.cpp`.
 - [x] Remove before-cleaning annotated image and orange box histogram generation from `runBinTrialsPaddle` in `ExperimentAlignmentScreen.kt`.
-- [ ] Verify `./build_app` compilation success.
+- [x] Verify `./build_app` compilation success.
