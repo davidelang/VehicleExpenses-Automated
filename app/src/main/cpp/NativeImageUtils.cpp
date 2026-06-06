@@ -1817,124 +1817,54 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
-    int maxW = mat->cols, maxH = mat->rows;
-    double contentThreshold = computeThreshold(*mat, L, T, R, B, thresholdFactor);
+    // 1. Calculate thresholds (min width of vertical stroke and min height of horizontal stroke)
+    int minHorizRun = std::max(1, (int)(vSW * 0.5f)); 
+    int minVertRun  = std::max(1, (int)(hSW * 0.5f));  
 
-    // Minimum pixel counts derived from stroke widths
-    int minVertRun   = std::max(1, (int)(hSW * 0.5f));
-    int minHorizDepth = std::max(1, (int)(vSW * 0.5f));
-    int minVertDepth  = std::max(1, (int)(hSW * 0.5f));
+    // 2. Find connected components with stats
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
-    auto getMaxRunEB = [&](int start, int end, int fixed, bool horizontal) -> int {
-        int currentRun = 0, maxRun = 0;
-        if (horizontal) {
-            if (fixed < 0 || fixed >= maxH) return 0;
-            const uint8_t* rowPtr = mat->ptr<uint8_t>(fixed);
-            for (int i = std::max(0, start); i < std::min(maxW, end); ++i) {
-                if (rowPtr[i] > contentThreshold) { currentRun++; if (currentRun > maxRun) maxRun = currentRun; }
-                else currentRun = 0;
+    // 3. Union bounding boxes of valid components that intersect the starting box
+    int unionL = mat->cols, unionT = mat->rows, unionR = 0, unionB = 0;
+    bool found = false;
+
+    for (int i = 1; i < nLabels; ++i) {
+        int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+
+        // Noise filtering: width and height must exceed 0.5 * stroke width
+        if (w >= minHorizRun && h >= minVertRun) {
+            int cL = stats.at<int>(i, cv::CC_STAT_LEFT);
+            int cT = stats.at<int>(i, cv::CC_STAT_TOP);
+            int cR = cL + w;
+            int cB = cT + h;
+
+            // Check intersection with Red Box (L, T, R, B)
+            bool intersects = !(cL > R || cR < L || cT > B || cB < T);
+            if (intersects) {
+                unionL = std::min(unionL, cL);
+                unionT = std::min(unionT, cT);
+                unionR = std::max(unionR, cR);
+                unionB = std::max(unionB, cB);
+                found = true;
             }
-        } else {
-            if (fixed < 0 || fixed >= maxW) return 0;
-            for (int i = std::max(0, start); i < std::min(maxH, end); ++i) {
-                if (mat->at<uint8_t>(i, fixed) > contentThreshold) { currentRun++; if (currentRun > maxRun) maxRun = currentRun; }
-                else currentRun = 0;
-            }
-        }
-        return maxRun;
-    };
-
-    auto isValleyEB = [&](int x, int mnY, int mxY) -> bool {
-        int h = mxY - mnY;
-        int cut = std::max(1, (int)(h * 0.10));
-        return getMaxRunEB(mnY + cut, mxY - cut, x, false) < minVertRun;
-    };
-
-    double minX = L, maxX = R, minY = T, maxY = B;
-
-    auto hasDepthInDir = [&](int x, int dir, int count) -> bool {
-        for (int i = 0; i < count; ++i) {
-            int cx = x + i * dir;
-            if (cx < 0 || cx >= maxW) return false;
-            if (isValleyEB(cx, (int)minY, (int)maxY)) return false;
-        }
-        return true;
-    };
-
-    auto hasDepthVertDir = [&](int y, int dir, int count) -> bool {
-        for (int i = 0; i < count; ++i) {
-            int cy = y + i * dir;
-            if (cy < 0 || cy >= maxH) return false;
-            if (getMaxRunEB((int)minX, (int)maxX, cy, true) < minHorizDepth) return false;
-        }
-        return true;
-    };
-
-    double vL = (maxY - minY) * 1.5;
-
-    // Vertical walk
-    // Retract top edge down if first rows are empty
-    while (minY < maxY && getMaxRunEB((int)minX, (int)maxX, (int)minY, true) < minHorizDepth) {
-        minY += 1.0;
-    }
-    // Expand top edge up with lookahead
-    while (minY > 0 && (T - minY) < vL) {
-        int nextRow = (int)minY - 1;
-        if (getMaxRunEB((int)minX, (int)maxX, nextRow, true) < minHorizDepth) break;
-        if (!hasDepthVertDir(nextRow, -1, minVertDepth)) break;
-        minY -= 1.0;
-    }
-
-    // Retract bottom edge up if last rows are empty
-    while (maxY > minY && getMaxRunEB((int)minX, (int)maxX, (int)maxY - 1, true) < minHorizDepth) {
-        maxY -= 1.0;
-    }
-    // Expand bottom edge down with lookahead
-    while (maxY < maxH - 1 && (maxY - B) < vL) {
-        int nextRow = (int)maxY + 1;
-        if (getMaxRunEB((int)minX, (int)maxX, nextRow, true) < minHorizDepth) break;
-        if (!hasDepthVertDir(nextRow, 1, minVertDepth)) break;
-        maxY += 1.0;
-    }
-
-    // Left edge
-    // Retraction looks right: walk right while column is valley
-    if (isValleyEB((int)minX, (int)minY, (int)maxY)) {
-        while (minX < maxX && isValleyEB((int)minX, (int)minY, (int)maxY)) {
-            minX += 1.0;
-        }
-    }
-    // Retraction lookahead looking right
-    while (minX < maxX && !hasDepthInDir((int)minX, 1, minHorizDepth)) {
-        minX += 1.0;
-    }
-    // Expand left from solid content
-    if (minX > 0 && !isValleyEB((int)minX - 1, (int)minY, (int)maxY) && hasDepthInDir((int)minX - 1, -1, minHorizDepth)) {
-        while (minX > 0 && !isValleyEB((int)minX - 1, (int)minY, (int)maxY) && hasDepthInDir((int)minX - 1, -1, minHorizDepth)) {
-            minX -= 1.0;
         }
     }
 
-    // Right edge
-    // Retract left if in valley
-    if (isValleyEB((int)maxX - 1, (int)minY, (int)maxY)) {
-        while (maxX > minX && isValleyEB((int)maxX - 1, (int)minY, (int)maxY)) {
-            maxX -= 1.0;
-        }
-    }
-    // Retraction lookahead looking left
-    while (maxX > minX && !hasDepthInDir((int)maxX - 1, -1, minHorizDepth)) {
-        maxX -= 1.0;
-    }
-    // Expand right from solid content
-    if (maxX < maxW && !isValleyEB((int)maxX, (int)minY, (int)maxY) && hasDepthInDir((int)maxX, 1, minHorizDepth)) {
-        while (maxX < maxW && !isValleyEB((int)maxX, (int)minY, (int)maxY) && hasDepthInDir((int)maxX, 1, minHorizDepth)) {
-            maxX += 1.0;
-        }
+    int finalL = L, finalT = T, finalR = R, finalB = B;
+    if (found) {
+        int H = B - T;
+        int maxExp = H * 2.0; // 2x original height limit
+
+        finalL = unionL;
+        finalT = std::max(T - maxExp, unionT);
+        finalR = unionR;
+        finalB = std::min(B + maxExp, unionB);
     }
 
     jintArray result = env->NewIntArray(4);
-    jint dims[4] = { (jint)minX, (jint)minY, (jint)maxX, (jint)maxY };
+    jint dims[4] = { finalL, finalT, finalR, finalB };
     env->SetIntArrayRegion(result, 0, 4, dims);
     return result;
 }
