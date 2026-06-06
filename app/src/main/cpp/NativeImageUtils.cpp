@@ -2075,5 +2075,3 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAlign
     env->SetObjectArrayElement(resultArr, 2, failArr);
     return resultArr;
 }
-
-}
