@@ -1924,6 +1924,47 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlackOutLargeAndSmallComponentsH(
+    JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW, jfloat maxWidth) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
+
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+
+    std::vector<int> invalidLabels;
+    for (int i = 1; i < nLabels; ++i) {
+        int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+
+        bool tooSmall = ((float)w <= vSW * 0.75f || (float)h <= hSW * 0.75f);
+        bool tooLarge = ((float)w > maxWidth);
+
+        if (tooSmall || tooLarge) {
+            invalidLabels.push_back(i);
+        }
+    }
+
+    if (!invalidLabels.empty()) {
+        std::vector<bool> isInvalid(nLabels, false);
+        for (int label : invalidLabels) {
+            isInvalid[label] = true;
+        }
+        for (int r = 0; r < mat->rows; ++r) {
+            auto* rowPtr = mat->ptr<uint8_t>(r);
+            const auto* labelPtr = labels.ptr<int>(r);
+            for (int c = 0; c < mat->cols; ++c) {
+                int label = labelPtr[c];
+                if (label > 0 && isInvalid[label]) {
+                    rowPtr[c] = 0;
+                }
+            }
+        }
+    }
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculatePitchH(
     JNIEnv* env, jobject thiz, jlong matPtr, jint minX, jint minY, jint maxX, jint maxY, jfloat thresholdFactor, jfloat vSW, jfloat hSW) {

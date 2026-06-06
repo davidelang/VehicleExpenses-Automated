@@ -289,7 +289,8 @@ private suspend fun runExperiment(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
         PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
         PipelineConfig("set_h", "Set H (Char-Aware Expansion)", { it.paddleTimeMs }) { it.paddleCppAngle },
-        PipelineConfig("set_i", "Set I (All Components Debug)", { it.paddleTimeMs }) { it.paddleCppAngle }
+        PipelineConfig("set_i", "Set I (All Components Debug)", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_j", "Set J (CC Speedup)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
     val harnessEngineNames = listOf("Set A ML") + pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
@@ -492,7 +493,7 @@ private suspend fun runExperiment(
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
                             }
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h" || pipeline.key == "set_i"), pipelineKey = pipeline.key)
+                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h" || pipeline.key == "set_i" || pipeline.key == "set_j"), pipelineKey = pipeline.key)
                         }
                     }
                     
@@ -1076,25 +1077,29 @@ private suspend fun runBinTrialsPaddle(
             return@forEachIndexed
         }
 
-        NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
-        NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
+        var vSW = vSW_red
+        var hSW = hSW_red
+        if (pipelineKey != "set_j") {
+            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
+            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
 
-        experimentDetSet512x128.p.clear()
-        val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-        tFullB = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
-        experimentDetSet512x128.c[dCrId2].release()
+            experimentDetSet512x128.p.clear()
+            val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            tFullB = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
+            experimentDetSet512x128.c[dCrId2].release()
 
-        rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
-        var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-        var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-        var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-        val vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
-        val hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
-        odoBuffer.crop[redBoxCropId].release()
+            rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
+            var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+            var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
+            hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
+            odoBuffer.crop[redBoxCropId].release()
+        }
 
-        if (vSW <= 0f || hSW <= 0f) {
+        if (pipelineKey != "set_j" && (vSW <= 0f || hSW <= 0f)) {
             val histsHtml = StringBuilder()
             
             // 1. Raw Red Box Histograms
@@ -1150,8 +1155,12 @@ private suspend fun runBinTrialsPaddle(
             "charaware_hlimit"        to String.format("%.1f", hSW * 0.75f)
         )
 
-        val valleyResults = if (pipelineKey == "set_i") {
-            NativeImageUtils.blackOutLargeComponentsH(odoBuffer.p.mat, 0.25f * odoBuffer.p.mat.cols())
+        val valleyResults = if (pipelineKey == "set_i" || pipelineKey == "set_j") {
+            if (pipelineKey == "set_j") {
+                NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.25f * odoBuffer.p.mat.cols())
+            } else {
+                NativeImageUtils.blackOutLargeComponentsH(odoBuffer.p.mat, 0.25f * odoBuffer.p.mat.cols())
+            }
             val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
             compRects.map { Pair(it, trialMetaMap) }
         } else {
@@ -1182,7 +1191,7 @@ private suspend fun runBinTrialsPaddle(
         }
 
         val tFrags = valleyResults.map { it.first }
-        val tCons = if (pipelineKey == "set_i") {
+        val tCons = if (pipelineKey == "set_i" || pipelineKey == "set_j") {
             if (tFrags.isNotEmpty()) {
                 var minL = Int.MAX_VALUE
                 var minT = Int.MAX_VALUE
@@ -1241,7 +1250,7 @@ private suspend fun runBinTrialsPaddle(
         
         val annsPost = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
-        if (pipelineKey == "set_i") {
+        if (pipelineKey == "set_i" || pipelineKey == "set_j") {
             tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
             tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         } else {
