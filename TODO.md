@@ -1,8 +1,9 @@
 # TODO
 
-## Active Execution: Create Set J (Connected Components Speedup)
-- [x] Implement `nativeBlackOutLargeAndSmallComponentsH` in `NativeImageUtils.cpp`.
-- [x] Add JNI declaration and Kotlin wrapper `blackOutLargeAndSmallComponentsH` in `NativeImageUtils.kt`.
-- [x] Add `set_j` configuration to `pipelines` and `useCharAware` checks in `ExperimentAlignmentScreen.kt`.
-- [x] Update `runBinTrialsPaddle` in `ExperimentAlignmentScreen.kt` to handle `pipelineKey == "set_j"`, consolidating scrubbing and negation passes, reusing `vSW_red` and `hSW_red`, and drawing annotations.
-- [x] Verify `./build_app` compilation success.
+## Active Execution: Remove Set H & Set I, Cleanups, and Redefine Failing Subset
+- [x] Redefine `FAILING_SUBSET` with the 11 Set J failures in `ExperimentAlignmentScreen.kt`.
+- [x] Remove Set H and Set I configuration and conditional blocks in `ExperimentAlignmentScreen.kt`.
+- [x] Remove unused JNI wrappers (`expandBounds`, `calculatePitch`, `alignGrid`, `expandBoundsH`, `calculatePitchH`, `alignGridH`, `blackOutLargeComponentsH`) in `NativeImageUtils.kt`.
+- [x] Remove unused native implementations in `NativeImageUtils.cpp`.
+- [x] Remove before-cleaning annotated image and orange box histogram generation from `runBinTrialsPaddle` in `ExperimentAlignmentScreen.kt`.
+- [ ] Verify `./build_app` compilation success.

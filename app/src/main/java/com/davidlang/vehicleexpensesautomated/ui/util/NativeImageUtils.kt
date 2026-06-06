@@ -302,13 +302,6 @@ object NativeImageUtils {
         return null
     }
 
-    /** Vertical walk + bidirectional snapping on odoBuffer.p.mat.
-     *  Returns the initial bounds rect for use by calculatePitch. */
-    fun expandBounds(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float): android.graphics.Rect {
-        val res = nativeExpandBounds(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
-        return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
-    }
-
     /** Decoupled H-variants for Set H with stroke-width aware logic */
     fun calculateHistogramWithThresholdH(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
         if (rects.isEmpty()) return null
@@ -335,10 +328,6 @@ object NativeImageUtils {
         return list
     }
 
-    fun blackOutLargeComponentsH(mat: Mat, maxWidth: Float) {
-        nativeBlackOutLargeComponentsH(mat.nativeObj, maxWidth)
-    }
-
     fun blackOutLargeAndSmallComponentsH(mat: Mat, vSW: Float, hSW: Float, maxWidth: Float) {
         nativeBlackOutLargeAndSmallComponentsH(mat.nativeObj, vSW, hSW, maxWidth)
     }
@@ -356,35 +345,14 @@ object NativeImageUtils {
         return null
     }
 
-    /** Valley detection + pitch/anchorMode/bestShift on odoBuffer.p.mat within the given bounds.
-     *  Returns IntArray[3] = [pitch, anchorMode(1=right/0=center), bestShift], or null. */
-    fun calculatePitch(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float): IntArray? {
-        return nativeCalculatePitch(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, thresholdFactor)
-    }
-
-    /** Character-aware horizontal expansion using pitch + vSW mass check on odoBuffer.p.mat.
-     *  Returns Triple(finalBoundsRect, matchedSlots flat IntArray, failedSlots flat IntArray), or null. */
-    fun alignGrid(mat: Mat, bounds: android.graphics.Rect, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Triple<android.graphics.Rect, IntArray, IntArray>? {
-        val res = nativeAlignGrid(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, pitch, bestShift, anchorMode, vSW, hSW, thresholdFactor)
-        if (res != null && res.size == 3) {
-            val fb = res[0] as IntArray
-            return Triple(android.graphics.Rect(fb[0], fb[1], fb[2], fb[3]), res[1] as IntArray, res[2] as IntArray)
-        }
-        return null
-    }
-
     private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
     private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
-    private external fun nativeExpandBounds(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float): IntArray?
-    private external fun nativeCalculatePitch(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float): IntArray?
-    private external fun nativeAlignGrid(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
 
     private external fun nativeCalculateHistogramWithThresholdH(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
     private external fun nativeExpandBoundsH(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeFindAllComponentsH(matPtr: Long, vSW: Float, hSW: Float): IntArray?
     private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
-    private external fun nativeBlackOutLargeComponentsH(matPtr: Long, maxWidth: Float)
     private external fun nativeBlackOutLargeAndSmallComponentsH(matPtr: Long, vSW: Float, hSW: Float, maxWidth: Float)
 
 }

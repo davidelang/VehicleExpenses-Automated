@@ -69,17 +69,16 @@ private val GOLDEN_SUBSET = mapOf(
 )
 
 private val FAILING_SUBSET = mapOf(
+    "PXL_20221029_002946498.dng" to 4,
     "PXL_20221121_021330418.jpg" to 5,
     "PXL_20221228_164725812.dng" to 12,
-    "PXL_20230430_042448627.dng" to 22,
-    "PXL_20231221_212942380.jpg" to 40,
     "PXL_20231223_074744139.jpg" to 41,
     "PXL_20240114_162249446.jpg" to 45,
     "PXL_20240414_010409990.jpg" to 50,
-    "PXL_20240717_235836312.jpg" to 55,
-    "PXL_20240722_200247194.jpg" to 56,
+    "PXL_20250426_023457157.jpg" to 80,
+    "PXL_20250703_031510594.jpg" to 94,
+    "PXL_20251108_025019715.jpg" to 122,
     "PXL_20251111_071548876.jpg" to 124,
-    "PXL_20260214_204037399.jpg" to 131,
     "PXL_20260413_083458977.jpg" to 141
 )
 
@@ -288,8 +287,6 @@ private suspend fun runExperiment(
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
         PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
-        PipelineConfig("set_h", "Set H (Char-Aware Expansion)", { it.paddleTimeMs }) { it.paddleCppAngle },
-        PipelineConfig("set_i", "Set I (All Components Debug)", { it.paddleTimeMs }) { it.paddleCppAngle },
         PipelineConfig("set_j", "Set J (CC Speedup)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
     val harnessEngineNames = listOf("Set A ML") + pipelines.map { "${it.displayName} Paddle" }
@@ -493,7 +490,7 @@ private suspend fun runExperiment(
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
                             }
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h" || pipeline.key == "set_i" || pipeline.key == "set_j"), pipelineKey = pipeline.key)
+                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_j"), pipelineKey = pipeline.key)
                         }
                     }
                     
@@ -1021,13 +1018,12 @@ private suspend fun runBinTrialsPaddle(
         tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
 
         val (tPlainPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-        val (tAnnotatedPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
 
         if (tRawB.isEmpty()) {
             val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (No bounding box detected)", 0f, 0f, "",
-                tAnnotatedPreB64, tPlainPreB64, "", "",
+                "", tPlainPreB64, "", "",
                 "Peak detection failed (No bounding box detected).", 0f, emptyMap(),
                 "", annStr
             ))
@@ -1069,7 +1065,7 @@ private suspend fun runBinTrialsPaddle(
             val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
-                tAnnotatedPreB64, tPlainPreB64, "", "",
+                "", tPlainPreB64, "", "",
                 histsHtml.toString(), 0f, emptyMap(),
                 "", annStr
             ))
@@ -1134,7 +1130,7 @@ private suspend fun runBinTrialsPaddle(
 
             trialsList.add(TrialData(
                 threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW)", 0f, 0f, "",
-                tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
+                "", tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
                 histsHtml.toString(), 0f, emptyMap(),
                 post1bpp, annStr
             ))
@@ -1155,12 +1151,8 @@ private suspend fun runBinTrialsPaddle(
             "charaware_hlimit"        to String.format("%.1f", hSW * 0.75f)
         )
 
-        val valleyResults = if (pipelineKey == "set_i" || pipelineKey == "set_j") {
-            if (pipelineKey == "set_j") {
-                NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.25f * odoBuffer.p.mat.cols())
-            } else {
-                NativeImageUtils.blackOutLargeComponentsH(odoBuffer.p.mat, 0.25f * odoBuffer.p.mat.cols())
-            }
+        val valleyResults = if (pipelineKey == "set_j") {
+            NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.25f * odoBuffer.p.mat.cols())
             val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
             compRects.map { Pair(it, trialMetaMap) }
         } else {
@@ -1191,7 +1183,7 @@ private suspend fun runBinTrialsPaddle(
         }
 
         val tFrags = valleyResults.map { it.first }
-        val tCons = if (pipelineKey == "set_i" || pipelineKey == "set_j") {
+        val tCons = if (pipelineKey == "set_j") {
             if (tFrags.isNotEmpty()) {
                 var minL = Int.MAX_VALUE
                 var minT = Int.MAX_VALUE
@@ -1250,7 +1242,7 @@ private suspend fun runBinTrialsPaddle(
         
         val annsPost = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
-        if (pipelineKey == "set_i" || pipelineKey == "set_j") {
+        if (pipelineKey == "set_j") {
             tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
             tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
         } else {
@@ -1301,21 +1293,6 @@ private suspend fun runBinTrialsPaddle(
                     }
                 }
             }
-            tCons.forEachIndexed { oIdx, ob ->
-                val orangeBoxCropId = odoBuffer.createCrop(ob.left, ob.top, ob.width(), ob.height())
-                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[orangeBoxCropId].width, odoBuffer.crop[orangeBoxCropId].height)
-                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[orangeBoxCropId].mat, listOf(cropRect), thresholdFactor)
-                if (hRes != null) {
-                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                    val firstIntersect = tRawB.find { it.boundingBox.intersects(ob.left, ob.top, ob.right, ob.bottom) }
-                    val pitch = if (firstIntersect != null) {
-                        val rIdx = tRawB.indexOf(firstIntersect)
-                        valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
-                    } else "0"
-                    histsHtml.append("<br><small>Orange Box #$oIdx [${ob.left},${ob.top} - ${ob.right},${ob.bottom}] (${ob.width()}x${ob.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64'>")
-                }
-                odoBuffer.crop[orangeBoxCropId].release()
-            }
         }
 
         val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
@@ -1325,7 +1302,7 @@ private suspend fun runBinTrialsPaddle(
         
         trialsList.add(TrialData(
             threshold, tText, tProbs.sum(), minP, tProbsStr,
-            tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
+            "", tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
             histsHtml.toString(), tAvg, trialMetaMap,
             post1bpp, annStr
         ))
@@ -1353,11 +1330,10 @@ private suspend fun runBinTrialsPaddle(
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
         
         val preCleanPlain = if (t.plainPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPreB64}'><br>" else ""
-        val preCleanAnnot = if (t.annotatedPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPreB64}'><br>" else ""
         val postCleanPlain = if (t.plainPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPostB64}'><br>" else ""
         val postCleanAnnot = if (t.annotatedPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPostB64}'><br>" else ""
         
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><b>Pre-Cleaned (Binarized Only):</b><br>$preCleanPlain$preCleanAnnot<b>Post-Cleaned (OCR Input):</b><br>$postCleanPlain$postCleanAnnot${t.histB64}</div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><b>Pre-Cleaned (Binarized Only):</b><br>$preCleanPlain<b>Post-Cleaned (OCR Input):</b><br>$postCleanPlain$postCleanAnnot${t.histB64}</div>")
         
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"
         if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
