@@ -1549,6 +1549,7 @@ private fun buildHtmlRowDynamic(
                     if (step.stageName == "Bin" && step.metadata.containsKey("best_plain_pre")) {
                         val preCleanPlain = step.metadata["best_plain_pre"] ?: ""
                         val preCleanAnnot = step.metadata["best_annotated_pre"] ?: ""
+                        val preRollingPlain = step.metadata["best_plain_pre_rolling"] ?: ""
                         val postCleanPlain = step.metadata["best_plain_post"] ?: ""
                         val postCleanAnnot = step.metadata["best_annotated_post"] ?: ""
                         
@@ -1556,6 +1557,10 @@ private fun buildHtmlRowDynamic(
                         appendLine("<b>Pre-Cleaned (Binarized Only):</b><br>")
                         if (preCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
                         if (preCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
+                        if (preRollingPlain.isNotEmpty()) {
+                            appendLine("<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br>")
+                            appendLine("<img src='data:image/jpeg;base64,$preRollingPlain'><br>")
+                        }
                         appendLine("<b>Post-Cleaned (OCR Input):</b><br>")
                         if (postCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
                         if (postCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")

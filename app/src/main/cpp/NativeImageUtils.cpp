@@ -1927,6 +1927,92 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         }
     }
 
+    // 2. Run vertical wide filter (sequential, before CC refresh)
+    for (int i = 1; i < nLabels; ++i) {
+        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        if ((float)h >= 0.3f * mat->rows) {
+            int minX = stats.at<int>(i, cv::CC_STAT_LEFT);
+            int minY = stats.at<int>(i, cv::CC_STAT_TOP);
+            int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+            int maxX = minX + w;
+            int maxY = minY + h;
+
+            std::vector<int> thicknesses(h, 999999);
+            int narrow_rows_count = 0;
+
+            for (int y = minY; y < maxY; ++y) {
+                std::vector<int> run_lengths;
+                for (int x = minX; x < maxX; ++x) {
+                    if (labels.at<int>(y, x) == i) {
+                        int x_left = x;
+                        while (x_left >= 0 && labels.at<int>(y, x_left) == i) {
+                            x_left--;
+                        }
+                        x_left++;
+
+                        int x_right = x;
+                        while (x_right < mat->cols && labels.at<int>(y, x_right) == i) {
+                            x_right++;
+                        }
+                        x_right--;
+
+                        run_lengths.push_back(x_right - x_left + 1);
+                        x = x_right;
+                    }
+                }
+                if (!run_lengths.empty()) {
+                    int t = getPercentile(run_lengths, 0.20f);
+                    thicknesses[y - minY] = t;
+                    if ((float)t < 0.75f * vSW) {
+                        narrow_rows_count++;
+                    }
+                }
+            }
+
+            if (narrow_rows_count >= 0.3f * mat->rows) {
+                int t_min = 999999;
+                int y_min = -1;
+                for (int y = minY; y < maxY; ++y) {
+                    int t = thicknesses[y - minY];
+                    if (t < t_min) {
+                        t_min = t;
+                        y_min = y;
+                    }
+                }
+
+                if (y_min != -1 && t_min < 999999) {
+                    int y_start = y_min;
+                    while (y_start >= minY && thicknesses[y_start - minY] <= t_min + 2 && thicknesses[y_start - minY] <= t_min * 1.5 && (float)thicknesses[y_start - minY] < 0.75f * vSW) {
+                        y_start--;
+                    }
+                    y_start++;
+
+                    int y_end = y_min;
+                    while (y_end < maxY && thicknesses[y_end - minY] <= t_min + 2 && thicknesses[y_end - minY] <= t_min * 1.5 && (float)thicknesses[y_end - minY] < 0.75f * vSW) {
+                        y_end++;
+                    }
+                    y_end--;
+
+                    int H = y_end - y_start + 1;
+                    int pad = (int)(0.5f * H);
+                    int y_clear_start = std::max(minY, y_start - pad);
+                    int y_clear_end = std::min(maxY - 1, y_end + pad);
+
+                    for (int y = y_clear_start; y <= y_clear_end; ++y) {
+                        auto* rowPtr = mat->ptr<uint8_t>(y);
+                        const auto* labelRow = labels.ptr<int>(y);
+                        for (int x = minX; x < maxX; ++x) {
+                            if (labelRow[x] == i) {
+                                rowPtr[x] = 0;
+                                modified = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Refresh connected components list if we split any large object
     if (modified) {
         nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);

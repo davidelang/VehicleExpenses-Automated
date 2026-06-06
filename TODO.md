@@ -1,9 +1,6 @@
 # TODO
 
-## Active Execution: First-Class Pre-Rolling Image Snapshot via `takeSnapshot`
-- [x] Add `plainPreRollingB64` first-class field to `TrialData` inside `runBinTrialsPaddle`.
-- [x] Initialize `tPlainPreRollingB64` variable and capture pre-rolling snapshot using `OcrUtils.takeSnapshot` in Set J block.
-- [x] Pass `tPlainPreRollingB64` to `TrialData` constructor calls.
-- [x] Render the pre-rolling image in HTML from the `plainPreRollingB64` property.
-- [x] Update winner metadata map with `best_plain_pre_rolling`.
-- [x] Verify `./build_app` compilation success.
+## Active Execution: Pre-Rolling HTML Display & Vertical Wide Filter Implementation
+- [ ] Render the pre-rolling image snapshot in the HTML report table columns.
+- [ ] Implement the vertical wide filter in `NativeImageUtils.cpp` after the horizontal wide filter but before the CC refresh/small items check.
+- [ ] Verify compilation success via `./build_app`.
