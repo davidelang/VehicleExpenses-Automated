@@ -1832,9 +1832,107 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
 
+    // Run first pass of CC to find extra-large components
     cv::Mat labels, stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
+    bool modified = false;
+
+    // Helper for percentile calculation
+    auto getPercentile = [](std::vector<int>& v, float p) -> int {
+        if (v.empty()) return 999999;
+        std::sort(v.begin(), v.end());
+        int idx = std::max(0, std::min((int)v.size() - 1, (int)(v.size() * p)));
+        return v[idx];
+    };
+
+    for (int i = 1; i < nLabels; ++i) {
+        int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        if ((float)w > maxWidth) {
+            int minX = stats.at<int>(i, cv::CC_STAT_LEFT);
+            int minY = stats.at<int>(i, cv::CC_STAT_TOP);
+            int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+            int maxX = minX + w;
+            int maxY = minY + h;
+
+            std::vector<int> thicknesses(h, 999999);
+
+            for (int y = minY; y < maxY; ++y) {
+                std::vector<int> run_lengths;
+                for (int x = minX; x < maxX; ++x) {
+                    if (labels.at<int>(y, x) == i) {
+                        // Compute continuous vertical run of component 'i' in column x containing y
+                        int y_top = y;
+                        while (y_top >= 0 && labels.at<int>(y_top, x) == i) {
+                            y_top--;
+                        }
+                        y_top++;
+
+                        int y_bottom = y;
+                        while (y_bottom < mat->rows && labels.at<int>(y_bottom, x) == i) {
+                            y_bottom++;
+                        }
+                        y_bottom--;
+
+                        run_lengths.push_back(y_bottom - y_top + 1);
+                    }
+                }
+                if (!run_lengths.empty()) {
+                    thicknesses[y - minY] = getPercentile(run_lengths, 0.20f);
+                }
+            }
+
+            // Find row where vertical thickness is minimized
+            int t_min = 999999;
+            int y_min = -1;
+            for (int y = minY; y < maxY; ++y) {
+                int t = thicknesses[y - minY];
+                if (t < t_min) {
+                    t_min = t;
+                    y_min = y;
+                }
+            }
+
+            if (y_min != -1 && t_min < 999999) {
+                // Contiguous range with similar thickness
+                int y_start = y_min;
+                while (y_start >= minY && thicknesses[y_start - minY] <= t_min + 2 && thicknesses[y_start - minY] <= t_min * 1.5) {
+                    y_start--;
+                }
+                y_start++;
+
+                int y_end = y_min;
+                while (y_end < maxY && thicknesses[y_end - minY] <= t_min + 2 && thicknesses[y_end - minY] <= t_min * 1.5) {
+                    y_end++;
+                }
+                y_end--;
+
+                int H = y_end - y_start + 1;
+                int pad = (int)(0.5f * H);
+                int y_clear_start = std::max(minY, y_start - pad);
+                int y_clear_end = std::min(maxY - 1, y_end + pad);
+
+                // Set pixels of component i in this range to 0 (black)
+                for (int y = y_clear_start; y <= y_clear_end; ++y) {
+                    auto* rowPtr = mat->ptr<uint8_t>(y);
+                    const auto* labelRow = labels.ptr<int>(y);
+                    for (int x = minX; x < maxX; ++x) {
+                        if (labelRow[x] == i) {
+                            rowPtr[x] = 0;
+                            modified = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Refresh connected components list if we split any large object
+    if (modified) {
+        nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+    }
+
+    // Run small item binarization filter (and any remaining tooLarge parts)
     std::vector<int> invalidLabels;
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
