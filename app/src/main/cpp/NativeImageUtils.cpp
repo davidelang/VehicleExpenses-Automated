@@ -1287,14 +1287,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     std::vector<std::pair<int, int>> sortedHist(horizRunHist.begin(), horizRunHist.end());
     std::sort(sortedHist.begin(), sortedHist.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
 
-    // Forensic Filter Images
-    cv::Mat core(mat->rows, mat->cols, CV_8UC1, cv::Scalar(0));
-    cv::Mat temp; cv::threshold((*mat), temp, contentThreshold, 255, cv::THRESH_BINARY);
-    temp.copyTo(core);
-    cv::Mat passA = core.clone(), passB = core.clone(), passC = core.clone();
-    filterComponents(passA, (float)vSW_red, (float)hSW_red, 0);
-    filterComponents(passB, (float)vSW_red, (float)hSW_red, 1);
-    filterComponents(passC, (float)vSW_red, (float)hSW_red, 2);
+    // Forensic Filter Images removed to optimize memory
 
     std::vector<int> colMaxRuns;
     for (int x = (int)minX; x < (int)maxX; ++x) {
@@ -1450,22 +1443,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jint s[16] = { (jint)L, (jint)T, (jint)R, (jint)B, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)minX, (jint)minY, (jint)maxX, (jint)maxY, (jint)contentThreshold, (jint)vSW_red, (jint)hSW_red, (jint)medianPitch };
     env->SetIntArrayRegion(summary, 0, 16, s);
 
-    jstring imgAB64 = env->NewStringUTF(matToBase64(passA).c_str());
-    jstring imgBB64 = env->NewStringUTF(matToBase64(passB).c_str());
-    jstring imgCB64 = env->NewStringUTF(matToBase64(passC).c_str());
     jstring traceStr = env->NewStringUTF(oss.str().c_str());
 
     jclass objClass = env->FindClass("java/lang/Object");
-    jobjectArray resultArr = env->NewObjectArray(9, objClass, nullptr);
+    jobjectArray resultArr = env->NewObjectArray(6, objClass, nullptr);
     env->SetObjectArrayElement(resultArr, 0, summary);
     env->SetObjectArrayElement(resultArr, 1, traceStr);
     env->SetObjectArrayElement(resultArr, 2, hArr);
     env->SetObjectArrayElement(resultArr, 3, vArr);
     env->SetObjectArrayElement(resultArr, 4, matchedArr);
     env->SetObjectArrayElement(resultArr, 5, failedArr);
-    env->SetObjectArrayElement(resultArr, 6, imgAB64);
-    env->SetObjectArrayElement(resultArr, 7, imgBB64);
-    env->SetObjectArrayElement(resultArr, 8, imgCB64);
 
     return resultArr;
 }

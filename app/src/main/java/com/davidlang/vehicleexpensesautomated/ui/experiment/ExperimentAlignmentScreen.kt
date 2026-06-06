@@ -275,6 +275,9 @@ private suspend fun runExperiment(
     val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
     
+    // Pre-allocated JSON serialization buffer (16MB starting capacity)
+    var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
+    
     var partCount = 1
     val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
     var currentSize = 0
@@ -555,7 +558,16 @@ private suspend fun runExperiment(
                     meta.diagnostic, photoResult!!, vehicles, deskewResA, tSnapOrig, tSnapAlign
                 )
                 val comma = if (index < total - 1) "," else ""
-                jsonFile.appendText(photoJson.toString(2) + "$comma\n")
+                
+                // Clear/reset or re-allocate the reusable buffer to keep memory bounded
+                if (jsonCharBuffer.capacity() > 64 * 1024 * 1024) {
+                    jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
+                } else {
+                    jsonCharBuffer.setLength(0)
+                }
+                
+                appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
+                jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
                 
                 val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f)
 
@@ -731,6 +743,85 @@ private fun serializePhotoResultToJson(
         }; put("vehicles", vehicleResults)
     }
     return root
+}
+
+private fun appendJsonValue(sb: StringBuilder, value: Any?, indent: Int, indentLevel: Int) {
+    if (sb.length > 64 * 1024 * 1024) {
+        throw IllegalStateException("JSON serialization exceeded the 64MB safety ceiling")
+    }
+    when (value) {
+        null -> sb.append("null")
+        JSONObject.NULL -> sb.append("null")
+        is JSONObject -> appendJsonObject(sb, value, indent, indentLevel)
+        is JSONArray -> appendJsonArray(sb, value, indent, indentLevel)
+        is String -> {
+            sb.append('"')
+            escapeJsonString(sb, value)
+            sb.append('"')
+        }
+        is Boolean -> sb.append(value.toString())
+        is Number -> sb.append(value.toString())
+        else -> {
+            sb.append('"')
+            escapeJsonString(sb, value.toString())
+            sb.append('"')
+        }
+    }
+}
+
+private fun appendJsonObject(sb: StringBuilder, json: JSONObject, indent: Int, indentLevel: Int) {
+    sb.append("{\n")
+    val keys = json.keys()
+    val nextLevel = indentLevel + 1
+    val indentStr = " ".repeat(nextLevel * indent)
+    var first = true
+    while (keys.hasNext()) {
+        if (!first) {
+            sb.append(",\n")
+        }
+        first = false
+        val key = keys.next()
+        val value = json.get(key)
+        sb.append(indentStr).append('"').append(key).append("\": ")
+        appendJsonValue(sb, value, indent, nextLevel)
+    }
+    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("}")
+}
+
+private fun appendJsonArray(sb: StringBuilder, array: JSONArray, indent: Int, indentLevel: Int) {
+    sb.append("[\n")
+    val nextLevel = indentLevel + 1
+    val indentStr = " ".repeat(nextLevel * indent)
+    for (i in 0 until array.length()) {
+        if (i > 0) {
+            sb.append(",\n")
+        }
+        sb.append(indentStr)
+        appendJsonValue(sb, array.get(i), indent, nextLevel)
+    }
+    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("]")
+}
+
+private fun escapeJsonString(sb: StringBuilder, str: String) {
+    for (i in 0 until str.length) {
+        val ch = str[i]
+        when (ch) {
+            '"' -> sb.append("\\\"")
+            '\\' -> sb.append("\\\\")
+            '/' -> sb.append("\\/")
+            '\b' -> sb.append("\\b")
+            '\n' -> sb.append("\\n")
+            '\r' -> sb.append("\\r")
+            '\t' -> sb.append("\\t")
+            else -> {
+                if (ch.code < 32 || ch.code > 126) {
+                    sb.append(String.format("\\u%04x", ch.code))
+                } else {
+                    sb.append(ch)
+                }
+            }
+        }
+    }
 }
 
 private fun serializePathwayToJson(res: PhotoPathwayResult): JSONObject {

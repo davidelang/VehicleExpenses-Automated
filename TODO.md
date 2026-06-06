@@ -1,12 +1,10 @@
 # TODO
 
-## Active Execution: Set H Decoupled SW-Aware Valley Snapping & Metadata Retention
-- [x] Revert `nativeExpandBounds` and its Kotlin wrapper `expandBounds` back to their original signatures (pre-SW-aware) to preserve Set E.
-- [x] Implement `nativeCalculateHistogramWithThresholdH` in C++ with height-bounded peak search `[4, H * 0.30]`. Add Kotlin wrapper.
-- [x] Implement `nativeExpandBoundsH` in C++ with lookahead retraction and expansion. Add Kotlin wrapper.
-- [x] Implement `nativeCalculatePitchH` in C++ using `hSW * 0.5` valley threshold. Add Kotlin wrapper.
-- [x] Implement `nativeAlignGridH` in C++ and Kotlin.
-- [x] Update `TrialData` in `ExperimentAlignmentScreen.kt` to store `metadata`.
-- [x] Update `runBinTrialsPaddle` to propagate the winner's correct metadata and bypass the redundant diagnostic run at the end.
-- [x] Clean up Set H pipeline steps in `ExperimentAlignmentScreen.kt` to call the new `*H` variants.
-- [x] Verify `./build_app` succeeds
+## Active Execution: Pass A/B/C Image Elimination & Reusable JSON Buffer
+- [ ] Completely remove Pass A/B/C image generation, filtering, and base64-encoding from `NativeImageUtils.cpp` (nativeExpandByCharacterAwareDiagnostic) and shrink returned array size from 9 to 6.
+- [ ] Update `NativeImageUtils.kt` to handle 6 elements and remove `charaware_img_a/b/c` metadata properties.
+- [ ] Implement JSON helper functions (`appendJsonValue`, `appendJsonObject`, `appendJsonArray`, `escapeJsonString`) in `ExperimentAlignmentScreen.kt`.
+- [ ] Integrate pre-allocated 16MB StringBuilder in `ExperimentAlignmentScreen.kt`'s `runExperimentAlignment`.
+- [ ] Implement JSON helper functions in `ExperimentPumpScreen.kt`.
+- [ ] Integrate pre-allocated 16MB StringBuilder in `ExperimentPumpScreen.kt`'s `runExperimentPump`.
+- [ ] Verify `./build_app` compilation success.
