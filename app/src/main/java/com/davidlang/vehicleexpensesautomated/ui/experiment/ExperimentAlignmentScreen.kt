@@ -1066,7 +1066,7 @@ private suspend fun runBinTrialsPaddle(
             val annStr = serializeAnnotations(annsPre)
             trialsList.add(TrialData(
                 threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
-                "", tPlainPreB64, "", "",
+                "", tPlainPreB64, "", "", "",
                 histsHtml.toString(), 0f, emptyMap(),
                 "", annStr
             ))
