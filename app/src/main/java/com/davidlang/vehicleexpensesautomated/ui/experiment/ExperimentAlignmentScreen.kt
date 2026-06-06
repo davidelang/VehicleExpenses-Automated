@@ -285,7 +285,8 @@ private suspend fun runExperiment(
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
         PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
-        PipelineConfig("set_h", "Set H (Char-Aware Expansion)", { it.paddleTimeMs }) { it.paddleCppAngle }
+        PipelineConfig("set_h", "Set H (Char-Aware Expansion)", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_i", "Set I (All Components Debug)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
     val harnessEngineNames = listOf("Set A ML") + pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
@@ -488,7 +489,7 @@ private suspend fun runExperiment(
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
                             }
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h"))
+                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_h" || pipeline.key == "set_i"), pipelineKey = pipeline.key)
                         }
                     }
                     
@@ -870,7 +871,8 @@ private suspend fun runBinTrialsPaddle(
     paddleEngine: NativePaddleEngine,
     rawBins: FloatArray,
     useCharAware: Boolean,
-    steps: List<OcrStepResult>
+    steps: List<OcrStepResult>,
+    pipelineKey: String = ""
 ): Pair<String, Map<String, String>> {
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
@@ -1037,37 +1039,48 @@ private suspend fun runBinTrialsPaddle(
             return@forEachIndexed
         }
 
-        val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
-        val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW_clean, hSW_clean)
-        val pitch      = pitchData?.get(0) ?: 0
-        val anchorMode = pitchData?.get(1) ?: 0
-        val bestShift  = pitchData?.get(2) ?: 0
-
-        val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
-            odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
-            vSW_clean, hSW_clean, thresholdFactor
-        ) else null
-
-        // Disable additional expansion of the orangebox after the component based expansion for Row H
-        val finalBounds = if (useCharAware) initialBounds else (gridResult?.first ?: initialBounds)
-        val matchedSlots = gridResult?.second ?: IntArray(0)
-        val failedSlots  = gridResult?.third  ?: IntArray(0)
-
-        val trialMetaMap = mapOf(
-            "charaware_pitch"         to pitch.toString(),
+        val trialMetaMap = mutableMapOf(
+            "charaware_pitch"         to "0",
             "charaware_v_stroke"      to vSW_clean.toInt().toString(),
             "charaware_h_stroke"      to hSW_clean.toInt().toString(),
             "charaware_v_stroke_raw"  to vSW_red.toInt().toString(),
             "charaware_h_stroke_raw"  to hSW_red.toInt().toString(),
-            "charaware_matched_slots" to matchedSlots.joinToString(","),
-            "charaware_failed_slots"  to failedSlots.joinToString(","),
-            "charaware_vlimit"        to String.format("%.1f", vSW_clean * 0.5f),
+            "charaware_matched_slots" to "",
+            "charaware_failed_slots"  to "",
+            "charaware_vlimit"        to String.format("%.1f", vSW_clean * 0.75f),
             "charaware_hlimit"        to String.format("%.1f", hSW_clean * 0.75f)
         )
 
-        val tValleyResults = tRawB.map { Pair(finalBounds, trialMetaMap) }
-        val valleyResults = if (useCharAware) tValleyResults
+        val valleyResults = if (pipelineKey == "set_i") {
+            val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW_clean, hSW_clean)
+            compRects.map { Pair(it, trialMetaMap) }
+        } else {
+            val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
+            val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW_clean, hSW_clean)
+            val pitch      = pitchData?.get(0) ?: 0
+            val anchorMode = pitchData?.get(1) ?: 0
+            val bestShift  = pitchData?.get(2) ?: 0
+
+            val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
+                odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
+                vSW_clean, hSW_clean, thresholdFactor
+            ) else null
+
+            // Disable additional expansion of the orangebox after the component based expansion for Row H
+            val finalBounds = if (useCharAware) initialBounds else (gridResult?.first ?: initialBounds)
+            val matchedSlots = gridResult?.second ?: IntArray(0)
+            val failedSlots  = gridResult?.third  ?: IntArray(0)
+
+            trialMetaMap["charaware_pitch"] = pitch.toString()
+            trialMetaMap["charaware_matched_slots"] = matchedSlots.joinToString(",")
+            trialMetaMap["charaware_failed_slots"] = failedSlots.joinToString(",")
+            trialMetaMap["charaware_vlimit"] = String.format("%.1f", vSW_clean * 0.5f)
+            trialMetaMap["charaware_hlimit"] = String.format("%.1f", hSW_clean * 0.75f)
+
+            val tValleyResults = tRawB.map { Pair(finalBounds, trialMetaMap) }
+            if (useCharAware) tValleyResults
             else tRawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f) }
+        }
 
         val tFrags = valleyResults.map { it.first }
         val tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
@@ -1107,7 +1120,11 @@ private suspend fun runBinTrialsPaddle(
         
         val annsPost = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
-        tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        if (pipelineKey == "set_i") {
+            tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
+        } else {
+            tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        }
         
         val histsHtml = StringBuilder()
         if (useCharAware && valleyResults.isNotEmpty()) {
@@ -1680,7 +1697,7 @@ private suspend fun runPaddleValleyIterative(
     targetRefMap: MutableMap<String, RefinementTrace>,
     isNumeric: Boolean = false,
     stages: List<String> = listOf("Raw", "80%"),
-    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false
+    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false, pipelineKey: String = ""
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
@@ -1735,7 +1752,7 @@ private suspend fun runPaddleValleyIterative(
             stageMeta["after_hist"] = h2
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, masterBuffer as BufferSet, winnerRef.vehicle.id, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware, steps)
+            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, masterBuffer as BufferSet, winnerRef.vehicle.id, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware, steps, pipelineKey)
             trialsHtmlStr = tHtml
             stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)

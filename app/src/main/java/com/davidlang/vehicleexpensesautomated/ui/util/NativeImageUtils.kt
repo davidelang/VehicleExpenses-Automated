@@ -330,6 +330,17 @@ object NativeImageUtils {
         return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
     }
 
+    fun findAllComponentsH(mat: Mat, vSW: Float, hSW: Float): List<android.graphics.Rect> {
+        val res = nativeFindAllComponentsH(mat.nativeObj, vSW, hSW) ?: return emptyList()
+        val list = mutableListOf<android.graphics.Rect>()
+        for (i in 0 until res.size step 4) {
+            if (i + 3 < res.size) {
+                list.add(android.graphics.Rect(res[i], res[i+1], res[i+2], res[i+3]))
+            }
+        }
+        return list
+    }
+
     fun calculatePitchH(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray? {
         return nativeCalculatePitchH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, thresholdFactor, vSW, hSW)
     }
@@ -368,6 +379,7 @@ object NativeImageUtils {
 
     private external fun nativeCalculateHistogramWithThresholdH(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
     private external fun nativeExpandBoundsH(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeFindAllComponentsH(matPtr: Long, vSW: Float, hSW: Float): IntArray?
     private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
 

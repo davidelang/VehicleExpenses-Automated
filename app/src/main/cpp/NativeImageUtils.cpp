@@ -1870,6 +1870,38 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFindAllComponentsH(
+    JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+
+    std::vector<int> boxes;
+    for (int i = 1; i < nLabels; ++i) {
+        int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+
+        if ((float)w > vSW * 0.75f && (float)h > hSW * 0.75f) {
+            int cL = stats.at<int>(i, cv::CC_STAT_LEFT);
+            int cT = stats.at<int>(i, cv::CC_STAT_TOP);
+            int cR = cL + w;
+            int cB = cT + h;
+            boxes.push_back(cL);
+            boxes.push_back(cT);
+            boxes.push_back(cR);
+            boxes.push_back(cB);
+        }
+    }
+
+    jintArray result = env->NewIntArray(boxes.size());
+    env->SetIntArrayRegion(result, 0, boxes.size(), reinterpret_cast<const jint*>(boxes.data()));
+    return result;
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculatePitchH(
     JNIEnv* env, jobject thiz, jlong matPtr, jint minX, jint minY, jint maxX, jint maxY, jfloat thresholdFactor, jfloat vSW, jfloat hSW) {
 
