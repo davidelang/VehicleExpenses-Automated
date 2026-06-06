@@ -1007,10 +1007,10 @@ private suspend fun runBinTrialsPaddle(
         val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-        val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+        var tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[dCrId].release()
         
-        val tRawB = tFullB.filter { b1 ->
+        var tRawB = tFullB.filter { b1 ->
             tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
         }
         
@@ -1034,25 +1034,34 @@ private suspend fun runBinTrialsPaddle(
             return@forEachIndexed
         }
 
-        val rb = tRawB.first()
-        val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-        val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-        val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-        val vSW_red = hRes?.second?.get(0)?.toFloat() ?: -1f
-        val hSW_red = hRes?.second?.get(1)?.toFloat() ?: -1f
-        odoBuffer.crop[redBoxCropId].release()
+        // Cache pre-cleaning histograms/plots (primitive types only)
+        val cachedRawRedBoxHists = tRawB.map { b ->
+            val redBoxCropId = odoBuffer.createCrop(b.boundingBox.left, b.boundingBox.top, b.boundingBox.width(), b.boundingBox.height())
+            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            val b64 = if (hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
+            odoBuffer.crop[redBoxCropId].release()
+            Pair(hRes, b64)
+        }
+
+        var rb = tRawB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: tRawB.first()
+        val rbIndex = tRawB.indexOf(rb)
+        val rbCached = cachedRawRedBoxHists.getOrNull(rbIndex)
+        val vSW_red = rbCached?.first?.second?.get(0)?.toFloat() ?: -1f
+        val hSW_red = rbCached?.first?.second?.get(1)?.toFloat() ?: -1f
 
         if (vSW_red <= 0f || hSW_red <= 0f) {
             val histsHtml = StringBuilder()
-            tRawB.forEachIndexed { rIdx, rb ->
-                val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-                if (hRes != null) {
-                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
+            tRawB.forEachIndexed { rIdx, b ->
+                val cached = cachedRawRedBoxHists.getOrNull(rIdx)
+                if (cached != null) {
+                    val hResCached = cached.first
+                    val b64Cached = cached.second
+                    if (hResCached != null && b64Cached != null) {
+                        val meta = hResCached.second
+                        histsHtml.append("<br><small>Red Box #$rIdx [${b.boundingBox.left},${b.boundingBox.top} - ${b.boundingBox.right},${b.boundingBox.bottom}] (${b.boundingBox.width()}x${b.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64Cached'>")
+                    }
                 }
-                odoBuffer.crop[redBoxCropId].release()
             }
             histsHtml.append("<br>Raw peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).")
 
@@ -1074,45 +1083,44 @@ private suspend fun runBinTrialsPaddle(
         val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-        val tFullB2 = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
+        tFullB = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[dCrId2].release()
-        val cleanRb = tFullB2.filter { b1 ->
-            tFullB2.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
-        }.firstOrNull() ?: rb
 
-        val cleanCropId = odoBuffer.createCrop(cleanRb.boundingBox.left, cleanRb.boundingBox.top, cleanRb.boundingBox.width(), cleanRb.boundingBox.height())
-        val cleanCropRect = android.graphics.Rect(0, 0, odoBuffer.crop[cleanCropId].width, odoBuffer.crop[cleanCropId].height)
-        val hRes2 = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[cleanCropId].mat, listOf(cleanCropRect), thresholdFactor)
-        val vSW_clean = hRes2?.second?.get(0)?.toFloat() ?: -1f
-        val hSW_clean = hRes2?.second?.get(1)?.toFloat() ?: -1f
-        odoBuffer.crop[cleanCropId].release()
+        rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
+        var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+        var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+        var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+        val vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
+        val hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
+        odoBuffer.crop[redBoxCropId].release()
 
-        if (vSW_clean <= 0f || hSW_clean <= 0f) {
+        if (vSW <= 0f || hSW <= 0f) {
             val histsHtml = StringBuilder()
             
-            // 1. Red Box Histograms
-            tRawB.forEachIndexed { rIdx, rb ->
-                val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-                if (hRes != null) {
-                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0:</small><br><img src='data:image/jpeg;base64,$b64'>")
+            // 1. Raw Red Box Histograms
+            tRawB.forEachIndexed { rIdx, b ->
+                val cached = cachedRawRedBoxHists.getOrNull(rIdx)
+                if (cached != null) {
+                    val hResCached = cached.first
+                    val b64Cached = cached.second
+                    if (hResCached != null && b64Cached != null) {
+                        val meta = hResCached.second
+                        histsHtml.append("<br><small>Red Box #$rIdx [${b.boundingBox.left},${b.boundingBox.top} - ${b.boundingBox.right},${b.boundingBox.bottom}] (${b.boundingBox.width()}x${b.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0:</small><br><img src='data:image/jpeg;base64,$b64Cached'>")
+                    }
                 }
-                odoBuffer.crop[redBoxCropId].release()
             }
             
-            // 2. Cleaned Crop (Orange Box) Histogram
-            val orangeBoxCropId = odoBuffer.createCrop(cleanRb.boundingBox.left, cleanRb.boundingBox.top, cleanRb.boundingBox.width(), cleanRb.boundingBox.height())
-            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[orangeBoxCropId].width, odoBuffer.crop[orangeBoxCropId].height)
-            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[orangeBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            // 2. Cleaned Red Box Histogram
+            redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+            cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             if (hRes != null) {
                 val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                histsHtml.append("<br><small>Orange Box (Cleaned Crop) [${cleanRb.boundingBox.left},${cleanRb.boundingBox.top} - ${cleanRb.boundingBox.right},${cleanRb.boundingBox.bottom}] (${cleanRb.boundingBox.width()}x${cleanRb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
+                histsHtml.append("<br><small>Cleaned Red Box [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
             }
-            odoBuffer.crop[orangeBoxCropId].release()
+            odoBuffer.crop[redBoxCropId].release()
 
-            histsHtml.append("<br>Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean).")
+            histsHtml.append("<br>Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW).")
 
             val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
             val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
@@ -1120,7 +1128,7 @@ private suspend fun runBinTrialsPaddle(
             val annStr = serializeAnnotations(annsPre)
 
             trialsList.add(TrialData(
-                threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW_clean, hSW_clean=$hSW_clean)", 0f, 0f, "",
+                threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW)", 0f, 0f, "",
                 tAnnotatedPreB64, tPlainPreB64, tAnnotatedPostB64, tPlainPostB64,
                 histsHtml.toString(), 0f, emptyMap(),
                 post1bpp, annStr
@@ -1132,32 +1140,31 @@ private suspend fun runBinTrialsPaddle(
 
         val trialMetaMap = mutableMapOf(
             "charaware_pitch"         to "0",
-            "charaware_v_stroke"      to vSW_clean.toInt().toString(),
-            "charaware_h_stroke"      to hSW_clean.toInt().toString(),
+            "charaware_v_stroke"      to vSW.toInt().toString(),
+            "charaware_h_stroke"      to hSW.toInt().toString(),
             "charaware_v_stroke_raw"  to vSW_red.toInt().toString(),
             "charaware_h_stroke_raw"  to hSW_red.toInt().toString(),
             "charaware_matched_slots" to "",
             "charaware_failed_slots"  to "",
-            "charaware_vlimit"        to String.format("%.1f", vSW_clean * 0.75f),
-            "charaware_hlimit"        to String.format("%.1f", hSW_clean * 0.75f)
+            "charaware_vlimit"        to String.format("%.1f", vSW * 0.75f),
+            "charaware_hlimit"        to String.format("%.1f", hSW * 0.75f)
         )
 
         val valleyResults = if (pipelineKey == "set_i") {
-            val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW_clean, hSW_clean)
+            val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
             compRects.map { Pair(it, trialMetaMap) }
         } else {
-            val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, cleanRb.boundingBox, thresholdFactor, vSW_clean, hSW_clean)
-            val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW_clean, hSW_clean)
+            val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, rb.boundingBox, thresholdFactor, vSW, hSW)
+            val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW, hSW)
             val pitch      = pitchData?.get(0) ?: 0
             val anchorMode = pitchData?.get(1) ?: 0
             val bestShift  = pitchData?.get(2) ?: 0
 
             val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
                 odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
-                vSW_clean, hSW_clean, thresholdFactor
+                vSW, hSW, thresholdFactor
             ) else null
 
-            // Disable additional expansion of the orangebox after the component based expansion for Row H
             val finalBounds = if (useCharAware) initialBounds else (gridResult?.first ?: initialBounds)
             val matchedSlots = gridResult?.second ?: IntArray(0)
             val failedSlots  = gridResult?.third  ?: IntArray(0)
@@ -1165,8 +1172,8 @@ private suspend fun runBinTrialsPaddle(
             trialMetaMap["charaware_pitch"] = pitch.toString()
             trialMetaMap["charaware_matched_slots"] = matchedSlots.joinToString(",")
             trialMetaMap["charaware_failed_slots"] = failedSlots.joinToString(",")
-            trialMetaMap["charaware_vlimit"] = String.format("%.1f", vSW_clean * 0.5f)
-            trialMetaMap["charaware_hlimit"] = String.format("%.1f", hSW_clean * 0.75f)
+            trialMetaMap["charaware_vlimit"] = String.format("%.1f", vSW * 0.5f)
+            trialMetaMap["charaware_hlimit"] = String.format("%.1f", hSW * 0.75f)
 
             val tValleyResults = tRawB.map { Pair(finalBounds, trialMetaMap) }
             if (useCharAware) tValleyResults
@@ -1249,16 +1256,17 @@ private suspend fun runBinTrialsPaddle(
                 histsHtml.append("<br><small>Cleaned: narrow w&lt;${vLimit}, short h&lt;=${hLimit} | vSW raw=$vRaw → clean=$vClean | hSW raw=$hRaw → clean=$hClean</small>")
             }
 
-            tRawB.forEachIndexed { rIdx, rb ->
-                val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-                if (hRes != null) {
-                    val b64 = generateDualHistogramB64(hRes.first.first, hRes.first.second); val meta = hRes.second
-                    val pitch = valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
-                    histsHtml.append("<br><small>Red Box #$rIdx [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64'>")
+            tRawB.forEachIndexed { rIdx, b ->
+                val cached = cachedRawRedBoxHists.getOrNull(rIdx)
+                if (cached != null) {
+                    val hResCached = cached.first
+                    val b64Cached = cached.second
+                    if (hResCached != null && b64Cached != null) {
+                        val meta = hResCached.second
+                        val pitch = valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
+                        histsHtml.append("<br><small>Red Box #$rIdx [${b.boundingBox.left},${b.boundingBox.top} - ${b.boundingBox.right},${b.boundingBox.bottom}] (${b.boundingBox.width()}x${b.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64Cached'>")
+                    }
                 }
-                odoBuffer.crop[redBoxCropId].release()
             }
             tCons.forEachIndexed { oIdx, ob ->
                 val orangeBoxCropId = odoBuffer.createCrop(ob.left, ob.top, ob.width(), ob.height())
