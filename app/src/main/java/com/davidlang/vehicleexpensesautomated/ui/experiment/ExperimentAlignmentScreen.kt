@@ -872,7 +872,7 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
                 stepObj.put("text", step.text)
                 val meta = JSONObject()
                 step.metadata.forEach { (k, v) -> 
-                    if (k != "best_plain_pre" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
+                    if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
                         meta.put(k, v)
                     }
                 }
@@ -1960,6 +1960,7 @@ private suspend fun runPaddleValleyIterative(
         if (stage == "Bin" && stageMeta.containsKey("best_plain_pre")) {
             val preCleanPlain = stageMeta["best_plain_pre"] ?: ""
             val preCleanAnnot = stageMeta["best_annotated_pre"] ?: ""
+            val preRollingPlain = stageMeta["best_plain_pre_rolling"] ?: ""
             val postCleanPlain = stageMeta["best_plain_post"] ?: ""
             val postCleanAnnot = stageMeta["best_annotated_post"] ?: ""
             
@@ -1967,6 +1968,10 @@ private suspend fun runPaddleValleyIterative(
             htmlOutput.append("<b>Pre-Cleaned (Binarized Only):</b><br>")
             if (preCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
             if (preCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
+            if (preRollingPlain.isNotEmpty()) {
+                htmlOutput.append("<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br>")
+                htmlOutput.append("<img src='data:image/jpeg;base64,$preRollingPlain'><br>")
+            }
             htmlOutput.append("<b>Post-Cleaned (OCR Input):</b><br>")
             if (postCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
             if (postCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
@@ -1980,7 +1985,7 @@ private suspend fun runPaddleValleyIterative(
         sObj.addProperty("text", currentOdoStr)
         sObj.addProperty("time", tL)
         stageMeta.forEach { (k, v) -> 
-            if (k != "best_plain_pre" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
+            if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
                 sObj.addProperty(k, v)
             }
         }
