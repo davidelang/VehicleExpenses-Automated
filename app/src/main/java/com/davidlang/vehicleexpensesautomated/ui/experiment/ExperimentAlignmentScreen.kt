@@ -1036,7 +1036,7 @@ private suspend fun runBinTrialsPaddle(
             val redBoxCropId = odoBuffer.createCrop(b.boundingBox.left, b.boundingBox.top, b.boundingBox.width(), b.boundingBox.height())
             val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
             val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
-            val b64 = if (hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
+            val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
             odoBuffer.crop[redBoxCropId].release()
             Pair(hRes, b64)
         }
