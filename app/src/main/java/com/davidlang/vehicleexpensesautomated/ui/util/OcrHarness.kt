@@ -33,7 +33,8 @@ data class OcrHarnessResult(
     val odometerValue: String?,
     val thumbB64: String? = null,
     val totalTimeMs: Long = 0,
-    val tSnapshotMs: Long = 0
+    val tSnapshotMs: Long = 0,
+    val extraImages: Map<String, String> = emptyMap()
 )
 
 data class HarnessRunDef(

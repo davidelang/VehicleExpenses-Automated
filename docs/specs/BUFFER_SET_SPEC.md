@@ -82,4 +82,8 @@ To prevent JVM crashes and memory corruption during `flip()` or `resize()` opera
 - **Mat Persistence:** OpenCV `Mat` objects (`mat`, `uvMat`) for both base buffers and crops are **persistent**. When a flip or resize occurs, the underlying C++ data pointers are updated in-place via JNI.
 - **YuvHandle Smart Proxy:** The `YuvHandle` is a **Smart Proxy**. While the `YuvHandle` object itself can be cached, its `planes` property dynamically generates fresh `ByteBuffer` slices at the moment of access. This ensures that even if a `YuvHandle` is cached across a `flip()`, accessing its data will always yield pointers to the correct, current Primary RAM.
 
-**MANDATE:** Despite these safety measures, caching handles in long-lived variables is considered a **Documentation Anti-Pattern**. For maximum readability and to ensure strict adherence to the pipeline state, always query handles on-demand (e.g., `process(bufferSet.p.mat)`) rather than storing them.
+**MANDATE:** Caching or assigning local JVM/native references (aliases) to active `Slice` or `Mat` instances (e.g., `val trialMat = odoBuffer.p.mat`) is **STRICTLY FORBIDDEN** across the codebase. Assigning local aliases to save typing or shorten code is unacceptable. Because functions or operations may invoke `flip()` internally now or in future refactoring, local aliases create severe pointer stability risks. You must always query handles dynamically (e.g., `odoBuffer.p.mat`) at the call-site.
+
+## 5. Future Tasks
+- [ ] **AUDIT:** Audit the entire codebase to locate and remove any cached Mat/Slice pointer aliases (e.g., `trialMat`), replacing them with dynamic call-site queries.
+
