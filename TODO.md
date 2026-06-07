@@ -19,3 +19,11 @@
     - [x] Update `GEMINI.md` to mandate forensic audits.
     - [x] Update `.gemini/system.md` to reflect new rigor.
     - [x] Commit and sync rules across all worktrees.
+
+- [ ] Merge and Integrate tweak-odo-ocr
+    - [x] Sync PR document to shared dev-ai-interaction/PRs/
+    - [ ] Merge tweak-odo-ocr branch into master (--no-ff)
+    - [ ] Verify build success via ./build_app
+    - [ ] Update global 'works' tag
+    - [ ] Update ENGINEERING_LOG.md with merge details
+    - [ ] Verify GEMINI.md mandate update
