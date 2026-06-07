@@ -1154,7 +1154,7 @@ private suspend fun runBinTrialsPaddle(
 
         var tPlainPreRollingB64 = ""
         val valleyResults = if (pipelineKey == "set_j") {
-            NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.25f * odoBuffer.p.mat.cols())
+            NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
             val (snapB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
             tPlainPreRollingB64 = snapB64
             NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)

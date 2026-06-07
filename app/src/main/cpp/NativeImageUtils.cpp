@@ -1848,189 +1848,105 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        int minX = stats.at<int>(i, cv::CC_STAT_LEFT);
+        int minY = stats.at<int>(i, cv::CC_STAT_TOP);
+        int maxX = minX + w;
+        int maxY = minY + h;
+
+        // 1. Horizontal Wide Filter (Width is proof of garbage)
         if ((float)w > maxWidth) {
-            int minX = stats.at<int>(i, cv::CC_STAT_LEFT);
-            int minY = stats.at<int>(i, cv::CC_STAT_TOP);
-            int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
-            int maxX = minX + w;
-            int maxY = minY + h;
-
-            std::vector<int> thicknesses(h, 999999);
-
+            std::vector<bool> garbageRows(h, false);
             for (int y = minY; y < maxY; ++y) {
-                std::vector<int> run_lengths;
+                int run = 0;
+                const int* labelRow = labels.ptr<int>(y);
                 for (int x = minX; x < maxX; ++x) {
-                    if (labels.at<int>(y, x) == i) {
-                        // Compute continuous vertical run of component 'i' in column x containing y
-                        int y_top = y;
-                        while (y_top >= 0 && labels.at<int>(y_top, x) == i) {
-                            y_top--;
-                        }
-                        y_top++;
-
-                        int y_bottom = y;
-                        while (y_bottom < mat->rows && labels.at<int>(y_bottom, x) == i) {
-                            y_bottom++;
-                        }
-                        y_bottom--;
-
-                        run_lengths.push_back(y_bottom - y_top + 1);
-                    }
+                    if (labelRow[x] == i) run++;
                 }
-                if (!run_lengths.empty()) {
-                    thicknesses[y - minY] = getPercentile(run_lengths, 0.20f);
+                if ((float)run > maxWidth) {
+                    garbageRows[y - minY] = true;
                 }
             }
 
-            // Find row where vertical thickness is minimized
-            int t_min = 999999;
-            int y_min = -1;
-            for (int y = minY; y < maxY; ++y) {
-                int t = thicknesses[y - minY];
-                if (t < t_min) {
-                    t_min = t;
-                    y_min = y;
-                }
-            }
+            // Group marked rows into bands and erase
+            for (int y = 0; y < h; ++y) {
+                if (garbageRows[y]) {
+                    int y_start = y;
+                    while (y < h && garbageRows[y]) y++;
+                    int y_end = y - 1;
 
-            if (y_min != -1 && t_min < 999999) {
-                // Contiguous range with similar thickness
-                int y_start = y_min;
-                while (y_start >= minY && thicknesses[y_start - minY] <= t_min + 2 && thicknesses[y_start - minY] <= t_min * 1.5) {
-                    y_start--;
-                }
-                y_start++;
+                    int H = y_end - y_start + 1;
+                    int pad = (int)(0.5f * H);
+                    int y_clear_start = std::max(minY, minY + y_start - pad);
+                    int y_clear_end = std::min(maxY - 1, minY + y_end + pad);
 
-                int y_end = y_min;
-                while (y_end < maxY && thicknesses[y_end - minY] <= t_min + 2 && thicknesses[y_end - minY] <= t_min * 1.5) {
-                    y_end++;
-                }
-                y_end--;
-
-                int H = y_end - y_start + 1;
-                int pad = (int)(0.5f * H);
-                int y_clear_start = std::max(minY, y_start - pad);
-                int y_clear_end = std::min(maxY - 1, y_end + pad);
-
-                // Set pixels of component i in this range to 0 (black)
-                for (int y = y_clear_start; y <= y_clear_end; ++y) {
-                    auto* rowPtr = mat->ptr<uint8_t>(y);
-                    const auto* labelRow = labels.ptr<int>(y);
-                    for (int x = minX; x < maxX; ++x) {
-                        if (labelRow[x] == i) {
-                            rowPtr[x] = 0;
-                            modified = true;
+                    for (int cy = y_clear_start; cy <= y_clear_end; ++cy) {
+                        auto* rowPtr = mat->ptr<uint8_t>(cy);
+                        const auto* lRow = labels.ptr<int>(cy);
+                        for (int cx = minX; cx < maxX; ++cx) {
+                            if (lRow[cx] == i) {
+                                rowPtr[cx] = 0;
+                                modified = true;
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-    // 2. Run vertical wide filter (sequential, before CC refresh)
-    for (int i = 1; i < nLabels; ++i) {
-        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        // 2. Vertical Wide Filter (Thickness-over-distance is proof of garbage)
         if ((float)h >= 0.3f * mat->rows) {
-            int minX = stats.at<int>(i, cv::CC_STAT_LEFT);
-            int minY = stats.at<int>(i, cv::CC_STAT_TOP);
-            int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
-            int maxX = minX + w;
-            int maxY = minY + h;
-
-            std::vector<int> thicknesses(h, 999999);
-            int max_contiguous_narrow_rows = 0;
-            int current_contiguous = 0;
-
-            for (int y = minY; y < maxY; ++y) {
-                std::vector<int> run_lengths;
-                for (int x = minX; x < maxX; ++x) {
+            std::vector<bool> garbageCols(w, false);
+            for (int x = minX; x < maxX; ++x) {
+                int maxContiguous = 0;
+                int currentContiguous = 0;
+                for (int y = minY; y < maxY; ++y) {
                     if (labels.at<int>(y, x) == i) {
-                        int x_left = x;
-                        while (x_left >= 0 && labels.at<int>(y, x_left) == i) {
-                            x_left--;
-                        }
-                        x_left++;
-
-                        int x_right = x;
-                        while (x_right < mat->cols && labels.at<int>(y, x_right) == i) {
-                            x_right++;
-                        }
-                        x_right--;
-
-                        run_lengths.push_back(x_right - x_left + 1);
-                        x = x_right;
+                        currentContiguous++;
+                        if (currentContiguous > maxContiguous) maxContiguous = currentContiguous;
+                    } else {
+                        currentContiguous = 0;
                     }
                 }
-                if (!run_lengths.empty()) {
-                    int t = getPercentile(run_lengths, 0.20f);
-                    thicknesses[y - minY] = t;
-                    if ((float)t < 0.75f * vSW) {
-                        current_contiguous++;
-                        if (current_contiguous > max_contiguous_narrow_rows) {
-                            max_contiguous_narrow_rows = current_contiguous;
+
+                if ((float)maxContiguous >= 0.3f * mat->rows) {
+                    // Check if horizontally narrow at 20th percentile
+                    std::vector<int> hWidths;
+                    for (int y = minY; y < maxY; ++y) {
+                        if (labels.at<int>(y, x) == i) {
+                            int xl = x; while (xl >= 0 && labels.at<int>(y, xl) == i) xl--;
+                            int xr = x; while (xr < mat->cols && labels.at<int>(y, xr) == i) xr++;
+                            hWidths.push_back(xr - xl - 1);
                         }
-                    } else {
-                        current_contiguous = 0;
                     }
-                } else {
-                    current_contiguous = 0;
+                    if (!hWidths.empty()) {
+                        int tw = getPercentile(hWidths, 0.20f);
+                        if ((float)tw < 0.75f * vSW) {
+                            garbageCols[x - minX] = true;
+                        }
+                    }
                 }
             }
 
-            if (max_contiguous_narrow_rows >= 0.3f * mat->rows) {
-                int t_min = 999999;
-                int y_min = -1;
-                for (int y = minY; y < maxY; ++y) {
-                    int t = thicknesses[y - minY];
-                    if (t < t_min) {
-                        t_min = t;
-                        y_min = y;
-                    }
-                }
+            // Group marked columns into bands and erase
+            for (int x = 0; x < w; ++x) {
+                if (garbageCols[x]) {
+                    int x_start = x;
+                    while (x < w && garbageCols[x]) x++;
+                    int x_end = x - 1;
 
-                if (y_min != -1 && t_min < 999999) {
-                    // Find exact horizontal bounds of component i at y_min
-                    int x_left_res = -1, x_right_res = -1;
-                    for (int x = minX; x < maxX; ++x) {
-                        if (labels.at<int>(y_min, x) == i) {
-                            int xl = x;
-                            while (xl >= 0 && labels.at<int>(y_min, xl) == i) {
-                                xl--;
-                            }
-                            xl++;
+                    int W_band = x_end - x_start + 1;
+                    int pad = (int)(0.5f * W_band);
+                    int x_clear_start = std::max(minX, minX + x_start - pad);
+                    int x_clear_end = std::min(maxX - 1, minX + x_end + pad);
 
-                            int xr = x;
-                            while (xr < mat->cols && labels.at<int>(y_min, xr) == i) {
-                                xr++;
-                            }
-                            xr--;
-                            
-                            // Use the run that was used for thickness calculation (at 20th percentile)
-                            // For simplicity and since these are likely single vertical lines, 
-                            // we'll take the first run that matches the t_min thickness approximately
-                            if ((xr - xl + 1) <= t_min + 2) {
-                                x_left_res = xl;
-                                x_right_res = xr;
-                                break;
-                            }
-                            x = xr;
-                        }
-                    }
-
-                    if (x_left_res != -1) {
-                        int W = x_right_res - x_left_res + 1;
-                        int pad = (int)(0.5f * W);
-                        int x_clear_start = std::max(minX, x_left_res - pad);
-                        int x_clear_end = std::min(maxX - 1, x_right_res + pad);
-
-                        for (int y = minY; y < maxY; ++y) {
-                            auto* rowPtr = mat->ptr<uint8_t>(y);
-                            const auto* labelRow = labels.ptr<int>(y);
-                            for (int x = x_clear_start; x <= x_clear_end; ++x) {
-                                if (labelRow[x] == i) {
-                                    rowPtr[x] = 0;
-                                    modified = true;
-                                }
+                    for (int cy = minY; cy < maxY; ++cy) {
+                        auto* rowPtr = mat->ptr<uint8_t>(cy);
+                        const auto* lRow = labels.ptr<int>(cy);
+                        for (int cx = x_clear_start; cx <= x_clear_end; ++cx) {
+                            if (lRow[cx] == i) {
+                                rowPtr[cx] = 0;
+                                modified = true;
                             }
                         }
                     }
