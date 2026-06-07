@@ -1,7 +1,7 @@
 # TODO
 
 ## Active Execution: Remove Wide Filter Padding
-- [ ] Remove aggressive 50% padding from horizontal and vertical wide filters <!-- id: 7 -->
+- [x] Remove aggressive 50% padding from horizontal and vertical wide filters <!-- id: 7 -->
 
 ## Completed Tasks
 - [x] Implement global matching for horizontal/vertical wide filters with anti-nibbling constraints <!-- id: 6 -->
