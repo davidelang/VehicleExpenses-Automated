@@ -165,6 +165,82 @@ object NativeImageUtils {
         } else rect
     }
 
+    fun expandByValleyDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
+        val res = nativeExpandByValleyDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        if (res != null && res.size == 2) {
+            val summary = res[0] as IntArray
+            val trace = res[1] as String
+            val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
+            val meta = mapOf(
+                "valley_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
+                "valley_probed" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
+                "valley_retracted" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
+                "valley_threshold" to summary[12].toString(),
+                "valley_run" to summary[13].toString(),
+                "valley_lookahead" to (summary[14] / 100f).toString(),
+                "valley_image_width" to summary[15].toString(),
+                "valley_trace" to trace
+            )
+            return Pair(finalRect, meta)
+        }
+        return Pair(rect, emptyMap())
+    }
+
+    fun expandByCharacterAwareDiagnostic(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, Map<String, String>> {
+        val res = nativeExpandByCharacterAwareDiagnostic(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        if (res != null && res.size == 6) {
+            val summary = res[0] as IntArray
+            val trace = res[1] as String
+            val hArr = res[2] as IntArray
+            val vArr = res[3] as IntArray
+            val matchedSlots = res[4] as IntArray
+            val failedSlots = res[5] as IntArray
+            
+            val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
+            val meta = mutableMapOf(
+                "charaware_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
+                "charaware_strict" to "${summary[4]},${summary[5]}-${summary[6]},${summary[7]}",
+                "charaware_final" to "${summary[8]},${summary[9]}-${summary[10]},${summary[11]}",
+                "charaware_threshold" to summary[12].toString(),
+                "charaware_v_stroke" to summary[13].toString(),
+                "charaware_h_stroke" to summary[14].toString(),
+                "charaware_pitch" to summary[15].toString(),
+                "charaware_trace" to trace,
+                "charaware_h_hist" to hArr.joinToString(","),
+                "charaware_v_hist" to vArr.joinToString(","),
+                "charaware_matched_slots" to matchedSlots.joinToString(","),
+                "charaware_failed_slots" to failedSlots.joinToString(",")
+            )
+            return Pair(finalRect, meta)
+        }
+        return Pair(rect, emptyMap())
+    }
+
+    fun calculateHistograms(mat: Mat, rects: List<android.graphics.Rect>): Pair<Pair<IntArray, IntArray>, IntArray>? {
+        if (rects.isEmpty()) return null
+        val flatRects = IntArray(rects.size * 4)
+        rects.forEachIndexed { i, r ->
+            flatRects[i * 4] = r.left
+            flatRects[i * 4 + 1] = r.top
+            flatRects[i * 4 + 2] = r.right
+            flatRects[i * 4 + 3] = r.bottom
+        }
+        val res = nativeCalculateHistogramB64(mat.nativeObj, flatRects)
+        if (res != null && res.size == 3) {
+            return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
+        }
+        return null
+    }
+
+    private external fun nativeCalculateHistogramB64(matPtr: Long, rects: IntArray): Array<Any>?
+
+    fun expandByCharacterAware(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): android.graphics.Rect {
+        val res = nativeExpandByCharacterAware(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
+        return if (res != null && res.size == 4) {
+            android.graphics.Rect(res[0], res[1], res[2], res[3])
+        } else rect
+    }
+
     fun expandByUniformity(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float = 0.40f): Pair<android.graphics.Rect, android.graphics.Rect> {
         val res = nativeExpandByUniformity(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor)
         return if (res != null && res.size == 8) {
@@ -197,8 +273,92 @@ object NativeImageUtils {
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
-    external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
+    private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
+    private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
 
+    // --------------------------------------------------------
+    // SET H MODULAR PIPELINE — New granular JNI bindings.
+    // No existing functions were modified.
+    // --------------------------------------------------------
+
+    /** Filters connected components in-place on a binary Mat (CV_8UC1).
+     *  mode 0=PassA, 1=PassB, 2=PassC. Pass odoBuffer.s.mat after binarizing from .p. */
+    fun filterComponents(mat: Mat, vSW: Float, hSW: Float, mode: Int) {
+        nativeFilterComponents(mat.nativeObj, vSW, hSW, mode)
+    }
+
+    /** Histogram + vSW/hSW peak estimation with explicit thresholdFactor on odoBuffer.p.mat.
+     *  Returns Pair(Pair(hArr, vArr), metaArr) where metaArr=[vSW,hSW,0,contentThreshold]. */
+    fun calculateHistogramWithThreshold(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
+        if (rects.isEmpty()) return null
+        val flatRects = IntArray(rects.size * 4)
+        rects.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
+        val res = nativeCalculateHistogramWithThreshold(mat.nativeObj, flatRects, thresholdFactor)
+        if (res != null && res.size == 3) return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
+        return null
+    }
+
+    /** Decoupled H-variants for Set H with stroke-width aware logic */
+    fun calculateHistogramWithThresholdH(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
+        if (rects.isEmpty()) return null
+        val flatRects = IntArray(rects.size * 4)
+        rects.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
+        val res = nativeCalculateHistogramWithThresholdH(mat.nativeObj, flatRects, thresholdFactor)
+        if (res != null && res.size == 3) return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
+        return null
+    }
+
+    fun expandBoundsH(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): android.graphics.Rect {
+        val res = nativeExpandBoundsH(mat.nativeObj, rect.left, rect.top, rect.right, rect.bottom, thresholdFactor, vSW, hSW)
+        return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
+    }
+
+    fun findAllComponentsH(mat: Mat, vSW: Float, hSW: Float): List<android.graphics.Rect> {
+        val res = nativeFindAllComponentsH(mat.nativeObj, vSW, hSW) ?: return emptyList()
+        val list = mutableListOf<android.graphics.Rect>()
+        for (i in 0 until res.size step 4) {
+            if (i + 3 < res.size) {
+                list.add(android.graphics.Rect(res[i], res[i+1], res[i+2], res[i+3]))
+            }
+        }
+        return list
+    }
+
+    fun blackOutLargeAndSmallComponentsH(mat: Mat, vSW: Float, hSW: Float, maxWidth: Float) {
+        nativeBlackOutLargeAndSmallComponentsH(mat.nativeObj, vSW, hSW, maxWidth)
+    }
+
+    fun calculatePitchH(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray? {
+        return nativeCalculatePitchH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, thresholdFactor, vSW, hSW)
+    }
+
+    fun alignGridH(mat: Mat, bounds: android.graphics.Rect, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Triple<android.graphics.Rect, IntArray, IntArray>? {
+        val res = nativeAlignGridH(mat.nativeObj, bounds.left, bounds.top, bounds.right, bounds.bottom, pitch, bestShift, anchorMode, vSW, hSW, thresholdFactor)
+        if (res != null && res.size == 3) {
+            val fb = res[0] as IntArray
+            return Triple(android.graphics.Rect(fb[0], fb[1], fb[2], fb[3]), res[1] as IntArray, res[2] as IntArray)
+        }
+        return null
+    }
+
+    fun blackOutRollingDigitsH(mat: Mat, vSW: Float, hSW: Float) {
+        nativeBlackOutRollingDigitsH(mat.nativeObj, vSW, hSW)
+    }
+
+    private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
+    private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
+
+    private external fun nativeCalculateHistogramWithThresholdH(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
+    private external fun nativeExpandBoundsH(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeFindAllComponentsH(matPtr: Long, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
+    private external fun nativeBlackOutLargeAndSmallComponentsH(matPtr: Long, vSW: Float, hSW: Float, maxWidth: Float)
+    private external fun nativeBlackOutRollingDigitsH(matPtr: Long, vSW: Float, hSW: Float)
+
 }
+
