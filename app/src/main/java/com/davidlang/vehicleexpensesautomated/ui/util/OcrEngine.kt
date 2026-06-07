@@ -90,6 +90,7 @@ data class RefinementTrace(
 data class SingleVehiclePathwayResult(
     val alignmentTrace: AlignmentTraceResult?,
     val refinementTraces: Map<String, RefinementTrace>,
+    val disambiguatedLandmarks: List<TextBlock> = emptyList(),
     val harnessResults: Map<String, OcrHarnessResult> = emptyMap()
 )
 
@@ -107,7 +108,6 @@ data class SingleVehicleResult(
 
 data class PhotoPathwayResult(
     val winnerName: String,
-    val bestOdometer: String,
     val tDeskewTotal: Long,
     val tDiscoveryTotal: Long,
     val deskewedBase64: String,
