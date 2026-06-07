@@ -1890,31 +1890,27 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         if ((float)h >= 0.3f * mat->rows) {
             std::vector<bool> garbageCols(w, false);
             for (int x = minX; x < maxX; ++x) {
-                int currentContiguous = 0;
-                int narrowCount = 0;
+                int maxContiguousNarrow = 0;
+                int currentContiguousNarrow = 0;
                 for (int y = minY; y < maxY; ++y) {
                     if (labels.at<int>(y, x) == i) {
-                        currentContiguous++;
                         // Check if horizontally narrow at this row
                         int xl = x; while (xl >= 0 && labels.at<int>(y, xl) == i) xl--;
                         int xr = x; while (xr < mat->cols && labels.at<int>(y, xr) == i) xr++;
                         if ((float)(xr - xl - 1) < 0.75f * vSW) {
-                            narrowCount++;
+                            currentContiguousNarrow++;
+                            if (currentContiguousNarrow > maxContiguousNarrow) {
+                                maxContiguousNarrow = currentContiguousNarrow;
+                            }
+                        } else {
+                            currentContiguousNarrow = 0;
                         }
                     } else {
-                        if (currentContiguous > 0) {
-                            if ((float)currentContiguous >= 0.3f * mat->rows && (float)narrowCount > 0.8f * (float)currentContiguous) {
-                                garbageCols[x - minX] = true;
-                            }
-                        }
-                        currentContiguous = 0;
-                        narrowCount = 0;
+                        currentContiguousNarrow = 0;
                     }
                 }
-                if (currentContiguous > 0) {
-                    if ((float)currentContiguous >= 0.3f * mat->rows && (float)narrowCount > 0.8f * (float)currentContiguous) {
-                        garbageCols[x - minX] = true;
-                    }
+                if ((float)maxContiguousNarrow >= 0.3f * mat->rows) {
+                    garbageCols[x - minX] = true;
                 }
             }
 
@@ -1926,9 +1922,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     int x_end = x - 1;
 
                     int W_band = x_end - x_start + 1;
-                    int pad = (int)(0.5f * W_band);
-                    int x_clear_start = std::max(minX, minX + x_start - pad);
-                    int x_clear_end = std::min(maxX - 1, minX + x_end + pad);
+                    int x_clear_start = minX + x_start;
+                    int x_clear_end = minX + x_end;
 
                     for (int cy = minY; cy < maxY; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
@@ -2306,7 +2301,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         float dist_j = getLineDistance(j, avgX);
 
         int loser = -1;
-        if ((float)(stats.at<int>(i, cv::CC_STAT_HEIGHT) + stats.at<int>(j, cv::CC_STAT_HEIGHT)) > 1.15f * hMed) {
+        int y_min_i = stats.at<int>(i, cv::CC_STAT_TOP);
+        int y_max_i = y_min_i + stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        int y_min_j = stats.at<int>(j, cv::CC_STAT_TOP);
+        int y_max_j = y_min_j + stats.at<int>(j, cv::CC_STAT_HEIGHT);
+        int combined_h = std::max(y_max_i, y_max_j) - std::min(y_min_i, y_min_j);
+
+        if ((float)combined_h > 1.15f * hMed) {
             if (dist_i < dist_j) {
                 loser = j;
             } else if (dist_j < dist_i) {

@@ -1,5 +1,9 @@
 # TODO
 
+## Active Execution: Fix Filter Safety Gates and Remove Unauthorized Logic
+- [ ] Tighten rolling filter alignment to 0.1 * vSW and implement combined bounding box height gate <!-- id: 11 -->
+- [ ] Revert vertical filter to strict contiguous narrow run logic and remove unauthorized 80% ratio <!-- id: 12 -->
+
 ## Completed Tasks
 - [x] Tighten rolling filter alignment to 0.1 * vSW and add height gate <!-- id: 9 -->
 - [x] Fix vertical filter logic with deterministic 80% narrowness check and remove percentiles <!-- id: 10 -->
@@ -8,5 +12,5 @@
 - [x] Implement global matching for horizontal/vertical wide filters with anti-nibbling constraints <!-- id: 6 -->
 - [x] Fix data corruption in buffer J alignment by surgicalizing wide filters (fix vertical filter logic) <!-- id: 5 -->
 - [x] Exclude `"best_plain_pre_rolling"` from serialization keys in `ExperimentAlignmentScreen.kt` (lines 875 and 1983).
-- [x] Extract and display `"best_plain_pre_rolling"` in the `Bin` stage report rendering of `ExperimentAlignmentScreen.kt" (lines 1960-1974).
+- [x] Extract and display `"best_plain_pre_rolling"` in the `Bin` stage report rendering of `ExperimentAlignmentScreen.kt` (lines 1960-1974).
 - [x] Run `./build_app` to compile and create a new git tag.
