@@ -1,7 +1,7 @@
 # TODO
 
 ## Active Execution: Fix Wide/Small Component Filtering
-- [ ] Fix data corruption in buffer J alignment by surgicalizing wide filters (fix vertical filter logic) <!-- id: 5 -->
+- [x] Fix data corruption in buffer J alignment by surgicalizing wide filters (fix vertical filter logic) <!-- id: 5 -->
 
 ## Completed Tasks
 - [x] Exclude `"best_plain_pre_rolling"` from serialization keys in `ExperimentAlignmentScreen.kt` (lines 875 and 1983).
