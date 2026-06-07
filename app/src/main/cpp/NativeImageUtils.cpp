@@ -1876,9 +1876,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     int y_end = y - 1;
 
                     int H = y_end - y_start + 1;
-                    int pad = (int)(0.5f * H);
-                    int y_clear_start = std::max(minY, minY + y_start - pad);
-                    int y_clear_end = std::min(maxY - 1, minY + y_end + pad);
+                    int y_clear_start = minY + y_start;
+                    int y_clear_end = minY + y_end;
 
                     for (int cy = y_clear_start; cy <= y_clear_end; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
@@ -1936,9 +1935,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     int x_end = x - 1;
 
                     int W_band = x_end - x_start + 1;
-                    int pad = (int)(0.5f * W_band);
-                    int x_clear_start = std::max(minX, minX + x_start - pad);
-                    int x_clear_end = std::min(maxX - 1, minX + x_end + pad);
+                    int x_clear_start = minX + x_start;
+                    int x_clear_end = minX + x_end;
 
                     for (int cy = minY; cy < maxY; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
