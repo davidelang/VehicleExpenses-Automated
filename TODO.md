@@ -1,7 +1,7 @@
 # TODO
 
 ## Active Execution: Fix Wide/Small Component Filtering (Global Match)
-- [ ] Implement global matching for horizontal/vertical wide filters with anti-nibbling constraints <!-- id: 6 -->
+- [x] Implement global matching for horizontal/vertical wide filters with anti-nibbling constraints <!-- id: 6 -->
 
 ## Completed Tasks
 - [x] Fix data corruption in buffer J alignment by surgicalizing wide filters (fix vertical filter logic) <!-- id: 5 -->
