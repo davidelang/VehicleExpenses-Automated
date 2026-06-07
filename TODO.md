@@ -20,13 +20,13 @@
     - [x] Update `.gemini/system.md` to reflect new rigor.
     - [x] Commit and sync rules across all worktrees.
 
-- [ ] Merge and Integrate tweak-odo-ocr
+- [x] Merge and Integrate tweak-odo-ocr
     - [x] Sync PR document to shared dev-ai-interaction/PRs/
     - [x] Merge tweak-odo-ocr branch into master (--no-ff)
-    - [ ] Verify build success via ./build_app
-    - [ ] Update global 'works' tag
-    - [ ] Update ENGINEERING_LOG.md with merge details
-    - [ ] Verify GEMINI.md mandate update
+    - [x] Verify build success via ./build_app
+    - [x] Update global 'works' tag
+    - [x] Update ENGINEERING_LOG.md with merge details
+    - [x] Verify GEMINI.md mandate update
 
 ## Completed tweak-odo-ocr Tasks
 - [x] Tighten rolling filter alignment to 0.1 * vSW and implement combined bounding box height gate <!-- id: 11 -->
