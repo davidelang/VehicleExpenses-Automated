@@ -1,10 +1,8 @@
 # TODO
 
-## Active Execution: Physical Data-Driven Filter Fix
-- [ ] Tighten rolling filter alignment to 0.1 * vSW and add height gate <!-- id: 9 -->
-- [ ] Fix vertical filter logic with deterministic 80% narrowness check and remove percentiles <!-- id: 10 -->
-
 ## Completed Tasks
+- [x] Tighten rolling filter alignment to 0.1 * vSW and add height gate <!-- id: 9 -->
+- [x] Fix vertical filter logic with deterministic 80% narrowness check and remove percentiles <!-- id: 10 -->
 - [x] Revert removal of aggressive 50% padding due to Line 5 regression <!-- id: 8 -->
 - [x] Remove aggressive 50% padding from horizontal and vertical wide filters <!-- id: 7 -->
 - [x] Implement global matching for horizontal/vertical wide filters with anti-nibbling constraints <!-- id: 6 -->
