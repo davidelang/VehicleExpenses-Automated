@@ -1838,14 +1838,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
     bool modified = false;
 
-    // Helper for percentile calculation
-    auto getPercentile = [](std::vector<int>& v, float p) -> int {
-        if (v.empty()) return 999999;
-        std::sort(v.begin(), v.end());
-        int idx = std::max(0, std::min((int)v.size() - 1, (int)(v.size() * p)));
-        return v[idx];
-    };
-
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
         int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
@@ -1875,8 +1867,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     while (y < h && garbageRows[y]) y++;
                     int y_end = y - 1;
 
-                    int H = y_end - y_start + 1;
-                    int pad = (int)(0.5f * H);
+                    int H_band = y_end - y_start + 1;
+                    int pad = (int)(0.5f * H_band);
                     int y_clear_start = std::max(minY, minY + y_start - pad);
                     int y_clear_end = std::min(maxY - 1, minY + y_end + pad);
 
@@ -1898,32 +1890,30 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         if ((float)h >= 0.3f * mat->rows) {
             std::vector<bool> garbageCols(w, false);
             for (int x = minX; x < maxX; ++x) {
-                int maxContiguous = 0;
                 int currentContiguous = 0;
+                int narrowCount = 0;
                 for (int y = minY; y < maxY; ++y) {
                     if (labels.at<int>(y, x) == i) {
                         currentContiguous++;
-                        if (currentContiguous > maxContiguous) maxContiguous = currentContiguous;
+                        // Check if horizontally narrow at this row
+                        int xl = x; while (xl >= 0 && labels.at<int>(y, xl) == i) xl--;
+                        int xr = x; while (xr < mat->cols && labels.at<int>(y, xr) == i) xr++;
+                        if ((float)(xr - xl - 1) < 0.75f * vSW) {
+                            narrowCount++;
+                        }
                     } else {
+                        if (currentContiguous > 0) {
+                            if ((float)currentContiguous >= 0.3f * mat->rows && (float)narrowCount > 0.8f * (float)currentContiguous) {
+                                garbageCols[x - minX] = true;
+                            }
+                        }
                         currentContiguous = 0;
+                        narrowCount = 0;
                     }
                 }
-
-                if ((float)maxContiguous >= 0.3f * mat->rows) {
-                    // Check if horizontally narrow at 20th percentile
-                    std::vector<int> hWidths;
-                    for (int y = minY; y < maxY; ++y) {
-                        if (labels.at<int>(y, x) == i) {
-                            int xl = x; while (xl >= 0 && labels.at<int>(y, xl) == i) xl--;
-                            int xr = x; while (xr < mat->cols && labels.at<int>(y, xr) == i) xr++;
-                            hWidths.push_back(xr - xl - 1);
-                        }
-                    }
-                    if (!hWidths.empty()) {
-                        int tw = getPercentile(hWidths, 0.20f);
-                        if ((float)tw < 0.75f * vSW) {
-                            garbageCols[x - minX] = true;
-                        }
+                if (currentContiguous > 0) {
+                    if ((float)currentContiguous >= 0.3f * mat->rows && (float)narrowCount > 0.8f * (float)currentContiguous) {
+                        garbageCols[x - minX] = true;
                     }
                 }
             }
@@ -2239,7 +2229,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         for (int j = i + 1; j < nLabels; ++j) {
             float cx_i = getCenterX(i);
             float cx_j = getCenterX(j);
-            if (std::abs(cx_i - cx_j) <= 0.5f * vSW) {
+            if (std::abs(cx_i - cx_j) <= 0.1f * vSW) {
                 alignedPairs.push_back({i, j});
                 isPairMember[i] = true;
                 isPairMember[j] = true;
@@ -2316,22 +2306,24 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         float dist_j = getLineDistance(j, avgX);
 
         int loser = -1;
-        if (dist_i < dist_j) {
-            loser = j;
-        } else if (dist_j < dist_i) {
-            loser = i;
-        } else {
-            // Tie breaker: distance of center to line
-            float yLine = m * avgX + c;
-            float cy_i = getCenterY(i);
-            float cy_j = getCenterY(j);
-            if (std::abs(cy_i - yLine) < std::abs(cy_j - yLine)) {
+        if ((float)(stats.at<int>(i, cv::CC_STAT_HEIGHT) + stats.at<int>(j, cv::CC_STAT_HEIGHT)) > 1.15f * hMed) {
+            if (dist_i < dist_j) {
                 loser = j;
-            } else {
+            } else if (dist_j < dist_i) {
                 loser = i;
+            } else {
+                // Tie breaker: distance of center to line
+                float yLine = m * avgX + c;
+                float cy_i = getCenterY(i);
+                float cy_j = getCenterY(j);
+                if (std::abs(cy_i - yLine) < std::abs(cy_j - yLine)) {
+                    loser = j;
+                } else {
+                    loser = i;
+                }
             }
         }
-        toBlank.push_back(loser);
+        if (loser != -1) toBlank.push_back(loser);
     }
 
     // Blank out losing components
