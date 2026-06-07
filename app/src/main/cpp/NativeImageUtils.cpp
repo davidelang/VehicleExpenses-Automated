@@ -1938,7 +1938,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
             int maxY = minY + h;
 
             std::vector<int> thicknesses(h, 999999);
-            int narrow_rows_count = 0;
+            int max_contiguous_narrow_rows = 0;
+            int current_contiguous = 0;
 
             for (int y = minY; y < maxY; ++y) {
                 std::vector<int> run_lengths;
@@ -1964,12 +1965,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     int t = getPercentile(run_lengths, 0.20f);
                     thicknesses[y - minY] = t;
                     if ((float)t < 0.75f * vSW) {
-                        narrow_rows_count++;
+                        current_contiguous++;
+                        if (current_contiguous > max_contiguous_narrow_rows) {
+                            max_contiguous_narrow_rows = current_contiguous;
+                        }
+                    } else {
+                        current_contiguous = 0;
                     }
+                } else {
+                    current_contiguous = 0;
                 }
             }
 
-            if (narrow_rows_count >= 0.3f * mat->rows) {
+            if (max_contiguous_narrow_rows >= 0.3f * mat->rows) {
                 int t_min = 999999;
                 int y_min = -1;
                 for (int y = minY; y < maxY; ++y) {
@@ -1981,30 +1989,48 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                 }
 
                 if (y_min != -1 && t_min < 999999) {
-                    int y_start = y_min;
-                    while (y_start >= minY && thicknesses[y_start - minY] <= t_min + 2 && thicknesses[y_start - minY] <= t_min * 1.5 && (float)thicknesses[y_start - minY] < 0.75f * vSW) {
-                        y_start--;
+                    // Find exact horizontal bounds of component i at y_min
+                    int x_left_res = -1, x_right_res = -1;
+                    for (int x = minX; x < maxX; ++x) {
+                        if (labels.at<int>(y_min, x) == i) {
+                            int xl = x;
+                            while (xl >= 0 && labels.at<int>(y_min, xl) == i) {
+                                xl--;
+                            }
+                            xl++;
+
+                            int xr = x;
+                            while (xr < mat->cols && labels.at<int>(y_min, xr) == i) {
+                                xr++;
+                            }
+                            xr--;
+                            
+                            // Use the run that was used for thickness calculation (at 20th percentile)
+                            // For simplicity and since these are likely single vertical lines, 
+                            // we'll take the first run that matches the t_min thickness approximately
+                            if ((xr - xl + 1) <= t_min + 2) {
+                                x_left_res = xl;
+                                x_right_res = xr;
+                                break;
+                            }
+                            x = xr;
+                        }
                     }
-                    y_start++;
 
-                    int y_end = y_min;
-                    while (y_end < maxY && thicknesses[y_end - minY] <= t_min + 2 && thicknesses[y_end - minY] <= t_min * 1.5 && (float)thicknesses[y_end - minY] < 0.75f * vSW) {
-                        y_end++;
-                    }
-                    y_end--;
+                    if (x_left_res != -1) {
+                        int W = x_right_res - x_left_res + 1;
+                        int pad = (int)(0.5f * W);
+                        int x_clear_start = std::max(minX, x_left_res - pad);
+                        int x_clear_end = std::min(maxX - 1, x_right_res + pad);
 
-                    int H = y_end - y_start + 1;
-                    int pad = (int)(0.5f * H);
-                    int y_clear_start = std::max(minY, y_start - pad);
-                    int y_clear_end = std::min(maxY - 1, y_end + pad);
-
-                    for (int y = y_clear_start; y <= y_clear_end; ++y) {
-                        auto* rowPtr = mat->ptr<uint8_t>(y);
-                        const auto* labelRow = labels.ptr<int>(y);
-                        for (int x = minX; x < maxX; ++x) {
-                            if (labelRow[x] == i) {
-                                rowPtr[x] = 0;
-                                modified = true;
+                        for (int y = minY; y < maxY; ++y) {
+                            auto* rowPtr = mat->ptr<uint8_t>(y);
+                            const auto* labelRow = labels.ptr<int>(y);
+                            for (int x = x_clear_start; x <= x_clear_end; ++x) {
+                                if (labelRow[x] == i) {
+                                    rowPtr[x] = 0;
+                                    modified = true;
+                                }
                             }
                         }
                     }
@@ -2019,6 +2045,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     }
 
     // Run small item binarization filter (and any remaining tooLarge parts)
+    // vSW: width of vertical character strokes
+    // hSW: height of horizontal character strokes
     std::vector<int> invalidLabels;
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
