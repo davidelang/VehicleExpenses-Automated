@@ -1,10 +1,8 @@
 # TODO
 
-## Active Execution: Fix Filter Safety Gates and Remove Unauthorized Logic
-- [ ] Tighten rolling filter alignment to 0.1 * vSW and implement combined bounding box height gate <!-- id: 11 -->
-- [ ] Revert vertical filter to strict contiguous narrow run logic and remove unauthorized 80% ratio <!-- id: 12 -->
-
 ## Completed Tasks
+- [x] Tighten rolling filter alignment to 0.1 * vSW and implement combined bounding box height gate <!-- id: 11 -->
+- [x] Revert vertical filter to strict contiguous narrow run logic and remove unauthorized 80% ratio <!-- id: 12 -->
 - [x] Tighten rolling filter alignment to 0.1 * vSW and add height gate <!-- id: 9 -->
 - [x] Fix vertical filter logic with deterministic 80% narrowness check and remove percentiles <!-- id: 10 -->
 - [x] Revert removal of aggressive 50% padding due to Line 5 regression <!-- id: 8 -->
