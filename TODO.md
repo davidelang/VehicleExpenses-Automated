@@ -1,9 +1,7 @@
 # TODO
 
-## Active Execution: Revert Padding Removal
-- [ ] Revert removal of aggressive 50% padding due to Line 5 regression <!-- id: 8 -->
-
 ## Completed Tasks
+- [x] Revert removal of aggressive 50% padding due to Line 5 regression <!-- id: 8 -->
 - [x] Remove aggressive 50% padding from horizontal and vertical wide filters <!-- id: 7 -->
 - [x] Implement global matching for horizontal/vertical wide filters with anti-nibbling constraints <!-- id: 6 -->
 - [x] Fix data corruption in buffer J alignment by surgicalizing wide filters (fix vertical filter logic) <!-- id: 5 -->
