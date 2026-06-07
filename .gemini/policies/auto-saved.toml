@@ -22,22 +22,8 @@ modes = [ "default", "autoEdit", "yolo" ]
 decision = "allow"
 priority = 950
 toolName = "run_shell_command"
-commandPrefix = [ "git status", "git log", "git diff", "git add", "git commit", "git describe", "git rev-parse", "git worktree", "git show", "git ls-files", "git cat-file", "git cp", "git chmod", "git cat", "git rm" ]
-modes = [ "plan", "autoEdit", "yolo" ]
-
-[[rule]]
-decision = "deny"
-priority = 960
-toolName = "run_shell_command"
-commandRegex = "^git\\s+reset.*"
-modes = [ "plan", "autoEdit", "yolo" ]
-
-[[rule]]
-decision = "allow"
-priority = 970
-toolName = "run_shell_command"
-commandRegex = "^git\\s+reset\\s+--hard\\s+([^ ]+/)?builds$"
-modes = [ "plan", "autoEdit", "yolo" ]
+commandPrefix = [ "git" ]
+modes = [ "autoEdit", "yolo" ]
 
 [[rule]]
 decision = "allow"
@@ -64,7 +50,21 @@ commandPrefix = [ "jq" ]
 decision = "allow"
 priority = 950
 toolName = "run_shell_command"
+commandPrefix = [ "git", "cp" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
 commandPrefix = [ "adb", "tail" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "git", "chmod" ]
 modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
@@ -101,4 +101,12 @@ decision = "allow"
 priority = 950
 toolName = "run_shell_command"
 commandPrefix = [ "grep", "awk" ]
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
+decision = "allow"
+priority = 950
+toolName = "run_shell_command"
+commandPrefix = [ "git", "cat" ]
+allowRedirection = true
 modes = [ "plan", "autoEdit", "yolo" ]
