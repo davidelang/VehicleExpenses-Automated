@@ -28,6 +28,13 @@
     - [x] Update ENGINEERING_LOG.md with merge details
     - [x] Verify GEMINI.md mandate update
 
+- [ ] Merge and Integrate fix-whitespace
+    - [ ] Sync PR document to shared dev-ai-interaction/PRs/
+    - [ ] Merge fix-whitespace branch into master (--no-ff)
+    - [ ] Verify build success via ./build_app
+    - [ ] Update global 'works' tag
+    - [ ] Update ENGINEERING_LOG.md with merge details
+
 ## Completed tweak-odo-ocr Tasks
 - [x] Tighten rolling filter alignment to 0.1 * vSW and implement combined bounding box height gate <!-- id: 11 -->
 - [x] Revert vertical filter to strict contiguous narrow run logic and remove unauthorized 80% ratio <!-- id: 12 -->
