@@ -2,6 +2,17 @@
 
 This log tracks the implementation, refactoring, and deployment activities performed by the Application Engineer session.
 
+## [2026-06-07] - Kotlin Whitespace & Style Rectification
+- **Activity:** Merged `fix-whitespace` branch into master. Performed a repository-wide automated cleanup of Kotlin formatting violations.
+- **Improvements:**
+    - **Linting Compliance:** Corrected 559 whitespace and style violations across 18 Kotlin files, achieving 0 violations in the `audit_kotlin_whitespace.py` report.
+    - **Formatting:** Standardized control keyword spacing (e.g., `if (`), removed trailing whitespace, and collapsed redundant empty lines.
+    - **Build Integrity:** Verified build success via `./build_app` and moved the global `works` tag.
+- **Files Modified:**
+    - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/util/OdometerOcrUtils.kt`
+    - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/experiment/ExperimentAlignmentScreen.kt`
+    - (16 other Kotlin source files)
+
 ## [2026-06-07] - Odometer OCR Tweak & Filtering Integration
 - **Activity:** Merged `tweak-odo-ocr` branch into master. Integrated a major overhaul of the odometer extraction pipeline including advanced native filtering and reporting diagnostics.
 - **Improvements:**
