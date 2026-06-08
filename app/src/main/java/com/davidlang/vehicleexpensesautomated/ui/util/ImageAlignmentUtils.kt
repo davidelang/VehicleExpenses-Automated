@@ -79,7 +79,7 @@ object ImageAlignmentUtils {
         refLandmarks: List<TextBlock>
     ): List<TextBlock> {
         val dashValid = dashLandmarks.filter { it.boundingBox.width() > 0 }
-        
+
         /**
          * 3-Pass Architecture for Landmark Disambiguation:
          * Instance ID Documentation:
@@ -93,7 +93,7 @@ object ImageAlignmentUtils {
 
         val refTexts = refValid.map { it.text }.toSet()
         val refUniqueMap = refValid.filter { it.instanceId == 0 }.associateBy { it.text }
-        
+
         // Pass 1: Classification
         val results = dashValid.map { dashMark ->
             val isPotential = dashMark.text in refTexts
@@ -112,7 +112,7 @@ object ImageAlignmentUtils {
                 results[i] = results[i].copy(instanceId = -2)
             }
         }
-        
+
         Log.d("DISAMB_TRACE", "START (3-Pass): Dash=${dashValid.size}, Ref=${refValid.size} | Unique=${results.count { it.instanceId == 0 }}, Potential=${results.count { it.instanceId == -1 }}")
 
         // Pass 3: Triangulation Resolution
@@ -135,12 +135,12 @@ object ImageAlignmentUtils {
                     for (k in j + 1 until seedPool.size) {
                         val d1s = results.filter { it.text == seedPool[i].first }; val d2s = results.filter { it.text == seedPool[j].first }; val d3s = results.filter { it.text == seedPool[k].first }
                         val r1s = refValid.filter { it.text == seedPool[i].first }; val r2s = refValid.filter { it.text == seedPool[j].first }; val r3s = refValid.filter { it.text == seedPool[k].first }
-                        
+
                         for (d1 in d1s) for (d2 in d2s) for (d3 in d3s) {
                             val d12 = dist(d1, d2); val d23 = dist(d2, d3); val d31 = dist(d3, d1)
                             val dPerim = d12 + d23 + d31
                             if (dPerim == 0.0) continue
-                            
+
                             if (triCount < 5) {
                                 for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
                                     val r12 = dist(r1, r2); val r23 = dist(r2, r3); val r31 = dist(r3, r1)
@@ -151,16 +151,16 @@ object ImageAlignmentUtils {
                                     if (triCount >= 5) break
                                 }
                             }
-                            
+
                             for (r1 in r1s) for (r2 in r2s) for (r3 in r3s) {
                                 val r12 = dist(r1, r2); val r23 = dist(r2, r3); val r31 = dist(r3, r1)
                                 val rPerim = r12 + r23 + r31
                                 if (rPerim == 0.0) continue
-                                
+
                                 val dev1 = abs((d12/dPerim) / (r12/rPerim) - 1.0)
                                 val dev2 = abs((d23/dPerim) / (r23/rPerim) - 1.0)
                                 val dev3 = abs((d31/dPerim) / (r31/rPerim) - 1.0)
-                                
+
                                 if (dev1 < 0.05 && dev2 < 0.05 && dev3 < 0.05) {
                                     results[results.indexOf(d1)] = d1.copy(instanceId = r1.instanceId)
                                     results[results.indexOf(d2)] = d2.copy(instanceId = r2.instanceId)
@@ -182,7 +182,7 @@ object ImageAlignmentUtils {
             var bestP1: TextBlock? = null
             var bestP2: TextBlock? = null
             var maxDist = -1.0
-            
+
             for (i in confirmed.indices) {
                 for (j in i + 1 until confirmed.size) {
                     val d = dist(confirmed[i], confirmed[j])
@@ -193,7 +193,7 @@ object ImageAlignmentUtils {
                     }
                 }
             }
-            
+
             if (bestP1 != null && bestP2 != null) {
                 val p1 = bestP1!!; val p2 = bestP2!!
                 val rP1 = refValid.find { it.text == p1.text && it.instanceId == p1.instanceId }!!
@@ -209,17 +209,17 @@ object ImageAlignmentUtils {
                     val d1c = dist(p1, dashMark); val d2c = dist(p2, dashMark)
                     val dPerim = d12 + d1c + d2c
                     if (dPerim == 0.0) continue
-                    
+
                     val refCandidates = refValid.filter { it.text == dashMark.text }
                     for (cand in refCandidates) {
                         val r1c = dist(rP1, cand); val r2c = dist(rP2, cand)
                         val rPerim = r12 + r1c + r2c
                         if (rPerim == 0.0) continue
-                        
+
                         val dev1 = abs((d12/dPerim) / (r12/rPerim) - 1.0)
                         val dev2 = abs((d1c/dPerim) / (r1c/rPerim) - 1.0)
                         val dev3 = abs((d2c/dPerim) / (r2c/rPerim) - 1.0)
-                        
+
                         if (dev1 < 0.05 && dev2 < 0.05 && dev3 < 0.05) {
                             results[idx] = dashMark.copy(instanceId = cand.instanceId)
                             Log.d("DISAMB_TRACE", "    -> Landmark #$idx Matched: '${dashMark.text}'-${cand.instanceId} | Devs: %.3f, %.3f, %.3f".format(dev1, dev2, dev3))
@@ -231,7 +231,7 @@ object ImageAlignmentUtils {
                 }
             }
         }
-        
+
         Log.d("DISAMB_TRACE", "FINISH: Tagged ${results.count { it.instanceId >= 0 }}/${dashValid.size} landmarks")
         return results
     }
@@ -258,7 +258,7 @@ object ImageAlignmentUtils {
             val center = (vehicle.odometerCropTop!! + vehicle.odometerCropBottom!!) / 2.0f
             if (vehicle.isIcrs) center else IcrsMath.legacyAnisotropicToIcrs(0.5f, center, refW, refH).y
         } else 0f
-        
+
         // 1. Filter and Match Confirmed Landmarks
         val confirmedPairs = queryLandmarks.filter { it.instanceId >= 0 && it.boundingBox.width() > 0 }
             .mapNotNull { queMark ->
@@ -274,21 +274,21 @@ object ImageAlignmentUtils {
                     val r2 = confirmedPairs[j].first
                     val q1 = confirmedPairs[i].second
                     val q2 = confirmedPairs[j].second
-                    
+
                     val r1Icrs = IcrsMath.pixelToIcrs(r1.boundingBox.centerX().toFloat(), r1.boundingBox.centerY().toFloat(), refW, refH)
                     val r2Icrs = IcrsMath.pixelToIcrs(r2.boundingBox.centerX().toFloat(), r2.boundingBox.centerY().toFloat(), refW, refH)
                     val q1Icrs = IcrsMath.pixelToIcrs(q1.boundingBox.centerX().toFloat(), q1.boundingBox.centerY().toFloat(), queW, queH)
                     val q2Icrs = IcrsMath.pixelToIcrs(q2.boundingBox.centerX().toFloat(), q2.boundingBox.centerY().toFloat(), queW, queH)
-                    
+
                     val refDist = Math.sqrt((r1Icrs.x - r2Icrs.x).toDouble().pow(2.0) + (r1Icrs.y - r2Icrs.y).toDouble().pow(2.0))
                     val queDist = Math.sqrt((q1Icrs.x - q2Icrs.x).toDouble().pow(2.0) + (q1Icrs.y - q2Icrs.y).toDouble().pow(2.0))
-                    
+
                     if (queDist > 0) {
                         val s = (refDist / queDist).toFloat()
                         val rAngle = Math.atan2((r2Icrs.y - r1Icrs.y).toDouble(), (r2Icrs.x - r1Icrs.x).toDouble())
                         val qAngle = Math.atan2((q2Icrs.y - q1Icrs.y).toDouble(), (q2Icrs.x - q1Icrs.x).toDouble())
                         val rot = Math.toDegrees(rAngle - qAngle).toFloat()
-                        
+
                         if (kotlin.math.abs(rot) > 4.0f) continue
                         val tx = r1Icrs.x - (s * q1Icrs.x)
                         val ty = r1Icrs.y - (s * q1Icrs.y)
@@ -298,7 +298,7 @@ object ImageAlignmentUtils {
                     }
                 }
             }
-        } 
+        }
 
         if (allCandidates.isEmpty()) return AnchorResult(false, message = "No valid anchors.", timeMs = System.currentTimeMillis() - t0)
 
@@ -337,7 +337,7 @@ object ImageAlignmentUtils {
         val sqS = minOf(queW, queH).toFloat()
         val cxq = queW / 2f
         val cyq = queH / 2f
-        
+
         val matrixTX = cxq * (1f - finalScale) + (finalTx * sqS)
         val matrixTY = cyq * (1f - finalScale) + (finalTy * sqS)
 
@@ -377,7 +377,7 @@ object ImageAlignmentUtils {
             val warpMat = Mat(2, 3, CvType.CV_64F)
             warpMat.put(0, 0, matrixValues[0].toDouble(), matrixValues[1].toDouble(), matrixValues[2].toDouble())
             warpMat.put(1, 0, matrixValues[3].toDouble(), matrixValues[4].toDouble(), matrixValues[5].toDouble())
-            
+
             Imgproc.warpAffine(src, dst, warpMat, src.size(), Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0, 0.0, 0.0, 255.0))
             warpMat.release()
 
@@ -389,7 +389,7 @@ object ImageAlignmentUtils {
                 Utils.matToBitmap(dst, input as Bitmap)
                 src.release(); dst.release()
             }
-            
+
             AnchorResult(true, 0.5f, System.currentTimeMillis() - t0, metadata, "Consensus (%d/%d)".format(bestGroup.size, allCandidates.size))
         } catch (e: Exception) {
             AnchorResult(false, message = "Warp failed: ${e.message}", timeMs = System.currentTimeMillis() - t0, metadata = metadata)
@@ -434,13 +434,13 @@ object ImageAlignmentUtils {
         val queryWordsList = queryLandmarks.map { it.text.trim() }.sorted()
         val queryWordsSet = queryWordsList.toSet()
         val vehicleLandmarks = allVehicles.associate { it.id to getLandmarksFromJson(it.landmarkTextBlocksJson, engineName) }
-        
+
         val initialResults = allVehicles.associate { currentVehicle ->
             val myWords = vehicleLandmarks[currentVehicle.id] ?: emptySet()
             val otherWordsPool = vehicleLandmarks.filter { it.key != currentVehicle.id }.values.flatten().toSet()
             val vetoPool = otherWordsPool - myWords
             val triggers = queryWordsSet.intersect(vetoPool).sorted()
-            
+
             currentVehicle.id to VetoResult(
                 isVetoed = triggers.isNotEmpty(),
                 reasonWord = if (triggers.isNotEmpty()) triggers.joinToString(", ") else "",

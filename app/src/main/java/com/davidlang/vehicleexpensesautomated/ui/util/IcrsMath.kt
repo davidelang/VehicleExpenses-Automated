@@ -5,7 +5,7 @@ import android.graphics.RectF
 
 /**
  * IcrsMath: Implementation of Isotropic Center-Relative Space (ICRS).
- * 
+ *
  * As defined in docs/specs/ISOTROPIC_COORDINATE_SPEC.md:
  * - Origin (0,0) is the center of the image.
  * - Short edge is scaled to [-0.5, 0.5].
@@ -19,7 +19,7 @@ object IcrsMath {
     fun pixelToIcrs(px: Float, py: Float, imgW: Int, imgH: Int): PointF {
         val s = minOf(imgW, imgH).toFloat()
         if (s <= 0) return PointF(0f, 0f)
-        
+
         val icrsX = (px - (imgW / 2f)) / s
         val icrsY = (py - (imgH / 2f)) / s
         return PointF(icrsX, icrsY)
@@ -31,7 +31,7 @@ object IcrsMath {
     fun icrsToPixel(icrsX: Float, icrsY: Float, imgW: Int, imgH: Int): PointF {
         val s = minOf(imgW, imgH).toFloat()
         if (s <= 0) return PointF(imgW / 2f, imgH / 2f)
-        
+
         val px = (icrsX * s) + (imgW / 2f)
         val py = (icrsY * s) + (imgH / 2f)
         return PointF(px, py)
