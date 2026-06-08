@@ -28,12 +28,13 @@
     - [x] Update ENGINEERING_LOG.md with merge details
     - [x] Verify GEMINI.md mandate update
 
-- [ ] Whitespace & Style Auto-Fix
+- [x] Whitespace & Style Auto-Fix
     - [x] Reset and Sync branch with master.
-    - [ ] Re-audit updated codebase.
-    - [ ] Re-apply automated fixes.
-    - [ ] Re-run audit to verify zero violations.
-    - [ ] Run `./build_app` to verify build integrity.
+    - [x] Re-audit updated codebase.
+    - [x] Re-apply automated fixes.
+    - [x] Re-run audit to verify zero violations.
+    - [x] Run `./build_app` to verify build integrity.
+
 
 ## Completed tweak-odo-ocr Tasks
 - [x] Tighten rolling filter alignment to 0.1 * vSW and implement combined bounding box height gate <!-- id: 11 -->
