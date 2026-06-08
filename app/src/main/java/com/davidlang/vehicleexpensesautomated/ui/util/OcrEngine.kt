@@ -168,13 +168,13 @@ data class OcrResult(
 }
 
 data class OcrStepResult(
-    val stageName: String, 
-    val thumbB64: String, 
+    val stageName: String,
+    val thumbB64: String,
     val ocrInputB64: String? = null, // Phase 63: Exact 320x48 buffer passed to model
-    val text: String?, 
-    val boxes: List<Rect> = emptyList(), 
-    val normalizedBoxes: List<TextBlock> = emptyList(), 
-    val rawBox: Rect? = null, 
+    val text: String?,
+    val boxes: List<Rect> = emptyList(),
+    val normalizedBoxes: List<TextBlock> = emptyList(),
+    val rawBox: Rect? = null,
     val refinedBox: Rect? = null,
     val metadata: Map<String, String> = emptyMap()
 )
@@ -199,7 +199,7 @@ class MlKitEngine : OcrEngine {
     override val name = "ML Kit"
     override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
-        
+
         val image = when (input) {
             is Bitmap -> com.google.mlkit.vision.common.InputImage.fromBitmap(input, 0)
             is BufferSet.Slice -> {

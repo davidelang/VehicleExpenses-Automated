@@ -59,7 +59,7 @@ object NativeImageUtils {
         // Create temporary Mat wrappers that respect the native memory stride
         val yPlane = handle.planes[0]
         val uvPlane = handle.planes[2] // V plane is start of interleaved UV in NV21
-        
+
         val yMat = Mat(handle.height, handle.width, CvType.CV_8UC1, yPlane.buffer, yPlane.rowStride.toLong())
         val uvMat = Mat(handle.height / 2, handle.width / 2, CvType.CV_8UC2, uvPlane.buffer, uvPlane.rowStride.toLong())
 
@@ -75,7 +75,7 @@ object NativeImageUtils {
             val p1 = Point(ann.x1.toDouble(), ann.y1.toDouble())
             val p2 = Point(ann.x2.toDouble(), ann.y2.toDouble())
             val thickness = ann.strokeWidth
-            
+
             if (ann.shape == Shape.RECTANGLE) {
                 Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), thickness)
                 Imgproc.rectangle(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
@@ -195,7 +195,7 @@ object NativeImageUtils {
             val vArr = res[3] as IntArray
             val matchedSlots = res[4] as IntArray
             val failedSlots = res[5] as IntArray
-            
+
             val finalRect = android.graphics.Rect(summary[8], summary[9], summary[10], summary[11])
             val meta = mutableMapOf(
                 "charaware_start" to "${summary[0]},${summary[1]}-${summary[2]},${summary[3]}",
@@ -361,4 +361,3 @@ object NativeImageUtils {
     private external fun nativeBlackOutRollingDigitsH(matPtr: Long, vSW: Float, hSW: Float)
 
 }
-
