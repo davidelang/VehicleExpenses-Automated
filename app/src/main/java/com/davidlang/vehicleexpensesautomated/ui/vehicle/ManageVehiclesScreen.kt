@@ -414,10 +414,10 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                                     val x = screenPos.x; val y = screenPos.y
 
                                     when {
-                                        Offset(sr.left, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_LEFT; activeCropIsOdo = isOdo }
-                                        Offset(sr.right, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_RIGHT; activeCropIsOdo = isOdo }
-                                        Offset(sr.left, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_LEFT; activeCropIsOdo = isOdo }
-                                        Offset(sr.right, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_RIGHT; activeCropIsOdo = isOdo }
+                                        (Offset(sr.left, sr.top) - screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_LEFT; activeCropIsOdo = isOdo }
+                                        (Offset(sr.right, sr.top) - screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_RIGHT; activeCropIsOdo = isOdo }
+                                        (Offset(sr.left, sr.bottom) - screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_LEFT; activeCropIsOdo = isOdo }
+                                        (Offset(sr.right, sr.bottom) - screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_RIGHT; activeCropIsOdo = isOdo }
                                         Math.abs(y - sr.top) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.TOP; activeCropIsOdo = isOdo }
                                         Math.abs(y - sr.bottom) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.BOTTOM; activeCropIsOdo = isOdo }
                                         Math.abs(x - sr.left) < hitRadius && y > sr.top && y < sr.bottom -> { activeHandle = DragHandle.LEFT; activeCropIsOdo = isOdo }
