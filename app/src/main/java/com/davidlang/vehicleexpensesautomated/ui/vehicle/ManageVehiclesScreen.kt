@@ -44,6 +44,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+enum class CropEditMode {
+    IDLE,
+    CREATE_ODO,
+    CREATE_OTHER,
+    EDIT_CROPS
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ManageVehiclesScreen(
@@ -73,8 +80,7 @@ fun ManageVehiclesScreen(
 
     var odometerCropRect by remember { mutableStateOf<Rect?>(null) }
     var otherTextCropRect by remember { mutableStateOf<Rect?>(null) }
-    var isEditingOcrArea by remember { mutableStateOf(false) }
-    var isEditingOtherText by remember { mutableStateOf(false) }
+    var editMode by remember { mutableStateOf(CropEditMode.IDLE) }
     var imageSize by remember { mutableStateOf(Offset.Zero) }
     var originalImageSize by remember { mutableStateOf(Offset.Zero) }
 
@@ -222,13 +228,22 @@ fun ManageVehiclesScreen(
             PhotoPicker(photoStorageManager = hiltViewModel<SettingsViewModel>().photoStorageManager, photoType = PhotoType.FUEL, currentPhotoUrl = pickedPhotoUrl, onPhotoUrlChanged = { url -> if (url != null) processImportedPhoto(url) })
 
             if (referencePhotoUrl != null) {
-                EditCropsView(referencePhotoUrl!!, odometerCropRect, otherTextCropRect, originalImageSize, isEditingOcrArea, isEditingOtherText,
+                EditCropsView(referencePhotoUrl!!, odometerCropRect, otherTextCropRect, originalImageSize, editMode,
                     onSizeChanged = { imageSize = it },
                     onCropChanged = { odo, other -> odometerCropRect = odo; otherTextCropRect = other })
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    Button(onClick = { isEditingOcrArea = !isEditingOcrArea; isEditingOtherText = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOcrArea) "Done Odo" else "Mark Odo") }
-                    Button(onClick = { isEditingOtherText = !isEditingOtherText; isEditingOcrArea = false }, modifier = Modifier.weight(1f)) { Text(if (isEditingOtherText) "Done Ignore" else "Mark to Ignore") }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_ODO) CropEditMode.IDLE else CropEditMode.CREATE_ODO }, modifier = Modifier.weight(1f)) { 
+                            Text(if (editMode == CropEditMode.CREATE_ODO) "Done Odo" else "Create Odo Crop") 
+                        }
+                        Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_OTHER) CropEditMode.IDLE else CropEditMode.CREATE_OTHER }, modifier = Modifier.weight(1f)) { 
+                            Text(if (editMode == CropEditMode.CREATE_OTHER) "Done Ignore" else "Create Ignore Crop") 
+                        }
+                    }
+                    Button(onClick = { editMode = if (editMode == CropEditMode.EDIT_CROPS) CropEditMode.IDLE else CropEditMode.EDIT_CROPS }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (editMode == CropEditMode.EDIT_CROPS) "Done Editing" else "Edit Crops")
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
@@ -334,7 +349,7 @@ fun ManageVehiclesScreen(
 }
 
 @Composable
-private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, originalSize: Offset, isOdo: Boolean, isOther: Boolean, onSizeChanged: (Offset) -> Unit, onCropChanged: (Rect?, Rect?) -> Unit) {
+private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, originalSize: Offset, editMode: CropEditMode, onSizeChanged: (Offset) -> Unit, onCropChanged: (Rect?, Rect?) -> Unit) {
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDragRect by remember { mutableStateOf<Rect?>(null) }
     var viewSize by remember { mutableStateOf(Offset.Zero) }
@@ -342,84 +357,151 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
+    enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, TOP, BOTTOM, LEFT, RIGHT }
+    var activeHandle by remember { mutableStateOf(DragHandle.NONE) }
+    var activeCropIsOdo by remember { mutableStateOf(true) }
+
     BoxWithConstraints(modifier = Modifier
         .fillMaxWidth()
-        .height(260.dp)
+        .height(300.dp)
         .onSizeChanged { size -> viewSize = Offset(size.width.toFloat(), size.height.toFloat()); onSizeChanged(viewSize) }
         .pointerInput(Unit) {
             detectTransformGestures { _, pan, zoom, _ ->
-                scale = (scale * zoom).coerceIn(1f, 5f)
-                val newOffset = offset + pan
-                // Basic bounds checking for pan could be added here if desired
-                offset = newOffset
+                scale = (scale * zoom).coerceIn(1f, 10f)
+                offset += pan
             }
         }
-        .pointerInput(isOdo, isOther, viewSize, originalSize, scale, offset) {
-            if (!isOdo && !isOther) return@pointerInput
+        .pointerInput(editMode, viewSize, originalSize, scale, offset, odoRect, otherRect) {
+            if (editMode == CropEditMode.IDLE) return@pointerInput
+
             detectDragGestures(
-                onDragStart = { startOffset ->
-                    // Inverse transform the start coordinate
-                    dragStart = (startOffset - offset) / scale
-                    currentDragRect = null
-                },
+                onDragStart = { startOffset -> 
+                    val screenPos = (startOffset - offset) / scale
+                    dragStart = screenPos
+                    activeHandle = DragHandle.NONE
+
+                    if (editMode == CropEditMode.EDIT_CROPS) {
+                        val pxW = viewSize.x; val pxH = viewSize.y
+                        val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
+                        val s = minOf(originalSize.x, originalSize.y)
+                        val hitRadius = 40f / scale // Screen pixels
+
+                        fun getScreenRect(r: Rect): Rect {
+                            val lx = (r.left * s + (originalSize.x / 2f)) / originalSize.x
+                            val ly = (r.top * s + (originalSize.y / 2f)) / originalSize.y
+                            val lw = (r.width * s) / originalSize.x
+                            val lh = (r.height * s) / originalSize.y
+                            return Rect(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height, fitRect.left + (lx + lw) * fitRect.width, fitRect.top + (ly + lh) * fitRect.height)
+                        }
+
+                        listOf(true to odoRect, false to otherRect).forEach { (isOdo, rect) ->
+                            rect?.let { r ->
+                                val sr = getScreenRect(r)
+                                val x = screenPos.x; val y = screenPos.y
+
+                                when {
+                                    Offset(sr.left, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_LEFT; activeCropIsOdo = isOdo }
+                                    Offset(sr.right, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_RIGHT; activeCropIsOdo = isOdo }
+                                    Offset(sr.left, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_LEFT; activeCropIsOdo = isOdo }
+                                    Offset(sr.right, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_RIGHT; activeCropIsOdo = isOdo }
+                                    Math.abs(y - sr.top) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.TOP; activeCropIsOdo = isOdo }
+                                    Math.abs(y - sr.bottom) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.BOTTOM; activeCropIsOdo = isOdo }
+                                    Math.abs(x - sr.left) < hitRadius && y > sr.top && y < sr.bottom -> { activeHandle = DragHandle.LEFT; activeCropIsOdo = isOdo }
+                                    Math.abs(x - sr.right) < hitRadius && y > sr.top && y < sr.bottom -> { activeHandle = DragHandle.RIGHT; activeCropIsOdo = isOdo }
+                                }
+                            }
+                            if (activeHandle != DragHandle.NONE) return@forEach
+                        }
+                    }
+                }, 
                 onDrag = { change, _ ->
                     change.consume()
-                    val start = dragStart
-                    // Inverse transform the current coordinate
+                    val start = dragStart ?: return@detectDragGestures
                     val end = (change.position - offset) / scale
+                    val pxW = viewSize.x; val pxH = viewSize.y
+                    val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
+                    val imgW = originalSize.x.toInt(); val imgH = originalSize.y.toInt()
 
-                    if (start != null && viewSize.x > 0 && originalSize.x > 0) {
-                        val fitRect = calculateFitImageRect(viewSize.x, viewSize.y, originalSize.x, originalSize.y)
+                    if (editMode == CropEditMode.CREATE_ODO || editMode == CropEditMode.CREATE_OTHER) {
                         val lx1 = (start.x - fitRect.left) / fitRect.width
                         val ly1 = (start.y - fitRect.top) / fitRect.height
                         val lx2 = (end.x - fitRect.left) / fitRect.width
                         val ly2 = (end.y - fitRect.top) / fitRect.height
-
-                        val imgW = originalSize.x.toInt(); val imgH = originalSize.y.toInt()
                         val p1 = IcrsMath.legacyAnisotropicToIcrs(lx1, ly1, imgW, imgH)
                         val p2 = IcrsMath.legacyAnisotropicToIcrs(lx2, ly2, imgW, imgH)
-
                         currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
+                    } else if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
+                        val currentRect = if (activeCropIsOdo) odoRect else otherRect
+                        currentRect?.let { r ->
+                            val s = minOf(originalSize.x, originalSize.y)
+                            fun toScreen(valX: Float, valY: Float): Offset {
+                                val lx = (valX * s + (originalSize.x / 2f)) / originalSize.x
+                                val ly = (valY * s + (originalSize.y / 2f)) / originalSize.y
+                                return Offset(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height)
+                            }
+                            val tl = toScreen(r.left, r.top); val br = toScreen(r.right, r.bottom)
+                            var newTl = tl; var newBr = br
+                            when (activeHandle) {
+                                DragHandle.TOP_LEFT -> { newTl = end }
+                                DragHandle.TOP_RIGHT -> { newTl = Offset(newTl.x, end.y); newBr = Offset(end.x, newBr.y) }
+                                DragHandle.BOTTOM_LEFT -> { newTl = Offset(end.x, newTl.y); newBr = Offset(newBr.x, end.y) }
+                                DragHandle.BOTTOM_RIGHT -> { newBr = end }
+                                DragHandle.TOP -> { newTl = Offset(newTl.x, end.y) }
+                                DragHandle.BOTTOM -> { newBr = Offset(newBr.x, end.y) }
+                                DragHandle.LEFT -> { newTl = Offset(end.x, newTl.y) }
+                                DragHandle.RIGHT -> { newBr = Offset(end.x, newBr.y) }
+                                else -> {}
+                            }
+                            fun toIcrs(screen: Offset): Offset {
+                                val lx = (screen.x - fitRect.left) / fitRect.width
+                                val ly = (screen.y - fitRect.top) / fitRect.height
+                                return IcrsMath.legacyAnisotropicToIcrs(lx, ly, imgW, imgH)
+                            }
+                            val p1 = toIcrs(newTl); val p2 = toIcrs(newBr)
+                            currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
+                        }
                     }
-                },
-                onDragEnd = {
-                    val final = currentDragRect
-                    if (final != null) {
-                        if (isOdo) onCropChanged(final, otherRect) else onCropChanged(odoRect, final)
+                }, 
+                onDragEnd = { 
+                    currentDragRect?.let { final -> 
+                        if (editMode == CropEditMode.CREATE_ODO || (editMode == CropEditMode.EDIT_CROPS && activeCropIsOdo)) onCropChanged(final, otherRect)
+                        else onCropChanged(odoRect, final)
                     }
-                    currentDragRect = null
-                    dragStart = null
+                    currentDragRect = null; dragStart = null; activeHandle = DragHandle.NONE
                 }
             )
         }
     ) {
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = offset.x,
-                translationY = offset.y
-            )
-        ) {
+        Box(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)) {
             Image(painter = rememberAsyncImagePainter(photoUrl), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            val scope = this@BoxWithConstraints
-            val pxW = with(androidx.compose.ui.platform.LocalDensity.current) { scope.maxWidth.toPx() }; val pxH = with(androidx.compose.ui.platform.LocalDensity.current) { scope.maxHeight.toPx() }
-            val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
             Canvas(modifier = Modifier.fillMaxSize()) {
+                val pxW = size.width; val pxH = size.height
+                val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
                 fun drawIcrsRect(rect: Rect, color: Color) {
                     val s = minOf(originalSize.x, originalSize.y)
                     val lx = (rect.left * s + (originalSize.x / 2f)) / originalSize.x
                     val ly = (rect.top * s + (originalSize.y / 2f)) / originalSize.y
                     val lw = (rect.width * s) / originalSize.x
                     val lh = (rect.height * s) / originalSize.y
-
                     drawRect(color, Offset(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height), androidx.compose.ui.geometry.Size(lw * fitRect.width, lh * fitRect.height), style = Stroke(4f / scale))
                 }
-
                 currentDragRect?.let { drawIcrsRect(it, Color.Red) }
                 odoRect?.let { drawIcrsRect(it, Color.Blue) }
                 otherRect?.let { drawIcrsRect(it, Color.Green) }
+            }
+        }
+
+        // PAN / ZOOM BUTTONS
+        Column(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                SmallFloatingActionButton(onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("+") }
+                SmallFloatingActionButton(onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("-") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                SmallFloatingActionButton(onClick = { offset += Offset(0f, 50f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("↓") }
+                SmallFloatingActionButton(onClick = { offset += Offset(0f, -50f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("↑") }
+                SmallFloatingActionButton(onClick = { offset += Offset(-50f, 0f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("←") }
+                SmallFloatingActionButton(onClick = { offset += Offset(50f, 0f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("→") }
             }
         }
     }

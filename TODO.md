@@ -1,5 +1,12 @@
 # TODO
 
+- [ ] **Improve Crop Editing and Pan/Zoom Controls** <!-- id: 13 -->
+    - [x] **DONE:** Rebase on top of master
+    - [ ] Implement `CropEditMode` and updated UI buttons in `ManageVehiclesScreen.kt`
+    - [ ] Implement Pan/Zoom UI and gesture handling in `EditCropsView`
+    - [ ] Implement handle-based hit testing and resizing in `EDIT_CROPS` mode
+    - [ ] Verify build and behavior
+
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
