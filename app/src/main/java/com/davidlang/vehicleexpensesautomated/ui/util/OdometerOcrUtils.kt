@@ -56,14 +56,14 @@ object OdometerOcrUtils {
             if (matchingClusters.isEmpty()) clusters.add(mutableListOf(frag))
             else {
                 val firstIdx = matchingClusters[0]; clusters[firstIdx].add(frag)
-                for (k in matchingClusters.size - 1 downTo 1) { 
+                for (k in matchingClusters.size - 1 downTo 1) {
                     clusters[firstIdx].addAll(clusters[matchingClusters[k]])
-                    clusters.removeAt(matchingClusters[k]) 
+                    clusters.removeAt(matchingClusters[k])
                 }
             }
         }
-        return clusters.map { cluster -> 
-            android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) 
+        return clusters.map { cluster ->
+            android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom })
         }
     }
 
@@ -77,20 +77,20 @@ object OdometerOcrUtils {
     }
 
     data class EngineResult(
-        val angle: Float, 
-        val timesMs: List<Long>, 
-        val blocks: List<TextBlock> = emptyList(), 
+        val angle: Float,
+        val timesMs: List<Long>,
+        val blocks: List<TextBlock> = emptyList(),
         val metadata: Map<String, String> = emptyMap(),
         val cppBlocks: List<TextBlock> = emptyList()
     )
     data class DeskewResult(
-        val angle: Float, 
-        val mlAngle: Float, 
-        val mlTimeMs: Long, 
-        val paddleTimeMs: Long, 
+        val angle: Float,
+        val mlAngle: Float,
+        val mlTimeMs: Long,
+        val paddleTimeMs: Long,
         val paddleCppAngle: Float = 0f,
-        val mlBlocks: List<TextBlock> = emptyList(), 
-        val paddleBlocks: List<TextBlock> = emptyList(), 
+        val mlBlocks: List<TextBlock> = emptyList(),
+        val paddleBlocks: List<TextBlock> = emptyList(),
         val paddleCppBlocks: List<TextBlock> = emptyList(),
         val engines: Map<String, EngineResult> = emptyMap(),
         val metadata: Map<String, String> = emptyMap()
@@ -98,18 +98,18 @@ object OdometerOcrUtils {
 
     suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
         val t0 = System.currentTimeMillis()
-        
+
         // 1. Unified Preparation (Bitmap or BufferSet.Slice)
         val pTargetSize = 2048
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
-        
+
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
         val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
-        
+
         val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
         val targetW = (srcW * pScale).toInt()
         val targetH = (srcH * pScale).toInt()
-        
+
         // 32-px Aligned Letterboxing
         val alignedW = ((targetW + 31) / 32) * 32
         val alignedH = ((targetH + 31) / 32) * 32
@@ -131,12 +131,12 @@ object OdometerOcrUtils {
         } else {
             Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
         }
-        
+
         bufferSet.c[innerId].release()
-        
+
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
-        
+
         // 3. ML Kit Path
         val tMl0 = System.currentTimeMillis()
         val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
@@ -148,14 +148,14 @@ object OdometerOcrUtils {
         val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
-        
+
         bufferSet.c[outerId].release()
 
         val mlAngle = mlRes.angle
         val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
 
         return DeskewResult(
-            angle = mlRes.angle.coerceIn(-20f, 20f), 
+            angle = mlRes.angle.coerceIn(-20f, 20f),
             mlAngle = mlRes.angle,
             mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
@@ -173,7 +173,7 @@ object OdometerOcrUtils {
         val img = InputImage.fromByteBuffer(nv21, width, height, 0, InputImage.IMAGE_FORMAT_NV21)
         val res = extractFromPhotoBitmapRaw(img)
         val tDetect = System.currentTimeMillis() - tStart
-        
+
         val invScale = 1.0f / pScale
         val scaledBlocks = res.textBlocks.map { block ->
             val b = block.boundingBox
@@ -198,12 +198,12 @@ object OdometerOcrUtils {
                     val next = iterator.next()
                     val interL = Math.max(current.left, next.left); val interT = Math.max(current.top, next.top)
                     val interR = Math.min(current.right, next.right); val interB = Math.min(current.bottom, next.bottom)
-                    
+
                     val overlapW = if (interR > interL) interR - interL else 0
                     val overlapH = if (interB > interT) interB - interT else 0
                     val minW = Math.min(current.width(), next.width())
                     val minH = Math.min(current.height(), next.height())
-                    
+
                     val significant = overlapW >= (minW * threshold) && overlapH >= (minH * threshold)
 
                     if (significant) {
@@ -223,15 +223,14 @@ object OdometerOcrUtils {
         return merged
     }
 
-    
 
     private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
-        
+
         val tDet0 = System.currentTimeMillis()
         val det = paddleEngine.detect(resizedMat, pWidth, pHeight, copyHeatmap = false) ?: return EngineResult(0f, emptyList())
         val tDetOnly = System.currentTimeMillis() - tDet0
-        
+
         // Parallel Angle Calculation
         val tAngleCpp0 = System.currentTimeMillis()
         val cppAngle = if (det.outputTensor != null) NativeImageUtils.heatmapToAngle(det.outputTensor, 0.20f) else 0f
@@ -239,7 +238,7 @@ object OdometerOcrUtils {
 
         val newMeta = det.metadata.toMutableMap()
         newMeta["paddle_cpp_angle"] = cppAngle.toString()
-        
+
         val invScale = 1.0f / pScale
         val cppBlocks = det.nativeBoxes.map { box ->
             val points = box.points
@@ -248,7 +247,7 @@ object OdometerOcrUtils {
             val maxX = maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) * invScale
             val maxY = maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) * invScale
             val bounds = android.graphics.Rect(minX.toInt(), minY.toInt(), maxX.toInt(), maxY.toInt())
-            
+
             val scaledPoints = FloatArray(8)
             for (i in 0 until 8) {
                 scaledPoints[i] = points[i] * invScale
@@ -256,7 +255,7 @@ object OdometerOcrUtils {
             val angle = calculateBoxAngle(scaledPoints)
             TextBlock("", bounds, angle, confidence = box.confidence)
         }
-        
+
         return EngineResult(cppAngle, emptyList(), emptyList(), newMeta, cppBlocks = cppBlocks)
     }
 
@@ -298,11 +297,11 @@ object OdometerOcrUtils {
             }
             else -> throw IllegalArgumentException("Unsupported input type for deskew: ${input.javaClass.name}")
         }
-        
+
         val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
         val pWidth = (srcW * pScale).toInt()
         val pHeight = (srcH * pScale).toInt()
-        
+
         val grayMat = when (input) {
             is Bitmap -> {
                 val argbMat = Mat()
@@ -319,16 +318,16 @@ object OdometerOcrUtils {
         val targetSize = org.opencv.core.Size(pWidth.toDouble(), pHeight.toDouble())
         val resizedGray = Mat(pTargetSize, pTargetSize, org.opencv.core.CvType.CV_8U, org.opencv.core.Scalar(0.0))
         val roiMat = Mat(resizedGray, org.opencv.core.Rect(0, 0, pWidth, pHeight))
-        
+
         Imgproc.resize(grayMat, roiMat, roiMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-        
+
         val resizedArgb = Mat()
         Imgproc.cvtColor(resizedGray, resizedArgb, Imgproc.COLOR_GRAY2RGBA)
         org.opencv.android.Utils.matToBitmap(resizedArgb, targetBitmap)
-        
+
         resizedGray.release(); resizedArgb.release(); roiMat.release()
         if (input is Bitmap) grayMat.release()
-        
+
         return Triple(pWidth, pHeight, pScale)
     }
 
@@ -358,7 +357,6 @@ object OdometerOcrUtils {
         }
     }
 
-    
 
     private fun normalizeAngle(angle: Float): Float {
         // Maps angle to [-45, 45] range using 90-degree rotational symmetry
@@ -368,20 +366,20 @@ object OdometerOcrUtils {
     }
 
     private fun calculateWeightedAverage(candidates: List<TextBlock>, imgHeight: Int): Float {
-        val validCandidates = candidates.filter { 
+        val validCandidates = candidates.filter {
             it.boundingBox.height() > 0 && it.boundingBox.width() > 0 && it.angle.isFinite()
         }
         if (validCandidates.isEmpty()) return 0f
 
         // Thickness (Filter Basis): Use the shortest side to identify the text line thickness regardless of rotation.
-        val thicknesses = validCandidates.map { 
-            kotlin.math.min(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat() 
+        val thicknesses = validCandidates.map {
+            kotlin.math.min(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat()
         }
         val roundedThicknesses = thicknesses.map { Math.round(it / 0.005f) * 0.005f }
         val counts = roundedThicknesses.groupingBy { it }.eachCount()
         val threshold = Math.max(2, (validCandidates.size * 0.15).toInt())
         val peaks = counts.filter { it.value >= threshold }.keys
-        
+
         val floor = if (peaks.isNotEmpty()) {
             peaks.minOrNull()!! * 0.7f
         } else {
@@ -396,7 +394,7 @@ object OdometerOcrUtils {
             sortedT[sortedT.size / 2] * 2.0f
         }
 
-        val filtered = validCandidates.filter { 
+        val filtered = validCandidates.filter {
             val t = kotlin.math.min(it.boundingBox.width(), it.boundingBox.height()).toFloat() / imgHeight.toFloat()
             t >= floor && t <= ceiling
         }
@@ -406,15 +404,15 @@ object OdometerOcrUtils {
         // RANSAC-lite: Pick the most frequent angle (the consensus)
         // Group angles by +/- 0.5 degree bucket, normalized to [-45, 45]
         val buckets = filtered.groupBy { Math.round(normalizeAngle(it.angle) * 2) / 2.0f }
-        
+
         // Weight by sqrt(Length) where Length is the longest side of the detection.
         // sqrt dampens single large outliers while allowing multiple text blocks to outvote dust.
-        val bestBucket = buckets.maxByOrNull { bucket -> 
-            bucket.value.sumOf { 
-                kotlin.math.sqrt(kotlin.math.max(it.boundingBox.width(), it.boundingBox.height()).toDouble()) 
+        val bestBucket = buckets.maxByOrNull { bucket ->
+            bucket.value.sumOf {
+                kotlin.math.sqrt(kotlin.math.max(it.boundingBox.width(), it.boundingBox.height()).toDouble())
             }
         }
-        
+
         val finalAngle = bestBucket?.key ?: 0f
         return if (finalAngle.isFinite()) finalAngle else 0f
     }
@@ -440,7 +438,7 @@ object OdometerOcrUtils {
         imgHeight: Int
     ): List<TextBlock> {
         val filtered = allBlocks.filter { block ->
-            !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight) && 
+            !OcrUtils.isBlockInCrop(block, odometerCrop, imgWidth, imgHeight) &&
             !OcrUtils.isBlockInCrop(block, otherTextCrop, imgWidth, imgHeight)
         }
         return filtered.map { block ->
@@ -468,7 +466,7 @@ object OdometerOcrUtils {
         if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
         val filtered = Mat()
         Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-        
+
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
             matToBitmap(filtered, bitmap)
         } else {
@@ -526,7 +524,7 @@ object OdometerOcrUtils {
     fun automaticContrastStretch(mat: Mat): FloatArray {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-        
+
         val bins = FloatArray(64); hist.get(0, 0, bins)
         val smoothed = FloatArray(64)
         for (i in 0..63) {
@@ -584,7 +582,7 @@ object OdometerOcrUtils {
             val beta = -intensityLow * alpha
             mat.convertTo(mat, CvType.CV_8U, alpha, beta)
         }
-        
+
         hist.release()
         return bins
     }
@@ -592,7 +590,7 @@ object OdometerOcrUtils {
     fun shoulderContrastStretch(mat: Mat): FloatArray {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-        
+
         val bins = FloatArray(64); hist.get(0, 0, bins)
         val smoothed = FloatArray(64)
         for (i in 0..63) {
@@ -631,7 +629,7 @@ object OdometerOcrUtils {
             val beta = -intensityLow * alpha
             mat.convertTo(mat, CvType.CV_8U, alpha, beta)
         }
-        
+
         hist.release()
         return bins
     }
@@ -684,7 +682,7 @@ object OdometerOcrUtils {
         buffer.rewind()
         bitmap.copyPixelsFromBuffer(buffer)
     }
-        
+
 
     fun applyClahe(bitmap: Bitmap): Bitmap {
         val mat = Mat()
@@ -806,7 +804,7 @@ object OdometerOcrUtils {
      *   here by dynamically extracting the aligned width/height from the sourceBuffer and applying scaleX/scaleY.
      */
     fun processPaddleHeatmap(
-        heatmap: FloatArray?, w: Int, h: Int, scale: Float, 
+        heatmap: FloatArray?, w: Int, h: Int, scale: Float,
         sourceBuffer: Any, algorithm: String = "Native",
         nativeBoxes: List<NativePaddleEngine.DetectionBox>? = null,
         nativePostMs: String? = null
@@ -820,7 +818,7 @@ object OdometerOcrUtils {
                 val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 4.0) * invScale.toDouble()).toInt()
                 val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 4.0) * invScale.toDouble()).toInt()
                 val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
-                
+
                 val scaledPoints = FloatArray(8)
                 for (i in 0 until 8) {
                     scaledPoints[i] = points[i] * invScale
@@ -829,7 +827,7 @@ object OdometerOcrUtils {
                 TextBlock("", bounds, angle, confidence = box.confidence)
             }
         }
-        
+
         if (heatmap == null) return emptyList()
         return processPaddleHeatmapLegacy(heatmap, w, h, scale)
     }
@@ -872,8 +870,8 @@ object OdometerOcrUtils {
                 val rotatedRect = Imgproc.minAreaRect(p2f)
                 val points = arrayOf(org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point())
                 rotatedRect.points(points)
-                p2f.release() 
-                
+                p2f.release()
+
                 // Map raw heatmap coordinates directly using invScale (no stretch mapping needed).
                 val bounds = android.graphics.Rect(
                     Math.floor((rotatedRect.boundingRect().x - 4.0) * invScale).toInt(),
@@ -881,26 +879,26 @@ object OdometerOcrUtils {
                     Math.ceil((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width + 4.0) * invScale).toInt(),
                     Math.ceil((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height + 4.0) * invScale).toInt()
                 )
-                
+
                 val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
                 val rect = rotatedRect.boundingRect()
                 val rx = rect.x.coerceIn(0, w - 1)
                 val ry = rect.y.coerceIn(0, h - 1)
                 val rw = rect.width.coerceAtMost(w - rx)
                 val rh = rect.height.coerceAtMost(h - ry)
-                
+
                 var confidence = 0.0f
                 if (rw > 0 && rh > 0) {
                     val subMask = Mat.zeros(rh, rw, CvType.CV_8U)
                     val shiftedContourPoints = contour.toArray().map { org.opencv.core.Point(it.x - rx, it.y - ry) }
                     val localContour = org.opencv.core.MatOfPoint(*shiftedContourPoints.toTypedArray())
                     Imgproc.drawContours(subMask, listOf(localContour), -1, org.opencv.core.Scalar(255.0), -1)
-                    
+
                     var sum = 0.0
                     var count = 0
                     val maskBytes = ByteArray(rw * rh)
                     subMask.get(0, 0, maskBytes)
-                    
+
                     for (dy in 0 until rh) {
                         val cy = ry + dy
                         for (dx in 0 until rw) {
@@ -918,7 +916,7 @@ object OdometerOcrUtils {
                     localContour.release()
                     subMask.release()
                 }
-                
+
                 results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints, confidence = confidence))
             }
         } finally {
@@ -986,21 +984,21 @@ object OdometerOcrUtils {
         results.forEach { (engineName, res) ->
             Log.e("LandmarkSerialization", "Serializing landmarks for engine: $engineName")
             val array = JSONArray()
-            
+
             // Pass 1: Count total occurrences for detectable landmarks ONLY (Phase 109 Refined)
             // Manual landmarks (width=0) are excluded from this uniqueness tally.
             val globalCounts = res.textBlocks
                 .filter { it.boundingBox.width() > 0 }
                 .groupBy { cleanLandmarkString(it.text) }
                 .mapValues { it.value.size }
-            
+
             val runningCounts = mutableMapOf<String, Int>()
             res.textBlocks.forEach { block ->
                 val cleaned = cleanLandmarkString(block.text)
                 if (cleaned.length > 1) {
                     val isManual = block.boundingBox.width() == 0
                     val total = globalCounts[cleaned] ?: 0
-                    
+
                     val instance = if (isManual) {
                         -2 // Tag as Manual (Invisible to alignment, visible to Veto)
                     } else if (total == 1) {
@@ -1010,7 +1008,7 @@ object OdometerOcrUtils {
                         runningCounts[cleaned] = count
                         count // Specific instance of duplicate (1, 2, ...)
                     }
-                    
+
                     val obj = JSONObject()
                     obj.put("text", cleaned)
                     val box = block.boundingBox

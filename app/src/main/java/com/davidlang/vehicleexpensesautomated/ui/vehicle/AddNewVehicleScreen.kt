@@ -78,13 +78,13 @@ fun AddNewVehicleScreen(
                     }
                     val cropRect = odometerCropRect?.let { r -> android.graphics.RectF(r.left, r.top, r.right, r.bottom) }
                     val otherCrop = otherTextCropRect?.let { r -> android.graphics.RectF(r.left, r.top, r.right, r.bottom) }
-                    
+
                     val result = OdometerOcrUtils.extractFromPhoto(finalPath, cropRect)
                     lastOcrDebugResult = result
-                    
+
                     discoveredLandmarks = OdometerOcrUtils.discoverLandmarks(finalPath, cropRect, otherCrop)
                     landmarkTextBlocksJson = serializeLandmarks(discoveredLandmarks)
-                    
+
                     showLandmarkCheck = true
                     result.odometer?.let { odometerReading = it }
                 } catch (e: Exception) { Log.e("AddNewVehicle", "OCR exception", e); Toast.makeText(context, "OCR failed: ${e.message}", Toast.LENGTH_LONG).show() }

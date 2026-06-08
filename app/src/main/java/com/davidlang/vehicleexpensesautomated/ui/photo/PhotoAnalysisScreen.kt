@@ -34,7 +34,7 @@ fun PhotoAnalysisScreen(
                 context.contentResolver.openInputStream(photoUri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 }
-                
+
                 val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
                 val fullText = result.textBlocks.joinToString(" ") { it.text }
                 tempFile.delete()

@@ -119,37 +119,37 @@ fun ExperimentPumpScreen(navController: NavHostController) {
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { 
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(currentPhotoName, style = MaterialTheme.typography.labelSmall)
-                    Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall) 
+                    Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
         Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
-        Button(onClick = { 
-            scope.launch { 
+        Button(onClick = {
+            scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
                 totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, null) { res, p -> 
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName 
+                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, null) { res, p ->
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
-                isRunning = false; status = "Complete! Reports saved." 
-            } 
+                isRunning = false; status = "Complete! Reports saved."
+            }
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
-        Button(onClick = { 
-            scope.launch { 
+        Button(onClick = {
+            scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
                 val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, GOLDEN_SUBSET) { res, p -> 
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName 
+                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
-                isRunning = false; status = "Complete! Limited Report saved." 
-            } 
+                isRunning = false; status = "Complete! Limited Report saved."
+            }
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Limited Experiment (Golden Subset)") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
@@ -174,12 +174,12 @@ data class PumpBranch(
     var discoveryDetails: JSONObject? = null
 ) {
     fun getBranch(name: String): PumpBranch = subBranches.getOrPut(name) { PumpBranch(name) }
-    
+
     fun serializeToJson(): JSONObject {
         val root = JSONObject()
         val imgObj = JSONObject(); images.forEach { (k, v) -> imgObj.put(k, v) }; root.put("images", imgObj)
-        val resObj = JSONObject(); pathResults.forEach { (k, v) -> 
-            val p = JSONObject(); p.put("cost", v.cost); p.put("vol", v.vol); resObj.put(k, p) 
+        val resObj = JSONObject(); pathResults.forEach { (k, v) ->
+            val p = JSONObject(); p.put("cost", v.cost); p.put("vol", v.vol); resObj.put(k, p)
         }; root.put("results", resObj)
         val metaObj = JSONObject(); metadata.forEach { (k, v) -> metaObj.put(k, v) }; root.put("metadata", metaObj)
         if (discoveryDetails != null) root.put("discovery_details", discoveryDetails)
@@ -189,41 +189,41 @@ data class PumpBranch(
 }
 
 data class PumpReferenceCache(
-    val vehicle: Vehicle, 
-    val referenceBase64: String, 
-    val curatedLandmarks: List<TextBlock>, 
+    val vehicle: Vehicle,
+    val referenceBase64: String,
+    val curatedLandmarks: List<TextBlock>,
     val bmp: Bitmap,
     val width: Int,
     val height: Int
 )
 
 private suspend fun runPumpExperiment(
-    experimentDir: File, 
-    reportDir: File, 
-    debugCropDir: File, 
-    context: Context, 
-    onLog: (String) -> Unit, 
-    subsetNames: List<String>?, 
+    experimentDir: File,
+    reportDir: File,
+    debugCropDir: File,
+    context: Context,
+    onLog: (String) -> Unit,
+    subsetNames: List<String>?,
     onProgress: (PumpPhotoResultSummary, Float) -> Unit
 ) = withContext(Dispatchers.IO) {
-    val allPhotos = experimentDir.listFiles { f -> 
-        f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") 
+    val allPhotos = experimentDir.listFiles { f ->
+        f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
     }?.sortedBy { it.name } ?: return@withContext
-    
+
     val photos = if (subsetNames != null) {
         allPhotos.filter { it.name in subsetNames }
     } else allPhotos
-    
+
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val paddleEngine = NativePaddleEngine(context)
 
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
-    
+
     // Pre-allocated JSON serialization buffer (16MB starting capacity)
     var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
-    
+
     var partCount = 1
     val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
     var currentSize = 0
@@ -255,15 +255,15 @@ private suspend fun runPumpExperiment(
     }
 
     var currentFile = pStartNewFile()
-    
+
     photos.forEachIndexed { index, file ->
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
-            
+
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             masterBuffer.resize(imgW, imgH)
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
-            
+
             val root = PumpBranch("Root")
             val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, 225, 0, emptyList(), null, masterBuffer)
             root.images["before"] = beforeB64
@@ -305,7 +305,7 @@ private suspend fun runPumpExperiment(
                     val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
                     rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
                     rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
-                    
+
                     // Rotate Luma (Y)
                     org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
 
@@ -337,21 +337,21 @@ private suspend fun runPumpExperiment(
                     val srcH = workspace.p.height
                     val currentLongEdge = max(srcW, srcH)
                     val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
-                    
+
                     val targetW = (srcW * scaleFactor).toInt()
                     val targetH = (srcH * scaleFactor).toInt()
                     val targetLongEdge = max(targetW, targetH)
-                    
+
                     val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
                     val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
-                    
+
                     if (!processedScales.contains(chosenScale)) {
                         processedScales.add(chosenScale)
                         chosenBuffer.p.clear() // clears luma and resets chroma to 128
                         val recCropId = chosenBuffer.createCrop(0, 0, targetW, targetH)
                         val interp = if (srcW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                         org.opencv.imgproc.Imgproc.resize(workspace.p.mat, chosenBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                        
+
                         val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
                             chosenBuffer.p.nv21,
                             chosenBuffer.p.width,
@@ -361,7 +361,7 @@ private suspend fun runPumpExperiment(
                         )
                         val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
                         chosenBuffer.c[recCropId].release()
-                        
+
                         val hunks = result.textBlocks.map { block ->
                             val ml = block.boundingBox.left.toFloat()
                             val mt = block.boundingBox.top.toFloat()
@@ -380,7 +380,7 @@ private suspend fun runPumpExperiment(
                         branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
                         branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
                     }
-                    
+
                     val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine)
                     val raw = paddleResults[0]
                     val exp = paddleResults[1]
@@ -391,10 +391,10 @@ private suspend fun runPumpExperiment(
                     pdHunksExpTotal.addAll(exp)
                     pdHunksMaxTotal.addAll(maxExt)
                     pdHunksNativeTotal.addAll(native)
-                    
+
                     workspace.c[innerId].release()
                     workspace.c[outerId].release()
-                    
+
                     discoveryDetails["Paddle Raw"]!![scale] = raw
                     discoveryDetails["Paddle Expanded"]!![scale] = exp
                     discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
@@ -415,7 +415,7 @@ private suspend fun runPumpExperiment(
                     val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
                     val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
                     val res = performHunkRecognition(listOf(expT, expB), workspace, experimentRecSet320x48, engine, paddleEngine, context, tilt)
-                    
+
                     suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
                         val p1 = IcrsMath.icrsToPixel(exp.icrs.left, exp.icrs.top, imgW, imgH)
                         val p2 = IcrsMath.icrsToPixel(exp.icrs.right, exp.icrs.bottom, imgW, imgH)
@@ -449,11 +449,11 @@ private suspend fun runPumpExperiment(
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle")
 
                 // 5. Visualization
-                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h -> 
+                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
                     val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
                     SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
-                
+
                 val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
                 branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
                 val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
@@ -463,7 +463,7 @@ private suspend fun runPumpExperiment(
             // Final Reporting
             val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
             val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
-            
+
             val rowHtml = pBuildHtmlRowDynamic(
                 rowIndex = index + 1,
                 fileName = file.name,
@@ -484,17 +484,17 @@ private suspend fun runPumpExperiment(
                 index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
             )
             val comma = if (index < total - 1) "," else ""
-            
+
             // Clear/reset or re-allocate the reusable buffer to keep memory bounded
             if (jsonCharBuffer.capacity() > 64 * 1024 * 1024) {
                 jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
             } else {
                 jsonCharBuffer.setLength(0)
             }
-            
+
             appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
             jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
-            
+
             val summaryText = flows.map { f -> "$f: ${root.getBranch(f).pathResults["ML"]?.cost ?: "F"}" }.joinToString(" | ")
             val resultSummary = PumpPhotoResultSummary(file.name, summaryText, 1.0f, "")
             withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
@@ -506,7 +506,7 @@ private suspend fun runPumpExperiment(
     }
     currentFile.appendText(footer)
     jsonFile.appendText("\n  ]\n}")
-    
+
     experimentRecSet320x48.release()
     experimentDetSet512x128.release()
     masterBuffer.release()
@@ -514,7 +514,7 @@ private suspend fun runPumpExperiment(
 }
 
 private fun pSerializePhotoResultToJson(
-    lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, 
+    lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int,
     isDegraded: Boolean, nativeProbe: String, deskewResA: OdometerOcrUtils.DeskewResult? = null,
     tSnapOrig: Long = 0, tSnapDeskew: Long = 0, fileName: String = "",
     root: PumpBranch,
@@ -528,7 +528,7 @@ private fun pSerializePhotoResultToJson(
         put("isDegraded", isDegraded); put("nativeProbe", nativeProbe)
         put("t_thumb_orig_ms", tSnapOrig); put("t_snap_deskew_ms", tSnapDeskew)
         put("original_histogram", originalHistogram)
-        
+
         val scaleTelemetry = JSONObject()
         root.subBranches.values.forEach { branch ->
             branch.metadata.forEach { (k, v) ->
@@ -538,12 +538,12 @@ private fun pSerializePhotoResultToJson(
             }
         }
         put("scale_telemetry", scaleTelemetry)
-        
+
         put("tree", root.serializeToJson())
-        
+
         val d = JSONObject()
         d.pPutSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
-        deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) -> 
+        deskewResA?.engines?.get("Paddle V3")?.metadata?.forEach { (k, v) ->
             if (k.contains("chk") || k.contains("count")) d.put(k, v)
         }
         put("deskew", d)
@@ -682,14 +682,14 @@ private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): St
     if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(256), org.opencv.core.MatOfFloat(0f, 256f))
-    
+
     val totalPixels = (mat.rows() * mat.cols()).toDouble()
     val bins = FloatArray(256); hist.get(0, 0, bins)
-    
+
     val bmp = Bitmap.createBitmap(100, 60, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
     canvas.drawColor(Color.BLACK)
     val paint = Paint()
-    
+
     var runningSum = 0.0
     val cdf = FloatArray(256)
     for (i in 0..255) {
@@ -706,12 +706,12 @@ private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): St
         val y2 = 50 - (cdf[((i + 1) * 2.56).toInt()] * 50f)
         canvas.drawLine(x1, y1, x2, y2, paint)
     }
-    
+
     for (i in 0..99) {
         if (i % 10 == 0) { paint.color = Color.RED; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
         if (i == (floorPercentile * 100).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(i.toFloat(), 52f, (i + 1).toFloat(), 60f, paint) }
     }
-    
+
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
@@ -744,7 +744,7 @@ private fun pBuildHtmlRowDynamic(
     val img = root.images
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
-    root.subBranches.toSortedMap().forEach { (name, br) -> 
+    root.subBranches.toSortedMap().forEach { (name, br) ->
         appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
         appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,${br.images["PD"]}'></td>")
     }
@@ -753,8 +753,8 @@ private fun pBuildHtmlRowDynamic(
     root.subBranches.toSortedMap().forEach { (name, br) ->
         br.pathResults.forEach { (eng, res) ->
             appendLine("<tr><td>$name:$eng</td>")
-            appendLine("<td><b>${res.cost}</b>" + (if(res.costB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'>" else "") + "</td>")
-            appendLine("<td><b>${res.vol}</b>" + (if(res.volB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'>" else "") + "</td>")
+            appendLine("<td><b>${res.cost}</b>" + (if (res.costB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'>" else "") + "</td>")
+            appendLine("<td><b>${res.vol}</b>" + (if (res.volB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'>" else "") + "</td>")
             appendLine("</tr>")
         }
     }
@@ -794,38 +794,37 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
     val srcW = buffer.p.width
     val srcH = buffer.p.height
     val currentLongEdge = max(srcW, srcH)
-    
+
     val scale = if (currentLongEdge <= targetLongEdge) 1.0f else targetLongEdge.toFloat() / currentLongEdge
     val targetW = (srcW * scale).toInt()
     val targetH = (srcH * scale).toInt()
 
     val alignedW = ((targetW + 31) / 32) * 32
     val alignedH = ((targetH + 31) / 32) * 32
-    
+
     Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
-    
+
     val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
     buffer.c[outerId].clear()
-    
+
     val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
     Imgproc.resize(buffer.p.mat, buffer.c[innerId].mat, buffer.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-    
+
     return Pair(outerId, innerId)
 }
 
 
-
 private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): List<List<PumpHunk>> {
     val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
-    
+
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
     val rawBlocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
     val rawRects = rawBlocks.map { it.boundingBox }
-    
+
     // 1. Consolidate Raw Character Fragments (75% overlap rule)
     val consolidated = OdometerOcrUtils.consolidateRects(rawRects, 0.75f)
-    
+
     val hunksRaw = mutableListOf<PumpHunk>()
     val hunksExpanded = mutableListOf<PumpHunk>()
     val hunksMaxExtent = mutableListOf<PumpHunk>()
@@ -851,7 +850,7 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         val i1 = IcrsMath.pixelToIcrs(retractedRect.left.toFloat(), retractedRect.top.toFloat(), masterW, masterH)
         val i2 = IcrsMath.pixelToIcrs(retractedRect.right.toFloat(), retractedRect.bottom.toFloat(), masterW, masterH)
         hunksExpanded.add(PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y)))
-        
+
         // Capture Max Extent reach (Yellow tier)
         val y1 = IcrsMath.pixelToIcrs(maxExtentRect.left.toFloat(), maxExtentRect.top.toFloat(), masterW, masterH)
         val y2 = IcrsMath.pixelToIcrs(maxExtentRect.right.toFloat(), maxExtentRect.bottom.toFloat(), masterW, masterH)
@@ -864,7 +863,7 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         val icrsPoints = box.points.toList().chunked(2).map { (px, py) ->
             IcrsMath.pixelToIcrs(px, py, masterW, masterH)
         }
-        
+
         var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
         var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
         icrsPoints.forEach { p ->
@@ -893,11 +892,11 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
                 val next = iterator.next()
                 val interL = max(current.icrs.left, next.icrs.left); val interT = max(current.icrs.top, next.icrs.top)
                 val interR = min(current.icrs.right, next.icrs.right); val interB = min(current.icrs.bottom, next.icrs.bottom)
-                
+
                 val overlapH = if (interB > interT) interB - interT else 0f
                 val minH = min(current.icrs.height(), next.icrs.height())
                 val significantOverlap = overlapH >= (minH * 0.3f)
-                
+
                 val isNested = current.icrs.contains(next.icrs) || next.icrs.contains(current.icrs)
 
                 if (significantOverlap || isNested) {
@@ -920,48 +919,48 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
 }
 
 private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: BufferSet, recBuffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context, angle: Float = 0f): List<PumpHunk> {
-     val masterW = buffer.p.width; val masterH = buffer.p.height
-     val minEdge = Math.min(masterW, masterH).toFloat()
-     val maxX = masterW / (2f * minEdge); val maxY = masterH / (2f * minEdge)
-     
-     return hunks.map { hunk ->
-         val l = hunk.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-         val t = hunk.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-         val r = hunk.icrs.right.coerceIn(l + 0.001f, maxX)
-         val b = hunk.icrs.bottom.coerceIn(t + 0.001f, maxY)
-         
-         val p1 = IcrsMath.icrsToPixel(l, t, masterW, masterH); val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
-         val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
-         
-         if (pW < 2 || pH < 2) return@map hunk
+    val masterW = buffer.p.width; val masterH = buffer.p.height
+    val minEdge = Math.min(masterW, masterH).toFloat()
+    val maxX = masterW / (2f * minEdge); val maxY = masterH / (2f * minEdge)
 
-         val cropId = buffer.createCrop(l, t, r - l, b - t)
-         
-         val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
-         recBuffer.p.clear()
-         val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
-         val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-         org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-         
-         val res = if (engine == "ML Kit") {
-              val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                  recBuffer.p.nv21,
-                  recBuffer.p.width,
-                  recBuffer.p.height,
-                  0,
-                  com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-              )
-              val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
-             // ML Kit 7-Segment Cleanup + Upside Down detection
-             val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
-             ocrRes.copy(debugText = cleaned)
-         } else {
-             paddleEngine.recognize(recBuffer.c[recCropId])
-         }
-         
-         recBuffer.c[recCropId].release(); buffer.c[cropId].release()
-         PumpHunk(res.debugText, hunk.icrs)
-     }
+    return hunks.map { hunk ->
+        val l = hunk.icrs.left.coerceIn(-maxX, maxX - 0.001f)
+        val t = hunk.icrs.top.coerceIn(-maxY, maxY - 0.001f)
+        val r = hunk.icrs.right.coerceIn(l + 0.001f, maxX)
+        val b = hunk.icrs.bottom.coerceIn(t + 0.001f, maxY)
+
+        val p1 = IcrsMath.icrsToPixel(l, t, masterW, masterH); val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
+        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+
+        if (pW < 2 || pH < 2) return@map hunk
+
+        val cropId = buffer.createCrop(l, t, r - l, b - t)
+
+        val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
+        recBuffer.p.clear()
+        val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
+        val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+        org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+
+        val res = if (engine == "ML Kit") {
+                val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                recBuffer.p.nv21,
+                recBuffer.p.width,
+                recBuffer.p.height,
+                0,
+                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                )
+                val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+            // ML Kit 7-Segment Cleanup + Upside Down detection
+            val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
+            ocrRes.copy(debugText = cleaned)
+        } else {
+            paddleEngine.recognize(recBuffer.c[recCropId])
+        }
+
+        recBuffer.c[recCropId].release(); buffer.c[cropId].release()
+        PumpHunk(res.debugText, hunk.icrs)
+    }
 }
 
 
@@ -969,7 +968,7 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
     if (hunks.isEmpty()) return emptyList()
     val sorted = hunks.sortedBy { it.icrs.left }
     val result = mutableListOf<MutableList<PumpHunk>>()
-    
+
     for (hunk in sorted) {
         var merged = false
         for (line in result) {
@@ -977,7 +976,7 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
             val h = min(hunk.icrs.height(), last.icrs.height())
             val vOverlap = max(0f, min(hunk.icrs.bottom, last.icrs.bottom) - max(hunk.icrs.top, last.icrs.top))
             val hGap = hunk.icrs.left - last.icrs.right
-            
+
             if (vOverlap > 0.7f * h && hGap < 1.0f * h) {
                 line.add(hunk)
                 merged = true
@@ -986,7 +985,7 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
         }
         if (!merged) result.add(mutableListOf(hunk))
     }
-    
+
     return result.map { line ->
         val l = line.minOf { it.icrs.left }
         val t = line.minOf { it.icrs.top }
@@ -995,10 +994,10 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
         val widest = r - l
         val shortest = line.minOf { it.icrs.height() }
         val centerY = line.map { it.icrs.centerY() }.average().toFloat()
-        
+
         // Spec: inherit string with highest digit count
         val bestText = line.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
-        
+
         val fT = centerY - shortest / 2f; val fB = centerY + shortest / 2f
         PumpHunk(bestText, RectF(l, fT, r, fB))
     }
@@ -1007,7 +1006,7 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
 private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>, List<PumpHunk>> {
     if (hunks.isEmpty()) return Pair(emptyList(), emptyList())
     val sortedY = hunks.sortedBy { it.icrs.centerY() }
-    
+
     val lanes = mutableListOf<MutableList<PumpHunk>>()
     for (hunk in sortedY) {
         var found = false
@@ -1022,12 +1021,12 @@ private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>,
         }
         if (!found) lanes.add(mutableListOf(hunk))
     }
-    
+
     if (lanes.size < 2) return Pair(hunks, emptyList())
-    
+
     // Sort lanes by centerY
     val sortedLanes = lanes.sortedBy { it.first().icrs.centerY() }
-    
+
     // Find largest gap between adjacent lanes
     var maxGap = -1f
     var splitIdx = 0
@@ -1038,7 +1037,7 @@ private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>,
             splitIdx = i
         }
     }
-    
+
     val top = sortedLanes.take(splitIdx + 1).flatten()
     val bottom = sortedLanes.drop(splitIdx + 1).flatten()
     return Pair(top, bottom)
@@ -1046,25 +1045,25 @@ private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>,
 
 private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHunk>): Pair<PumpHunk, PumpHunk>? {
     val pairs = mutableListOf<Pair<PumpHunk, PumpHunk>>()
-    
+
     for (top in topLanes) {
         for (bottom in bottomLanes) {
             val hB = bottom.icrs.height()
             val gap = bottom.icrs.top - top.icrs.bottom
             val vOverlap = max(0f, min(top.icrs.bottom, bottom.icrs.bottom) - max(top.icrs.top, bottom.icrs.top))
             val xOverlap = max(0f, min(top.icrs.right, bottom.icrs.right) - max(top.icrs.left, bottom.icrs.left))
-            
+
             val digitTop = top.text.count { it.isDigit() }
             val digitBottom = bottom.text.count { it.isDigit() }
-            
+
             if (gap < 1.25f * hB && vOverlap < 0.2f * hB && xOverlap > 0 && digitTop >= 2 && digitBottom >= 2) {
                 pairs.add(Pair(top, bottom))
             }
         }
     }
-    
+
     if (pairs.isEmpty()) return null
-    
+
     val goldenWords = listOf("Sale", "Total", "Gallon", "$", "Price")
     return pairs.maxByOrNull { (t, b) ->
         var score = 0
@@ -1079,12 +1078,12 @@ private fun expandHunkContext(hunk: PumpHunk, maxX: Float, maxY: Float): PumpHun
     val newH = h * 1.5f
     val dy = (newH - h) / 2f
     val dx = newH // Horizontal expansion is value of NEW height on EACH side
-    
+
     val l = (hunk.icrs.left - dx).coerceIn(-maxX, maxX - 0.001f)
     val t = (hunk.icrs.top - dy).coerceIn(-maxY, maxY - 0.001f)
     val r = (hunk.icrs.right + dx).coerceIn(l + 0.001f, maxX)
     val b = (hunk.icrs.bottom + dy).coerceIn(t + 0.001f, maxY)
-    
+
     return PumpHunk(hunk.text, RectF(l, t, r, b))
 }
 
@@ -1119,14 +1118,14 @@ private fun JSONObject.pPutSafe(key: String, value: Double, context: String = ""
 private fun JSONObject.pPutSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
 private suspend fun pRunMLKitIterative(
-    displayName: String, 
-    masterBuffer: Any, 
-    mWidth: Int, 
-    mHeight: Int, 
+    displayName: String,
+    masterBuffer: Any,
+    mWidth: Int,
+    mHeight: Int,
     winnerRef: PumpReferenceCache,
     vehicleBufferSets: Map<Int, BufferSet>,
     experimentRecSet320x48: BufferSet,
-    report: MutableMap<String, OcrHarnessResult>, 
+    report: MutableMap<String, OcrHarnessResult>,
     targetRefMap: MutableMap<String, RefinementTrace>
 ) {
     val tH0 = System.currentTimeMillis()
@@ -1134,26 +1133,26 @@ private suspend fun pRunMLKitIterative(
     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
-    
+
     val l = winnerRef.vehicle.odometerCropLeft ?: 0f
     val t = winnerRef.vehicle.odometerCropTop ?: 0f
     val r = winnerRef.vehicle.odometerCropRight ?: 1f
     val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-    
+
     val icrsRect = if (winnerRef.vehicle.isIcrs) RectF(l, t, r, b) else IcrsMath.legacyAnisotropicToIcrs(RectF(l, t, r, b), mWidth, mHeight)
     val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
     val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
-    
+
     val roiW = (p2.x - p1.x).toInt().coerceAtMost(mWidth)
     val roiH = (p2.y - p1.y).toInt().coerceAtMost(mHeight)
     val sX = p1.x.toInt().coerceIn(0, mWidth - 1)
     val sY = p1.y.toInt().coerceIn(0, mHeight - 1)
-    
+
     val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
     var lastThumb = ""
     var tSnTotal = 0L
     val steps = mutableListOf<OcrStepResult>()
-    
+
     stages.forEach { stage ->
         val tS0 = System.currentTimeMillis()
         when (masterBuffer) {
@@ -1163,41 +1162,41 @@ private suspend fun pRunMLKitIterative(
                 org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
             }
         }
-        
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.75f) 
+
+        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.75f)
         else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
-        
+
         experimentRecSet320x48.p.clear()
         val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())
         val ew = ((odoBuffer.p.mat.cols() * rSc + 1).toInt() / 2) * 2
         val eh = ((odoBuffer.p.mat.rows() * rSc + 1).toInt() / 2) * 2
         val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        
+
         val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
         val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
         experimentRecSet320x48.c[rCrId].release()
-        
+
         val odoB = StringBuilder()
-        vText.textBlocks.forEach { blk -> 
-            blk.lines.forEach { line -> 
+        vText.textBlocks.forEach { blk ->
+            blk.lines.forEach { line ->
                 val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
-                if (cleaned.isNotBlank()) odoB.append(cleaned) 
-            } 
+                if (cleaned.isNotBlank()) odoB.append(cleaned)
+            }
         }
-        
+
         val odoStr = odoB.toString()
         allOdo.add(odoStr)
         val tL = System.currentTimeMillis() - tS0
         steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, emptyMap()))
-        
+
         val anns = mutableListOf<SnapshotAnnotation>()
         val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
         val snY = odoBuffer.p.mat.rows().toFloat() / eh.toFloat()
-        vText.textBlocks.forEach { b -> 
-            b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) } 
+        vText.textBlocks.forEach { b ->
+            b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
         }
-        
+
         val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
         lastThumb = sB64
         tSnTotal += ts
@@ -1207,7 +1206,7 @@ private suspend fun pRunMLKitIterative(
         sObj.addProperty("time", tL)
         jsonStages.add(stage, sObj)
     }
-    
+
     val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
     report[displayName] = result
     targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)

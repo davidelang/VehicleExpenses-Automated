@@ -11,11 +11,11 @@ object OcrHarness {
 
     suspend fun runDiscovery(input: Any, context: Context): OcrResult {
         val rawResult = MlKitEngine().recognize(input)
-        
+
         val cleanedBlocks = rawResult.textBlocks.map { block ->
             block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
         }.filter { it.text.length > 1 }
-        
+
         val sanitizedResult = rawResult.copy(
             textBlocks = cleanedBlocks,
             debugText = cleanedBlocks.joinToString(" ") { it.text }

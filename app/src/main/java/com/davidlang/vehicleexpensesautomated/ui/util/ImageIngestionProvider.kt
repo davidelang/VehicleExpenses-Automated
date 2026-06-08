@@ -49,7 +49,7 @@ object ImageIngestionProvider {
             } else {
                 ImageDecoder.createSource(File(path))
             }
-            
+
             try {
                 // Use ImageDecoder header listener to find TRUE raw sensor dimensions.
                 ImageDecoder.decodeDrawable(source) { _, info, _ ->
@@ -78,7 +78,7 @@ object ImageIngestionProvider {
         val t0 = System.currentTimeMillis()
         val file = java.io.File(path)
         val ext = file.extension.lowercase()
-        
+
         // --- TYPE-AWARE DISPATCHER ---
         return when (ext) {
             "jpg", "jpeg" -> ingestJpeg(path, target, t0)
@@ -98,14 +98,14 @@ object ImageIngestionProvider {
 
         // Step 1: Native Ingestion (Direct LibRaw -> YUV)
         NativeImageUtils.ingestDngToYuv(path, target)
-        
+
         // Step 2: Stabilize state for monochrome-expecting logic
         target.clearChroma()
-        
+
         return IngestionMetadata(
-            probedW, probedH, 
-            probedW, probedH, 
-            "image/x-adobe-dng", 
+            probedW, probedH,
+            probedW, probedH,
+            "image/x-adobe-dng",
             System.currentTimeMillis() - startTime,
             false,
             "LibRaw: ${probedW}x${probedH}"
@@ -121,27 +121,27 @@ object ImageIngestionProvider {
         if (diag == "FAILED_TO_LOAD") {
             throw Exception("Native imread failed for JPEG: $path")
         }
-        
+
         // Parse "WxH channels:C"
         val parts = diag.split(" ")
         if (parts.isEmpty()) throw Exception("Invalid native diagnostic: $diag")
-        
+
         val res = parts[0].split("x")
         if (res.size < 2) throw Exception("Invalid native resolution: ${parts[0]}")
-        
+
         val w = res[0].toInt()
         val h = res[1].toInt()
 
         // Step 1: Native Ingestion (Direct imread -> YUV)
         NativeImageUtils.ingestJpegToYuv(path, target)
-        
+
         // Step 2: Stabilize state
         target.clearChroma()
-        
+
         return IngestionMetadata(
-            w, h, 
-            w, h, 
-            "image/jpeg", 
+            w, h,
+            w, h,
+            "image/jpeg",
             System.currentTimeMillis() - startTime,
             false,
             diag
@@ -155,7 +155,7 @@ object ImageIngestionProvider {
         startTime: Long
     ): IngestionMetadata {
         val (probedW, probedH) = probeDimensions(context, path)
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val source = if (path.startsWith("content://")) ImageDecoder.createSource(context.contentResolver, Uri.parse(path)) else ImageDecoder.createSource(File(path))
             var format = "unknown"
@@ -167,7 +167,7 @@ object ImageIngestionProvider {
 
             NativeImageUtils.ingestArgbToYuv(decodedBitmap, target)
             target.clearChroma()
-            
+
             val meta = IngestionMetadata(probedW, probedH, decodedBitmap.width, decodedBitmap.height, format, System.currentTimeMillis() - startTime, decodedBitmap.width < probedW || decodedBitmap.height < probedH)
             decodedBitmap.recycle()
             return meta

@@ -39,7 +39,7 @@ fun SettingsScreen() {
     var photoProviderPref by remember { mutableStateOf(prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive") }
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
-    
+
     var status by remember { mutableStateOf("Ready") }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -145,9 +145,9 @@ private fun DropdownSetting(label: String, selectedValue: String, options: List<
 
 @Composable
 private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) { 
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
         Text(label, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange) 
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
