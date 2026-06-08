@@ -51,6 +51,8 @@ enum class CropEditMode {
     EDIT_CROPS
 }
 
+enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, TOP, BOTTOM, LEFT, RIGHT }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ManageVehiclesScreen(
@@ -357,7 +359,6 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, TOP, BOTTOM, LEFT, RIGHT }
     var activeHandle by remember { mutableStateOf(DragHandle.NONE) }
     var activeCropIsOdo by remember { mutableStateOf(true) }
 
@@ -427,8 +428,8 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         val ly1 = (start.y - fitRect.top) / fitRect.height
                         val lx2 = (end.x - fitRect.left) / fitRect.width
                         val ly2 = (end.y - fitRect.top) / fitRect.height
-                        val p1 = IcrsMath.legacyAnisotropicToIcrs(lx1, ly1, imgW, imgH)
-                        val p2 = IcrsMath.legacyAnisotropicToIcrs(lx2, ly2, imgW, imgH)
+                        val p1 = IcrsMath.legacyAnisotropicToIcrs(lx1, ly1, imgW, imgH).let { Offset(it.x, it.y) }
+                        val p2 = IcrsMath.legacyAnisotropicToIcrs(lx2, ly2, imgW, imgH).let { Offset(it.x, it.y) }
                         currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
                     } else if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
                         val currentRect = if (activeCropIsOdo) odoRect else otherRect
@@ -455,7 +456,7 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                             fun toIcrs(screen: Offset): Offset {
                                 val lx = (screen.x - fitRect.left) / fitRect.width
                                 val ly = (screen.y - fitRect.top) / fitRect.height
-                                return IcrsMath.legacyAnisotropicToIcrs(lx, ly, imgW, imgH)
+                                return IcrsMath.legacyAnisotropicToIcrs(lx, ly, imgW, imgH).let { Offset(it.x, it.y) }
                             }
                             val p1 = toIcrs(newTl); val p2 = toIcrs(newBr)
                             currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
@@ -492,7 +493,7 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
         }
 
         // PAN / ZOOM BUTTONS
-        Column(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 SmallFloatingActionButton(onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("+") }
                 SmallFloatingActionButton(onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("-") }
