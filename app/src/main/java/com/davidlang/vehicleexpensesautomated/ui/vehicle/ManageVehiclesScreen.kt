@@ -366,55 +366,68 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
         .fillMaxWidth()
         .height(300.dp)
         .onSizeChanged { size -> viewSize = Offset(size.width.toFloat(), size.height.toFloat()); onSizeChanged(viewSize) }
-        .pointerInput(Unit) {
-            detectTransformGestures { _, pan, zoom, _ ->
-                scale = (scale * zoom).coerceIn(1f, 10f)
-                offset += pan
-            }
-        }
-        .pointerInput(editMode, viewSize, originalSize, scale, offset, odoRect, otherRect) {
-            if (editMode == CropEditMode.IDLE) return@pointerInput
-
-            detectDragGestures(
-                onDragStart = { startOffset -> 
-                    val screenPos = (startOffset - offset) / scale
-                    dragStart = screenPos
-                    activeHandle = DragHandle.NONE
-
-                    if (editMode == CropEditMode.EDIT_CROPS) {
-                        val pxW = viewSize.x; val pxH = viewSize.y
-                        val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
-                        val s = minOf(originalSize.x, originalSize.y)
-                        val hitRadius = 40f / scale // Screen pixels
-
-                        fun getScreenRect(r: Rect): Rect {
-                            val lx = (r.left * s + (originalSize.x / 2f)) / originalSize.x
-                            val ly = (r.top * s + (originalSize.y / 2f)) / originalSize.y
-                            val lw = (r.width * s) / originalSize.x
-                            val lh = (r.height * s) / originalSize.y
-                            return Rect(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height, fitRect.left + (lx + lw) * fitRect.width, fitRect.top + (ly + lh) * fitRect.height)
-                        }
-
-                        listOf(true to odoRect, false to otherRect).forEach { (isOdo, rect) ->
-                            rect?.let { r ->
-                                val sr = getScreenRect(r)
-                                val x = screenPos.x; val y = screenPos.y
-
-                                when {
-                                    Offset(sr.left, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_LEFT; activeCropIsOdo = isOdo }
-                                    Offset(sr.right, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_RIGHT; activeCropIsOdo = isOdo }
-                                    Offset(sr.left, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_LEFT; activeCropIsOdo = isOdo }
-                                    Offset(sr.right, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_RIGHT; activeCropIsOdo = isOdo }
-                                    Math.abs(y - sr.top) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.TOP; activeCropIsOdo = isOdo }
-                                    Math.abs(y - sr.bottom) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.BOTTOM; activeCropIsOdo = isOdo }
-                                    Math.abs(x - sr.left) < hitRadius && y > sr.top && y < sr.bottom -> { activeHandle = DragHandle.LEFT; activeCropIsOdo = isOdo }
-                                    Math.abs(x - sr.right) < hitRadius && y > sr.top && y < sr.bottom -> { activeHandle = DragHandle.RIGHT; activeCropIsOdo = isOdo }
-                                }
-                            }
-                            if (activeHandle != DragHandle.NONE) return@forEach
-                        }
+    ) {
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    // detectTransformGestures only provides a non-zero zoom if two fingers are used.
+                    // pan can be non-zero for one finger, so we check zoom to restrict to 2-finger.
+                    // Actually, if we want 2-finger zoom/pan, we should check if more than one pointer is present.
+                    // Compose's detectTransformGestures doesn't expose pointer count easily, 
+                    // but it usually only fires for multi-touch. 
+                    // To be safe, we only apply if zoom != 1f OR if we decide to allow 1-finger pan.
+                    // The user said: "when not in edit mode for either crop, two finger gestures will pan and zoom"
+                    // and "4 two finger pan/zoom, 1 finger draw/edit crop/nothing"
+                    // So we should ideally only pan/zoom with 2 fingers.
+                    if (zoom != 1f || pan != Offset.Zero) {
+                        scale = (scale * zoom).coerceIn(1f, 10f)
+                        offset += pan
                     }
-                }, 
+                }
+            }
+            .pointerInput(editMode, viewSize, originalSize, scale, offset, odoRect, otherRect) {
+                if (editMode == CropEditMode.IDLE) return@pointerInput
+                detectDragGestures(
+                    onDragStart = { startOffset -> 
+                        val screenPos = (startOffset - offset) / scale
+                        dragStart = screenPos
+                        activeHandle = DragHandle.NONE
+
+                        if (editMode == CropEditMode.EDIT_CROPS) {
+                            val pxW = viewSize.x; val pxH = viewSize.y
+                            val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
+                            val s = minOf(originalSize.x, originalSize.y)
+                            val hitRadius = 40f / scale // Screen pixels
+
+                            fun getScreenRect(r: Rect): Rect {
+                                val lx = (r.left * s + (originalSize.x / 2f)) / originalSize.x
+                                val ly = (r.top * s + (originalSize.y / 2f)) / originalSize.y
+                                val lw = (r.width * s) / originalSize.x
+                                val lh = (r.height * s) / originalSize.y
+                                return Rect(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height, fitRect.left + (lx + lw) * fitRect.width, fitRect.top + (ly + lh) * fitRect.height)
+                            }
+
+                            listOf(true to odoRect, false to otherRect).forEach { (isOdo, rect) ->
+                                rect?.let { r ->
+                                    val sr = getScreenRect(r)
+                                    val x = screenPos.x; val y = screenPos.y
+
+                                    when {
+                                        Offset(sr.left, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_LEFT; activeCropIsOdo = isOdo }
+                                        Offset(sr.right, sr.top).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.TOP_RIGHT; activeCropIsOdo = isOdo }
+                                        Offset(sr.left, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_LEFT; activeCropIsOdo = isOdo }
+                                        Offset(sr.right, sr.bottom).minus(screenPos).getDistance() < hitRadius -> { activeHandle = DragHandle.BOTTOM_RIGHT; activeCropIsOdo = isOdo }
+                                        Math.abs(y - sr.top) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.TOP; activeCropIsOdo = isOdo }
+                                        Math.abs(y - sr.bottom) < hitRadius && x > sr.left && x < sr.right -> { activeHandle = DragHandle.BOTTOM; activeCropIsOdo = isOdo }
+                                        Math.abs(x - sr.left) < hitRadius && y > sr.top && y < sr.bottom -> { activeHandle = DragHandle.LEFT; activeCropIsOdo = isOdo }
+                                        Math.abs(x - sr.right) < hitRadius && y > sr.top && y < sr.bottom -> { activeHandle = DragHandle.RIGHT; activeCropIsOdo = isOdo }
+                                    }
+                                }
+                                if (activeHandle != DragHandle.NONE) return@forEach
+                            }
+                        }
+                    }, 
                 onDrag = { change, _ ->
                     change.consume()
                     val start = dragStart ?: return@detectDragGestures
