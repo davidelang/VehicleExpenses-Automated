@@ -33,14 +33,14 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         val yuv: YuvHandle   // Standard multi-plane descriptor
         val width: Int
         val height: Int
-        
+
         // Creation & Lifecycle
         fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int
         fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int
         fun resize(x: Int, y: Int, w: Int, h: Int)
         fun resize(x: Float, y: Float, w: Float, h: Float)
         fun release()
-        
+
         // Operations
         fun clear()
         fun clearChroma()
@@ -56,17 +56,17 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     val s: Slice get() = instances[1 - primaryIdx]
     val scratch: Slice get() = s
     val secondary: Slice get() = s
-    
+
     val crop = CropRegistry()
     val c = crop
-    
+
     val width: Int get() = _width
     val height: Int get() = _height
 
     // Manager Functions
     suspend fun flip() = mutex.withLock {
         primaryIdx = 1 - primaryIdx
-        managedCrops.values.forEach { 
+        managedCrops.values.forEach {
             it.rebindToOwner()
         }
     }
@@ -77,7 +77,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         instances[1].physicalResize(w, h)
         _width = w
         _height = h
-        
+
         // Lifecycle Rule: Preserved ICRS, drop Pixel
         val toRemove = mutableListOf<Int>()
         managedCrops.forEach { (id, c) ->
@@ -93,7 +93,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     suspend fun normalizeYUV() = mutex.withLock {
         val src = p.yuv
         val dstHandle = (s as Instance).nativePtr
-        
+
         nativeNormalizeYUV(
             src.planes[0].buffer, src.planes[1].buffer, src.planes[2].buffer,
             src.planes[0].rowStride, src.planes[1].rowStride, src.planes[2].rowStride,
@@ -142,7 +142,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         private var _uvMat: Mat? = null
         private var _nv21Mat: Mat? = null
         private var _buffer: ByteBuffer? = null
-        
+
         val isLogicalScratch: Boolean get() = this === instances[1 - primaryIdx]
 
         override val mat: Mat get() = _mat ?: throw IllegalStateException("Not initialized")
@@ -203,7 +203,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         private var rawX: Float, private var rawY: Float, private var rawW: Float, private var rawH: Float
     ) : Slice {
         internal val owner: Instance get() = if (isLogicalScratch) instances[1 - primaryIdx] else instances[primaryIdx]
-        
+
         private var _mat: Mat? = null
         private var _uvMat: Mat? = null
         private var absX = 0; private var absY = 0; private var absW = 0; private var absH = 0
@@ -249,18 +249,18 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             } else {
                 listOf(rawX, rawY, rawW, rawH)
             }
-            
+
             // Phase 126: Strict 2x2 Boundary Alignment and Clamping
             // Ensures coordinates are always even and inside native buffer limits [0, width/height]
             absX = (px.toInt().coerceIn(0, _width - 2) / 2) * 2
             absY = (py.toInt().coerceIn(0, _height - 2) / 2) * 2
-            
+
             val x2 = ((px + pw).toInt().coerceIn(absX + 2, _width) / 2) * 2
             val y2 = ((py + ph).toInt().coerceIn(absY + 2, _height) / 2) * 2
-            
+
             absW = x2 - absX
             absH = y2 - absY
-            
+
             val curMat = _mat
             val curUvMat = _uvMat
             if (curMat == null || curUvMat == null) {
@@ -290,16 +290,16 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
         override fun resize(x: Int, y: Int, w: Int, h: Int) { isIcrs = false; rawX = x.toFloat(); rawY = y.toFloat(); rawW = w.toFloat(); rawH = h.toFloat(); refresh() }
         override fun resize(x: Float, y: Float, w: Float, h: Float) { isIcrs = true; rawX = x; rawY = y; rawW = w; rawH = h; refresh() }
-        override fun release() { 
+        override fun release() {
             managedCrops.values.remove(this)
             _mat?.release()
             _uvMat?.release()
             _mat = null
             _uvMat = null
         }
-        internal fun disarm() { 
+        internal fun disarm() {
             Log.d("BufferSet", "Disarming crop. Mat is null: ${_mat == null}")
-            _mat?.let { nativeDisarmMat(it) }; _uvMat?.let { nativeDisarmMat(it) }; _mat = null; _uvMat = null 
+            _mat?.let { nativeDisarmMat(it) }; _uvMat?.let { nativeDisarmMat(it) }; _mat = null; _uvMat = null
         }
         override fun clear() { mat.setTo(Scalar(0.0)); clearChroma() }
         override fun clearChroma() { uvMat.setTo(Scalar(128.0, 128.0)) }

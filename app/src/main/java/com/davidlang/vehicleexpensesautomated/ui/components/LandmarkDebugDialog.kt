@@ -68,7 +68,7 @@ fun LandmarkDebugDialog(
     val context = LocalContext.current
     var showDiscovery by remember { mutableStateOf(true) }
     var isEditing by remember { mutableStateOf(false) }
-    
+
     // Local state for editing
     var editableLandmarks by remember { mutableStateOf(landmarks) }
     val focusManager = LocalFocusManager.current
@@ -90,7 +90,7 @@ fun LandmarkDebugDialog(
                     } else if (File(photoPath).exists()) {
                         BitmapFactory.decodeFile(photoPath, options)
                     } else null
-                    
+
                     if (raw != null) {
                         // Apply heavy filters on background thread
                         val filtered = OdometerOcrUtils.applyBilateral(OdometerOcrUtils.applyGrayscale(raw))
@@ -126,7 +126,7 @@ fun LandmarkDebugDialog(
                         if (!isEditing) {
                             Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 8.dp)) { Text("Edit OCR") }
                         } else {
-                            Button(onClick = { 
+                            Button(onClick = {
                                 val newList = editableLandmarks.toMutableList()
                                 newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
                                 editableLandmarks = newList
@@ -134,7 +134,7 @@ fun LandmarkDebugDialog(
                             Button(onClick = { onLandmarksChanged(editableLandmarks); onDismiss() }, modifier = Modifier.padding(end = 8.dp)) { Text("Save Overrides") }
                             Button(onClick = { isEditing = false; editableLandmarks = landmarks }, modifier = Modifier.padding(end = 8.dp)) { Text("Cancel") }
                         }
-                        
+
                         Text("Discovery", style = MaterialTheme.typography.labelSmall)
                         Switch(checked = showDiscovery, onCheckedChange = { showDiscovery = it })
                         Spacer(modifier = Modifier.width(16.dp))
@@ -167,7 +167,7 @@ fun LandmarkDebugDialog(
                                         rawDiscoveryBoxes.forEach { box ->
                                             drawRect(color = Color.Red.copy(alpha = 0.3f), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Fill)
                                         }
-                                        
+
                                         fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color) {
                                             val shortEdge = min(imgW, imgH)
                                             val lx = (rect.left * shortEdge + (imgW / 2f)) / imgW
@@ -217,12 +217,12 @@ fun LandmarkDebugDialog(
                                         border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                                     ) {
                                         Row(modifier = Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else lm.refinedDiscoveryBox?.let { 
+                                            val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else lm.refinedDiscoveryBox?.let {
                                                 android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
-                                            } ?: lm.rawDiscoveryBox?.let { 
+                                            } ?: lm.rawDiscoveryBox?.let {
                                                 android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
                                             }
-                                            
+
                                             Box(modifier = Modifier.size(48.dp).background(Color.Black), contentAlignment = Alignment.Center) {
                                                 var crop by remember(zone) { mutableStateOf<Bitmap?>(null) }
 
@@ -240,7 +240,7 @@ fun LandmarkDebugDialog(
 
                                                 crop?.let { c -> Image(bitmap = c.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit) }
                                             }
-                                            
+
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 if (isEditing) {
@@ -293,7 +293,7 @@ fun LandmarkDebugDialog(
                                                     if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                                                     else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
                                                 }
-                                                
+
                                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                     lm.rawDiscoveryBox?.let { MetricChip(color = Color.Red, w = (it.right - it.left) * imgW, h = (it.bottom - it.top) * imgH) }
                                                     lm.refinedDiscoveryBox?.let { MetricChip(color = Color(0xFFFF8C00), w = (it.right - it.left) * imgW, h = (it.bottom - it.top) * imgH) }

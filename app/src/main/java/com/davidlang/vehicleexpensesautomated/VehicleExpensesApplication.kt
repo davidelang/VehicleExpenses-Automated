@@ -34,16 +34,16 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         if (!org.opencv.android.OpenCVLoader.initLocal()) {
             android.util.Log.e("VehicleExpensesApp", "OpenCV initialization failed!")
         }
-        
+
         // 2. Initialize Paddle static predictors
         com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine.initializeGlobalBuffers(this)
-        
+
         // 3. Anchor Engine Instances (External to class load loop)
         anchoredEngineV3 = NativePaddleEngine(this, variant = "V3")
-        
+
         android.util.Log.i("VehicleExpensesApp", "onCreate complete. Engines anchored.")
         super.onCreate()
-        
+
         copyTessdataOnce(this)
         try {
             android.util.Log.i("VehicleExpensesApp", "Initializing SyncManager")
