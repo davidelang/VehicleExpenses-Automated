@@ -2,6 +2,19 @@
 
 This log tracks the implementation, refactoring, and deployment activities performed by the Application Engineer session.
 
+## [2026-06-07] - Odometer OCR Tweak & Filtering Integration
+- **Activity:** Merged `tweak-odo-ocr` branch into master. Integrated a major overhaul of the odometer extraction pipeline including advanced native filtering and reporting diagnostics.
+- **Improvements:**
+    - **Native Filtering:** Implemented robust Horizontal and Vertical wide component filters in `NativeImageUtils.cpp` using contiguous run logic to sever noise connections (frame/grid lines) without damaging characters.
+    - **OCR Precision:** Added a 4px bounding box expansion in `OdometerOcrUtils.kt` to compensate for CNN stride loss in the Paddle detector, improving character recall.
+    - **Forensics:** Added PBM P4 encoding for 1bpp forensic image exports and updated the HTML report to include "Pre-Rolling" stage snapshots for better debugging of the binarization pipeline.
+    - **Protocol:** Enforced the "Spec vs. Reference Precedence" mandate in `GEMINI.md`.
+- **Files Modified:**
+    - `app/src/main/cpp/NativeImageUtils.cpp`
+    - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/experiment/ExperimentAlignmentScreen.kt`
+    - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/util/OdometerOcrUtils.kt`
+    - `GEMINI.md`
+
 ## [2026-05-30] - Restore Paddle Numeric Parity
 - **Activity:** Restored odometer numeric recognition accuracy by swapping the recognizer from the degraded custom numeric model (`rec_numeric_mono`) to the official pre-trained V3 model (`rec_v3_mono`) while keeping the constrained argmax CTC decoding logic.
 - **Improvements:**

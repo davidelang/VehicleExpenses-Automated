@@ -54,26 +54,39 @@ import kotlin.math.min
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 
-private val GOLDEN_SUBSET = listOf(
-    "PXL_20220701_020707365.dng",
-    "PXL_20220821_051055938.dng",
-    "PXL_20221029_002946498.dng",
-    "PXL_20221020_215546513.dng",
-    "PXL_20221221_205939873.dng",
-    "PXL_20221228_164725812.dng",
-    "PXL_20221222_211445685.dng",
-    "PXL_20230113_231330881.dng",
-    "PXL_20221121_021330418.jpg",
-    "PXL_20221126_210323823.jpg",
-    "PXL_20221128_172727575.jpg"
+private val GOLDEN_SUBSET = mapOf(
+    "PXL_20220701_020707365.dng" to 1,
+    "PXL_20220821_051055938.dng" to 2,
+    "PXL_20221029_002946498.dng" to 4,
+    "PXL_20221020_215546513.dng" to 3,
+    "PXL_20221221_205939873.dng" to 9,
+    "PXL_20221228_164725812.dng" to 12,
+    "PXL_20221222_211445685.dng" to 10,
+    "PXL_20230113_231330881.dng" to 14,
+    "PXL_20221121_021330418.jpg" to 5,
+    "PXL_20221126_210323823.jpg" to 7,
+    "PXL_20221128_172727575.jpg" to 8
+)
+
+private val FAILING_SUBSET = mapOf(
+    "PXL_20221029_002946498.dng" to 4,
+    "PXL_20221121_021330418.jpg" to 5,
+    "PXL_20221228_164725812.dng" to 12,
+    "PXL_20231223_074744139.jpg" to 41,
+    "PXL_20240114_162249446.jpg" to 45,
+    "PXL_20240414_010409990.jpg" to 50,
+    "PXL_20250426_023457157.jpg" to 80,
+    "PXL_20250703_031510594.jpg" to 94,
+    "PXL_20251108_025019715.jpg" to 122,
+    "PXL_20251111_071548876.jpg" to 124,
+    "PXL_20260413_083458977.jpg" to 141
 )
 
 @Immutable
 data class PhotoResultSummary(
     val photoName: String,
     val matchedVehicle: String,
-    val finalConfidence: Float,
-    val odometer: String?
+    val finalConfidence: Float
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,7 +153,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch { 
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-                val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
+                val subset = allFiles.filter { it.name in GOLDEN_SUBSET.keys }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
                 runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, GOLDEN_SUBSET) { res, p -> 
@@ -149,13 +162,26 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
                 isRunning = false; status = "Complete! Limited Report saved." 
             } 
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Limited Experiment (Golden Subset)") }
+        Button(onClick = { 
+            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
+            scope.launch { 
+                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                val subset = allFiles.filter { it.name in FAILING_SUBSET.keys }
+                totalPhotos = subset.size
+                isRunning = true; resultsList.clear()
+                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, FAILING_SUBSET) { res, p -> 
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName 
+                }
+                isRunning = false; status = "Complete! Failing Subset Report saved." 
+            } 
+        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Failing Subset") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("${index + 1}.", style = MaterialTheme.typography.titleSmall); Spacer(modifier = Modifier.width(8.dp))
-                        Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary); Text("Odo: ${res.odometer ?: "FAILED"}", style = MaterialTheme.typography.bodySmall) }
+                        Column { Text(res.photoName, style = MaterialTheme.typography.labelSmall); Text("Match: ${res.matchedVehicle}", color = MaterialTheme.colorScheme.primary) }
                     }
                 }
             }
@@ -186,15 +212,15 @@ private suspend fun runExperiment(
     vehicles: List<Vehicle>, 
     context: Context, 
     onLog: (String) -> Unit, 
-    subsetNames: List<String>?, 
+    subsetMap: Map<String, Int>?, 
     onProgress: (PhotoResultSummary, Float) -> Unit
 ) = withContext(Dispatchers.IO) {
     val allPhotos = experimentDir.listFiles { f -> 
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") 
     }?.sortedBy { it.name } ?: return@withContext
     
-    val photos = if (subsetNames != null) {
-        allPhotos.filter { it.name in subsetNames }
+    val photos = if (subsetMap != null) {
+        allPhotos.filter { it.name in subsetMap.keys }
     } else allPhotos
     
     val total = photos.size
@@ -248,8 +274,11 @@ private suspend fun runExperiment(
     val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
     
+    // Pre-allocated JSON serialization buffer (16MB starting capacity)
+    var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
+    
     var partCount = 1
-    val maxSizeBytes = 2 * 1024 * 1024 // 2MB parts
+    val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
     var currentSize = 0
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
@@ -257,10 +286,10 @@ private suspend fun runExperiment(
 
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
-        
-        PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle }
+        PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_j", "Set J (CC Speedup)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
-    val harnessEngineNames = pipelines.flatMap { listOf("${it.displayName} ML", "${it.displayName} Paddle") }
+    val harnessEngineNames = listOf("Set A ML") + pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
 
     fun startNewFile(): File {
@@ -272,13 +301,14 @@ private suspend fun runExperiment(
     var currentFile = startNewFile()
     
     photos.forEachIndexed { index, file ->
+        val originalLineNumber = subsetMap?.get(file.name) ?: (index + 1)
         // Phase 116 Emergency Fix: Initialize photoResult early with "No Match" state
         // to prevent serializePhotoResultToJson crashes on failed identification.
         var photoResult: ProcessedPhotoResult? = ProcessedPhotoResult(file.name, emptyMap(), emptyMap(), emptyMap())
         var finalWinnerName = "No match"
-        var bestOdometer = "FAILED"
+        
         try {
-            withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
+            withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name} (#$originalLineNumber)") }
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             
             // Sequential A/B Ingestion
@@ -302,7 +332,7 @@ private suspend fun runExperiment(
             )
 
             try {
-                // Step 2 (Deskew): Calculate tilt independently for both pipelines
+                // Step 2 (Deskew): Calculate tilt independently for Set A/E
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
 
                 val tilt = deskewResA.angle
@@ -341,6 +371,7 @@ private suspend fun runExperiment(
                     System.currentTimeMillis() - tRot0
                 }
 
+                
                 val pathways = mutableMapOf<String, PhotoPathwayResult>()
                 val vehiclePathways = mutableMapOf<Int, MutableMap<String, SingleVehiclePathwayResult>>()
                 val primaryVetoResultsMap = mutableMapOf<String, Map<Int, VetoResult>>()
@@ -353,11 +384,15 @@ private suspend fun runExperiment(
                 var ocrFirst: OcrResult? = null
 
                 pipelines.forEach { pipeline ->
-                    val angle = pipeline.getAngle(deskewResA)
-                    
                     // Reset work buffer Set B by copying from ingested original Set A
                     NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
                     NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
+
+                    val extraImages = mutableMapOf<String, String>()
+
+                                        // Use stable Raw deskew for all remaining sets
+                    val currentDeskewRes = deskewResA
+                    val angle = pipeline.getAngle(currentDeskewRes)
                     
                     // Rotate work buffer Set B
                     rotate(NativePaddleEngine.bufferSetB, angle)
@@ -385,6 +420,7 @@ private suspend fun runExperiment(
                     
                     var alignedBase64 = ""
                     val hMap = mutableMapOf<String, OcrHarnessResult>()
+                    var landmarksForAudit: List<TextBlock> = emptyList()
                     val refinementTraces = mutableMapOf<String, RefinementTrace>()
                     var alignResSuccess = false
                     var alignResTimeMs = 0L
@@ -392,6 +428,7 @@ private suspend fun runExperiment(
                     
                     if (globalWinnerRef != null) {
                         val queryLandmarksPrimary = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, globalWinnerRef.curatedLandmarks)
+                        landmarksForAudit = queryLandmarksPrimary.filter { it.instanceId >= 0 }
                         
                         val alignRes = ImageAlignmentUtils.anchorAlign(
                             NativePaddleEngine.bufferSetB,
@@ -447,15 +484,20 @@ private suspend fun runExperiment(
                             val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
                             
-                            runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces)
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true)
+                            // For Set F and G, only run the "Raw" stage
+                            val iterativeStages = listOf("Raw", "Bin-Trials", "Bin")
+
+                            if (pipeline.key == "set_a") {
+                                runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
+                            }
+                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_j"), pipelineKey = pipeline.key)
                         }
                     }
                     
                     val photoPathway = PhotoPathwayResult(
                         winnerName = globalWinnerRef?.vehicle?.name ?: "No match",
-                        bestOdometer = "", // filled dynamically downstream
-                        tDeskewTotal = pipeline.getDeskewTime(deskewResA),
+                        
+                        tDeskewTotal = pipeline.getDeskewTime(currentDeskewRes),
                         tDiscoveryTotal = tDiscoveryTotal,
                         deskewedBase64 = alignedBase64,
                         discoveryResult = ocr,
@@ -465,7 +507,7 @@ private suspend fun runExperiment(
                     pathways[pipeline.key] = photoPathway
                     
                     val alignmentTrace = AlignmentTraceResult(alignResSuccess, alignResTimeMs, alignedBase64, alignResMetadata)
-                    val vehiclePathway = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, hMap)
+                    val vehiclePathway = SingleVehiclePathwayResult(alignmentTrace, refinementTraces, landmarksForAudit, hMap)
                     
                     if (globalWinnerRef != null) {
                         val map = vehiclePathways.getOrPut(globalWinnerRef.vehicle.id) { mutableMapOf() }
@@ -478,16 +520,7 @@ private suspend fun runExperiment(
                     finalWinnerName = winnerRef.vehicle.name
                 }
                 
-                // Extract odometer consensus across all pathways
-                val allResults = vehiclePathways.values.flatMap { it.values }.flatMap { it.refinementTraces.values }.flatMap { it.steps }.mapNotNull { it.text }.filter { it.isNotBlank() }
-                if (allResults.isNotEmpty()) {
-                    bestOdometer = allResults.groupBy { it }.mapValues { it.value.size }.maxByOrNull { it.value }?.key ?: "FAILED"
-                }
-                
-                // Update bestOdometer in all PhotoPathwayResults
-                val updatedPathways = pathways.mapValues { (_, pathRes) ->
-                    pathRes.copy(bestOdometer = bestOdometer)
-                }
+                val updatedPathways = pathways
                 
                 // Build vehicleResultsMap
                 val vehicleResultsMap = mutableMapOf<Int, SingleVehicleResult>()
@@ -509,23 +542,32 @@ private suspend fun runExperiment(
                 photoResult = ProcessedPhotoResult(file.name, updatedPathways, vehicleResultsMap, primaryVetoResultsGlobal)
                 
                 val rowHtml = buildHtmlRowDynamic(
-                    index + 1, file.name, imgW, imgH, meta.isDegraded, originalBase64,
+                    originalLineNumber, file.name, imgW, imgH, meta.isDegraded, originalBase64,
                     photoResult!!, vehicleResultsMap, cachedRefs, finalWinnerName, emptyList(),
                     harnessEngineNames, (tMl + tPd), tDiscoveryTotalCombined,
-                    tilt, deskewResA, pipelines, meta.diagnostic
+                    tilt, deskewResA, pipelines, meta.diagnostic, photoResult.pathways["set_g"]?.harnessResults?.get("Set G (Raw Angle + 80% Early) Paddle")?.extraImages ?: emptyMap()
                 )
                 
                 if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
                 currentFile.appendText(rowHtml); currentSize += rowHtml.length
 
                 val photoJson = serializePhotoResultToJson(
-                    index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, 
+                    originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded, 
                     meta.diagnostic, photoResult!!, vehicles, deskewResA, tSnapOrig, tSnapAlign
                 )
                 val comma = if (index < total - 1) "," else ""
-                jsonFile.appendText(photoJson.toString(2) + "$comma\n")
                 
-                val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f, bestOdometer)
+                // Clear/reset or re-allocate the reusable buffer to keep memory bounded
+                if (jsonCharBuffer.capacity() > 64 * 1024 * 1024) {
+                    jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
+                } else {
+                    jsonCharBuffer.setLength(0)
+                }
+                
+                appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
+                jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
+                
+                val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f)
 
                 // Ensure UI update is dispatched BEFORE we move to cleanup
                 withContext(Dispatchers.Main) { 
@@ -582,12 +624,13 @@ private fun serializePhotoResultToJson(
 
         // Top-level Metrics (Source from Set A as default)
         put("winner", photoResult.pathways["set_a"]?.winnerName ?: "No match")
-        put("odometer", photoResult.pathways["set_a"]?.bestOdometer ?: "FAILED")
+        
         
         // Deskew Data (Source from Path A)
         val deskewObj = JSONObject()
         deskewObj.putSafe("angle_a", (deskewResA?.angle ?: 0f).toDouble())
         deskewObj.putSafe("paddle_cpp_angle", (deskewResA?.paddleCppAngle ?: 0f).toDouble())
+
         val paddleKtAngle = deskewResA?.engines?.get("Paddle V3")?.angle ?: 0f
         deskewObj.putSafe("paddle_kt_angle", paddleKtAngle.toDouble())
         
@@ -700,11 +743,90 @@ private fun serializePhotoResultToJson(
     return root
 }
 
+private fun appendJsonValue(sb: StringBuilder, value: Any?, indent: Int, indentLevel: Int) {
+    if (sb.length > 64 * 1024 * 1024) {
+        throw IllegalStateException("JSON serialization exceeded the 64MB safety ceiling")
+    }
+    when (value) {
+        null -> sb.append("null")
+        JSONObject.NULL -> sb.append("null")
+        is JSONObject -> appendJsonObject(sb, value, indent, indentLevel)
+        is JSONArray -> appendJsonArray(sb, value, indent, indentLevel)
+        is String -> {
+            sb.append('"')
+            escapeJsonString(sb, value)
+            sb.append('"')
+        }
+        is Boolean -> sb.append(value.toString())
+        is Number -> sb.append(value.toString())
+        else -> {
+            sb.append('"')
+            escapeJsonString(sb, value.toString())
+            sb.append('"')
+        }
+    }
+}
+
+private fun appendJsonObject(sb: StringBuilder, json: JSONObject, indent: Int, indentLevel: Int) {
+    sb.append("{\n")
+    val keys = json.keys()
+    val nextLevel = indentLevel + 1
+    val indentStr = " ".repeat(nextLevel * indent)
+    var first = true
+    while (keys.hasNext()) {
+        if (!first) {
+            sb.append(",\n")
+        }
+        first = false
+        val key = keys.next()
+        val value = json.get(key)
+        sb.append(indentStr).append('"').append(key).append("\": ")
+        appendJsonValue(sb, value, indent, nextLevel)
+    }
+    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("}")
+}
+
+private fun appendJsonArray(sb: StringBuilder, array: JSONArray, indent: Int, indentLevel: Int) {
+    sb.append("[\n")
+    val nextLevel = indentLevel + 1
+    val indentStr = " ".repeat(nextLevel * indent)
+    for (i in 0 until array.length()) {
+        if (i > 0) {
+            sb.append(",\n")
+        }
+        sb.append(indentStr)
+        appendJsonValue(sb, array.get(i), indent, nextLevel)
+    }
+    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("]")
+}
+
+private fun escapeJsonString(sb: StringBuilder, str: String) {
+    for (i in 0 until str.length) {
+        val ch = str[i]
+        when (ch) {
+            '"' -> sb.append("\\\"")
+            '\\' -> sb.append("\\\\")
+            '/' -> sb.append("\\/")
+            '\b' -> sb.append("\\b")
+            '\n' -> sb.append("\\n")
+            '\r' -> sb.append("\\r")
+            '\t' -> sb.append("\\t")
+            else -> {
+                if (ch.code < 32 || ch.code > 126) {
+                    sb.append(String.format("\\u%04x", ch.code))
+                } else {
+                    sb.append(ch)
+                }
+            }
+        }
+    }
+}
+
 private fun serializePathwayToJson(res: PhotoPathwayResult): JSONObject {
     val root = JSONObject()
     root.apply {
         put("winner", res.winnerName)
-        put("odometer", res.bestOdometer)
+        
         put("t_deskew_ms", res.tDeskewTotal)
         put("t_discovery_ms", res.tDiscoveryTotal)
         put("discovery_debug", res.discoveryResult.debugText)
@@ -714,7 +836,11 @@ private fun serializePathwayToJson(res: PhotoPathwayResult): JSONObject {
             val hObj = JSONObject()
             hObj.put("total_ms", hRes.totalTimeMs)
             hObj.put("snapshot_ms", hRes.tSnapshotMs)
+            hObj.put("odometer", hRes.odometerValue)
             hObj.put("stages", JSONObject(hRes.jsonSection.toString()))
+            val extraObj = JSONObject()
+            hRes.extraImages.forEach { (ek, ev) -> extraObj.put(ek, ev) }
+            hObj.put("extraImages", extraObj)
             harnessTimings.put(engine, hObj)
         }
         put("harness", harnessTimings)
@@ -745,7 +871,11 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
                 stepObj.put("stage", step.stageName)
                 stepObj.put("text", step.text)
                 val meta = JSONObject()
-                step.metadata.forEach { (k, v) -> meta.put(k, v) }
+                step.metadata.forEach { (k, v) -> 
+                    if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
+                        meta.put(k, v)
+                    }
+                }
                 stepObj.put("metadata", meta)
                 stepsArray.put(stepObj)
             }
@@ -753,8 +883,573 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
             refinementJson.put(strat, sObj)
         }
         put("refinement", refinementJson)
+        val landArray = JSONArray()
+        res.disambiguatedLandmarks.forEach { l ->
+            val lObj = JSONObject()
+            lObj.put("name", l.text)
+            lObj.put("cx", l.boundingBox.centerX())
+            lObj.put("cy", l.boundingBox.centerY())
+            lObj.put("instance_id", l.instanceId)
+            landArray.put(lObj)
+        }
+        put("disambiguated_landmarks", landArray)
     }
     return root
+}
+
+private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
+    val cols = mat.cols()
+    val rows = mat.rows()
+    val totalPixels = cols * rows
+    val data = ByteArray(totalPixels)
+    mat.get(0, 0, data)
+    
+    val packedSize = (totalPixels + 7) / 8
+    val packed = ByteArray(packedSize)
+    
+    var byteIdx = 0
+    var bitIdx = 0
+    var currentByte = 0
+    
+    for (i in 0 until totalPixels) {
+        val pixelVal = data[i].toInt() and 0xFF
+        val bit = if (pixelVal <= 127) 1 else 0
+        currentByte = (currentByte shl 1) or bit
+        bitIdx++
+        if (bitIdx == 8) {
+            packed[byteIdx++] = currentByte.toByte()
+            currentByte = 0
+            bitIdx = 0
+        }
+    }
+    if (bitIdx > 0) {
+        currentByte = currentByte shl (8 - bitIdx)
+        packed[byteIdx++] = currentByte.toByte()
+    }
+    
+    val header = "P4\n$cols $rows\n".toByteArray(Charsets.US_ASCII)
+    val fullData = ByteArray(header.size + packed.size)
+    System.arraycopy(header, 0, fullData, 0, header.size)
+    System.arraycopy(packed, 0, fullData, header.size, packed.size)
+    
+    return android.util.Base64.encodeToString(fullData, android.util.Base64.NO_WRAP)
+}
+
+private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
+    val arr = org.json.JSONArray()
+    anns.forEach { ann ->
+        val obj = org.json.JSONObject()
+        obj.put("x1", ann.x1)
+        obj.put("y1", ann.y1)
+        obj.put("x2", ann.x2)
+        obj.put("y2", ann.y2)
+        obj.put("shape", ann.shape.name)
+        obj.put("color", ann.color)
+        obj.put("strokeWidth", ann.strokeWidth)
+        arr.put(obj)
+    }
+    return arr.toString()
+}
+
+private suspend fun runBinTrialsPaddle(
+    odoBuffer: BufferSet,
+    masterBuffer: BufferSet,
+    vehicleId: Int,
+    experimentDetSet512x128: BufferSet,
+    experimentRecSet320x48: BufferSet,
+    paddleEngine: NativePaddleEngine,
+    rawBins: FloatArray,
+    useCharAware: Boolean,
+    steps: List<OcrStepResult>,
+    pipelineKey: String = ""
+): Pair<String, Map<String, String>> {
+    val midpoints = findValleyMidpoints(rawBins)
+    val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
+    val trialsMeta = mutableMapOf<String, String>()
+    data class TrialData(
+        val thresh: Double,
+        val text: String,
+        val sumProb: Float,
+        val minProb: Float,
+        val probsStr: String,
+        val annotatedPreB64: String,
+        val plainPreB64: String,
+        val plainPreRollingB64: String,
+        val annotatedPostB64: String,
+        val plainPostB64: String,
+        val histB64: String,
+        val avgConf: Float,
+        val metadata: Map<String, String>,
+        val post1bppB64: String,
+        val annotationsStr: String
+    )
+    val trialsList = mutableListOf<TrialData>()
+
+    midpoints.forEachIndexed { vIdx, binIdx ->
+        val threshold = binIdx * 4.0
+
+        // Step 1: Pull fresh raw grayscale crop from masterBuffer to odoBuffer.p
+        odoBuffer.p.clear()
+        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+
+        // Step 2: Binarize into .s, then flip so .p = binary, .s = original grayscale (scratchpad).
+        odoBuffer.s.clear()
+        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        odoBuffer.flip()
+        
+        val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
+        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
+        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
+        
+        experimentDetSet512x128.p.clear()
+        val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+        var tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+        experimentDetSet512x128.c[dCrId].release()
+        
+        var tRawB = tFullB.filter { b1 ->
+            tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
+        }
+        
+        val thresholdFactor = 128.0f
+
+        val annsPre = mutableListOf<SnapshotAnnotation>()
+        tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+
+        val (tPlainPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+
+        if (tRawB.isEmpty()) {
+            val annStr = serializeAnnotations(annsPre)
+            trialsList.add(TrialData(
+                threshold, "ERR: Peak detection failed (No bounding box detected)", 0f, 0f, "",
+                "", tPlainPreB64, "", "", "",
+                "Peak detection failed (No bounding box detected).", 0f, emptyMap(),
+                "", annStr
+            ))
+            trialsMeta["trial_${vIdx}_annotations"] = annStr
+            return@forEachIndexed
+        }
+
+        // Cache pre-cleaning histograms/plots (primitive types only)
+        val cachedRawRedBoxHists = tRawB.map { b ->
+            val redBoxCropId = odoBuffer.createCrop(b.boundingBox.left, b.boundingBox.top, b.boundingBox.width(), b.boundingBox.height())
+            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
+            odoBuffer.crop[redBoxCropId].release()
+            Pair(hRes, b64)
+        }
+
+        var rb = tRawB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: tRawB.first()
+        val rbIndex = tRawB.indexOf(rb)
+        val rbCached = cachedRawRedBoxHists.getOrNull(rbIndex)
+        val vSW_red = rbCached?.first?.second?.get(0)?.toFloat() ?: -1f
+        val hSW_red = rbCached?.first?.second?.get(1)?.toFloat() ?: -1f
+
+        if (vSW_red <= 0f || hSW_red <= 0f) {
+            val histsHtml = StringBuilder()
+            tRawB.forEachIndexed { rIdx, b ->
+                val cached = cachedRawRedBoxHists.getOrNull(rIdx)
+                if (cached != null) {
+                    val hResCached = cached.first
+                    val b64Cached = cached.second
+                    if (hResCached != null && b64Cached != null) {
+                        val meta = hResCached.second
+                        histsHtml.append("<br><small>Red Box #$rIdx [${b.boundingBox.left},${b.boundingBox.top} - ${b.boundingBox.right},${b.boundingBox.bottom}] (${b.boundingBox.width()}x${b.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64Cached'>")
+                    }
+                }
+            }
+            histsHtml.append("<br>Raw peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red).")
+
+            val annStr = serializeAnnotations(annsPre)
+            trialsList.add(TrialData(
+                threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
+                "", tPlainPreB64, "", "", "",
+                histsHtml.toString(), 0f, emptyMap(),
+                "", annStr
+            ))
+            trialsMeta["trial_${vIdx}_annotations"] = annStr
+            return@forEachIndexed
+        }
+
+        var vSW = vSW_red
+        var hSW = hSW_red
+        if (pipelineKey != "set_j") {
+            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
+            NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
+
+            experimentDetSet512x128.p.clear()
+            val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            tFullB = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
+            experimentDetSet512x128.c[dCrId2].release()
+
+            rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
+            var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+            var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
+            hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
+            odoBuffer.crop[redBoxCropId].release()
+        }
+
+        if (pipelineKey != "set_j" && (vSW <= 0f || hSW <= 0f)) {
+            val histsHtml = StringBuilder()
+            
+            // 1. Raw Red Box Histograms
+            tRawB.forEachIndexed { rIdx, b ->
+                val cached = cachedRawRedBoxHists.getOrNull(rIdx)
+                if (cached != null) {
+                    val hResCached = cached.first
+                    val b64Cached = cached.second
+                    if (hResCached != null && b64Cached != null) {
+                        val meta = hResCached.second
+                        histsHtml.append("<br><small>Red Box #$rIdx [${b.boundingBox.left},${b.boundingBox.top} - ${b.boundingBox.right},${b.boundingBox.bottom}] (${b.boundingBox.width()}x${b.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0:</small><br><img src='data:image/jpeg;base64,$b64Cached'>")
+                    }
+                }
+            }
+            
+            // 2. Cleaned Red Box Histogram
+            val failCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+            val failRect = android.graphics.Rect(0, 0, odoBuffer.crop[failCropId].width, odoBuffer.crop[failCropId].height)
+            val failRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[failCropId].mat, listOf(failRect), thresholdFactor)
+            if (failRes != null) {
+                val b64 = generateDualHistogramB64(failRes.first.first, failRes.first.second); val meta = failRes.second
+                histsHtml.append("<br><small>Cleaned Red Box [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
+            }
+            odoBuffer.crop[failCropId].release()
+
+            histsHtml.append("<br>Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW).")
+
+            val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+            val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPre, null, NativePaddleEngine.bufferSetA)
+            val post1bpp = matToPbmP4Base64(odoBuffer.p.mat)
+            val annStr = serializeAnnotations(annsPre)
+
+            trialsList.add(TrialData(
+                threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW)", 0f, 0f, "",
+                "", tPlainPreB64, "", tAnnotatedPostB64, tPlainPostB64,
+                histsHtml.toString(), 0f, emptyMap(),
+                post1bpp, annStr
+            ))
+            trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
+            trialsMeta["trial_${vIdx}_annotations"] = annStr
+            return@forEachIndexed
+        }
+
+        val trialMetaMap = mutableMapOf(
+            "charaware_pitch"         to "0",
+            "charaware_v_stroke"      to vSW.toInt().toString(),
+            "charaware_h_stroke"      to hSW.toInt().toString(),
+            "charaware_v_stroke_raw"  to vSW_red.toInt().toString(),
+            "charaware_h_stroke_raw"  to hSW_red.toInt().toString(),
+            "charaware_matched_slots" to "",
+            "charaware_failed_slots"  to "",
+            "charaware_vlimit"        to String.format("%.1f", vSW * 0.75f),
+            "charaware_hlimit"        to String.format("%.1f", hSW * 0.75f)
+        )
+
+        var tPlainPreRollingB64 = ""
+        val valleyResults = if (pipelineKey == "set_j") {
+            NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
+            val (snapB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+            tPlainPreRollingB64 = snapB64
+            NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
+            val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
+            compRects.map { Pair(it, trialMetaMap) }
+        } else {
+            val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, rb.boundingBox, thresholdFactor, vSW, hSW)
+            val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW, hSW)
+            val pitch      = pitchData?.get(0) ?: 0
+            val anchorMode = pitchData?.get(1) ?: 0
+            val bestShift  = pitchData?.get(2) ?: 0
+
+            val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
+                odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
+                vSW, hSW, thresholdFactor
+            ) else null
+
+            val finalBounds = if (useCharAware) initialBounds else (gridResult?.first ?: initialBounds)
+            val matchedSlots = gridResult?.second ?: IntArray(0)
+            val failedSlots  = gridResult?.third  ?: IntArray(0)
+
+            trialMetaMap["charaware_pitch"] = pitch.toString()
+            trialMetaMap["charaware_matched_slots"] = matchedSlots.joinToString(",")
+            trialMetaMap["charaware_failed_slots"] = failedSlots.joinToString(",")
+            trialMetaMap["charaware_vlimit"] = String.format("%.1f", vSW * 0.5f)
+            trialMetaMap["charaware_hlimit"] = String.format("%.1f", hSW * 0.75f)
+
+            val tValleyResults = tRawB.map { Pair(finalBounds, trialMetaMap) }
+            if (useCharAware) tValleyResults
+            else tRawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f) }
+        }
+
+        val tFrags = valleyResults.map { it.first }
+        val tCons = if (pipelineKey == "set_j") {
+            if (tFrags.isNotEmpty()) {
+                var minL = Int.MAX_VALUE
+                var minT = Int.MAX_VALUE
+                var maxR = Int.MIN_VALUE
+                var maxB = Int.MIN_VALUE
+                for (rect in tFrags) {
+                    if (rect.left < minL) minL = rect.left
+                    if (rect.top < minT) minT = rect.top
+                    if (rect.right > maxR) maxR = rect.right
+                    if (rect.bottom > maxB) maxB = rect.bottom
+                }
+                val orangeL = minL.coerceIn(0, odoBuffer.p.mat.cols() - 1)
+                val orangeT = minT.coerceIn(0, odoBuffer.p.mat.rows() - 1)
+                val orangeR = maxR.coerceIn(orangeL + 1, odoBuffer.p.mat.cols())
+                val orangeB = maxB.coerceIn(orangeT + 1, odoBuffer.p.mat.rows())
+                listOf(android.graphics.Rect(orangeL, orangeT, orangeR, orangeB))
+            } else {
+                emptyList()
+            }
+        } else {
+            OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
+        }
+        val tOdoB = StringBuilder(); val tProbsB = StringBuilder(); var tCf = 0f; var tCnt = 0
+        
+        valleyResults.forEachIndexed { vI, res ->
+            res.second.forEach { (k, v) -> trialsMeta["trial_${vIdx}_frag_${vI}_$k"] = v }
+        }
+
+        tCons.forEach { tBox ->
+            val sL = tBox.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
+            val sT = tBox.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
+            val sR = tBox.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
+            val sB = tBox.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
+            if (sR > sL && sB > sT) {
+                val bRecMat = odoBuffer.p.mat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT))
+                experimentRecSet320x48.p.clear()
+                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
+                val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
+                val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
+                val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
+                org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+                if (ocrR.debugText.isNotBlank()) {
+                    tOdoB.append(ocrR.debugText).append(" ")
+                    ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") }
+                }
+                tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length
+                tCnt += ocrR.debugText.length
+                experimentRecSet320x48.c[rCrId].release()
+                bRecMat.release()
+            }
+        }
+        val tText = tOdoB.toString().trim(); val tProbsStr = tProbsB.toString().trim(); val tAvg = if (tCnt > 0) tCf / tCnt else 0f
+        val tProbs = mutableListOf<Float>(); val regex = Regex("\\((0\\.\\d+|1\\.0+)\\)"); regex.findAll(tProbsStr).forEach { tProbs.add(it.groupValues[1].toFloatOrNull() ?: 0f) }
+        val minP = if (tProbs.isNotEmpty()) tProbs.minOrNull() ?: 0f else 0f
+        
+        val annsPost = mutableListOf<SnapshotAnnotation>()
+        tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        if (pipelineKey == "set_j") {
+            tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
+            tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        } else {
+            tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        }
+        
+        val histsHtml = StringBuilder()
+        if (useCharAware && valleyResults.isNotEmpty()) {
+            valleyResults.forEach { res ->
+                val mSlots = res.second["charaware_matched_slots"]
+                if (!mSlots.isNullOrEmpty()) {
+                    val pts = mSlots.split(",").mapNotNull { it.toIntOrNull() }
+                    for (i in 0 until pts.size step 4) {
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.WHITE, 1))
+                    }
+                }
+                val fSlots = res.second["charaware_failed_slots"]
+                if (!fSlots.isNullOrEmpty()) {
+                    val pts = fSlots.split(",").mapNotNull { it.toIntOrNull() }
+                    for (i in 0 until pts.size step 4) {
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.BLUE, 1))
+                    }
+                }
+            }
+
+            valleyResults.firstOrNull()?.second?.let { meta ->
+                val p = meta["charaware_pitch"] ?: "0"
+                histsHtml.append("<br><b>Overall Pitch (from 1st Red Box, post-clean):</b> $p px")
+
+                val vLimit = meta["charaware_vlimit"] ?: "?"
+                val hLimit = meta["charaware_hlimit"] ?: "?"
+                val vRaw = meta["charaware_v_stroke_raw"] ?: "?"
+                val hRaw = meta["charaware_h_stroke_raw"] ?: "?"
+                val vClean = meta["charaware_v_stroke"] ?: "?"
+                val hClean = meta["charaware_h_stroke"] ?: "?"
+                histsHtml.append("<br><small>Cleaned: narrow w&lt;${vLimit}, short h&lt;=${hLimit} | vSW raw=$vRaw → clean=$vClean | hSW raw=$hRaw → clean=$hClean</small>")
+            }
+
+            tRawB.forEachIndexed { rIdx, b ->
+                val cached = cachedRawRedBoxHists.getOrNull(rIdx)
+                if (cached != null) {
+                    val hResCached = cached.first
+                    val b64Cached = cached.second
+                    if (hResCached != null && b64Cached != null) {
+                        val meta = hResCached.second
+                        val pitch = valleyResults.getOrNull(rIdx)?.second?.get("charaware_pitch") ?: "0"
+                        histsHtml.append("<br><small>Red Box #$rIdx [${b.boundingBox.left},${b.boundingBox.top} - ${b.boundingBox.right},${b.boundingBox.bottom}] (${b.boundingBox.width()}x${b.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=$pitch:</small><br><img src='data:image/jpeg;base64,$b64Cached'>")
+                    }
+                }
+            }
+        }
+
+        val (tPlainPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+        val (tAnnotatedPostB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, annsPost, null, NativePaddleEngine.bufferSetA)
+        val post1bpp = matToPbmP4Base64(odoBuffer.p.mat)
+        val annStr = serializeAnnotations(annsPost)
+        
+        trialsList.add(TrialData(
+            threshold, tText, tProbs.sum(), minP, tProbsStr,
+            "", tPlainPreB64, tPlainPreRollingB64, tAnnotatedPostB64, tPlainPostB64,
+            histsHtml.toString(), tAvg, trialMetaMap,
+            post1bpp, annStr
+        ))
+        trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
+        trialsMeta["trial_${vIdx}_annotations"] = annStr
+    }
+    
+    val highQual = trialsList.filter { it.minProb >= 0.90f }
+    val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
+    
+    // Set winning binarization state
+    if (winner != null) {
+        odoBuffer.p.clear()
+        val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+        org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+
+        odoBuffer.s.clear()
+        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, winner.thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        odoBuffer.flip()
+    }
+
+    trialsList.forEachIndexed { idx, t ->
+        val isWinner = (t == winner)
+        val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
+        val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.90f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.90]</span> " else "[REJECTED: Sum defeated]"
+        
+        val preCleanPlain = if (t.plainPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPreB64}'><br>" else ""
+        val preRollingPlain = if (t.plainPreRollingB64.isNotEmpty()) "<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br><img src='data:image/jpeg;base64,${t.plainPreRollingB64}'><br>" else ""
+        val postCleanPlain = if (t.plainPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPostB64}'><br>" else ""
+        val postCleanAnnot = if (t.annotatedPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPostB64}'><br>" else ""
+        
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><b>Pre-Cleaned (Binarized Only):</b><br>$preCleanPlain$preRollingPlain<b>Post-Cleaned (OCR Input):</b><br>$postCleanPlain$postCleanAnnot${t.histB64}</div>")
+        
+        trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"
+        if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
+    }
+    
+    val winnerMeta = if (winner != null) {
+        mutableMapOf(
+            "best_threshold" to winner.thresh.toString(),
+            "best_text" to winner.text,
+            "best_thumb" to winner.annotatedPostB64,
+            "best_probs" to winner.probsStr,
+            "selection_logic" to (if (winner.minProb >= 0.90f) "Filter(Min>=0.90)->Sum" else "Fallback(Sum)")
+        ).apply {
+            putAll(winner.metadata)
+            put("best_plain_pre", winner.plainPreB64)
+            put("best_plain_pre_rolling", winner.plainPreRollingB64)
+            put("best_annotated_pre", winner.annotatedPreB64)
+            put("best_plain_post", winner.plainPostB64)
+            put("best_annotated_post", winner.annotatedPostB64)
+            put("best_post_1bpp", winner.post1bppB64)
+            put("best_annotations", winner.annotationsStr)
+        }
+    } else emptyMap()
+    trialsMeta.putAll(winnerMeta)
+    return Pair(trialsHtml.toString(), trialsMeta)
+}
+private suspend fun runBinTrialsMLKit(
+    odoBuffer: BufferSet,
+    experimentRecSet320x48: BufferSet,
+    rawBins: FloatArray,
+    steps: List<OcrStepResult>
+): Pair<String, Map<String, String>> {
+    val midpoints = findValleyMidpoints(rawBins)
+    val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
+    val trialsMeta = mutableMapOf<String, String>()
+    data class TrialData(val thresh: Double, val text: String, val base64: String)
+    val trialsList = mutableListOf<TrialData>()
+
+    val rawStep = steps.find { it.stageName == "Raw" }
+    if (rawStep != null) {
+        trialsList.add(TrialData(-1.0, rawStep.text?.trim() ?: "", rawStep.thumbB64))
+    }
+
+    midpoints.forEachIndexed { vIdx, binIdx ->
+        val threshold = binIdx * 4.0
+        odoBuffer.s.clear(); org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        val trialMat = odoBuffer.s.mat; experimentRecSet320x48.p.clear()
+        val rSc = kotlin.math.min(320f / trialMat.cols(), 48f / trialMat.rows())
+        val ew = ((trialMat.cols() * rSc + 1).toInt() / 2) * 2; val eh = ((trialMat.rows() * rSc + 1).toInt() / 2) * 2
+        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh); org.opencv.imgproc.Imgproc.resize(trialMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+        val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
+        experimentRecSet320x48.c[rCrId].release()
+        val tOdoB = StringBuilder()
+        vText.textBlocks.forEach { blk -> blk.lines.forEach { line -> val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, false).filter { it.isDigit() }; if (cleaned.isNotBlank()) tOdoB.append(cleaned) } }
+        val tResText = tOdoB.toString()
+        val anns = mutableListOf<SnapshotAnnotation>(); val snX = trialMat.cols().toFloat() / ew.toFloat(); val snY = trialMat.rows().toFloat() / eh.toFloat()
+        var orangeArea = 0; val mlBoxes = mutableListOf<String>()
+        vText.textBlocks.forEach { b -> b.boundingBox?.let { val l = (it.left * snX).toInt(); val t = (it.top * snY).toInt(); val r = (it.right * snX).toInt(); val bot = (it.bottom * snY).toInt(); anns.add(SnapshotAnnotation(l, t, r, bot, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)); orangeArea += (r - l) * (bot - t); mlBoxes.add("$l,$t,$r,$bot") } }
+        val (tB64, _) = OcrUtils.takeSnapshot(trialMat, null, 200, 0, anns, null, NativePaddleEngine.bufferSetA)
+        trialsList.add(TrialData(threshold, tResText, tB64))
+        trialsMeta["trial_${vIdx}_orange_area"] = orangeArea.toString(); if (mlBoxes.isNotEmpty()) trialsMeta["trial_${vIdx}_orange_boxes"] = mlBoxes.joinToString(";")
+    }
+    val winner = trialsList.maxByOrNull { it.text.length }
+    trialsList.forEachIndexed { idx, t ->
+        if (t.thresh < 0) return@forEachIndexed
+        val isWinner = (t == winner); val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"; val status = if (isWinner) "<b>[SELECTED]</b> " else "[REJECTED]"
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b><br><img src=\"data:image/jpeg;base64,${t.base64}\"></div>")
+        trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|1.0"
+    }
+    val winnerMeta = if (winner != null) {
+        mapOf(
+            "best_threshold" to winner.thresh.toString(),
+            "best_text" to winner.text,
+            "best_thumb" to winner.base64,
+            "selection_logic" to (if (winner.thresh < 0) "RAW Selected" else "Max Length (ML Kit)")
+        )
+    } else emptyMap()
+    trialsMeta.putAll(winnerMeta)
+    return Pair(trialsHtml.toString(), trialsMeta)
+}
+
+private fun findValleyMidpoints(bins: FloatArray): List<Int> {
+    if (bins.isEmpty()) return emptyList()
+    val binCount = bins.size
+    val smoothed = FloatArray(binCount)
+    for (i in 0 until binCount) {
+        val start = (i - 1).coerceAtLeast(0)
+        val end = (i + 1).coerceAtMost(binCount - 1)
+        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+    }
+
+    val midpoints = mutableListOf<Int>()
+    var i = 1
+    while (i < binCount - 1) {
+        if (smoothed[i] <= smoothed[i - 1] && smoothed[i] <= smoothed[i + 1]) {
+            val startIdx = i
+            while (i < binCount - 1 && smoothed[i + 1] == smoothed[startIdx]) { i++ }
+            val endIdx = i
+            
+            val risesLeft = smoothed[startIdx - 1] > smoothed[startIdx]
+            val risesRight = if (endIdx < binCount - 1) smoothed[endIdx + 1] > smoothed[endIdx] else false
+            
+            if (risesLeft && risesRight) {
+                midpoints.add((startIdx + endIdx) / 2)
+            }
+        }
+        i++
+    }
+    return midpoints.distinct()
 }
 
 private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>, harnessEngines: List<String>, pipelineNames: List<String>): String = buildString {
@@ -785,7 +1480,8 @@ private fun buildHtmlRowDynamic(
     tilt: Float,
     deskewRes: OdometerOcrUtils.DeskewResult,
     pipelines: List<PipelineConfig>,
-    diagnostic: String = ""
+    diagnostic: String = "",
+    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false
 ): String = buildString {
     val resHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty()) "<br><small>Native: $diagnostic</small>" else ""
@@ -797,7 +1493,13 @@ private fun buildHtmlRowDynamic(
     appendLine("<br><small>$resHtml</small>$diagHtml")
     appendLine("<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms")
     appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
-    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'></td>")
+    appendLine("<br><img src='data:image/jpeg;base64,$originalBase64'>")
+    
+    // For Set G, show histograms in first column
+    if (extraImages.containsKey("hist1")) {
+        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (Yellow=Stretch, Magenta=80%)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (Cyan=Original 80%)</small></td></tr></table>")
+    }
+    appendLine("</td>")
     
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
     
@@ -843,7 +1545,36 @@ private fun buildHtmlRowDynamic(
                 appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
                 trace.steps.forEach { step -> 
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
-                    appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br><img src='data:image/jpeg;base64,${step.thumbB64}'>")
+                    
+                    if (step.stageName == "Bin" && step.metadata.containsKey("best_plain_pre")) {
+                        val preCleanPlain = step.metadata["best_plain_pre"] ?: ""
+                        val preCleanAnnot = step.metadata["best_annotated_pre"] ?: ""
+                        val preRollingPlain = step.metadata["best_plain_pre_rolling"] ?: ""
+                        val postCleanPlain = step.metadata["best_plain_post"] ?: ""
+                        val postCleanAnnot = step.metadata["best_annotated_post"] ?: ""
+                        
+                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>")
+                        appendLine("<b>Pre-Cleaned (Binarized Only):</b><br>")
+                        if (preCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
+                        if (preCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
+                        if (preRollingPlain.isNotEmpty()) {
+                            appendLine("<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br>")
+                            appendLine("<img src='data:image/jpeg;base64,$preRollingPlain'><br>")
+                        }
+                        appendLine("<b>Post-Cleaned (OCR Input):</b><br>")
+                        if (postCleanPlain.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
+                        if (postCleanAnnot.isNotEmpty()) appendLine("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
+                    } else {
+                        appendLine("<div class='ocr-step'><b>${step.stageName}:</b><br>")
+                        if (step.thumbB64.isNotEmpty()) {
+                            appendLine("<img src='data:image/jpeg;base64,${step.thumbB64}'>")
+                        }
+                    }
+                    
+                    if (step.metadata.containsKey("before_hist")) {
+                        appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${step.metadata["after_hist"]}'><br><small>After</small></td></tr></table>")
+                    }
+
                     val rawText = step.metadata["raw_text"]
                     if (rawText != null) {
                         appendLine("<br><small>Raw: $rawText</small>")
@@ -860,6 +1591,89 @@ private fun buildHtmlRowDynamic(
     val freq = allReadings.groupBy { it }.mapValues { it.value.size }.toList().sortedByDescending { it.second }
     freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/48)<br>") }
     appendLine("</td></tr>")
+}
+
+private fun generateRunLengthHistogramB64(histStr: String?): String {
+    if (histStr.isNullOrEmpty()) return ""
+    val counts = histStr.split(",").map { it.toIntOrNull() ?: 0 }
+    if (counts.size < 256) return ""
+    
+    val maxVal = counts.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val bmp = Bitmap.createBitmap(256, 120, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    val paint = android.graphics.Paint()
+    
+    paint.color = android.graphics.Color.BLUE
+    for (i in 0..255) {
+        val h = (counts[i].toFloat() / maxVal) * 100
+        canvas.drawRect(i.toFloat(), 110f - h, (i + 1).toFloat(), 110f, paint)
+    }
+    
+    // Draw base line
+    paint.color = android.graphics.Color.BLACK
+    paint.strokeWidth = 1f
+    canvas.drawLine(0f, 110f, 255f, 110f, paint)
+
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80)
+    bmp.recycle()
+    return b64
+}
+
+private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
+    if (hHist == null || vHist == null || hHist.size < 256 || vHist.size < 256) return ""
+    
+    val binSize = 2
+    val numBins = (256 + binSize - 1) / binSize // 128 bins
+    
+    val bH = IntArray(numBins)
+    val bV = IntArray(numBins)
+    for (i in 0..255) {
+        bH[i / binSize] += hHist[i]
+        bV[i / binSize] += vHist[i]
+    }
+    
+    val maxH = bH.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val maxV = bV.maxOrNull()?.coerceAtLeast(1) ?: 1
+    
+    val bmp = Bitmap.createBitmap(522, 130, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    val paint = android.graphics.Paint()
+    
+    val halfW = 256
+    val barW = (256.0f / numBins).coerceAtLeast(1.0f)
+    
+    // Draw H Hist (Blue)
+    paint.color = android.graphics.Color.BLUE
+    for (i in 0 until numBins) {
+        val h = (bH[i].toFloat() / maxH) * 100
+        canvas.drawRect(i * barW, 110f - h, (i + 1) * barW, 110f, paint)
+    }
+    
+    // Draw V Hist (Red)
+    paint.color = android.graphics.Color.RED
+    for (i in 0 until numBins) {
+        val h = (bV[i].toFloat() / maxV) * 100
+        canvas.drawRect(halfW + 5 + i * barW, 110f - h, halfW + 5 + (i + 1) * barW, 110f, paint)
+    }
+    
+    // Draw base line and scale tics
+    paint.color = android.graphics.Color.BLACK
+    paint.strokeWidth = 1f
+    canvas.drawLine(0f, 110f, 255f, 110f, paint)
+    canvas.drawLine((halfW + 5).toFloat(), 110f, 521f, 110f, paint)
+    
+    for (i in 0..255 step 25) {
+        val isLong = (i % 100 == 0)
+        val ticH = if (isLong) 10f else 5f
+        canvas.drawLine(i.toFloat(), 110f, i.toFloat(), 110f + ticH, paint)
+        canvas.drawLine((halfW + 5 + i).toFloat(), 110f, (halfW + 5 + i).toFloat(), 110f + ticH, paint)
+    }
+
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80)
+    bmp.recycle()
+    return b64
 }
 
 private fun createScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: Int, targetBuffer: Bitmap? = null): String {
@@ -907,6 +1721,77 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
 
 private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
+
+
+private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
+    val hist = org.opencv.core.Mat()
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+    val bins = FloatArray(64); hist.get(0, 0, bins)
+    val totalPixels = mat.rows() * mat.cols()
+
+    val smoothed = FloatArray(64)
+    for (i in 0..63) {
+        val start = (i - 2).coerceAtLeast(0)
+        val end = (i + 2).coerceAtMost(63)
+        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+    }
+
+    // Low Limit: Climb to first peak, then drop to valley
+    var lowPeakIdx = 0
+    while (lowPeakIdx < 62 && smoothed[lowPeakIdx + 1] >= smoothed[lowPeakIdx]) lowPeakIdx++
+    var lowIdx = lowPeakIdx
+    while (lowIdx < 63 && smoothed[lowIdx + 1] <= smoothed[lowIdx]) lowIdx++
+
+    // High Limit: Climb to first peak from right, then drop to valley
+    var highPeakIdx = 63
+    while (highPeakIdx > 1 && smoothed[highPeakIdx - 1] >= smoothed[highPeakIdx]) highPeakIdx--
+    var highIdx = highPeakIdx
+    while (highIdx > 0 && smoothed[highIdx - 1] <= smoothed[highIdx]) highIdx--
+
+    val intensityLow = lowIdx * 4.0
+    val intensityHigh = highIdx * 4.0
+    Log.i("HIST_REFINEMENT", "Limits: Low=%d (Peak=%d), High=%d (Peak=%d)".format(lowIdx, lowPeakIdx, highIdx, highPeakIdx))
+
+    var p80 = 0.0
+    var sum = 0.0
+    for (i in 0..63) {
+        sum += bins[i]
+        if (sum >= totalPixels * 0.80) { p80 = i * 4.0; break }
+    }
+    
+    hist.release()
+    return OdometerOcrUtils.HistStats(intensityLow, intensityHigh, p80, bins)
+}
+
+private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
+    val hist = org.opencv.core.Mat()
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+    val bins = FloatArray(64); hist.get(0, 0, bins)
+
+    val maxVal = bins.maxOrNull() ?: 1.0f
+    val bmp = Bitmap.createBitmap(256, 120, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    val paint = android.graphics.Paint()
+    
+    paint.color = android.graphics.Color.BLACK
+    val startBin = if (skipEnds) 1 else 0
+    val endBin = if (skipEnds) 62 else 63
+    val localMax = if (skipEnds) (startBin..endBin).map { bins[it] }.maxOrNull() ?: 1.0f else maxVal
+    for (i in startBin..endBin) {
+        val h = (bins[i] / localMax) * 100
+        canvas.drawRect(i * 4f, 110f - h, (i + 1) * 4f, 110f, paint)
+    }
+    
+    markers.forEach { marker ->
+        paint.color = marker.color
+        paint.strokeWidth = 2f
+        canvas.drawLine(marker.value.toFloat(), 0f, marker.value.toFloat(), 120f, paint)
+    }
+
+    val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
+}
+
 private suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
     val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)
     val landmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
@@ -916,27 +1801,7 @@ private suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair
 private fun JSONObject.putSafe(key: String, value: Double, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 private fun JSONObject.putSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
-private fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
-    val clusters = mutableListOf<MutableList<android.graphics.Rect>>()
-    for (frag in fragments) {
-        val matchingClusters = mutableListOf<Int>()
-        for ((idx, cluster) in clusters.withIndex()) {
-            if (cluster.any { c ->
-                val overlapTop = kotlin.math.max(frag.top, c.top); val overlapBottom = kotlin.math.min(frag.bottom, c.bottom)
-                val overlapHeight = overlapBottom - overlapTop
-                overlapHeight > 0 && overlapHeight >= kotlin.math.min(frag.height(), c.height()) * 0.20
-            }) matchingClusters.add(idx)
-        }
-        if (matchingClusters.isEmpty()) clusters.add(mutableListOf(frag))
-        else {
-            val firstIdx = matchingClusters[0]; clusters[firstIdx].add(frag)
-            for (k in matchingClusters.size - 1 downTo 1) { clusters[firstIdx].addAll(clusters[matchingClusters[k]]); clusters.removeAt(matchingClusters[k]) }
-        }
-    }
-    return clusters.map { cluster -> 
-        android.graphics.Rect(cluster.minOf { it.left }, cluster.minOf { it.top }, cluster.maxOf { it.right }, cluster.maxOf { it.bottom }) 
-    }
-}
+
 
 private suspend fun runPaddleValleyIterative(
     displayName: String, 
@@ -950,11 +1815,14 @@ private suspend fun runPaddleValleyIterative(
     paddleEngine: NativePaddleEngine,
     report: MutableMap<String, OcrHarnessResult>, 
     targetRefMap: MutableMap<String, RefinementTrace>,
-    isNumeric: Boolean = false
+    isNumeric: Boolean = false,
+    stages: List<String> = listOf("Raw", "80%"),
+    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false, pipelineKey: String = ""
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
+
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
     
@@ -972,13 +1840,17 @@ private suspend fun runPaddleValleyIterative(
     val startX = p1.x.toInt().coerceIn(0, mWidth - 1)
     val startY = p1.y.toInt().coerceIn(0, mHeight - 1)
     
-    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
+    val stagesList = stages
     var lastThumb = ""
     var tSnTotal = 0L
     val steps = mutableListOf<OcrStepResult>()
     
-    stages.forEach { stage ->
+    stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
+        val stageMeta = mutableMapOf<String, String>(); var trialsHtmlStr = ""
+        var currentOdoStr = ""
+        var currentThumb = ""
+
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
@@ -987,10 +1859,36 @@ private suspend fun runPaddleValleyIterative(
             }
         }
         
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
-        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
+        if (stage.contains("80%")) {
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
+        } else if (stage == "Hist") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.intensityLow, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.intensityHigh, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.p80, Color.MAGENTA)))
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, stats.intensityLow, stats.intensityHigh)
+            val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
+            val beta = -stats.intensityLow * alpha
+            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
+            stageMeta["before_hist"] = h1
+            stageMeta["after_hist"] = h2
+        } else if (stage == "Bin-Trials") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, masterBuffer as BufferSet, winnerRef.vehicle.id, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware, steps, pipelineKey)
+            trialsHtmlStr = tHtml
+            stageMeta["trials_html"] = trialsHtmlStr
+            stageMeta.putAll(tMeta)
+            currentOdoStr = tMeta["best_text"] ?: "---"
+            currentThumb = tMeta["best_thumb"] ?: lastThumb
+        } else if (stage == "Bin") {
+            val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
+            if (binTrialsMeta != null) {
+                currentOdoStr = binTrialsMeta["best_text"] ?: "---"
+                currentThumb = binTrialsMeta["best_thumb"] ?: lastThumb
+                stageMeta.putAll(binTrialsMeta)
+            }
+        }
         
-        val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
+        if (stage != "Bin" && stage != "Bin-Trials") {
+            val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
         val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
         val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
         
@@ -1000,13 +1898,19 @@ private suspend fun runPaddleValleyIterative(
         val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
         
-        val frags = rawB.map { NativeImageUtils.expandByValley(odoBuffer.p.mat, it.boundingBox) }
-        val cons = clusterRects(frags).sortedBy { it.left }
+        val valleyResults = rawB.map { if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox) else NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
+        val frags = valleyResults.map { it.first }
+        
+        val cons = OdometerOcrUtils.clusterRects(frags).sortedBy { it.left }
         val odoB = StringBuilder()
         val fBoxes = mutableListOf<android.graphics.Rect>()
         val jMeta = com.google.gson.JsonObject()
+
+        valleyResults.forEachIndexed { vIdx, res -> 
+            res.second.forEach { (k, v) -> jMeta.addProperty("${k}_${vIdx}", v) }
+        }
         
-        cons.forEach { box ->
+        cons.forEachIndexed { bIdx, box ->
             val sL = box.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
             val sT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
             val sR = box.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
@@ -1023,30 +1927,74 @@ private suspend fun runPaddleValleyIterative(
             
             val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
-            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty(k, v) }
-        }
-        
-        val odoStr = odoB.toString().trim()
-        allOdo.add(odoStr)
+            ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${bIdx}", v) }
+            }
+
+            currentOdoStr = odoB.toString().trim()
+            val anns = mutableListOf<SnapshotAnnotation>()
+            rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
+            fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
+
+            val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
+            currentThumb = sB64
+            if (stage == "Raw" || stage.contains("80%")) {
+                val (plainB64, _) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+                stageMeta["plain_thumb"] = plainB64
+                if (useCharAware && valleyResults.isNotEmpty()) {
+                    stageMeta["run_hist"] = generateRunLengthHistogramB64(valleyResults[0].second["charaware_run_hist"])
+                }
+            }
+            tSnTotal += ts
+            jMeta.entrySet().forEach { e -> stageMeta[e.key] = e.value.asString }
+            }
         val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, jMeta.asMap().mapValues { it.value.asString }))
-        
-        val anns = mutableListOf<SnapshotAnnotation>()
-        rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
-        fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
-        
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        lastThumb = sB64
-        tSnTotal += ts
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
+        allOdo.add(currentOdoStr)
+        lastThumb = currentThumb
+
+        val plainImg = if (stageMeta.containsKey("plain_thumb")) "<img src='data:image/jpeg;base64,${stageMeta["plain_thumb"]}'><br>" else ""
+        val histImg = if (stageMeta.containsKey("run_hist")) "<br><small>Run-Length Histogram:</small><br><img src='data:image/jpeg;base64,${stageMeta["run_hist"]}'>" else ""
+        val hT = if (stageMeta.containsKey("before_hist")) {
+        "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
+        } else ""
+
+        if (stage == "Bin" && stageMeta.containsKey("best_plain_pre")) {
+            val preCleanPlain = stageMeta["best_plain_pre"] ?: ""
+            val preCleanAnnot = stageMeta["best_annotated_pre"] ?: ""
+            val preRollingPlain = stageMeta["best_plain_pre_rolling"] ?: ""
+            val postCleanPlain = stageMeta["best_plain_post"] ?: ""
+            val postCleanAnnot = stageMeta["best_annotated_post"] ?: ""
+            
+            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>")
+            htmlOutput.append("<b>Pre-Cleaned (Binarized Only):</b><br>")
+            if (preCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanPlain'><br>")
+            if (preCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$preCleanAnnot'><br>")
+            if (preRollingPlain.isNotEmpty()) {
+                htmlOutput.append("<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br>")
+                htmlOutput.append("<img src='data:image/jpeg;base64,$preRollingPlain'><br>")
+            }
+            htmlOutput.append("<b>Post-Cleaned (OCR Input):</b><br>")
+            if (postCleanPlain.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanPlain'><br>")
+            if (postCleanAnnot.isNotEmpty()) htmlOutput.append("<img src='data:image/jpeg;base64,$postCleanAnnot'><br>")
+            htmlOutput.append("$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        } else {
+            val thumbImg = if (lastThumb.isNotEmpty()) "<img src='data:image/jpeg;base64,$lastThumb'>" else ""
+            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg$thumbImg$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        }
+
         val sObj = com.google.gson.JsonObject()
-        sObj.addProperty("text", odoStr)
+        sObj.addProperty("text", currentOdoStr)
         sObj.addProperty("time", tL)
-        jMeta.entrySet().forEach { e -> sObj.add(e.key, e.value) }
+        stageMeta.forEach { (k, v) -> 
+            if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
+                sObj.addProperty(k, v)
+            }
+        }
         jsonStages.add(stage, sObj)
+        steps.add(OcrStepResult(stage, lastThumb, null, currentOdoStr, emptyList(), emptyList(), null, null, stageMeta.toMap()))
+
     }
     
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
+    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, OdometerOcrUtils.pickBestOdometer(steps), lastThumb, System.currentTimeMillis() - tH0, tSnTotal, extraImages)
     report[displayName] = result
     targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
 }
@@ -1060,7 +2008,8 @@ private suspend fun runMLKitIterative(
     vehicleBufferSets: Map<Int, BufferSet>,
     experimentRecSet320x48: BufferSet,
     report: MutableMap<String, OcrHarnessResult>, 
-    targetRefMap: MutableMap<String, RefinementTrace>
+    targetRefMap: MutableMap<String, RefinementTrace>,
+    stages: List<String> = listOf("Raw", "80%")
 ) {
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
@@ -1082,13 +2031,17 @@ private suspend fun runMLKitIterative(
     val sX = p1.x.toInt().coerceIn(0, mWidth - 1)
     val sY = p1.y.toInt().coerceIn(0, mHeight - 1)
     
-    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
+    val stagesList = stages
     var lastThumb = ""
     var tSnTotal = 0L
     val steps = mutableListOf<OcrStepResult>()
     
-    stages.forEach { stage ->
+    stagesList.forEach { stage ->
         val tS0 = System.currentTimeMillis()
+        val stageMeta = mutableMapOf<String, String>(); var trialsHtmlStr = ""
+        var currentOdoStr = ""
+        var currentThumb = ""
+
         when (masterBuffer) {
             is BufferSet -> {
                 odoBuffer.p.clear()
@@ -1097,51 +2050,85 @@ private suspend fun runMLKitIterative(
             }
         }
         
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f) 
-        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
-        
-        experimentRecSet320x48.p.clear()
-        val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())
-        val ew = ((odoBuffer.p.mat.cols() * rSc + 1).toInt() / 2) * 2
-        val eh = ((odoBuffer.p.mat.rows() * rSc + 1).toInt() / 2) * 2
-        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        
-        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
-        val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
-        experimentRecSet320x48.c[rCrId].release()
-        
-        val odoB = StringBuilder()
-        vText.textBlocks.forEach { blk -> 
-            blk.lines.forEach { line -> 
-                val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
-                if (cleaned.isNotBlank()) odoB.append(cleaned) 
-            } 
+        if (stage.contains("80%")) {
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
+        } else if (stage == "Hist") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.intensityLow, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.intensityHigh, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.p80, Color.MAGENTA)))
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, stats.intensityLow, stats.intensityHigh)
+            val alpha = if (stats.intensityHigh > stats.intensityLow) 255.0 / (stats.intensityHigh - stats.intensityLow) else 1.0
+            val beta = -stats.intensityLow * alpha
+            val h2 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.p80 * alpha + beta, Color.CYAN)), skipEnds = true)
+            stageMeta["before_hist"] = h1
+            stageMeta["after_hist"] = h2
+        } else if (stage == "Bin-Trials") {
+            val stats = getHistStats(odoBuffer.p.mat)
+            val (tHtml, tMeta) = runBinTrialsMLKit(odoBuffer, experimentRecSet320x48, stats.rawBins, steps)
+            trialsHtmlStr = tHtml
+            stageMeta["trials_html"] = trialsHtmlStr
+            stageMeta.putAll(tMeta)
+        } else if (stage == "Bin") {
+            val binTrialsMeta = steps.find { it.stageName == "Bin-Trials" }?.metadata
+            if (binTrialsMeta != null) {
+                currentOdoStr = binTrialsMeta["best_text"] ?: "---"
+                currentThumb = binTrialsMeta["best_thumb"] ?: lastThumb
+                stageMeta["selection_logic"] = binTrialsMeta["selection_logic"] ?: "Heuristic"
+                if (binTrialsMeta.containsKey("best_threshold")) stageMeta["selected_threshold"] = binTrialsMeta["best_threshold"]!!
+            }
         }
         
-        val odoStr = odoB.toString()
-        allOdo.add(odoStr)
+        if (stage != "Bin") {
+            experimentRecSet320x48.p.clear()
+            val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())
+            val ew = ((odoBuffer.p.mat.cols() * rSc + 1).toInt() / 2) * 2
+            val eh = ((odoBuffer.p.mat.rows() * rSc + 1).toInt() / 2) * 2
+            val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
+            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            
+            val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
+            val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
+            experimentRecSet320x48.c[rCrId].release()
+            
+            val odoB = StringBuilder()
+            vText.textBlocks.forEach { blk -> 
+                blk.lines.forEach { line -> 
+                    val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
+                    if (cleaned.isNotBlank()) odoB.append(cleaned) 
+                } 
+            }
+            currentOdoStr = odoB.toString()
+            
+            val anns = mutableListOf<SnapshotAnnotation>()
+            val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
+            val snY = odoBuffer.p.mat.rows().toFloat() / eh.toFloat()
+            vText.textBlocks.forEach { b -> 
+                b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) } 
+            }
+            
+            val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
+            currentThumb = sB64
+            tSnTotal += ts
+        }
+
         val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, emptyMap()))
+        allOdo.add(currentOdoStr)
+        lastThumb = currentThumb
         
-        val anns = mutableListOf<SnapshotAnnotation>()
-        val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
-        val snY = odoBuffer.p.mat.rows().toFloat() / eh.toFloat()
-        vText.textBlocks.forEach { b -> 
-            b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) } 
-        }
+        val hT = if (stageMeta.containsKey("before_hist")) {
+            "<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["before_hist"]}'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${stageMeta["after_hist"]}'><br><small>After</small></td></tr></table>"
+        } else ""
         
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        lastThumb = sB64
-        tSnTotal += ts
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
+        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'>$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+        
         val sObj = com.google.gson.JsonObject()
-        sObj.addProperty("text", odoStr)
+        sObj.addProperty("text", currentOdoStr)
         sObj.addProperty("time", tL)
+        stageMeta.forEach { (k, v) -> sObj.addProperty(k, v) }
         jsonStages.add(stage, sObj)
+        steps.add(OcrStepResult(stage, lastThumb, null, currentOdoStr, emptyList(), emptyList(), null, null, stageMeta.toMap()))
     }
     
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
+    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, OdometerOcrUtils.pickBestOdometer(steps), lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
     report[displayName] = result
     targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
 }
