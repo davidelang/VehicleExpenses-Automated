@@ -5,7 +5,7 @@
     - [x] Implement `CropEditMode` and updated UI buttons in `ManageVehiclesScreen.kt`
     - [x] Implement Pan/Zoom UI and gesture handling in `EditCropsView`
     - [x] Implement handle-based hit testing and resizing in `EDIT_CROPS` mode
-    - [ ] Fix gesture coordinate math for zoomed/panned images
+    - [x] Fix gesture coordinate math for zoomed/panned images
     - [x] Verify build and behavior
 
 - [x] Refactor Agent Workspace Syncing
