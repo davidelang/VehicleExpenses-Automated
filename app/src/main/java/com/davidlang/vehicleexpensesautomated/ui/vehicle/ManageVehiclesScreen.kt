@@ -381,7 +381,8 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                 if (editMode == CropEditMode.IDLE) return@pointerInput
                 detectDragGestures(
                     onDragStart = { startOffset -> 
-                        val screenPos = (startOffset - offset) / scale
+                        val center = Offset(viewSize.x / 2f, viewSize.y / 2f)
+                        val screenPos = (startOffset - center - offset) / scale + center
                         dragStart = screenPos
                         activeHandle = DragHandle.NONE
 
@@ -422,7 +423,8 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                     onDrag = { change, _ ->
                         change.consume()
                         val start = dragStart ?: return@detectDragGestures
-                        val end = (change.position - offset) / scale
+                        val center = Offset(viewSize.x / 2f, viewSize.y / 2f)
+                        val end = (change.position - center - offset) / scale + center
                         val pxW = viewSize.x; val pxH = viewSize.y
                         val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
                         val imgW = originalSize.x.toInt(); val imgH = originalSize.y.toInt()
