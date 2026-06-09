@@ -51,7 +51,8 @@
     - [x] Forensic Audit and Build Validation
 
 
-- [ ] Relax Rolling Filter Horizontal Restriction
+- [x] Relax Rolling Filter Horizontal Restriction
     - [x] Update TODO.md
-    - [ ] Update pairing threshold in NativeImageUtils.cpp to 1.0 * vSW
-    - [ ] Forensic Audit and Build Validation
+    - [x] Update pairing threshold in NativeImageUtils.cpp to 1.0 * vSW
+    - [x] Forensic Audit and Build Validation
+
