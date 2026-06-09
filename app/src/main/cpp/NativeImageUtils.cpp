@@ -2202,70 +2202,57 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return 0;
 
-    cv::Mat labels, stats, centroids;
-    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
-    if (nLabels <= 2) return 0;
+    float limit = 0.50f * std::max(vSW, hSW);
+    int totalConnections = 0;
+    bool changed = true;
+    int pass = 0;
 
-    float dxLimit = 0.50f * vSW;
-    float dyLimit = 0.50f * hSW;
-    int connections = 0;
+    while (changed && pass < 5) {
+        changed = false;
+        pass++;
+        cv::Mat labels, stats, centroids;
+        int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+        if (nLabels <= 2) break;
 
-    for (int i = 1; i < nLabels; ++i) {
-        int w1 = stats.at<int>(i, cv::CC_STAT_WIDTH);
-        int h1 = stats.at<int>(i, cv::CC_STAT_HEIGHT);
-        int l1 = stats.at<int>(i, cv::CC_STAT_LEFT);
-        int t1 = stats.at<int>(i, cv::CC_STAT_TOP);
-        int r1 = l1 + w1;
-        int b1 = t1 + h1;
+        for (int i = 1; i < nLabels; ++i) {
+            int w1 = stats.at<int>(i, cv::CC_STAT_WIDTH);
+            int h1 = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+            int l1 = stats.at<int>(i, cv::CC_STAT_LEFT);
+            int t1 = stats.at<int>(i, cv::CC_STAT_TOP);
+            int r1 = l1 + w1;
+            int b1 = t1 + h1;
 
-        for (int j = i + 1; j < nLabels; ++j) {
-            int w2 = stats.at<int>(j, cv::CC_STAT_WIDTH);
-            int h2 = stats.at<int>(j, cv::CC_STAT_HEIGHT);
-            int l2 = stats.at<int>(j, cv::CC_STAT_LEFT);
-            int t2 = stats.at<int>(j, cv::CC_STAT_TOP);
-            int r2 = l2 + w2;
-            int b2 = t2 + h2;
+            for (int j = i + 1; j < nLabels; ++j) {
+                int w2 = stats.at<int>(j, cv::CC_STAT_WIDTH);
+                int h2 = stats.at<int>(j, cv::CC_STAT_HEIGHT);
+                int l2 = stats.at<int>(j, cv::CC_STAT_LEFT);
+                int t2 = stats.at<int>(j, cv::CC_STAT_TOP);
+                int r2 = l2 + w2;
+                int b2 = t2 + h2;
 
-            // Gap between boxes (0 if they overlap)
-            int dx = (r1 < l2) ? (l2 - r1) : ((r2 < l1) ? (l1 - r2) : 0);
-            int dy = (b1 < t2) ? (t2 - b1) : ((b2 < t1) ? (t1 - b2) : 0);
+                // Precise gap calculation
+                int dx = (r1 < l2) ? (l2 - r1) : ((r2 < l1) ? (l1 - r2) : 0);
+                int dy = (b1 < t2) ? (t2 - b1) : ((b2 < t1) ? (t1 - b2) : 0);
 
-            if ((float)dx < dxLimit && (float)dy < dyLimit) {
-                 __android_log_print(ANDROID_LOG_INFO, "NativeImage", "WELDING: %d & %d, dx=%d, dy=%d", i, j, dx, dy);
-                 
-                 if (dx == 0 && dy > 0) {
-                     // Overlap in X, gap in Y. Fill vertical bridge.
-                     int x_start = std::max(l1, l2);
-                     int x_end = std::min(r1, r2);
-                     int y_start = (b1 <= t2) ? b1 - 1 : b2 - 1;
-                     int y_end = (b1 <= t2) ? t2 + 1 : t1 + 1;
-                     cv::Rect bridge(x_start, y_start, std::max(1, x_end - x_start), std::max(1, y_end - y_start));
-                     if (bridge.x >= 0 && bridge.y >= 0 && bridge.x + bridge.width <= mat->cols && bridge.y + bridge.height <= mat->rows) {
-                         mat->operator()(bridge).setTo(cv::Scalar(255));
-                     }
-                 } else if (dy == 0 && dx > 0) {
-                     // Overlap in Y, gap in X. Fill horizontal bridge.
-                     int y_start = std::max(t1, t2);
-                     int y_end = std::min(b1, b2);
-                     int x_start = (r1 <= l2) ? r1 - 1 : r2 - 1;
-                     int x_end = (r1 <= l2) ? l2 + 1 : l1 + 1;
-                     cv::Rect bridge(x_start, y_start, std::max(1, x_end - x_start), std::max(1, y_end - y_start));
-                     if (bridge.x >= 0 && bridge.y >= 0 && bridge.x + bridge.width <= mat->cols && bridge.y + bridge.height <= mat->rows) {
-                         mat->operator()(bridge).setTo(cv::Scalar(255));
-                     }
-                 } else {
-                     // Corner or overlap in both. Draw thick line.
-                     int x1 = (r1 < l2) ? r1 - 1 : (r2 < l1 ? l1 : (l1 + r1) / 2);
-                     int y1 = (b1 < t2) ? b1 - 1 : (b2 < t1 ? t1 : (t1 + b1) / 2);
-                     int x2 = (r1 < l2) ? l2 : (r2 < l1 ? r2 - 1 : (l2 + r2) / 2);
-                     int y2 = (b1 < t2) ? t2 : (b2 < t1 ? b2 - 1 : (t2 + b2) / 2);
-                     cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 4);
-                 }
-                 connections++;
+                if ((float)dx < limit && (float)dy < limit) {
+                    __android_log_print(ANDROID_LOG_INFO, "NativeImage", "WELDING: Pass %d, %d & %d, dx=%d, dy=%d", pass, i, j, dx, dy);
+                    
+                    // Endpoint math: if separate, bridge boundaries. If overlapping, use shared center.
+                    int x1 = (r1 <= l2) ? r1 - 1 : ((r2 <= l1) ? l1 : (std::max(l1, l2) + std::min(r1, r2)) / 2);
+                    int y1 = (b1 <= t2) ? b1 - 1 : ((b2 <= t1) ? t1 : (std::max(t1, t2) + std::min(b1, b2)) / 2);
+                    int x2 = (r1 <= l2) ? l2 : ((r2 <= l1) ? r2 - 1 : (std::max(l1, l2) + std::min(r1, r2)) / 2);
+                    int y2 = (b1 <= t2) ? t2 : ((b2 <= t1) ? b2 - 1 : (std::max(t1, t2) + std::min(b1, b2)) / 2);
+
+                    cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 1);
+                    totalConnections++;
+                    changed = true;
+                    goto next_pass;
+                }
             }
         }
+        next_pass:;
     }
-    return connections;
+    return totalConnections;
 }
 
 extern "C" JNIEXPORT void JNICALL

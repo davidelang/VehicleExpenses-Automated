@@ -56,3 +56,8 @@
     - [x] Update pairing threshold in NativeImageUtils.cpp to 1.0 * vSW
     - [x] Forensic Audit and Build Validation
 
+
+- [ ] Implement Gap-Connecting Filter (Take 5 - Iterative Precise)
+    - [x] Update TODO.md
+    - [ ] Implement iterative 1px welding logic in NativeImageUtils.cpp
+    - [ ] Forensic Audit and Build Validation
