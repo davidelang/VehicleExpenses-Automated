@@ -113,22 +113,8 @@ fun ManageVehiclesScreen(
                 } catch (e: Exception) { Log.e("ManageVehicles", "Failed dimensions", e) }
             }
             val (odo, other) = vehicleViewModel.getCrops(it)
-
-            // Phase 126: ICRS Migration Bridge
-            if (!it.isIcrs && originalImageSize != Offset.Zero) {
-                val imgW = originalImageSize.x.toInt(); val imgH = originalImageSize.y.toInt()
-                odometerCropRect = odo?.let { r ->
-                    val icrs = IcrsMath.legacyAnisotropicToIcrs(RectF(r.left, r.top, r.right, r.bottom), imgW, imgH)
-                    Rect(icrs.left, icrs.top, icrs.right, icrs.bottom)
-                }
-                otherTextCropRect = other?.let { r ->
-                    val icrs = IcrsMath.legacyAnisotropicToIcrs(RectF(r.left, r.top, r.right, r.bottom), imgW, imgH)
-                    Rect(icrs.left, icrs.top, icrs.right, icrs.bottom)
-                }
-            } else {
-                odometerCropRect = odo
-                otherTextCropRect = other
-            }
+            odometerCropRect = odo
+            otherTextCropRect = other
 
             // Hydration handled by the "Show Landmarks" button
             discoveryResults = null
@@ -315,7 +301,7 @@ fun ManageVehiclesScreen(
             OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text("License Plate") }, modifier = Modifier.fillMaxWidth())
 
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { scope.launch { if (isNewVehicle) { vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) } else { editingVehicle?.let { val updated = it.copy(name = name, make = make, model = model, year = year.toIntOrNull() ?: 0, licensePlate = licensePlate, referenceDashPhotoUrl = referencePhotoUrl, cleanedReferenceDashPhotoUrl = referencePhotoUrl, odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom, otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom, landmarkTextBlocksJson = landmarkTextBlocksJson, isIcrs = true); vehicleViewModel.updateVehicle(updated) } }; navController.popBackStack() } }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank() && referencePhotoUrl != null) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
+            Button(onClick = { scope.launch { if (isNewVehicle) { vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) } else { editingVehicle?.let { val updated = it.copy(name = name, make = make, model = model, year = year.toIntOrNull() ?: 0, licensePlate = licensePlate, referenceDashPhotoUrl = referencePhotoUrl, cleanedReferenceDashPhotoUrl = referencePhotoUrl, odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom, otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom, landmarkTextBlocksJson = landmarkTextBlocksJson); vehicleViewModel.updateVehicle(updated) } }; navController.popBackStack() } }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank() && referencePhotoUrl != null) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
         }
     }
 
@@ -428,15 +414,19 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         val pxW = viewSize.x; val pxH = viewSize.y
                         val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
                         val imgW = originalSize.x.toInt(); val imgH = originalSize.y.toInt()
-
                         if (editMode == CropEditMode.CREATE_ODO || editMode == CropEditMode.CREATE_OTHER) {
-                            val lx1 = (start.x - fitRect.left) / fitRect.width
-                            val ly1 = (start.y - fitRect.top) / fitRect.height
-                            val lx2 = (end.x - fitRect.left) / fitRect.width
-                            val ly2 = (end.y - fitRect.top) / fitRect.height
-                            val p1 = IcrsMath.legacyAnisotropicToIcrs(lx1, ly1, imgW, imgH).let { Offset(it.x, it.y) }
-                            val p2 = IcrsMath.legacyAnisotropicToIcrs(lx2, ly2, imgW, imgH).let { Offset(it.x, it.y) }
+                            val p1 = IcrsMath.normalizedToIcrs(
+                                (start.x - fitRect.left) / fitRect.width,
+                                (start.y - fitRect.top) / fitRect.height,
+                                imgW, imgH
+                            ).let { Offset(it.x, it.y) }
+                            val p2 = IcrsMath.normalizedToIcrs(
+                                (end.x - fitRect.left) / fitRect.width,
+                                (end.y - fitRect.top) / fitRect.height,
+                                imgW, imgH
+                            ).let { Offset(it.x, it.y) }
                             currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
+                        }
                         } else if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
                             val currentRect = if (activeCropIsOdo) odoRect else otherRect
                             currentRect?.let { r ->
@@ -460,9 +450,11 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                                     else -> {}
                                 }
                                 fun toIcrs(screen: Offset): Offset {
-                                    val lx = (screen.x - fitRect.left) / fitRect.width
-                                    val ly = (screen.y - fitRect.top) / fitRect.height
-                                    return IcrsMath.legacyAnisotropicToIcrs(lx, ly, imgW, imgH).let { Offset(it.x, it.y) }
+                                    return IcrsMath.normalizedToIcrs(
+                                        (screen.x - fitRect.left) / fitRect.width,
+                                        (screen.y - fitRect.top) / fitRect.height,
+                                        imgW, imgH
+                                    ).let { Offset(it.x, it.y) }
                                 }
                                 val p1 = toIcrs(newTl); val p2 = toIcrs(newBr)
                                 currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))

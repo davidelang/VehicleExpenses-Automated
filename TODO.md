@@ -1,5 +1,20 @@
 # TODO
 
+- [x] **Exhaustive Legacy Coordinate Purge (Phased) and Robust JSON Fixup** <!-- id: 19 -->
+    - [x] **Phase 1: Refactor Call Sites**
+        - [x] Purge `isIcrs` branching in `ExperimentAlignmentScreen.kt`
+        - [x] Purge `isIcrs` branching in `ExperimentPumpScreen.kt`
+        - [x] Purge `isIcrs` branching in `ManageVehiclesScreen.kt`
+        - [x] Purge `isIcrs` branching in `ImageAlignmentUtils.kt`
+        - [x] Purge `isIcrs` branching in `OdometerOcrUtils.kt`
+        - [x] Purge legacy math from `LandmarkDebugDialog.kt`
+    - [x] **Phase 2: Purge Definitions**
+        - [x] Delete `legacyAnisotropicToIcrs` from `IcrsMath.kt`
+        - [x] Remove `isIcrs` from `Vehicle.kt` and `VehicleViewModel.kt`
+    - [x] **Phase 3: Final Verification**
+        - [x] Implement robust character-counting JSON fixup in `fetch_latest_reports.py`
+        - [x] Final audit and verify build
+
 - [x] **Reset Application and Finalize Robust Fetch Script** <!-- id: 18 -->
     - [x] Reset app repo to stable `cbcf3463` to clear ICRS/JSON regressions
     - [x] Implement robust character-counting JSON fixup in `fetch_latest_reports.py` (Sandbox)
