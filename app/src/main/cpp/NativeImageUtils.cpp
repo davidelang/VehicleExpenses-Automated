@@ -1850,12 +1850,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         if ((float)w > maxWidth) {
             std::vector<bool> garbageRows(h, false);
             for (int y = minY; y < maxY; ++y) {
-                int run = 0;
+                int maxRun = 0;
+                int currentRun = 0;
                 const int* labelRow = labels.ptr<int>(y);
                 for (int x = minX; x < maxX; ++x) {
-                    if (labelRow[x] == i) run++;
+                    if (labelRow[x] == i) {
+                        currentRun++;
+                        if (currentRun > maxRun) maxRun = currentRun;
+                    } else {
+                        currentRun = 0;
+                    }
                 }
-                if ((float)run > maxWidth) {
+                if ((float)maxRun > maxWidth) {
                     garbageRows[y - minY] = true;
                 }
             }
