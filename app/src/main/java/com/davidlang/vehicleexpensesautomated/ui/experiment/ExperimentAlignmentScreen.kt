@@ -1172,6 +1172,7 @@ private suspend fun runBinTrialsPaddle(
             trialsMeta["trial_${vIdx}_pre_cleaned_1bpp"] = preCleanedP4
 
             NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
+            NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
             val preRollP4 = matToPbmP4Base64(odoBuffer.p.mat)
             trialsMeta["trial_${vIdx}_pre_roll_1bpp"] = preRollP4
 

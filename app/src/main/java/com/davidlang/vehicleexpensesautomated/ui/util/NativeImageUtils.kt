@@ -345,10 +345,15 @@ object NativeImageUtils {
         return null
     }
 
+    fun connectSegmentsH(mat: Mat, vSW: Float, hSW: Float) {
+        nativeConnectSegmentsH(mat.nativeObj, vSW, hSW)
+    }
+
     fun blackOutRollingDigitsH(mat: Mat, vSW: Float, hSW: Float) {
         nativeBlackOutRollingDigitsH(mat.nativeObj, vSW, hSW)
     }
 
+    private external fun nativeConnectSegmentsH(matPtr: Long, vSW: Float, hSW: Float)
     private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
     private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
 
