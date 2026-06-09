@@ -17,6 +17,13 @@ decision = "allow"
 priority = 950
 toolName = "enter_plan_mode"
 modes = [ "default", "autoEdit", "yolo" ]
+[[rule]]
+decision = "allow"
+priority = 1000
+toolName = "run_shell_command"
+commandPrefix = [ "jq" ]
+allowRedirection = true
+modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
 decision = "deny"
@@ -29,8 +36,9 @@ modes = [ "plan", "autoEdit", "yolo" ]
 decision = "allow"
 priority = 950
 toolName = "run_shell_command"
-commandPrefix = [ "git status", "git log", "git diff", "git add", "git commit", "git describe", "git rev-parse", "git worktree", "git show", "git ls-files", "git cat-file", "git cp", "git chmod", "git cat", "git rm" ]
+commandPrefix = [ "git status", "git log", "git diff", "git add", "git commit", "git describe", "git rev-parse", "git worktree", "git show", "git ls-files", "git cat-file", "git cp", "git chmod", "git cat", "git rm", "ls" ]
 modes = [ "plan", "autoEdit", "yolo" ]
+
 
 [[rule]]
 decision = "ask"
@@ -60,14 +68,6 @@ priority = 950
 toolName = "run_shell_command"
 commandPrefix = [ "./deploy" ]
 modes = [ "default", "autoEdit", "yolo" ]
-
-[[rule]]
-decision = "allow"
-priority = 1000
-toolName = "run_shell_command"
-commandRegex = "^jq\\s+.*"
-allowRedirection = true
-modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
 decision = "allow"
