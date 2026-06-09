@@ -33,6 +33,6 @@
 - [x] Resolve jq Plan Mode Block
     - [x] Update `auto-saved.toml` with high-priority regex for jq.
     - [x] Commit and sync rules across all worktrees.
-- [/] Refactor jq Rule and Whitelist ls
-    - [ ] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
-    - [ ] Commit and sync rules across all worktrees.
+- [x] Refactor jq Rule and Whitelist ls
+    - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
+    - [x] Commit and sync rules across all worktrees.
