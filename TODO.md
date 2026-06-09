@@ -26,7 +26,7 @@
     - [x] Update `GEMINI.md` with jq recommendation.
     - [x] Update `.gemini/system.md` with jq recommendation.
     - [x] Commit and sync rules across all worktrees.
-- [/] Fix jq and Whitespace Permissions
-    - [ ] Update `plans.toml` with robust whitespace regex.
-    - [ ] Update `auto-saved.toml` to allow `jq` in Plan Mode.
-    - [ ] Commit and sync rules across all worktrees.
+- [x] Fix jq and Whitespace Permissions
+    - [x] Update `plans.toml` with robust whitespace regex.
+    - [x] Update `auto-saved.toml` to allow `jq` in Plan Mode.
+    - [x] Commit and sync rules across all worktrees.
