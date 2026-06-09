@@ -1,5 +1,10 @@
 # TODO
 
+- [x] **Bit-Level Diagnostic Logging for Rolling Filter** <!-- id: 22 -->
+    - [x] Add intermediate P4 captures (pre-cleaned, pre-roll) to `ExperimentAlignmentScreen.kt`
+    - [x] Add comprehensive `__android_log_print` logging to `NativeImageUtils.cpp`
+    - [x] Verify build and capture logs/JSON for Row 89
+
 - [x] **Restore Forensic Enhancements and Update Failing Subset** <!-- id: 21 -->
     - [x] Update `FAILING_SUBSET` map with current failures for E and J
     - [x] Restore 2px red odometer annotations to aligned HTML snapshots

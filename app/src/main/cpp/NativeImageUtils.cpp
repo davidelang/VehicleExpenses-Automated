@@ -2202,17 +2202,28 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
 
+    __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: Start. vSW=%.2f, hSW=%.2f, Size=%dx%d", vSW, hSW, mat->cols, mat->rows);
+
     cv::Mat labels, stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
-    if (nLabels <= 2) return; // Need at least 2 foreground components to have a pair
+    if (nLabels <= 2) {
+        __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: Too few labels (%d). Exiting.", nLabels);
+        return;
+    }
 
     // 1. Compute heights and find median height
     std::vector<int> heights;
     for (int i = 1; i < nLabels; ++i) {
-        heights.push_back(stats.at<int>(i, cv::CC_STAT_HEIGHT));
+        int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        heights.push_back(h);
+        float cx = stats.at<int>(i, cv::CC_STAT_LEFT) + stats.at<int>(i, cv::CC_STAT_WIDTH) / 2.0f;
+        float cy = stats.at<int>(i, cv::CC_STAT_TOP) + stats.at<int>(i, cv::CC_STAT_HEIGHT) / 2.0f;
+        __android_log_print(ANDROID_LOG_DEBUG, "NativeImage", "ROLLING: Comp %d: w=%d, h=%d, cx=%.1f, cy=%.1f", 
+            i, stats.at<int>(i, cv::CC_STAT_WIDTH), h, cx, cy);
     }
     std::sort(heights.begin(), heights.end());
-    float hMed = heights[heights.size() / 2];
+    float hMed = (float)heights[heights.size() / 2];
+    __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: hMed=%.1f, gate=%.1f", hMed, 1.15f * hMed);
 
     // Helper functions for centers
     auto getCenterX = [&](int label) -> float {
@@ -2230,7 +2241,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         for (int j = i + 1; j < nLabels; ++j) {
             float cx_i = getCenterX(i);
             float cx_j = getCenterX(j);
-            if (std::abs(cx_i - cx_j) <= 0.1f * vSW) {
+            float dx = std::abs(cx_i - cx_j);
+            if (dx <= 0.1f * vSW) {
+                __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: PAIRED %d & %d. dx=%.2f <= %.2f", i, j, dx, 0.1f * vSW);
                 alignedPairs.push_back({i, j});
                 isPairMember[i] = true;
                 isPairMember[j] = true;
@@ -2281,6 +2294,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         m = 0.0f;
         c = totalY / (nLabels - 1);
     }
+    __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: Line fit: y = %.4fx + %.2f", m, c);
 
     // Helper for boundary distance to line
     auto getLineDistance = [&](int label, float x) -> float {
@@ -2329,7 +2343,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     loser = i;
                 }
             }
+            __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: KILL %d (dist=%.2f) paired with %d (dist=%.2f). comb_h=%d > %.1f", 
+                loser, (loser == i ? dist_i : dist_j), (loser == i ? j : i), (loser == i ? dist_j : dist_i), combined_h, 1.15f * hMed);
+        } else {
+             __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: SAVE %d & %d. comb_h=%d <= %.1f", i, j, combined_h, 1.15f * hMed);
         }
+
         if (loser != -1) toBlank.push_back(loser);
     }
 
