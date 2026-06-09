@@ -1,5 +1,10 @@
 # TODO
 
+- [x] **Reset Application and Finalize Robust Fetch Script** <!-- id: 18 -->
+    - [x] Reset app repo to stable `cbcf3463` to clear ICRS/JSON regressions
+    - [x] Implement robust character-counting JSON fixup in `fetch_latest_reports.py` (Sandbox)
+    - [x] Verify build stability
+
 - [x] **Improve Crop Editing and Pan/Zoom Controls** <!-- id: 13 -->
     - [x] **DONE:** Rebase on top of master
     - [x] Implement `CropEditMode` and updated UI buttons in `ManageVehiclesScreen.kt`
