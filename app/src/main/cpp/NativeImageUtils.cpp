@@ -2315,8 +2315,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
             float cx_i = getCenterX(i);
             float cx_j = getCenterX(j);
             float dx = std::abs(cx_i - cx_j);
-            if (dx <= 0.1f * vSW) {
-                __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: PAIRED %d & %d. dx=%.2f <= %.2f", i, j, dx, 0.1f * vSW);
+            if (dx <= 1.0f * vSW) {
+                __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: PAIRED %d & %d. dx=%.2f <= %.2f", i, j, dx, 1.0f * vSW);
                 alignedPairs.push_back({i, j});
                 isPairMember[i] = true;
                 isPairMember[j] = true;
