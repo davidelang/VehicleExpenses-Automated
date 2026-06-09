@@ -11,8 +11,6 @@
 Instructions in this file take absolute precedence. Speed achieved by bypassing protocol is a **High-Severity Performance Failure**.
 - **Linear History:** No `git commit --amend`.
 - **Per-Branch Tagging:** All lifecycle tags (`builds`, `deployed`, `works`) MUST be prefixed with the branch name (e.g., `feature-x/builds`) unless on the `master` branch.
-- **Spec vs. Reference Precedence:** Documents under `docs/specs/` are strict specifications (hard requirements). If the codebase deviates from a spec, the code is wrong. Documents under `docs/reference/` are informative references; if the code deviates from reference documentation, the document is wrong.
-
 
 ## The Bi-Modal Workflow (Research -> Strategy -> Execution)
 
@@ -26,7 +24,11 @@ Instructions in this file take absolute precedence. Speed achieved by bypassing 
 - **Exclusivity:** Implement ONLY the approved plan. "Taking liberties" to refactor, clean up, or fix unapproved issues is forbidden.
 - **State Verification:** Before performing any edit, you MUST re-verify the file content. Do NOT assume your memory of a file from a previous turn is accurate.
 - **The First Action:** The very first action upon entering the Execution phase is to update `TODO.md` to reflect the newly approved plan.
-- **Post-Execution Validation:** Before presenting your final report, you MUST explicitly read the modified files to verify that all intended changes from the plan were successfully written to disk. Confirm `./build_app` success.
+- **Post-Execution Validation (CRITICAL):**
+    - The success return code of a `replace` or `write_file` tool call is **NOT evidence of integrity**.
+    - You MUST perform a **Forensic Audit** via `read_file` (targeting the modified lines) after EVERY modification to verify that the change was applied correctly and did not cause unintended side effects or corruption.
+    - Confirm `./build_app` success.
+    - Skipping this audit step is a **High-Severity Performance Failure**.
 - **Total Turn Reversion:** If any implementation step fails (syntax errors, logical gaps) or reveals a flaw in the plan, you MUST immediately revert ALL changes from the current turn (`git reset --hard <branch-name>/builds` or `git reset --hard builds` if on master) to restore the repository to its last stable state. Return to the Strategy phase to propose a revised plan.
 
 ## Stability & Build Policy (3-3-3 Rule)
@@ -47,6 +49,7 @@ Instructions in this file take absolute precedence. Speed achieved by bypassing 
 - **Sandbox (~/git/VehicleExpenses-automated/dev-ai-interaction/):** Use the absolute path for research and logs.
 
 ## Engineering Defaults
+- **JSON Parsing:** Prioritize the use of `jq` for efficient and reliable JSON parsing and data extraction, especially for large files, over custom Python scripts or line-based tools like `grep`.
 - **OCR:** Multi-engine approach (ML Kit, Paddle). No silent fallbacks.
 - **Alignment:** 4-DOF Affine transforms (Translation, Rotation, Scale).
 - **Vetoes:** Primary matching signal is the **Automated Word Veto**.
