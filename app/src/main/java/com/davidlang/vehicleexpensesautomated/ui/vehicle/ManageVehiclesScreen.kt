@@ -426,7 +426,6 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                                 imgW, imgH
                             ).let { Offset(it.x, it.y) }
                             currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
-                        }
                         } else if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
                             val currentRect = if (activeCropIsOdo) odoRect else otherRect
                             currentRect?.let { r ->
