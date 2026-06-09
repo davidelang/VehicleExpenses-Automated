@@ -24,5 +24,7 @@ data class Vehicle(
     val otherTextCropTop: Float? = null,
     val otherTextCropRight: Float? = null,
     val otherTextCropBottom: Float? = null,
-    val landmarkTextBlocksJson: String? = null // new (cleaned/filtered)
+    val landmarkTextBlocksJson: String? = null, // new (cleaned/filtered)
+    @Deprecated("Legacy field. All new data is ICRS.")
+    val isIcrs: Boolean = true
 )

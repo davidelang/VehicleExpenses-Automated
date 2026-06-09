@@ -1,5 +1,9 @@
 # TODO
 
+- [ ] **Fix Startup Crash (Room Schema Mismatch)** <!-- id: 20 -->
+    - [ ] Restore `isIcrs` field to `Vehicle.kt` for schema compatibility
+    - [ ] Verify app launch and check `SyncWorker` status
+
 - [x] **Exhaustive Legacy Coordinate Purge (Phased) and Robust JSON Fixup** <!-- id: 19 -->
     - [x] **Phase 1: Refactor Call Sites**
         - [x] Purge `isIcrs` branching in `ExperimentAlignmentScreen.kt`
