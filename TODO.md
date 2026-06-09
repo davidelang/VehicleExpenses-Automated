@@ -45,7 +45,8 @@
     - [x] Forensic Audit and Build Validation
 
 
-- [ ] Implement Gap-Connecting Filter (Take 4 - Welding)
+- [x] Implement Gap-Connecting Filter (Take 4 - Welding)
     - [x] Update TODO.md
-    - [ ] Implement aggressive welding logic in NativeImageUtils.cpp
-    - [ ] Forensic Audit and Build Validation
+    - [x] Implement aggressive welding logic in NativeImageUtils.cpp
+    - [x] Forensic Audit and Build Validation
+
