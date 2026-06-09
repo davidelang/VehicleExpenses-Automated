@@ -19,6 +19,13 @@ toolName = "enter_plan_mode"
 modes = [ "default", "autoEdit", "yolo" ]
 
 [[rule]]
+decision = "deny"
+priority = 940
+toolName = "run_shell_command"
+commandRegex = "^git\\s+.*"
+modes = [ "plan", "autoEdit", "yolo" ]
+
+[[rule]]
 decision = "allow"
 priority = 950
 toolName = "run_shell_command"
@@ -26,7 +33,7 @@ commandPrefix = [ "git status", "git log", "git diff", "git add", "git commit", 
 modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
-decision = "deny"
+decision = "ask"
 priority = 960
 toolName = "run_shell_command"
 commandRegex = "^git\\s+reset.*"
@@ -36,7 +43,7 @@ modes = [ "plan", "autoEdit", "yolo" ]
 decision = "allow"
 priority = 970
 toolName = "run_shell_command"
-commandRegex = "^git\\s+reset\\s+--hard\\s+([^ ]+/)?builds$"
+commandRegex = "^git\\s+reset\\s+--hard\\s+(([^ ]+/)?builds|HEAD)$"
 modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
