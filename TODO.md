@@ -1,11 +1,11 @@
 # TODO
 
-- [ ] **Restore Forensic Enhancements and Update Failing Subset** <!-- id: 21 -->
-    - [ ] Update `FAILING_SUBSET` map with current failures for E and J
-    - [ ] Restore 2px red odometer annotations to aligned HTML snapshots
-    - [ ] Restore JSON bloat filtering (`trials_html`, histograms)
-    - [ ] Restore `Throwable` error logging to JSON array
-    - [ ] Verify build and behavior
+- [x] **Restore Forensic Enhancements and Update Failing Subset** <!-- id: 21 -->
+    - [x] Update `FAILING_SUBSET` map with current failures for E and J
+    - [x] Restore 2px red odometer annotations to aligned HTML snapshots
+    - [x] Restore JSON bloat filtering (`trials_html`, histograms)
+    - [x] Restore `Throwable` error logging to JSON array
+    - [x] Verify build and behavior
 
 - [x] **Fix Startup Crash (Room Schema Mismatch)** <!-- id: 20 -->
     - [x] Restore `isIcrs` field to `Vehicle.kt` for schema compatibility
