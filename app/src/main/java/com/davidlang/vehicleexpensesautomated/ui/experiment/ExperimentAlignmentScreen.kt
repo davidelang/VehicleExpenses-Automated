@@ -69,17 +69,16 @@ private val GOLDEN_SUBSET = mapOf(
 )
 
 private val FAILING_SUBSET = mapOf(
-    "PXL_20221029_002946498.dng" to 4,
-    "PXL_20221121_021330418.jpg" to 5,
     "PXL_20221228_164725812.dng" to 12,
     "PXL_20231223_074744139.jpg" to 41,
     "PXL_20240114_162249446.jpg" to 45,
     "PXL_20240414_010409990.jpg" to 50,
+    "PXL_20240722_200247194.jpg" to 56,
+    "PXL_20250423_023559600.jpg" to 78,
     "PXL_20250426_023457157.jpg" to 80,
-    "PXL_20250703_031510594.jpg" to 94,
-    "PXL_20251108_025019715.jpg" to 122,
+    "PXL_20250521_001438093.jpg" to 89,
     "PXL_20251111_071548876.jpg" to 124,
-    "PXL_20260413_083458977.jpg" to 141
+    "PXL_20260220_061131814.jpg" to 134
 )
 
 @Immutable
@@ -299,6 +298,7 @@ private suspend fun runExperiment(
     }
 
     var currentFile = startNewFile()
+    var firstJsonResult = true
 
     photos.forEachIndexed { index, file ->
         val originalLineNumber = subsetMap?.get(file.name) ?: (index + 1)
@@ -446,12 +446,22 @@ private suspend fun runExperiment(
                         alignResMetadata.putAll(alignRes.metadata)
 
                         val (snap, tSnap) = if (alignRes.success) {
+                            val odoAnns = mutableListOf<SnapshotAnnotation>()
+                            globalWinnerRef?.vehicle?.let { v ->
+                                val icrsL = v.odometerCropLeft ?: 0f
+                                val icrsT = v.odometerCropTop ?: 0f
+                                val icrsR = v.odometerCropRight ?: 1f
+                                val icrsB = v.odometerCropBottom ?: 1f
+                                val p1 = IcrsMath.icrsToPixel(icrsL, icrsT, imgW, imgH)
+                                val p2 = IcrsMath.icrsToPixel(icrsR, icrsB, imgW, imgH)
+                                odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
+                            }
                             OcrUtils.takeSnapshot(
                                 source = NativePaddleEngine.bufferSetB.p,
                                 sourceRect = null,
                                 targetW = 600,
                                 targetH = 450,
-                                annotations = emptyList(),
+                                annotations = odoAnns,
                                 scratchArgb = null,
                                 scratchYuv = NativePaddleEngine.bufferSetB
                             )
@@ -555,17 +565,12 @@ private suspend fun runExperiment(
                     originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded,
                     meta.diagnostic, photoResult!!, vehicles, deskewResA, tSnapOrig, tSnapAlign
                 )
-                val comma = if (index < total - 1) "," else ""
-
-                // Clear/reset or re-allocate the reusable buffer to keep memory bounded
-                if (jsonCharBuffer.capacity() > 64 * 1024 * 1024) {
-                    jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
-                } else {
-                    jsonCharBuffer.setLength(0)
-                }
-
+                
+                val prefix = if (firstJsonResult) "" else ",\n"
+                jsonCharBuffer.setLength(0)
                 appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
-                jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
+                jsonFile.appendText(prefix + jsonCharBuffer.toString())
+                firstJsonResult = false
 
                 val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f)
 
@@ -574,15 +579,24 @@ private suspend fun runExperiment(
                     onProgress(resultSummary, (index + 1).toFloat() / total)
                 }
 
-                val runtime = Runtime.getRuntime()
-                val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
-                Log.i("MEMORY_CHECK", "[Image ${index + 1}/${total}] Used Heap: ${usedMem}MB / ${runtime.maxMemory() / 1024 / 1024}MB")
-
                 delay(150)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Processing failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
+                val errorJson = JSONObject().apply {
+                    put("line_number", originalLineNumber)
+                    put("file", file.name)
+                    put("error", e.toString())
+                    put("stacktrace", Log.getStackTraceString(e))
+                }
+                val prefix = if (firstJsonResult) "" else ",\n"
+                jsonCharBuffer.setLength(0)
+                appendJsonObject(jsonCharBuffer, errorJson, 2, 0)
+                jsonFile.appendText(prefix + jsonCharBuffer.toString())
+                firstJsonResult = false
             } finally {
                 // BufferSets are cleaned up globally or at end of session
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
         }
     }
@@ -871,7 +885,8 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
                 stepObj.put("text", step.text)
                 val meta = JSONObject()
                 step.metadata.forEach { (k, v) ->
-                    if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
+                    if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post" &&
+                        k != "trials_html" && k != "before_hist" && k != "after_hist") {
                         meta.put(k, v)
                     }
                 }
@@ -1982,7 +1997,8 @@ private suspend fun runPaddleValleyIterative(
         sObj.addProperty("text", currentOdoStr)
         sObj.addProperty("time", tL)
         stageMeta.forEach { (k, v) ->
-            if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post") {
+            if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post" &&
+                k != "trials_html" && k != "before_hist" && k != "after_hist") {
                 sObj.addProperty(k, v)
             }
         }
@@ -2120,7 +2136,11 @@ private suspend fun runMLKitIterative(
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", currentOdoStr)
         sObj.addProperty("time", tL)
-        stageMeta.forEach { (k, v) -> sObj.addProperty(k, v) }
+        stageMeta.forEach { (k, v) -> 
+            if (k != "trials_html" && k != "before_hist" && k != "after_hist") {
+                sObj.addProperty(k, v) 
+            }
+        }
         jsonStages.add(stage, sObj)
         steps.add(OcrStepResult(stage, lastThumb, null, currentOdoStr, emptyList(), emptyList(), null, null, stageMeta.toMap()))
     }
