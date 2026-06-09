@@ -66,6 +66,7 @@ decision = "allow"
 priority = 950
 toolName = "run_shell_command"
 commandPrefix = [ "jq" ]
+modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
 decision = "allow"
