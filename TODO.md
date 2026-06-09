@@ -19,6 +19,6 @@
     - [x] Update `GEMINI.md` to mandate forensic audits.
     - [x] Update `.gemini/system.md` to reflect new rigor.
     - [x] Commit and sync rules across all worktrees.
-- [/] Refine Git Reset and Approval Policy
-    - [ ] Update `.gemini/policies/auto-saved.toml` with tiered policies (HEAD allowance, 'ask' for other resets, 'deny' for catch-all git).
-    - [ ] Commit and sync rules across all worktrees.
+- [x] Refine Git Reset and Approval Policy
+    - [x] Update `.gemini/policies/auto-saved.toml` with tiered policies (HEAD allowance, 'ask' for other resets, 'deny' for catch-all git).
+    - [x] Commit and sync rules across all worktrees.
