@@ -49,6 +49,7 @@ Instructions in this file take absolute precedence. Speed achieved by bypassing 
 - **Sandbox (~/git/VehicleExpenses-automated/dev-ai-interaction/):** Use the absolute path for research and logs.
 
 ## Engineering Defaults
+- **JSON Parsing:** Prioritize the use of `jq` for efficient and reliable JSON parsing and data extraction, especially for large files, over custom Python scripts or line-based tools like `grep`.
 - **OCR:** Multi-engine approach (ML Kit, Paddle). No silent fallbacks.
 - **Alignment:** 4-DOF Affine transforms (Translation, Rotation, Scale).
 - **Vetoes:** Primary matching signal is the **Automated Word Veto**.

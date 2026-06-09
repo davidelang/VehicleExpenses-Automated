@@ -22,3 +22,7 @@
 - [x] Refine Git Reset and Approval Policy
     - [x] Update `.gemini/policies/auto-saved.toml` with tiered policies (HEAD allowance, 'ask' for other resets, 'deny' for catch-all git).
     - [x] Commit and sync rules across all worktrees.
+- [/] Recommend jq for JSON Parsing
+    - [ ] Update `GEMINI.md` with jq recommendation.
+    - [ ] Update `.gemini/system.md` with jq recommendation.
+    - [ ] Commit and sync rules across all worktrees.
