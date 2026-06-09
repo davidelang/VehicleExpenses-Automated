@@ -2231,15 +2231,36 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
             int dy = (b1 < t2) ? (t2 - b1) : ((b2 < t1) ? (t1 - b2) : 0);
 
             if ((float)dx < dxLimit && (float)dy < dyLimit) {
-                 __android_log_print(ANDROID_LOG_INFO, "NativeImage", "CONNECT: %d & %d, dx=%d, dy=%d", i, j, dx, dy);
+                 __android_log_print(ANDROID_LOG_INFO, "NativeImage", "WELDING: %d & %d, dx=%d, dy=%d", i, j, dx, dy);
                  
-                 // Find closest points for the line
-                 int x1 = (r1 < l2) ? r1-1 : (r2 < l1 ? l1 : (l1+r1)/2);
-                 int y1 = (b1 < t2) ? b1-1 : (b2 < t1 ? t1 : (t1+b1)/2);
-                 int x2 = (r1 < l2) ? l2 : (r2 < l1 ? r2-1 : (l2+r2)/2);
-                 int y2 = (b1 < t2) ? t2 : (b2 < l1 ? b2-1 : (t2+b2)/2);
-
-                 cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 2);
+                 if (dx == 0 && dy > 0) {
+                     // Overlap in X, gap in Y. Fill vertical bridge.
+                     int x_start = std::max(l1, l2);
+                     int x_end = std::min(r1, r2);
+                     int y_start = (b1 <= t2) ? b1 - 1 : b2 - 1;
+                     int y_end = (b1 <= t2) ? t2 + 1 : t1 + 1;
+                     cv::Rect bridge(x_start, y_start, std::max(1, x_end - x_start), std::max(1, y_end - y_start));
+                     if (bridge.x >= 0 && bridge.y >= 0 && bridge.x + bridge.width <= mat->cols && bridge.y + bridge.height <= mat->rows) {
+                         mat->operator()(bridge).setTo(cv::Scalar(255));
+                     }
+                 } else if (dy == 0 && dx > 0) {
+                     // Overlap in Y, gap in X. Fill horizontal bridge.
+                     int y_start = std::max(t1, t2);
+                     int y_end = std::min(b1, b2);
+                     int x_start = (r1 <= l2) ? r1 - 1 : r2 - 1;
+                     int x_end = (r1 <= l2) ? l2 + 1 : l1 + 1;
+                     cv::Rect bridge(x_start, y_start, std::max(1, x_end - x_start), std::max(1, y_end - y_start));
+                     if (bridge.x >= 0 && bridge.y >= 0 && bridge.x + bridge.width <= mat->cols && bridge.y + bridge.height <= mat->rows) {
+                         mat->operator()(bridge).setTo(cv::Scalar(255));
+                     }
+                 } else {
+                     // Corner or overlap in both. Draw thick line.
+                     int x1 = (r1 < l2) ? r1 - 1 : (r2 < l1 ? l1 : (l1 + r1) / 2);
+                     int y1 = (b1 < t2) ? b1 - 1 : (b2 < t1 ? t1 : (t1 + b1) / 2);
+                     int x2 = (r1 < l2) ? l2 : (r2 < l1 ? r2 - 1 : (l2 + r2) / 2);
+                     int y2 = (b1 < t2) ? t2 : (b2 < t1 ? b2 - 1 : (t2 + b2) / 2);
+                     cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 4);
+                 }
                  connections++;
             }
         }

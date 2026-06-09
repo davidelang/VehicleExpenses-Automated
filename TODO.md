@@ -44,3 +44,8 @@
     - [x] Integrate into ExperimentAlignmentScreen.kt for set_j
     - [x] Forensic Audit and Build Validation
 
+
+- [ ] Implement Gap-Connecting Filter (Take 4 - Welding)
+    - [x] Update TODO.md
+    - [ ] Implement aggressive welding logic in NativeImageUtils.cpp
+    - [ ] Forensic Audit and Build Validation
