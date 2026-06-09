@@ -2,6 +2,15 @@
 
 This log tracks the implementation, refactoring, and deployment activities performed by the Application Engineer session.
 
+## [2026-06-08] - Horizontal Wide Filter Precision Fix
+- **Activity:** Merged `fix-j-imagefilter` branch into master. Corrected the native Horizontal Wide Filter logic to prevent over-aggressive digit trimming.
+- **Improvements:**
+    - **Logic Refinement:** Transitioned from aggregate (total row) pixel summation to **contiguous max-run** tracking in `NativeImageUtils.cpp`.
+    - **Digit Integrity:** Ensured that valid digits connected to frames (e.g., Set J, image 94) are no longer sliced by the frame-removal filter.
+    - **Verification:** Audited all other run-length loops in the native codebase and confirmed they correctly handle contiguity.
+- **Files Modified:**
+    - `app/src/main/cpp/NativeImageUtils.cpp`
+
 ## [2026-06-07] - Kotlin Whitespace & Style Rectification
 - **Activity:** Merged `fix-whitespace` branch into master. Performed a repository-wide automated cleanup of Kotlin formatting violations.
 - **Improvements:**
