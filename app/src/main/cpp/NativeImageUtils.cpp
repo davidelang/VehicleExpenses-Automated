@@ -2206,8 +2206,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
     if (nLabels <= 2) return; // 1 background + 1 object? nothing to connect
 
-    float dxLimit = 0.30f * vSW;
-    float dyLimit = 0.30f * hSW;
+    float dxLimit = 0.50f * vSW;
+    float dyLimit = 0.50f * hSW;
 
     for (int i = 1; i < nLabels; ++i) {
         int w1 = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -2226,38 +2226,36 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
             int b2 = t2 + h2;
 
             // Calculate gaps
-            // dx: horizontal distance between boxes
             int dx = 0;
             if (r1 <= l2) dx = l2 - r1;
             else if (r2 <= l1) dx = l1 - r2;
 
-            // dy: vertical distance between boxes
             int dy = 0;
             if (b1 <= t2) dy = t2 - b1;
             else if (b2 <= t1) dy = t1 - b2;
 
-            bool vOverlap = (std::max(t1, t2) <= std::min(b1, b2) + 2); // 2px margin
-            bool hOverlap = (std::max(l1, l2) <= std::min(r1, r2) + 2); // 2px margin
+            bool vOverlap = (std::max(t1, t2) <= std::min(b1, b2) + 2);
+            bool hOverlap = (std::max(l1, l2) <= std::min(r1, r2) + 2);
 
             bool shouldConnect = false;
             cv::Point p1, p2;
+            const char* type = "";
 
             if (vOverlap && dx > 0 && (float)dx < dxLimit) {
-                // Connect horizontally
                 shouldConnect = true;
+                type = "HORIZ";
                 int cy = (std::max(t1, t2) + std::min(b1, b2)) / 2;
                 p1 = cv::Point(r1 <= l2 ? r1 - 1 : l1, cy);
                 p2 = cv::Point(r1 <= l2 ? l2 : r2 - 1, cy);
             } else if (hOverlap && dy > 0 && (float)dy < dyLimit) {
-                // Connect vertically
                 shouldConnect = true;
+                type = "VERT";
                 int cx = (std::max(l1, l2) + std::min(r1, r2)) / 2;
                 p1 = cv::Point(cx, b1 <= t2 ? b1 - 1 : t1);
                 p2 = cv::Point(cx, b1 <= t2 ? t2 : b2 - 1);
             } else if (dx > 0 && (float)dx < dxLimit && dy > 0 && (float)dy < dyLimit) {
-                // Corner connection
                 shouldConnect = true;
-                // Find closest corners
+                type = "CORNER";
                 int cx1 = (r1 <= l2) ? r1 - 1 : l1;
                 int cy1 = (b1 <= t2) ? b1 - 1 : t1;
                 int cx2 = (r1 <= l2) ? l2 : r2 - 1;
@@ -2267,6 +2265,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
             }
 
             if (shouldConnect) {
+                __android_log_print(ANDROID_LOG_INFO, "NativeImageUtils", "CONNECT: %d & %d, type=%s, dx=%d, dy=%d", i, j, type, dx, dy);
                 cv::line(*mat, p1, p2, cv::Scalar(255), 1);
             }
         }

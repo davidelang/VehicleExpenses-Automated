@@ -33,3 +33,17 @@
 - [x] Resolve jq Plan Mode Block
     - [x] Update `auto-saved.toml` with high-priority regex for jq.
     - [x] Commit and sync rules across all worktrees.
+
+- [x] Implement Gap-Connecting Filter for Set J Bin Workflow
+    - [x] Update TODO.md
+    - [x] Implement nativeConnectSegmentsH in NativeImageUtils.cpp
+    - [x] Add JNI mapping and Kotlin wrapper in NativeImageUtils.kt
+    - [x] Integrate into ExperimentAlignmentScreen.kt for set_j
+    - [x] Forensic Audit and Build Validation
+
+- [ ] Refine Gap-Connecting Filter (Take 2)
+    - [x] Update TODO.md
+    - [x] Update `nativeConnectSegmentsH` with 0.5*SW limit and logging in `NativeImageUtils.cpp`
+    - [x] Add `post_cleaning` snapshot in `ExperimentAlignmentScreen.kt`
+    - [ ] Forensic Audit and Build Validation
+
