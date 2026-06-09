@@ -2195,19 +2195,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAlign
     return resultArr;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" JNIEXPORT jint JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConnectSegmentsH(
     JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return 0;
 
     cv::Mat labels, stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
-    if (nLabels <= 2) return; // 1 background + 1 object? nothing to connect
+    if (nLabels <= 2) return 0;
 
     float dxLimit = 0.50f * vSW;
     float dyLimit = 0.50f * hSW;
+    int connections = 0;
 
     for (int i = 1; i < nLabels; ++i) {
         int w1 = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -2225,51 +2226,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
             int r2 = l2 + w2;
             int b2 = t2 + h2;
 
-            // Calculate gaps
-            int dx = 0;
-            if (r1 <= l2) dx = l2 - r1;
-            else if (r2 <= l1) dx = l1 - r2;
+            // Gap between boxes (0 if they overlap)
+            int dx = (r1 < l2) ? (l2 - r1) : ((r2 < l1) ? (l1 - r2) : 0);
+            int dy = (b1 < t2) ? (t2 - b1) : ((b2 < t1) ? (t1 - b2) : 0);
 
-            int dy = 0;
-            if (b1 <= t2) dy = t2 - b1;
-            else if (b2 <= t1) dy = t1 - b2;
+            if ((float)dx < dxLimit && (float)dy < dyLimit) {
+                 __android_log_print(ANDROID_LOG_INFO, "NativeImage", "CONNECT: %d & %d, dx=%d, dy=%d", i, j, dx, dy);
+                 
+                 // Find closest points for the line
+                 int x1 = (r1 < l2) ? r1-1 : (r2 < l1 ? l1 : (l1+r1)/2);
+                 int y1 = (b1 < t2) ? b1-1 : (b2 < t1 ? t1 : (t1+b1)/2);
+                 int x2 = (r1 < l2) ? l2 : (r2 < l1 ? r2-1 : (l2+r2)/2);
+                 int y2 = (b1 < t2) ? t2 : (b2 < l1 ? b2-1 : (t2+b2)/2);
 
-            bool vOverlap = (std::max(t1, t2) <= std::min(b1, b2) + 2);
-            bool hOverlap = (std::max(l1, l2) <= std::min(r1, r2) + 2);
-
-            bool shouldConnect = false;
-            cv::Point p1, p2;
-            const char* type = "";
-
-            if (vOverlap && dx > 0 && (float)dx < dxLimit) {
-                shouldConnect = true;
-                type = "HORIZ";
-                int cy = (std::max(t1, t2) + std::min(b1, b2)) / 2;
-                p1 = cv::Point(r1 <= l2 ? r1 - 1 : l1, cy);
-                p2 = cv::Point(r1 <= l2 ? l2 : r2 - 1, cy);
-            } else if (hOverlap && dy > 0 && (float)dy < dyLimit) {
-                shouldConnect = true;
-                type = "VERT";
-                int cx = (std::max(l1, l2) + std::min(r1, r2)) / 2;
-                p1 = cv::Point(cx, b1 <= t2 ? b1 - 1 : t1);
-                p2 = cv::Point(cx, b1 <= t2 ? t2 : b2 - 1);
-            } else if (dx > 0 && (float)dx < dxLimit && dy > 0 && (float)dy < dyLimit) {
-                shouldConnect = true;
-                type = "CORNER";
-                int cx1 = (r1 <= l2) ? r1 - 1 : l1;
-                int cy1 = (b1 <= t2) ? b1 - 1 : t1;
-                int cx2 = (r1 <= l2) ? l2 : r2 - 1;
-                int cy2 = (b1 <= t2) ? t2 : b2 - 1;
-                p1 = cv::Point(cx1, cy1);
-                p2 = cv::Point(cx2, cy2);
-            }
-
-            if (shouldConnect) {
-                __android_log_print(ANDROID_LOG_INFO, "NativeImageUtils", "CONNECT: %d & %d, type=%s, dx=%d, dy=%d", i, j, type, dx, dy);
-                cv::line(*mat, p1, p2, cv::Scalar(255), 1);
+                 cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 2);
+                 connections++;
             }
         }
     }
+    return connections;
 }
 
 extern "C" JNIEXPORT void JNICALL

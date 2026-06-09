@@ -1175,7 +1175,10 @@ private suspend fun runBinTrialsPaddle(
             val postCleaningP4 = matToPbmP4Base64(odoBuffer.p.mat)
             trialsMeta["trial_${vIdx}_post_cleaning_1bpp"] = postCleaningP4
 
-            NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
+            val connectCount = NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
+            trialsMeta["trial_${vIdx}_connect_count"] = connectCount.toString()
+            android.util.Log.i("NativeImage", "TRIAL $vIdx CONNECT COUNT: $connectCount")
+
             val preRollP4 = matToPbmP4Base64(odoBuffer.p.mat)
             trialsMeta["trial_${vIdx}_pre_roll_1bpp"] = preRollP4
 

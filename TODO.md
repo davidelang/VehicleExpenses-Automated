@@ -36,3 +36,10 @@
 - [x] Refactor jq Rule and Whitelist ls
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
+
+- [ ] Implement Gap-Connecting Filter (Take 3)
+    - [x] Update TODO.md
+    - [ ] Implement simplified nativeConnectSegmentsH in NativeImageUtils.cpp
+    - [ ] Update JNI Mapping in NativeImageUtils.kt
+    - [ ] Integrate into ExperimentAlignmentScreen.kt for set_j
+    - [ ] Forensic Audit and Build Validation
