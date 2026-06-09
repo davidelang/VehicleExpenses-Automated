@@ -57,7 +57,8 @@
     - [x] Forensic Audit and Build Validation
 
 
-- [ ] Implement Gap-Connecting Filter (Take 5 - Iterative Precise)
+- [x] Implement Gap-Connecting Filter (Take 5 - Iterative Precise)
     - [x] Update TODO.md
-    - [ ] Implement iterative 1px welding logic in NativeImageUtils.cpp
-    - [ ] Forensic Audit and Build Validation
+    - [x] Implement iterative 1px welding logic in NativeImageUtils.cpp
+    - [x] Forensic Audit and Build Validation
+
