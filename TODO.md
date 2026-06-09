@@ -30,3 +30,6 @@
     - [x] Update `plans.toml` with robust whitespace regex.
     - [x] Update `auto-saved.toml` to allow `jq` in Plan Mode.
     - [x] Commit and sync rules across all worktrees.
+- [/] Resolve jq Plan Mode Block
+    - [ ] Update `auto-saved.toml` with high-priority regex for jq.
+    - [ ] Commit and sync rules across all worktrees.
