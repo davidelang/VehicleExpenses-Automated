@@ -2237,13 +2237,22 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
                 if ((float)dx < limit && (float)dy < limit) {
                     __android_log_print(ANDROID_LOG_INFO, "NativeImage", "WELDING: Pass %d, %d & %d, dx=%d, dy=%d", pass, i, j, dx, dy);
                     
-                    // Endpoint math: if separate, bridge boundaries. If overlapping, use shared center.
-                    int x1 = (r1 <= l2) ? r1 - 1 : ((r2 <= l1) ? l1 : (std::max(l1, l2) + std::min(r1, r2)) / 2);
-                    int y1 = (b1 <= t2) ? b1 - 1 : ((b2 <= t1) ? t1 : (std::max(t1, t2) + std::min(b1, b2)) / 2);
-                    int x2 = (r1 <= l2) ? l2 : ((r2 <= l1) ? r2 - 1 : (std::max(l1, l2) + std::min(r1, r2)) / 2);
-                    int y2 = (b1 <= t2) ? t2 : ((b2 <= t1) ? b2 - 1 : (std::max(t1, t2) + std::min(b1, b2)) / 2);
+                    // Endpoint math: extend bridge 3 pixels INTO each segment to guarantee physical contact.
+                    int sharedX = (std::max(l1, l2) + std::min(r1, r2)) / 2;
+                    int sharedY = (std::max(t1, t2) + std::min(b1, b2)) / 2;
 
-                    cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 1);
+                    int x1 = (r1 <= l2) ? r1 - 3 : ((r2 <= l1) ? l1 + 2 : sharedX);
+                    int y1 = (b1 <= t2) ? b1 - 3 : ((b2 <= t1) ? t1 + 2 : sharedY);
+                    int x2 = (r1 <= l2) ? l2 + 2 : ((r2 <= l1) ? r2 - 3 : sharedX);
+                    int y2 = (b1 <= t2) ? t2 + 2 : ((b2 <= t1) ? b2 - 3 : sharedY);
+
+                    // Clamp to image boundaries
+                    x1 = std::max(0, std::min(mat->cols - 1, x1));
+                    y1 = std::max(0, std::min(mat->rows - 1, y1));
+                    x2 = std::max(0, std::min(mat->cols - 1, x2));
+                    y2 = std::max(0, std::min(mat->rows - 1, y2));
+
+                    cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 3);
                     totalConnections++;
                     changed = true;
                     goto next_pass;

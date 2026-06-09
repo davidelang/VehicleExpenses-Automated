@@ -62,3 +62,8 @@
     - [x] Implement iterative 1px welding logic in NativeImageUtils.cpp
     - [x] Forensic Audit and Build Validation
 
+
+- [ ] Implement Gap-Connecting Filter (Take 6 - Deep Hook)
+    - [x] Update TODO.md
+    - [ ] Implement robust deep-hook welding in NativeImageUtils.cpp
+    - [ ] Forensic Audit and Build Validation
