@@ -63,9 +63,10 @@ modes = [ "default", "autoEdit", "yolo" ]
 
 [[rule]]
 decision = "allow"
-priority = 950
+priority = 1000
 toolName = "run_shell_command"
-commandPrefix = [ "jq" ]
+commandRegex = "^jq\\s+.*"
+allowRedirection = true
 modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
