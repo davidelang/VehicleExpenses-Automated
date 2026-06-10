@@ -95,6 +95,24 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
         val detBufferSet: BufferSet get() = _detBufferSet!!
         val recBufferSet: BufferSet get() = _recBufferSet!!
+        private val bufferLarge: FloatArray get() = _bufferLarge!!
+        val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
+        val sharedCanvas2048: Canvas get() = _sharedCanvas2048!!
+        private val bufferSmall: FloatArray get() = _bufferSmall!!
+        private val bufferRec: FloatArray get() = _bufferRec!!
+        val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
+        val sharedBmpOdoScratch: Bitmap get() = _sharedBmpOdoScratch!!
+        val sharedCanvasOdoScratch: Canvas get() = _sharedCanvasOdoScratch!!
+        val redPaint: Paint get() = _redPaint!!
+        val bluePaint4: Paint get() = _bluePaint4!!
+        val yellowPaint2: Paint get() = _yellowPaint2!!
+        val orangePaint: Paint get() = _orangePaint!!
+        val grayToAlphaPaint: Paint get() = _grayToAlphaPaint!!
+        val alphaToGrayPaint: Paint get() = _alphaToGrayPaint!!
+        val srcPaint = Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC) }
+        val sharedBuffer: java.nio.ByteBuffer get() = _sharedBuffer!!
+        val sharedBytes: ByteArray get() = _sharedBytes!!
+        val sharedMatrix = android.graphics.Matrix()
 
         fun getOdoBuffer(vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
             val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
@@ -542,7 +560,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             else -> throw IllegalArgumentException("Unsupported input type for recognizeNumeric")
         }
 
-        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = w, imageHeight = h)
+        if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
 
         val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS)
         OcrResult(
