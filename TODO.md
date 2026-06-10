@@ -48,3 +48,9 @@
     - [x] Lower minProb gate to 0.80 in ExperimentAlignmentScreen.kt
     - [x] Forensic Audit and Build Validation
 
+
+- [ ] Finalize Ground Truth and PR
+    - [x] Update TODO.md
+    - [ ] Remove ? from line 141 in ground_truth_odo.json
+    - [ ] Perform 5-commit history cleanup
+    - [ ] Generate PR
