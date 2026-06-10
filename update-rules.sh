@@ -78,5 +78,14 @@ for WT in $WORKTREES; do
     )
 done
 
+# 5. Promote Policies to User-tier (ensure they are active)
+USER_POLICY_DIR="$HOME/.gemini/policies"
+echo ">>> Promoting policies to User-tier: $USER_POLICY_DIR"
+mkdir -p "$USER_POLICY_DIR"
+
+# Copy repo policies to system with project-specific prefixes to avoid collisions
+cp "$SOURCE_DIR/.gemini/policies/plans.toml" "$USER_POLICY_DIR/vehicle_expenses_plans.toml"
+cp "$SOURCE_DIR/.gemini/policies/auto-saved.toml" "$USER_POLICY_DIR/vehicle_expenses_auto_saved.toml"
+
 echo "--- Rule Update Sync Complete ---"
 echo "Status: All worktrees are now synchronized with $SOURCE_DIR."

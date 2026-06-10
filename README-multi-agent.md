@@ -70,9 +70,11 @@ Once work is completed and merged into `master`:
 
 ### 2.4. Operational Notes
 - **Directory Naming:** Physical worktrees are named `agent-1`, `agent-2`, etc., to allow for re-use. Use the branch-name symlinks for navigation.
-- **Shared Brain:** All agent directories use **hard links** for rules in `.gemini/` and `new_agent_prompt`. 
-    - **⚠️ WARNING:** These files are set to **Read-Only**. Modifying them in one place changes them everywhere.
-    - **To Update Rules:** You must be in the orchestration root, `chmod 644 <file>`, edit, and `chmod 444 <file>` to restore protection.
-- **Sandbox Access:** Access the sandbox directly using the absolute path: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
+- **Shared Infrastructure:** Agent rules and mandates are physical copies synced via `./update-rules.sh`.
+- **Sandbox Access:** Access the sandbox using the absolute path: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
 - **Build/Deploy:** Always run `./build_app` and `./deploy` from **inside** the specific agent directory/symlink. They are branch-aware.
-rectory/symlink. They are branch-aware.
+
+### 2.5. Infrastructure Constraints (CRITICAL)
+
+**Plan Mode "Safe-List":**
+While in Plan Mode, the `run_shell_command` tool is restricted to a hardcoded "Safe List" of binaries (e.g., `cat`, `grep`, `awk`, `python3`, `git`). Commands NOT on this list, including `jq`, are blocked with a "Execution of scripts is blocked" error, even if whitelisted in policies.
