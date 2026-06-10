@@ -1041,7 +1041,7 @@ private suspend fun runBinTrialsPaddle(
                 threshold, "ERR: Peak detection failed (No bounding box detected)", 0f, 0f, "",
                 "", tPlainPreB64, "", "", "",
                 "Peak detection failed (No bounding box detected).", 0f, emptyMap(),
-                "", annStr
+                "", annStr, ""
             ))
             trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
@@ -1083,7 +1083,7 @@ private suspend fun runBinTrialsPaddle(
                 threshold, "ERR: Peak detection failed (vSW_red=$vSW_red, hSW_red=$hSW_red)", 0f, 0f, "",
                 "", tPlainPreB64, "", "", "",
                 histsHtml.toString(), 0f, emptyMap(),
-                "", annStr
+                "", annStr, ""
             ))
             trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
@@ -1148,9 +1148,9 @@ private suspend fun runBinTrialsPaddle(
                 threshold, "ERR: Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW)", 0f, 0f, "",
                 "", tPlainPreB64, "", tAnnotatedPostB64, tPlainPostB64,
                 histsHtml.toString(), 0f, emptyMap(),
-                post1bpp, annStr
+                post1bpp, annStr, ""
             ))
-            trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
+            // trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
             trialsMeta["trial_${vIdx}_annotations"] = annStr
             return@forEachIndexed
         }
@@ -1168,12 +1168,13 @@ private suspend fun runBinTrialsPaddle(
         )
 
         var tPlainPreRollingB64 = ""
+        var postCleaningP4 = ""
         val valleyResults = if (pipelineKey == "set_j") {
             val preCleanedP4 = matToPbmP4Base64(odoBuffer.p.mat)
             // trialsMeta["trial_${vIdx}_pre_cleaned_1bpp"] = preCleanedP4
 
             NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
-            val postCleaningP4 = matToPbmP4Base64(odoBuffer.p.mat)
+            postCleaningP4 = matToPbmP4Base64(odoBuffer.p.mat)
             // trialsMeta["trial_${vIdx}_post_cleaning_1bpp"] = postCleaningP4
 
             val connectCount = NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
