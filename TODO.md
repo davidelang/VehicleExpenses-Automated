@@ -36,3 +36,10 @@
 - [x] Refactor jq Rule and Whitelist ls
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
+
+- [ ] Merge and Integrate improve-vehicle-odo-setup
+    - [ ] Sync PR document to shared dev-ai-interaction/PRs/
+    - [ ] Merge improve-vehicle-odo-setup branch into master (--no-ff)
+    - [ ] Verify build success via ./build_app
+    - [ ] Update global 'works' tag
+    - [ ] Update ENGINEERING_LOG.md with merge details
