@@ -2202,77 +2202,71 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return 0;
 
-    float limit = 0.50f * std::max(vSW, hSW);
+    float dxLimit = 0.50f * vSW;
+    float dyLimit = 0.50f * hSW;
     int totalConnections = 0;
     bool changed = true;
     int pass = 0;
 
-    while (changed && pass < 5) {
+    while (changed && pass < 3) {
         changed = false;
         pass++;
         cv::Mat labels, stats, centroids;
         int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
         if (nLabels <= 2) break;
 
-        for (int i = 1; i < nLabels; ++i) {
-            int w1 = stats.at<int>(i, cv::CC_STAT_WIDTH);
-            int h1 = stats.at<int>(i, cv::CC_STAT_HEIGHT);
-            int l1 = stats.at<int>(i, cv::CC_STAT_LEFT);
-            int t1 = stats.at<int>(i, cv::CC_STAT_TOP);
-            int r1 = l1 + w1;
-            int b1 = t1 + h1;
-
-            for (int j = i + 1; j < nLabels; ++j) {
-                int w2 = stats.at<int>(j, cv::CC_STAT_WIDTH);
-                int h2 = stats.at<int>(j, cv::CC_STAT_HEIGHT);
-                int l2 = stats.at<int>(j, cv::CC_STAT_LEFT);
-                int t2 = stats.at<int>(j, cv::CC_STAT_TOP);
-                int r2 = l2 + w2;
-                int b2 = t2 + h2;
-
-                // Precise gap calculation
-                int dx = (r1 < l2) ? (l2 - r1) : ((r2 < l1) ? (l1 - r2) : 0);
-                int dy = (b1 < t2) ? (t2 - b1) : ((b2 < t1) ? (t1 - b2) : 0);
-
-                if ((float)dx < limit && (float)dy < limit) {
-                    __android_log_print(ANDROID_LOG_INFO, "NativeImage", "WELDING: Pass %d, %d & %d, dx=%d, dy=%d", pass, i, j, dx, dy);
-                    
-                    int cx = (std::max(l1, l2) + std::min(r1, r2)) / 2;
-                    int cy = (std::max(t1, t2) + std::min(b1, b2)) / 2;
-                    cv::Rect bridge;
-
-                    if (dy > 0) {
-                        // Vertical gap: 3px wide, spans gap + 2px hooks.
-                        int y_start = (b1 <= t2) ? b1 - 2 : b2 - 2;
-                        int y_end = (b1 <= t2) ? t2 + 2 : t1 + 2;
-                        bridge = cv::Rect(cx - 1, y_start, 3, std::max(1, y_end - y_start));
-                    } else if (dx > 0) {
-                        // Horizontal gap: spans gap + 2px hooks, 3px high.
-                        int x_start = (r1 <= l2) ? r1 - 2 : r2 - 2;
-                        int x_end = (r1 <= l2) ? l2 + 2 : l1 + 2;
-                        bridge = cv::Rect(x_start, cy - 1, std::max(1, x_end - x_start), 3);
-                    } else {
-                        // Overlap: 5x5 square at center to force merge.
-                        bridge = cv::Rect(cx - 2, cy - 2, 5, 5);
+        // Vertical Scan for Vertical Gaps (dy)
+        for (int x = 0; x < mat->cols; ++x) {
+            int lastInkY = -1;
+            int lastID = -1;
+            for (int y = 0; y < mat->rows; ++y) {
+                int id = labels.at<int>(y, x);
+                if (id > 0) {
+                    if (lastID > 0 && lastID != id) {
+                        int gap = y - lastInkY - 1;
+                        if (gap > 0 && (float)gap < dyLimit) {
+                            // Bridge specific pixels in this column
+                            for (int gy = lastInkY + 1; gy < y; ++gy) {
+                                mat->at<uint8_t>(gy, x) = 255;
+                            }
+                            totalConnections++;
+                            changed = true;
+                        }
                     }
-
-                    // Boundary Clamping
-                    if (bridge.x < 0) bridge.x = 0;
-                    if (bridge.y < 0) bridge.y = 0;
-                    if (bridge.x + bridge.width > mat->cols) bridge.width = mat->cols - bridge.x;
-                    if (bridge.y + bridge.height > mat->rows) bridge.height = mat->rows - bridge.y;
-
-                    if (bridge.width > 0 && bridge.height > 0) {
-                        mat->operator()(bridge).setTo(cv::Scalar(255));
-                    }
-
-                    totalConnections++;
-                    changed = true;
-                    goto next_pass;
+                    lastInkY = y;
+                    lastID = id;
                 }
             }
         }
-        next_pass:;
+
+        // Horizontal Scan for Horizontal Gaps (dx)
+        for (int y = 0; y < mat->rows; ++y) {
+            int lastInkX = -1;
+            int lastID = -1;
+            auto* rowPtr = mat->ptr<uint8_t>(y);
+            auto* labelPtr = labels.ptr<int>(y);
+            for (int x = 0; x < mat->cols; ++x) {
+                int id = labelPtr[x];
+                if (id > 0) {
+                    if (lastID > 0 && lastID != id) {
+                        int gap = x - lastInkX - 1;
+                        if (gap > 0 && (float)gap < dxLimit) {
+                            for (int gx = lastInkX + 1; gx < x; ++gx) {
+                                rowPtr[gx] = 255;
+                            }
+                            totalConnections++;
+                            changed = true;
+                        }
+                    }
+                    lastInkX = x;
+                    lastID = id;
+                }
+            }
+        }
+    }
+
+    if (totalConnections > 0) {
+        __android_log_print(ANDROID_LOG_INFO, "NativeImage", "PIXEL-WELD: Total bridges across passes: %d", totalConnections);
     }
     return totalConnections;
 }

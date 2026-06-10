@@ -42,3 +42,8 @@
     - [x] Implement surgical iterative welding in NativeImageUtils.cpp
     - [x] Forensic Audit and Build Validation
 
+
+- [ ] Implement Gap-Connecting Filter (Take 8 - Pixel-Aware Scan)
+    - [x] Update TODO.md
+    - [ ] Implement pixel-scanning welding logic in NativeImageUtils.cpp
+    - [ ] Forensic Audit and Build Validation
