@@ -1,13 +1,9 @@
 # TODO
 
-- [ ] Fix Quick Fill Stability & Photo Persistence
-    - [ ] Implement stride-aware native borrowing in `BufferSet.cpp`.
-    - [ ] Add `det`, `rec` BufferSets and `vehicleOdoBuffers` map to `NativePaddleEngine.kt`.
-    - [ ] Add `calculatePaddleAngleOptimized` benchmark to `OdometerOcrUtils.kt`.
-    - [ ] Update `ExperimentAlignmentScreen.kt` with deskew benchmark telemetry.
-    - [ ] Implement optimized (no-flip) bin-trials and unified identity in `OcrHarness.kt`.
-    - [ ] Implement unified 12MP capture, background save, and busy spinner in `QuickFillupScreen.kt`.
-- [x] Fix Quick Fill Pipeline
+- [ ] Update Set E to Optimized Deskew Angle
+    - [ ] Integrate optimized deskew into `DeskewResult` and `calculateAverageTextAngle`.
+    - [ ] Switch `set_e` pipeline to use `paddleOptimizedAngle`.
+- [x] Fix Quick Fill Stability & Photo Persistence
     - [x] Auto-select vehicle based on discovered landmarks.
     - [x] Save comprehensive debug JSON to disk for ADB retrieval.
 - [x] Implement Quick Fill & Buffer Borrowing Pipeline

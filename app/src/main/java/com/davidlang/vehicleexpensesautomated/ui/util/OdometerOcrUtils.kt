@@ -89,6 +89,8 @@ object OdometerOcrUtils {
         val mlTimeMs: Long,
         val paddleTimeMs: Long,
         val paddleCppAngle: Float = 0f,
+        val paddleOptimizedAngle: Float = 0f,
+        val paddleOptimizedTimeMs: Long = 0L,
         val mlBlocks: List<TextBlock> = emptyList(),
         val paddleBlocks: List<TextBlock> = emptyList(),
         val paddleCppBlocks: List<TextBlock> = emptyList(),
@@ -99,7 +101,10 @@ object OdometerOcrUtils {
     suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
         val t0 = System.currentTimeMillis()
 
-        // 1. Unified Preparation (Bitmap or BufferSet.Slice)
+        // 1. Optimized Paddle Path (Benchmark/Production Version)
+        val (optAngle, optTime) = calculatePaddleAngleOptimized(input)
+
+        // 2. Unified Preparation for Legacy Path (Bitmap or BufferSet.Slice)
         val pTargetSize = 2048
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
 
@@ -120,7 +125,7 @@ object OdometerOcrUtils {
 
         val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
 
-        // 2. Native Resize into workspace (top-left)
+        // 3. Native Resize into workspace (top-left) - Legacy uses INTER_AREA
         if (input is Bitmap) {
             val argbMat = Mat()
             org.opencv.android.Utils.bitmapToMat(input, argbMat)
@@ -137,13 +142,13 @@ object OdometerOcrUtils {
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
 
-        // 3. ML Kit Path
+        // 4. ML Kit Path
         val tMl0 = System.currentTimeMillis()
         val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
-        // 4. Paddle Path (Combined V3 Kotlin + C++ Native)
+        // 5. Paddle Path (Combined V3 Kotlin + C++ Native)
         val tPd0 = System.currentTimeMillis()
         val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
         val tPd = System.currentTimeMillis() - tPd0
@@ -160,6 +165,8 @@ object OdometerOcrUtils {
             mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
             paddleCppAngle = paddleCppAngle,
+            paddleOptimizedAngle = optAngle,
+            paddleOptimizedTimeMs = optTime,
             mlBlocks = mlRes.blocks,
             paddleBlocks = pdRes.blocks,
             paddleCppBlocks = pdRes.cppBlocks,

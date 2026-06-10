@@ -285,7 +285,7 @@ private suspend fun runExperiment(
 
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
-        PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
+        PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
         PipelineConfig("set_j", "Set J (CC Speedup)", { it.paddleTimeMs }) { it.paddleCppAngle }
     )
     val harnessEngineNames = listOf("Set A ML") + pipelines.map { "${it.displayName} Paddle" }
@@ -334,13 +334,7 @@ private suspend fun runExperiment(
             try {
                 // Step 2 (Deskew): Calculate tilt independently for Set A/E
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
-                val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(NativePaddleEngine.bufferSetA.p)
                 
-                // Add to photo results for JSON serialization
-                val extraMeta = mutableMapOf<String, String>()
-                extraMeta["paddle_optimized_angle"] = optAngle.toString()
-                extraMeta["paddle_optimized_time_ms"] = optTime.toString()
-
                 val tilt = deskewResA.angle
                 val tMl = deskewResA.mlTimeMs
                 val tPd = deskewResA.paddleTimeMs
@@ -569,8 +563,7 @@ private suspend fun runExperiment(
 
                 val photoJson = serializePhotoResultToJson(
                     originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded,
-                    meta.diagnostic, photoResult!!, vehicles, deskewResA, tSnapOrig, tSnapAlign,
-                    optAngle, optTime
+                    meta.diagnostic, photoResult!!, vehicles, deskewResA, tSnapOrig, tSnapAlign
                 )
                 
                 val prefix = if (firstJsonResult) "" else ",\n"
@@ -621,8 +614,7 @@ private fun serializePhotoResultToJson(
     lineNumber: Int, probedW: Int, probedH: Int, decodedW: Int, decodedH: Int, isDegraded: Boolean,
     nativeProbe: String, photoResult: ProcessedPhotoResult, vehicles: List<Vehicle>,
     deskewResA: OdometerOcrUtils.DeskewResult? = null,
-    tSnapOrig: Long = 0, tSnapAlign: Long = 0,
-    optAngle: Float = 0f, optTime: Long = 0
+    tSnapOrig: Long = 0, tSnapAlign: Long = 0
 ): JSONObject {
     val root = JSONObject()
     root.apply {
@@ -636,8 +628,8 @@ private fun serializePhotoResultToJson(
         put("nativeProbe", nativeProbe)
         put("t_thumb_orig_ms", tSnapOrig)
         put("t_snap_align_ms", tSnapAlign)
-        put("paddle_optimized_angle", optAngle.toDouble())
-        put("paddle_optimized_time_ms", optTime)
+        put("paddle_optimized_angle", deskewResA?.paddleOptimizedAngle?.toDouble() ?: 0.0)
+        put("paddle_optimized_time_ms", deskewResA?.paddleOptimizedTimeMs ?: 0L)
 
         // Pathway Serialization (Phase 116)
         val pathwaysJson = JSONObject()
