@@ -1047,17 +1047,11 @@ object OdometerOcrUtils {
                         var w = obj.getDouble("w")
                         var h = obj.getDouble("h")
                         val instanceId = if (obj.has("instance")) obj.getInt("instance") else -1
-                        val isIcrs = obj.optBoolean("is_icrs", false)
-
-                        val centerPix = if (isIcrs) {
-                            IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
-                        } else {
-                            android.graphics.PointF((cx * imgW).toFloat(), (cy * imgH).toFloat())
-                        }
+                        val centerPix = IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
 
                         val shortEdge = minOf(imgW, imgH).toDouble()
-                        val pixW = if (isIcrs) (w * shortEdge) else (w * imgW)
-                        val pixH = if (isIcrs) (h * shortEdge) else (h * imgH)
+                        val pixW = (w * shortEdge)
+                        val pixH = (h * shortEdge)
 
                         val left = (centerPix.x - pixW / 2.0).toInt()
                         val top = (centerPix.y - pixH / 2.0).toInt()
