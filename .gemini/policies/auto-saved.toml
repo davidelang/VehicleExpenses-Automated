@@ -19,7 +19,7 @@ toolName = "enter_plan_mode"
 modes = [ "default", "autoEdit", "yolo" ]
 [[rule]]
 decision = "allow"
-priority = 1000
+priority = 999
 toolName = "run_shell_command"
 commandPrefix = [ "jq" ]
 allowRedirection = true
