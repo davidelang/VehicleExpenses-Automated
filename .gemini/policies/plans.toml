@@ -37,6 +37,14 @@ decision = "allow"
 priority = 800
 modes = ["plan"]
 
+# Whitelist jq specifically at high priority to override script blocks
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "jq"
+decision = "allow"
+priority = 999
+modes = ["plan"]
+
 # Explicitly block commands that attempt to traverse out of the sandbox via relative paths
 [[rule]]
 toolName = "run_shell_command"
