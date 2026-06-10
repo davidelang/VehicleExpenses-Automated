@@ -1169,7 +1169,7 @@ private suspend fun runBinTrialsPaddle(
         var tPlainPreRollingB64 = ""
         val valleyResults = if (pipelineKey == "set_j") {
             val preCleanedP4 = matToPbmP4Base64(odoBuffer.p.mat)
-            trialsMeta["trial_${vIdx}_pre_cleaned_1bpp"] = preCleanedP4
+            // trialsMeta["trial_${vIdx}_pre_cleaned_1bpp"] = preCleanedP4
 
             NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
             val postCleaningP4 = matToPbmP4Base64(odoBuffer.p.mat)
@@ -1180,7 +1180,7 @@ private suspend fun runBinTrialsPaddle(
             android.util.Log.i("NativeImage", "TRIAL $vIdx CONNECT COUNT: $connectCount")
 
             val preRollP4 = matToPbmP4Base64(odoBuffer.p.mat)
-            trialsMeta["trial_${vIdx}_pre_roll_1bpp"] = preRollP4
+            // trialsMeta["trial_${vIdx}_pre_roll_1bpp"] = preRollP4
 
             val (snapB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
             tPlainPreRollingB64 = snapB64
@@ -1361,12 +1361,7 @@ private suspend fun runBinTrialsPaddle(
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
         val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.40f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.40]</span> " else "[REJECTED: Sum defeated]"
 
-        val preCleanPlain = if (t.plainPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPreB64}'><br>" else ""
-        val preRollingPlain = if (t.plainPreRollingB64.isNotEmpty()) "<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br><img src='data:image/jpeg;base64,${t.plainPreRollingB64}'><br>" else ""
-        val postCleanPlain = if (t.plainPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPostB64}'><br>" else ""
-        val postCleanAnnot = if (t.annotatedPostB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.annotatedPostB64}'><br>" else ""
-
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br><b>Pre-Cleaned (Binarized Only):</b><br>$preCleanPlain$preRollingPlain<b>Post-Cleaned (OCR Input):</b><br>$postCleanPlain$postCleanAnnot${t.histB64}</div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>${t.histB64}</div>")
 
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"
         if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
@@ -1381,11 +1376,11 @@ private suspend fun runBinTrialsPaddle(
             "selection_logic" to (if (winner.minProb >= 0.40f) "Filter(Min>=0.40)->Sum" else "Fallback(Sum)")
         ).apply {
             putAll(winner.metadata)
-            put("best_plain_pre", winner.plainPreB64)
-            put("best_plain_pre_rolling", winner.plainPreRollingB64)
+            // put("best_plain_pre", winner.plainPreB64)
+            // put("best_plain_pre_rolling", winner.plainPreRollingB64)
             put("best_annotated_pre", winner.annotatedPreB64)
-            put("best_plain_post", winner.plainPostB64)
-            put("best_annotated_post", winner.annotatedPostB64)
+            // put("best_plain_post", winner.plainPostB64)
+            // put("best_annotated_post", winner.annotatedPostB64)
             put("best_post_1bpp", winner.post1bppB64)
             put("best_annotations", winner.annotationsStr)
         }

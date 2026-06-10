@@ -62,3 +62,11 @@
     - [x] Remove pan direction buttons
     - [x] Forensic Audit and Build Validation
 
+- [x] Optimize Alignment Reports (Remove large images)
+    - [x] Update TODO.md
+    - [x] Remove pre-cleaning and pre-roll p4 from JSON
+    - [x] Remove pre-cleaning, pre-roll, and post-roll from HTML
+    - [x] Cleanup winner metadata
+    - [x] Forensic Audit and Build Validation
+
+
