@@ -36,3 +36,37 @@
 - [x] Refactor jq Rule and Whitelist ls
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
+
+- [x] Final Tuning of Gap-Welding Filter
+    - [x] Update TODO.md
+    - [x] Update dyLimit to 0.75 * hSW in NativeImageUtils.cpp
+    - [x] Forensic Audit and Build Validation
+
+
+- [x] Fix Odometer Selection Regression
+    - [x] Update TODO.md
+    - [x] Lower minProb gate to 0.80 in ExperimentAlignmentScreen.kt
+    - [x] Forensic Audit and Build Validation
+
+
+- [x] Finalize Ground Truth and PR
+    - [x] Update TODO.md
+    - [x] Remove ? from line 141 in ground_truth_odo.json
+    - [x] Perform 5-commit history cleanup
+    - [x] Generate PR
+
+- [x] Refine ManageVehiclesScreen UI Layout
+    - [x] Update TODO.md
+    - [x] Consolidate crop buttons into a single row
+    - [x] Move zoom controls to top-right vertical stack
+    - [x] Remove pan direction buttons
+    - [x] Forensic Audit and Build Validation
+
+- [x] Optimize Alignment Reports (Remove large images)
+    - [x] Update TODO.md
+    - [x] Remove pre-cleaning and pre-roll p4 from JSON
+    - [x] Remove pre-cleaning, pre-roll, and post-roll from HTML
+    - [x] Cleanup winner metadata
+    - [x] Forensic Audit and Build Validation
+
+
