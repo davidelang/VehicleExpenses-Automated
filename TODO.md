@@ -36,3 +36,11 @@
 - [x] Refactor jq Rule and Whitelist ls
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
+
+- [x] Implement Deep Forensic Pruning (Final Bloat Fix)
+    - [x] Update TODO.md
+    - [x] Remove redundant "Bin" stage in ExperimentAlignmentScreen.kt
+    - [x] Prune losing vehicle data in JSON serialization
+    - [x] Purge redundant JPEGs from JSON metadata
+    - [x] Forensic Audit and Build Validation
+
