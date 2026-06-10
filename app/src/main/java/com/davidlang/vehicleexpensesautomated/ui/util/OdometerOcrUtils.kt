@@ -168,6 +168,37 @@ object OdometerOcrUtils {
         )
     }
 
+    suspend fun calculatePaddleAngleOptimized(input: Any): Pair<Float, Long> {
+        val t0 = System.currentTimeMillis()
+        val pTargetSize = 2048
+        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
+        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
+        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val targetW = (srcW * pScale).toInt(); val targetH = (srcH * pScale).toInt()
+        val alignedW = ((targetW + 31) / 32) * 32; val alignedH = ((targetH + 31) / 32) * 32
+        
+        bufferSet.p.clear()
+        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
+        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
+        
+        if (input is Bitmap) {
+            val argbMat = Mat(); org.opencv.android.Utils.bitmapToMat(input, argbMat)
+            val gray = Mat(); Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+            argbMat.release(); gray.release()
+        } else {
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+        }
+
+        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(0f, 0L)
+        val det = paddleEngine.detect(bufferSet.c[outerId].mat, alignedW, alignedH, copyHeatmap = false)
+        val cppAngle = if (det?.outputTensor != null) NativeImageUtils.heatmapToAngle(det.outputTensor, 0.20f) else 0f
+        
+        bufferSet.c[innerId].release(); bufferSet.c[outerId].release()
+        return Pair(cppAngle, System.currentTimeMillis() - t0)
+    }
+
     private suspend fun deskewMlKit(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
         val tStart = System.currentTimeMillis()
         val img = InputImage.fromByteBuffer(nv21, width, height, 0, InputImage.IMAGE_FORMAT_NV21)
