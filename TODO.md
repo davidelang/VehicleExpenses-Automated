@@ -1,5 +1,9 @@
 # TODO
 
+- [x] Implement Visual Stage Debugging & Full Telemetry
+    - [x] Add `onStage` callback and exhaustive JSON telemetry to `OcrHarness.kt`.
+    - [x] Implement visual stage display in `QuickFillupScreen.kt`.
+    - [x] Audit `ImageAlignmentUtils.kt` for 2048px to 4000px coordinate parity.
 - [ ] Update Set E to Optimized Deskew Angle
     - [ ] Integrate optimized deskew into `DeskewResult` and `calculateAverageTextAngle`.
     - [ ] Switch `set_e` pipeline to use `paddleOptimizedAngle`.

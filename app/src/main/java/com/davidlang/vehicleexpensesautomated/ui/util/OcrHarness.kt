@@ -30,12 +30,16 @@ object OcrHarness {
         context: Context,
         masterBuffer: BufferSet,
         allVehicles: List<Vehicle>,
-        debug: Boolean
+        debug: Boolean,
+        onStage: (suspend (String, Bitmap) -> Unit)? = null
     ): AutoFillResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null
         
         try {
+            // 0. Initial Snapshot
+            onStage?.invoke("Original", masterBuffer.p.toBitmap())
+
             // 1. Deskew (Paddle C++) - Optimized Version
             val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
             OdometerOcrUtils.rotate(masterBuffer, optAngle)
@@ -44,6 +48,7 @@ object OcrHarness {
                 addProperty("deskew_angle", optAngle)
                 addProperty("deskew_time_ms", optTime)
             }
+            onStage?.invoke("Deskewed", masterBuffer.p.toBitmap())
 
             // 2. Landmark Discovery (ML Kit)
             val (ocrDisc, queryLandmarks) = performLandmarkDiscovery(masterBuffer.p, context)
@@ -51,6 +56,17 @@ object OcrHarness {
             jsonDebug?.apply {
                 addProperty("discovery_text", ocrDisc.debugText)
                 addProperty("discovery_time_ms", ocrDisc.executionTimeMs)
+                val landmarksJson = JsonArray()
+                queryLandmarks.forEach { mark ->
+                    val obj = JsonObject()
+                    obj.addProperty("text", mark.text)
+                    obj.addProperty("conf", mark.confidence)
+                    val icrs = IcrsMath.pixelToIcrs(mark.boundingBox.centerX().toFloat(), mark.boundingBox.centerY().toFloat(), masterBuffer.width, masterBuffer.height)
+                    obj.addProperty("cx", icrs.x)
+                    obj.addProperty("cy", icrs.y)
+                    landmarksJson.add(obj)
+                }
+                add("discovery_landmarks", landmarksJson)
             }
 
             // 3. Identification (Tier 1 Veto)
@@ -59,7 +75,9 @@ object OcrHarness {
             val winningVehicle = allVehicles.find { it.id == winnerId }
 
             if (winningVehicle == null) {
-                return AutoFillResult(error = "Vehicle not identified", debugJson = jsonDebug?.toString())
+                val errorMsg = "Vehicle not identified"
+                jsonDebug?.addProperty("error", errorMsg)
+                return AutoFillResult(error = errorMsg, debugJson = jsonDebug?.toString())
             }
 
             jsonDebug?.apply {
@@ -69,10 +87,10 @@ object OcrHarness {
 
             // 4. Extraction (Set J)
             val referenceLandmarks = winningVehicle.landmarkTextBlocksJson?.let {
-                OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", masterBuffer.width, masterBuffer.height)
+                OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", 4000, 3072) // Refs are 4k
             } ?: emptyList()
 
-            val setJResult = runSetJPipeline(context, masterBuffer, winningVehicle, referenceLandmarks, debug)
+            val setJResult = runSetJPipeline(context, masterBuffer, winningVehicle, referenceLandmarks, debug, onStage)
             
             jsonDebug?.apply {
                 add("set_j", setJResult.jsonSection)
@@ -115,14 +133,14 @@ object OcrHarness {
 
     /**
      * Production implementation of the "Set J" pipeline.
-     * Optimized for speed but supports extensive telemetry if [debug] is enabled.
      */
     suspend fun runSetJPipeline(
         context: Context,
         masterBuffer: BufferSet,
         vehicle: Vehicle,
         referenceLandmarks: List<TextBlock>,
-        debug: Boolean = false
+        debug: Boolean = false,
+        onStage: (suspend (String, Bitmap) -> Unit)? = null
     ): OcrHarnessResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null
@@ -134,13 +152,24 @@ object OcrHarness {
         // 1. Alignment (into bufferSetA.s, then flip)
         val (ocrDisc, queryLandmarks) = performLandmarkDiscovery(masterBuffer.p, context)
         val disambiguated = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, referenceLandmarks)
+        
+        // Audit Check: queW/queH must match current buffer dimensions (likely 2048x1536)
         val alignRes = ImageAlignmentUtils.anchorAlign(masterBuffer, referenceLandmarks, disambiguated, vehicle, 4000, 3072, imgW, imgH)
         
-        if (!alignRes.success) {
-            return OcrHarnessResult("Set J failed", "Alignment failed", JsonObject(), null, totalTimeMs = System.currentTimeMillis() - t0)
+        jsonDebug?.apply {
+            val alignMeta = JsonObject()
+            alignRes.metadata.forEach { (k, v) -> alignMeta.addProperty(k, v) }
+            add("alignment", alignMeta)
+            addProperty("alignment_success", alignRes.success)
+            addProperty("alignment_message", alignRes.message)
         }
 
-        // 2. Odometer Crop (from perfectly aligned masterBuffer.p)
+        if (!alignRes.success) {
+            return OcrHarnessResult("Set J failed", "Alignment failed", jsonDebug ?: JsonObject(), null, totalTimeMs = System.currentTimeMillis() - t0)
+        }
+        onStage?.invoke("Aligned", masterBuffer.p.toBitmap())
+
+        // 2. Odometer Crop
         val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
         val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
         val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
@@ -149,9 +178,21 @@ object OcrHarness {
         val odoBuffer = NativePaddleEngine.getOdoBuffer(vehicle)
         odoBuffer.p.clear()
         val interp = if (roi.width() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-        org.opencv.imgproc.Imgproc.resize(masterBuffer.p.mat.submat(org.opencv.core.Rect(roi.left, roi.top, roi.width(), roi.height())), odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        
+        // Safety Clamping
+        val safeRoi = Rect(
+            roi.left.coerceIn(0, masterBuffer.width - 1),
+            roi.top.coerceIn(0, masterBuffer.height - 1),
+            roi.right.coerceIn(roi.left + 1, masterBuffer.width),
+            roi.bottom.coerceIn(roi.top + 1, masterBuffer.height)
+        )
+        
+        val odoMat = masterBuffer.p.mat.submat(org.opencv.core.Rect(safeRoi.left, safeRoi.top, safeRoi.width(), safeRoi.height()))
+        org.opencv.imgproc.Imgproc.resize(odoMat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        odoMat.release()
+        onStage?.invoke("Odometer Crop", odoBuffer.p.toBitmap())
 
-        // 3. Bin Trials (Iterative Extraction)
+        // 3. Bin Trials
         val stats = OdometerOcrUtils.getHistStats(odoBuffer.p.mat)
         val midpoints = OdometerOcrUtils.findValleyMidpoints(stats.rawBins)
         
@@ -161,12 +202,9 @@ object OcrHarness {
 
         midpoints.forEach { binIdx ->
             val threshold = binIdx * 4.0
-            
-            // Binarize p into s. DO NOT FLIP.
             odoBuffer.s.clear()
             org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
 
-            // Set J Pre-processing (CC Speedup) ON THE S SLICE
             val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.s.mat, listOf(Rect(0, 0, odoBuffer.width, odoBuffer.height)), 128f)
             val vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
             val hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
@@ -179,7 +217,6 @@ object OcrHarness {
                 
                 if (compRects.isNotEmpty()) {
                     val combined = Rect(compRects.minOf { it.left }, compRects.minOf { it.top }, compRects.maxOf { it.right }, compRects.maxOf { it.bottom })
-                    
                     val recBuffer = NativePaddleEngine.recBufferSet
                     recBuffer.p.clear()
                     val bRecMat = odoBuffer.s.mat.submat(org.opencv.core.Rect(combined.left, combined.top, combined.width(), combined.height()))
@@ -198,7 +235,8 @@ object OcrHarness {
                         tObj.addProperty("text", trial.text)
                         tObj.addProperty("sum_prob", trial.sumProb)
                         tObj.addProperty("min_prob", trial.minProb)
-                        tObj.addProperty("thumb", OcrUtils.takeSnapshot(odoBuffer.s.mat, null, 320, 48).first)
+                        tObj.addProperty("vSW", vSW); tObj.addProperty("hSW", hSW)
+                        tObj.addProperty("thumb", OcrUtils.takeSnapshot(odoBuffer.s.mat, combined, 320, 48).first)
                         trialJsonArray?.add(tObj)
                     }
                     bRecMat.release()
@@ -206,7 +244,6 @@ object OcrHarness {
             }
         }
 
-        // Probabilistic Winner Selection
         val highQual = trialsList.filter { it.minProb >= 0.40f }
         val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
         val winnerOdo = winner?.text
@@ -214,7 +251,9 @@ object OcrHarness {
         jsonDebug?.apply {
             addProperty("odometer", winnerOdo)
             addProperty("winner_threshold", winner?.thresh)
+            addProperty("valleys_found", midpoints.size)
             add("trials", trialJsonArray)
+            addProperty("odo_snapshot", OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 640, 200).first)
         }
         
         return OcrHarnessResult(
@@ -226,36 +265,9 @@ object OcrHarness {
         )
     }
 
-}
-
-data class OcrHarnessResult(
-    val htmlHeader: String,
-    val htmlCell: String,
-    val jsonSection: JsonObject,
-    val odometerValue: String?,
-    val thumbB64: String? = null,
-    val totalTimeMs: Long = 0,
-    val tSnapshotMs: Long = 0,
-    val extraImages: Map<String, String> = emptyMap()
-)
-
-data class HarnessRunDef(
-    val strategy: OcrEngineStrategy,
-    val buffer: Any,
-    val width: Int,
-    val height: Int
-)
-
-interface OcrEngineStrategy {
-    val displayName: String
-    suspend fun execute(
-        masterBuffer: Any,
-        masterW: Int,
-        masterH: Int,
-        report: ReportCollector
-    ): OcrHarnessResult
-}
-
-interface ReportCollector {
-    fun add(engineName: String, result: OcrHarnessResult)
+    private fun BufferSet.Slice.toBitmap(): Bitmap {
+        val bmp = Bitmap.createBitmap(this.width, this.height, Bitmap.Config.ARGB_8888)
+        NativeImageUtils.syncMatToArgb(this.mat, bmp)
+        return bmp
+    }
 }

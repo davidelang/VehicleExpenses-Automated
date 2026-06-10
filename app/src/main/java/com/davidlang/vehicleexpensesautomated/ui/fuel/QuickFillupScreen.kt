@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
@@ -11,6 +12,8 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,6 +21,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -32,7 +38,10 @@ import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,6 +67,9 @@ fun QuickFillupScreen(
 
     var isProcessing by remember { mutableStateOf(false) }
     var capturePending by remember { mutableStateOf(false) }
+    var displayBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var stageLabel by remember { mutableStateOf("") }
+
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
     val saveFuelPhotos = remember { prefs.getBoolean("save_fuel_photos", false) }
@@ -87,66 +99,103 @@ fun QuickFillupScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Camera Preview (Top Half)
-        Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
-            CameraPreview(
-                modifier = Modifier.fillMaxSize(),
-                imageCapture = imageCapture,
-                onImageCaptured = { imageProxy ->
-                    if (capturePending) {
-                        capturePending = false
-                        scope.launch {
-                            try {
-                                val bufferSet = NativePaddleEngine.bufferSetA
-                                if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
-                                    bufferSet.resize(imageProxy.width, imageProxy.height)
-                                }
-                                
-                                val planes = imageProxy.planes
-                                bufferSet.borrowYuv(
-                                    planes[0].buffer,
-                                    planes[1].buffer,
-                                    planes[2].buffer,
-                                    planes[0].rowStride,
-                                    planes[1].rowStride,
-                                    planes[1].pixelStride,
-                                    planes[2].pixelStride
-                                )
-
-                                val result = OcrHarness.runAutoFillPipeline(context, bufferSet, vehicles, debugMode)
-                                
-                                if (result.error != null) {
-                                    Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
-                                }
-
-                                result.vehicleId?.let { selectedVehicleId = it }
-                                result.odometer?.let { odometer = it }
-
-                                if (debugMode && result.debugJson != null) {
-                                    val timestamp = System.currentTimeMillis()
-                                    val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
-                                    file.writeText(result.debugJson)
-                                    Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
-                                }
-
-                            } catch (e: Exception) {
-                                Log.e("QuickFill", "OCR Pipeline failed", e)
-                            } finally {
-                                imageProxy.close()
-                                isProcessing = false
-                            }
-                        }
-                    } else {
-                        imageProxy.close()
-                    }
+        // Camera Preview or Visual Debug (Top Half)
+        Box(modifier = Modifier.fillMaxWidth().height(300.dp).background(Color.Black)) {
+            if (isProcessing && displayBitmap != null) {
+                Image(
+                    bitmap = displayBitmap!!.asImageBitmap(),
+                    contentDescription = "Processing Stage",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+                Surface(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                ) {
+                    Text(
+                        text = "STAGE: $stageLabel",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(4.dp)
+                    )
                 }
-            )
+            } else {
+                CameraPreview(
+                    modifier = Modifier.fillMaxSize(),
+                    imageCapture = imageCapture,
+                    onImageCaptured = { imageProxy ->
+                        if (capturePending) {
+                            capturePending = false
+                            scope.launch(Dispatchers.Default) {
+                                try {
+                                    val bufferSet = NativePaddleEngine.bufferSetA
+                                    if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
+                                        bufferSet.resize(imageProxy.width, imageProxy.height)
+                                    }
+                                    
+                                    val planes = imageProxy.planes
+                                    bufferSet.borrowYuv(
+                                        planes[0].buffer,
+                                        planes[1].buffer,
+                                        planes[2].buffer,
+                                        planes[0].rowStride,
+                                        planes[1].rowStride,
+                                        planes[1].pixelStride,
+                                        planes[2].pixelStride
+                                    )
+
+                                    val result = OcrHarness.runAutoFillPipeline(
+                                        context = context,
+                                        masterBuffer = bufferSet,
+                                        allVehicles = vehicles,
+                                        debug = debugMode,
+                                        onStage = { stage, bmp ->
+                                            withContext(Dispatchers.Main) {
+                                                stageLabel = stage
+                                                displayBitmap = bmp
+                                            }
+                                            delay(800) // Visual pacing
+                                        }
+                                    )
+                                    
+                                    withContext(Dispatchers.Main) {
+                                        if (result.error != null) {
+                                            Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                                        }
+
+                                        result.vehicleId?.let { selectedVehicleId = it }
+                                        result.odometer?.let { odometer = it }
+
+                                        if (debugMode && result.debugJson != null) {
+                                            val timestamp = System.currentTimeMillis()
+                                            val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
+                                            file.writeText(result.debugJson)
+                                            Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+
+                                } catch (e: Exception) {
+                                    Log.e("QuickFill", "OCR Pipeline failed", e)
+                                } finally {
+                                    imageProxy.close()
+                                    withContext(Dispatchers.Main) {
+                                        isProcessing = false
+                                        displayBitmap = null
+                                    }
+                                }
+                            }
+                        } else {
+                            imageProxy.close()
+                        }
+                    }
+                )
+            }
             
-            if (isProcessing) {
+            if (isProcessing && displayBitmap == null) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center)
                 )
-            } else {
+            } else if (!isProcessing) {
                 Button(
                     onClick = {
                         isProcessing = true
