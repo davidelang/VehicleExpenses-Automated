@@ -2,6 +2,18 @@
 
 This log tracks the implementation, refactoring, and deployment activities performed by the Application Engineer session.
 
+## [2026-06-09] - Odometer Setup UI & Filter Optimization
+- **Activity:** Merged `improve-vehicle-odo-setup` branch into master.
+- **Improvements:**
+    - **Pixel-Aware Gap Welding:** Replaced bounding-box segment welding with an iterative $X/Y$ pixel-scan `nativeConnectSegmentsH` in `NativeImageUtils.cpp`. Reliably bridges sub-$0.5 \times SW$ gaps while preserving critical empty spaces (e.g. the center of a '0').
+    - **Forensic Pruning:** Optimized JSON alignment reports by excluding large JPEGs and path data for non-winning vehicles. Reduced log drop rates.
+    - **Filter Relaxation:** Relaxed rolling filter horizontal pairing restriction to `1.0 * vSW` to catch misaligned digit halves.
+    - **UI/UX:** Consolidated crop adjustment buttons in `ManageVehiclesScreen` and added isotropic corner dragging.
+- **Files Modified:**
+    - `app/src/main/cpp/NativeImageUtils.cpp`
+    - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/experiment/ExperimentAlignmentScreen.kt`
+    - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/vehicle/ManageVehiclesScreen.kt`
+
 ## [2026-06-08] - Horizontal Wide Filter Precision Fix
 - **Activity:** Merged `fix-j-imagefilter` branch into master. Corrected the native Horizontal Wide Filter logic to prevent over-aggressive digit trimming.
 - **Improvements:**
