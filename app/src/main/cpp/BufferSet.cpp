@@ -257,15 +257,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeBorrowYuv(
     if (!yPtr) return;
 
     handle->yMat->data = yPtr;
-    // We assume the caller provides yStride that matches our width for simplicity in this bridge,
-    // but OpenCV Mat can handle custom strides (step). 
-    // However, our BufferSet is designed for w == stride.
-    // If they differ, we'd need to update the Mat step.
     handle->yMat->datastart = yPtr;
     handle->yMat->dataend = yPtr + (handle->height * yStride);
+    handle->yMat->step[0] = (size_t)yStride;
 
     // NV21 Mat also starts at Y
     handle->nv21Mat->data = yPtr;
+    handle->nv21Mat->step[0] = (size_t)yStride;
 
     // Borrow UV only if interleaved (Semi-Planar)
     if (uPtr && vPtr && uPixelStride == 2 && vPixelStride == 2) {
@@ -273,14 +271,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeBorrowYuv(
         // We point to the first byte of the chroma pair.
         uint8_t* firstChroma = (uPtr < vPtr) ? uPtr : vPtr;
         handle->uvMat->data = firstChroma;
+        handle->uvMat->step[0] = (size_t)uvStride;
     } else {
         // Fallback: point UV to internal memory to avoid crash, 
         // but it won't match the borrowed Y.
         handle->uvMat->data = handle->data + (handle->width * handle->height);
+        handle->uvMat->step[0] = (size_t)handle->width;
     }
     
     handle->isBorrowed = true;
-    LOGI("BufferSet borrowed external buffers for handle %p", handle);
+    LOGI("BufferSet borrowed external buffers for handle %p (yStride=%d)", handle, yStride);
 }
 
 JNIEXPORT void JNICALL
@@ -296,8 +296,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeUnborrow(
     if (!handle->isBorrowed) return;
 
     handle->yMat->data = handle->data;
+    handle->yMat->step[0] = (size_t)handle->width;
     handle->uvMat->data = handle->data + (handle->width * handle->height);
+    handle->uvMat->step[0] = (size_t)handle->width;
     handle->nv21Mat->data = handle->data;
+    handle->nv21Mat->step[0] = (size_t)handle->width;
     
     handle->isBorrowed = false;
     LOGI("BufferSet unborrowed handle %p", handle);

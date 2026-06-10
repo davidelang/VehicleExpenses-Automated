@@ -1,5 +1,20 @@
 # TODO
 
+- [ ] Fix Quick Fill Stability & Photo Persistence
+    - [ ] Implement stride-aware native borrowing in `BufferSet.cpp`.
+    - [ ] Add `det`, `rec`, and `odo` BufferSets to `NativePaddleEngine` global pool.
+    - [ ] Implement optimized (no-flip) bin-trials and unified identity in `OcrHarness.kt`.
+    - [ ] Implement 12MP high-res capture and persistence in `QuickFillupScreen.kt`.
+    - [ ] Add busy spinner to `QuickFillupScreen.kt` during processing.
+- [x] Fix Quick Fill Pipeline
+    - [x] Auto-select vehicle based on discovered landmarks.
+    - [x] Save comprehensive debug JSON to disk for ADB retrieval.
+- [x] Implement Quick Fill & Buffer Borrowing Pipeline
+    - [x] Update `docs/specs/BUFFER_SET_SPEC.md` for borrowing architecture.
+    - [x] Implement safe Buffer Borrowing in `BufferSet` (C++ & Kotlin).
+    - [x] Add "Debug OCR Pipeline" toggle to Settings.
+    - [x] Extract "Set J" logic into streamlined `OcrHarness`.
+    - [x] Refactor `QuickFillupScreen` with CameraX and live processing.
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.

@@ -131,7 +131,7 @@ object OcrHarness {
         val imgW = masterBuffer.width
         val imgH = masterBuffer.height
 
-        // 1. Alignment
+        // 1. Alignment (into bufferSetA.s, then flip)
         val (ocrDisc, queryLandmarks) = performLandmarkDiscovery(masterBuffer.p, context)
         val disambiguated = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, referenceLandmarks)
         val alignRes = ImageAlignmentUtils.anchorAlign(masterBuffer, referenceLandmarks, disambiguated, vehicle, 4000, 3072, imgW, imgH)
@@ -140,22 +140,18 @@ object OcrHarness {
             return OcrHarnessResult("Set J failed", "Alignment failed", JsonObject(), null, totalTimeMs = System.currentTimeMillis() - t0)
         }
 
-        // 2. Odometer Crop
-        val l = vehicle.odometerCropLeft ?: 0f
-        val t = vehicle.odometerCropTop ?: 0f
-        val r = vehicle.odometerCropRight ?: 1f
-        val b = vehicle.odometerCropBottom ?: 1f
-        
-        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH)
-        val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
+        // 2. Odometer Crop (from perfectly aligned masterBuffer.p)
+        val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
+        val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
+        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
         val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
         
-        val odoBuffer = NativePaddleEngine.bufferSetB
+        val odoBuffer = NativePaddleEngine.getOdoBuffer(vehicle)
         odoBuffer.p.clear()
         val interp = if (roi.width() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
         org.opencv.imgproc.Imgproc.resize(masterBuffer.p.mat.submat(org.opencv.core.Rect(roi.left, roi.top, roi.width(), roi.height())), odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
 
-        // 3. Bin Trials (No Contrast Stretch for Set J)
+        // 3. Bin Trials (Iterative Extraction)
         val stats = OdometerOcrUtils.getHistStats(odoBuffer.p.mat)
         val midpoints = OdometerOcrUtils.findValleyMidpoints(stats.rawBins)
         
@@ -166,33 +162,28 @@ object OcrHarness {
         midpoints.forEach { binIdx ->
             val threshold = binIdx * 4.0
             
-            // Re-binarize from grayscale
+            // Binarize p into s. DO NOT FLIP.
             odoBuffer.s.clear()
             org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-            odoBuffer.flip()
 
-            // Set J Pre-processing (CC Speedup)
-            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.p.mat, listOf(Rect(0, 0, odoBuffer.width, odoBuffer.height)), 128f)
+            // Set J Pre-processing (CC Speedup) ON THE S SLICE
+            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.s.mat, listOf(Rect(0, 0, odoBuffer.width, odoBuffer.height)), 128f)
             val vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
             val hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
 
             if (vSW > 0 && hSW > 0) {
-                NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
-                NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
-                NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
-                val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
+                NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.s.mat, vSW, hSW, 0.20f * odoBuffer.s.mat.cols())
+                NativeImageUtils.connectSegmentsH(odoBuffer.s.mat, vSW, hSW)
+                NativeImageUtils.blackOutRollingDigitsH(odoBuffer.s.mat, vSW, hSW)
+                val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.s.mat, vSW, hSW)
                 
                 if (compRects.isNotEmpty()) {
                     val combined = Rect(compRects.minOf { it.left }, compRects.minOf { it.top }, compRects.maxOf { it.right }, compRects.maxOf { it.bottom })
                     
-                    val recBuffer = NativePaddleEngine.bufferSetA
+                    val recBuffer = NativePaddleEngine.recBufferSet
                     recBuffer.p.clear()
-                    val bRecMat = odoBuffer.p.mat.submat(org.opencv.core.Rect(combined.left, combined.top, combined.width(), combined.height()))
-                    val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
-                    val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
-                    val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
-                    val rCrId = recBuffer.createCrop(4, 4, ew, eh)
-                    org.opencv.imgproc.Imgproc.resize(bRecMat, recBuffer.c[rCrId].mat, recBuffer.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                    val bRecMat = odoBuffer.s.mat.submat(org.opencv.core.Rect(combined.left, combined.top, combined.width(), combined.height()))
+                    org.opencv.imgproc.Imgproc.resize(bRecMat, recBuffer.p.mat, recBuffer.p.mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                     
                     val ocrR = paddleEngine.recognizeNumeric(recBuffer.p)
                     val probsStr = ocrR.metadata["ocr_probs"] ?: ""
@@ -207,11 +198,9 @@ object OcrHarness {
                         tObj.addProperty("text", trial.text)
                         tObj.addProperty("sum_prob", trial.sumProb)
                         tObj.addProperty("min_prob", trial.minProb)
-                        tObj.addProperty("thumb", OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48).first)
+                        tObj.addProperty("thumb", OcrUtils.takeSnapshot(odoBuffer.s.mat, null, 320, 48).first)
                         trialJsonArray?.add(tObj)
                     }
-                    
-                    recBuffer.c[rCrId].release()
                     bRecMat.release()
                 }
             }

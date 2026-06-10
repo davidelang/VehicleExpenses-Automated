@@ -69,6 +69,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _bufferSetA: BufferSet? = null
         private var _bufferSetB: BufferSet? = null
         private var _deskewBufferSetLarge: BufferSet? = null
+        private var _detBufferSet: BufferSet? = null
+        private var _recBufferSet: BufferSet? = null
+        private val vehicleOdoBuffers = mutableMapOf<Int, BufferSet>()
         private var _bufferLarge: FloatArray? = null
         private var _sharedBmp2048: Bitmap? = null
         private var _sharedCanvas2048: Canvas? = null
@@ -90,24 +93,21 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bufferSetA: BufferSet get() = _bufferSetA!!
         val bufferSetB: BufferSet get() = _bufferSetB!!
         val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
-        private val bufferLarge: FloatArray get() = _bufferLarge!!
-        val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
-        val sharedCanvas2048: Canvas get() = _sharedCanvas2048!!
-        private val bufferSmall: FloatArray get() = _bufferSmall!!
-        private val bufferRec: FloatArray get() = _bufferRec!!
-        val sharedNv21Buffer: ByteArray get() = _sharedNv21Buffer!!
-        val sharedBmpOdoScratch: Bitmap get() = _sharedBmpOdoScratch!!
-        val sharedCanvasOdoScratch: Canvas get() = _sharedCanvasOdoScratch!!
-        val redPaint: Paint get() = _redPaint!!
-        val bluePaint4: Paint get() = _bluePaint4!!
-        val yellowPaint2: Paint get() = _yellowPaint2!!
-        val orangePaint: Paint get() = _orangePaint!!
-        val grayToAlphaPaint: Paint get() = _grayToAlphaPaint!!
-        val alphaToGrayPaint: Paint get() = _alphaToGrayPaint!!
-        val srcPaint = Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC) }
-        val sharedBuffer: java.nio.ByteBuffer get() = _sharedBuffer!!
-        val sharedBytes: ByteArray get() = _sharedBytes!!
-        val sharedMatrix = android.graphics.Matrix()
+        val detBufferSet: BufferSet get() = _detBufferSet!!
+        val recBufferSet: BufferSet get() = _recBufferSet!!
+
+        fun getOdoBuffer(vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
+            val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
+            val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
+            // Target roughly 1000px wide for processing
+            val targetW = 1024
+            val targetH = ((b - t) / (r - l) * targetW).toInt().coerceIn(64, 1024)
+            
+            return vehicleOdoBuffers.getOrPut(vehicle.id) {
+                Log.i("PaddleLite", "Creating persistent Odo Buffer for vehicle ${vehicle.id}: ${targetW}x${targetH}")
+                BufferSet(targetW, targetH)
+            }
+        }
 
         fun initializeGlobalBuffers(context: Context) {
             if (isAvailableGlobally) return
@@ -119,6 +119,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _deskewBufferSetLarge = BufferSet(2048, 2048)
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
+
+            _detBufferSet = BufferSet(512, 128)
+            _recBufferSet = BufferSet(320, 48)
 
             _bufferLarge = FloatArray(1 * 2048 * 2048) // Native is now exclusively 1-channel (Mono)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
@@ -539,7 +542,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             else -> throw IllegalArgumentException("Unsupported input type for recognizeNumeric")
         }
 
-        if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
+        if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = w, imageHeight = h)
 
         val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS)
         OcrResult(

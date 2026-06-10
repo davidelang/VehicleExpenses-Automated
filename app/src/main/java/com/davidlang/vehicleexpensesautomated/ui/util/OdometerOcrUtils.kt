@@ -1055,6 +1055,19 @@ object OdometerOcrUtils {
         return list
     }
 
+    fun saveImageProxyToFile(imageProxy: androidx.camera.core.ImageProxy, file: java.io.File) {
+        val planeProxy = imageProxy.planes[0]
+        val buffer = planeProxy.buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        
+        // This only works if capture format is JPEG (ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+        // If it's YUV, we'd need to encode it.
+        // Assuming ImageCapture provides JPEG when not specified otherwise for proxy?
+        // Actually, ImageProxy from ImageCapture is usually JPEG.
+        file.writeBytes(bytes)
+    }
+
     fun refineNumericResult(result: OcrResult): OcrResult {
         val refinedBlocks = result.textBlocks.map { block ->
             val isFlipped = Math.abs(block.angle) > 165f

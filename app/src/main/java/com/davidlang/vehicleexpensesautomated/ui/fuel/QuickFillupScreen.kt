@@ -6,7 +6,11 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
@@ -51,9 +56,21 @@ fun QuickFillupScreen(
     var lon by remember { mutableStateOf<Double?>(null) }
     var loc by remember { mutableStateOf<String?>(null) }
 
-    var isCapturing by remember { mutableStateOf(false) }
+    var isProcessing by remember { mutableStateOf(false) }
+    var capturePending by remember { mutableStateOf(false) }
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
+    val saveFuelPhotos = remember { prefs.getBoolean("save_fuel_photos", false) }
+
+    val imageCapture: ImageCapture = remember {
+        val resSelector = ResolutionSelector.Builder()
+            .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+            .build()
+        ImageCapture.Builder()
+            .setResolutionSelector(resSelector)
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .build()
+    }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -71,52 +88,50 @@ fun QuickFillupScreen(
         Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
+                imageCapture = imageCapture,
                 onImageCaptured = { imageProxy ->
-                    if (isCapturing) {
-                        isCapturing = false
-                        val currentVehicle = vehicles.find { it.id == selectedVehicleId }
-                        if (currentVehicle != null) {
-                            scope.launch {
-                                try {
-                                    val bufferSet = NativePaddleEngine.bufferSetA
-                                    if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
-                                        bufferSet.resize(imageProxy.width, imageProxy.height)
-                                    }
-                                    
-                                    val planes = imageProxy.planes
-                                    bufferSet.borrowYuv(
-                                        planes[0].buffer,
-                                        planes[1].buffer,
-                                        planes[2].buffer,
-                                        planes[0].rowStride,
-                                        planes[1].rowStride,
-                                        planes[1].pixelStride,
-                                        planes[2].pixelStride
-                                    )
-
-                                    val result = OcrHarness.runAutoFillPipeline(context, bufferSet, vehicles, debugMode)
-                                    
-                                    if (result.error != null) {
-                                        Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
-                                    }
-
-                                    result.vehicleId?.let { selectedVehicleId = it }
-                                    result.odometer?.let { odometer = it }
-
-                                    if (debugMode && result.debugJson != null) {
-                                        val timestamp = System.currentTimeMillis()
-                                        val file = java.io.File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
-                                        file.writeText(result.debugJson)
-                                        Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("QuickFill", "OCR Pipeline failed", e)
-                                } finally {
-                                    imageProxy.close()
+                    if (capturePending) {
+                        capturePending = false
+                        scope.launch {
+                            try {
+                                val bufferSet = NativePaddleEngine.bufferSetA
+                                if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
+                                    bufferSet.resize(imageProxy.width, imageProxy.height)
                                 }
+                                
+                                val planes = imageProxy.planes
+                                bufferSet.borrowYuv(
+                                    planes[0].buffer,
+                                    planes[1].buffer,
+                                    planes[2].buffer,
+                                    planes[0].rowStride,
+                                    planes[1].rowStride,
+                                    planes[1].pixelStride,
+                                    planes[2].pixelStride
+                                )
+
+                                val result = OcrHarness.runAutoFillPipeline(context, bufferSet, vehicles, debugMode)
+                                
+                                if (result.error != null) {
+                                    Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                                }
+
+                                result.vehicleId?.let { selectedVehicleId = it }
+                                result.odometer?.let { odometer = it }
+
+                                if (debugMode && result.debugJson != null) {
+                                    val timestamp = System.currentTimeMillis()
+                                    val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
+                                    file.writeText(result.debugJson)
+                                    Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
+                                }
+
+                            } catch (e: Exception) {
+                                Log.e("QuickFill", "OCR Pipeline failed", e)
+                            } finally {
+                                imageProxy.close()
+                                isProcessing = false
                             }
-                        } else {
-                            imageProxy.close()
                         }
                     } else {
                         imageProxy.close()
@@ -124,11 +139,41 @@ fun QuickFillupScreen(
                 }
             )
             
-            Button(
-                onClick = { isCapturing = true },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
-            ) {
-                Text("Capture Odometer")
+            if (isProcessing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                Button(
+                    onClick = {
+                        isProcessing = true
+                        capturePending = true
+                        
+                        if (saveFuelPhotos) {
+                            val photoFile = File(context.cacheDir, "temp_fuel_${System.currentTimeMillis()}.jpg")
+                            val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+                            imageCapture.takePicture(
+                                outputOptions,
+                                ContextCompat.getMainExecutor(context),
+                                object : ImageCapture.OnImageSavedCallback {
+                                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                        scope.launch {
+                                            val uri = Uri.fromFile(photoFile)
+                                            photoUrl = settingsViewModel.photoStorageManager.savePhoto(uri, photoFile.name, PhotoType.FUEL)
+                                            photoFile.delete()
+                                        }
+                                    }
+                                    override fun onError(exception: ImageCaptureException) {
+                                        Log.e("QuickFill", "Photo save failed", exception)
+                                    }
+                                }
+                            )
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
+                ) {
+                    Text("Capture Odometer")
+                }
             }
         }
 
@@ -198,6 +243,7 @@ fun QuickFillupScreen(
                     navController.popBackStack()
                 }
             },
+            enabled = !isProcessing,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Save Fill-up")
