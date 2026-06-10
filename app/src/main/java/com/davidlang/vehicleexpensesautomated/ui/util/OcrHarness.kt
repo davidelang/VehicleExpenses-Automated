@@ -271,3 +271,35 @@ object OcrHarness {
         return bmp
     }
 }
+
+data class OcrHarnessResult(
+    val htmlHeader: String,
+    val htmlCell: String,
+    val jsonSection: JsonObject,
+    val odometerValue: String?,
+    val thumbB64: String? = null,
+    val totalTimeMs: Long = 0,
+    val tSnapshotMs: Long = 0,
+    val extraImages: Map<String, String> = emptyMap()
+)
+
+data class HarnessRunDef(
+    val strategy: OcrEngineStrategy,
+    val buffer: Any,
+    val width: Int,
+    val height: Int
+)
+
+interface OcrEngineStrategy {
+    val displayName: String
+    suspend fun execute(
+        masterBuffer: Any,
+        masterW: Int,
+        masterH: Int,
+        report: ReportCollector
+    ): OcrHarnessResult
+}
+
+interface ReportCollector {
+    fun add(engineName: String, result: OcrHarnessResult)
+}
