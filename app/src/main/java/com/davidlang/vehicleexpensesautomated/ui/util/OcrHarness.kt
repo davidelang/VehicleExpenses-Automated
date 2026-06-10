@@ -36,13 +36,13 @@ object OcrHarness {
         val jsonDebug = if (debug) JsonObject() else null
         
         try {
-            // 1. Deskew (Paddle C++)
-            val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
-            OdometerOcrUtils.rotate(masterBuffer, deskewRes.paddleCppAngle)
+            // 1. Deskew (Paddle C++) - Optimized Version
+            val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
+            OdometerOcrUtils.rotate(masterBuffer, optAngle)
             
             jsonDebug?.apply {
-                addProperty("deskew_angle", deskewRes.paddleCppAngle)
-                addProperty("deskew_time_ms", System.currentTimeMillis() - t0)
+                addProperty("deskew_angle", optAngle)
+                addProperty("deskew_time_ms", optTime)
             }
 
             // 2. Landmark Discovery (ML Kit)

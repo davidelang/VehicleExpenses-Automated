@@ -64,7 +64,10 @@ fun QuickFillupScreen(
 
     val imageCapture: ImageCapture = remember {
         val resSelector = ResolutionSelector.Builder()
-            .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+            .setResolutionStrategy(ResolutionStrategy(
+                android.util.Size(2048, 1536),
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER
+            ))
             .build()
         ImageCapture.Builder()
             .setResolutionSelector(resSelector)

@@ -42,9 +42,12 @@ fun CameraPreview(
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
-                // Request maximum resolution for analysis to match capture quality
+                // Request 2048px width resolution for high-quality OCR without 12MP overhead
                 val resSelector = ResolutionSelector.Builder()
-                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    .setResolutionStrategy(ResolutionStrategy(
+                        android.util.Size(2048, 1536),
+                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER
+                    ))
                     .build()
 
                 val imageAnalysis = ImageAnalysis.Builder()
