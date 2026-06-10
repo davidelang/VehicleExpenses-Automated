@@ -37,7 +37,8 @@
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
 
-- [ ] Final Tuning of Gap-Welding Filter
+- [x] Final Tuning of Gap-Welding Filter
     - [x] Update TODO.md
-    - [ ] Update dyLimit to 0.75 * hSW in NativeImageUtils.cpp
-    - [ ] Forensic Audit and Build Validation
+    - [x] Update dyLimit to 0.75 * hSW in NativeImageUtils.cpp
+    - [x] Forensic Audit and Build Validation
+
