@@ -1,14 +1,5 @@
 # TODO
 
-- [x] Fix Quick Fill Pipeline
-    - [x] Auto-select vehicle based on discovered landmarks.
-    - [x] Save comprehensive debug JSON to disk for ADB retrieval.
-- [x] Implement Quick Fill & Buffer Borrowing Pipeline
-    - [x] Update `docs/specs/BUFFER_SET_SPEC.md` for borrowing architecture.
-    - [x] Implement safe Buffer Borrowing in `BufferSet` (C++ & Kotlin).
-    - [x] Add "Debug OCR Pipeline" toggle to Settings.
-    - [x] Extract "Set J" logic into streamlined `OcrHarness`.
-    - [x] Refactor `QuickFillupScreen` with CameraX and live processing.
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
@@ -45,3 +36,7 @@
 - [x] Refactor jq Rule and Whitelist ls
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
+- [/] Fix Master Agent 'works' Tag Violation
+    - [ ] Update `GEMINI.md` with Safety Override clause.
+    - [ ] Update `MASTER_AGENT_MANDATE.md` with strict merge template.
+    - [ ] Commit and sync rules across all worktrees.
