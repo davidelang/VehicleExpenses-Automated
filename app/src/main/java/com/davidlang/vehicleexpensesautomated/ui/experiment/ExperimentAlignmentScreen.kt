@@ -1342,7 +1342,7 @@ private suspend fun runBinTrialsPaddle(
         trialsMeta["trial_${vIdx}_annotations"] = annStr
     }
 
-    val highQual = trialsList.filter { it.minProb >= 0.80f }
+    val highQual = trialsList.filter { it.minProb >= 0.40f }
     val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
 
     // Set winning binarization state
@@ -1359,7 +1359,7 @@ private suspend fun runBinTrialsPaddle(
     trialsList.forEachIndexed { idx, t ->
         val isWinner = (t == winner)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
-        val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.80f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.80]</span> " else "[REJECTED: Sum defeated]"
+        val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.40f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.40]</span> " else "[REJECTED: Sum defeated]"
 
         val preCleanPlain = if (t.plainPreB64.isNotEmpty()) "<img src='data:image/jpeg;base64,${t.plainPreB64}'><br>" else ""
         val preRollingPlain = if (t.plainPreRollingB64.isNotEmpty()) "<b>Pre-Rolling (After Size Filter, Before Rolling Filter):</b><br><img src='data:image/jpeg;base64,${t.plainPreRollingB64}'><br>" else ""
@@ -1378,7 +1378,7 @@ private suspend fun runBinTrialsPaddle(
             "best_text" to winner.text,
             "best_thumb" to winner.annotatedPostB64,
             "best_probs" to winner.probsStr,
-            "selection_logic" to (if (winner.minProb >= 0.80f) "Filter(Min>=0.80)->Sum" else "Fallback(Sum)")
+            "selection_logic" to (if (winner.minProb >= 0.40f) "Filter(Min>=0.40)->Sum" else "Fallback(Sum)")
         ).apply {
             putAll(winner.metadata)
             put("best_plain_pre", winner.plainPreB64)
@@ -1885,7 +1885,7 @@ private suspend fun runPaddleValleyIterative(
         }
 
         if (stage.contains("80%")) {
-            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.40f)
         } else if (stage == "Hist") {
             val stats = getHistStats(odoBuffer.p.mat)
             val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.intensityLow, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.intensityHigh, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.p80, Color.MAGENTA)))
@@ -2077,7 +2077,7 @@ private suspend fun runMLKitIterative(
         }
 
         if (stage.contains("80%")) {
-            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.80f)
+            OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.40f)
         } else if (stage == "Hist") {
             val stats = getHistStats(odoBuffer.p.mat)
             val h1 = generateGatedHistogramB64(odoBuffer.p.mat, listOf(OdometerOcrUtils.HistMarker(stats.intensityLow, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.intensityHigh, Color.YELLOW), OdometerOcrUtils.HistMarker(stats.p80, Color.MAGENTA)))
