@@ -42,3 +42,9 @@
     - [x] Update dyLimit to 0.75 * hSW in NativeImageUtils.cpp
     - [x] Forensic Audit and Build Validation
 
+
+- [x] Fix Odometer Selection Regression
+    - [x] Update TODO.md
+    - [x] Lower minProb gate to 0.80 in ExperimentAlignmentScreen.kt
+    - [x] Forensic Audit and Build Validation
+
