@@ -2203,7 +2203,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return 0;
 
     float dxLimit = 0.50f * vSW;
-    float dyLimit = 0.50f * hSW;
+    float dyLimit = 0.75f * hSW;
     int totalConnections = 0;
     bool changed = true;
     int pass = 0;
