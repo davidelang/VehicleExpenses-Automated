@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import com.davidlang.vehicleexpensesautomated.ui.util.RectF
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -165,21 +166,22 @@ fun LandmarkDebugDialog(
 
                                     if (showDiscovery) {
                                         rawDiscoveryBoxes.forEach { box ->
-                                            drawRect(color = Color.Red.copy(alpha = 0.3f), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Fill)
+                                            val p1 = IcrsMath.icrsToPixel(box.left, box.top, imgW.toInt(), imgH.toInt())
+                                            val p2 = IcrsMath.icrsToPixel(box.right, box.bottom, imgW.toInt(), imgH.toInt())
+                                            drawRect(color = Color.Red.copy(alpha = 0.3f), topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh), size = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh), style = Fill)
                                         }
 
                                         fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color) {
-                                            val shortEdge = min(imgW, imgH)
-                                            val lx = (rect.left * shortEdge + (imgW / 2f)) / imgW
-                                            val ly = (rect.top * shortEdge + (imgH / 2f)) / imgH
-                                            val lw = (rect.width * shortEdge) / imgW
-                                            val lh = (rect.height * shortEdge) / imgH
-                                            drawRect(color = color, topLeft = Offset(lx * dw, ly * dh), size = Size(lw * dw, lh * dh), style = Stroke(2f))
+                                            val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, imgW.toInt(), imgH.toInt())
+                                            val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, imgW.toInt(), imgH.toInt())
+                                            drawRect(color = color, topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh), size = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh), style = Stroke(2f))
                                         }
 
                                         editableLandmarks.forEach { lm ->
                                             lm.refinedDiscoveryBox?.let { box ->
-                                                drawRect(color = Color(0xFFFF8C00), topLeft = Offset(box.left * dw, box.top * dh), size = Size((box.right - box.left) * dw, (box.bottom - box.top) * dh), style = Stroke(3f))
+                                                val p1 = IcrsMath.icrsToPixel(box.left, box.top, imgW.toInt(), imgH.toInt())
+                                                val p2 = IcrsMath.icrsToPixel(box.right, box.bottom, imgW.toInt(), imgH.toInt())
+                                                drawRect(color = Color(0xFFFF8C00), topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh), size = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh), style = Stroke(3f))
                                             }
                                             if (lm.boundingBox.width() > 0) {
                                                 val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
@@ -218,9 +220,13 @@ fun LandmarkDebugDialog(
                                     ) {
                                         Row(modifier = Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                             val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else lm.refinedDiscoveryBox?.let {
-                                                android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
+                                                val p1 = IcrsMath.icrsToPixel(it.left, it.top, imgW.toInt(), imgH.toInt())
+                                                val p2 = IcrsMath.icrsToPixel(it.right, it.bottom, imgW.toInt(), imgH.toInt())
+                                                android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
                                             } ?: lm.rawDiscoveryBox?.let {
-                                                android.graphics.Rect((it.left * imgW).toInt(), (it.top * imgH).toInt(), (it.right * imgW).toInt(), (it.bottom * imgH).toInt())
+                                                val p1 = IcrsMath.icrsToPixel(it.left, it.top, imgW.toInt(), imgH.toInt())
+                                                val p2 = IcrsMath.icrsToPixel(it.right, it.bottom, imgW.toInt(), imgH.toInt())
+                                                android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
                                             }
 
                                             Box(modifier = Modifier.size(48.dp).background(Color.Black), contentAlignment = Alignment.Center) {
@@ -295,8 +301,14 @@ fun LandmarkDebugDialog(
                                                 }
 
                                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    lm.rawDiscoveryBox?.let { MetricChip(color = Color.Red, w = (it.right - it.left) * imgW, h = (it.bottom - it.top) * imgH) }
-                                                    lm.refinedDiscoveryBox?.let { MetricChip(color = Color(0xFFFF8C00), w = (it.right - it.left) * imgW, h = (it.bottom - it.top) * imgH) }
+                                                    lm.rawDiscoveryBox?.let { 
+                                                        val sE = min(imgW, imgH)
+                                                        MetricChip(color = Color.Red, w = (it.right - it.left) * sE, h = (it.bottom - it.top) * sE) 
+                                                    }
+                                                    lm.refinedDiscoveryBox?.let { 
+                                                        val sE = min(imgW, imgH)
+                                                        MetricChip(color = Color(0xFFFF8C00), w = (it.right - it.left) * sE, h = (it.bottom - it.top) * sE) 
+                                                    }
                                                     if (lm.boundingBox.width() > 0) MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
                                                 }
                                             }
