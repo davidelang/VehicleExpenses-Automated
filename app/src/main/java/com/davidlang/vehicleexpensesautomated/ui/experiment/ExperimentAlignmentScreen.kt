@@ -495,7 +495,7 @@ private suspend fun runExperiment(
                             try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
                             // For Set F and G, only run the "Raw" stage
-                            val iterativeStages = listOf("Raw", "Bin-Trials", "Bin")
+                            val iterativeStages = listOf("Raw", "Bin-Trials")
 
                             if (pipeline.key == "set_a") {
                                 runMLKitIterative("${pipeline.displayName} ML", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentRecSet320x48, hMap, refinementTraces, iterativeStages)
@@ -746,8 +746,10 @@ private fun serializePhotoResultToJson(
                 put("veto_reason", vRes.vetoReason)
 
                 val pathsObj = JSONObject()
-                vRes.pathResults.forEach { (pathKey, pathRes) ->
-                    pathsObj.put(pathKey, serializeVehiclePathwayToJson(pathRes))
+                if (vRes.isWinner) {
+                    vRes.pathResults.forEach { (pathKey, pathRes) ->
+                        pathsObj.put(pathKey, serializeVehiclePathwayToJson(pathRes))
+                    }
                 }
                 put("path_results", pathsObj)
             })
@@ -1373,20 +1375,19 @@ private suspend fun runBinTrialsPaddle(
         mutableMapOf(
             "best_threshold" to winner.thresh.toString(),
             "best_text" to winner.text,
-            "best_thumb" to winner.annotatedPostB64,
+            // "best_thumb" to winner.annotatedPostB64,
             "best_probs" to winner.probsStr,
             "selection_logic" to (if (winner.minProb >= 0.40f) "Filter(Min>=0.40)->Sum" else "Fallback(Sum)")
         ).apply {
             putAll(winner.metadata)
             // put("best_plain_pre", winner.plainPreB64)
             // put("best_plain_pre_rolling", winner.plainPreRollingB64)
-            put("best_annotated_pre", winner.annotatedPreB64)
+            // put("best_annotated_pre", winner.annotatedPreB64)
             // put("best_plain_post", winner.plainPostB64)
-            put("best_annotated_post", winner.annotatedPostB64)
+            // put("best_annotated_post", winner.annotatedPostB64)
             put("best_post_1bpp", winner.post1bppB64)
             put("best_post_cleaning_1bpp", winner.postCleaning1bppB64)
             put("best_annotations", winner.annotationsStr)
-
         }
     } else emptyMap()
     trialsMeta.putAll(winnerMeta)
@@ -1440,7 +1441,7 @@ private suspend fun runBinTrialsMLKit(
         mapOf(
             "best_threshold" to winner.thresh.toString(),
             "best_text" to winner.text,
-            "best_thumb" to winner.base64,
+            // "best_thumb" to winner.base64,
             "selection_logic" to (if (winner.thresh < 0) "RAW Selected" else "Max Length (ML Kit)")
         )
     } else emptyMap()
