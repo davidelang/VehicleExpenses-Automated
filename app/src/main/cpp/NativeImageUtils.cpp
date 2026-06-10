@@ -2237,22 +2237,35 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
                 if ((float)dx < limit && (float)dy < limit) {
                     __android_log_print(ANDROID_LOG_INFO, "NativeImage", "WELDING: Pass %d, %d & %d, dx=%d, dy=%d", pass, i, j, dx, dy);
                     
-                    // Endpoint math: extend bridge 3 pixels INTO each segment to guarantee physical contact.
-                    int sharedX = (std::max(l1, l2) + std::min(r1, r2)) / 2;
-                    int sharedY = (std::max(t1, t2) + std::min(b1, b2)) / 2;
+                    int cx = (std::max(l1, l2) + std::min(r1, r2)) / 2;
+                    int cy = (std::max(t1, t2) + std::min(b1, b2)) / 2;
+                    cv::Rect bridge;
 
-                    int x1 = (r1 <= l2) ? r1 - 3 : ((r2 <= l1) ? l1 + 2 : sharedX);
-                    int y1 = (b1 <= t2) ? b1 - 3 : ((b2 <= t1) ? t1 + 2 : sharedY);
-                    int x2 = (r1 <= l2) ? l2 + 2 : ((r2 <= l1) ? r2 - 3 : sharedX);
-                    int y2 = (b1 <= t2) ? t2 + 2 : ((b2 <= t1) ? b2 - 3 : sharedY);
+                    if (dy > 0) {
+                        // Vertical gap: 3px wide, spans gap + 2px hooks.
+                        int y_start = (b1 <= t2) ? b1 - 2 : b2 - 2;
+                        int y_end = (b1 <= t2) ? t2 + 2 : t1 + 2;
+                        bridge = cv::Rect(cx - 1, y_start, 3, std::max(1, y_end - y_start));
+                    } else if (dx > 0) {
+                        // Horizontal gap: spans gap + 2px hooks, 3px high.
+                        int x_start = (r1 <= l2) ? r1 - 2 : r2 - 2;
+                        int x_end = (r1 <= l2) ? l2 + 2 : l1 + 2;
+                        bridge = cv::Rect(x_start, cy - 1, std::max(1, x_end - x_start), 3);
+                    } else {
+                        // Overlap: 5x5 square at center to force merge.
+                        bridge = cv::Rect(cx - 2, cy - 2, 5, 5);
+                    }
 
-                    // Clamp to image boundaries
-                    x1 = std::max(0, std::min(mat->cols - 1, x1));
-                    y1 = std::max(0, std::min(mat->rows - 1, y1));
-                    x2 = std::max(0, std::min(mat->cols - 1, x2));
-                    y2 = std::max(0, std::min(mat->rows - 1, y2));
+                    // Boundary Clamping
+                    if (bridge.x < 0) bridge.x = 0;
+                    if (bridge.y < 0) bridge.y = 0;
+                    if (bridge.x + bridge.width > mat->cols) bridge.width = mat->cols - bridge.x;
+                    if (bridge.y + bridge.height > mat->rows) bridge.height = mat->rows - bridge.y;
 
-                    cv::line(*mat, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255), 3);
+                    if (bridge.width > 0 && bridge.height > 0) {
+                        mat->operator()(bridge).setTo(cv::Scalar(255));
+                    }
+
                     totalConnections++;
                     changed = true;
                     goto next_pass;
