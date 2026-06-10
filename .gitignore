@@ -85,3 +85,6 @@ alignment_results_*.json
 !app/src/main/assets/tflite/
 !app/src/main/assets/tflite/paddle/
 !app/src/main/assets/tflite/paddle/**
+
+.gemini/
+gha-creds-*.json

@@ -9,6 +9,7 @@
 
 ## Protocol Precedence (CRITICAL)
 Instructions in this file take absolute precedence. Speed achieved by bypassing protocol is a **High-Severity Performance Failure**.
+- **Safety Override:** An "approved plan" NEVER authorizes the violation of a Foundational Mandate (e.g., modifying the `works` tag, amending history, or deploying). If a plan is found to contain such a violation during execution, you MUST STOP immediately and report the conflict instead of executing the unauthorized command.
 - **Linear History:** No `git commit --amend`.
 - **Per-Branch Tagging:** All lifecycle tags (`builds`, `deployed`, `works`) MUST be prefixed with the branch name (e.g., `feature-x/builds`) unless on the `master` branch.
 

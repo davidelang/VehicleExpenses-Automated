@@ -29,12 +29,12 @@ When the user asks you to review a branch (e.g., "Please review PR-feature-x"):
 3.  **Forensic Audit:** Use `git diff master..<branch-name>` to see the total delta. Compare this against the plans included in the PR document.
     *   *Tip:* If you have doubts about the cleanup, you can inspect the messy original state via `git show backup-<branch-name>`.
 4.  **Strict Enforcement:** If you find unauthorized changes (proactivity), you MUST reject the merge and instruct the Branch Agent to revert and fix.
-5. **Merge & Validate:** If approved, perform the merge:
-    ```bash
-    git merge --no-ff <branch-name> -m "Merge PR: <branch-name> (Reviewed by Master Agent)"
-    ./build_app
-    ```
-    *Note: The user will apply the `works` tag manually after verification.*
+5. **Merge Strategy Proposal:** Your proposed Integration Strategy MUST be exactly this (copy-paste):
+    - Merge `<branch-name>` into master with `--no-ff`.
+    - Run `./build_app` to verify compilation.
+    - Update `ENGINEERING_LOG.md`.
+
+    **CRITICAL:** You are strictly forbidden from proposing or executing a `works` tag update. This tag is reserved for the User.
 
 6.  **Cleanup Notification:** Inform the user that the merge is complete and they can now run `./remove_worktree.sh <branch-name>` from the root.
 
