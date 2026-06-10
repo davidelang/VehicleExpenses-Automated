@@ -38,22 +38,14 @@ object IcrsMath {
     }
 
     /**
-     * Legacy Anisotropic Bridge:
-     * Converts legacy [0.0 - 1.0] normalized coordinates (where X is /W and Y is /H)
-     * into pure ICRS coordinates.
+     * Convert normalized [0..1] coordinates to ICRS.
      */
-    fun legacyAnisotropicToIcrs(lx: Float, ly: Float, imgW: Int, imgH: Int): PointF {
-        val px = lx * imgW
-        val py = ly * imgH
-        return pixelToIcrs(px, py, imgW, imgH)
+    fun normalizedToIcrs(nx: Float, ny: Float, imgW: Int, imgH: Int): PointF {
+        val s = minOf(imgW, imgH).toFloat()
+        if (s <= 0) return PointF(0f, 0f)
+        val icrsX = (nx * imgW - (imgW / 2f)) / s
+        val icrsY = (ny * imgH - (imgH / 2f)) / s
+        return PointF(icrsX, icrsY)
     }
 
-    /**
-     * Converts a legacy [0.0 - 1.0] top-left RectF into an ICRS centered RectF.
-     */
-    fun legacyAnisotropicToIcrs(legacy: RectF, imgW: Int, imgH: Int): RectF {
-        val p1 = legacyAnisotropicToIcrs(legacy.left, legacy.top, imgW, imgH)
-        val p2 = legacyAnisotropicToIcrs(legacy.right, legacy.bottom, imgW, imgH)
-        return RectF(p1.x, p1.y, p2.x, p2.y)
-    }
 }

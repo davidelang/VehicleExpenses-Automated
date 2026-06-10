@@ -72,8 +72,7 @@ class VehicleViewModel @Inject constructor(
             otherTextCropTop = otherTextCropRect?.top,
             otherTextCropRight = otherTextCropRect?.right,
             otherTextCropBottom = otherTextCropRect?.bottom,
-            landmarkTextBlocksJson = landmarkTextBlocksJson,
-            isIcrs = true
+            landmarkTextBlocksJson = landmarkTextBlocksJson
         )
 
         try {

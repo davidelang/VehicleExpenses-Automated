@@ -43,3 +43,11 @@
     - [ ] Verify build success via ./build_app
     - [ ] Update global 'works' tag
     - [ ] Update ENGINEERING_LOG.md with merge details
+
+## Completed improve-vehicle-odo-setup Tasks
+- [x] Implement Deep Forensic Pruning (Final Bloat Fix)
+    - [x] Update TODO.md
+    - [x] Remove redundant "Bin" stage in ExperimentAlignmentScreen.kt
+    - [x] Prune losing vehicle data in JSON serialization
+    - [x] Purge redundant JPEGs from JSON metadata
+    - [x] Forensic Audit and Build Validation
