@@ -1,5 +1,8 @@
 # TODO
 
+- [x] Fix Quick Fill Pipeline
+    - [x] Auto-select vehicle based on discovered landmarks.
+    - [x] Save comprehensive debug JSON to disk for ADB retrieval.
 - [x] Implement Quick Fill & Buffer Borrowing Pipeline
     - [x] Update `docs/specs/BUFFER_SET_SPEC.md` for borrowing architecture.
     - [x] Implement safe Buffer Borrowing in `BufferSet` (C++ & Kotlin).

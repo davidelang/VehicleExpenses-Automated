@@ -94,18 +94,21 @@ fun QuickFillupScreen(
                                         planes[2].pixelStride
                                     )
 
-                                    val referenceLandmarks = currentVehicle.landmarkTextBlocksJson?.let {
-                                        OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", 4000, 3072)
-                                    } ?: emptyList()
+                                    val result = OcrHarness.runAutoFillPipeline(context, bufferSet, vehicles, debugMode)
+                                    
+                                    if (result.error != null) {
+                                        Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                                    }
 
-                                    val result = OcrHarness.runSetJPipeline(context, bufferSet, currentVehicle, referenceLandmarks, debugMode)
-                                    
-                                    // flip() was called inside the pipeline, which triggered unborrow()
-                                    // But we should be careful. Actually, anchorAlign and runSetJPipeline 
-                                    // both call flip() internally.
-                                    
-                                    odometer = result.odometerValue ?: odometer
-                                    Toast.makeText(context, "OCR Complete: $odometer", Toast.LENGTH_SHORT).show()
+                                    result.vehicleId?.let { selectedVehicleId = it }
+                                    result.odometer?.let { odometer = it }
+
+                                    if (debugMode && result.debugJson != null) {
+                                        val timestamp = System.currentTimeMillis()
+                                        val file = java.io.File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
+                                        file.writeText(result.debugJson)
+                                        Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
+                                    }
                                 } catch (e: Exception) {
                                     Log.e("QuickFill", "OCR Pipeline failed", e)
                                 } finally {
