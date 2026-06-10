@@ -995,7 +995,8 @@ private suspend fun runBinTrialsPaddle(
         val avgConf: Float,
         val metadata: Map<String, String>,
         val post1bppB64: String,
-        val annotationsStr: String
+        val annotationsStr: String,
+        val postCleaning1bppB64: String
     )
     val trialsList = mutableListOf<TrialData>()
 
@@ -1173,7 +1174,7 @@ private suspend fun runBinTrialsPaddle(
 
             NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
             val postCleaningP4 = matToPbmP4Base64(odoBuffer.p.mat)
-            trialsMeta["trial_${vIdx}_post_cleaning_1bpp"] = postCleaningP4
+            // trialsMeta["trial_${vIdx}_post_cleaning_1bpp"] = postCleaningP4
 
             val connectCount = NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
             trialsMeta["trial_${vIdx}_connect_count"] = connectCount.toString()
@@ -1336,9 +1337,9 @@ private suspend fun runBinTrialsPaddle(
             threshold, tText, tProbs.sum(), minP, tProbsStr,
             "", tPlainPreB64, tPlainPreRollingB64, tAnnotatedPostB64, tPlainPostB64,
             histsHtml.toString(), tAvg, trialMetaMap,
-            post1bpp, annStr
+            post1bpp, annStr, postCleaningP4
         ))
-        trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
+        // trialsMeta["trial_${vIdx}_post_1bpp"] = post1bpp
         trialsMeta["trial_${vIdx}_annotations"] = annStr
     }
 
@@ -1380,9 +1381,11 @@ private suspend fun runBinTrialsPaddle(
             // put("best_plain_pre_rolling", winner.plainPreRollingB64)
             put("best_annotated_pre", winner.annotatedPreB64)
             // put("best_plain_post", winner.plainPostB64)
-            // put("best_annotated_post", winner.annotatedPostB64)
+            put("best_annotated_post", winner.annotatedPostB64)
             put("best_post_1bpp", winner.post1bppB64)
+            put("best_post_cleaning_1bpp", winner.postCleaning1bppB64)
             put("best_annotations", winner.annotationsStr)
+
         }
     } else emptyMap()
     trialsMeta.putAll(winnerMeta)

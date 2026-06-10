@@ -64,9 +64,15 @@
 
 - [x] Optimize Alignment Reports (Remove large images)
     - [x] Update TODO.md
-    - [x] Remove pre-cleaning and pre-roll p4 from JSON
     - [x] Remove pre-cleaning, pre-roll, and post-roll from HTML
-    - [x] Cleanup winner metadata
+    - [x] Remove per-trial 1bpp images from JSON
     - [x] Forensic Audit and Build Validation
+
+- [x] Fix Extreme Report Bloat (574MB)
+    - [x] Update TODO.md
+    - [x] Remove redundant per-trial images in ExperimentAlignmentScreen.kt
+    - [x] Cleanup HTML image sections
+    - [x] Forensic Audit and Build Validation
+
 
 
