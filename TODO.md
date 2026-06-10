@@ -1,5 +1,11 @@
 # TODO
 
+- [x] Implement Quick Fill & Buffer Borrowing Pipeline
+    - [x] Update `docs/specs/BUFFER_SET_SPEC.md` for borrowing architecture.
+    - [x] Implement safe Buffer Borrowing in `BufferSet` (C++ & Kotlin).
+    - [x] Add "Debug OCR Pipeline" toggle to Settings.
+    - [x] Extract "Set J" logic into streamlined `OcrHarness`.
+    - [x] Refactor `QuickFillupScreen` with CameraX and live processing.
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.

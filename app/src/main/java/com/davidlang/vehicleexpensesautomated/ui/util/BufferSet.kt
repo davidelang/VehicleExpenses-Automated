@@ -65,10 +65,15 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
     // Manager Functions
     suspend fun flip() = mutex.withLock {
+        (p as Instance).unborrow()
         primaryIdx = 1 - primaryIdx
         managedCrops.values.forEach {
             it.rebindToOwner()
         }
+    }
+
+    suspend fun borrowYuv(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) = mutex.withLock {
+        (p as Instance).borrow(y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
     }
 
     suspend fun resize(w: Int, h: Int) = mutex.withLock {
@@ -142,6 +147,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         private var _uvMat: Mat? = null
         private var _nv21Mat: Mat? = null
         private var _buffer: ByteBuffer? = null
+        var isBorrowed: Boolean = false
+            private set
 
         val isLogicalScratch: Boolean get() = this === instances[1 - primaryIdx]
 
@@ -169,6 +176,18 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
         fun setup(w: Int, h: Int) { nativeHandle = nativeSetup(w, h); refreshViews() }
         fun physicalResize(w: Int, h: Int) { nativeResize(nativeHandle, w, h); _buffer = nativeGetBuffer(nativeHandle) }
+
+        fun borrow(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) {
+            nativeBorrowYuv(nativeHandle, y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
+            isBorrowed = true
+        }
+
+        fun unborrow() {
+            if (!isBorrowed) return
+            nativeUnborrow(nativeHandle)
+            isBorrowed = false
+        }
+
         private fun refreshViews() {
             _mat = Mat(nativeGetMatPtr(nativeHandle))
             _uvMat = Mat(nativeGetUVMatPtr(nativeHandle))
@@ -318,6 +337,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     private external fun nativeUpdateMatData(matPtr: Long, parentMatPtr: Long, byteOffset: Int)
     private external fun nativeUpdateCropMat(cropMatPtr: Long, parentMatPtr: Long, x: Int, y: Int, w: Int, h: Int)
     private external fun nativeNormalizeYUV(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, yRStride: Int, uRStride: Int, vRStride: Int, yPStride: Int, uPStride: Int, vPStride: Int, w: Int, h: Int, dstHandle: Long)
+    private external fun nativeBorrowYuv(handle: Long, y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int)
+    private external fun nativeUnborrow(handle: Long)
     companion object {
         init { System.loadLibrary("buffer_set") }
         @JvmStatic private external fun nativeDisarmMat(matObj: Mat)

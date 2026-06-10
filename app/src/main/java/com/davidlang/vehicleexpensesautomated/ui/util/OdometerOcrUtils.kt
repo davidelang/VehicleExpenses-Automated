@@ -940,6 +940,121 @@ object OdometerOcrUtils {
         return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
     }
 
+    fun findValleyMidpoints(bins: FloatArray): List<Int> {
+        if (bins.isEmpty()) return emptyList()
+        val binCount = bins.size
+        val smoothed = FloatArray(binCount)
+        for (i in 0 until binCount) {
+            val start = (i - 1).coerceAtLeast(0)
+            val end = (i + 1).coerceAtMost(binCount - 1)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+        }
+
+        val midpoints = mutableListOf<Int>()
+        var i = 1
+        while (i < binCount - 1) {
+            if (smoothed[i] <= smoothed[i - 1] && smoothed[i] <= smoothed[i + 1]) {
+                val startIdx = i
+                while (i < binCount - 1 && smoothed[i + 1] == smoothed[startIdx]) { i++ }
+                val endIdx = i
+
+                val risesLeft = smoothed[startIdx - 1] > smoothed[startIdx]
+                val risesRight = if (endIdx < binCount - 1) smoothed[endIdx + 1] > smoothed[endIdx] else false
+
+                if (risesLeft && risesRight) {
+                    midpoints.add((startIdx + endIdx) / 2)
+                }
+            }
+            i++
+        }
+        return midpoints.distinct()
+    }
+
+    fun getHistStats(mat: org.opencv.core.Mat): HistStats {
+        val hist = org.opencv.core.Mat()
+        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+        val bins = FloatArray(64); hist.get(0, 0, bins)
+        val totalPixels = mat.rows() * mat.cols()
+
+        val smoothed = FloatArray(64)
+        for (i in 0..63) {
+            val start = (i - 2).coerceAtLeast(0)
+            val end = (i + 2).coerceAtMost(63)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+        }
+
+        // Low Limit: Climb to first peak, then drop to valley
+        var lowPeakIdx = 0
+        while (lowPeakIdx < 62 && smoothed[lowPeakIdx + 1] >= smoothed[lowPeakIdx]) lowPeakIdx++
+        var lowIdx = lowPeakIdx
+        while (lowIdx < 63 && smoothed[lowIdx + 1] <= smoothed[lowIdx]) lowIdx++
+
+        // High Limit: Climb to first peak from right, then drop to valley
+        var highPeakIdx = 63
+        while (highPeakIdx > 1 && smoothed[highPeakIdx - 1] >= smoothed[highPeakIdx]) highPeakIdx--
+        var highIdx = highPeakIdx
+        while (highIdx > 0 && smoothed[highIdx - 1] <= smoothed[highIdx]) highIdx--
+
+        val intensityLow = lowIdx * 4.0
+        val intensityHigh = highIdx * 4.0
+
+        var p80 = 0.0
+        var sum = 0.0
+        for (i in 0..63) {
+            sum += bins[i]
+            if (sum >= totalPixels * 0.80) { p80 = i * 4.0; break }
+        }
+
+        hist.release()
+        return HistStats(intensityLow, intensityHigh, p80, bins)
+    }
+
+    suspend fun rotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
+        val tRot0 = System.currentTimeMillis()
+        val src = set.p.mat
+        val dst = set.s.mat
+
+        val matrixLocal = android.graphics.Matrix()
+        matrixLocal.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
+        val values = FloatArray(9)
+        matrixLocal.getValues(values)
+
+        val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
+        rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
+        rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
+
+        // Rotate Luma (Y)
+        org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+
+        // Rotate Chroma (UV)
+        val srcUv = set.p.uvMat
+        val dstUv = set.s.uvMat
+        val uvScaleMat = rotMat.clone()
+        // Shift translation for half-res UV plane
+        uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
+        uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
+        org.opencv.imgproc.Imgproc.warpAffine(srcUv, dstUv, uvScaleMat, srcUv.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
+
+        set.flip()
+        rotMat.release(); uvScaleMat.release()
+        System.currentTimeMillis() - tRot0
+    }
+
+    fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
+        if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
+        try {
+            val root = org.json.JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) org.json.JSONArray(json) else return emptyList()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
+                val centerPix = IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
+                val sE = kotlin.math.min(imgW, imgH).toDouble(); val pW = (w * sE); val pH = (h * sE)
+                val inst = if (obj.has("instance")) obj.getInt("instance") else -1; val cT = OdometerOcrUtils.cleanLandmarkString(text)
+                list.add(TextBlock(cT, android.graphics.Rect((centerPix.x - pW/2.0).toInt(), (centerPix.y - pH/2.0).toInt(), (centerPix.x + pW/2.0).toInt(), (centerPix.y + pH/2.0).toInt()), instanceId = inst))
+            }
+        } catch (e: Exception) { Log.e("OdometerOcrUtils", "Failed to parse landmarks", e) }
+        return list
+    }
+
     fun refineNumericResult(result: OcrResult): OcrResult {
         val refinedBlocks = result.textBlocks.map { block ->
             val isFlipped = Math.abs(block.angle) > 165f

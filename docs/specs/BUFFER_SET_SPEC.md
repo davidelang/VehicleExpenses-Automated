@@ -57,6 +57,12 @@ The core philosophy is **zero-allocation iterative processing**. Processing rout
 | `slice.clear()` | Zeroes Luma AND resets Chroma to 128. |
 | `slice.clearChroma()` | Resets only the Chroma (UV) to 128. |
 
+### Level 5: Borrowing Functions (Primary Buffer Only)
+| Syntax | Description |
+| :--- | :--- |
+| `foo.borrowYuv(y, u, v, ...)` | Overrides the physical pointers of the Primary Buffer to target external memory (e.g., CameraX `ImageProxy`). |
+| `foo.unborrow()` | Resets Primary Buffer pointers to internal RAM. **Note: This is automatically called by `foo.flip()` if a borrow is active.** |
+
 ## 4. Behavioral Rules
 
 ### A. Coordinate Overloading
@@ -83,6 +89,12 @@ To prevent JVM crashes and memory corruption during `flip()` or `resize()` opera
 - **YuvHandle Smart Proxy:** The `YuvHandle` is a **Smart Proxy**. While the `YuvHandle` object itself can be cached, its `planes` property dynamically generates fresh `ByteBuffer` slices at the moment of access. This ensures that even if a `YuvHandle` is cached across a `flip()`, accessing its data will always yield pointers to the correct, current Primary RAM.
 
 **MANDATE:** Caching or assigning local JVM/native references (aliases) to active `Slice` or `Mat` instances (e.g., `val trialMat = odoBuffer.p.mat`) is **STRICTLY FORBIDDEN** across the codebase. Assigning local aliases to save typing or shorten code is unacceptable. Because functions or operations may invoke `flip()` internally now or in future refactoring, local aliases create severe pointer stability risks. You must always query handles dynamically (e.g., `odoBuffer.p.mat`) at the call-site.
+
+### F. Buffer Borrowing Lifecycle
+`BufferSet` supports **Zero-Copy Ingestion** via Buffer Borrowing. This allows the Primary (`p`) buffer to temporarily wrap memory owned by the OS or another subsystem.
+- **External Authority:** While borrowed, the external provider maintains ownership of the memory. The `BufferSet` must not attempt to free this memory.
+- **Automatic Unborrow Safeguard:** To prevent data corruption or accidental writes to external memory, the `flip()` operation includes a **Strict Safeguard**: if the `BufferSet` is currently in a borrowed state, it MUST automatically execute `unborrow()` *before* swapping the Primary and Scratch roles. This ensures the Scratch buffer (the target for the next write operation) is always backed by safe, internal RAM.
+- **Scope:** Borrowing is only supported on the Primary Buffer. Crops and Scratch buffers cannot be independently borrowed.
 
 ## 5. Future Tasks
 - [ ] **AUDIT:** Audit the entire codebase to locate and remove any cached Mat/Slice pointer aliases (e.g., `trialMat`), replacing them with dynamic call-site queries.
