@@ -49,9 +49,16 @@
     - [x] Forensic Audit and Build Validation
 
 
-- [ ] Finalize Ground Truth and PR
+- [x] Finalize Ground Truth and PR
     - [x] Update TODO.md
     - [x] Remove ? from line 141 in ground_truth_odo.json
-    - [ ] Perform 5-commit history cleanup
+    - [x] Perform 5-commit history cleanup
+    - [x] Generate PR
 
-    - [ ] Generate PR
+- [x] Refine ManageVehiclesScreen UI Layout
+    - [x] Update TODO.md
+    - [x] Consolidate crop buttons into a single row
+    - [x] Move zoom controls to top-right vertical stack
+    - [x] Remove pan direction buttons
+    - [x] Forensic Audit and Build Validation
+

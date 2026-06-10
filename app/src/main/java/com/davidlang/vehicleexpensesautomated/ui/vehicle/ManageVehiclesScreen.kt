@@ -220,17 +220,15 @@ fun ManageVehiclesScreen(
                     onSizeChanged = { imageSize = it },
                     onCropChanged = { odo, other -> odometerCropRect = odo; otherTextCropRect = other })
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_ODO) CropEditMode.IDLE else CropEditMode.CREATE_ODO }, modifier = Modifier.weight(1f)) { 
-                            Text(if (editMode == CropEditMode.CREATE_ODO) "Done Odo" else "Create Odo Crop") 
-                        }
-                        Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_OTHER) CropEditMode.IDLE else CropEditMode.CREATE_OTHER }, modifier = Modifier.weight(1f)) { 
-                            Text(if (editMode == CropEditMode.CREATE_OTHER) "Done Ignore" else "Create Ignore Crop") 
-                        }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_ODO) CropEditMode.IDLE else CropEditMode.CREATE_ODO }, modifier = Modifier.weight(1f)) {
+                        Text(if (editMode == CropEditMode.CREATE_ODO) "Done Odo" else "Odo Crop")
                     }
-                    Button(onClick = { editMode = if (editMode == CropEditMode.EDIT_CROPS) CropEditMode.IDLE else CropEditMode.EDIT_CROPS }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (editMode == CropEditMode.EDIT_CROPS) "Done Editing" else "Edit Crops")
+                    Button(onClick = { editMode = if (editMode == CropEditMode.EDIT_CROPS) CropEditMode.IDLE else CropEditMode.EDIT_CROPS }, modifier = Modifier.weight(1f)) {
+                        Text(if (editMode == CropEditMode.EDIT_CROPS) "Done Edit" else "Edit Crops")
+                    }
+                    Button(onClick = { editMode = if (editMode == CropEditMode.CREATE_OTHER) CropEditMode.IDLE else CropEditMode.CREATE_OTHER }, modifier = Modifier.weight(1f)) {
+                        Text(if (editMode == CropEditMode.CREATE_OTHER) "Done Ignore" else "Ignore Crop")
                     }
                 }
 
@@ -489,18 +487,10 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                 }
             }
 
-            // PAN / ZOOM BUTTONS
-            Column(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SmallFloatingActionButton(onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("+") }
-                    SmallFloatingActionButton(onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("-") }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SmallFloatingActionButton(onClick = { offset += Offset(0f, 50f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("↓") }
-                    SmallFloatingActionButton(onClick = { offset += Offset(0f, -50f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("↑") }
-                    SmallFloatingActionButton(onClick = { offset += Offset(-50f, 0f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("←") }
-                    SmallFloatingActionButton(onClick = { offset += Offset(50f, 0f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("→") }
-                }
+            // ZOOM BUTTONS
+            Column(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SmallFloatingActionButton(onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("+") }
+                SmallFloatingActionButton(onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("-") }
             }
         }
     }
