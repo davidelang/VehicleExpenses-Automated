@@ -366,8 +366,8 @@ object OcrUtils {
 
     fun isBlockInCrop(block: TextBlock, crop: android.graphics.RectF?, w: Int, h: Int): Boolean {
         if (crop == null || w == 0 || h == 0) return false
-        val cx = block.boundingBox.centerX().toFloat() / w; val cy = block.boundingBox.centerY().toFloat() / h
-        return cx >= crop.left && cx <= crop.right && cy >= crop.top && cy <= crop.bottom
+        val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), w, h)
+        return icrs.x >= crop.left && icrs.x <= crop.right && icrs.y >= crop.top && icrs.y <= crop.bottom
     }
 
 }
