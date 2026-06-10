@@ -37,7 +37,8 @@
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
 
-- [ ] Implement Gap-Connecting Filter (Take 7 - Surgical Rectangles)
+- [x] Implement Gap-Connecting Filter (Take 7 - Surgical Rectangles)
     - [x] Update TODO.md
-    - [ ] Implement surgical iterative welding in NativeImageUtils.cpp
-    - [ ] Forensic Audit and Build Validation
+    - [x] Implement surgical iterative welding in NativeImageUtils.cpp
+    - [x] Forensic Audit and Build Validation
+
