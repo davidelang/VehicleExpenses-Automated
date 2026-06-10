@@ -36,7 +36,7 @@
 - [x] Refactor jq Rule and Whitelist ls
     - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
     - [x] Commit and sync rules across all worktrees.
-- [/] Fix Master Agent 'works' Tag Violation
-    - [ ] Update `GEMINI.md` with Safety Override clause.
-    - [ ] Update `MASTER_AGENT_MANDATE.md` with strict merge template.
-    - [ ] Commit and sync rules across all worktrees.
+- [x] Fix Master Agent 'works' Tag Violation
+    - [x] Update `GEMINI.md` with Safety Override clause.
+    - [x] Update `MASTER_AGENT_MANDATE.md` with strict merge template.
+    - [x] Commit and sync rules across all worktrees.
