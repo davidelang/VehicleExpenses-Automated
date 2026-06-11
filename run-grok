@@ -1,0 +1,16 @@
+#!/bin/bash
+# run-grok
+# Launch Grok CLI in the current agent worktree.
+# Sandbox is provided via the ./dev-ai-interaction symlink (created by setup_agent) + absolute path in mandates.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
+
+echo "Launching Grok CLI in $(pwd)..."
+echo "Grok binary: $GROK_BIN"
+echo "Sandbox path: $SANDBOX_DIR"
+
+exec "$GROK_BIN" \
+    "Read new_grok_agent_prompt and follow its instructions." \
+    "$@"

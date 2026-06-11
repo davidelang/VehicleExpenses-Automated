@@ -9,7 +9,7 @@ For instructions on how to manage agents, create branches, and merge work, see:
 ## 📂 Layout Overview
 - **`master/`**: Main development worktree.
 - **`agent-N/`**: Dynamic worktrees for feature agents.
-- **`.gemini/`**: Shared brain (policies and rules).
+- Shared brain files (`.gemini/*`, `GEMINI.md`, `AGENT_MANDATES.md`, `AGENTS.md`, `GROK.md`, `new_*_prompt`, etc.): tracked on the branch and delivered by `git worktree add` (from master tip) or hotfixed via `update-rules.sh` from the orchestration root. The sandbox symlink (`dev-ai-interaction`) is the only one created locally.
 
 ---
 ## Repository History

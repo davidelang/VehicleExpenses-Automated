@@ -40,18 +40,30 @@ commandPrefix = [ "git status", "git log", "git diff", "git add", "git commit", 
 modes = [ "plan", "autoEdit", "yolo" ]
 
 
+# Git reset: only the three approved contexts (with preflight for recovery tags).
+# HEAD only for uncommitted discard (same-turn planning errors).
+# <branch>/builds or builds (on master) for build-recovery / 3-3-3.
+# All other resets (HEAD^, arbitrary SHAs, other branches, etc.) are denied.
 [[rule]]
-decision = "ask"
-priority = 960
+decision = "allow"
+priority = 970
 toolName = "run_shell_command"
-commandRegex = "^git\\s+reset.*"
+commandRegex = "^git\\s+reset\\s+--hard\\s+HEAD$"
 modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
 decision = "allow"
 priority = 970
 toolName = "run_shell_command"
-commandRegex = "^git\\s+reset\\s+--hard\\s+(([^ ]+/)?builds|HEAD)$"
+commandRegex = "^git\\s+reset\\s+--hard\\s+(([^ ]+/)?builds)$"
+modes = [ "plan", "autoEdit", "yolo" ]
+
+# Explicit deny for the common forbidden forms (agents must use the preflight pattern in prompts).
+[[rule]]
+decision = "deny"
+priority = 980
+toolName = "run_shell_command"
+commandRegex = "^git\\s+reset.*(HEAD\\^|HEAD~|HEAD@|origin/|[0-9a-f]{7,})"
 modes = [ "plan", "autoEdit", "yolo" ]
 
 [[rule]]
@@ -62,12 +74,9 @@ commandPrefix = [ "adb" ]
 modes = [ "plan", "default", "autoEdit", "yolo" ]
 allowRedirection = true
 
-[[rule]]
-decision = "allow"
-priority = 950
-toolName = "run_shell_command"
-commandPrefix = [ "./deploy" ]
-modes = [ "default", "autoEdit", "yolo" ]
+# ./deploy and adb installDebug are forbidden for agents (shared hardware).
+# Agents must ask the user to perform deploys. No allow rule here for agents.
+# (Root orchestration / user may still use them directly.)
 
 [[rule]]
 decision = "allow"

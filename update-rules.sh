@@ -1,7 +1,14 @@
 #!/bin/bash
 # update-rules.sh
 # Synchronizes infrastructure, policies, and mandates across all agent worktrees.
-# This script should be run from the worktree containing the source of truth (usually master).
+#
+# Per user direction and approved plan: ALWAYS run this from the orchestration root
+# on the `orchestration` branch (development context for all rule/infra changes).
+# It publishes (cp + per-worktree commit) to the `master/` worktree and all `agent-N/`
+# worktrees. New worktrees inherit correct content via `git worktree add ... master`
+# (after the master branch tip has the updates).
+#
+# Shared brain uses physical copies (no hard links, no skip-worktree).
 
 # 1. Identify the repository root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,11 +34,19 @@ FILES=(
     "MASTER_AGENT_MANDATE.md"
     "README-multi-agent.md"
     "agent_reminder"
-    "AGENT_CONTEXT.md.template"
     "new_agent_prompt"
     ".gitignore"
     "docs/specs/OPERATIONAL_HANDBOOK.md"
+    # New for Grok CLI parallel support (added per approved plan)
+    "AGENT_MANDATES.md"
+    "AGENTS.md"
+    "GROK.md"
+    "new_grok_agent_prompt"
+    ".grok/config.toml"
+    ".grok/hooks/plan-mode-hard-stops.js"
 )
+
+# Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
 
 # 4. Push updates to all other worktrees
 CURRENT_WT=$(git rev-parse --show-toplevel)
@@ -51,7 +66,7 @@ for WT in $WORKTREES; do
             TARGET_FILE="$WT/$FILE"
             TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
             mkdir -p "$TARGET_DIR_PATH"
-            # Break hard links and overwrite read-only files
+            # Overwrite with physical copy (shared brain is physical copies on the branch, not links)
             rm -f "$TARGET_FILE"
             cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
         fi
