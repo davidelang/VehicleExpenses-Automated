@@ -379,6 +379,33 @@ private suspend fun runPumpExperiment(
                 }
                 branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
+                // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
+                // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
+                // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
+                // (prepareScale + detect at 224/608/1024/2560), a final pass on the union (after ICRS mapping to common
+                // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
+                // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
+                // takeCrop) have no entirely-contained nested boxes, matching the intent.
+                if (pdHunksRawTotal.isNotEmpty()) {
+                    val kept = pdHunksRawTotal.filter { h1 ->
+                        val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(h1.icrs.right, h1.icrs.bottom, imgW, imgH)
+                        val r1 = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        pdHunksRawTotal.none { h2 ->
+                            h1 !== h2 && run {
+                                val op1 = IcrsMath.icrsToPixel(h2.icrs.left, h2.icrs.top, imgW, imgH)
+                                val op2 = IcrsMath.icrsToPixel(h2.icrs.right, h2.icrs.bottom, imgW, imgH)
+                                val r2 = android.graphics.Rect(op1.x.toInt(), op1.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                // Small inset tolerance in final pixel space (cross-scale nesting can appear after mapping).
+                                // Remove only boxes that are entirely contained.
+                                r2.contains(r1.left + 2, r1.top + 2, r1.right - 2, r1.bottom - 2)
+                            }
+                        }
+                    }
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(kept)
+                }
+
                 val mlHunks = if (flowName == "Set B") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
