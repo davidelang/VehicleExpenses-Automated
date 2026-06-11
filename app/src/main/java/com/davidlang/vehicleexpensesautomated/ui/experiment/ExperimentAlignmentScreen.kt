@@ -286,7 +286,7 @@ private suspend fun runExperiment(
     val pipelines = listOf(
         PipelineConfig("set_a", "Set A", { it.mlTimeMs }) { it.mlAngle },
         PipelineConfig("set_e", "Set E", { it.paddleTimeMs }) { it.paddleCppAngle },
-        PipelineConfig("set_j", "Set J (CC Speedup)", { it.paddleTimeMs }) { it.paddleCppAngle }
+        PipelineConfig("set_j", "Set J (CC Speedup)", { it.paddleTimeMs }) { it.paddleOptimizedAngle }
     )
     val harnessEngineNames = listOf("Set A ML") + pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
@@ -334,7 +334,7 @@ private suspend fun runExperiment(
             try {
                 // Step 2 (Deskew): Calculate tilt independently for Set A/E
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
-
+                
                 val tilt = deskewResA.angle
                 val tMl = deskewResA.mlTimeMs
                 val tPd = deskewResA.paddleTimeMs
@@ -628,6 +628,8 @@ private fun serializePhotoResultToJson(
         put("nativeProbe", nativeProbe)
         put("t_thumb_orig_ms", tSnapOrig)
         put("t_snap_align_ms", tSnapAlign)
+        put("paddle_optimized_angle", deskewResA?.paddleOptimizedAngle?.toDouble() ?: 0.0)
+        put("paddle_optimized_time_ms", deskewResA?.paddleOptimizedTimeMs ?: 0L)
 
         // Pathway Serialization (Phase 116)
         val pathwaysJson = JSONObject()
