@@ -57,11 +57,14 @@ class PhotoStorageManager @Inject constructor(
         val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
         val provider = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
 
-        return if (provider == "google_drive") {
-            // Try Drive first; if it fails for any reason (no account, network, auth, etc.), fall back to local
-            uploadToDrive(uri, fileName, photoType) ?: saveLocally(uri, fileName, photoType)
+        val localUriString = saveLocally(uri, fileName, photoType)
+
+        return if (provider == "google_drive" && localUriString != null) {
+            val localUri = Uri.parse(localUriString)
+            val driveUrl = uploadToDrive(localUri, fileName, photoType)
+            driveUrl ?: localUriString
         } else {
-            saveLocally(uri, fileName, photoType)
+            localUriString
         }
     }
 
@@ -74,7 +77,7 @@ class PhotoStorageManager @Inject constructor(
             val folderId = findOrCreateFolder(drive, folderName)
 
             val tempFile = File(context.cacheDir, fileName)
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            openInputStream(uri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
                 }
@@ -109,7 +112,7 @@ class PhotoStorageManager @Inject constructor(
                     }
                     context.contentResolver.update(uri, contentValues, null, null)
                 } catch (e: Exception) {
-                    // Ignore failures in finalizing
+                    android.util.Log.e("PhotoStorageManager", "Failed to update IS_PENDING to 0", e)
                 }
             }
             return uri.toString()
@@ -118,7 +121,7 @@ class PhotoStorageManager @Inject constructor(
         // Otherwise, copy it to a new MediaStore location
         val destUri = createMediaStoreUri(fileName, photoType) ?: return null
         return try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            openInputStream(uri)?.use { input ->
                 context.contentResolver.openOutputStream(destUri)?.use { output ->
                     input.copyTo(output)
                 }
@@ -130,8 +133,30 @@ class PhotoStorageManager @Inject constructor(
                 }
                 context.contentResolver.update(destUri, contentValues, null, null)
             }
+            
+            // Explicitly notify the MediaScanner so the photo appears in the Gallery immediately
+            try {
+                val projection = arrayOf(MediaStore.MediaColumns.DATA)
+                context.contentResolver.query(destUri, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                        val path = cursor.getString(pathIndex)
+                        android.media.MediaScannerConnection.scanFile(
+                            context,
+                            arrayOf(path),
+                            arrayOf("image/jpeg")
+                        ) { scannedPath, scannedUri ->
+                            android.util.Log.i("PhotoStorageManager", "MediaScanner scanned: $scannedPath -> $scannedUri")
+                        }
+                    }
+                }
+            } catch (scanEx: Exception) {
+                android.util.Log.e("PhotoStorageManager", "MediaScanner notification failed", scanEx)
+            }
+
             destUri.toString()
         } catch (e: Exception) {
+            android.util.Log.e("PhotoStorageManager", "Failed to save photo locally", e)
             null
         }
     }
@@ -184,5 +209,18 @@ class PhotoStorageManager @Inject constructor(
             }
         }
         return name
+    }
+
+    private fun openInputStream(uri: Uri): java.io.InputStream? {
+        return try {
+            if (uri.scheme == "file") {
+                java.io.FileInputStream(File(uri.path ?: ""))
+            } else {
+                context.contentResolver.openInputStream(uri)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PhotoStorageManager", "Failed to open input stream for URI: $uri", e)
+            null
+        }
     }
 }
