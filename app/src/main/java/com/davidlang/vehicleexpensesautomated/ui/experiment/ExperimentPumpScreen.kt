@@ -419,6 +419,50 @@ private suspend fun runPumpExperiment(
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
                 }
 
+                // Global cross-scale nested removal for the final raw red boxes.
+                // Previously the +1 expand + nested filter was only per-scale inside runDiscoveryPaddle.
+                // Now, after collecting the union of all resulting boxes (regardless of discovery scale),
+                // de-nest globally in full image pixel space so the drawn red boxes (and anns in crops)
+                // have no nested, even if a high-res small box from one scale ends up inside a low-res
+                // large box from another scale.
+                val rawFullRects = pdHunksRawTotal.map { h ->
+                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
+                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                }.toMutableList()
+                val expandedGlobal = rawFullRects.map { r ->
+                    android.graphics.Rect(
+                        (r.left - 1).coerceAtLeast(0),
+                        (r.top - 1).coerceAtLeast(0),
+                        (r.right + 1).coerceAtMost(imgW - 1),
+                        (r.bottom + 1).coerceAtMost(imgH - 1)
+                    )
+                }
+                val nonNestedGlobal = expandedGlobal.filter { r1 ->
+                    expandedGlobal.none { r2 ->
+                        r1 != r2 && (
+                            r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) ||
+                            run {
+                                val interL = max(r1.left, r2.left)
+                                val interT = max(r1.top, r2.top)
+                                val interR = min(r1.right, r2.right)
+                                val interB = min(r1.bottom, r2.bottom)
+                                if (interL < interR && interT < interB) {
+                                    val interArea = (interR - interL) * (interB - interT).toFloat()
+                                    val r1Area = r1.width() * r1.height()
+                                    interArea > 0.6f * r1Area
+                                } else false
+                            }
+                        )
+                    }
+                }
+                pdHunksRawTotal.clear()
+                nonNestedGlobal.forEach { r ->
+                    val l = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
+                    val ri = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
+                    pdHunksRawTotal.add(PumpHunk("", RectF(l.x, l.y, ri.x, ri.y)))
+                }
+
                 // 5. Visualization
                 fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
                     val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
