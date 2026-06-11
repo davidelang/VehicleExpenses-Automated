@@ -362,10 +362,12 @@ private suspend fun runPumpExperiment(
                     }
 
                     val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
-                    val raw = paddleResults[0]
-                    val exp = paddleResults[1]
-                    val maxExt = paddleResults[2]
-                    val native = paddleResults[3]
+                    // Casts required because runDiscoveryPaddle now returns List<*> (to carry the 5th
+                    // crop rects for accurate global mapping, per the approved plan).
+                    val raw = paddleResults[0] as List<PumpHunk>
+                    val exp = paddleResults[1] as List<PumpHunk>
+                    val maxExt = paddleResults[2] as List<PumpHunk>
+                    val native = paddleResults[3] as List<PumpHunk>
 
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
