@@ -1,7 +1,7 @@
 # TODO
 
-- [ ] Optimize Quick Fill UI and App-Wide Top Bar (Revision 6)
-    - [ ] Implement landscape side-by-side := layout (Camera left, Buttons middle, Inputs right)
+- [x] Optimize Quick Fill UI and App-Wide Top Bar (Revision 6)
+    - [x] Implement landscape side-by-side := layout (Camera left, Buttons middle, Inputs right)
     - [x] Implement custom Canvas-based UpDownArrowsIcon
     - [x] Implement adaptive portrait/landscape orientation layouts
     - [x] Group Vehicle + Odo (green border in Odo mode) and Volume + Cost (green border in Pump mode)
