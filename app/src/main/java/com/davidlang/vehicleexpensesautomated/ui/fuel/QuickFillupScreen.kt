@@ -21,6 +21,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +90,12 @@ fun QuickFillupScreen(
     var captureMode by remember { mutableStateOf("odo") }
     var currencySymbol by remember { mutableStateOf(defaultCurrency) }
     var volumeUnit by remember { mutableStateOf(defaultVolumeUnit) }
+
+    val focusManager = LocalFocusManager.current
+    var isOdoFocused by remember { mutableStateOf(false) }
+    var isVolumeFocused by remember { mutableStateOf(false) }
+    var isCostFocused by remember { mutableStateOf(false) }
+    val isEditing = isOdoFocused || isVolumeFocused || isCostFocused
 
     val imageCapture: ImageCapture = remember {
         val resSelector = ResolutionSelector.Builder()
@@ -263,7 +276,16 @@ fun QuickFillupScreen(
                     value = odometer,
                     onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
                     label = { Text("Odo") },
-                    modifier = Modifier.weight(1.0f),
+                    modifier = Modifier
+                        .weight(1.0f)
+                        .onFocusChanged { isOdoFocused = it.isFocused },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                    ),
                     singleLine = true
                 )
             }
@@ -296,7 +318,16 @@ fun QuickFillupScreen(
                             Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
                         }
                     },
-                    modifier = Modifier.weight(1.0f),
+                    modifier = Modifier
+                        .weight(1.0f)
+                        .onFocusChanged { isVolumeFocused = it.isFocused },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                    ),
                     singleLine = true
                 )
                 OutlinedTextField(
@@ -328,7 +359,16 @@ fun QuickFillupScreen(
                             }
                         }
                     },
-                    modifier = Modifier.weight(1.0f),
+                    modifier = Modifier
+                        .weight(1.0f)
+                        .onFocusChanged { isCostFocused = it.isFocused },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { focusManager.clearFocus() }
+                    ),
                     singleLine = true
                 )
             }
@@ -572,28 +612,36 @@ fun QuickFillupScreen(
 
     if (isLandscape) {
         Row(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .weight(1.2f)
-                    .fillMaxHeight()
-            ) {
-                cameraOrCropArea()
+            if (!isEditing) {
+                Box(
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .fillMaxHeight()
+                ) {
+                    cameraOrCropArea()
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    cameraControlsContent(true)
+                }
             }
             Column(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(horizontal = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                cameraControlsContent(true)
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .verticalScroll(rememberScrollState()),
+                modifier = if (isEditing) {
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                } else {
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .verticalScroll(rememberScrollState())
+                },
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 fieldsAndSaveContent()
@@ -601,23 +649,27 @@ fun QuickFillupScreen(
         }
     } else {
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                cameraOrCropArea()
+            if (!isEditing) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    cameraOrCropArea()
+                }
             }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .then(if (isEditing) Modifier else Modifier.verticalScroll(rememberScrollState())),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 fieldsAndSaveContent()
-                Spacer(modifier = Modifier.height(12.dp))
-                cameraControlsContent(false)
+                if (!isEditing) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    cameraControlsContent(false)
+                }
             }
         }
     }
