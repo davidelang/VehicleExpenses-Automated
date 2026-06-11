@@ -296,20 +296,15 @@ private suspend fun runPumpExperiment(
 
                 // Use shared modern rotate (UV handling, parity with alignment improvements). Local pRotate removed.
                 OdometerOcrUtils.rotate(workspace, tilt)
+                branch.metadata["tilt"] = "%.2f".format(tilt)
 
                 // 3. Discovery
                 val scales = listOf(224, 608, 1024, 2560)
-                val mlBlocksRaw = mutableListOf<PumpHunk>()
+                val mlBlocksRaw = if (flowName == "Set B") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
-
-                // Accumulator for accurate full-pixel rects (post local +1/dedup/strict filter from each scale).
-                // These are mapped using the per-scale scaleFactor so the global union filter operates in true
-                // original photo pixel space (not distorted by content-ICRS roundtrip). Required for correct
-                // strict subset removal across scales per the approved plan.
-                val allFullPixelRawRects = mutableListOf<android.graphics.Rect>()
 
                 val processedScales = mutableSetOf<Int>()
                 scales.forEach { scale ->
@@ -325,33 +320,35 @@ private suspend fun runPumpExperiment(
                     val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
                     val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
 
-                    if (!processedScales.contains(chosenScale)) {
-                        processedScales.add(chosenScale)
-                        chosenBuffer.p.clear() // clears luma and resets chroma to 128
-                        val recCropId = chosenBuffer.createCrop(0, 0, targetW, targetH)
-                        val interp = if (srcW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                        org.opencv.imgproc.Imgproc.resize(workspace.p.mat, chosenBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                    if (flowName != "Set B") {
+                        if (!processedScales.contains(chosenScale)) {
+                            processedScales.add(chosenScale)
+                            chosenBuffer.p.clear() // clears luma and resets chroma to 128
+                            val recCropId = chosenBuffer.createCrop(0, 0, targetW, targetH)
+                            val interp = if (srcW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.p.mat, chosenBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
 
-                        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                            chosenBuffer.p.nv21,
-                            chosenBuffer.p.width,
-                            chosenBuffer.p.height,
-                            0,
-                            com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-                        )
-                        val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
-                        chosenBuffer.c[recCropId].release()
+                            val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                                chosenBuffer.p.nv21,
+                                chosenBuffer.p.width,
+                                chosenBuffer.p.height,
+                                0,
+                                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                            )
+                            val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+                            chosenBuffer.c[recCropId].release()
 
-                        val hunks = result.textBlocks.map { block ->
-                            val ml = block.boundingBox.left.toFloat()
-                            val mt = block.boundingBox.top.toFloat()
-                            val mr = block.boundingBox.right.toFloat()
-                            val mb = block.boundingBox.bottom.toFloat()
-                            val i1 = IcrsMath.pixelToIcrs(ml, mt, targetW, targetH)
-                            val i2 = IcrsMath.pixelToIcrs(mr, mb, targetW, targetH)
-                            PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
+                            val hunks = result.textBlocks.map { block ->
+                                val ml = block.boundingBox.left.toFloat()
+                                val mt = block.boundingBox.top.toFloat()
+                                val mr = block.boundingBox.right.toFloat()
+                                val mb = block.boundingBox.bottom.toFloat()
+                                val i1 = IcrsMath.pixelToIcrs(ml, mt, targetW, targetH)
+                                val i2 = IcrsMath.pixelToIcrs(mr, mb, targetW, targetH)
+                                PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
+                            }
+                            mlBlocksRaw.addAll(hunks)
                         }
-                        mlBlocksRaw.addAll(hunks)
                     }
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
@@ -362,12 +359,10 @@ private suspend fun runPumpExperiment(
                     }
 
                     val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
-                    // Casts required because runDiscoveryPaddle now returns List<*> (to carry the 5th
-                    // crop rects for accurate global mapping, per the approved plan).
-                    val raw = paddleResults[0] as List<PumpHunk>
-                    val exp = paddleResults[1] as List<PumpHunk>
-                    val maxExt = paddleResults[2] as List<PumpHunk>
-                    val native = paddleResults[3] as List<PumpHunk>
+                    val raw = paddleResults[0]
+                    val exp = paddleResults[1]
+                    val maxExt = paddleResults[2]
+                    val native = paddleResults[3]
 
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
@@ -381,23 +376,10 @@ private suspend fun runPumpExperiment(
                     discoveryDetails["Paddle Expanded"]!![scale] = exp
                     discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
                     discoveryDetails["Paddle Native"]!![scale] = native
-
-                    // Collect the post-local strict-filter crop rects (5th return value) and map to full
-                    // original pixel rects using this scale's scaleFactor. These feed the global union filter.
-                    val cropRects = paddleResults[4] as List<android.graphics.Rect>
-                    val fullRects = cropRects.map { r ->
-                        android.graphics.Rect(
-                            (r.left / scaleFactor).coerceAtLeast(0f).toInt(),
-                            (r.top / scaleFactor).coerceAtLeast(0f).toInt(),
-                            (r.right / scaleFactor).coerceAtMost(srcW - 1f).toInt(),
-                            (r.bottom / scaleFactor).coerceAtMost(srcH - 1f).toInt()
-                        )
-                    }
-                    allFullPixelRawRects.addAll(fullRects)
                 }
                 branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
-                val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw)
+                val mlHunks = if (flowName == "Set B") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
                 // 4. Extraction
@@ -440,37 +422,16 @@ private suspend fun runPumpExperiment(
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
                 }
 
-                // Global cross-scale strict subset removal on the *union* of all post-+1 boxes (across scales).
-                // Uses the accurately mapped full-pixel rects accumulated above (via /scaleFactor in crop space).
-                // Dedup exact first (keep one), then remove ONLY if strict subset (full 4-side containment by a different box).
-                // NO extra +1/expand at this layer (the +1 was at the lowest level per scale; the old +5 was a
-                // 1-layer-up workaround for when +1 could not be inside the lowest calc).
-                // This produces the final pdHunksRawTotal used for Set B (and flow) PD red annotations and takeCrop.
-                // Target (per approved plan): for row 2 (PXL_20240708_222637707.jpg) Set B paddle, final red count ~20
-                // (between the 30+ and 4 seen in the two latest-report pump_results jsons). Non-subsets (e.g. the
-                // left $ / Gallons boxes) survive unless they are actually strict subsets.
-                val deduped = mutableListOf<android.graphics.Rect>()
-                for (r in allFullPixelRawRects) {
-                    if (deduped.none { it.left == r.left && it.top == r.top && it.right == r.right && it.bottom == r.bottom }) deduped.add(r)
-                }
-                val nonNestedGlobal = deduped.filter { r1 ->
-                    deduped.none { r2 -> r1 != r2 && r2.left <= r1.left && r2.top <= r1.top && r2.right >= r1.right && r2.bottom >= r1.bottom }
-                }
-                pdHunksRawTotal.clear()
-                nonNestedGlobal.forEach { r ->
-                    val l = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val ri = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    pdHunksRawTotal.add(PumpHunk("", RectF(l.x, l.y, ri.x, ri.y)))
-                }
-
                 // 5. Visualization
                 fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
                     val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
                     SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
 
-                val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
-                branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
+                if (flowName != "Set B") {
+                    val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
+                    branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
+                }
                 // Only red raw boxes for now (focus on redbox debugging: larger by +1, nested removed, correct positions after scaling fix)
                 val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
                 // + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
@@ -512,7 +473,14 @@ private suspend fun runPumpExperiment(
             appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
             jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
 
-            val summaryText = flows.map { f -> "$f: ${root.getBranch(f).pathResults["ML"]?.cost ?: "F"}" }.joinToString(" | ")
+            val summaryText = flows.map { f ->
+                val br = root.getBranch(f)
+                if (f == "Set B") {
+                    "$f Paddle: ${br.pathResults["Paddle"]?.cost ?: "F"}"
+                } else {
+                    "$f: ${br.pathResults["ML"]?.cost ?: "F"}"
+                }
+            }.joinToString(" | ")
             val resultSummary = PumpPhotoResultSummary(file.name, summaryText, 1.0f, "")
             withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
             delay(50)
@@ -737,7 +705,9 @@ private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: L
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
     appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
     flows.toSortedSet().forEach { flow ->
-        appendLine("<th style='width:350px;'>$flow ML</th>")
+        if (flow != "Set B") {
+            appendLine("<th style='width:350px;'>$flow ML</th>")
+        }
         appendLine("<th style='width:350px;'>$flow Paddle</th>")
     }
     appendLine("<th style='width:600px;'>Final Comparison</th></tr>")
@@ -759,10 +729,15 @@ private fun pBuildHtmlRowDynamic(
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
+
+    val perSetTilts = root.subBranches.toSortedMap().entries
+        .joinToString(" | ") { (name, br) -> "$name: ${br.metadata["tilt"] ?: "?"}°" }
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
+        if (name != "Set B") {
+            appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
+        }
         appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,${br.images["PD"]}'></td>")
     }
 
@@ -831,23 +806,27 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
 }
 
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine, contentW: Int, contentH: Int): List<*> {
-    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList<android.graphics.Rect>())
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine, contentW: Int, contentH: Int): List<List<PumpHunk>> {
+    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
     val rawBlocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
     val rawRects = rawBlocks.map { it.boundingBox }
 
-    // +1 expand per scale in crop/detect-input space (before scaling back up / before anything more).
-    // Then strict subset removal ONLY: dedup exact matches first (keep one), then remove a rect only if
-    // it is a strict subset (full containment on all 4 sides) of another different rect.
-    // This matches the approved plan: "ONLY remove boxes that are strict subsets of other boxes".
-    // (The +5 inset pattern was the old 1-layer-up workaround from alignment when +1 could not live in
-    // the lowest-level calc; here the +1 is at lowest so we use direct full-contain test with no extra margin.)
-    // Y-overlap without full X containment must not trigger removal.
-    // The returned 5th element (crop-space nonNestedRects) is for the caller's accurate full-pixel mapping
-    // for the global cross-scale union (using scaleFactor, not ICRS roundtrip distortion).
+    // Redbox improvement from Set J (alignment experiment) - first item per user directive.
+    // Move sides of detected box out by 1 pixel in low-res (this crop/detect-input space) before
+    // the ICRS "scaling back up" (and before doing anything more: consolidate, native expand, hunks).
+    // Then remove nested red boxes (inset contains filter, matching alignment tRawB logic in runBinTrialsPaddle).
+    //
+    // Pump note (variable scale vs fixed in alignment): scaleFactor computed in caller scales.forEach
+    // (currentLongEdge vs target/scale + prepareScale 32-align outer/inner + process 1.0f on crop).
+    // ICRS here uses crop masterW/H; later icrsToPixel in getFinal uses full original imgW/imgH.
+    // This chain causes erosion (e.g. 63px feature -> ~56px effective after down/up as described).
+    // +1 here (in the post-process rect space) + nested removal is the ported math.
+    // Per clarification: the lowest level does the +1 adjustment; layers above (scale/prepare) apply the
+    // scale factor from there. Buffer sizes are multiples of 32x2 (for alignment), but the boxes themselves
+    // do not need to be.
     val expandedRects = rawRects.map { r ->
         android.graphics.Rect(
             (r.left - 1).coerceAtLeast(0),
@@ -856,16 +835,8 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
             (r.bottom + 1).coerceAtMost(masterH - 1)
         )
     }
-
-    // Dedup exact first (keep one of any identical boxes), then strict full-containment filter.
-    val dedupedRects = mutableListOf<android.graphics.Rect>()
-    for (r in expandedRects) {
-        if (dedupedRects.none { it.left == r.left && it.top == r.top && it.right == r.right && it.bottom == r.bottom }) {
-            dedupedRects.add(r)
-        }
-    }
-    val nonNestedRects = dedupedRects.filter { r1 ->
-        dedupedRects.none { r2 -> r1 != r2 && r2.left <= r1.left && r2.top <= r1.top && r2.right >= r1.right && r2.bottom >= r1.bottom }
+    val nonNestedRects = expandedRects.filter { r1 ->
+        expandedRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
     }
 
     // 1. Consolidate Raw Character Fragments (75% overlap rule) -- now on improved (expanded + de-nested) raw redboxes
@@ -929,9 +900,7 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
     }
 
-    // Return 5th element: the post-+1/dedup/strict nonNested crop-space rects (for caller's accurate
-    // full-pixel mapping in the global cross-scale union step). This is required by the approved plan.
-    return listOf(hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative, nonNestedRects)
+    return listOf(hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
 }
 
 
