@@ -14,6 +14,8 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -75,6 +77,12 @@ fun QuickFillupScreen(
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
     val saveFuelPhotos = remember { prefs.getBoolean("save_fuel_photos", true) }
 
+    val defaultCurrency = remember { prefs.getString("currency_symbol", "$") ?: "$" }
+    val defaultVolumeUnit = remember { prefs.getString("volume_unit", "G") ?: "G" }
+    var captureMode by remember { mutableStateOf("odo") }
+    var currencySymbol by remember { mutableStateOf(defaultCurrency) }
+    var volumeUnit by remember { mutableStateOf(defaultVolumeUnit) }
+
     val imageCapture: ImageCapture = remember {
         val resSelector = ResolutionSelector.Builder()
             .setResolutionStrategy(ResolutionStrategy(
@@ -100,25 +108,64 @@ fun QuickFillupScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Camera Preview or Visual Debug (Top Half)
-        Box(modifier = Modifier.fillMaxWidth().height(300.dp).background(Color.Black)) {
-            if (isProcessing && displayBitmap != null) {
+        // Mode Selector: Odometer vs Pump
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            FilledTonalButton(
+                onClick = { captureMode = "odo" },
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = if (captureMode == "odo") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (captureMode == "odo") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f).padding(end = 4.dp)
+            ) {
+                Text("Get Odometer")
+            }
+            FilledTonalButton(
+                onClick = { captureMode = "pump" },
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = if (captureMode == "pump") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (captureMode == "pump") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f).padding(start = 4.dp)
+            ) {
+                Text("Get Pump")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Camera Preview / Final Crop Display Area
+        Box(modifier = Modifier.fillMaxWidth().height(220.dp).background(Color.Black)) {
+            if (displayBitmap != null) {
                 Image(
                     bitmap = displayBitmap!!.asImageBitmap(),
-                    contentDescription = "Processing Stage",
+                    contentDescription = "Odometer Crop",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
-                Surface(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
-                ) {
-                    Text(
-                        text = "STAGE: $stageLabel",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(4.dp)
-                    )
+                if (!isProcessing) {
+                    Button(
+                        onClick = { displayBitmap = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                    ) {
+                        Text("Try Again", color = Color.White)
+                    }
+                } else {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.6f),
+                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                    ) {
+                        Text(
+                            text = "STAGE: $stageLabel",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(4.dp)
+                        )
+                    }
                 }
             } else {
                 CameraPreview(
@@ -127,64 +174,70 @@ fun QuickFillupScreen(
                     onImageCaptured = { imageProxy ->
                         if (capturePending) {
                             capturePending = false
-                            scope.launch(Dispatchers.Default) {
-                                try {
-                                    val bufferSet = NativePaddleEngine.bufferSetA
-                                    if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
-                                        bufferSet.resize(imageProxy.width, imageProxy.height)
-                                    }
-                                    
-                                    val planes = imageProxy.planes
-                                    bufferSet.borrowYuv(
-                                        planes[0].buffer,
-                                        planes[1].buffer,
-                                        planes[2].buffer,
-                                        planes[0].rowStride,
-                                        planes[1].rowStride,
-                                        planes[1].pixelStride,
-                                        planes[2].pixelStride
-                                    )
-                                    bufferSet.normalizeYUV()
+                            val bufferSet = NativePaddleEngine.bufferSetA
+                            if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
+                                bufferSet.resize(imageProxy.width, imageProxy.height)
+                            }
+                            
+                            val planes = imageProxy.planes
+                            bufferSet.borrowYuv(
+                                planes[0].buffer,
+                                planes[1].buffer,
+                                planes[2].buffer,
+                                planes[0].rowStride,
+                                planes[1].rowStride,
+                                planes[1].pixelStride,
+                                planes[2].pixelStride
+                            )
+                            bufferSet.normalizeYUV()
 
-                                    val rotation = imageProxy.imageInfo.rotationDegrees
-                                    val result = OcrHarness.runAutoFillPipeline(
-                                        context = context,
-                                        masterBuffer = bufferSet,
-                                        allVehicles = vehicles,
-                                        debug = debugMode,
-                                        cameraRotationDegrees = rotation,
-                                        onStage = { stage, bmp ->
-                                            withContext(Dispatchers.Main) {
-                                                stageLabel = stage
-                                                displayBitmap = bmp
+                            val rotation = imageProxy.imageInfo.rotationDegrees
+                            if (captureMode == "odo") {
+                                scope.launch(Dispatchers.Default) {
+                                    try {
+                                        val result = OcrHarness.runAutoFillPipeline(
+                                            context = context,
+                                            masterBuffer = bufferSet,
+                                            allVehicles = vehicles,
+                                            debug = debugMode,
+                                            cameraRotationDegrees = rotation,
+                                            onStage = { stage, bmp ->
+                                                withContext(Dispatchers.Main) {
+                                                    stageLabel = stage
+                                                    displayBitmap = bmp
+                                                }
+                                            }
+                                        )
+                                        
+                                        withContext(Dispatchers.Main) {
+                                            if (result.error != null) {
+                                                Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                                            }
+
+                                            result.vehicleId?.let { selectedVehicleId = it }
+                                            result.odometer?.let { odometer = it }
+
+                                            if (debugMode && result.debugJson != null) {
+                                                val timestamp = System.currentTimeMillis()
+                                                val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
+                                                file.writeText(result.debugJson)
+                                                Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
                                             }
                                         }
-                                    )
-                                    
-                                    withContext(Dispatchers.Main) {
-                                        if (result.error != null) {
-                                            Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
-                                        }
- 
-                                        result.vehicleId?.let { selectedVehicleId = it }
-                                        result.odometer?.let { odometer = it }
- 
-                                        if (debugMode && result.debugJson != null) {
-                                            val timestamp = System.currentTimeMillis()
-                                            val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
-                                            file.writeText(result.debugJson)
-                                            Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Log.e("QuickFill", "OCR Pipeline failed", e)
+                                    } finally {
+                                        imageProxy.close()
+                                        withContext(Dispatchers.Main) {
+                                            isProcessing = false
                                         }
                                     }
- 
-                                } catch (e: Exception) {
-                                    Log.e("QuickFill", "OCR Pipeline failed", e)
-                                } finally {
-                                    imageProxy.close()
-                                    withContext(Dispatchers.Main) {
-                                        isProcessing = false
-                                        displayBitmap = null
-                                    }
+                                }
+                            } else {
+                                imageProxy.close()
+                                scope.launch(Dispatchers.Main) {
+                                    isProcessing = false
+                                    Toast.makeText(context, "Pump photo captured!", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         } else {
@@ -192,84 +245,97 @@ fun QuickFillupScreen(
                         }
                     }
                 )
+
+                // Shutter button inside the preview area
+                if (!isProcessing) {
+                    IconButton(
+                        onClick = {
+                            isProcessing = true
+                            capturePending = true
+                            photoUrl = null
+                            
+                            val playSound = prefs.getBoolean("shutter_sounds", true)
+                            if (playSound) {
+                                try {
+                                    android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
+                                } catch (e: Exception) {
+                                    Log.e("QuickFill", "Failed to play shutter sound", e)
+                                }
+                            }
+
+                            if (saveFuelPhotos) {
+                                isPhotoSaving = true
+                                try {
+                                    val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                        context.display
+                                    } else {
+                                        (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
+                                    }
+                                    val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
+                                    imageCapture.targetRotation = rotation
+                                } catch (e: Exception) {
+                                    Log.e("QuickFill", "Failed to set target rotation", e)
+                                }
+
+                                val resolver = context.contentResolver
+                                val contentValues = android.content.ContentValues().apply {
+                                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
+                                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DCIM + "/Camera")
+                                    }
+                                }
+
+                                val outputOptions = ImageCapture.OutputFileOptions.Builder(
+                                    resolver,
+                                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                    contentValues
+                                ).build()
+
+                                imageCapture.takePicture(
+                                    outputOptions,
+                                    ContextCompat.getMainExecutor(context),
+                                    object : ImageCapture.OnImageSavedCallback {
+                                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                            val savedUri = output.savedUri
+                                            android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
+                                            photoUrl = savedUri?.toString()
+                                            isPhotoSaving = false
+                                        }
+                                        override fun onError(exception: ImageCaptureException) {
+                                            android.util.Log.e("QuickFill", "Photo capture failed", exception)
+                                            isPhotoSaving = false
+                                        }
+                                    }
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp)
+                            .size(64.dp)
+                            .background(Color.White, CircleShape)
+                            .border(4.dp, Color.Gray, CircleShape)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(Color.White, CircleShape)
+                        )
+                    }
+                }
             }
             
             if (isProcessing && displayBitmap == null) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center)
                 )
-            } else if (!isProcessing) {
-                Button(
-                    onClick = {
-                        isProcessing = true
-                        capturePending = true
-                        photoUrl = null
-                        
-                        val playSound = prefs.getBoolean("shutter_sounds", true)
-                        if (playSound) {
-                            try {
-                                android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
-                            } catch (e: Exception) {
-                                Log.e("QuickFill", "Failed to play shutter sound", e)
-                            }
-                        }
- 
-                        if (saveFuelPhotos) {
-                            isPhotoSaving = true
-                            try {
-                                val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                    context.display
-                                } else {
-                                    (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
-                                }
-                                val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
-                                imageCapture.targetRotation = rotation
-                            } catch (e: Exception) {
-                                Log.e("QuickFill", "Failed to set target rotation", e)
-                            }
- 
-                            val resolver = context.contentResolver
-                            val contentValues = android.content.ContentValues().apply {
-                                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
-                                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DCIM + "/Camera")
-                                }
-                            }
- 
-                            val outputOptions = ImageCapture.OutputFileOptions.Builder(
-                                resolver,
-                                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                contentValues
-                            ).build()
- 
-                            imageCapture.takePicture(
-                                outputOptions,
-                                ContextCompat.getMainExecutor(context),
-                                object : ImageCapture.OnImageSavedCallback {
-                                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                        val savedUri = output.savedUri
-                                        android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
-                                        photoUrl = savedUri?.toString()
-                                        isPhotoSaving = false
-                                    }
-                                    override fun onError(exception: ImageCaptureException) {
-                                        android.util.Log.e("QuickFill", "Photo capture failed", exception)
-                                        isPhotoSaving = false
-                                    }
-                                }
-                            )
-                        }
-                    },
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
-                ) {
-                    Text("Capture Odometer")
-                }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
+        // Vehicle Dropdown Selector
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,
@@ -298,23 +364,72 @@ fun QuickFillupScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Compact Single-Line Input Row with Local Overrides
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = odometer,
+                onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
+                label = { Text("Odo") },
+                modifier = Modifier.weight(1.2f),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = gallons,
+                onValueChange = { gallons = it },
+                label = { Text(volumeUnit) },
+                trailingIcon = {
+                    IconButton(
+                        onClick = { volumeUnit = if (volumeUnit == "G") "L" else "G" },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
+                    }
+                },
+                modifier = Modifier.weight(1.1f),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = cost,
+                onValueChange = { cost = it },
+                label = { Text(currencySymbol) },
+                trailingIcon = {
+                    var showCurrencyMenu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { showCurrencyMenu = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Text("⚙️", style = MaterialTheme.typography.labelSmall)
+                        }
+                        DropdownMenu(
+                            expanded = showCurrencyMenu,
+                            onDismissRequest = { showCurrencyMenu = false }
+                        ) {
+                            listOf("$", "€", "£", "¥", "C$").forEach { symbol ->
+                                DropdownMenuItem(
+                                    text = { Text(symbol) },
+                                    onClick = {
+                                        currencySymbol = symbol
+                                        showCurrencyMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1.1f),
+                singleLine = true
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
-        PhotoPicker(
-            photoStorageManager = settingsViewModel.photoStorageManager,
-            photoType = PhotoType.FUEL,
-            currentPhotoUrl = photoUrl,
-            onPhotoUrlChanged = { photoUrl = it }
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(value = odometer, onValueChange = { odometer = it }, label = { Text("Odometer Reading") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = gallons, onValueChange = { gallons = it }, label = { Text("Gallons") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = cost, onValueChange = { cost = it }, label = { Text("Total Cost") }, modifier = Modifier.fillMaxWidth())
-
-        Spacer(modifier = Modifier.height(24.dp))
-
+        // Save Button
         Button(
             onClick = {
                 selectedVehicleId?.let { vehicleId ->
@@ -341,3 +456,4 @@ fun QuickFillupScreen(
         }
     }
 }
+

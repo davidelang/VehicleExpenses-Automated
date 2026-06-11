@@ -1,9 +1,18 @@
 # TODO
 
-- [ ] Optimize Auto-Fill Pipeline Latency (Approved Plan)
-    - [ ] Update runSetJPipeline in OcrHarness.kt to accept and use queryLandmarks, avoiding redundant ML Kit Text Recognition
-    - [ ] Remove delay(800) visual pacing delay from QuickFillupScreen.kt to run pipeline asynchronously with no UI idle time
-    - [ ] Add deskew_angle_calc_time_ms and deskew_rotate_time_ms to debug JSON in OcrHarness.kt for timing audit
+- [ ] Optimize Quick Fill UI and App-Wide Top Bar (Approved Plan)
+    - [x] Remove PhotoPicker component (removing Take Picture and Gallery buttons)
+    - [x] Move capture shutter button outside the preview overlay and render as a circle button
+    - [x] Add odo/pump mode toggle buttons at the top of QuickFillupScreen
+    - [x] Support dynamic unit/currency abbreviations and quick dropdown/toggles inside Odo/G/$ text fields
+    - [x] Maintain final odometer crop display on screen with a "Try Again" button to restart preview
+    - [x] Configure android:theme for MainActivity in AndroidManifest.xml to consolidate app-wide headers
+    - [x] Add default currency and volume unit preferences in SettingsScreen
+
+- [x] Optimize Auto-Fill Pipeline Latency (Approved Plan)
+    - [x] Update runSetJPipeline in OcrHarness.kt to accept and use queryLandmarks, avoiding redundant ML Kit Text Recognition
+    - [x] Remove delay(800) visual pacing delay from QuickFillupScreen.kt to run pipeline asynchronously with no UI idle time
+    - [x] Add deskew_angle_calc_time_ms and deskew_rotate_time_ms to debug JSON in OcrHarness.kt for timing audit
 
 - [x] Save Quick Fill Photos Directly to MediaStore DCIM/Camera
     - [x] Update QuickFillupScreen.kt to use direct MediaStore saving with DCIM/Camera relative path
