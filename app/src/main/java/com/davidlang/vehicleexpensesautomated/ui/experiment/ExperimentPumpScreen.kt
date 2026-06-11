@@ -355,7 +355,7 @@ private suspend fun runPumpExperiment(
                         branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
                     }
 
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
                     val raw = paddleResults[0]
                     val exp = paddleResults[1]
                     val maxExt = paddleResults[2]
@@ -396,22 +396,15 @@ private suspend fun runPumpExperiment(
                         val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
                         val anns = mutableListOf<SnapshotAnnotation>()
                         if (engine == "Paddle") {
-                            // RED: Raw detections
+                            // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
                             pdHunksRawTotal.forEach { h ->
                                 val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
                                 val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
                                 anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.RED, 2))
                             }
-                            // BLUE: Expanded (4px)
-                            pdHunksExpTotal.forEach { h ->
-                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.BLUE, 4))
-                            }
-                            // ORANGE: The specific merged hunk for this crop
-                            val o1 = IcrsMath.icrsToPixel(orig.icrs.left, orig.icrs.top, imgW, imgH)
-                            val o2 = IcrsMath.icrsToPixel(orig.icrs.right, orig.icrs.bottom, imgW, imgH)
-                            anns.add(SnapshotAnnotation(o1.x.toInt(), o1.y.toInt(), o2.x.toInt(), o2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
+                            // BLUE and ORANGE temporarily disabled
+                            // pdHunksExpTotal.forEach { ... BLUE }
+                            // ... ORANGE for the specific
                         }
                         return OcrUtils.takeSnapshot(workspace.p, rect, 300, 100, anns, null, workspace).first
                     }
@@ -434,7 +427,9 @@ private suspend fun runPumpExperiment(
 
                 val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
                 branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
-                val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
+                // Only red raw boxes for now (focus on redbox debugging: larger by +1, nested removed, correct positions after scaling fix)
+                val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                // + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
             }
 
@@ -792,7 +787,7 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
 }
 
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): List<List<PumpHunk>> {
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine, contentW: Int, contentH: Int): List<List<PumpHunk>> {
     val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
@@ -833,38 +828,48 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
     val hunksMaxExtent = mutableListOf<PumpHunk>()
     val hunksNative = mutableListOf<PumpHunk>()
 
-    consolidated.forEach { rect ->
-        // Convert to absolute master pixels
+    // Build raw hunks from the non-nested expanded rects (pre-consolidate) so the RED raw boxes in reports
+    // show the individual +1 expanded and de-nested detections. Use contentW/contentH for ICRS to fix
+    // scaling back up / offsets (the outer master includes padding, content is the actual downscaled image size).
+    nonNestedRects.forEach { rect ->
         val ml = rect.left.toInt().coerceIn(0, masterW - 1)
         val mt = rect.top.toInt().coerceIn(0, masterH - 1)
         val mr = rect.right.toInt().coerceIn(0, masterW - 1)
         val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
-        // Capture Consolidated Raw in ICRS
-        val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), masterW, masterH)
-        val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), masterW, masterH)
+        val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), contentW, contentH)
+        val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), contentW, contentH)
         hunksRaw.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
+    }
+
+    consolidated.forEach { rect ->
+        // Convert to absolute master pixels (coords still in the outer/crop space)
+        val ml = rect.left.toInt().coerceIn(0, masterW - 1)
+        val mt = rect.top.toInt().coerceIn(0, masterH - 1)
+        val mr = rect.right.toInt().coerceIn(0, masterW - 1)
+        val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
+        val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
         // 2. Perform Native Expansion (with Height-Relative Jump-Out and Retraction)
         val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
 
-        // Capture Expanded/Retracted result
-        val i1 = IcrsMath.pixelToIcrs(retractedRect.left.toFloat(), retractedRect.top.toFloat(), masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(retractedRect.right.toFloat(), retractedRect.bottom.toFloat(), masterW, masterH)
+        // Capture Expanded/Retracted result -- use content size for ICRS (consistent scaling)
+        val i1 = IcrsMath.pixelToIcrs(retractedRect.left.toFloat(), retractedRect.top.toFloat(), contentW, contentH)
+        val i2 = IcrsMath.pixelToIcrs(retractedRect.right.toFloat(), retractedRect.bottom.toFloat(), contentW, contentH)
         hunksExpanded.add(PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y)))
 
         // Capture Max Extent reach (Yellow tier)
-        val y1 = IcrsMath.pixelToIcrs(maxExtentRect.left.toFloat(), maxExtentRect.top.toFloat(), masterW, masterH)
-        val y2 = IcrsMath.pixelToIcrs(maxExtentRect.right.toFloat(), maxExtentRect.bottom.toFloat(), masterW, masterH)
+        val y1 = IcrsMath.pixelToIcrs(maxExtentRect.left.toFloat(), maxExtentRect.top.toFloat(), contentW, contentH)
+        val y2 = IcrsMath.pixelToIcrs(maxExtentRect.right.toFloat(), maxExtentRect.bottom.toFloat(), contentW, contentH)
         hunksMaxExtent.add(PumpHunk("", RectF(y1.x, y1.y, y2.x, y2.y)))
     }
 
-    // Capture Native Results (Phase 2 A/B)
+    // Capture Native Results (Phase 2 A/B) -- using content size for ICRS too
     res.nativeBoxes.forEach { box ->
         // Points are in input Mat pixels (crop-relative)
         val icrsPoints = box.points.toList().chunked(2).map { (px, py) ->
-            IcrsMath.pixelToIcrs(px, py, masterW, masterH)
+            IcrsMath.pixelToIcrs(px, py, contentW, contentH)
         }
 
         var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
