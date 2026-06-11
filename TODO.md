@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] Optimize Quick Fill UI and App-Wide Top Bar (Approved Plan)
+- [x] Optimize Quick Fill UI and App-Wide Top Bar (Approved Plan)
     - [x] Remove PhotoPicker component (removing Take Picture and Gallery buttons)
     - [x] Move capture shutter button outside the preview overlay and render as a circle button
     - [x] Add odo/pump mode toggle buttons at the top of QuickFillupScreen
