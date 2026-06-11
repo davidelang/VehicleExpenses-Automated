@@ -1,5 +1,24 @@
 # TODO
 
+- [ ] [NEW - approved plan] Fix Pump Redbox Filter to ONLY Strict Subset Removal (Target ~20 for Row 2 Set B Paddle)
+    - This is a fresh narrowly-scoped plan (old one archived to dev-ai-interaction/plans/old/pump-redbox-strict-subset-filter-abandoned-2026-06-11.md).
+    - Goal (verbatim): "the goal is not to keep labels like $ and Gallons, the goal is to ONLY remove boxes that are strict subsets of other boxes. the current code does not do that"
+    - "if two red boxes are exactly the same, one of the two should go"
+    - Evidence/target from user: row 2 Set B paddle annotations in pump_results_2026-06-11_13-24-56.json (30+) vs 14-03-57.json (4) → must be ~20ish after fix.
+    - +5 was 1-layer-up workaround (should have been +4); no extra margin at global now that +1 is at lowest level.
+    - Filter must not trigger on Y-overlap without full X containment.
+    - **Only edit**: app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/experiment/ExperimentPumpScreen.kt
+    - 1. runDiscoveryPaddle: keep +1, add dedup exact first (keep 1), then strict full-contain filter on deduped; return nonNestedRects as 5th list item (update empty return).
+    - 2. In scales.forEach (after paddleResults): accumulate allFullPixelRawRects by mapping crop rects / scaleFactor using srcW/srcH.
+    - 3. Replace the global block entirely with: dedup the accumulated full rects, strict filter (no expandedGlobal +1), clear + repop pdHunksRawTotal using full img ICRS.
+    - 4. Update comments to match "ONLY strict subsets" + reference the jsons/target count.
+    - First action: this TODO update (done).
+    - Before every edit: re-verify with read_file.
+    - After every search_replace: forensic read_file on the modified lines.
+    - ./build_app success + tag.
+    - Run experiment; in new pump_results json, row 2 (PXL_20240708_222637707.jpg, line_number 2) Set B paddle final red count must be ~20; non-subset boxes (e.g. l~-0.664) survive if not contained.
+    - PD visuals consistent; Set A unchanged.
+    - Handoff when complete + verified.
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
