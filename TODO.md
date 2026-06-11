@@ -1,5 +1,15 @@
 # TODO
 
+- [ ] Port Alignment/Set J improvements to Pump experiment (redbox detection + Set E-style deskew + introduce Set B pump-only flow)
+  - Approved plan: /home/dlang/.grok/sessions/%2Fhome%2Fdlang%2Fgit%2FVehicleExpenses-automated%2Fagent-1/019eb64d-c2d8-7732-9310-b84c0095cd9d/plan.md
+  - Starting items per user directive:
+    - Improve redbox detection in pump (runDiscoveryPaddle): +1 side expansion on detected boxes in low-res/crop space before ICRS/"scaling back up" + remove nested red boxes before anything more (consolidate, native expand, hunk creation). Scale-aware due to pump's variable scaleFactor + prepareScale + crop ICRS vs full-res toPixel (unlike fixed in alignment Set J).
+    - Deskew for Set E style in pump: different detect image populate + JNI angle; compute once, per-flow selection.
+    - Create "Set B" (pump only): flows = listOf("Set A", "Set B"); Set B populates only Paddle result (no MLKit in recognition step).
+  - Reuse: OdometerOcrUtils.calculateAverageTextAngle / calculatePaddleAngleOptimized / rotate / consolidateRects / processPaddleHeatmap etc.; NativeImageUtils.heatmapToAngle; OcrUtils; IcrsMath (see plan for full list + paths).
+  - Main file: app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/experiment/ExperimentPumpScreen.kt
+  - Verification: forensic read_file after every edit; ./build_app success; run pump experiment UI on golden subset; inspect new Set B columns, redbox visuals (expanded, less nested), different deskew angles in reports; no regression on Set A.
+  - Follow all mandates (first update this TODO, re-verify file content before edit, forensic audit post-edit, 3-3-3, approved resets only, etc.).
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
