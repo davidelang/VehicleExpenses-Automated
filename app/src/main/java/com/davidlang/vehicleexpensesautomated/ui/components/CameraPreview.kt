@@ -12,7 +12,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -20,6 +24,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import android.view.OrientationEventListener
+import android.view.Surface
 
 @Composable
 fun CameraPreview(
@@ -31,6 +37,33 @@ fun CameraPreview(
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
+    var imageAnalysisState by remember { mutableStateOf<ImageAnalysis?>(null) }
+
+    DisposableEffect(imageAnalysisState, imageCapture) {
+        val listener = object : OrientationEventListener(context) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val rotation = when (orientation) {
+                    in 45 until 135 -> Surface.ROTATION_270
+                    in 135 until 225 -> Surface.ROTATION_180
+                    in 225 until 315 -> Surface.ROTATION_90
+                    else -> Surface.ROTATION_0
+                }
+                try {
+                    imageAnalysisState?.targetRotation = rotation
+                    imageCapture.targetRotation = rotation
+                } catch (e: Exception) {
+                    Log.e("CameraPreview", "Failed to set target rotation dynamically", e)
+                }
+            }
+        }
+        if (listener.canDetectOrientation()) {
+            listener.enable()
+        }
+        onDispose {
+            listener.disable()
+        }
+    }
 
     AndroidView(
         factory = { ctx ->
@@ -59,6 +92,8 @@ fun CameraPreview(
                 imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
                     onImageCaptured(imageProxy)
                 }
+
+                imageAnalysisState = imageAnalysis
 
                 val cameraSelector = CameraSelector.Builder()
                     .requireLensFacing(CameraSelector.LENS_FACING_BACK)

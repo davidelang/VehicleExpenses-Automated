@@ -1042,18 +1042,26 @@ object OdometerOcrUtils {
             sum += bins[i]
             if (sum >= totalPixels * 0.80) { p80 = i * 4.0; break }
         }
-
         hist.release()
         return HistStats(intensityLow, intensityHigh, p80, bins)
     }
 
-    suspend fun rotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
+    suspend fun rotate(set: BufferSet, angle: Float): Long {
+        return rotate(set, angle, set.width, set.height)
+    }
+
+    suspend fun rotate(set: BufferSet, angle: Float, targetW: Int, targetH: Int): Long = withContext(Dispatchers.IO) {
         val tRot0 = System.currentTimeMillis()
         val src = set.p.mat
-        val dst = set.s.mat
+        val srcUv = set.p.uvMat
+
+        val tempMat = org.opencv.core.Mat()
+        val tempUv = org.opencv.core.Mat()
 
         val matrixLocal = android.graphics.Matrix()
-        matrixLocal.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
+        matrixLocal.postTranslate(-src.cols() / 2f, -src.rows() / 2f)
+        matrixLocal.postRotate(-angle)
+        matrixLocal.postTranslate(targetW / 2f, targetH / 2f)
         val values = FloatArray(9)
         matrixLocal.getValues(values)
 
@@ -1061,20 +1069,30 @@ object OdometerOcrUtils {
         rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
         rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
 
-        // Rotate Luma (Y)
-        org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+        // Warp Y to tempMat
+        val dstSize = org.opencv.core.Size(targetW.toDouble(), targetH.toDouble())
+        tempMat.create(dstSize, src.type())
+        org.opencv.imgproc.Imgproc.warpAffine(src, tempMat, rotMat, dstSize, org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
 
-        // Rotate Chroma (UV)
-        val srcUv = set.p.uvMat
-        val dstUv = set.s.uvMat
+        // Warp UV to tempUv
         val uvScaleMat = rotMat.clone()
-        // Shift translation for half-res UV plane
         uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
         uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
-        org.opencv.imgproc.Imgproc.warpAffine(srcUv, dstUv, uvScaleMat, srcUv.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
+        val uvDstSize = org.opencv.core.Size((targetW / 2).toDouble(), (targetH / 2).toDouble())
+        tempUv.create(uvDstSize, srcUv.type())
+        org.opencv.imgproc.Imgproc.warpAffine(srcUv, tempUv, uvScaleMat, uvDstSize, org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
 
-        set.flip()
-        rotMat.release(); uvScaleMat.release()
+        // Resize the set and copy
+        set.resize(targetW, targetH)
+
+        tempMat.copyTo(set.p.mat)
+        tempUv.copyTo(set.p.uvMat)
+
+        tempMat.release()
+        tempUv.release()
+        rotMat.release()
+        uvScaleMat.release()
+
         System.currentTimeMillis() - tRot0
     }
 

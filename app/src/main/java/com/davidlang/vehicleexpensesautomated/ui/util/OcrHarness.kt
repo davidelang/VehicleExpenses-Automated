@@ -31,6 +31,7 @@ object OcrHarness {
         masterBuffer: BufferSet,
         allVehicles: List<Vehicle>,
         debug: Boolean,
+        cameraRotationDegrees: Int = 0,
         onStage: (suspend (String, Bitmap) -> Unit)? = null
     ): AutoFillResult {
         val t0 = System.currentTimeMillis()
@@ -42,11 +43,20 @@ object OcrHarness {
 
             // 1. Deskew (Paddle C++) - Optimized Version
             val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
-            OdometerOcrUtils.rotate(masterBuffer, optAngle)
+            
+            val totalAngle = cameraRotationDegrees + optAngle
+            val imgW = masterBuffer.width
+            val imgH = masterBuffer.height
+            val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
+            val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
+            
+            val rotTime = OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
             
             jsonDebug?.apply {
+                addProperty("camera_rotation", cameraRotationDegrees)
                 addProperty("deskew_angle", optAngle)
-                addProperty("deskew_time_ms", optTime)
+                addProperty("total_rotation_angle", totalAngle)
+                addProperty("deskew_time_ms", optTime + rotTime)
             }
             onStage?.invoke("Deskewed", masterBuffer.p.toBitmap())
 

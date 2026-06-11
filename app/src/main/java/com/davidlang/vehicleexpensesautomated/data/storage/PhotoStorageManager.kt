@@ -77,7 +77,7 @@ class PhotoStorageManager @Inject constructor(
             val folderId = findOrCreateFolder(drive, folderName)
 
             val tempFile = File(context.cacheDir, fileName)
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            openInputStream(uri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
                 }
@@ -121,7 +121,7 @@ class PhotoStorageManager @Inject constructor(
         // Otherwise, copy it to a new MediaStore location
         val destUri = createMediaStoreUri(fileName, photoType) ?: return null
         return try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            openInputStream(uri)?.use { input ->
                 context.contentResolver.openOutputStream(destUri)?.use { output ->
                     input.copyTo(output)
                 }
@@ -187,5 +187,18 @@ class PhotoStorageManager @Inject constructor(
             }
         }
         return name
+    }
+
+    private fun openInputStream(uri: Uri): java.io.InputStream? {
+        return try {
+            if (uri.scheme == "file") {
+                java.io.FileInputStream(File(uri.path ?: ""))
+            } else {
+                context.contentResolver.openInputStream(uri)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PhotoStorageManager", "Failed to open input stream for URI: $uri", e)
+            null
+        }
     }
 }

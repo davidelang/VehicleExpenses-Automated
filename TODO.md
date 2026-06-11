@@ -3,9 +3,9 @@
 - [x] Implement Camera, Photo Saving, and Orientation Improvements
     - [x] Add "Play Shutter Sound" switch to Settings.
     - [x] Play system shutter sound on Quick Fill capture if preference is enabled.
-    - [x] Save photos to local MediaStore gallery even when Google Drive is active.
-    - [x] Rotate live camera preview buffer using imageProxy rotation degrees.
-    - [x] Set imageCapture target rotation dynamically before capture.
+    - [x] Fix photo saving silent failure in PhotoStorageManager (file:// scheme handle).
+    - [x] Update CameraPreview with OrientationEventListener for dynamic targetRotation tracking (landscape fix).
+    - [x] Combine coarse camera rotation and fine deskew tilt into a single warpAffine step in OcrHarness / OdometerOcrUtils.
 - [x] Align Production Quick Fill with Set J Experiment
     - [x] Update `getOdoBuffer` in `NativePaddleEngine.kt` to dynamically size the crop buffer based on reference photo dimensions.
     - [x] Implement Paddle Detection in `runSetJPipeline` trial loop to isolate the text bounding box for stroke-width calculation.

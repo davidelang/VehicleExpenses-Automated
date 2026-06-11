@@ -143,43 +143,15 @@ fun QuickFillupScreen(
                                         planes[1].pixelStride,
                                         planes[2].pixelStride
                                     )
+                                    bufferSet.normalizeYUV()
 
                                     val rotation = imageProxy.imageInfo.rotationDegrees
-                                    if (rotation == 90 || rotation == 270) {
-                                        val tempMat = org.opencv.core.Mat()
-                                        val tempUv = org.opencv.core.Mat()
-                                        val code = if (rotation == 90) org.opencv.core.Core.ROTATE_90_CLOCKWISE else org.opencv.core.Core.ROTATE_90_COUNTERCLOCKWISE
-                                        org.opencv.core.Core.rotate(bufferSet.p.mat, tempMat, code)
-                                        org.opencv.core.Core.rotate(bufferSet.p.uvMat, tempUv, code)
-                                        
-                                        bufferSet.flip() // Unborrows
-                                        bufferSet.resize(imageProxy.height, imageProxy.width)
-                                        tempMat.copyTo(bufferSet.p.mat)
-                                        tempUv.copyTo(bufferSet.p.uvMat)
-                                        tempMat.release()
-                                        tempUv.release()
-                                    } else if (rotation == 180) {
-                                        val tempMat = org.opencv.core.Mat()
-                                        val tempUv = org.opencv.core.Mat()
-                                        org.opencv.core.Core.rotate(bufferSet.p.mat, tempMat, org.opencv.core.Core.ROTATE_180)
-                                        org.opencv.core.Core.rotate(bufferSet.p.uvMat, tempUv, org.opencv.core.Core.ROTATE_180)
-                                        
-                                        bufferSet.flip() // Unborrows
-                                        tempMat.copyTo(bufferSet.p.mat)
-                                        tempUv.copyTo(bufferSet.p.uvMat)
-                                        tempMat.release()
-                                        tempUv.release()
-                                    } else {
-                                        bufferSet.p.mat.copyTo(bufferSet.s.mat)
-                                        bufferSet.p.uvMat.copyTo(bufferSet.s.uvMat)
-                                        bufferSet.flip() // Unborrows
-                                    }
- 
                                     val result = OcrHarness.runAutoFillPipeline(
                                         context = context,
                                         masterBuffer = bufferSet,
                                         allVehicles = vehicles,
                                         debug = debugMode,
+                                        cameraRotationDegrees = rotation,
                                         onStage = { stage, bmp ->
                                             withContext(Dispatchers.Main) {
                                                 stageLabel = stage
