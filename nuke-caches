@@ -1,4 +1,14 @@
 #!/bin/bash
+# nuke-caches
+#
+# LAST-RESORT USER SCRIPT.
+# Agents must NOT treat this as precedent or use it as part of normal workflow.
+# It performs an extremely aggressive full cache + build nuke and starts with
+# `git reset --hard HEAD` (allowed for users; agents have stricter three-context rules).
+#
+# Agents: prefer the approved reset contexts in AGENT_MANDATES.md (with preflight).
+# Only the human should run this when recovering a badly broken local environment.
+
 set -e
 
 git reset --hard HEAD

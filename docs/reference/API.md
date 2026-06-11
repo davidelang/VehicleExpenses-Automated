@@ -10,7 +10,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ### `Vehicle.kt`
 - `Vehicle(id, name, make, model, year, licensePlate, vin, notes, referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl, odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom, otherTextCropLeft, otherTextCropTop, otherTextCropRight, otherTextCropBottom, landmarkTextBlocksJson)`
-  - Core entity for vehicle management. Crop boxes are stored as normalized bounds (0.0 to 1.0). `landmarkTextBlocksJson` holds the multi-engine JSON manifest.
+  - Core entity for vehicle management. Crop boxes are stored as ICRS (Isotropic Center-Relative Space) or raw pixel bounds. (Normalized 0.0–1.0 per-axis is obsolete.) `landmarkTextBlocksJson` holds the multi-engine JSON manifest. See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
 
 ### `FuelEntry.kt`
 - `FuelEntry(id, vehicleId, odometer, gallons, cost, timestamp, photoUrl, isPartialFill, latitude, longitude, location, cloudManifest)`
