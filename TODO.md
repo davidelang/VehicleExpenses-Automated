@@ -1,5 +1,8 @@
 # TODO
 
+- [x] Fix YUV Borrow Handle Cache for YUV Normalization
+    - [x] Cache borrowed buffers/strides on JVM side in BufferSet.kt.
+    - [x] Expose cached buffers/strides in yuv Smart Proxy when isBorrowed is true.
 - [x] Remove BufferSet Coroutine Locks and Document Threading Model
     - [x] Remove Mutex and locks from BufferSet.kt and make methods non-suspending.
     - [x] Update docs/specs/BUFFER_SET_SPEC.md to document sequential single-threaded model.

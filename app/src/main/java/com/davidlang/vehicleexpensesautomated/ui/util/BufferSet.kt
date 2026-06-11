@@ -147,6 +147,14 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         var isBorrowed: Boolean = false
             private set
 
+        private var borrowedY: ByteBuffer? = null
+        private var borrowedU: ByteBuffer? = null
+        private var borrowedV: ByteBuffer? = null
+        private var borrowedYStride: Int = 0
+        private var borrowedUvStride: Int = 0
+        private var borrowedUPixelStride: Int = 0
+        private var borrowedVPixelStride: Int = 0
+
         val isLogicalScratch: Boolean get() = this === instances[1 - primaryIdx]
 
         override val mat: Mat get() = _mat ?: throw IllegalStateException("Not initialized")
@@ -161,6 +169,16 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             override val width: Int get() = _width
             override val height: Int get() = _height
             override val planes: Array<Plane> get() {
+                if (isBorrowed) {
+                    val y = borrowedY ?: throw IllegalStateException("Borrowed Y null")
+                    val u = borrowedU ?: throw IllegalStateException("Borrowed U null")
+                    val v = borrowedV ?: throw IllegalStateException("Borrowed V null")
+                    return arrayOf(
+                        Plane(y, borrowedYStride, 1),
+                        Plane(u, borrowedUvStride, borrowedUPixelStride),
+                        Plane(v, borrowedUvStride, borrowedVPixelStride)
+                    )
+                }
                 val buf = _buffer ?: throw IllegalStateException("Not initialized")
                 return arrayOf(
                     Plane((buf.duplicate().position(0) as ByteBuffer).slice(), _width, 1),
@@ -176,12 +194,26 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
         fun borrow(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) {
             nativeBorrowYuv(nativeHandle, y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
+            borrowedY = y
+            borrowedU = u
+            borrowedV = v
+            borrowedYStride = yStride
+            borrowedUvStride = uvStride
+            borrowedUPixelStride = uPixelStride
+            borrowedVPixelStride = vPixelStride
             isBorrowed = true
         }
 
         fun unborrow() {
             if (!isBorrowed) return
             nativeUnborrow(nativeHandle)
+            borrowedY = null
+            borrowedU = null
+            borrowedV = null
+            borrowedYStride = 0
+            borrowedUvStride = 0
+            borrowedUPixelStride = 0
+            borrowedVPixelStride = 0
             isBorrowed = false
         }
 
