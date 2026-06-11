@@ -40,6 +40,7 @@ fun SettingsScreen() {
     var debugOcrPipeline by remember { mutableStateOf(prefs.getBoolean("debug_ocr_pipeline", false)) }
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
+    var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
 
     var status by remember { mutableStateOf("Ready") }
 
@@ -51,7 +52,7 @@ fun SettingsScreen() {
         uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
     }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, debugOcrPipeline, ocrConfidenceThreshold, darkModePref) {
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, debugOcrPipeline, ocrConfidenceThreshold, darkModePref, shutterSounds) {
         prefs.edit().apply {
             putString("sheet_id", sheetId)
             putBoolean("sync_enabled", syncEnabled)
@@ -64,6 +65,7 @@ fun SettingsScreen() {
             putBoolean("debug_ocr_pipeline", debugOcrPipeline)
             putFloat("ocr_confidence_threshold", ocrConfidenceThreshold)
             putString("dark_mode", darkModePref)
+            putBoolean("shutter_sounds", shutterSounds)
             apply()
         }
     }
@@ -83,6 +85,7 @@ fun SettingsScreen() {
         SwitchSetting("Charging Only", chargingOnly) { chargingOnly = it }
         SliderSetting("Sync Frequency (hours)", frequencyHours.toFloat(), 1f..24f) { frequencyHours = it.toInt() }
         SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { saveFuelPhotos = it }
+        SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
         SwitchSetting("Debug OCR Pipeline", debugOcrPipeline) { debugOcrPipeline = it }
         SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) { ocrConfidenceThreshold = it }
 

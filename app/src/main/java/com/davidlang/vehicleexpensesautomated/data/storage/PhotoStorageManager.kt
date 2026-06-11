@@ -57,11 +57,14 @@ class PhotoStorageManager @Inject constructor(
         val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
         val provider = prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive"
 
-        return if (provider == "google_drive") {
-            // Try Drive first; if it fails for any reason (no account, network, auth, etc.), fall back to local
-            uploadToDrive(uri, fileName, photoType) ?: saveLocally(uri, fileName, photoType)
+        val localUriString = saveLocally(uri, fileName, photoType)
+
+        return if (provider == "google_drive" && localUriString != null) {
+            val localUri = Uri.parse(localUriString)
+            val driveUrl = uploadToDrive(localUri, fileName, photoType)
+            driveUrl ?: localUriString
         } else {
-            saveLocally(uri, fileName, photoType)
+            localUriString
         }
     }
 

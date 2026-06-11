@@ -144,6 +144,37 @@ fun QuickFillupScreen(
                                         planes[2].pixelStride
                                     )
 
+                                    val rotation = imageProxy.imageInfo.rotationDegrees
+                                    if (rotation == 90 || rotation == 270) {
+                                        val tempMat = org.opencv.core.Mat()
+                                        val tempUv = org.opencv.core.Mat()
+                                        val code = if (rotation == 90) org.opencv.core.Core.ROTATE_90_CLOCKWISE else org.opencv.core.Core.ROTATE_90_COUNTERCLOCKWISE
+                                        org.opencv.core.Core.rotate(bufferSet.p.mat, tempMat, code)
+                                        org.opencv.core.Core.rotate(bufferSet.p.uvMat, tempUv, code)
+                                        
+                                        bufferSet.flip() // Unborrows
+                                        bufferSet.resize(imageProxy.height, imageProxy.width)
+                                        tempMat.copyTo(bufferSet.p.mat)
+                                        tempUv.copyTo(bufferSet.p.uvMat)
+                                        tempMat.release()
+                                        tempUv.release()
+                                    } else if (rotation == 180) {
+                                        val tempMat = org.opencv.core.Mat()
+                                        val tempUv = org.opencv.core.Mat()
+                                        org.opencv.core.Core.rotate(bufferSet.p.mat, tempMat, org.opencv.core.Core.ROTATE_180)
+                                        org.opencv.core.Core.rotate(bufferSet.p.uvMat, tempUv, org.opencv.core.Core.ROTATE_180)
+                                        
+                                        bufferSet.flip() // Unborrows
+                                        tempMat.copyTo(bufferSet.p.mat)
+                                        tempUv.copyTo(bufferSet.p.uvMat)
+                                        tempMat.release()
+                                        tempUv.release()
+                                    } else {
+                                        bufferSet.p.mat.copyTo(bufferSet.s.mat)
+                                        bufferSet.p.uvMat.copyTo(bufferSet.s.uvMat)
+                                        bufferSet.flip() // Unborrows
+                                    }
+ 
                                     val result = OcrHarness.runAutoFillPipeline(
                                         context = context,
                                         masterBuffer = bufferSet,
@@ -162,10 +193,10 @@ fun QuickFillupScreen(
                                         if (result.error != null) {
                                             Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
                                         }
-
+ 
                                         result.vehicleId?.let { selectedVehicleId = it }
                                         result.odometer?.let { odometer = it }
-
+ 
                                         if (debugMode && result.debugJson != null) {
                                             val timestamp = System.currentTimeMillis()
                                             val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
@@ -173,7 +204,7 @@ fun QuickFillupScreen(
                                             Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
                                         }
                                     }
-
+ 
                                 } catch (e: Exception) {
                                     Log.e("QuickFill", "OCR Pipeline failed", e)
                                 } finally {
@@ -201,7 +232,28 @@ fun QuickFillupScreen(
                         isProcessing = true
                         capturePending = true
                         
+                        val playSound = prefs.getBoolean("shutter_sounds", true)
+                        if (playSound) {
+                            try {
+                                android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
+                            } catch (e: Exception) {
+                                Log.e("QuickFill", "Failed to play shutter sound", e)
+                            }
+                        }
+ 
                         if (saveFuelPhotos) {
+                            try {
+                                val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                    context.display
+                                } else {
+                                    (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
+                                }
+                                val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
+                                imageCapture.targetRotation = rotation
+                            } catch (e: Exception) {
+                                Log.e("QuickFill", "Failed to set target rotation", e)
+                            }
+ 
                             val photoFile = File(context.cacheDir, "temp_fuel_${System.currentTimeMillis()}.jpg")
                             val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
                             imageCapture.takePicture(
