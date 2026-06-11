@@ -1,5 +1,10 @@
 # TODO
 
+- [x] Save Quick Fill Photos Directly to MediaStore DCIM/Camera
+    - [x] Update QuickFillupScreen.kt to use direct MediaStore saving with DCIM/Camera relative path
+    - [x] Block premature submissions by disabling Save button during photo saving
+
+
 - [x] Fix Portrait Image Rotation Flip and Photo Saving Flow
     - [x] Calculate totalAngle in OcrHarness as cameraRotationDegrees.toFloat() - optAngle
     - [x] Apply positive postRotate(angle) in OdometerOcrUtils.rotate

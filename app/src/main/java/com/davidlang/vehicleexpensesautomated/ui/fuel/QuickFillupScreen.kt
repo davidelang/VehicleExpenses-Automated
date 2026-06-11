@@ -69,6 +69,7 @@ fun QuickFillupScreen(
     var capturePending by remember { mutableStateOf(false) }
     var displayBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var stageLabel by remember { mutableStateOf("") }
+    var isPhotoSaving by remember { mutableStateOf(false) }
 
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
@@ -203,6 +204,7 @@ fun QuickFillupScreen(
                     onClick = {
                         isProcessing = true
                         capturePending = true
+                        photoUrl = null
                         
                         val playSound = prefs.getBoolean("shutter_sounds", true)
                         if (playSound) {
@@ -214,6 +216,7 @@ fun QuickFillupScreen(
                         }
  
                         if (saveFuelPhotos) {
+                            isPhotoSaving = true
                             try {
                                 val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                                     context.display
@@ -226,21 +229,34 @@ fun QuickFillupScreen(
                                 Log.e("QuickFill", "Failed to set target rotation", e)
                             }
  
-                            val photoFile = File(context.cacheDir, "temp_fuel_${System.currentTimeMillis()}.jpg")
-                            val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+                            val resolver = context.contentResolver
+                            val contentValues = android.content.ContentValues().apply {
+                                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
+                                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DCIM + "/Camera")
+                                }
+                            }
+ 
+                            val outputOptions = ImageCapture.OutputFileOptions.Builder(
+                                resolver,
+                                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                contentValues
+                            ).build()
+ 
                             imageCapture.takePicture(
                                 outputOptions,
                                 ContextCompat.getMainExecutor(context),
                                 object : ImageCapture.OnImageSavedCallback {
                                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                        scope.launch {
-                                            val uri = Uri.fromFile(photoFile)
-                                            photoUrl = settingsViewModel.photoStorageManager.savePhoto(uri, photoFile.name, PhotoType.FUEL)
-                                            photoFile.delete()
-                                        }
+                                        val savedUri = output.savedUri
+                                        android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
+                                        photoUrl = savedUri?.toString()
+                                        isPhotoSaving = false
                                     }
                                     override fun onError(exception: ImageCaptureException) {
-                                        Log.e("QuickFill", "Photo save failed", exception)
+                                        android.util.Log.e("QuickFill", "Photo capture failed", exception)
+                                        isPhotoSaving = false
                                     }
                                 }
                             )
@@ -319,10 +335,10 @@ fun QuickFillupScreen(
                     navController.popBackStack()
                 }
             },
-            enabled = !isProcessing,
+            enabled = !isProcessing && !isPhotoSaving,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Save Fill-up")
+            Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
         }
     }
 }
