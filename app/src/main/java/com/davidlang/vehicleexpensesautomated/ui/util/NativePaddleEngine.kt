@@ -69,6 +69,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _bufferSetA: BufferSet? = null
         private var _bufferSetB: BufferSet? = null
         private var _deskewBufferSetLarge: BufferSet? = null
+        private var _detBufferSet: BufferSet? = null
+        private var _recBufferSet: BufferSet? = null
+        private val vehicleOdoBuffers = mutableMapOf<Int, BufferSet>()
         private var _bufferLarge: FloatArray? = null
         private var _sharedBmp2048: Bitmap? = null
         private var _sharedCanvas2048: Canvas? = null
@@ -90,6 +93,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bufferSetA: BufferSet get() = _bufferSetA!!
         val bufferSetB: BufferSet get() = _bufferSetB!!
         val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
+        val detBufferSet: BufferSet get() = _detBufferSet!!
+        val recBufferSet: BufferSet get() = _recBufferSet!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
         val sharedCanvas2048: Canvas get() = _sharedCanvas2048!!
@@ -109,6 +114,69 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedBytes: ByteArray get() = _sharedBytes!!
         val sharedMatrix = android.graphics.Matrix()
 
+        private fun getReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
+            return try {
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                if (path.startsWith("content://")) {
+                    context.contentResolver.openInputStream(android.net.Uri.parse(path))?.use {
+                        android.graphics.BitmapFactory.decodeStream(it, null, options)
+                    }
+                } else {
+                    android.graphics.BitmapFactory.decodeFile(path, options)
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    Pair(options.outWidth, options.outHeight)
+                } else {
+                    Pair(4000, 3072) // Safe fallback
+                }
+            } catch (e: Exception) {
+                Log.w("PaddleLite", "Failed to decode reference bounds: $path", e)
+                Pair(4000, 3072) // Safe fallback
+            }
+        }
+
+        fun getOdoBuffer(context: Context, vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
+            val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
+            val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
+            
+            val (refW, refH) = if (!vehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
+                getReferenceDimensions(context, vehicle.referenceDashPhotoUrl)
+            } else {
+                Pair(4000, 3072)
+            }
+
+            val p1 = IcrsMath.icrsToPixel(l, t, refW, refH)
+            val p2 = IcrsMath.icrsToPixel(r, b, refW, refH)
+            val srcW = (p2.x - p1.x).toInt()
+            val srcH = (p2.y - p1.y).toInt()
+
+            // Align to 32-pixel boundaries for efficient native processing
+            val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
+            val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
+            
+            return vehicleOdoBuffers.getOrPut(vehicle.id) {
+                Log.i("PaddleLite", "Creating persistent Odo Buffer for vehicle ${vehicle.id}: ${targetW}x${targetH}")
+                BufferSet(targetW, targetH)
+            }
+        }
+
+        fun releaseOdoBuffer(vehicleId: Int) {
+            vehicleOdoBuffers.remove(vehicleId)?.let { buffer ->
+                Log.i("PaddleLite", "Releasing persistent Odo Buffer for vehicle $vehicleId")
+                buffer.release()
+            }
+        }
+
+        fun releaseAllOdoBuffers() {
+            val iterator = vehicleOdoBuffers.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                Log.i("PaddleLite", "Releasing persistent Odo Buffer for vehicle ${entry.key}")
+                entry.value.release()
+                iterator.remove()
+            }
+        }
+
         fun initializeGlobalBuffers(context: Context) {
             if (isAvailableGlobally) return
             val tStart = System.currentTimeMillis()
@@ -119,6 +187,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _deskewBufferSetLarge = BufferSet(2048, 2048)
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
+
+            _detBufferSet = BufferSet(512, 128)
+            _recBufferSet = BufferSet(320, 48)
 
             _bufferLarge = FloatArray(1 * 2048 * 2048) // Native is now exclusively 1-channel (Mono)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)

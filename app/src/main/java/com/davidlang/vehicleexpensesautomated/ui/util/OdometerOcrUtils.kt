@@ -89,6 +89,8 @@ object OdometerOcrUtils {
         val mlTimeMs: Long,
         val paddleTimeMs: Long,
         val paddleCppAngle: Float = 0f,
+        val paddleOptimizedAngle: Float = 0f,
+        val paddleOptimizedTimeMs: Long = 0L,
         val mlBlocks: List<TextBlock> = emptyList(),
         val paddleBlocks: List<TextBlock> = emptyList(),
         val paddleCppBlocks: List<TextBlock> = emptyList(),
@@ -99,7 +101,10 @@ object OdometerOcrUtils {
     suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
         val t0 = System.currentTimeMillis()
 
-        // 1. Unified Preparation (Bitmap or BufferSet.Slice)
+        // 1. Optimized Paddle Path (Benchmark/Production Version)
+        val (optAngle, optTime) = calculatePaddleAngleOptimized(input)
+
+        // 2. Unified Preparation for Legacy Path (Bitmap or BufferSet.Slice)
         val pTargetSize = 2048
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
 
@@ -120,7 +125,7 @@ object OdometerOcrUtils {
 
         val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
 
-        // 2. Native Resize into workspace (top-left)
+        // 3. Native Resize into workspace (top-left) - Legacy uses INTER_AREA
         if (input is Bitmap) {
             val argbMat = Mat()
             org.opencv.android.Utils.bitmapToMat(input, argbMat)
@@ -137,13 +142,13 @@ object OdometerOcrUtils {
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
 
-        // 3. ML Kit Path
+        // 4. ML Kit Path
         val tMl0 = System.currentTimeMillis()
         val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
-        // 4. Paddle Path (Combined V3 Kotlin + C++ Native)
+        // 5. Paddle Path (Combined V3 Kotlin + C++ Native)
         val tPd0 = System.currentTimeMillis()
         val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
         val tPd = System.currentTimeMillis() - tPd0
@@ -160,12 +165,45 @@ object OdometerOcrUtils {
             mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
             paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
             paddleCppAngle = paddleCppAngle,
+            paddleOptimizedAngle = optAngle,
+            paddleOptimizedTimeMs = optTime,
             mlBlocks = mlRes.blocks,
             paddleBlocks = pdRes.blocks,
             paddleCppBlocks = pdRes.cppBlocks,
             engines = results,
             metadata = mapOf("t_prep_ms" to tPrep.toString())
         )
+    }
+
+    suspend fun calculatePaddleAngleOptimized(input: Any): Pair<Float, Long> {
+        val t0 = System.currentTimeMillis()
+        val pTargetSize = 2048
+        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
+        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
+        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val targetW = (srcW * pScale).toInt(); val targetH = (srcH * pScale).toInt()
+        val alignedW = ((targetW + 31) / 32) * 32; val alignedH = ((targetH + 31) / 32) * 32
+        
+        bufferSet.p.clear()
+        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
+        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
+        
+        if (input is Bitmap) {
+            val argbMat = Mat(); org.opencv.android.Utils.bitmapToMat(input, argbMat)
+            val gray = Mat(); Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+            argbMat.release(); gray.release()
+        } else {
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+        }
+
+        val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(0f, 0L)
+        val det = paddleEngine.detect(bufferSet.c[outerId].mat, alignedW, alignedH, copyHeatmap = false)
+        val cppAngle = if (det?.outputTensor != null) NativeImageUtils.heatmapToAngle(det.outputTensor, 0.20f) else 0f
+        
+        bufferSet.c[innerId].release(); bufferSet.c[outerId].release()
+        return Pair(cppAngle, System.currentTimeMillis() - t0)
     }
 
     private suspend fun deskewMlKit(nv21: ByteBuffer, width: Int, height: Int, pScale: Float): EngineResult {
@@ -938,6 +976,152 @@ object OdometerOcrUtils {
         val candidates = results.mapNotNull { it.text }.filter { it.length in 4..7 && it.all { c -> c.isDigit() } }
         if (candidates.isEmpty()) return null
         return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
+    }
+
+    fun findValleyMidpoints(bins: FloatArray): List<Int> {
+        if (bins.isEmpty()) return emptyList()
+        val binCount = bins.size
+        val smoothed = FloatArray(binCount)
+        for (i in 0 until binCount) {
+            val start = (i - 1).coerceAtLeast(0)
+            val end = (i + 1).coerceAtMost(binCount - 1)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+        }
+
+        val midpoints = mutableListOf<Int>()
+        var i = 1
+        while (i < binCount - 1) {
+            if (smoothed[i] <= smoothed[i - 1] && smoothed[i] <= smoothed[i + 1]) {
+                val startIdx = i
+                while (i < binCount - 1 && smoothed[i + 1] == smoothed[startIdx]) { i++ }
+                val endIdx = i
+
+                val risesLeft = smoothed[startIdx - 1] > smoothed[startIdx]
+                val risesRight = if (endIdx < binCount - 1) smoothed[endIdx + 1] > smoothed[endIdx] else false
+
+                if (risesLeft && risesRight) {
+                    midpoints.add((startIdx + endIdx) / 2)
+                }
+            }
+            i++
+        }
+        return midpoints.distinct()
+    }
+
+    fun getHistStats(mat: org.opencv.core.Mat): HistStats {
+        val hist = org.opencv.core.Mat()
+        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+        val bins = FloatArray(64); hist.get(0, 0, bins)
+        val totalPixels = mat.rows() * mat.cols()
+
+        val smoothed = FloatArray(64)
+        for (i in 0..63) {
+            val start = (i - 2).coerceAtLeast(0)
+            val end = (i + 2).coerceAtMost(63)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+        }
+
+        // Low Limit: Climb to first peak, then drop to valley
+        var lowPeakIdx = 0
+        while (lowPeakIdx < 62 && smoothed[lowPeakIdx + 1] >= smoothed[lowPeakIdx]) lowPeakIdx++
+        var lowIdx = lowPeakIdx
+        while (lowIdx < 63 && smoothed[lowIdx + 1] <= smoothed[lowIdx]) lowIdx++
+
+        // High Limit: Climb to first peak from right, then drop to valley
+        var highPeakIdx = 63
+        while (highPeakIdx > 1 && smoothed[highPeakIdx - 1] >= smoothed[highPeakIdx]) highPeakIdx--
+        var highIdx = highPeakIdx
+        while (highIdx > 0 && smoothed[highIdx - 1] <= smoothed[highIdx]) highIdx--
+
+        val intensityLow = lowIdx * 4.0
+        val intensityHigh = highIdx * 4.0
+
+        var p80 = 0.0
+        var sum = 0.0
+        for (i in 0..63) {
+            sum += bins[i]
+            if (sum >= totalPixels * 0.80) { p80 = i * 4.0; break }
+        }
+        hist.release()
+        return HistStats(intensityLow, intensityHigh, p80, bins)
+    }
+
+    suspend fun rotate(set: BufferSet, angle: Float): Long {
+        return rotate(set, angle, set.width, set.height)
+    }
+
+    suspend fun rotate(set: BufferSet, angle: Float, targetW: Int, targetH: Int): Long = withContext(Dispatchers.IO) {
+        val tRot0 = System.currentTimeMillis()
+        val src = set.p.mat
+        val srcUv = set.p.uvMat
+
+        val tempMat = org.opencv.core.Mat()
+        val tempUv = org.opencv.core.Mat()
+
+        val matrixLocal = android.graphics.Matrix()
+        matrixLocal.postTranslate(-src.cols() / 2f, -src.rows() / 2f)
+        matrixLocal.postRotate(angle)
+        matrixLocal.postTranslate(targetW / 2f, targetH / 2f)
+        val values = FloatArray(9)
+        matrixLocal.getValues(values)
+
+        val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
+        rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
+        rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
+
+        // Warp Y to tempMat
+        val dstSize = org.opencv.core.Size(targetW.toDouble(), targetH.toDouble())
+        tempMat.create(dstSize, src.type())
+        org.opencv.imgproc.Imgproc.warpAffine(src, tempMat, rotMat, dstSize, org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+
+        // Warp UV to tempUv
+        val uvScaleMat = rotMat.clone()
+        uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
+        uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
+        val uvDstSize = org.opencv.core.Size((targetW / 2).toDouble(), (targetH / 2).toDouble())
+        tempUv.create(uvDstSize, srcUv.type())
+        org.opencv.imgproc.Imgproc.warpAffine(srcUv, tempUv, uvScaleMat, uvDstSize, org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
+
+        // Resize the set and copy
+        set.resize(targetW, targetH)
+
+        tempMat.copyTo(set.p.mat)
+        tempUv.copyTo(set.p.uvMat)
+
+        tempMat.release()
+        tempUv.release()
+        rotMat.release()
+        uvScaleMat.release()
+
+        System.currentTimeMillis() - tRot0
+    }
+
+    fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
+        if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
+        try {
+            val root = org.json.JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) org.json.JSONArray(json) else return emptyList()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
+                val centerPix = IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
+                val sE = kotlin.math.min(imgW, imgH).toDouble(); val pW = (w * sE); val pH = (h * sE)
+                val inst = if (obj.has("instance")) obj.getInt("instance") else -1; val cT = OdometerOcrUtils.cleanLandmarkString(text)
+                list.add(TextBlock(cT, android.graphics.Rect((centerPix.x - pW/2.0).toInt(), (centerPix.y - pH/2.0).toInt(), (centerPix.x + pW/2.0).toInt(), (centerPix.y + pH/2.0).toInt()), instanceId = inst))
+            }
+        } catch (e: Exception) { Log.e("OdometerOcrUtils", "Failed to parse landmarks", e) }
+        return list
+    }
+
+    fun saveImageProxyToFile(imageProxy: androidx.camera.core.ImageProxy, file: java.io.File) {
+        val planeProxy = imageProxy.planes[0]
+        val buffer = planeProxy.buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        
+        // This only works if capture format is JPEG (ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+        // If it's YUV, we'd need to encode it.
+        // Assuming ImageCapture provides JPEG when not specified otherwise for proxy?
+        // Actually, ImageProxy from ImageCapture is usually JPEG.
+        file.writeBytes(bytes)
     }
 
     fun refineNumericResult(result: OcrResult): OcrResult {
