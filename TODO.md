@@ -1,10 +1,10 @@
 # TODO
 
-- [ ] Configure Numeric Keyboards and Focus-Based Camera Hiding (Approved Plan)
-    - [ ] Add imports and retrieve focus manager in QuickFillupScreen.kt
-    - [ ] Track focus state for Odometer, Volume, and Cost fields
-    - [ ] Conditionally hide camera preview/controls and disable scroll behavior when editing
-    - [ ] Apply KeyboardOptions and KeyboardActions for numeric/decimal keyboards
+- [x] Configure Numeric Keyboards and Focus-Based Camera Hiding (Approved Plan)
+    - [x] Add imports and retrieve focus manager in QuickFillupScreen.kt
+    - [x] Track focus state for Odometer, Volume, and Cost fields
+    - [x] Conditionally hide camera preview/controls and disable scroll behavior when editing
+    - [x] Apply KeyboardOptions and KeyboardActions for numeric/decimal keyboards
 
 - [x] Optimize Quick Fill UI and App-Wide Top Bar (Revision 6)
     - [x] Implement landscape side-by-side := layout (Camera left, Buttons middle, Inputs right)
