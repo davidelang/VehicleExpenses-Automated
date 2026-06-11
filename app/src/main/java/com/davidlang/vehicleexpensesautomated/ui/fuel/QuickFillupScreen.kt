@@ -108,35 +108,6 @@ fun QuickFillupScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Mode Selector: Odometer vs Pump
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            FilledTonalButton(
-                onClick = { captureMode = "odo" },
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = if (captureMode == "odo") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (captureMode == "odo") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier.weight(1f).padding(end = 4.dp)
-            ) {
-                Text("Get Odometer")
-            }
-            FilledTonalButton(
-                onClick = { captureMode = "pump" },
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = if (captureMode == "pump") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (captureMode == "pump") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier.weight(1f).padding(start = 4.dp)
-            ) {
-                Text("Get Pump")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
         // Camera Preview / Final Crop Display Area
         Box(modifier = Modifier.fillMaxWidth().height(220.dp).background(Color.Black)) {
             if (displayBitmap != null) {
@@ -146,15 +117,7 @@ fun QuickFillupScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
-                if (!isProcessing) {
-                    Button(
-                        onClick = { displayBitmap = null },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
-                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
-                    ) {
-                        Text("Try Again", color = Color.White)
-                    }
-                } else {
+                if (isProcessing) {
                     Surface(
                         color = Color.Black.copy(alpha = 0.6f),
                         modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
@@ -245,8 +208,33 @@ fun QuickFillupScreen(
                         }
                     }
                 )
+            }
+            
+            if (isProcessing && displayBitmap == null) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+        }
 
-                // Shutter button inside the preview area
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Camera Controls Box (Out of the live video)
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (displayBitmap != null) {
+                if (!isProcessing) {
+                    Button(
+                        onClick = { displayBitmap = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Try Again", color = MaterialTheme.colorScheme.onError)
+                    }
+                }
+            } else {
                 if (!isProcessing) {
                     IconButton(
                         onClick = {
@@ -311,8 +299,6 @@ fun QuickFillupScreen(
                             }
                         },
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp)
                             .size(64.dp)
                             .background(Color.White, CircleShape)
                             .border(4.dp, Color.Gray, CircleShape)
@@ -324,12 +310,6 @@ fun QuickFillupScreen(
                         )
                     }
                 }
-            }
-            
-            if (isProcessing && displayBitmap == null) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center)
-                )
             }
         }
 
@@ -369,15 +349,29 @@ fun QuickFillupScreen(
         // Compact Single-Line Input Row with Local Overrides
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
                 value = odometer,
                 onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
                 label = { Text("Odo") },
-                modifier = Modifier.weight(1.2f),
+                modifier = Modifier.weight(1.0f),
                 singleLine = true
             )
+            Button(
+                onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (captureMode == "odo") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                ),
+                modifier = Modifier.weight(0.9f).height(56.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text(
+                    text = if (captureMode == "odo") "Odo" else "Pump",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
             OutlinedTextField(
                 value = gallons,
                 onValueChange = { gallons = it },
@@ -390,7 +384,7 @@ fun QuickFillupScreen(
                         Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
                     }
                 },
-                modifier = Modifier.weight(1.1f),
+                modifier = Modifier.weight(1.0f),
                 singleLine = true
             )
             OutlinedTextField(
@@ -422,7 +416,7 @@ fun QuickFillupScreen(
                         }
                     }
                 },
-                modifier = Modifier.weight(1.1f),
+                modifier = Modifier.weight(1.0f),
                 singleLine = true
             )
         }

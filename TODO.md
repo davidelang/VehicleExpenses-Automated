@@ -1,11 +1,11 @@
 # TODO
 
-- [x] Optimize Quick Fill UI and App-Wide Top Bar (Approved Plan)
+- [x] Optimize Quick Fill UI and App-Wide Top Bar (Revision 3)
+    - [x] Set COMPATIBLE mode in CameraPreview.kt to fix preview overflow/overlap
+    - [x] Move shutter and "Try Again" buttons completely outside camera preview/image crop Box
+    - [x] Consolidate mode switch into a single toggle button between Odo and G/$ inputs
     - [x] Remove PhotoPicker component (removing Take Picture and Gallery buttons)
-    - [x] Move capture shutter button outside the preview overlay and render as a circle button
-    - [x] Add odo/pump mode toggle buttons at the top of QuickFillupScreen
     - [x] Support dynamic unit/currency abbreviations and quick dropdown/toggles inside Odo/G/$ text fields
-    - [x] Maintain final odometer crop display on screen with a "Try Again" button to restart preview
     - [x] Configure android:theme for MainActivity in AndroidManifest.xml to consolidate app-wide headers
     - [x] Add default currency and volume unit preferences in SettingsScreen
 
