@@ -35,10 +35,14 @@ fun SettingsScreen() {
     var chargingOnly by remember { mutableStateOf(prefs.getBoolean("charging_only", false)) }
     var frequencyHours by remember { mutableStateOf(prefs.getInt("frequency_hours", 6)) }
     var driveFolder by remember { mutableStateOf(prefs.getString("drive_folder", "Vehicle Expenses Photos") ?: "") }
-    var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", false)) }
+    var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", true)) }
     var photoProviderPref by remember { mutableStateOf(prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive") }
+    var debugOcrPipeline by remember { mutableStateOf(prefs.getBoolean("debug_ocr_pipeline", false)) }
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
+    var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
+    var currencySymbol by remember { mutableStateOf(prefs.getString("currency_symbol", "$") ?: "$") }
+    var volumeUnit by remember { mutableStateOf(prefs.getString("volume_unit", "G") ?: "G") }
 
     var status by remember { mutableStateOf("Ready") }
 
@@ -50,7 +54,7 @@ fun SettingsScreen() {
         uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
     }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, ocrConfidenceThreshold, darkModePref) {
+    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, debugOcrPipeline, ocrConfidenceThreshold, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
         prefs.edit().apply {
             putString("sheet_id", sheetId)
             putBoolean("sync_enabled", syncEnabled)
@@ -60,8 +64,12 @@ fun SettingsScreen() {
             putString("drive_folder", driveFolder)
             putBoolean("save_fuel_photos", saveFuelPhotos)
             putString("photo_storage_provider", photoProviderPref)
+            putBoolean("debug_ocr_pipeline", debugOcrPipeline)
             putFloat("ocr_confidence_threshold", ocrConfidenceThreshold)
             putString("dark_mode", darkModePref)
+            putBoolean("shutter_sounds", shutterSounds)
+            putString("currency_symbol", currencySymbol)
+            putString("volume_unit", volumeUnit)
             apply()
         }
     }
@@ -81,7 +89,31 @@ fun SettingsScreen() {
         SwitchSetting("Charging Only", chargingOnly) { chargingOnly = it }
         SliderSetting("Sync Frequency (hours)", frequencyHours.toFloat(), 1f..24f) { frequencyHours = it.toInt() }
         SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { saveFuelPhotos = it }
+        SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
+        SwitchSetting("Debug OCR Pipeline", debugOcrPipeline) { debugOcrPipeline = it }
         SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) { ocrConfidenceThreshold = it }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Localization & Units", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = currencySymbol,
+                onValueChange = { currencySymbol = it },
+                label = { Text("Default Currency") },
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
+            )
+            Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                DropdownSetting(
+                    label = "Default Unit",
+                    selectedValue = if (volumeUnit == "G") "Gallons (G)" else "Liters (L)",
+                    options = listOf("Gallons (G)", "Liters (L)"),
+                    onValueChange = { volumeUnit = if (it.startsWith("Gallons")) "G" else "L" }
+                )
+            }
+        }
 
         Text("Photo Storage Provider", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
