@@ -246,7 +246,8 @@ private suspend fun runPumpExperiment(
 
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
-    val flows = listOf("Set A")
+    // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
+    val flows = listOf("Set A", "Set B")
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -294,34 +295,16 @@ private suspend fun runPumpExperiment(
                     root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
                 }
 
-                // 2. Deskew
+                // 2. Deskew (ported Set E style from alignment for Set B; uses dedicated populate + JNI angle path)
+                // Compute per-flow but select angle source based on flow. Set B (pump-only) uses paddleCppAngle (from the optimized/JNI path inside calculateAverageTextAngle).
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
-                val tilt = deskewRes.angle
-
-                suspend fun pRotate(set: BufferSet, angle: Float) = withContext(Dispatchers.IO) {
-                    val src = set.p.mat; val dst = set.s.mat
-                    val matrixLocal = android.graphics.Matrix(); matrixLocal.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
-                    val values = FloatArray(9); matrixLocal.getValues(values)
-                    val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
-                    rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
-                    rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
-
-                    // Rotate Luma (Y)
-                    org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-
-                    // Rotate Chroma (UV)
-                    val srcUv = set.p.uvMat
-                    val dstUv = set.s.uvMat
-                    val uvScaleMat = rotMat.clone()
-                    // Shift translation for half-res UV plane
-                    uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
-                    uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
-                    org.opencv.imgproc.Imgproc.warpAffine(srcUv, dstUv, uvScaleMat, srcUv.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
-
-                    set.flip()
-                    rotMat.release(); uvScaleMat.release()
+                val tilt = when (flowName) {
+                    "Set B" -> deskewRes.paddleCppAngle
+                    else -> deskewRes.angle
                 }
-                pRotate(workspace, tilt)
+
+                // Use shared modern rotate (UV handling, parity with alignment improvements). Local pRotate removed.
+                OdometerOcrUtils.rotate(workspace, tilt)
 
                 // 3. Discovery
                 val scales = listOf(224, 608, 1024, 2560)
@@ -445,8 +428,12 @@ private suspend fun runPumpExperiment(
                     return PathResult(res[0].text, res[1].text, cropT, cropB)
                 }
 
-                branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
+                // Set B is pump-only (no MLKit for the recognition step). Only populate Paddle result for this flow.
+                // Set A keeps dual for comparison.
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle")
+                if (flowName != "Set B") {
+                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
+                }
 
                 // 5. Visualization
                 fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
@@ -822,8 +809,31 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
     val rawBlocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
     val rawRects = rawBlocks.map { it.boundingBox }
 
-    // 1. Consolidate Raw Character Fragments (75% overlap rule)
-    val consolidated = OdometerOcrUtils.consolidateRects(rawRects, 0.75f)
+    // Redbox improvement from Set J (alignment experiment) - first item per user directive.
+    // Move sides of detected box out by 1 pixel in low-res (this crop/detect-input space) before
+    // the ICRS "scaling back up" (and before doing anything more: consolidate, native expand, hunks).
+    // Then remove nested red boxes (inset contains filter, matching alignment tRawB logic in runBinTrialsPaddle).
+    //
+    // Pump note (variable scale vs fixed in alignment): scaleFactor computed in caller scales.forEach
+    // (currentLongEdge vs target/scale + prepareScale 32-align outer/inner + process 1.0f on crop).
+    // ICRS here uses crop masterW/H; later icrsToPixel in getFinal uses full original imgW/imgH.
+    // This chain causes erosion (e.g. 63px feature -> ~56px effective after down/up as described).
+    // +1 here (in the post-process rect space) + nested removal is the ported math; extra compensation
+    // using the level's scaleFactor can be added if needed for full recovery on pump photos.
+    val expandedRects = rawRects.map { r ->
+        android.graphics.Rect(
+            (r.left - 1).coerceAtLeast(0),
+            (r.top - 1).coerceAtLeast(0),
+            (r.right + 1).coerceAtMost(masterW - 1),
+            (r.bottom + 1).coerceAtMost(masterH - 1)
+        )
+    }
+    val nonNestedRects = expandedRects.filter { r1 ->
+        expandedRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
+    }
+
+    // 1. Consolidate Raw Character Fragments (75% overlap rule) -- now on improved (expanded + de-nested) raw redboxes
+    val consolidated = OdometerOcrUtils.consolidateRects(nonNestedRects, 0.75f)
 
     val hunksRaw = mutableListOf<PumpHunk>()
     val hunksExpanded = mutableListOf<PumpHunk>()
