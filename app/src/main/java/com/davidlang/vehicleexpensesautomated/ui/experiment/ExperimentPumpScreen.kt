@@ -188,15 +188,6 @@ data class PumpBranch(
     }
 }
 
-data class PumpReferenceCache(
-    val vehicle: Vehicle,
-    val referenceBase64: String,
-    val curatedLandmarks: List<TextBlock>,
-    val bmp: Bitmap,
-    val width: Int,
-    val height: Int
-)
-
 private suspend fun runPumpExperiment(
     experimentDir: File,
     reportDir: File,
@@ -818,8 +809,10 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
     // (currentLongEdge vs target/scale + prepareScale 32-align outer/inner + process 1.0f on crop).
     // ICRS here uses crop masterW/H; later icrsToPixel in getFinal uses full original imgW/imgH.
     // This chain causes erosion (e.g. 63px feature -> ~56px effective after down/up as described).
-    // +1 here (in the post-process rect space) + nested removal is the ported math; extra compensation
-    // using the level's scaleFactor can be added if needed for full recovery on pump photos.
+    // +1 here (in the post-process rect space) + nested removal is the ported math.
+    // Per clarification: the lowest level does the +1 adjustment; layers above (scale/prepare) apply the
+    // scale factor from there. Buffer sizes are multiples of 32x2 (for alignment), but the boxes themselves
+    // do not need to be.
     val expandedRects = rawRects.map { r ->
         android.graphics.Rect(
             (r.left - 1).coerceAtLeast(0),
@@ -1127,97 +1120,4 @@ private fun pumpCreateScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: In
 private fun JSONObject.pPutSafe(key: String, value: Double, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 private fun JSONObject.pPutSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
-private suspend fun pRunMLKitIterative(
-    displayName: String,
-    masterBuffer: Any,
-    mWidth: Int,
-    mHeight: Int,
-    winnerRef: PumpReferenceCache,
-    vehicleBufferSets: Map<Int, BufferSet>,
-    experimentRecSet320x48: BufferSet,
-    report: MutableMap<String, OcrHarnessResult>,
-    targetRefMap: MutableMap<String, RefinementTrace>
-) {
-    val tH0 = System.currentTimeMillis()
-    val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
-    val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
-    val jsonStages = com.google.gson.JsonObject()
-    val allOdo = mutableListOf<String>()
 
-    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-    val t = winnerRef.vehicle.odometerCropTop ?: 0f
-    val r = winnerRef.vehicle.odometerCropRight ?: 1f
-    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-
-    val icrsRect = RectF(l, t, r, b)
-    val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
-    val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
-
-    val roiW = (p2.x - p1.x).toInt().coerceAtMost(mWidth)
-    val roiH = (p2.y - p1.y).toInt().coerceAtMost(mHeight)
-    val sX = p1.x.toInt().coerceIn(0, mWidth - 1)
-    val sY = p1.y.toInt().coerceIn(0, mHeight - 1)
-
-    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
-    var lastThumb = ""
-    var tSnTotal = 0L
-    val steps = mutableListOf<OcrStepResult>()
-
-    stages.forEach { stage ->
-        val tS0 = System.currentTimeMillis()
-        when (masterBuffer) {
-            is BufferSet -> {
-                odoBuffer.p.clear()
-                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
-            }
-        }
-
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.75f)
-        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
-
-        experimentRecSet320x48.p.clear()
-        val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())
-        val ew = ((odoBuffer.p.mat.cols() * rSc + 1).toInt() / 2) * 2
-        val eh = ((odoBuffer.p.mat.rows() * rSc + 1).toInt() / 2) * 2
-        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-
-        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
-        val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
-        experimentRecSet320x48.c[rCrId].release()
-
-        val odoB = StringBuilder()
-        vText.textBlocks.forEach { blk ->
-            blk.lines.forEach { line ->
-                val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
-                if (cleaned.isNotBlank()) odoB.append(cleaned)
-            }
-        }
-
-        val odoStr = odoB.toString()
-        allOdo.add(odoStr)
-        val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, emptyMap()))
-
-        val anns = mutableListOf<SnapshotAnnotation>()
-        val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
-        val snY = odoBuffer.p.mat.rows().toFloat() / eh.toFloat()
-        vText.textBlocks.forEach { b ->
-            b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
-        }
-
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        lastThumb = sB64
-        tSnTotal += ts
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
-        val sObj = com.google.gson.JsonObject()
-        sObj.addProperty("text", odoStr)
-        sObj.addProperty("time", tL)
-        jsonStages.add(stage, sObj)
-    }
-
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
-    report[displayName] = result
-    targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
-}
