@@ -14,6 +14,7 @@
         android:name=".VehicleExpensesApplication"
         android:allowBackup="true"
         android:label="VehicleExpenses"
+        android:theme="@style/Theme.VehicleExpensesAutomated"
         android:icon="@mipmap/ic_vehicleexpenses"
         android:roundIcon="@mipmap/ic_vehicleexpenses_round"
         android:supportsRtl="true">
