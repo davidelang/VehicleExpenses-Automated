@@ -72,7 +72,7 @@ fun QuickFillupScreen(
 
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
-    val saveFuelPhotos = remember { prefs.getBoolean("save_fuel_photos", false) }
+    val saveFuelPhotos = remember { prefs.getBoolean("save_fuel_photos", true) }
 
     val imageCapture: ImageCapture = remember {
         val resSelector = ResolutionSelector.Builder()

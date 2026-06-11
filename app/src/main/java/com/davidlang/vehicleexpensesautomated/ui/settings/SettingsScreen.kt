@@ -35,7 +35,7 @@ fun SettingsScreen() {
     var chargingOnly by remember { mutableStateOf(prefs.getBoolean("charging_only", false)) }
     var frequencyHours by remember { mutableStateOf(prefs.getInt("frequency_hours", 6)) }
     var driveFolder by remember { mutableStateOf(prefs.getString("drive_folder", "Vehicle Expenses Photos") ?: "") }
-    var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", false)) }
+    var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", true)) }
     var photoProviderPref by remember { mutableStateOf(prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive") }
     var debugOcrPipeline by remember { mutableStateOf(prefs.getBoolean("debug_ocr_pipeline", false)) }
     var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }

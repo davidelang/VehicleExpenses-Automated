@@ -1,5 +1,12 @@
 # TODO
 
+- [ ] Fix Portrait Image Rotation Flip and Photo Saving Flow
+    - [ ] Calculate totalAngle in OcrHarness as cameraRotationDegrees.toFloat() - optAngle
+    - [ ] Apply positive postRotate(angle) in OdometerOcrUtils.rotate
+    - [ ] Set default for save_fuel_photos to true in QuickFillupScreen and SettingsScreen
+    - [ ] Add error logging and MediaScannerConnection.scanFile in PhotoStorageManager.saveLocally
+
+
 - [x] Fix YUV Borrow Handle Cache for YUV Normalization
     - [x] Cache borrowed buffers/strides on JVM side in BufferSet.kt.
     - [x] Expose cached buffers/strides in yuv Smart Proxy when isBorrowed is true.

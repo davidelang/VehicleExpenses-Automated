@@ -1060,7 +1060,7 @@ object OdometerOcrUtils {
 
         val matrixLocal = android.graphics.Matrix()
         matrixLocal.postTranslate(-src.cols() / 2f, -src.rows() / 2f)
-        matrixLocal.postRotate(-angle)
+        matrixLocal.postRotate(angle)
         matrixLocal.postTranslate(targetW / 2f, targetH / 2f)
         val values = FloatArray(9)
         matrixLocal.getValues(values)

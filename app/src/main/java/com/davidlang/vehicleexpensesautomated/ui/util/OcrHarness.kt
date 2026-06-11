@@ -44,7 +44,7 @@ object OcrHarness {
             // 1. Deskew (Paddle C++) - Optimized Version
             val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
             
-            val totalAngle = cameraRotationDegrees + optAngle
+            val totalAngle = cameraRotationDegrees.toFloat() - optAngle
             val imgW = masterBuffer.width
             val imgH = masterBuffer.height
             val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW

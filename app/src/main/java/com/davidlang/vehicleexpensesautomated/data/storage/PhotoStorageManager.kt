@@ -112,7 +112,7 @@ class PhotoStorageManager @Inject constructor(
                     }
                     context.contentResolver.update(uri, contentValues, null, null)
                 } catch (e: Exception) {
-                    // Ignore failures in finalizing
+                    android.util.Log.e("PhotoStorageManager", "Failed to update IS_PENDING to 0", e)
                 }
             }
             return uri.toString()
@@ -133,8 +133,30 @@ class PhotoStorageManager @Inject constructor(
                 }
                 context.contentResolver.update(destUri, contentValues, null, null)
             }
+            
+            // Explicitly notify the MediaScanner so the photo appears in the Gallery immediately
+            try {
+                val projection = arrayOf(MediaStore.MediaColumns.DATA)
+                context.contentResolver.query(destUri, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                        val path = cursor.getString(pathIndex)
+                        android.media.MediaScannerConnection.scanFile(
+                            context,
+                            arrayOf(path),
+                            arrayOf("image/jpeg")
+                        ) { scannedPath, scannedUri ->
+                            android.util.Log.i("PhotoStorageManager", "MediaScanner scanned: $scannedPath -> $scannedUri")
+                        }
+                    }
+                }
+            } catch (scanEx: Exception) {
+                android.util.Log.e("PhotoStorageManager", "MediaScanner notification failed", scanEx)
+            }
+
             destUri.toString()
         } catch (e: Exception) {
+            android.util.Log.e("PhotoStorageManager", "Failed to save photo locally", e)
             null
         }
     }
