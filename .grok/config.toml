@@ -27,6 +27,41 @@ rules = [
   { action = "allow", tool = "bash", pattern = "cat *" },
   { action = "allow", tool = "bash", pattern = "./build_app*" },
   { action = "allow", tool = "bash", pattern = "jq *" },
+
+  # Blessed orchestration / launcher scripts.
+  # These are trusted tools run from the orchestration root (or relatively from worktrees).
+  # Explicitly allowing them here prevents repeated approval prompts when the human
+  # or a trusted orchestration agent runs them.
+  { action = "allow", tool = "bash", pattern = "./update-rules.sh*" },
+  { action = "allow", tool = "bash", pattern = "./setup_agent.sh*" },
+  { action = "allow", tool = "bash", pattern = "./sync_infrastructure.sh*" },
+  # Run launchers (invoked as ./run-* from root or ../run-* from worktrees)
+  { action = "allow", tool = "bash", pattern = "./run-grok*" },
+  { action = "allow", tool = "bash", pattern = "./run-gemini*" },
+  { action = "allow", tool = "bash", pattern = "./run-antigravity*" },
+  { action = "allow", tool = "bash", pattern = "../run-grok*" },
+  { action = "allow", tool = "bash", pattern = "../run-gemini*" },
+  { action = "allow", tool = "bash", pattern = "../run-antigravity*" },
+  # Cleanup script commonly used after agent work is merged
+  { action = "allow", tool = "bash", pattern = "./remove_worktree.sh*" },
+  { action = "allow", tool = "bash", pattern = "../remove_worktree.sh*" },
+
+  # PR workflow scripts (primarily run by AI agents for generating PRs, cleanup, etc.)
+  { action = "allow", tool = "bash", pattern = "./generate_pr.sh*" },
+  { action = "allow", tool = "bash", pattern = "./cleanup_pr.sh*" },
+  { action = "allow", tool = "bash", pattern = "../generate_pr.sh*" },
+  { action = "allow", tool = "bash", pattern = "../cleanup_pr.sh*" },
+
+  # Common safe sub-operations frequently performed by the blessed orchestration scripts
+  # (mkdir, cp, rm, chmod, sed, ln are used inside update-rules, setup_agent, etc.).
+  # Keeping them narrow reduces prompt noise while still being auditable.
+  { action = "allow", tool = "bash", pattern = "mkdir -p *" },
+  { action = "allow", tool = "bash", pattern = "cp *" },
+  { action = "allow", tool = "bash", pattern = "rm -f *" },
+  { action = "allow", tool = "bash", pattern = "chmod +w *" },
+  { action = "allow", tool = "bash", pattern = "sed -i *" },
+  { action = "allow", tool = "bash", pattern = "ln -s *" },
+
   # For plan mode hard stops (reinforce native plan mode via enter_plan_mode / SwitchMode):
   # deny edit/write/bash to non-sandbox paths; deny Task/subagent/invoke in plan mode, etc.
   # (exact rules tuned here + PreToolUse hooks below)
