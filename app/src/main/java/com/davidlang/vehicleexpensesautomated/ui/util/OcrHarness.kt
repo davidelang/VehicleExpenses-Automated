@@ -175,7 +175,7 @@ object OcrHarness {
         val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
         val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
         
-        val odoBuffer = NativePaddleEngine.getOdoBuffer(vehicle)
+        val odoBuffer = NativePaddleEngine.getOdoBuffer(context, vehicle)
         odoBuffer.p.clear()
         val interp = if (roi.width() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
         
@@ -204,44 +204,83 @@ object OcrHarness {
             val threshold = binIdx * 4.0
             odoBuffer.s.clear()
             org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+            odoBuffer.flip() // now .p = binary, .s = original grayscale
 
-            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.s.mat, listOf(Rect(0, 0, odoBuffer.width, odoBuffer.height)), 128f)
-            val vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
-            val hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
+            val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
+            val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
+            val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
+            
+            val experimentDetSet512x128 = NativePaddleEngine.detBufferSet
+            experimentDetSet512x128.p.clear()
+            val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
+            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+            experimentDetSet512x128.c[dCrId].release()
+            
+            val tRawB = tFullB.filter { b1 ->
+                tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
+            }
 
-            if (vSW > 0 && hSW > 0) {
-                NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.s.mat, vSW, hSW, 0.20f * odoBuffer.s.mat.cols())
-                NativeImageUtils.connectSegmentsH(odoBuffer.s.mat, vSW, hSW)
-                NativeImageUtils.blackOutRollingDigitsH(odoBuffer.s.mat, vSW, hSW)
-                val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.s.mat, vSW, hSW)
-                
-                if (compRects.isNotEmpty()) {
-                    val combined = Rect(compRects.minOf { it.left }, compRects.minOf { it.top }, compRects.maxOf { it.right }, compRects.maxOf { it.bottom })
-                    val recBuffer = NativePaddleEngine.recBufferSet
-                    recBuffer.p.clear()
-                    val bRecMat = odoBuffer.s.mat.submat(org.opencv.core.Rect(combined.left, combined.top, combined.width(), combined.height()))
-                    org.opencv.imgproc.Imgproc.resize(bRecMat, recBuffer.p.mat, recBuffer.p.mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+            if (tRawB.isNotEmpty()) {
+                val rb = tRawB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: tRawB.first()
+                val redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+                val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+                val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), 128f)
+                val vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
+                val hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
+                odoBuffer.crop[redBoxCropId].release()
+
+                if (vSW > 0 && hSW > 0) {
+                    NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
+                    NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
+                    val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
                     
-                    val ocrR = paddleEngine.recognizeNumeric(recBuffer.p)
-                    val probsStr = ocrR.metadata["ocr_probs"] ?: ""
-                    val probs = mutableListOf<Float>(); Regex("\\((0\\.\\d+|1\\.0+)\\)").findAll(probsStr).forEach { probs.add(it.groupValues[1].toFloatOrNull() ?: 0f) }
-                    
-                    val trial = TrialData(ocrR.debugText, probs.sum(), probs.minOrNull() ?: 0f, threshold)
-                    trialsList.add(trial)
+                    if (compRects.isNotEmpty()) {
+                        val combined = Rect(compRects.minOf { it.left }, compRects.minOf { it.top }, compRects.maxOf { it.right }, compRects.maxOf { it.bottom })
+                        val recBuffer = NativePaddleEngine.recBufferSet
+                        recBuffer.p.clear()
+                        
+                        val sL = combined.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
+                        val sT = combined.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
+                        val sR = combined.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
+                        val sB = combined.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
+                        
+                        if (sR > sL && sB > sT) {
+                            val bRecMat = odoBuffer.p.mat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT))
+                            val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
+                            val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
+                            val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
+                            val rCrId = recBuffer.createCrop(4, 4, ew, eh)
+                            org.opencv.imgproc.Imgproc.resize(bRecMat, recBuffer.c[rCrId].mat, recBuffer.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                            
+                            val ocrR = paddleEngine.recognizeNumeric(recBuffer.p)
+                            val probsStr = ocrR.metadata["ocr_probs"] ?: ""
+                            val probs = mutableListOf<Float>()
+                            Regex("\\((0\\.\\d+|1\\.0+)\\)").findAll(probsStr).forEach { 
+                                probs.add(it.groupValues[1].toFloatOrNull() ?: 0f) 
+                            }
+                            
+                            val trial = TrialData(ocrR.debugText, probs.sum(), probs.minOrNull() ?: 0f, threshold)
+                            trialsList.add(trial)
 
-                    if (debug) {
-                        val tObj = JsonObject()
-                        tObj.addProperty("threshold", threshold)
-                        tObj.addProperty("text", trial.text)
-                        tObj.addProperty("sum_prob", trial.sumProb)
-                        tObj.addProperty("min_prob", trial.minProb)
-                        tObj.addProperty("vSW", vSW); tObj.addProperty("hSW", hSW)
-                        tObj.addProperty("thumb", OcrUtils.takeSnapshot(odoBuffer.s.mat, combined, 320, 48).first)
-                        trialJsonArray?.add(tObj)
+                            if (debug) {
+                                val tObj = JsonObject()
+                                tObj.addProperty("threshold", threshold)
+                                tObj.addProperty("text", trial.text)
+                                tObj.addProperty("sum_prob", trial.sumProb)
+                                tObj.addProperty("min_prob", trial.minProb)
+                                tObj.addProperty("vSW", vSW); tObj.addProperty("hSW", hSW)
+                                tObj.addProperty("thumb", OcrUtils.takeSnapshot(odoBuffer.p.mat, combined, 320, 48).first)
+                                trialJsonArray?.add(tObj)
+                            }
+                            recBuffer.c[rCrId].release()
+                            bRecMat.release()
+                        }
                     }
-                    bRecMat.release()
                 }
             }
+            odoBuffer.flip() // flip back to restore grayscale
         }
 
         val highQual = trialsList.filter { it.minProb >= 0.40f }

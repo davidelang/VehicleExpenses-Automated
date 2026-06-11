@@ -114,12 +114,45 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedBytes: ByteArray get() = _sharedBytes!!
         val sharedMatrix = android.graphics.Matrix()
 
-        fun getOdoBuffer(vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
+        private fun getReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
+            return try {
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                if (path.startsWith("content://")) {
+                    context.contentResolver.openInputStream(android.net.Uri.parse(path))?.use {
+                        android.graphics.BitmapFactory.decodeStream(it, null, options)
+                    }
+                } else {
+                    android.graphics.BitmapFactory.decodeFile(path, options)
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    Pair(options.outWidth, options.outHeight)
+                } else {
+                    Pair(4000, 3072) // Safe fallback
+                }
+            } catch (e: Exception) {
+                Log.w("PaddleLite", "Failed to decode reference bounds: $path", e)
+                Pair(4000, 3072) // Safe fallback
+            }
+        }
+
+        fun getOdoBuffer(context: Context, vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
             val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
             val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
-            // Target roughly 1000px wide for processing
-            val targetW = 1024
-            val targetH = ((b - t) / (r - l) * targetW).toInt().coerceIn(64, 1024)
+            
+            val (refW, refH) = if (!vehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
+                getReferenceDimensions(context, vehicle.referenceDashPhotoUrl)
+            } else {
+                Pair(4000, 3072)
+            }
+
+            val p1 = IcrsMath.icrsToPixel(l, t, refW, refH)
+            val p2 = IcrsMath.icrsToPixel(r, b, refW, refH)
+            val srcW = (p2.x - p1.x).toInt()
+            val srcH = (p2.y - p1.y).toInt()
+
+            // Align to 32-pixel boundaries for efficient native processing
+            val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
+            val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
             
             return vehicleOdoBuffers.getOrPut(vehicle.id) {
                 Log.i("PaddleLite", "Creating persistent Odo Buffer for vehicle ${vehicle.id}: ${targetW}x${targetH}")
