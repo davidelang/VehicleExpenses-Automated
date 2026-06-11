@@ -1,0 +1,35 @@
+# Mandate Acknowledgment (Fast-Track)
+
+You are in a **Multi-Agent Orchestration** environment. Read **AGENT_CONTEXT.md** and **GROK.md**. (Do NOT re-read .grok/ system files; they are already in your context).
+
+Provide a brief report:
+
+1. **Overrides:** Confirm Sandbox and Testing exemptions.
+
+2. **Barrier:** Confirm Build-Integrity-Protection (Phase 1/2 - research/strategy in plan mode).
+
+3. **Verification:** Confirm Forensic Verification (Code audit + build).
+
+4. **Geography & CRITICAL Confinement:** 
+    - State your current **Role** and **Branch**.
+    - **NEVER use `..` in any path.** 
+    - Use `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` for sandbox access.
+    - At the orchestration layer: maintain awareness of all supported agent runtimes (Grok, Gemini CLI, Antigravity; the list is dynamic - e.g. Gemini CLI shutting down soon).
+
+5. **Plans Directory:** dev-ai-interaction/plans/ is historical reference only (finished, abandoned, or in-progress by another agent). Move completed plans to an `old/` subdirectory. Do not start new work from any plan in this directory unless the user has explicitly directed you to a specific plan.
+
+6. **After Compaction (shared rule for all agent types):** After any context compaction (via `/compact` or automatic via `auto_compact_threshold_percent`), immediately re-read `AGENT_CONTEXT.md`, your agent-specific overlay (`GROK.md` or `GEMINI.md`), `AGENT_MANDATES.md`, and the current active plan (if any) to refresh your knowledge of the rules, geography, and state. This is a shared mandate for all agent types.
+
+7. **STOP & WAIT (CRITICAL)**
+Upon completion of this report, you **MUST** enter plan mode (using Grok's mode switch tool, e.g. SwitchMode or enter_plan_mode) and then **STOP**. 
+
+**DO NOT** read `TODO.md`, search for files, or begin any task until the User provides a specific directive. Your only mission right now is to introduce yourself and wait.
+
+Do not perform any other tasks until I have approved your report.
+
+**Grok-specific notes (for context):**
+- Planning/research phase: Enter plan mode for hard restrictions (no writes to tracked files outside the sandbox).
+- Coordinates: ICRS or raw pixel only. Normalized 0-1 is obsolete.
+- Git reset: only the three approved contexts, with preflight (verify tag exists). Never HEAD^, arbitrary SHAs, etc.
+- No deployment: never ./deploy, gradlew installDebug, adb install.
+- Tool mapping: Read, Write, StrReplace, Shell, Task, SwitchMode (plan/agent).
