@@ -1,0 +1,23 @@
+# Project-level Grok configuration (checked in).
+# Merges with user ~/.grok/config.toml ; project rules take precedence for this workspace.
+# Managed from orchestration root; distributed via update-rules.sh.
+
+[permission]
+rules = [
+  { action = "allow", tool = "read" },
+  { action = "allow", tool = "grep" },
+  # narrow bash allows for safe commands (orchestration + common dev)
+  { action = "allow", tool = "bash", pattern = "git *" },
+  { action = "allow", tool = "bash", pattern = "gh *" },
+  { action = "allow", tool = "bash", pattern = "ls *" },
+  { action = "allow", tool = "bash", pattern = "cat *" },
+  { action = "allow", tool = "bash", pattern = "./build_app*" },
+  { action = "allow", tool = "bash", pattern = "jq *" },
+  # For plan mode hard stops (reinforce native plan mode via enter_plan_mode / SwitchMode):
+  # deny edit/write/bash to non-sandbox paths; deny Task/subagent/invoke in plan mode, etc.
+  # (exact rules tuned here + PreToolUse hooks below)
+]
+
+# Project .grok/hooks/ (PreToolUse) provide additional hard enforcement for plan-mode restrictions
+# (path traversal deny outside dev-ai-interaction/, sandbox-only writes in plan, etc.).
+# See .grok/hooks/ for the actual hook implementation(s).

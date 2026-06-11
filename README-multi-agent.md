@@ -15,7 +15,7 @@ This repository uses a **Container/Worktree** layout designed for multiple AI ag
 
 ### 2.1. Creating a New Agent Environment
 To assign a task to a new agent:
-1.  Navigate to the project root.
+1.  Navigate to the project root (orchestration root on `orchestration` branch).
 2.  Run the setup script with the feature branch name:
     ```bash
     ./setup_agent.sh feature-name
@@ -23,13 +23,18 @@ To assign a task to a new agent:
     *This automatically picks the next available `agent-N` directory, creates the worktree, and sets up a `feature-name` symlink for easy access.*
 
 3.  **Start the agent** (Recommended Process):
-    To ensure the agent is properly confined to its worktree and to avoid CLI crashes, use absolute paths for the root and the binary:
+    To ensure the agent is properly confined to its worktree and to avoid CLI crashes, use absolute paths for the root and the binary. Use the appropriate launcher:
     ```bash
     cd feature-name
+    # For Grok CLI (preferred for new work):
+    ../run-grok
+    # Paste on launch: "Read new_grok_agent_prompt and follow its instructions."
+
+    # For Gemini CLI (legacy/parallel):
     GEMINI_PROJECT_ROOT=$(pwd) ~/git/gemini/bin/gemini
+    # Paste: "Read new_agent_prompt and follow its instructions."
     ```
-    Once the agent is running, paste:
-    > "Read new_agent_prompt and follow its instructions."
+    The launcher sets up the sandbox (`dev-ai-interaction`) and passes the fast-track prompt. Grok/Gemini will then read `AGENT_CONTEXT.md` + overlay + `AGENT_MANDATES.md`.
 
     *Note: The Gemini CLI uses the terminal's Alternate Buffer for its interactive UI. If it crashes, your terminal scrollback might be temporarily hidden. Type `reset` or `clear` in your terminal to restore the main buffer.*
 

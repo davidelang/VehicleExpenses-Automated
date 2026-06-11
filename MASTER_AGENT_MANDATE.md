@@ -13,12 +13,8 @@ You are the **Master Agent** operating in the `master/` worktree. Your primary r
     - **`deployed`:** Manual via `./deploy`. Indicates successful installation on a device.
     - **`works` (CRITICAL):** User-Only. Indicates the User has manually verified functionality. **Agents MUST NEVER set or modify a `works` tag.**
     - **Convention:** All tags MUST be scoped to the branch (e.g., `branch-name/builds`) unless on `master`.
-- **Shared Brain Management:** You are the **only agent** authorized to modify the read-only infrastructure files (`.gemini/`, `GEMINI.md`, `new_agent_prompt`, etc.) in the orchestration root. 
-    - **Process:** When an update to the rules is required, you MUST:
-        1.  `run_shell_command "chmod 644 <file>"` to unlock it.
-        2.  Apply the change.
-        3.  `run_shell_command "chmod 444 <file>"` to re-protect it.
-        4.  Commit the change to both the `orchestration` and `master` branches to ensure synchronization.
+- **Shared Brain Management:** Rule/infrastructure changes are developed at the orchestration root on the `orchestration` branch (the SOURCE for `update-rules.sh`). For source-tree AI/orchestration documentation (certain specs, CONTRIBUTING.md, nuke-caches), the orchestration agent edits inside the `master/` worktree and commits on the master branch (master agent idle). New agents inherit via `git worktree add ... master`. Hotfixes to existing worktrees use `update-rules.sh` run from the orchestration root.
+    - New shared brain files for this plan: `AGENT_MANDATES.md`, `AGENTS.md`, `GROK.md`, `new_grok_agent_prompt`. `run-grok` is orchestration-root only (not synced).
 
 ## 2. The Verification Protocol (PR Review)
 
