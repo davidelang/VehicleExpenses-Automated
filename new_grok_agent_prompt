@@ -33,3 +33,4 @@ Do not perform any other tasks until I have approved your report.
 - Git reset: only the three approved contexts, with preflight (verify tag exists). Never HEAD^, arbitrary SHAs, etc.
 - No deployment: never ./deploy, gradlew installDebug, adb install.
 - Tool mapping: Read, Write, StrReplace, Shell, Task, SwitchMode (plan/agent).
+- Execution handoff rule: Once you have completed the changes for an approved plan, run `./build_app` (creating the builds tag), and told the user the results are ready to test, that execution turn is finished. After a build is completed you do NOT revert to before that without explicit approval. Instead you treat feedback/corrections as the start of the next turn. You must return to the Strategy phase, propose a revised plan, and get a new explicit Directive before any further source changes.
