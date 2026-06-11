@@ -1,5 +1,10 @@
 # TODO
 
+- [ ] Optimize Auto-Fill Pipeline Latency (Approved Plan)
+    - [ ] Update runSetJPipeline in OcrHarness.kt to accept and use queryLandmarks, avoiding redundant ML Kit Text Recognition
+    - [ ] Remove delay(800) visual pacing delay from QuickFillupScreen.kt to run pipeline asynchronously with no UI idle time
+    - [ ] Add deskew_angle_calc_time_ms and deskew_rotate_time_ms to debug JSON in OcrHarness.kt for timing audit
+
 - [x] Save Quick Fill Photos Directly to MediaStore DCIM/Camera
     - [x] Update QuickFillupScreen.kt to use direct MediaStore saving with DCIM/Camera relative path
     - [x] Block premature submissions by disabling Save button during photo saving
