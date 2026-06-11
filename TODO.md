@@ -1,9 +1,9 @@
 # TODO
 
-- [ ] Align Production Quick Fill with Set J Experiment
+- [x] Align Production Quick Fill with Set J Experiment
     - [x] Update `getOdoBuffer` in `NativePaddleEngine.kt` to dynamically size the crop buffer based on reference photo dimensions.
-    - [ ] Implement Paddle Detection in `runSetJPipeline` trial loop to isolate the text bounding box for stroke-width calculation.
-    - [ ] Implement aspect-aware resizing and 4px padding in `runSetJPipeline` recognition crop step.
+    - [x] Implement Paddle Detection in `runSetJPipeline` trial loop to isolate the text bounding box for stroke-width calculation.
+    - [x] Implement aspect-aware resizing and 4px padding in `runSetJPipeline` recognition crop step.
 - [ ] Update Set E to Optimized Deskew Angle
     - [ ] Integrate optimized deskew into `DeskewResult` and `calculateAverageTextAngle`.
     - [ ] Switch `set_e` pipeline to use `paddleOptimizedAngle`.
