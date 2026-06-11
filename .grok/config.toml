@@ -7,7 +7,21 @@ rules = [
   { action = "allow", tool = "read" },
   { action = "allow", tool = "grep" },
   # narrow bash allows for safe commands (orchestration + common dev)
-  { action = "allow", tool = "bash", pattern = "git *" },
+  # git commands - explicit list for safety (includes worktree operations needed for multi-agent)
+  { action = "allow", tool = "bash", pattern = "git status*" },
+  { action = "allow", tool = "bash", pattern = "git log*" },
+  { action = "allow", tool = "bash", pattern = "git diff*" },
+  { action = "allow", tool = "bash", pattern = "git show*" },
+  { action = "allow", tool = "bash", pattern = "git add*" },
+  { action = "allow", tool = "bash", pattern = "git commit*" },
+  { action = "allow", tool = "bash", pattern = "git describe*" },
+  { action = "allow", tool = "bash", pattern = "git rev-parse*" },
+  { action = "allow", tool = "bash", pattern = "git worktree*" },
+  { action = "allow", tool = "bash", pattern = "git worktree list" },
+  { action = "allow", tool = "bash", pattern = "git ls-files*" },
+  { action = "allow", tool = "bash", pattern = "git cat-file*" },
+  { action = "allow", tool = "bash", pattern = "git rm*" },
+  { action = "allow", tool = "bash", pattern = "git *" },  # fallback for other safe git usage (orchestration)
   { action = "allow", tool = "bash", pattern = "gh *" },
   { action = "allow", tool = "bash", pattern = "ls *" },
   { action = "allow", tool = "bash", pattern = "cat *" },
