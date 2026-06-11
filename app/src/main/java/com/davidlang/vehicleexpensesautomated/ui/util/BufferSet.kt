@@ -5,8 +5,6 @@ import org.opencv.core.Mat
 import org.opencv.core.Rect
 import org.opencv.core.Scalar
 import java.nio.ByteBuffer
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * BufferSet: Modern handle-centric memory manager for native image buffers.
@@ -14,7 +12,6 @@ import kotlinx.coroutines.sync.withLock
  * ROI: Region of Interest. A specific sub-section of an image buffer, also known as a Crop.
  */
 class BufferSet(internal var _width: Int, internal var _height: Int) {
-    private val mutex = Mutex()
     private var primaryIdx = 0
     private val instances = arrayOf(Instance(), Instance())
     private val managedCrops = mutableMapOf<Int, ManagedCrop>()
@@ -63,7 +60,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     val width: Int get() = _width
     val height: Int get() = _height
 
-    private fun performFlip() {
+    // Manager Functions
+    fun flip() {
         (p as Instance).unborrow()
         primaryIdx = 1 - primaryIdx
         managedCrops.values.forEach {
@@ -71,16 +69,11 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         }
     }
 
-    // Manager Functions
-    suspend fun flip() = mutex.withLock {
-        performFlip()
-    }
-
-    suspend fun borrowYuv(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) = mutex.withLock {
+    fun borrowYuv(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) {
         (p as Instance).borrow(y, u, v, yStride, uvStride, uPixelStride, vPixelStride)
     }
 
-    suspend fun resize(w: Int, h: Int) = mutex.withLock {
+    fun resize(w: Int, h: Int) {
         if (w == _width && h == _height) return
         instances[0].physicalResize(w, h)
         instances[1].physicalResize(w, h)
@@ -99,7 +92,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         toRemove.forEach { managedCrops.remove(it)?.disarm() }
     }
 
-    suspend fun normalizeYUV() = mutex.withLock {
+    fun normalizeYUV() {
         val src = p.yuv
         val dstHandle = (s as Instance).nativePtr
 
@@ -109,7 +102,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             src.planes[0].pixelStride, src.planes[1].pixelStride, src.planes[2].pixelStride,
             _width, _height, dstHandle
         )
-        performFlip()
+        flip()
     }
 
     fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int = p.createCrop(x, y, w, h, id)

@@ -1,5 +1,8 @@
 # TODO
 
+- [x] Remove BufferSet Coroutine Locks and Document Threading Model
+    - [x] Remove Mutex and locks from BufferSet.kt and make methods non-suspending.
+    - [x] Update docs/specs/BUFFER_SET_SPEC.md to document sequential single-threaded model.
 - [x] Implement Camera, Photo Saving, and Orientation Improvements
     - [x] Add "Play Shutter Sound" switch to Settings.
     - [x] Play system shutter sound on Quick Fill capture if preference is enabled.
