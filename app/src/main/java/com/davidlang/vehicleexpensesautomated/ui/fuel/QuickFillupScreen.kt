@@ -216,7 +216,7 @@ fun QuickFillupScreen(
         }
     }
 
-    val controlsContent = @Composable { isLand: Boolean ->
+    val fieldsAndSaveContent = @Composable {
         val odoBorder = if (captureMode == "odo") {
             Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
         } else {
@@ -336,9 +336,36 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Camera Controls Box (Out of the live video)
+        // Save Button
+        Button(
+            onClick = {
+                selectedVehicleId?.let { vehicleId ->
+                    fuelViewModel.saveFuel(
+                        FuelEntry(
+                            vehicleId = vehicleId,
+                            odometer = odometer.toIntOrNull() ?: 0,
+                            gallons = gallons.toDoubleOrNull() ?: 0.0,
+                            cost = cost.toDoubleOrNull() ?: 0.0,
+                            timestamp = System.currentTimeMillis(),
+                            photoUrl = photoUrl,
+                            latitude = lat,
+                            longitude = lon,
+                            location = loc
+                        )
+                    )
+                    navController.popBackStack()
+                }
+            },
+            enabled = !isProcessing && !isPhotoSaving,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
+        }
+    }
+
+    val cameraControlsContent = @Composable { isLand: Boolean ->
         Box(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = if (isLand) Modifier.wrapContentSize() else Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             if (displayBitmap != null) {
@@ -346,7 +373,7 @@ fun QuickFillupScreen(
                     Button(
                         onClick = { displayBitmap = null },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = if (isLand) Modifier.width(120.dp) else Modifier.fillMaxWidth()
                     ) {
                         Text("Try Again", color = MaterialTheme.colorScheme.onError)
                     }
@@ -357,7 +384,7 @@ fun QuickFillupScreen(
                         // Stacked vertically in Landscape mode
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             IconButton(
                                 onClick = {
@@ -541,34 +568,6 @@ fun QuickFillupScreen(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Save Button
-        Button(
-            onClick = {
-                selectedVehicleId?.let { vehicleId ->
-                    fuelViewModel.saveFuel(
-                        FuelEntry(
-                            vehicleId = vehicleId,
-                            odometer = odometer.toIntOrNull() ?: 0,
-                            gallons = gallons.toDoubleOrNull() ?: 0.0,
-                            cost = cost.toDoubleOrNull() ?: 0.0,
-                            timestamp = System.currentTimeMillis(),
-                            photoUrl = photoUrl,
-                            latitude = lat,
-                            longitude = lon,
-                            location = loc
-                        )
-                    )
-                    navController.popBackStack()
-                }
-            },
-            enabled = !isProcessing && !isPhotoSaving,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
-        }
     }
 
     if (isLandscape) {
@@ -582,13 +581,22 @@ fun QuickFillupScreen(
             }
             Column(
                 modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                cameraControlsContent(true)
+            }
+            Column(
+                modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                controlsContent(true)
+                fieldsAndSaveContent()
             }
         }
     } else {
@@ -607,7 +615,9 @@ fun QuickFillupScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                controlsContent(false)
+                fieldsAndSaveContent()
+                Spacer(modifier = Modifier.height(12.dp))
+                cameraControlsContent(false)
             }
         }
     }

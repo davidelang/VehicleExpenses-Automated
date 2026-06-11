@@ -1,11 +1,12 @@
 # TODO
 
-- [ ] Optimize Quick Fill UI and App-Wide Top Bar (Revision 5)
-    - [ ] Implement custom Canvas-based UpDownArrowsIcon
-    - [ ] Implement adaptive portrait/landscape orientation layouts
-    - [ ] Group Vehicle + Odo (green border in Odo mode) and Volume + Cost (green border in Pump mode)
-    - [ ] Shrink vehicle dropdown and place Odometer field next to it on same line
-    - [ ] Place custom UpDownArrowsIcon next to shutter button (horizontal in portrait, vertical in landscape)
+- [ ] Optimize Quick Fill UI and App-Wide Top Bar (Revision 6)
+    - [ ] Implement landscape side-by-side := layout (Camera left, Buttons middle, Inputs right)
+    - [x] Implement custom Canvas-based UpDownArrowsIcon
+    - [x] Implement adaptive portrait/landscape orientation layouts
+    - [x] Group Vehicle + Odo (green border in Odo mode) and Volume + Cost (green border in Pump mode)
+    - [x] Shrink vehicle dropdown and place Odometer field next to it on same line
+    - [x] Place custom UpDownArrowsIcon next to shutter button (horizontal in portrait, vertical in landscape)
     - [x] Set COMPATIBLE mode in CameraPreview.kt to fix preview overflow/overlap
     - [x] Remove PhotoPicker component (removing Take Picture and Gallery buttons)
     - [x] Support dynamic unit/currency abbreviations and quick dropdown/toggles inside Odo/G/$ text fields
