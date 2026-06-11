@@ -158,7 +158,6 @@ fun QuickFillupScreen(
                                                 stageLabel = stage
                                                 displayBitmap = bmp
                                             }
-                                            delay(800) // Visual pacing
                                         }
                                     )
                                     

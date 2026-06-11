@@ -57,6 +57,8 @@ object OcrHarness {
                 addProperty("deskew_angle", optAngle)
                 addProperty("total_rotation_angle", totalAngle)
                 addProperty("deskew_time_ms", optTime + rotTime)
+                addProperty("deskew_angle_calc_time_ms", optTime)
+                addProperty("deskew_rotate_time_ms", rotTime)
             }
             onStage?.invoke("Deskewed", masterBuffer.p.toBitmap())
 
@@ -100,7 +102,7 @@ object OcrHarness {
                 OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", 4000, 3072) // Refs are 4k
             } ?: emptyList()
 
-            val setJResult = runSetJPipeline(context, masterBuffer, winningVehicle, referenceLandmarks, debug, onStage)
+            val setJResult = runSetJPipeline(context, masterBuffer, winningVehicle, referenceLandmarks, queryLandmarks, debug, onStage)
             
             jsonDebug?.apply {
                 add("set_j", setJResult.jsonSection)
@@ -149,6 +151,7 @@ object OcrHarness {
         masterBuffer: BufferSet,
         vehicle: Vehicle,
         referenceLandmarks: List<TextBlock>,
+        queryLandmarks: List<TextBlock>,
         debug: Boolean = false,
         onStage: (suspend (String, Bitmap) -> Unit)? = null
     ): OcrHarnessResult {
@@ -160,7 +163,6 @@ object OcrHarness {
         val imgH = masterBuffer.height
 
         // 1. Alignment (into bufferSetA.s, then flip)
-        val (ocrDisc, queryLandmarks) = performLandmarkDiscovery(masterBuffer.p, context)
         val disambiguated = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, referenceLandmarks)
         
         // Audit Check: queW/queH must match current buffer dimensions (likely 2048x1536)
