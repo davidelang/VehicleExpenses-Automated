@@ -1,10 +1,10 @@
 # TODO
 
-- [ ] Fix Portrait Image Rotation Flip and Photo Saving Flow
-    - [ ] Calculate totalAngle in OcrHarness as cameraRotationDegrees.toFloat() - optAngle
-    - [ ] Apply positive postRotate(angle) in OdometerOcrUtils.rotate
-    - [ ] Set default for save_fuel_photos to true in QuickFillupScreen and SettingsScreen
-    - [ ] Add error logging and MediaScannerConnection.scanFile in PhotoStorageManager.saveLocally
+- [x] Fix Portrait Image Rotation Flip and Photo Saving Flow
+    - [x] Calculate totalAngle in OcrHarness as cameraRotationDegrees.toFloat() - optAngle
+    - [x] Apply positive postRotate(angle) in OdometerOcrUtils.rotate
+    - [x] Set default for save_fuel_photos to true in QuickFillupScreen and SettingsScreen
+    - [x] Add error logging and MediaScannerConnection.scanFile in PhotoStorageManager.saveLocally
 
 
 - [x] Fix YUV Borrow Handle Cache for YUV Normalization
