@@ -817,7 +817,24 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         )
     }
     val nonNestedRects = expandedRects.filter { r1 ->
-        expandedRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
+        expandedRects.none { r2 ->
+            r1 != r2 && (
+                r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) ||
+                // additional overlap check to remove "nested" or heavily overlapping redundant raw detections
+                // (the strict contains +5 from alignment Set J didn't catch clusters in this pump image)
+                run {
+                    val interL = max(r1.left, r2.left)
+                    val interT = max(r1.top, r2.top)
+                    val interR = min(r1.right, r2.right)
+                    val interB = min(r1.bottom, r2.bottom)
+                    if (interL < interR && interT < interB) {
+                        val interArea = (interR - interL) * (interB - interT).toFloat()
+                        val r1Area = r1.width() * r1.height()
+                        interArea > 0.6f * r1Area
+                    } else false
+                }
+            )
+        }
     }
 
     // 1. Consolidate Raw Character Fragments (75% overlap rule) -- now on improved (expanded + de-nested) raw redboxes
