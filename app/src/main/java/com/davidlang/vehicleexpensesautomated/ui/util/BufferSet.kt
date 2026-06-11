@@ -63,13 +63,17 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     val width: Int get() = _width
     val height: Int get() = _height
 
-    // Manager Functions
-    suspend fun flip() = mutex.withLock {
+    private fun performFlip() {
         (p as Instance).unborrow()
         primaryIdx = 1 - primaryIdx
         managedCrops.values.forEach {
             it.rebindToOwner()
         }
+    }
+
+    // Manager Functions
+    suspend fun flip() = mutex.withLock {
+        performFlip()
     }
 
     suspend fun borrowYuv(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) = mutex.withLock {
@@ -105,7 +109,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             src.planes[0].pixelStride, src.planes[1].pixelStride, src.planes[2].pixelStride,
             _width, _height, dstHandle
         )
-        flip()
+        performFlip()
     }
 
     fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
