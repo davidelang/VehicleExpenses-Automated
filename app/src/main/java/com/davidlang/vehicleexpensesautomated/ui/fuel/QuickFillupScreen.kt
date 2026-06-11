@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -102,14 +103,11 @@ fun QuickFillupScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        // Camera Preview / Final Crop Display Area
-        Box(modifier = Modifier.fillMaxWidth().height(220.dp).background(Color.Black)) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    val cameraOrCropArea = @Composable {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             if (displayBitmap != null) {
                 Image(
                     bitmap = displayBitmap!!.asImageBitmap(),
@@ -216,12 +214,131 @@ fun QuickFillupScreen(
                 )
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(8.dp))
+    val controlsContent = @Composable { isLand: Boolean ->
+        val odoBorder = if (captureMode == "odo") {
+            Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
+        } else {
+            Modifier.padding(8.dp)
+        }
+        
+        // Group 1: Vehicle + Odo
+        Column(modifier = Modifier.fillMaxWidth().then(odoBorder)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                var dropdownExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = dropdownExpanded,
+                    onExpandedChange = { dropdownExpanded = it },
+                    modifier = Modifier.weight(1.2f)
+                ) {
+                    OutlinedTextField(
+                        value = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle",
+                        onValueChange = {},
+                        label = { Text("Vehicle") },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                        readOnly = true,
+                        singleLine = true
+                    )
+                    ExposedDropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false }
+                    ) {
+                        vehicles.forEach { vehicle ->
+                            DropdownMenuItem(
+                                text = { Text(vehicle.name) },
+                                onClick = {
+                                    selectedVehicleId = vehicle.id
+                                    dropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = odometer,
+                    onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
+                    label = { Text("Odo") },
+                    modifier = Modifier.weight(1.0f),
+                    singleLine = true
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Group 2: Volume + Cost
+        val pumpBorder = if (captureMode == "pump") {
+            Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
+        } else {
+            Modifier.padding(8.dp)
+        }
+
+        Column(modifier = Modifier.fillMaxWidth().then(pumpBorder)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = gallons,
+                    onValueChange = { gallons = it },
+                    label = { Text(volumeUnit) },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { volumeUnit = if (volumeUnit == "G") "L" else "G" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
+                        }
+                    },
+                    modifier = Modifier.weight(1.0f),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = cost,
+                    onValueChange = { cost = it },
+                    label = { Text(currencySymbol) },
+                    trailingIcon = {
+                        var showCurrencyMenu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(
+                                onClick = { showCurrencyMenu = true },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Text("⚙️", style = MaterialTheme.typography.labelSmall)
+                            }
+                            DropdownMenu(
+                                expanded = showCurrencyMenu,
+                                onDismissRequest = { showCurrencyMenu = false }
+                            ) {
+                                listOf("$", "€", "£", "¥", "C$").forEach { symbol ->
+                                    DropdownMenuItem(
+                                        text = { Text(symbol) },
+                                        onClick = {
+                                            currencySymbol = symbol
+                                            showCurrencyMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1.0f),
+                    singleLine = true
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Camera Controls Box (Out of the live video)
         Box(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             if (displayBitmap != null) {
@@ -236,192 +353,196 @@ fun QuickFillupScreen(
                 }
             } else {
                 if (!isProcessing) {
-                    IconButton(
-                        onClick = {
-                            isProcessing = true
-                            capturePending = true
-                            photoUrl = null
-                            
-                            val playSound = prefs.getBoolean("shutter_sounds", true)
-                            if (playSound) {
-                                try {
-                                    android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
-                                } catch (e: Exception) {
-                                    Log.e("QuickFill", "Failed to play shutter sound", e)
-                                }
-                            }
-
-                            if (saveFuelPhotos) {
-                                isPhotoSaving = true
-                                try {
-                                    val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                        context.display
-                                    } else {
-                                        (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
-                                    }
-                                    val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
-                                    imageCapture.targetRotation = rotation
-                                } catch (e: Exception) {
-                                    Log.e("QuickFill", "Failed to set target rotation", e)
-                                }
-
-                                val resolver = context.contentResolver
-                                val contentValues = android.content.ContentValues().apply {
-                                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
-                                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DCIM + "/Camera")
-                                    }
-                                }
-
-                                val outputOptions = ImageCapture.OutputFileOptions.Builder(
-                                    resolver,
-                                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                    contentValues
-                                ).build()
-
-                                imageCapture.takePicture(
-                                    outputOptions,
-                                    ContextCompat.getMainExecutor(context),
-                                    object : ImageCapture.OnImageSavedCallback {
-                                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                            val savedUri = output.savedUri
-                                            android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
-                                            photoUrl = savedUri?.toString()
-                                            isPhotoSaving = false
-                                        }
-                                        override fun onError(exception: ImageCaptureException) {
-                                            android.util.Log.e("QuickFill", "Photo capture failed", exception)
-                                            isPhotoSaving = false
+                    if (isLand) {
+                        // Stacked vertically in Landscape mode
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    isProcessing = true
+                                    capturePending = true
+                                    photoUrl = null
+                                    
+                                    val playSound = prefs.getBoolean("shutter_sounds", true)
+                                    if (playSound) {
+                                        try {
+                                            android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
+                                        } catch (e: Exception) {
+                                            Log.e("QuickFill", "Failed to play shutter sound", e)
                                         }
                                     }
+
+                                    if (saveFuelPhotos) {
+                                        isPhotoSaving = true
+                                        try {
+                                            val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                                context.display
+                                            } else {
+                                                (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
+                                            }
+                                            val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
+                                            imageCapture.targetRotation = rotation
+                                        } catch (e: Exception) {
+                                            Log.e("QuickFill", "Failed to set target rotation", e)
+                                        }
+
+                                        val resolver = context.contentResolver
+                                        val contentValues = android.content.ContentValues().apply {
+                                            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
+                                            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DCIM + "/Camera")
+                                            }
+                                        }
+
+                                        val outputOptions = ImageCapture.OutputFileOptions.Builder(
+                                            resolver,
+                                            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                            contentValues
+                                        ).build()
+
+                                        imageCapture.takePicture(
+                                            outputOptions,
+                                            ContextCompat.getMainExecutor(context),
+                                            object : ImageCapture.OnImageSavedCallback {
+                                                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                                    val savedUri = output.savedUri
+                                                    android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
+                                                    photoUrl = savedUri?.toString()
+                                                    isPhotoSaving = false
+                                                }
+                                                override fun onError(exception: ImageCaptureException) {
+                                                    android.util.Log.e("QuickFill", "Photo capture failed", exception)
+                                                    isPhotoSaving = false
+                                                }
+                                            }
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .background(Color.White, CircleShape)
+                                    .border(4.dp, Color.Gray, CircleShape)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(Color.White, CircleShape)
                                 )
                             }
-                        },
-                        modifier = Modifier
-                            .size(64.dp)
-                            .background(Color.White, CircleShape)
-                            .border(4.dp, Color.Gray, CircleShape)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(Color.White, CircleShape)
-                        )
+                            
+                            IconButton(
+                                onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                            ) {
+                                UpDownArrowsIcon(
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    } else {
+                        // Side-by-side horizontally in Portrait mode
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    isProcessing = true
+                                    capturePending = true
+                                    photoUrl = null
+                                    
+                                    val playSound = prefs.getBoolean("shutter_sounds", true)
+                                    if (playSound) {
+                                        try {
+                                            android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
+                                        } catch (e: Exception) {
+                                            Log.e("QuickFill", "Failed to play shutter sound", e)
+                                        }
+                                    }
+
+                                    if (saveFuelPhotos) {
+                                        isPhotoSaving = true
+                                        try {
+                                            val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                                context.display
+                                            } else {
+                                                (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
+                                            }
+                                            val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
+                                            imageCapture.targetRotation = rotation
+                                        } catch (e: Exception) {
+                                            Log.e("QuickFill", "Failed to set target rotation", e)
+                                        }
+
+                                        val resolver = context.contentResolver
+                                        val contentValues = android.content.ContentValues().apply {
+                                            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
+                                            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DCIM + "/Camera")
+                                            }
+                                        }
+
+                                        val outputOptions = ImageCapture.OutputFileOptions.Builder(
+                                            resolver,
+                                            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                            contentValues
+                                        ).build()
+
+                                        imageCapture.takePicture(
+                                            outputOptions,
+                                            ContextCompat.getMainExecutor(context),
+                                            object : ImageCapture.OnImageSavedCallback {
+                                                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                                    val savedUri = output.savedUri
+                                                    android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
+                                                    photoUrl = savedUri?.toString()
+                                                    isPhotoSaving = false
+                                                }
+                                                override fun onError(exception: ImageCaptureException) {
+                                                    android.util.Log.e("QuickFill", "Photo capture failed", exception)
+                                                    isPhotoSaving = false
+                                                }
+                                            }
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .background(Color.White, CircleShape)
+                                    .border(4.dp, Color.Gray, CircleShape)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(Color.White, CircleShape)
+                                )
+                            }
+                            
+                            IconButton(
+                                onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                            ) {
+                                UpDownArrowsIcon(
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-
-        // Vehicle Dropdown Selector
-        var dropdownExpanded by remember { mutableStateOf(false) }
-        ExposedDropdownMenuBox(
-            expanded = dropdownExpanded,
-            onExpandedChange = { dropdownExpanded = it }
-        ) {
-            OutlinedTextField(
-                value = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle",
-                onValueChange = {},
-                label = { Text("Vehicle") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                readOnly = true
-            )
-            ExposedDropdownMenu(
-                expanded = dropdownExpanded,
-                onDismissRequest = { dropdownExpanded = false }
-            ) {
-                vehicles.forEach { vehicle ->
-                    DropdownMenuItem(
-                        text = { Text(vehicle.name) },
-                        onClick = {
-                            selectedVehicleId = vehicle.id
-                            dropdownExpanded = false
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Compact Single-Line Input Row with Local Overrides
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = odometer,
-                onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
-                label = { Text("Odo") },
-                modifier = Modifier.weight(1.0f),
-                singleLine = true
-            )
-            Button(
-                onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (captureMode == "odo") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                ),
-                modifier = Modifier.weight(0.9f).height(56.dp),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text(
-                    text = if (captureMode == "odo") "Odo" else "Pump",
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
-            OutlinedTextField(
-                value = gallons,
-                onValueChange = { gallons = it },
-                label = { Text(volumeUnit) },
-                trailingIcon = {
-                    IconButton(
-                        onClick = { volumeUnit = if (volumeUnit == "G") "L" else "G" },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                modifier = Modifier.weight(1.0f),
-                singleLine = true
-            )
-            OutlinedTextField(
-                value = cost,
-                onValueChange = { cost = it },
-                label = { Text(currencySymbol) },
-                trailingIcon = {
-                    var showCurrencyMenu by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(
-                            onClick = { showCurrencyMenu = true },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Text("⚙️", style = MaterialTheme.typography.labelSmall)
-                        }
-                        DropdownMenu(
-                            expanded = showCurrencyMenu,
-                            onDismissRequest = { showCurrencyMenu = false }
-                        ) {
-                            listOf("$", "€", "£", "¥", "C$").forEach { symbol ->
-                                DropdownMenuItem(
-                                    text = { Text(symbol) },
-                                    onClick = {
-                                        currencySymbol = symbol
-                                        showCurrencyMenu = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1.0f),
-                singleLine = true
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
 
         // Save Button
         Button(
@@ -448,6 +569,96 @@ fun QuickFillupScreen(
         ) {
             Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
         }
+    }
+
+    if (isLandscape) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(1.2f)
+                    .fillMaxHeight()
+            ) {
+                cameraOrCropArea()
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                controlsContent(true)
+            }
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                cameraOrCropArea()
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                controlsContent(false)
+            }
+        }
+    }
+}
+
+@Composable
+fun UpDownArrowsIcon(modifier: Modifier = Modifier, tint: Color = LocalContentColor.current) {
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val width = size.width
+        val height = size.height
+        val arrowWidth = width * 0.15f
+        
+        // Left arrow pointing up
+        val leftX = width * 0.35f
+        // Arrow line
+        drawLine(
+            color = tint,
+            start = androidx.compose.ui.geometry.Offset(leftX, height * 0.8f),
+            end = androidx.compose.ui.geometry.Offset(leftX, height * 0.2f),
+            strokeWidth = arrowWidth
+        )
+        // Arrow head
+        drawPath(
+            path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(leftX - width * 0.15f, height * 0.4f)
+                lineTo(leftX, height * 0.2f)
+                lineTo(leftX + width * 0.15f, height * 0.4f)
+            },
+            color = tint,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = arrowWidth)
+        )
+
+        // Right arrow pointing down
+        val rightX = width * 0.65f
+        // Arrow line
+        drawLine(
+            color = tint,
+            start = androidx.compose.ui.geometry.Offset(rightX, height * 0.2f),
+            end = androidx.compose.ui.geometry.Offset(rightX, height * 0.8f),
+            strokeWidth = arrowWidth
+        )
+        // Arrow head
+        drawPath(
+            path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(rightX - width * 0.15f, height * 0.6f)
+                lineTo(rightX, height * 0.8f)
+                lineTo(rightX + width * 0.15f, height * 0.6f)
+            },
+            color = tint,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = arrowWidth)
+        )
     }
 }
 

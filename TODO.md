@@ -1,9 +1,12 @@
 # TODO
 
-- [x] Optimize Quick Fill UI and App-Wide Top Bar (Revision 3)
+- [ ] Optimize Quick Fill UI and App-Wide Top Bar (Revision 5)
+    - [ ] Implement custom Canvas-based UpDownArrowsIcon
+    - [ ] Implement adaptive portrait/landscape orientation layouts
+    - [ ] Group Vehicle + Odo (green border in Odo mode) and Volume + Cost (green border in Pump mode)
+    - [ ] Shrink vehicle dropdown and place Odometer field next to it on same line
+    - [ ] Place custom UpDownArrowsIcon next to shutter button (horizontal in portrait, vertical in landscape)
     - [x] Set COMPATIBLE mode in CameraPreview.kt to fix preview overflow/overlap
-    - [x] Move shutter and "Try Again" buttons completely outside camera preview/image crop Box
-    - [x] Consolidate mode switch into a single toggle button between Odo and G/$ inputs
     - [x] Remove PhotoPicker component (removing Take Picture and Gallery buttons)
     - [x] Support dynamic unit/currency abbreviations and quick dropdown/toggles inside Odo/G/$ text fields
     - [x] Configure android:theme for MainActivity in AndroidManifest.xml to consolidate app-wide headers
