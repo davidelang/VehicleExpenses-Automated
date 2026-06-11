@@ -238,4 +238,72 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeNormalizeYUV
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeBorrowYuv(
+    JNIEnv* env, jobject thiz, jlong handlePtr, 
+    jobject yBuf, jobject uBuf, jobject vBuf,
+    jint yStride, jint uvStride, jint uPixelStride, jint vPixelStride) {
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        if (validHandles.find(handle) == validHandles.end()) return;
+    }
+
+    uint8_t* yPtr = (uint8_t*)env->GetDirectBufferAddress(yBuf);
+    uint8_t* uPtr = (uint8_t*)env->GetDirectBufferAddress(uBuf);
+    uint8_t* vPtr = (uint8_t*)env->GetDirectBufferAddress(vBuf);
+
+    if (!yPtr) return;
+
+    handle->yMat->data = yPtr;
+    handle->yMat->datastart = yPtr;
+    handle->yMat->dataend = yPtr + (handle->height * yStride);
+    handle->yMat->step[0] = (size_t)yStride;
+
+    // NV21 Mat also starts at Y
+    handle->nv21Mat->data = yPtr;
+    handle->nv21Mat->step[0] = (size_t)yStride;
+
+    // Borrow UV only if interleaved (Semi-Planar)
+    if (uPtr && vPtr && uPixelStride == 2 && vPixelStride == 2) {
+        // In NV21, V comes before U. In YV12/NV12, it might differ.
+        // We point to the first byte of the chroma pair.
+        uint8_t* firstChroma = (uPtr < vPtr) ? uPtr : vPtr;
+        handle->uvMat->data = firstChroma;
+        handle->uvMat->step[0] = (size_t)uvStride;
+    } else {
+        // Fallback: point UV to internal memory to avoid crash, 
+        // but it won't match the borrowed Y.
+        handle->uvMat->data = handle->data + (handle->width * handle->height);
+        handle->uvMat->step[0] = (size_t)handle->width;
+    }
+    
+    handle->isBorrowed = true;
+    LOGI("BufferSet borrowed external buffers for handle %p (yStride=%d)", handle, yStride);
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeUnborrow(
+    JNIEnv* env, jobject thiz, jlong handlePtr) {
+    
+    auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        if (validHandles.find(handle) == validHandles.end()) return;
+    }
+
+    if (!handle->isBorrowed) return;
+
+    handle->yMat->data = handle->data;
+    handle->yMat->step[0] = (size_t)handle->width;
+    handle->uvMat->data = handle->data + (handle->width * handle->height);
+    handle->uvMat->step[0] = (size_t)handle->width;
+    handle->nv21Mat->data = handle->data;
+    handle->nv21Mat->step[0] = (size_t)handle->width;
+    
+    handle->isBorrowed = false;
+    LOGI("BufferSet unborrowed handle %p", handle);
+}
+
 }
