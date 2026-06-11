@@ -305,6 +305,12 @@ private suspend fun runPumpExperiment(
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
 
+                // Accumulator for accurate full-pixel rects (post local +1/dedup/strict filter from each scale).
+                // These are mapped using the per-scale scaleFactor so the global union filter operates in true
+                // original photo pixel space (not distorted by content-ICRS roundtrip). Required for correct
+                // strict subset removal across scales per the approved plan.
+                val allFullPixelRawRects = mutableListOf<android.graphics.Rect>()
+
                 val processedScales = mutableSetOf<Int>()
                 scales.forEach { scale ->
                     val srcW = workspace.p.width
@@ -373,6 +379,19 @@ private suspend fun runPumpExperiment(
                     discoveryDetails["Paddle Expanded"]!![scale] = exp
                     discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
                     discoveryDetails["Paddle Native"]!![scale] = native
+
+                    // Collect the post-local strict-filter crop rects (5th return value) and map to full
+                    // original pixel rects using this scale's scaleFactor. These feed the global union filter.
+                    val cropRects = paddleResults[4] as List<android.graphics.Rect>
+                    val fullRects = cropRects.map { r ->
+                        android.graphics.Rect(
+                            (r.left / scaleFactor).coerceAtLeast(0f).toInt(),
+                            (r.top / scaleFactor).coerceAtLeast(0f).toInt(),
+                            (r.right / scaleFactor).coerceAtMost(srcW - 1f).toInt(),
+                            (r.bottom / scaleFactor).coerceAtMost(srcH - 1f).toInt()
+                        )
+                    }
+                    allFullPixelRawRects.addAll(fullRects)
                 }
                 branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
@@ -419,42 +438,21 @@ private suspend fun runPumpExperiment(
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
                 }
 
-                // Global cross-scale nested removal for the final raw red boxes.
-                // Previously the +1 expand + nested filter was only per-scale inside runDiscoveryPaddle.
-                // Now, after collecting the union of all resulting boxes (regardless of discovery scale),
-                // de-nest globally in full image pixel space so the drawn red boxes (and anns in crops)
-                // have no nested, even if a high-res small box from one scale ends up inside a low-res
-                // large box from another scale.
-                val rawFullRects = pdHunksRawTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                }.toMutableList()
-                val expandedGlobal = rawFullRects.map { r ->
-                    android.graphics.Rect(
-                        (r.left - 1).coerceAtLeast(0),
-                        (r.top - 1).coerceAtLeast(0),
-                        (r.right + 1).coerceAtMost(imgW - 1),
-                        (r.bottom + 1).coerceAtMost(imgH - 1)
-                    )
+                // Global cross-scale strict subset removal on the *union* of all post-+1 boxes (across scales).
+                // Uses the accurately mapped full-pixel rects accumulated above (via /scaleFactor in crop space).
+                // Dedup exact first (keep one), then remove ONLY if strict subset (full 4-side containment by a different box).
+                // NO extra +1/expand at this layer (the +1 was at the lowest level per scale; the old +5 was a
+                // 1-layer-up workaround for when +1 could not be inside the lowest calc).
+                // This produces the final pdHunksRawTotal used for Set B (and flow) PD red annotations and takeCrop.
+                // Target (per approved plan): for row 2 (PXL_20240708_222637707.jpg) Set B paddle, final red count ~20
+                // (between the 30+ and 4 seen in the two latest-report pump_results jsons). Non-subsets (e.g. the
+                // left $ / Gallons boxes) survive unless they are actually strict subsets.
+                val deduped = mutableListOf<android.graphics.Rect>()
+                for (r in allFullPixelRawRects) {
+                    if (deduped.none { it.left == r.left && it.top == r.top && it.right == r.right && it.bottom == r.bottom }) deduped.add(r)
                 }
-                val nonNestedGlobal = expandedGlobal.filter { r1 ->
-                    expandedGlobal.none { r2 ->
-                        r1 != r2 && (
-                            r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) ||
-                            run {
-                                val interL = max(r1.left, r2.left)
-                                val interT = max(r1.top, r2.top)
-                                val interR = min(r1.right, r2.right)
-                                val interB = min(r1.bottom, r2.bottom)
-                                if (interL < interR && interT < interB) {
-                                    val interArea = (interR - interL) * (interB - interT).toFloat()
-                                    val r1Area = r1.width() * r1.height()
-                                    interArea > 0.6f * r1Area
-                                } else false
-                            }
-                        )
-                    }
+                val nonNestedGlobal = deduped.filter { r1 ->
+                    deduped.none { r2 -> r1 != r2 && r2.left <= r1.left && r2.top <= r1.top && r2.right >= r1.right && r2.bottom >= r1.bottom }
                 }
                 pdHunksRawTotal.clear()
                 nonNestedGlobal.forEach { r ->
@@ -831,27 +829,23 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
 }
 
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine, contentW: Int, contentH: Int): List<List<PumpHunk>> {
-    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
+private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine, contentW: Int, contentH: Int): List<*> {
+    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList<android.graphics.Rect>())
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
     val rawBlocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
     val rawRects = rawBlocks.map { it.boundingBox }
 
-    // Redbox improvement from Set J (alignment experiment) - first item per user directive.
-    // Move sides of detected box out by 1 pixel in low-res (this crop/detect-input space) before
-    // the ICRS "scaling back up" (and before doing anything more: consolidate, native expand, hunks).
-    // Then remove nested red boxes (inset contains filter, matching alignment tRawB logic in runBinTrialsPaddle).
-    //
-    // Pump note (variable scale vs fixed in alignment): scaleFactor computed in caller scales.forEach
-    // (currentLongEdge vs target/scale + prepareScale 32-align outer/inner + process 1.0f on crop).
-    // ICRS here uses crop masterW/H; later icrsToPixel in getFinal uses full original imgW/imgH.
-    // This chain causes erosion (e.g. 63px feature -> ~56px effective after down/up as described).
-    // +1 here (in the post-process rect space) + nested removal is the ported math.
-    // Per clarification: the lowest level does the +1 adjustment; layers above (scale/prepare) apply the
-    // scale factor from there. Buffer sizes are multiples of 32x2 (for alignment), but the boxes themselves
-    // do not need to be.
+    // +1 expand per scale in crop/detect-input space (before scaling back up / before anything more).
+    // Then strict subset removal ONLY: dedup exact matches first (keep one), then remove a rect only if
+    // it is a strict subset (full containment on all 4 sides) of another different rect.
+    // This matches the approved plan: "ONLY remove boxes that are strict subsets of other boxes".
+    // (The +5 inset pattern was the old 1-layer-up workaround from alignment when +1 could not live in
+    // the lowest-level calc; here the +1 is at lowest so we use direct full-contain test with no extra margin.)
+    // Y-overlap without full X containment must not trigger removal.
+    // The returned 5th element (crop-space nonNestedRects) is for the caller's accurate full-pixel mapping
+    // for the global cross-scale union (using scaleFactor, not ICRS roundtrip distortion).
     val expandedRects = rawRects.map { r ->
         android.graphics.Rect(
             (r.left - 1).coerceAtLeast(0),
@@ -860,25 +854,16 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
             (r.bottom + 1).coerceAtMost(masterH - 1)
         )
     }
-    val nonNestedRects = expandedRects.filter { r1 ->
-        expandedRects.none { r2 ->
-            r1 != r2 && (
-                r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) ||
-                // additional overlap check to remove "nested" or heavily overlapping redundant raw detections
-                // (the strict contains +5 from alignment Set J didn't catch clusters in this pump image)
-                run {
-                    val interL = max(r1.left, r2.left)
-                    val interT = max(r1.top, r2.top)
-                    val interR = min(r1.right, r2.right)
-                    val interB = min(r1.bottom, r2.bottom)
-                    if (interL < interR && interT < interB) {
-                        val interArea = (interR - interL) * (interB - interT).toFloat()
-                        val r1Area = r1.width() * r1.height()
-                        interArea > 0.6f * r1Area
-                    } else false
-                }
-            )
+
+    // Dedup exact first (keep one of any identical boxes), then strict full-containment filter.
+    val dedupedRects = mutableListOf<android.graphics.Rect>()
+    for (r in expandedRects) {
+        if (dedupedRects.none { it.left == r.left && it.top == r.top && it.right == r.right && it.bottom == r.bottom }) {
+            dedupedRects.add(r)
         }
+    }
+    val nonNestedRects = dedupedRects.filter { r1 ->
+        dedupedRects.none { r2 -> r1 != r2 && r2.left <= r1.left && r2.top <= r1.top && r2.right >= r1.right && r2.bottom >= r1.bottom }
     }
 
     // 1. Consolidate Raw Character Fragments (75% overlap rule) -- now on improved (expanded + de-nested) raw redboxes
@@ -942,7 +927,9 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
     }
 
-    return listOf(hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
+    // Return 5th element: the post-+1/dedup/strict nonNested crop-space rects (for caller's accurate
+    // full-pixel mapping in the global cross-scale union step). This is required by the approved plan.
+    return listOf(hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative, nonNestedRects)
 }
 
 
