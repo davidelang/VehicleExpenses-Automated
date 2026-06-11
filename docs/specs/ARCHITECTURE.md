@@ -30,7 +30,7 @@ The application follows a strict 4-stage pipeline for processing dashboard photo
      - **Anchor-Triangulation Engine**: Calculates exact scale (Zoom), rotation, and Pan (tx, ty) based on unique unique text anchor vectors (Strategy A) or triangle similarity (Strategy B). It operates independently per OCR engine.
 
 3. **Extraction Phase:**
-   - **Cropping:** Using the transformation matrix from the alignment phase, it extracts specific odometer and "other text" crop boxes defined by the user in normalized coordinates (0.0 to 1.0).
+   - **Cropping:** Using the transformation matrix from the alignment phase, it extracts specific odometer and "other text" crop boxes defined by the user in ICRS (Isotropic Center-Relative Space) or raw pixel coordinates. (Normalized 0.0–1.0 per-axis is obsolete project-wide.) See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
 
 4. **Crop OCR Phase (Refinement):**
    - **Preprocessing:** Generates 5 variations of the extracted crop (Raw, Grayscale, Bilateral, CLAHE, OTSU) to counteract variable lighting.

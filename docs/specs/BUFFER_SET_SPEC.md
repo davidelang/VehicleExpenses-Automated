@@ -66,7 +66,7 @@ The core philosophy is **zero-allocation iterative processing**. Processing rout
 ## 4. Behavioral Rules
 
 ### A. Coordinate Overloading
-Kotlin supports full parameter-type overloading. `createCrop` and `resize` natively support both absolute pixel offsets (`Int`) and normalized offsets (`Float` from 0.0 to 1.0). 
+Kotlin supports full parameter-type overloading. `createCrop` and `resize` natively support both absolute pixel offsets (`Int`) and ICRS offsets (`Float`). "Normalized" in this context now means ICRS (radial shortest-edge normalization from the optical center). Legacy per-axis 0.0–1.0 is obsolete. See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` (authoritative). 
 
 ### B. Nested Crop Flattening
 If you call `foo.c[1].createCrop(...)` to create `foo.c[2]`, the API performs **Coordinate Flattening**. `c[2]` is stored in the registry as an absolute offset from the *root buffer origin*, not as a child. Releasing `c[1]` has zero effect on `c[2]`. 

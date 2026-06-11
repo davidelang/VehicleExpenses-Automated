@@ -43,4 +43,4 @@ This document provides the detailed procedural logic for the VehicleExpenses-aut
 - **OCR:** Multi-engine approach (ML Kit, Paddle). No silent fallbacks allowed.
 - **Alignment:** 4-DOF Affine transforms (Translation, Rotation, Scale).
 - **Vetoes:** Primary matching signal is the **Automated Word Veto**.
-- **Coordinates:** Normalized (0.0 to 1.0) based on image dimensions.
+- **Coordinates:** ICRS (Isotropic Center-Relative Space) or raw pixel integers only. (Normalized 0.0–1.0 per-axis is obsolete.) See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
