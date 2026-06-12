@@ -96,6 +96,28 @@
   - Standard structure. Adds in Set B processing: red-only image (from post-filter pdHunksRawTotal reds only) stored as "PD_red_only"; keeps full "PD" exactly "as is". In builder: special for B to emit red-only (labeled) + full (labeled as before) + ocr html. Addresses the need for clean red view to inspect merging (post the previous near-40px change).
 - Local current-state.md will be updated. Harness sessions plan.md will be set to short log only (referencing the correct dev-ai sandbox plan).
 - Background memory preserved from state (previous valley for B, red filter, blue retract for B, the 40px merging rule added to C blues/oranges in prior turn, decimal OCR filter, exact red nesting, etc.).
-- Status: Planning complete. Fresh plan written for this turn's display request. Awaiting explicit user approval of the sandbox plan path + directive to proceed. No tracked source edits yet.
+- Status: Execution COMPLETE for this approved plan (Set B red-only image + full annotations image). All phases followed (TODO first as mandatory action, re-reads, code edits with forensics after every, milestone + final ./build_app, state updates).
+  - In Set B viz block: red-only image created/stored from post-filter pdHunksRawTotal reds only (clean, no blue/orange); full "PD" + ocr kept exactly "as is happening now".
+  - In pBuildHtmlRowDynamic: special for B emits red-only (labeled "Red boxes only (after filter)") + full (labeled "All annotations ... as before") + ocr html.
+  - Comments updated in B block and builder.
+  - Builds: milestone + final successful (tag fix-pump-experiment/builds at 5e56efdd, version fix-pump-experiment-start-69-g5e56efdd). Tree clean (final confirmed nothing to commit).
+  - Forensic: reads before/after every edit (plan, state, TODO, B viz block for red-only, builder for two images, comments) + post-build re-reads + final state read confirmed exact.
+  - Verification per plan: user to run Limited Experiment (Golden Subset) to inspect Set B column in HTML (red-only clean reds post filter for merging inspection; full as before) + JSON under Set B images for "PD_red_only". A/C/other unchanged.
+- Local plan hygiene: harness log short reference only. Primary plan at dev-ai path (re-read on exec start). current-state + TODO updated.
+- Notes: Turn handed off. See the approved sandbox plan for full details. All prior memory (red filter for B, blue retract, 40px rule from C, OCR filter, etc.) preserved. After this END: feedback = new cycle (new plan + Directive).
+- Last ./build_app: final clean run (nothing to commit, tag updated).
+- Handoff: Changes for the approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-b-red-only-and-full-annotations-20260612-plan.md are ready for testing. **END OF EXECUTION TURN**
+
+# New cycle start (2026-06-12) — Rotation sign fix for Set A and B (new turn)
+- New turn, new plan (user directive after previous END): "rotation on set A and B appears to be backwards (set C is -1 * rotation of set B and it looks right, so A and B are going the wrong way)".
+- First actions (per mandates): read local current-state.md (done); researched the tilt selection in the per-flow deskew section (the when on deskewRes.paddleCppAngle / .angle, the rotate call, comments noting C negation), and calculateAverageTextAngle in OdometerOcrUtils; no TODO.md; no historical plans or sessions/plan.md as source.
+- Fresh sandbox plan written as first concrete deliverable (absolute path below).
+- Primary plan artifact: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-rotation-sign-a-b-fix-20260612-plan.md
+  - Minimal sign flip on the tilt chosen for "Set B" and else (A) so that the applied rotation matches the direction that makes Set C (current negation of B) look correct. Update the explanatory comment. The recent Set B red-only display change provides a clean view to verify the fix on reds.
+- Local current-state.md updated. Harness sessions plan.md set (via terminal) to short log only referencing the correct dev-ai sandbox plan.
+- Background memory preserved (Set B red-only/full images from prior turn, valley push, red filter, the 40px merging rule in C, decimal OCR filter, exact red nesting, blue retract, etc.).
+- Status: Planning. Fresh plan written. Awaiting explicit user approval of the sandbox plan path + directive to proceed. No tracked source edits yet.
+- After approval: re-read *exactly* the designated plan + current-state.md, then exec (TODO first, forensic every edit, builds, END marker).
+- Plan uses 20260612 + descriptive name per new-turn rule. Independent new cycle after prior END.
 - After approval: re-read *exactly* the designated plan + current-state.md, then exec phases (TODO first, forensic every edit, builds, END marker).
 - Plan uses 20260612 + descriptive name per new-turn rule. This is independent of the prior Set C plan (new cycle after its END).
