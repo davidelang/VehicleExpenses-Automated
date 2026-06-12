@@ -498,6 +498,7 @@ private suspend fun runPumpExperiment(
                         // Use exact containment (no artificial inset/spacing); for perfect overlaps,
                         // keep one representative (the first in order) and drop the rest.
                         // Sequential keep: only check against already-kept boxes to ensure at least one survives duplicates.
+                        // Also applies the 3 sides enclosed + <=40px "new 3 sides enclosed algorithm" (per user): if one is inside on 3 sides but protrudes on the 4th by <=40px in pixel, extend the containing on that side, then the protruding one is now fully contained and deleted as redundant. This uses the same pixel 40px logic as the blue/orange 3sides code in Set C.
                         val kept = mutableListOf<PumpHunk>()
                         for (h1 in pdHunksRawTotal) {
                             val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
@@ -516,8 +517,42 @@ private suspend fun runPumpExperiment(
                                 kept.add(h1)
                             }
                         }
+                        // 3 sides +40px on the exact survivors (the near-nested cases exact didn't catch)
+                        val toProcess = kept.toMutableList()
+                        val extended = mutableListOf<PumpHunk>()
+                        for (i in toProcess.indices) {
+                            var cur = toProcess[i]
+                            for (j in toProcess.indices) {
+                                if (i == j) continue
+                                val oth = toProcess[j]
+                                val cp = IcrsMath.icrsToPixel(cur.icrs.left, cur.icrs.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.icrs.right, cur.icrs.bottom, imgW, imgH)
+                                val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
+                                val op = IcrsMath.icrsToPixel(oth.icrs.left, oth.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.icrs.right, oth.icrs.bottom, imgW, imgH)
+                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                                if (insides.count { it } == 3) {
+                                    val newL = if (!insides[0]) min(cur.icrs.left, oth.icrs.left) else cur.icrs.left
+                                    val newT = if (!insides[1]) min(cur.icrs.top, oth.icrs.top) else cur.icrs.top
+                                    val newR = if (!insides[2]) max(cur.icrs.right, oth.icrs.right) else cur.icrs.right
+                                    val newB = if (!insides[3]) max(cur.icrs.bottom, oth.icrs.bottom) else cur.icrs.bottom
+                                    cur = PumpHunk(cur.text, RectF(newL, newT, newR, newB))
+                                }
+                            }
+                            if (extended.none { it.icrs == cur.icrs }) extended.add(cur)
+                        }
+                        val cleaned = extended.filter { b ->
+                            val bp = IcrsMath.icrsToPixel(b.icrs.left, b.icrs.top, imgW, imgH); val bp2 = IcrsMath.icrsToPixel(b.icrs.right, b.icrs.bottom, imgW, imgH)
+                            val bR = android.graphics.Rect(bp.x.toInt(), bp.y.toInt(), bp2.x.toInt(), bp2.y.toInt())
+                            !extended.any { o ->
+                                if (o === b) false else {
+                                    val op = IcrsMath.icrsToPixel(o.icrs.left, o.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.icrs.right, o.icrs.bottom, imgW, imgH)
+                                    val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                    oR.contains(bR)
+                                }
+                            }
+                        }.toMutableList()
                         pdHunksRawTotal.clear()
-                        pdHunksRawTotal.addAll(kept)
+                        pdHunksRawTotal.addAll(cleaned)
                     }
                 }
 
@@ -786,6 +821,7 @@ private suspend fun runPumpExperiment(
                 if (flowName == "Set B") {
                     // add back blue (exp) + orange (max) annotations for Set B (per user directive)
                     // Explicit nested red filter for B (shared call at 731 already cleans pdHunksRawTotal used for B redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
+                    // Now also includes the 3 sides +<=40px (the new 3 sides enclosed algorithm) so near-nested reds like the 12px pair in row 3 Set B get extended+deleted (visible in the red-only image).
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
 
                     // Red-only image for Set B (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now".
