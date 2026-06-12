@@ -586,6 +586,9 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.rectangle(mask, rect, org.opencv.core.Scalar(255.0), -1)
                     }
 
+                    // Capture redbox histogram for display in Set C column (per approved plan). Uses the mask-aware generate (new optional param) on the post-push mat restricted to red box pixels.
+                    branch.images["redboxHistC"] = generateHistogramB64(workspace.p.mat, 0.40f, mask)
+
                     val hist = org.opencv.core.Mat()
                     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
                     val bins = FloatArray(64); hist.get(0, 0, bins)
@@ -952,6 +955,53 @@ private suspend fun runPumpExperiment(
                             blueRects.add(RectF(l, t, r, b))
                         }
                     }
+
+                    // Near-containment merging rule (per approved plan for this turn, "when merging").
+                    // If one box is inside another on 3 sides but protrudes on the 4th by <=40px (pixel space), extend the containing box to the protruding side.
+                    // Then the protruding box is no longer outside and can be deleted as redundant (now fully inside after extend).
+                    // Applied to blueRects (the union from overlapping hunks per red) before retraction.
+                    run {
+                        val toProcess = blueRects.toMutableList()
+                        val extended = mutableListOf<RectF>()
+                        for (i in toProcess.indices) {
+                            var cur = toProcess[i]
+                            for (j in toProcess.indices) {
+                                if (i == j) continue
+                                val oth = toProcess[j]
+                                // Pixel rects for 40px tolerance
+                                val cp = IcrsMath.icrsToPixel(cur.left, cur.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.right, cur.bottom, imgW, imgH)
+                                val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
+                                val op = IcrsMath.icrsToPixel(oth.left, oth.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.right, oth.bottom, imgW, imgH)
+                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                                val insideCount = insides.count { it }
+                                if (insideCount == 3) {
+                                    // Extend cur on the non-inside side to cover oth
+                                    val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
+                                    val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
+                                    val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
+                                    val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
+                                    cur = RectF(newL, newT, newR, newB)
+                                }
+                            }
+                            if (extended.none { it == cur }) extended.add(cur)
+                        }
+                        // Remove any now fully contained (after extends)
+                        val cleaned = extended.filter { b ->
+                            val bp = IcrsMath.icrsToPixel(b.left, b.top, imgW, imgH); val bp2 = IcrsMath.icrsToPixel(b.right, b.bottom, imgW, imgH)
+                            val bR = android.graphics.Rect(bp.x.toInt(), bp.y.toInt(), bp2.x.toInt(), bp2.y.toInt())
+                            !extended.any { o ->
+                                if (o == b) false else {
+                                    val op = IcrsMath.icrsToPixel(o.left, o.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.right, o.bottom, imgW, imgH)
+                                    val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                    oR.contains(bR)
+                                }
+                            }
+                        }.toMutableList()
+                        blueRects.clear()
+                        blueRects.addAll(cleaned)
+                    }
+
                     // Blue retract to tight fit around text (per approved plan): after union of overlapping CC hunks (from the big/little filter on binMat) per red, retract using expandByUniformity to shrink back when expansion hits limit with no text/content.
                     // This ensures blues are tight rather than over-expanded.
                     val retractedBlueRects = mutableListOf<RectF>()
@@ -979,6 +1029,48 @@ private suspend fun runPumpExperiment(
                             orangeRects.add(RectF(l, t, r, b))
                         }
                     }
+
+                    // Near-containment merging rule (per approved plan) also applied to orangeRects (same-row unions).
+                    // Same 3-side inside + <=40px protrusion on 4th -> extend containing, then remove fully contained after.
+                    run {
+                        val toProcess = orangeRects.toMutableList()
+                        val extended = mutableListOf<RectF>()
+                        for (i in toProcess.indices) {
+                            var cur = toProcess[i]
+                            for (j in toProcess.indices) {
+                                if (i == j) continue
+                                val oth = toProcess[j]
+                                val cp = IcrsMath.icrsToPixel(cur.left, cur.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.right, cur.bottom, imgW, imgH)
+                                val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
+                                val op = IcrsMath.icrsToPixel(oth.left, oth.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.right, oth.bottom, imgW, imgH)
+                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                                val insideCount = insides.count { it }
+                                if (insideCount == 3) {
+                                    val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
+                                    val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
+                                    val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
+                                    val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
+                                    cur = RectF(newL, newT, newR, newB)
+                                }
+                            }
+                            if (extended.none { it == cur }) extended.add(cur)
+                        }
+                        val cleaned = extended.filter { o ->
+                            val op = IcrsMath.icrsToPixel(o.left, o.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.right, o.bottom, imgW, imgH)
+                            val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                            !extended.any { d ->
+                                if (d == o) false else {
+                                    val dp = IcrsMath.icrsToPixel(d.left, d.top, imgW, imgH); val dp2 = IcrsMath.icrsToPixel(d.right, d.bottom, imgW, imgH)
+                                    val dR = android.graphics.Rect(dp.x.toInt(), dp.y.toInt(), dp2.x.toInt(), dp2.y.toInt())
+                                    dR.contains(oR)
+                                }
+                            }
+                        }.toMutableList()
+                        orangeRects.clear()
+                        orangeRects.addAll(cleaned)
+                    }
+
                     // dedup orange by exact rect match (same objects inside -> same summed box)
                     val dedupedOrange = mutableListOf<RectF>()
                     for (o in orangeRects) {
@@ -1269,10 +1361,11 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
-private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
+private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float, mask: org.opencv.core.Mat? = null): String {
     if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
-    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+    // Support optional mask for red-box histograms (per approved plan for Set C). When mask provided, calc is restricted to those pixels (exact reuse of polarity probe pattern).
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), mask ?: org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
 
     val bins = FloatArray(64); hist.get(0, 0, bins)
 
@@ -1379,7 +1472,8 @@ private fun pBuildHtmlRowDynamic(
             val pushed = br.images["pushedC"] ?: ""
             val hB = br.images["histBeforeC"] ?: ""
             val hA = br.images["histAfterC"] ?: ""
-            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:48%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:48%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:48%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:48%;'><br><small>After</small></td></tr></table><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+            val rbox = br.images["redboxHistC"] ?: ""
+            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:48%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:48%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:48%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:48%;'><br><small>After</small></td></tr></table><img src='data:image/jpeg;base64,$rbox' style='max-width:60%;'><br><small>Redbox Hist (pixels in red boxes)</small><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
         } else {
             appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
         }

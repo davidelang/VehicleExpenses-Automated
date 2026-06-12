@@ -57,6 +57,25 @@
   - Key: new valleyPushToPeaks in OdometerOcrUtils (reuses findValleyMidpoints + 64-bin/smooth/peak patterns from automaticContrastStretch); replace stretch for C only + capture raw/pushed + before/after hists to branch.images; special-case Set C td in pBuildHtmlRowDynamic to render the 4 visuals (raw, pushed-few-brightness, hist before, hist after) inside column (framing existing PD/ocr). No changes to B/A or core blue/CC/polarity/filter logic beyond the transform swap.
 - Local state updated (this edit) for per-branch continuity. Harness sessions plan.md untouched (short log only; forbidden to read/reference per rules).
 - Background memory preserved: big/little filter (cv::connectedComponentsWithStats via blackOutLargeAndSmall + findAll + rolling in NativeImageUtils.cpp + wrappers; used in Set C CC path); OCR decimal (recognizeNumericDecimal + ALLOWED_DIGITS_DECIMAL) + >=2 digit filter in ocrLinesB/C; blue retract (expandByUniformity on bin/workspace); red nesting (exact no-inset sequential doCrossScaleRedboxFilter on raw+exp+max; filtered reds do not exist for blue derivation).
-- Status: Planning phase complete. Plan written to designated sandbox path. Awaiting explicit user approval (magic phrasing naming the exact dev-ai-interaction/plans/...-plan.md path + directive to proceed). No tracked source edits performed (plan mode + exemptions used only for sandbox plan + current-state.md).
-- After approval: re-read *exactly* the designated plan file first, then current-state.md, then exec phases (TODO first, forensic every edit, milestone ./build_app, final handoff with **END OF EXECUTION TURN** + "results ready to test"). Feedback after handoff = brand new turn (new plan file).
-- Plan name uses 20260612 per today's date + "new plan" directive; fresh file (not revision of any prior).
+- Status: Execution COMPLETE for this approved plan (valley push for Set C). All phases followed (TODO first, re-reads, code edits with forensics after *every*, milestone + final ./build_app, state updates).
+  - New util: valleyPushToPeaks added + integrated (replaces stretch for C only; raw + pushed (small # brightness, non-bin) + before/after hists captured to branch.images["rawC"] etc).
+  - Report: pBuildHtmlRowDynamic special-cases Set C column to show the 4 visuals (raw, Valley-Pushed few-brightness, hists) + PD/ocr.
+  - Comments updated throughout for the new behavior.
+  - Builds: milestone + final successful (tags updated; last clean run produced fix-pump-experiment/builds at 8f7acdb7, version fix-pump-experiment-start-66-g8f7acdb7). Tree clean post-build (confirmed).
+  - Forensic: multiple read_file before/after every edit (plan, state, TODO, the two .kt sites for func/integration/builder/comments) + post-build re-reads + final state read confirmed exact changes.
+  - Verification: code + build confirm the transform + display. Full UI run of "Run Limited Experiment (Golden Subset)" + inspect generated pump_report HTML (Set C column) + pump_results JSON to be done by user (raw image, quantized pushed with few brightness values visible, before/after hists, PD/ocr intact; A/B columns unaffected).
+- Local plan hygiene: Harness sessions plan.md kept minimal (short log only). Primary plan at dev-ai sandbox path (re-read exactly on exec start). current-state.md and TODO.md updated (first action).
+- Notes: Turn handed off. See approved plan (the executed path) for full details + verification criteria. Valley push + CC/OCR/filter/red-nest memory preserved for future. After handoff: any feedback starts new planning cycle (new plan document + explicit Directive before edits).
+- Last ./build_app: final clean run (nothing to commit, tag reference updated to current).
+- Handoff: Changes for the approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-c-valley-histogram-push-20260612-plan.md are ready for testing. **END OF EXECUTION TURN**
+
+# New cycle start (2026-06-12) — Set C red box pixel histogram + near-containment merging rule (revised per user to reflect only this turn's work)
+- User feedback: the plan presented was an old one that had nothing to do with this ask "for set c do a histogram of the pixels in the red boxes". One more thing: "when merging , if one box is inside another box on 4 sides, but outside the first box on the 4th side but up to 40px, extend the first box to the 4th side of the second box (and then the second box is not inside the first and could be deleted)".
+- First actions: read current-state.md (done); researched the exact Set C code for red mask/hist probe, blueRects/orangeRects merging, and column hist display. No obsolete plans.
+- The plan file was revised (multiple times per feedback) to be lean and only describe the work for *this turn*: the redbox hist display + the exact merging rule addition. Removed all obsolete data.
+- Primary plan artifact: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-c-redbox-histogram-and-merging-20260612-plan.md (revised lean version per user feedback to contain only the work for this turn: redbox hist display + 40px merging rule; no obsolete data).
+- Harness sessions plan.md (the one shown in dialog) was force-overwritten via terminal with short log only referencing the correct dev-ai sandbox plan (per rules: it is process log only and must not be the approved artifact or contain bulk/old plans).
+- current-state.md updated. No .kt edits.
+- Background memory preserved from state.
+- Status: Planning. Plan revised to exactly reflect this turn's work. Awaiting explicit approval of the sandbox plan at the dev-ai path above + directive.
+- After approval: re-read this plan + state, exec (TODO first, forensic, builds, END).
