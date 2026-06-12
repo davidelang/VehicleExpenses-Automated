@@ -527,106 +527,102 @@ private suspend fun runPumpExperiment(
                 // only their branch (images, pathResults, metadata["tilt"]). Old tangled forEach body remains
                 // temporarily (will be removed as logic is moved into the processors in subsequent phases).
                 // Set C valley (bin-test) will be fully implemented in its processor (Phase 3).
-                val flowProcessors: List<suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> = listOf(
-                    // Set A (baseline dual ML+Paddle, stretch, standard angle)
-                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                        // linear steps (no conditionals on set):
-                        // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
-                        // - standard tilt = deskewRes.angle; rotate; br.metadata["tilt"] = ...
-                        // - its mlBlocksRaw + pd* totals
-                        // - ml + pd discovery (via runPaddleDiscovery / inline scales for now)
-                        // - global filter (via doCross...)
-                        // - mlHunks + pdMerged; getFinal (shared) for both -> pathResults ML + Paddle
-                        // - viz: ML image + PD raw reds snapshot
-                    },
-                    // Set B (pump-only, no stretch, paddleCpp tilt)
-                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                        // linear for B:
-                        // - no stretch
-                        // - paddleCpp tilt (from deskewRes); rotate; tilt meta
-                        // - pd totals only (mlBlocksRaw empty or guarded)
-                        // - pd discovery (runPaddleDiscovery)
-                        // - filter
-                        // - only pdMerged + getFinal for "Paddle" path
-                        // - only PD viz (raw reds)
-                    },
-                    // Set C (pump-only + valley bin-test from alignment Set J, no stretch, paddleCpp, composite + best)
-                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                        // linear for C (no ifs on set name; the valley bin-test logic is the "list what needs to be done"
-                        // for this path, inside its entry in the array of functions. The array is iterated by the
-                        // dispatch (forEachIndexed + call by i); no hard-coded "Set C" checks inside this per-path
-                        // code (per the clarification, avoiding ugly hard-coding of names like setCvalley at call sites).
-                        val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(ws.p)
-                        val tilt = deskewRes.paddleCppAngle
-                        OdometerOcrUtils.rotate(ws, tilt)
-                        br.metadata["tilt"] = "%.2f".format(tilt)
+                val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    // linear steps (no conditionals on set):
+                    // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
+                    // - standard tilt = deskewRes.angle; rotate; br.metadata["tilt"] = ...
+                    // - its mlBlocksRaw + pd* totals
+                    // - ml + pd discovery (via runPaddleDiscovery / inline scales for now)
+                    // - global filter (via doCross...)
+                    // - mlHunks + pdMerged; getFinal (shared) for both -> pathResults ML + Paddle
+                    // - viz: ML image + PD raw reds snapshot
+                }
+                val procB: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    // linear for B:
+                    // - no stretch
+                    // - paddleCpp tilt (from deskewRes); rotate; tilt meta
+                    // - pd totals only (mlBlocksRaw empty or guarded)
+                    // - pd discovery (runPaddleDiscovery)
+                    // - filter
+                    // - only pdMerged + getFinal for "Paddle" path
+                    // - only PD viz (raw reds)
+                }
+                val procC: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    // linear for C (no ifs on set name; the valley bin-test logic is the "list what needs to be done"
+                    // for this path, inside its entry in the array of functions. The array is iterated by the
+                    // dispatch (forEachIndexed + call by i); no hard-coded "Set C" checks inside this per-path
+                    // code (per the clarification, avoiding ugly hard-coding of names like setCvalley at call sites).
+                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(ws.p)
+                    val tilt = deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(ws, tilt)
+                    br.metadata["tilt"] = "%.2f".format(tilt)
 
-                        val versionB64s = mutableListOf<String>()
+                    val versionB64s = mutableListOf<String>()
 
-                        // greyscale reference first (user expects greyscale + the binarized versions)
-                        val grayB64 = OcrUtils.takeSnapshot(ws.p, null, 600, 450, emptyList(), null, ws).first
-                        versionB64s.add(labelWithText(grayB64, "deskewed grayscale (no stretch)"))
+                    // greyscale reference first (user expects greyscale + the binarized versions)
+                    val grayB64 = OcrUtils.takeSnapshot(ws.p, null, 600, 450, emptyList(), null, ws).first
+                    versionB64s.add(labelWithText(grayB64, "deskewed grayscale (no stretch)"))
 
-                        var bestRawTotal = listOf<PumpHunk>()
-                        var bestExpTotal = listOf<PumpHunk>()
-                        var maxHunks = -1
+                    var bestRawTotal = listOf<PumpHunk>()
+                    var bestExpTotal = listOf<PumpHunk>()
+                    var maxHunks = -1
 
-                        val hist = org.opencv.core.Mat()
-                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(ws.p.mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
-                        val bins = FloatArray(64); hist.get(0, 0, bins)
-                        hist.release()
-                        val midpoints = OdometerOcrUtils.findValleyMidpoints(bins)
+                    val hist = org.opencv.core.Mat()
+                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(ws.p.mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                    val bins = FloatArray(64); hist.get(0, 0, bins)
+                    hist.release()
+                    val midpoints = OdometerOcrUtils.findValleyMidpoints(bins)
 
-                        midpoints.forEach { binIdx ->
-                            val thresh = binIdx * 4.0
-                            val binarized = org.opencv.core.Mat()
-                            org.opencv.imgproc.Imgproc.threshold(ws.p.mat, binarized, thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                    midpoints.forEach { binIdx ->
+                        val thresh = binIdx * 4.0
+                        val binarized = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.threshold(ws.p.mat, binarized, thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
 
-                            val saved = org.opencv.core.Mat()
-                            ws.p.mat.copyTo(saved)
-                            binarized.copyTo(ws.p.mat)
+                        val saved = org.opencv.core.Mat()
+                        ws.p.mat.copyTo(saved)
+                        binarized.copyTo(ws.p.mat)
 
-                            pdHunksRawTotal.clear()
-                            pdHunksExpTotal.clear()
-                            pdHunksMaxTotal.clear()
-                            pdHunksNativeTotal.clear()
+                        pdHunksRawTotal.clear()
+                        pdHunksExpTotal.clear()
+                        pdHunksMaxTotal.clear()
+                        pdHunksNativeTotal.clear()
 
-                            runPaddleDiscovery()
-                            doCrossScaleRedboxFilter(pdHunksRawTotal, w, h)
+                        runPaddleDiscovery()
+                        doCrossScaleRedboxFilter(pdHunksRawTotal, w, h)
 
-                            val aPdV = pdHunksRawTotal.map { hh ->
-                                val p1 = IcrsMath.icrsToPixel(hh.icrs.left, hh.icrs.top, w, h)
-                                val p2 = IcrsMath.icrsToPixel(hh.icrs.right, hh.icrs.bottom, w, h)
-                                SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.RED, 2)
-                            }
-                            val binB64 = OcrUtils.takeSnapshot(ws.p, null, 600, 450, aPdV, null, ws).first
-                            val labeledB64 = labelWithText(binB64, "thresh = ${thresh.toInt()}")
-                            versionB64s.add(labeledB64)
+                        val aPdV = pdHunksRawTotal.map { hh ->
+                            val p1 = IcrsMath.icrsToPixel(hh.icrs.left, hh.icrs.top, w, h)
+                            val p2 = IcrsMath.icrsToPixel(hh.icrs.right, hh.icrs.bottom, w, h)
+                            SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.RED, 2)
+                        }
+                        val binB64 = OcrUtils.takeSnapshot(ws.p, null, 600, 450, aPdV, null, ws).first
+                        val labeledB64 = labelWithText(binB64, "thresh = ${thresh.toInt()}")
+                        versionB64s.add(labeledB64)
 
-                            if (pdHunksRawTotal.size > maxHunks) {
-                                maxHunks = pdHunksRawTotal.size
-                                bestRawTotal = pdHunksRawTotal.toList()
-                                bestExpTotal = pdHunksExpTotal.toList()
-                            }
-
-                            saved.copyTo(ws.p.mat)
-                            saved.release()
-                            binarized.release()
+                        if (pdHunksRawTotal.size > maxHunks) {
+                            maxHunks = pdHunksRawTotal.size
+                            bestRawTotal = pdHunksRawTotal.toList()
+                            bestExpTotal = pdHunksExpTotal.toList()
                         }
 
-                        if (maxHunks >= 0) {
-                            pdHunksRawTotal.clear()
-                            pdHunksRawTotal.addAll(bestRawTotal)
-                            pdHunksExpTotal.clear()
-                            pdHunksExpTotal.addAll(bestExpTotal)
-                        }
-
-                        br.images["PD"] = if (versionB64s.isNotEmpty()) stackVertically(versionB64s) else ""
-
-                        val pdHunksMergedC = mergeGeometryIntoHunks(pdHunksExpTotal)
-                        br.pathResults["Paddle"] = getFinal(pdHunksMergedC, "Paddle", tilt, pdHunksRawTotal, ws, experimentRecSet320x48, paddleEngine, context, w, h)
+                        saved.copyTo(ws.p.mat)
+                        saved.release()
+                        binarized.release()
                     }
-                )
+
+                    if (maxHunks >= 0) {
+                        pdHunksRawTotal.clear()
+                        pdHunksRawTotal.addAll(bestRawTotal)
+                        pdHunksExpTotal.clear()
+                        pdHunksExpTotal.addAll(bestExpTotal)
+                    }
+
+                    br.images["PD"] = if (versionB64s.isNotEmpty()) stackVertically(versionB64s) else ""
+
+                    val pdHunksMergedC = mergeGeometryIntoHunks(pdHunksExpTotal)
+                    br.pathResults["Paddle"] = getFinal(pdHunksMergedC, "Paddle", tilt, pdHunksRawTotal, ws, experimentRecSet320x48, paddleEngine, context, w, h)
+                }
+                val flowProcessors = listOf(procA, procB, procC)
 
                 // Call the processor for this flow (i) from the array. Placed after the flowProcessors list val
                 // in source (name resolves) and after per-flow setup in execution. For Set C (i==2) this invokes
