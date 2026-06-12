@@ -873,9 +873,14 @@ private suspend fun runPumpExperiment(
 
                     // Compute vSW/hSW from the red boxes (using the red-box hist method, as in Set J / OcrHarness).
                     val redPixelRects = mutableListOf<android.graphics.Rect>()
-                    for (rBox in redBoxes) {
-                        val p1 = IcrsMath.icrsToPixel(rBox.left, rBox.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(rBox.right, rBox.bottom, imgW, imgH)
+                    for (idx in redBoxes.indices) {
+                        val rBox = redBoxes[idx]
+                        val l = rBox.left
+                        val t = rBox.top
+                        val rr = rBox.right
+                        val b = rBox.bottom
+                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(rr, b, imgW, imgH)
                         redPixelRects.add(android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt()))
                     }
                     val hRes = NativeImageUtils.calculateHistogramWithThresholdH(workspace.p.mat, redPixelRects, 128f)
