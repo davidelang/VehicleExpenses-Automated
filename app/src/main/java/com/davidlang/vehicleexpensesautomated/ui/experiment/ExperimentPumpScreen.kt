@@ -769,12 +769,25 @@ private suspend fun runPumpExperiment(
                 }
                 if (flowName == "Set B") {
                     // add back blue (exp) + orange (max) annotations for Set B (per user directive)
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
+                    // Explicit nested red filter for B (shared call at 731 already cleans pdHunksRawTotal used for B redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                    // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
+                    val retractedExpForBlue = mutableListOf<PumpHunk>()
+                    for (h in pdHunksExpTotal) {
+                        val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        val (retracted, _) = NativeImageUtils.expandByUniformity(workspace.p.mat, rect)
+                        val i1 = IcrsMath.pixelToIcrs(retracted.left.toFloat(), retracted.top.toFloat(), imgW, imgH)
+                        val i2 = IcrsMath.pixelToIcrs(retracted.right.toFloat(), retracted.bottom.toFloat(), imgW, imgH)
+                        retractedExpForBlue.add(PumpHunk(h.text, RectF(i1.x, i1.y, i2.x, i2.y)))
+                    }
+                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(retractedExpForBlue, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
                     val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
 
                     // run ocr recognize on *every* blue and *every* orange box; scale to 48px tall buffer with width multiple of 32 (for the recognition)
                     // (inline crop/resize/rec using experimentRecSet320x48 and direct paddle rec, modeled on performHunkRecognition but forcing %32 width)
-                    val blueTexts = pdHunksExpTotal.map { h ->
+                    val blueTexts = retractedExpForBlue.map { h ->
                         val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
                         val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
                         val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
@@ -816,7 +829,7 @@ private suspend fun runPumpExperiment(
                     }
 
                     // digits-only (0-9) pass using recognizeNumeric for the second OCR per box (as-is above + digits)
-                    val blueDigits = pdHunksExpTotal.map { h ->
+                    val blueDigits = retractedExpForBlue.map { h ->
                         val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
                         val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
                         val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
@@ -876,7 +889,9 @@ private suspend fun runPumpExperiment(
                     // called after blackOutLargeAndSmallComponentsH (and rolling) on a binarized version of the mat.
                     // See ExperimentAlignmentScreen.kt:1180 (blackOutLargeAndSmall), 1194 (findAllComponentsH after wide/tall processing) and the nativeBlackOut... / nativeFindAll... in NativeImageUtils.cpp
                     // which do CC passes at the beginning for large/wide, then after processing them before small.
-                    val redBoxes = pdHunksRawTotal.toList()
+                    // Explicit nested red filter for C redBoxes (used for blue derivation); shared filter at 731 already applied to pdHunksRawTotal, but explicit here (and in B) per plan/user feedback on B vs C.
+                    val redBoxes = pdHunksRawTotal.toMutableList()
+                    doCrossScaleRedboxFilter(redBoxes, imgW, imgH)
 
                     // Compute vSW/hSW from the red boxes (using the red-box hist method, as in Set J / OcrHarness).
                     val redPixelRects = mutableListOf<android.graphics.Rect>()
@@ -923,8 +938,20 @@ private suspend fun runPumpExperiment(
                             blueRects.add(RectF(l, t, r, b))
                         }
                     }
+                    // Blue retract to tight fit around text (per approved plan): after union of overlapping CC hunks (from the big/little filter on binMat) per red, retract using expandByUniformity to shrink back when expansion hits limit with no text/content.
+                    // This ensures blues are tight rather than over-expanded.
+                    val retractedBlueRects = mutableListOf<RectF>()
+                    for (b in blueRects) {
+                        val p1 = IcrsMath.icrsToPixel(b.left, b.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(b.right, b.bottom, imgW, imgH)
+                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        val (retracted, _) = NativeImageUtils.expandByUniformity(binMat, rect)
+                        val i1 = IcrsMath.pixelToIcrs(retracted.left.toFloat(), retracted.top.toFloat(), imgW, imgH)
+                        val i2 = IcrsMath.pixelToIcrs(retracted.right.toFloat(), retracted.bottom.toFloat(), imgW, imgH)
+                        retractedBlueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
+                    }
                     val orangeRects = mutableListOf<RectF>()
-                    for (blue in blueRects) {
+                    for (blue in retractedBlueRects) {
                         val yMin = blue.top
                         val yMax = blue.bottom
                         val sameRow = hunks.filter { h ->
@@ -949,7 +976,7 @@ private suspend fun runPumpExperiment(
                     val whiteAnns = compRects.map { r ->
                         SnapshotAnnotation(r.left, r.top, r.right, r.bottom, Shape.RECTANGLE, Color.WHITE, 1)
                     }
-                    val blueAnns = blueRects.map { r ->
+                    val blueAnns = retractedBlueRects.map { r ->
                         val p1 = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
                         val p2 = IcrsMath.icrsToPixel(r.right, r.bottom, imgW, imgH)
                         SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.BLUE, 4)
@@ -963,11 +990,11 @@ private suspend fun runPumpExperiment(
                     val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, allAnns, null, workspace).first
                     branch.images["PD"] = baseB64
                     // OCR twice (as-is + digits 0-9) on the blue/orange rects for C (same as B)
-                    val blueAsIs = blueRects.map { r ->
+                    val blueAsIs = retractedBlueRects.map { r ->
                         val hh = PumpHunk("", r)
                         performHunkRecognition(listOf(hh), workspace, experimentRecSet320x48, "Paddle", paddleEngine, context, tilt).firstOrNull()?.text ?: "?"
                     }
-                    val blueDigits = blueRects.map { r ->
+                    val blueDigits = retractedBlueRects.map { r ->
                         val ll = r.left.coerceIn(-maxX, maxX - 0.001f)
                         val tt = r.top.coerceIn(-maxY, maxY - 0.001f)
                         val rr = r.right.coerceIn(ll + 0.001f, maxX)
