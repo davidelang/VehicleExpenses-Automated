@@ -320,6 +320,80 @@ private suspend fun runPumpExperiment(
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
 
+                fun stackVertically(b64List: List<String>): String {
+                    if (b64List.isEmpty()) return ""
+                    val bitmaps = mutableListOf<android.graphics.Bitmap>()
+                    try {
+                        b64List.forEach { b64 ->
+                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            if (bmp != null) bitmaps.add(bmp)
+                        }
+                        if (bitmaps.isEmpty()) return ""
+                        val w = bitmaps.maxOf { it.width }
+                        val totalH = bitmaps.sumOf { it.height }
+                        val stacked = android.graphics.Bitmap.createBitmap(w, totalH, android.graphics.Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(stacked)
+                        canvas.drawColor(android.graphics.Color.BLACK)
+                        var y = 0
+                        bitmaps.forEach { bmp ->
+                            val scale = w.toFloat() / bmp.width.toFloat()
+                            val nh = (bmp.height * scale).toInt()
+                            val sb = android.graphics.Bitmap.createScaledBitmap(bmp, w, nh, true)
+                            canvas.drawBitmap(sb, 0f, y.toFloat(), null)
+                            y += nh
+                            if (sb != bmp) sb.recycle()
+                            bmp.recycle()
+                        }
+                        val res = OcrUtils.bitmapToBase64(stacked, 70)
+                        stacked.recycle()
+                        return res
+                    } catch (e: Exception) {
+                        bitmaps.forEach { it.recycle() }
+                        return ""
+                    }
+                }
+
+                suspend fun getFinal(
+                    hunks: List<PumpHunk>,
+                    engine: String,
+                    tilt: Float,
+                    pdRawForAnns: List<PumpHunk>,
+                    ws: BufferSet,
+                    recBuf: BufferSet,
+                    paddleEng: NativePaddleEngine,
+                    ctx: Context,
+                    imgW: Int,
+                    imgH: Int
+                ): PathResult {
+                    val stitched = stitchHunksHorizontally(hunks)
+                    val (top, bottom) = groupLanesByVerticalGap(stitched)
+                    val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
+                    val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
+                    val res = performHunkRecognition(listOf(expT, expB), ws, recBuf, engine, paddleEng, ctx, tilt)
+
+                    suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
+                        val p1 = IcrsMath.icrsToPixel(exp.icrs.left, exp.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(exp.icrs.right, exp.icrs.bottom, imgW, imgH)
+                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        val anns = mutableListOf<SnapshotAnnotation>()
+                        if (engine == "Paddle") {
+                            // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
+                            pdRawForAnns.forEach { h ->
+                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
+                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.RED, 2))
+                            }
+                            // BLUE and ORANGE temporarily disabled
+                            // pdHunksExpTotal.forEach { ... BLUE }
+                            // ... ORANGE for the specific
+                        }
+                        return OcrUtils.takeSnapshot(ws.p, rect, 300, 100, anns, null, ws).first
+                    }
+                    val cropT = takeCrop(expT, pair.first); val cropB = takeCrop(expB, pair.second)
+                    return PathResult(res[0].text, res[1].text, cropT, cropB)
+                }
+
                 // Phase 2 of approved refactor plan: the array of processor functions (one per flow, in same order as
                 // the flows list) that we iterate over (forEachIndexed or zip). Each is a self-contained lambda whose
                 // body is the linear list of steps for that path (no if(flowName) inside). Common setup (ws copy,
@@ -432,39 +506,9 @@ private suspend fun runPumpExperiment(
                 // removed when array fully replaces the tangle.
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
 
-                fun stackVertically(b64List: List<String>): String {
-                    if (b64List.isEmpty()) return ""
-                    val bitmaps = mutableListOf<android.graphics.Bitmap>()
-                    try {
-                        b64List.forEach { b64 ->
-                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            if (bmp != null) bitmaps.add(bmp)
-                        }
-                        if (bitmaps.isEmpty()) return ""
-                        val w = bitmaps.maxOf { it.width }
-                        val totalH = bitmaps.sumOf { it.height }
-                        val stacked = android.graphics.Bitmap.createBitmap(w, totalH, android.graphics.Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(stacked)
-                        canvas.drawColor(android.graphics.Color.BLACK)
-                        var y = 0
-                        bitmaps.forEach { bmp ->
-                            val scale = w.toFloat() / bmp.width.toFloat()
-                            val nh = (bmp.height * scale).toInt()
-                            val sb = android.graphics.Bitmap.createScaledBitmap(bmp, w, nh, true)
-                            canvas.drawBitmap(sb, 0f, y.toFloat(), null)
-                            y += nh
-                            if (sb != bmp) sb.recycle()
-                            bmp.recycle()
-                        }
-                        val res = OcrUtils.bitmapToBase64(stacked, 70)
-                        stacked.recycle()
-                        return res
-                    } catch (e: Exception) {
-                        bitmaps.forEach { it.recycle() }
-                        return ""
-                    }
-                }
+                // stackVertically hoisted earlier (before flowProcessors list) for name resolution inside the
+                // C processor lambda body (the array entry for Set C contains the valley that calls it).
+
 
                 suspend fun runPaddleDiscovery() {
                     val processedScales = mutableSetOf<Int>()
@@ -665,45 +709,9 @@ private suspend fun runPumpExperiment(
                 // (for red anns in paddle crops), workspace/rec/paddle/context/img dims so it can be called from
                 // per-processor code with each set's own values (no hard closure on the tangled per-flow vars).
                 // Body updated to use params; takeCrop inner updated for pdRawForAnns.
-                suspend fun getFinal(
-                    hunks: List<PumpHunk>,
-                    engine: String,
-                    tilt: Float,
-                    pdRawForAnns: List<PumpHunk>,
-                    ws: BufferSet,
-                    recBuf: BufferSet,
-                    paddleEng: NativePaddleEngine,
-                    ctx: Context,
-                    imgW: Int,
-                    imgH: Int
-                ): PathResult {
-                    val stitched = stitchHunksHorizontally(hunks)
-                    val (top, bottom) = groupLanesByVerticalGap(stitched)
-                    val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
-                    val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
-                    val res = performHunkRecognition(listOf(expT, expB), ws, recBuf, engine, paddleEng, ctx, tilt)
-
-                    suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
-                        val p1 = IcrsMath.icrsToPixel(exp.icrs.left, exp.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(exp.icrs.right, exp.icrs.bottom, imgW, imgH)
-                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                        val anns = mutableListOf<SnapshotAnnotation>()
-                        if (engine == "Paddle") {
-                            // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
-                            pdRawForAnns.forEach { h ->
-                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.RED, 2))
-                            }
-                            // BLUE and ORANGE temporarily disabled
-                            // pdHunksExpTotal.forEach { ... BLUE }
-                            // ... ORANGE for the specific
-                        }
-                        return OcrUtils.takeSnapshot(ws.p, rect, 300, 100, anns, null, ws).first
-                    }
-                    val cropT = takeCrop(expT, pair.first); val cropB = takeCrop(expB, pair.second)
-                    return PathResult(res[0].text, res[1].text, cropT, cropB)
-                }
+                // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
+                // for name resolution inside the C processor lambda body (the array entry for Set C calls it
+                // for the best path result using the valley versions).
 
                 // Set B / Set C are pump-only (no MLKit for the recognition step). Only populate Paddle result for these flows.
                 // Set A keeps dual for comparison.
