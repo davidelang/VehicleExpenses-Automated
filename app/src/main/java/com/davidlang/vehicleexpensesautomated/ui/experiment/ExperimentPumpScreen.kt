@@ -290,7 +290,8 @@ private suspend fun runPumpExperiment(
                 }
 
                 // 1. Transform
-                val rawHist = if (flowName == "Set C") floatArrayOf() else OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                // C now uses the same histogram/automaticContrastStretch as B (per "go back to the same histogram that B uses"; removed special-case skip for C).
+                val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                 if (flowName == flows.first() && flowName != "Set C") {
                     originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
                     root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
@@ -299,9 +300,11 @@ private suspend fun runPumpExperiment(
 
                 // 2. Deskew (ported Set E style from alignment for Set B; uses dedicated populate + JNI angle path)
                 // Compute per-flow but select angle source based on flow. Set B (pump-only) uses paddleCppAngle (from the optimized/JNI path inside calculateAverageTextAngle).
+                // Set C uses negated paddleCppAngle (user: "deskew rotation of set C seems to be rotating the wrong direction").
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
                 val tilt = when (flowName) {
-                    "Set B", "Set C" -> deskewRes.paddleCppAngle
+                    "Set B" -> deskewRes.paddleCppAngle
+                    "Set C" -> -deskewRes.paddleCppAngle
                     else -> deskewRes.angle
                 }
 
@@ -521,103 +524,14 @@ private suspend fun runPumpExperiment(
                 }
 
                 suspend fun doValleyForC(ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int) {
-                    // the valley bin-test logic for Set C (the "list what needs to be done" for this path in its dedicated function, called from the C entry in the array of processors via bridge).
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(ws.p)
-                    val tilt = deskewRes.paddleCppAngle
-                    OdometerOcrUtils.rotate(ws, tilt)
-                    br.metadata["tilt"] = "%.2f".format(tilt)
-
-                    val versionB64s = mutableListOf<String>()
-
-                    // greyscale reference first (user expects greyscale + the binarized versions)
-                    val grayB64 = OcrUtils.takeSnapshot(ws.p, null, 600, 450, emptyList(), null, ws).first
-                    versionB64s.add(labelWithText(grayB64, "deskewed grayscale (no stretch)"))
-
-                    var bestRawTotal = listOf<PumpHunk>()
-                    var bestExpTotal = listOf<PumpHunk>()
-                    var maxHunks = -1
-
-                    // Get initial red boxes by running detection on the (deskewed, no-stretch) grayscale.
-                    // Then compute the 64-bin histogram *only on pixels inside those red boxes* (text regions),
-                    // so the valley thresholds are tuned to the actual content rather than the whole image background.
-                    pdHunksRawTotal.clear()
-                    pdHunksExpTotal.clear()
-                    pdHunksMaxTotal.clear()
-                    pdHunksNativeTotal.clear()
-                    runBlocking(Dispatchers.IO) { runPaddleDiscovery() }
-
-                    // Build a mask with 255 only inside the initial red boxes (in pixel space for the current mat).
-                    val mask = org.opencv.core.Mat.zeros(ws.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                    for (hunk in pdHunksRawTotal) {
-                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, w, h)
-                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, w, h)
-                        val rect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
-                        org.opencv.imgproc.Imgproc.rectangle(mask, rect, org.opencv.core.Scalar(255.0), -1)
-                    }
-
-                    // Histogram using the mask (only pixels inside red boxes).
-                    val hist = org.opencv.core.Mat()
-                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(ws.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
-                    val bins = FloatArray(64); hist.get(0, 0, bins)
-                    hist.release()
-                    mask.release()
-
-                    // Clear the initial reds; the valley loop will populate fresh detections on each binarized version.
-                    pdHunksRawTotal.clear()
-                    pdHunksExpTotal.clear()
-                    pdHunksMaxTotal.clear()
-                    pdHunksNativeTotal.clear()
-
-                    val midpoints = OdometerOcrUtils.findValleyMidpoints(bins)
-
-                    midpoints.forEach { binIdx ->
-                        val thresh = binIdx * 4.0
-                        val binarized = org.opencv.core.Mat()
-                        org.opencv.imgproc.Imgproc.threshold(ws.p.mat, binarized, thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-
-                        val saved = org.opencv.core.Mat()
-                        ws.p.mat.copyTo(saved)
-                        binarized.copyTo(ws.p.mat)
-
-                        pdHunksRawTotal.clear()
-                        pdHunksExpTotal.clear()
-                        pdHunksMaxTotal.clear()
-                        pdHunksNativeTotal.clear()
-
-                        runBlocking(Dispatchers.IO) { runPaddleDiscovery() }
-                        doCrossScaleRedboxFilter(pdHunksRawTotal, w, h)
-
-                        val aPdV = pdHunksRawTotal.map { hh ->
-                            val p1 = IcrsMath.icrsToPixel(hh.icrs.left, hh.icrs.top, w, h)
-                            val p2 = IcrsMath.icrsToPixel(hh.icrs.right, hh.icrs.bottom, w, h)
-                            SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.RED, 2)
-                        }
-                        val binB64 = OcrUtils.takeSnapshot(ws.p, null, 600, 450, aPdV, null, ws).first
-                        val labeledB64 = labelWithText(binB64, "thresh = ${thresh.toInt()}")
-                        versionB64s.add(labeledB64)
-
-                        if (pdHunksRawTotal.size > maxHunks) {
-                            maxHunks = pdHunksRawTotal.size
-                            bestRawTotal = pdHunksRawTotal.toList()
-                            bestExpTotal = pdHunksExpTotal.toList()
-                        }
-
-                        saved.copyTo(ws.p.mat)
-                        saved.release()
-                        binarized.release()
-                    }
-
-                    if (maxHunks >= 0) {
-                        pdHunksRawTotal.clear()
-                        pdHunksRawTotal.addAll(bestRawTotal)
-                        pdHunksExpTotal.clear()
-                        pdHunksExpTotal.addAll(bestExpTotal)
-                    }
-
-                    br.images["PD"] = if (versionB64s.isNotEmpty()) stackVertically(versionB64s) else ""
-
-                    val pdHunksMergedC = mergeGeometryIntoHunks(pdHunksExpTotal)
-                    br.pathResults["Paddle"] = runBlocking(Dispatchers.IO) { getFinal(pdHunksMergedC, "Paddle", tilt, pdHunksRawTotal, ws, experimentRecSet320x48, paddleEngine, context, w, h) }
+                    /* bin-trials removed 2026-06-11 per user directive ("remove the bin-trials from set C and go back to the same histogram that B uses").
+                       C now:
+                       - uses same automaticContrastStretch histogram as B (rawHist change)
+                       - gets red-box-hist polarity probe + invert (if dark text on light) inserted in common per-flow scope before discovery (forces light text on dark)
+                       - deskew tilt is negated for C (common)
+                       - uses the normal discovery body (after guard change below) + PD/path like B
+                       The old valley (gray + per-midpoint binarize + per-version stack + best) is gone; no more multiple thresh images for C.
+                    */
                 }
 
                 // Phase 2 of approved refactor plan: the array of processor functions (one per flow, in same order as
@@ -627,6 +541,45 @@ private suspend fun runPumpExperiment(
                 // only their branch (images, pathResults, metadata["tilt"]). Old tangled forEach body remains
                 // temporarily (will be removed as logic is moved into the processors in subsequent phases).
                 // Set C valley (bin-test) will be fully implemented in its processor (Phase 3).
+                // Red-box-hist polarity fix for Set C only (after tilt/rotate, before processors/body discovery; uses runPaddleDiscovery probe which is now defined).
+                // Looks at 64-bin hist *only inside the initial red boxes* (text regions) on the (deskewed, same-hist-as-B stretched) mat to decide dark text on light bg vs light on dark.
+                // If dark text, inverts the mat (bitwise_not) so subsequent detection/rec + PD snapshot for C always see light text on dark bg.
+                if (flowName == "Set C") {
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+                    runPaddleDiscovery()  // probe to populate initial reds on current mat state
+
+                    // Build mask (255 inside red boxes, pixel space) -- exact pattern from prior valley probe.
+                    val mask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
+                    for (hunk in pdHunksRawTotal) {
+                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
+                        val rect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
+                        org.opencv.imgproc.Imgproc.rectangle(mask, rect, org.opencv.core.Scalar(255.0), -1)
+                    }
+
+                    val hist = org.opencv.core.Mat()
+                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                    val bins = FloatArray(64); hist.get(0, 0, bins)
+                    hist.release()
+                    mask.release()
+
+                    val lowMass = bins.take(32).sum()
+                    val highMass = bins.drop(32).sum()
+                    val isDarkTextOnLightBg = lowMass > highMass
+                    if (isDarkTextOnLightBg) {
+                        org.opencv.core.Core.bitwise_not(workspace.p.mat, workspace.p.mat)
+                    }
+
+                    // Re-clear so the (now-unskipped for C) body discovery populates the *final* pd* on the (possibly inverted) mat.
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+                }
+
                 val procA: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear steps (no conditionals on set):
                     // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
@@ -648,15 +601,7 @@ private suspend fun runPumpExperiment(
                     // - only PD viz (raw reds)
                 }
                 val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // bridge to the dedicated per-path doValleyForC (the valley with greyscale + labeled binarized thresh images is there; the runBlocking bridges the suspend work from the normal C processor entry in the array).
-                    try {
-                        runBlocking(Dispatchers.IO) { doValleyForC(ws, br, det, w, h) }
-                    } catch (e: Exception) {
-                        // Visible error surfacing for silent failures in doValleyForC (e.g. during binarization, labeling, or stacking) that would cause fallback to greyscale only in the Set C column.
-                        Log.e("ExperimentPump", "doValleyForC failed for Set C", e)
-                        // Leave images["PD"] unset or set a clear error placeholder so it is obvious in the report.
-                        br.images["PD"] = ""  // or a base64 of a small "ERROR" image if desired
-                    }
+                    // C no longer uses dedicated valley (bin-trials removed). Polarity invert probe + common deskew/hist already applied; body discovery (now unskipped for C) + PD/path do the rest. Empty to keep array dispatch happy.
                 }
                 val flowProcessors = listOf(procA, procB, procC)
 
@@ -672,8 +617,10 @@ private suspend fun runPumpExperiment(
                 // removed when array fully replaces the tangle.
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
 
-                if (flowName == "Set C") {
-                    // C processor (via doValleyForC) has set br.images["PD"] to the composite (greyscale first +
+                if (flowName == "Set C_old_bin_trials") {
+                    // (bin-trials removed per 2026-06-11 directive; C now executes normal body (probe invert + negated tilt + B-like hist already applied upstream)
+                    // old long comment left for reference but block now skipped for C
+
                     // per-valley binarized images, each with "thresh = XX" label + reds from detection on that version).
                     // Skip the following old duplicated // 3. Discovery (the inline scales.forEach etc.) and later
                     // unconditional path/viz blocks for the normal pdHunks so they do not execute for C. This lets
@@ -778,7 +725,7 @@ private suspend fun runPumpExperiment(
                 // (Now via shared helper; body unchanged.)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
 
-                val mlHunks = if (flowName == "Set B") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
+                val mlHunks = if (flowName == "Set B" || flowName == "Set C") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
                 // 4. Extraction
@@ -799,9 +746,8 @@ private suspend fun runPumpExperiment(
                 // (called above after the list) has already set "Paddle" to the best valley result. This old set
                 // (and the name check) will be removed when the old tangled body is deleted and the array fully
                 // drives the flows (avoiding hard-coded names in the main logic).
-                if (flowName != "Set C") {
-                    branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
-                }
+                // C now gets its Paddle result from the body (like B); the old != "Set C" guard was only to protect valley-set result.
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 if (flowName != "Set B" && flowName != "Set C") {
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 }
@@ -816,13 +762,83 @@ private suspend fun runPumpExperiment(
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
                     branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
                 }
-                if (flowName == "Set C") {
-                    // set by C processor (valley composite with per-version threshold labels + reds; greyscale first)
-                    // (old force-set removed now that processor is active; this preserves the stacked labeled images)
+                if (flowName == "Set B") {
+                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
+                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
+                    val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+
+                    // run ocr recognize on *every* blue and *every* orange box; scale to 48px tall buffer with width multiple of 32 (for the recognition)
+                    // (inline crop/resize/rec using experimentRecSet320x48 and direct paddle rec, modeled on performHunkRecognition but forcing %32 width)
+                    val blueTexts = pdHunksExpTotal.map { h ->
+                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
+                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
+                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet320x48.p.clear()
+                            val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognize(experimentRecSet320x48.c[recCropId])
+                            experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText
+                        }
+                    }
+                    val orangeTexts = pdHunksMaxTotal.map { h ->
+                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
+                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
+                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet320x48.p.clear()
+                            val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognize(experimentRecSet320x48.c[recCropId])
+                            experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText
+                        }
+                    }
+
+                    // show all these results under the image (taller composite: annotated PD on top, OCR texts for blue+orange drawn below; re-encode as PD b64 so report shows it without pBuild change)
+                    val pdForB = try {
+                        val bytes = Base64.decode(baseB64, Base64.DEFAULT)
+                        var bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: baseB64
+                        val mutable = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                        bmp.recycle(); bmp = mutable
+                        val tallerH = bmp.height + 64
+                        val taller = android.graphics.Bitmap.createBitmap(bmp.width, tallerH, android.graphics.Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(taller)
+                        canvas.drawColor(android.graphics.Color.BLACK)
+                        canvas.drawBitmap(bmp, 0f, 0f, null)
+                        val paint = android.graphics.Paint().apply {
+                            color = android.graphics.Color.YELLOW
+                            textSize = 16f
+                            isAntiAlias = true
+                            setShadowLayer(1.5f, 1f, 1f, android.graphics.Color.BLACK)
+                        }
+                        canvas.drawText("Blue boxes: " + blueTexts.joinToString("  "), 6f, bmp.height + 18f, paint)
+                        canvas.drawText("Orange boxes: " + orangeTexts.joinToString("  "), 6f, bmp.height + 38f, paint)
+                        val baos = java.io.ByteArrayOutputStream()
+                        taller.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
+                        val out = Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
+                        bmp.recycle(); taller.recycle()
+                        out
+                    } catch (e: Exception) { baseB64 }
+                    branch.images["PD"] = pdForB
                 } else {
-                    // Only red raw boxes for now (focus on redbox debugging: larger by +1, nested removed, correct positions after scaling fix)
+                    // A and C (C uses same body as B for discovery after polarity fix; only reds per current request for C)
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
-                    // + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
                 }
             }
