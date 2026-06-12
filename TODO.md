@@ -1,12 +1,5 @@
 # TODO
 
-- [ ] Pump experiment Set B / Set C OCR reporting (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/pump-experiment-set-b-c-ocr-reporting-20260612-plan.md)
-    - [ ] Add `recognizeNumericDecimal` (uses ALLOWED_DIGITS_DECIMAL) in NativePaddleEngine.kt.
-    - [ ] Update digits passes in ExperimentPumpScreen.kt (Set B and Set C blocks) to use decimal numeric for pump reports.
-    - [ ] Filter ocrLinesB/ocrLinesC (and optionally PD anns) to only boxes with >=2 digits (reuse existing .count { isDigit() } logic).
-    - [ ] Forensic reads before/after edits; ./build_app at milestones; full experiment run + report inspection for verification.
-    - See approved sandbox plan for full Context, Approach, Critical Files (NativePaddleEngine.kt + ExperimentPumpScreen.kt), Reusable functions, Phased steps, and Verification. First execution actions completed (this TODO + current-state.md updated). CC memory note included in plan for future reference.
-
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
@@ -49,7 +42,7 @@
     - [x] Commit and sync rules across all worktrees.
 
 # Meta plan (approved 2026-06-12 on orchestration branch): Robust Plan/Execute Cycle
-- Primary deliverable of every planning phase must be a fresh, clean task-specific plan document written to dev-ai-interaction/ (e.g. <task>-<date>-plan.md) using the standard structure (Context, Recommended Approach, Critical Files with paths, Reusable utilities with exact locations, Phased steps with forensic+build, Verification). User approves by explicit path reference + directive (e.g. "approved the plan at dev-ai-interaction/XXX-plan.md for the following..."). Agent must re-read exactly that designated file as first step in execution.
+- Primary deliverable of every planning phase must be a fresh, clean task-specific plan document written to dev-ai-interaction/plans/ (e.g. <task>-<date>-plan.md) using the standard structure (Context, Recommended Approach, Critical Files with paths, Reusable utilities with exact locations, Phased steps with forensic+build, Verification). User approves by explicit path reference + directive (e.g. "approved the plan at dev-ai-interaction/XXX-plan.md for the following..."). Agent must re-read exactly that designated file as first step in execution.
 - Harness ~/.grok/sessions/.../plan.md (the process log whose path appears in plan-mode reminders) is *not* the work plan. Use it only for short log entries referencing the sandbox plan path. At start of new cycle (or post-handoff), roll any prior superseding/historical bulk to dev-ai-interaction/historical-plans/harness-plan-archive-....md first, then prepend only the minimal current-cycle header (prepending to, not even superseding, old content).
 - Subagent separation supported and recommended for complex work: in planning (main stays in plan mode), optionally spawn_subagent (type "plan" or via "design" skill) with narrow prompt whose *only* job is research + write one new sandbox plan file + return its path. After user approval of that specific sandbox plan path, main (or spawned "implement"/execution subagent with the approved plan content injected) executes precisely, with TODO first, forensic read before/after every edit, ./build_app, exact END OF EXECUTION TURN marker + "results ready to test", then complete stop. Subagents blocked in plan mode per existing rules.
 - Post-handoff / new cycle start: Happy path is exit the CLI and relaunch via run-grok (forces fresh Mandate report + enter_plan_mode + STOP per the launcher + new_grok_agent_prompt). Fallback: agent at every handoff writes short dev-ai-interaction/.post-handoff-gate.txt; user does `cat dev-ai-interaction/.post-handoff-gate.txt` then appends request (one-liner ritual). The new tracked MULTI_AGENT_USER_INSTRUCTIONS.md (at root, synced by update-rules.sh to master/agent worktrees) is the authoritative human reference.

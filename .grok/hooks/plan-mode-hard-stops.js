@@ -5,11 +5,16 @@
 // Native enter_plan_mode / SwitchMode + these hooks + [permission] rules in config.toml
 // together enforce the bi-modal barrier (no writes to tracked files outside sandbox during planning).
 //
-// Example behaviors to implement (tune as needed for exact Grok hook API):
-// - In plan mode: deny write/edit/bash to any path not under dev-ai-interaction/
-// - Deny Task / subagent / invoke_agent during plan mode
-// - Allow read/grep/jq/git-status/etc. broadly
-// - Log or report violations
+// Key policy (as of 2026-06):
+// - In plan mode: deny write/edit (search_replace/write) and most bash to paths
+//   outside dev-ai-interaction/ (the sandbox). Use the config rules for granular
+//   exceptions inside the sandbox and for local state files.
+// - When NOT in plan mode (normal execution after approved plan + exit_plan_mode):
+//   edits to tracked files are allowed (see blanket allow for search_replace/write
+//   in .grok/config.toml). This avoids constant permission prompts during execution.
+// - Deny Task / subagent / invoke_agent during plan mode.
+// - Allow read/grep/jq/git-status/etc. broadly.
+// - Log or report violations.
 //
 // The hook is executed by the Grok harness before tool use. Return allow/deny/ask as appropriate.
 //
