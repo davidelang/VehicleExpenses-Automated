@@ -25,6 +25,8 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
 - **Allowed Sandbox Writes:** You may write plans, create scripts, and run scripts exclusively within the `dev-ai-interaction/` sandbox directory.
 - **STOP & WAIT:** After proposing a strategy, you MUST stop and wait for an explicit Directive (approval) from the user before proceeding to Execution.
 
+**Interactive Strategic Nature of Planning (CRITICAL):** The pre-approval planning/research/strategy phase is the designated interactive strategic layer. The user may (and is encouraged to) provide rich problem descriptions, high-level direction, and iterative feedback on draft plan documents (including "the plan at <path> is insufficient because [details]; produce a revised plan at <newpath> addressing..."). Your role during this phase is to incorporate that input by revising the *plan file* in the sandbox (not by making any source changes to the application). Multiple rounds of user feedback and plan document revisions are expected and permitted. Only the user's exact magic approval phrasing naming a specific sandbox plan path authorizes transition to mechanical execution.
+
 ### Phase 3: EXECUTION (Plan -> Act -> Validate)
 - **Exclusivity (CRITICAL):** Implement *only* the precise observable behavior and specific source changes that were explicitly described in the currently approved plan. The approved plan means the detailed intended results described when the plan was approved, not high-level goals.
 
@@ -49,6 +51,10 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
 
   If the user provides any feedback after the handoff, you must treat it as the start of a new turn: return to the Strategy phase, produce a new or revised plan document, and obtain a fresh explicit Directive before any further source changes. Attempts to find exceptions or argue technicalities around the handoff boundary are policy violations.
 
+- **Planning and Execution Subagent Separation (Recommended for Complex Work):** For non-trivial work, use the supported separation of concerns. In the planning phase (main agent remains in plan mode; subagent calls for narrow planning sub-tasks are the exception that proves the rule or are routed through the main's sandbox writes), spawn_subagent with subagent_type="plan" (or "explore" followed by "plan", or via the "design" skill) using a *very narrow* prompt whose sole responsibility is research + writing exactly one new plan file under dev-ai-interaction/ (standard structure) + returning its full path and a one-paragraph summary. The sub prompt must explicitly forbid source edits outside the sandbox. After the user gives explicit approval of the specific sandbox plan file + "proceed with execution" directive, the main agent may execute directly (strictly following the approved plan + all handoff/forensic rules) *or* spawn a separate execution subagent (now allowed outside plan mode) whose prompt is seeded with the full approved plan text (or "read and follow precisely the plan at <path>") plus: "You are Execution Agent for this turn only. First action: update TODO.md. Only the exact changes and constraints in the approved plan. Forensic read before/after every edit. ./build_app after logical pieces. End with the exact **END OF EXECUTION TURN** marker + 'results ready to test' then complete stop. Parent/main will report to user." This narrow scoping reduces the "helpfulness" pressure that has historically caused post-handoff continuation. Existing skills ("design", "execute-plan", "implement", "review", "check-work") are the higher-level embodiment of this pattern; non-trivial work should route through them or equivalent spawn flows where available. Subagent/Task/invoke remains blocked during plan mode per the existing rule.
+
+- **Post-Handoff Cycle Start Protocol and Low-Friction Injection:** After any handoff (build + "ready to test" + END marker), the prior execution turn is finished per the Completion and Handoff rule above. The happy path for a clean new planning cycle is for the user to exit the current CLI session and relaunch via the normal `../run-grok` (or equivalent); the launcher always injects the full fresh-session instruction that forces the Mandate Acknowledgment report + enter_plan_mode + STOP. For users who remain in the same long chat: at every handoff the agent *must* (as part of completion) write the short, current gate text to `dev-ai-interaction/.post-handoff-gate.txt`. The user then uses the trivial `cat dev-ai-interaction/.post-handoff-gate.txt` (or a personal one-line shell alias) and appends the actual feedback. The gate text itself is kept short (the detailed rules live in the re-read mandates + the tracked MULTI_AGENT_USER_INSTRUCTIONS.md). See also the "Sandbox Plan File..." subsection above for the mandatory fresh sandbox plan creation on every new cycle. A narrow compliance/reviewer subagent or "review"/"check-work" skill invocation at the very start of a planning turn (to answer "Is there a freshly approved sandbox plan designated for this exact request? GO or NO-GO?") is optional but recommended as an additional guard. Future harness-level prepending of the short gate (via .grok/hooks or TUI enhancements) is noted as desirable but not required for the changes in this plan.
+
 - **State Verification:** Before performing any edit, you MUST re-verify the file content. Do NOT assume your memory of a file from a previous turn is accurate.
 - **The First Action:** The very first action upon entering the Execution phase is to update `TODO.md` to reflect the newly approved plan.
 - **Post-Execution Validation (CRITICAL):**
@@ -66,8 +72,20 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
 - **Strike 7-9:** Final 3 attempts. After the 9th failure, you MUST reset and perform a **Mandatory Forensic Analysis** (analyze root cause, propose a decomposed plan).
 
 ## Git Reset Rules (CRITICAL — Three Distinct Contexts Only)
-**Preflight required before every non-HEAD reset** (verify the tag actually exists on the current branch):
+**Preflight required before every non-HEAD reset** (verify the tag actually exists on the current branch).
 
+**Preferred (avoids repeated permission prompts):** Use the blessed helper script:
+
+```bash
+TAG=$(./get-builds-tag.sh)          # or ../get-builds-tag.sh from inside a worktree
+# On success, $TAG now contains e.g. "feature-x/builds" or "builds"
+git rev-parse "$TAG"   # (the helper already verified existence; this is belt-and-suspenders)
+git reset --hard "$TAG"
+```
+
+The helper `get-builds-tag.sh` (located in the worktree root, synced via update-rules.sh) encapsulates the exact branch/tag logic. It is pre-whitelisted in `.grok/config.toml` under blessed scripts.
+
+The old inline form is still shown below for reference but should be avoided in favor of the helper for day-to-day use:
 ```bash
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" = "master" ]; then TAG=builds; else TAG="${BRANCH}/builds"; fi
@@ -117,7 +135,23 @@ git reset --hard "$TAG"
 
 Completed plans are moved to the sibling directory `dev-ai-interaction/historical-plans/` (NOT a subdirectory of plans/, and NOT under plans/old/). The historical-plans/ location exists solely for archival purposes.
 
-**You must never read, list, search for, or be influenced by any files in dev-ai-interaction/historical-plans/, dev-ai-interaction/plans/ (or any old/ subdirectories), or any similar historical archive.** The only plan file you are permitted to read or implement is the single, specific document the user has most recently and *explicitly* designated for the *current turn* (e.g., "the approved plan for this turn is dev-ai-interaction/plans/my-current-plan.md" or by providing the full path and content). If you have read any historical or wrong plan file, you must immediately enter plan mode, report the violation, discard any work based on it, and wait for a new directive.
+**You must never read, list, search for, or be influenced by any files in dev-ai-interaction/historical-plans/, dev-ai-interaction/plans/ (or any old/ subdirectories), or any similar historical archive.** The only plan file you are permitted to read or implement is the single, specific document the user has most recently and *explicitly* designated for the *current turn* (e.g., "the approved plan for this turn is dev-ai-interaction/FOO-plan.md" or by providing the full path and content, referencing the tracked MULTI_AGENT_USER_INSTRUCTIONS.md for the exact approval phrasing). If you have read any historical or wrong plan file, you must immediately enter plan mode, report the violation, discard any work based on it, and wait for a new directive.
+
+In addition to the sandbox plan document, each worktree has its own **local untracked per-branch state file** (e.g. `current-state.md` or `.agent-state/current-state.md` directly in the worktree root, not in the shared dev-ai-interaction/ sandbox; these are gitignored). On every fresh launch or new cycle, **first** read the local current-state.md (this worktree) + the user-designated sandbox plan file. Update the local state file during planning as part of producing or revising the main plan document. These local state files provide cheap per-branch continuity without polluting the shared sandbox or git history.
+
+## Sandbox Plan File as the Primary Approved Artifact for Feature Work (CRITICAL)
+In every planning/research/strategy phase (after the mandated enter_plan_mode and any fresh Mandate Acknowledgment), your first concrete, reviewable deliverable **must** be to write (via allowed sandbox writes) a fresh, clean, self-contained plan document directly under `dev-ai-interaction/` (top level of the sandbox, using a descriptive name such as `<task-or-branch>-<YYYYMMDD-HHMM>-plan.md` or matching the style of existing examples like `buffer_set_lock_removal_plan.md`).
+
+- The plan must use the standard structure: Context (why this change), Recommended Approach (chosen over alternatives), Critical Files (exact paths), Existing Functions/Utilities to reuse (with file paths), Phased Small-Step Execution (forensic + build milestones), Verification (end-to-end criteria), and explicit handoff requirements (TODO first, forensic reads, ./build_app, **END OF EXECUTION TURN** marker + "results ready to test").
+- The harness `~/.grok/sessions/.../plan.md` (process/orchestration log) receives *only* a short entry: "In plan mode. Created project plan at dev-ai-interaction/xxx-plan.md. Summary: [3-5 bullets]. Called exit_plan_mode. Awaiting explicit user approval of the file at that path + directive." 
+- At the start of a new cycle (or immediately after a handoff/END marker), if the harness plan.md contains prior superseding "CURRENT TURN PLAN" or historical bulk, first copy the old content to a dated archive under `dev-ai-interaction/historical-plans/harness-plan-archive-<short-id>-<date>.md`, then leave only a minimal current-cycle header + log (prepending to, not even superseding, old content). The harness plan path is always shown in the plan-mode system reminder; you may edit it for this housekeeping only.
+- User approval must be unambiguous and path-specific (see MULTI_AGENT_USER_INSTRUCTIONS.md for the exact magic phrases). In execution you must re-read *exactly* the designated sandbox plan file (fresh) before any source change. You must also have read the local current-state.md from the worktree root.
+- On handoff or new-cycle start, the just-executed plan document is moved (or clearly noted) into historical-plans/.
+
+The "approved plan" for feature work is always the content of the designated sandbox file the user explicitly named, never the harness session plan.md or any historical archive. Local untracked per-worktree state files (current-state.md) are the mechanism for branch-specific continuity.
+
+## Harness Session plan.md Lifecycle and Hygiene (CRITICAL)
+See the subsection immediately above. The session plan.md (harness artifact) is strictly a concise turn/process log. It must never grow with full historical execution plans or superseding sections for the work. Roll + minimal prepend is mandatory when a new cycle begins. Never treat its content as the source of the approved plan for implementation.
 
 ## Plan File Access and Discovery Rules (CRITICAL - Turn Enforcement)
 You are strictly forbidden from:

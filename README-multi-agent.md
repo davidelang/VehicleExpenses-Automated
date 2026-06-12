@@ -38,6 +38,20 @@ To assign a task to a new agent:
 
     *Note: The Gemini CLI uses the terminal's Alternate Buffer for its interactive UI. If it crashes, your terminal scrollback might be temporarily hidden. Type `reset` or `clear` in your terminal to restore the main buffer.*
 
+### 2.1.5. Post-Handoff / New Cycle Start (relaunch or short gate file)
+After any agent handoff ("results ready to test" + **END OF EXECUTION TURN** marker + `./build_app` creating the builds tag), the prior execution turn is finished. 
+
+**Recommended (cleanest boundary):** Exit the current CLI session completely and relaunch with the normal command (`cd <agent-dir-or-symlink> ; ../run-grok` from the orchestration root, or the equivalent for the runtime). Every `run-grok` (etc.) injects the full fresh-session instruction that forces the Mandate Acknowledgment report, enter_plan_mode, and STOP. This gives a clean harness plan.md session (new uuid) and eliminates accumulation.
+
+**If staying in the same long chat session:** The agent is required (as part of handoff completion) to write the current short gate text to `dev-ai-interaction/.post-handoff-gate.txt`. Use the trivial ritual:
+
+```
+cat dev-ai-interaction/.post-handoff-gate.txt
+<then type or paste your actual feedback/request here>
+```
+
+The gate file itself is short; the authoritative lists of exact magic approval phrases the user *must* type (e.g. "approved the plan at dev-ai-interaction/<name>.md for the following...") and phrases the user must *never* say after a handoff live in the tracked `MULTI_AGENT_USER_INSTRUCTIONS.md`. For low-cost continuity, also read/maintain the local untracked `current-state.md` (or `.agent-state/current-state.md`) in the worktree root (gitignored, per-branch). See AGENT_MANDATES.md (Sandbox Plan File as Primary Artifact + Interactive Strategic Nature of Planning + local state), AGENTS.md, and the updated Plans Directory Rule.
+
 ### 2.2. Critical Troubleshooting: EBADF Crash
 If the Gemini CLI crashes with `An unexpected critical error occurred:Error: ioctl(2) failed, EBADF`, it is likely due to a **Policy Violation Race Condition**.
 
