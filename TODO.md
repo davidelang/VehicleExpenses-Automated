@@ -94,3 +94,20 @@
 - Verification per plan: builds clean; Set C column shows raw + the pushed image (small number of brightness values, visibly not binarized) + before/after hists + PD/ocr; A/B/root unchanged; JSON has new keys under Set C images; current-state + this TODO reflect.
 - See the full approved sandbox plan (the executed path above) for Context, Recommended Approach (vs. display-only, bin-trials revival, etc.), Critical Files, exact Reuse list, detailed Verification, and Handoff Requirements. Any post-handoff feedback starts *new* turn (new plan file + directive).
 - Local plan hygiene + current-state continuity followed. No historical plans or sessions/plan.md read/used as source.
+
+# Pump experiment Set B red-only image + full annotations (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-b-red-only-and-full-annotations-20260612-plan.md)
+- Execution started after explicit approval of the sandbox plan.
+- Re-reads of the approved plan + current-state.md + this TODO.md (done).
+- Phase 0: Updated this TODO.md (this is the mandatory first action per the plan and mandates; no .kt source edits performed before it).
+- Background preserved from state (Set B red filter + blue retract + ocr, the 40px merging rule from prior C work, decimal OCR + >=2 digit filter, exact red nesting, etc.).
+- Follow the approved plan's Phased Small-Step Execution exactly:
+  - Phase 1: In the if (flowName == "Set B") block (right after the explicit doCrossScaleRedboxFilter on pdHunksRawTotal), create red-only anns from the raw reds only and redOnlyB64 snapshot; store as branch.images["PD_red_only"]. Keep all subsequent retracted blue, full aPd, baseB64, ocrLinesB, "PD", and pd_ocr_html *exactly* as before. Forensic read_file after edit on the full B block.
+  - Phase 2: In pBuildHtmlRowDynamic (the subBranches.forEach for Paddle td), add if (name == "Set B") special case to emit red-only labeled + full labeled (as before) + extraOcr (pd_ocr_html). Leave the existing C special and generic paths untouched. Forensic read after.
+  - Phase 3: Update comments in the B viz block and builder to document the two images (red-only for clean red inspection post filter/merging; full as is happening now). Forensic read after.
+  - Phase 4: Re-verify current-state, git add the .kt + current-state.md (explicit), run ./build_app (pass files), verify success + new branch-scoped tag (get-builds-tag.sh + describe). Forensic re-reads on .kt post-build. (3-3-3 strikes + preflight approved reset only if needed.)
+  - Phase 5: Full forensic re-reads on all edited sites. Final ./build_app (clean). Update current-state.md (re-read first) with COMPLETE + last tag + handoff. Explicit user message including the exact plan path + "results ready to test. **END OF EXECUTION TURN**". Complete stop.
+- See the approved sandbox plan (the dev-ai path) for full Context (the display modification for Set B to allow redbox merging inspection), Approach (minimal, preserves "as is" for full), Critical Files, Reuse, detailed Phased steps, and Verification.
+- All constraints: ICRS/raw pixel only, forensic before/after every edit, ./build_app milestones, no deployment, no .. paths, primary artifact this plan, local state updated, etc.
+- Verification per plan: builds clean; Set B column in report shows red-only image (clean reds post filter, no blue/orange) + full annotations image (as before) + ocr html; A/C/other unchanged; JSON has "PD_red_only" under Set B; user can inspect whether redbox merging (current filter) matches expectation.
+- See the full approved sandbox plan for Context, Recommended Approach, Critical Files, exact Reuse list, detailed Verification, and Handoff Requirements. Any post-handoff feedback starts *new* turn (new plan file + directive).
+- Local plan hygiene + current-state continuity followed. No historical plans or sessions/plan.md read/used as source.
