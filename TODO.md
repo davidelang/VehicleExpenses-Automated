@@ -143,3 +143,18 @@
 - Verification: the red filter now also does 3sides, so for the reported case the pair will be merged, red count in red-only drops, matching user expectation from the "new 3 sides enclosed algorithm".
 - See the full approved plan for Context (with the 18 list and pair), Approach (enhance the shared red filter with the proven 3sides logic), etc.
 - Local hygiene + continuity followed. No historical as source.
+
+# Pump experiment fix 3sides merging overlap 40px (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-fix-3sides-merging-overlap-40px-limit-20260612-plan.md)
+- Execution started after explicit user approval ("approved, execute this plan").
+- Re-reads of *exactly* the approved plan + current-state.md + this TODO.md (done).
+- Phase 0: Updated this TODO.md (this is the mandatory first action per the plan and mandates; no .kt source edits performed before it).
+- Background preserved from state (20-box identical "Paddle Raw" input across reports from prior analysis, red-only for B, previous 3sides addition that introduced the loose predicate, blue retract, valley push, decimal OCR + >=2 digit filter, exact red nesting, CC big/little via connectedComponentsWithStats, blue retract via expandByUniformity, ICRS + raw pixel only, etc.).
+- Follow the approved plan's Phased Small-Step Execution exactly:
+  - Phase 1: Add the `qualifiesFor3SidesNearExtend(cR: android.graphics.Rect, oR: android.graphics.Rect): Boolean` helper (centralizes the fixed test: count==3 on edges + protrusion_px <=40 in pixel space from the cR/oR + hasOverlap on the protruding axis e.g. oR.right > cR.left for left). Update the three 3-sides sites (doCrossScaleRedboxFilter post-kept block, blueRects run{}, orangeRects run{}) to use `if (qualifiesFor3SidesNearExtend(cR, oR))` instead of bare count==3. Keep extend + cleanup identical. Update related comments for accuracy. Forensic read_file immediately after the edit(s) on helper + the three sites + comments + call sites.
+  - Phase 2 (light optional): Refresh any other comments mentioning the old loose phrasing. Forensic after.
+  - Phase 3: Re-verify current-state.md, git add .kt + current-state.md (explicit), run ./build_app (pass files), verify success + new tag. Forensic re-reads post-build.
+  - Phase 4: Full forensic re-reads. Final ./build_app (clean). Update current-state.md (re-read first) with COMPLETE + last tag + handoff. Explicit message with the exact plan path + "results ready to test. **END OF EXECUTION TURN**" (remind to re-run Limited Experiment (Golden Subset); compare new red-only for row 3 Set B vs 14-51-15 report — fewer erroneous merges, higher red count for the 90 bad pairs / example cases; intended small-protrusion+overlap cases still merge; C blues/oranges also improved).
+- See the approved sandbox plan (the dev-ai path) for full Context (user diagnosis + 20-box/90-bad-pairs simulation data + concrete example), Approach (targeted helper for the predicate), Critical Files, exact Reuse list, detailed Phased steps, and Verification.
+- All constraints followed: ICRS/raw pixel only (no 0-1), forensic before/after every edit, ./build_app milestones, no deployment, no .. paths, primary artifact this plan, local state + TODO updated, etc.
+- Verification per plan: builds clean; the "test" (3-sides decision) now requires real overlap + <=40px; red-only (Set B) and blue/orange (C) will correctly avoid over-merging on the 20-box cases; user to visually confirm via re-run.
+- Local plan hygiene + current-state continuity followed. No historical as source.
