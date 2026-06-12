@@ -479,19 +479,28 @@ private suspend fun runPumpExperiment(
 
                 fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
                     if (pdHunksRawTotal.isNotEmpty()) {
-                        val kept = pdHunksRawTotal.filter { h1 ->
+                        // Remove redundant nested or duplicate red boxes (entirely contained or perfectly overlapping).
+                        // Purpose: eliminate redundant detections so they do not contribute to derived
+                        // blue/orange boxes or final results. Filtered boxes are removed completely.
+                        // Use exact containment (no artificial inset/spacing); for perfect overlaps,
+                        // keep one representative (the first in order) and drop the rest.
+                        // Sequential keep: only check against already-kept boxes to ensure at least one survives duplicates.
+                        val kept = mutableListOf<PumpHunk>()
+                        for (h1 in pdHunksRawTotal) {
                             val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
                             val p2 = IcrsMath.icrsToPixel(h1.icrs.right, h1.icrs.bottom, imgW, imgH)
                             val r1 = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                            pdHunksRawTotal.none { h2 ->
+                            val isContained = kept.any { h2 ->
                                 h1 !== h2 && run {
                                     val op1 = IcrsMath.icrsToPixel(h2.icrs.left, h2.icrs.top, imgW, imgH)
                                     val op2 = IcrsMath.icrsToPixel(h2.icrs.right, h2.icrs.bottom, imgW, imgH)
                                     val r2 = android.graphics.Rect(op1.x.toInt(), op1.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                    // Small inset tolerance in final pixel space (cross-scale nesting can appear after mapping).
-                                    // Remove only boxes that are entirely contained.
-                                    r2.contains(r1.left + 2, r1.top + 2, r1.right - 2, r1.bottom - 2)
+                                    // Exact containment (no inset). Perfect overlaps/duplicates: keep the first, drop redundant.
+                                    r2.contains(r1.left, r1.top, r1.right, r1.bottom)
                                 }
+                            }
+                            if (!isContained) {
+                                kept.add(h1)
                             }
                         }
                         pdHunksRawTotal.clear()
@@ -729,6 +738,12 @@ private suspend fun runPumpExperiment(
                 // takeCrop) have no entirely-contained nested boxes, matching the intent.
                 // (Now via shared helper; body unchanged.)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                // Propagate the dedup: filter exp and max totals too, so that blue/orange boxes
+                // (derived from expansions of the raw reds) are not created from redundants that
+                // were filtered out of the raw list. Filtered reds must not "exist" for downstream
+                // blue derivation.
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
 
                 val mlHunks = if (flowName == "Set B" || flowName == "Set C") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
