@@ -1,16 +1,23 @@
 # TODO
 
-- [ ] Pump Experiment: Remove Set B MLKit column + per-set tilt in first column + document A/B Paddle differences (approved plan)
-    - Remove "Set B ML" column entirely from pump reports (pBuildHtmlHeader, pBuildHtmlRowDynamic, summaryText).
-    - For Set B flow: skip all MLKit discovery work (wrap extractFromPhotoBitmapRaw block, conditional mlBlocksRaw/mlHunks/images["ML"]; pathResults["ML"] already guarded). Set A remains dual.
-    - Capture per-flow tilt (after the "Set B" ? paddleCppAngle : angle selection + rotate) into branch.metadata["tilt"].
-    - In pBuildHtmlRowDynamic first (left) column: compute perSetTilts from subBranches metadata and emit prominent "Tilt per set: Set A: x.xx° | Set B: y.yy°" (augment the existing Deskew Time / Tilt area). Makes the different deskew sources visible per row.
-    - Fix progress summaryText to show "Set B Paddle: ..." for the pump-only flow.
-    - Update docs/PUMP_EXPERIMENT_FLOWS.md (ML-free flow pattern + first-column tilt note).
-    - Context from audit: Set A Paddle vs Set B Paddle differ in deskew source (standard .angle vs paddleCppAngle/JNI path from Set E style) and complete MLKit avoidance for Set B; they share the same Paddle recognition + the redbox +1/nested removal (local in pump's runDiscoveryPaddle). Redbox port affects both pump Paddle columns but did **not** modify the alignment experiment (Set J tRawB logic + runBinTrialsPaddle stayed as-is; no shared util changes).
-    - Process: TODO.md update first (this item), forensic read_file before/after every search_replace on kt, ./build_app with explicit file list, tag on success. Device run + report inspection is manual (per user note).
-    - Critical file: app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/experiment/ExperimentPumpScreen.kt (plus flows doc).
-    - All prior redbox/deskew improvements for Set B remain untouched.
+- [ ] Pump Experiment Set C (bin-test valley binarizations from alignment Set J; no stretch; multiple versions with per-version detect/redbox/nesting; stacked composite in Set C column; best version for result)
+    - Forensic analysis (post multiple resets in prior attempts): Root cause was large search_replace duplicating discovery block inside runPumpExperiment, breaking scope/closings (unresolved privates like prepareScale/runDiscoveryPaddle, private not for local, ambiguous component1/2 on Pair, syntax at end). Violated "small" duplication in approved plan and turn-boundary rules (post-build feedback requires new cycle). Exceeded 3 strikes without mandatory analysis until now.
+    - Decomposed sub-plan (per 3-3-3 + handoff rules; no reset past successful builds point per user note):
+      1. Update TODO.md first (this).
+      2. Small targeted search_replace only (forensic read_file before/after EVERY edit).
+      3. Add stackVertically helper (small insert).
+      4. Add local runPaddleDiscovery() helper (small insert, clean block with explicit pair for prepareScale to avoid ambiguous).
+      5. Small insert for if(flowName == "Set C") { valley hist/midpoints; per-version: binarize, swap p.mat, clear pd*, call helper, gen vB64 + collect, track best by raw count, restore } before normal discovery.
+      6. Small wrap of existing normal discovery block with if(flowName != "Set C") { ... } (replace the block with guarded version; body unchanged).
+      7. Ensure small support (flows list, tilt for C, stretch skip for C, no-ML conditionals for C in header/row/summary/pathResults/mlHunks/visual, ml if update) are in (some already from prior small; verify).
+      8. Update docs/PUMP... if needed (small).
+      9. ./build_app after pieces (list files); once a piece builds successfully, lock the builds tag; no reset past it.
+      10. Forensic build success + manual device run/golden subset + report inspect for Set C stacked binarized (no stretch) with reds post-filter, best result, A/B unchanged.
+    - Reuses per plan: OdometerOcrUtils.findValleyMidpoints, runDiscoveryPaddle (nesting), getAnns/takeSnapshot, existing patterns (no report builder mods), explicit pair in dupe.
+    - Once logic in and builds, treat as handed off for that piece per rules; further feedback = new turn.
+    - (Some small support like flows/tilt/stretch-skip/conditionals already in from re-applies post-reset; lock them.)
+
+- [x] Refactor Agent Workspace Syncing
 
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
