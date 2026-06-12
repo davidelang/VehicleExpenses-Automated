@@ -366,6 +366,8 @@ private suspend fun runPumpExperiment(
                     imgW: Int,
                     imgH: Int
                 ): PathResult {
+                    val minEdge = min(imgW, imgH).toFloat()
+                    val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
                     val stitched = stitchHunksHorizontally(hunks)
                     val (top, bottom) = groupLanesByVerticalGap(stitched)
                     val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
