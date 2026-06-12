@@ -333,6 +333,83 @@ private suspend fun runPumpExperiment(
                     }
                 }
 
+                fun runPaddleDiscovery() {
+                    val processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                        val srcW = workspace.p.width
+                        val srcH = workspace.p.height
+                        val currentLongEdge = max(srcW, srcH)
+                        val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                        val targetW = (srcW * scaleFactor).toInt()
+                        val targetH = (srcH * scaleFactor).toInt()
+                        val targetLongEdge = max(targetW, targetH)
+
+                        val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                        val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+                        if (flowName != "Set B" && flowName != "Set C") {
+                            if (!processedScales.contains(chosenScale)) {
+                                processedScales.add(chosenScale)
+                                chosenBuffer.p.clear()
+                                val recCropId = chosenBuffer.createCrop(0, 0, targetW, targetH)
+                                val interp = if (srcW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                                org.opencv.imgproc.Imgproc.resize(workspace.p.mat, chosenBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+
+                                val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                                    chosenBuffer.p.nv21,
+                                    chosenBuffer.p.width,
+                                    chosenBuffer.p.height,
+                                    0,
+                                    com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                                )
+                                val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+                                chosenBuffer.c[recCropId].release()
+
+                                val hunks = result.textBlocks.map { block ->
+                                    val ml = block.boundingBox.left.toFloat()
+                                    val mt = block.boundingBox.top.toFloat()
+                                    val mr = block.boundingBox.right.toFloat()
+                                    val mb = block.boundingBox.bottom.toFloat()
+                                    val i1 = IcrsMath.pixelToIcrs(ml, mt, targetW, targetH)
+                                    val i2 = IcrsMath.pixelToIcrs(mr, mb, targetW, targetH)
+                                    PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
+                                }
+                                mlBlocksRaw.addAll(hunks)
+                            }
+                        }
+
+                        val p = prepareScale(workspace, scale)
+                        val outerId = p.first
+                        val innerId = p.second
+                        val res = paddleEngine.detect(workspace.c[outerId])
+                        if (res != null) {
+                            branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
+                            branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
+                        }
+
+                        val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
+                        val raw = paddleResults[0]
+                        val exp = paddleResults[1]
+                        val maxExt = paddleResults[2]
+                        val native = paddleResults[3]
+
+                        pdHunksRawTotal.addAll(raw)
+                        pdHunksExpTotal.addAll(exp)
+                        pdHunksMaxTotal.addAll(maxExt)
+                        pdHunksNativeTotal.addAll(native)
+
+                        workspace.c[innerId].release()
+                        workspace.c[outerId].release()
+
+                        discoveryDetails["Paddle Raw"]!![scale] = raw
+                        discoveryDetails["Paddle Expanded"]!![scale] = exp
+                        discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                        discoveryDetails["Paddle Native"]!![scale] = native
+                    }
+                    branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+                }
+
                 // 3. Discovery
                 val scales = listOf(224, 608, 1024, 2560)
                 val mlBlocksRaw = if (flowName == "Set B") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()
