@@ -810,37 +810,165 @@ private suspend fun runPumpExperiment(
                         }
                     }
 
-                    // show all these results under the image (taller composite: annotated PD on top, OCR texts for blue+orange drawn below; re-encode as PD b64 so report shows it without pBuild change)
-                    val pdForB = try {
-                        val bytes = Base64.decode(baseB64, Base64.DEFAULT)
-                        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        if (decoded == null) baseB64 else {
-                            var bmp = decoded
-                            val mutable = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
-                            bmp.recycle(); bmp = mutable
-                            val tallerH = bmp.height + 64
-                            val taller = android.graphics.Bitmap.createBitmap(bmp.width, tallerH, android.graphics.Bitmap.Config.ARGB_8888)
-                            val canvas = android.graphics.Canvas(taller)
-                            canvas.drawColor(android.graphics.Color.BLACK)
-                            canvas.drawBitmap(bmp, 0f, 0f, null)
-                            val paint = android.graphics.Paint().apply {
-                                color = android.graphics.Color.YELLOW
-                                textSize = 16f
-                                isAntiAlias = true
-                                setShadowLayer(1.5f, 1f, 1f, android.graphics.Color.BLACK)
-                            }
-                            canvas.drawText("Blue boxes: " + blueTexts.joinToString("  "), 6f, bmp.height + 18f, paint)
-                            canvas.drawText("Orange boxes: " + orangeTexts.joinToString("  "), 6f, bmp.height + 38f, paint)
-                            val baos = java.io.ByteArrayOutputStream()
-                            taller.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
-                            val out = Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
-                            bmp.recycle(); taller.recycle()
-                            out
+                    // digits-only (0-9) pass using recognizeNumeric for the second OCR per box (as-is above + digits)
+                    val blueDigits = pdHunksExpTotal.map { h ->
+                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
+                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
+                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet320x48.p.clear()
+                            val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText
                         }
-                    } catch (e: Exception) { baseB64 }
-                    branch.images["PD"] = pdForB
+                    }
+                    val orangeDigits = pdHunksMaxTotal.map { h ->
+                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
+                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
+                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet320x48.p.clear()
+                            val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText
+                        }
+                    }
+
+                    // HTML text rows under the image (one row per box, as-is + digits separately). Store in metadata for pBuild to append after <img> (not baked in the PD image itself).
+                    val ocrLinesB = mutableListOf<String>()
+                    blueTexts.forEachIndexed { i, asis -> ocrLinesB += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: ${blueDigits[i]}" }
+                    orangeTexts.forEachIndexed { i, asis -> ocrLinesB += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: ${orangeDigits[i]}" }
+                    branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
+                    branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
+                } else if (flowName == "Set C") {
+                    // Set C: derive blue/orange from raw hunks using per-red overlap + Y-range horizontal extend + exact dedup (per user clarifications; no overlap/nesting tests, only exact box matches from same objects).
+                    val hunks = pdHunksRawTotal.toList()  // the "objects"/hunks (raw after cross filter)
+                    val blueRects = mutableListOf<RectF>()
+                    for (red in hunks) {
+                        val overlapping = hunks.filter { other ->
+                            !(other.icrs.right < red.icrs.left || other.icrs.left > red.icrs.right || other.icrs.bottom < red.icrs.top || other.icrs.top > red.icrs.bottom)
+                        }
+                        if (overlapping.isNotEmpty()) {
+                            val l = overlapping.minOf { it.icrs.left }
+                            val t = overlapping.minOf { it.icrs.top }
+                            val r = overlapping.maxOf { it.icrs.right }
+                            val b = overlapping.maxOf { it.icrs.bottom }
+                            blueRects.add(RectF(l, t, r, b))
+                        }
+                    }
+                    val orangeRects = mutableListOf<RectF>()
+                    for (blue in blueRects) {
+                        val yMin = blue.top
+                        val yMax = blue.bottom
+                        val sameRow = hunks.filter { h ->
+                            h.icrs.top >= yMin && h.icrs.bottom <= yMax
+                        }
+                        if (sameRow.isNotEmpty()) {
+                            val l = min(blue.left, sameRow.minOf { it.icrs.left })
+                            val t = min(blue.top, sameRow.minOf { it.icrs.top })
+                            val r = max(blue.right, sameRow.maxOf { it.icrs.right })
+                            val b = max(blue.bottom, sameRow.maxOf { it.icrs.bottom })
+                            orangeRects.add(RectF(l, t, r, b))
+                        }
+                    }
+                    // dedup orange by exact rect match (same objects inside -> same summed box)
+                    val dedupedOrange = mutableListOf<RectF>()
+                    for (o in orangeRects) {
+                        if (dedupedOrange.none { d -> d.left == o.left && d.top == o.top && d.right == o.right && d.bottom == o.bottom }) dedupedOrange.add(o)
+                    }
+                    // anns: red + 1px white around each hunk (to show hunk bounds) + blue + orange
+                    val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
+                    val whiteAnns = hunks.map { h ->
+                        val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                        SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.WHITE, 1)
+                    }
+                    val blueAnns = blueRects.map { r ->
+                        val p1 = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(r.right, r.bottom, imgW, imgH)
+                        SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.BLUE, 4)
+                    }
+                    val orangeAnns = dedupedOrange.map { r ->
+                        val p1 = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(r.right, r.bottom, imgW, imgH)
+                        SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)
+                    }
+                    val allAnns = redAnns + whiteAnns + blueAnns + orangeAnns
+                    val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, allAnns, null, workspace).first
+                    branch.images["PD"] = baseB64
+                    // OCR twice (as-is + digits 0-9) on the blue/orange rects for C (same as B)
+                    val blueAsIs = blueRects.map { r ->
+                        val hh = PumpHunk("", r)
+                        performHunkRecognition(listOf(hh), workspace, experimentRecSet320x48, "Paddle", paddleEngine, context, tilt).firstOrNull()?.text ?: "?"
+                    }
+                    val blueDigits = blueRects.map { r ->
+                        val ll = r.left.coerceIn(-maxX, maxX - 0.001f)
+                        val tt = r.top.coerceIn(-maxY, maxY - 0.001f)
+                        val rr = r.right.coerceIn(ll + 0.001f, maxX)
+                        val bb = r.bottom.coerceIn(tt + 0.001f, maxY)
+                        val p1 = IcrsMath.icrsToPixel(ll, tt, imgW, imgH); val p2 = IcrsMath.icrsToPixel(rr, bb, imgW, imgH)
+                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val cropId = workspace.createCrop(ll, tt, rr - ll, bb - tt)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet320x48.p.clear()
+                            val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText
+                        }
+                    }
+                    val orangeAsIs = dedupedOrange.map { r ->
+                        val hh = PumpHunk("", r)
+                        performHunkRecognition(listOf(hh), workspace, experimentRecSet320x48, "Paddle", paddleEngine, context, tilt).firstOrNull()?.text ?: "?"
+                    }
+                    val orangeDigits = dedupedOrange.map { r ->
+                        val ll = r.left.coerceIn(-maxX, maxX - 0.001f)
+                        val tt = r.top.coerceIn(-maxY, maxY - 0.001f)
+                        val rr = r.right.coerceIn(ll + 0.001f, maxX)
+                        val bb = r.bottom.coerceIn(tt + 0.001f, maxY)
+                        val p1 = IcrsMath.icrsToPixel(ll, tt, imgW, imgH); val p2 = IcrsMath.icrsToPixel(rr, bb, imgW, imgH)
+                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val cropId = workspace.createCrop(ll, tt, rr - ll, bb - tt)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet320x48.p.clear()
+                            val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText
+                        }
+                    }
+                    val ocrLinesC = mutableListOf<String>()
+                    blueAsIs.forEachIndexed { i, a -> ocrLinesC += "Blue ${i+1} as-is: $a &nbsp;&nbsp; digits: ${blueDigits[i]}" }
+                    orangeAsIs.forEachIndexed { i, a -> ocrLinesC += "Orange ${i+1} as-is: $a &nbsp;&nbsp; digits: ${orangeDigits[i]}" }
+                    branch.metadata["pd_ocr_html"] = ocrLinesC.joinToString("<br>")
                 } else {
-                    // A and C (C uses same body as B for discovery after polarity fix; only reds per current request for C)
+                    // A (reds only)
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
                 }
@@ -1147,7 +1275,11 @@ private fun pBuildHtmlRowDynamic(
         if (name != "Set B" && name != "Set C") {
             appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
         }
-        appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,${br.images["PD"]}'></td>")
+        val pdB64 = br.images["PD"] ?: ""
+        val extraOcr = if ((name == "Set B" || name == "Set C") && br.metadata.containsKey("pd_ocr_html")) {
+            "<br><div style='font-family:monospace; font-size:18px; text-align:left; background:#fafafa; padding:2px;'>" + br.metadata["pd_ocr_html"] + "</div>"
+        } else ""
+        appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
     }
 
     appendLine("<td><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
