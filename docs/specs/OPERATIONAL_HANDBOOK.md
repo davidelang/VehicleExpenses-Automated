@@ -7,12 +7,12 @@ This document provides the detailed procedural logic for the VehicleExpenses-aut
 ### Phase 1: Research (Discovery)
 - **Goal:** Map the codebase, validate assumptions, and reproduce issues.
 - **Barrier:** You are allowed to read any file, but you have NO authority to change any tracked file. You MUST operate in `mode = plan`.
-- **Sandbox:** All scripts, temporary data, and logs must be stored in `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
+- **Sandbox:** All scripts, temporary data, and logs must be stored in `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`. Plan documents go under `dev-ai-interaction/plans/`.
 
 ### Phase 2: Strategy (Planning)
 - **Goal:** Propose a comprehensive, idiomatic solution.
 - **Integrity:** The turn where you propose a plan must be **Application-Implementation-Free**.
-- **Sandbox:** You may use tools to write plans or scripts within the sandbox during this turn. The primary artifact you must produce is a fresh plan document under dev-ai-interaction/ (standard structure; see AGENT_MANDATES "Sandbox Plan File as the Primary..." and the tracked MULTI_AGENT_USER_INSTRUCTIONS.md). The harness session plan.md is process log only.
+- **Sandbox:** You may use tools to write plans or scripts within the sandbox during this turn. The primary artifact you must produce is a fresh plan document under dev-ai-interaction/plans/ (standard structure; see AGENT_MANDATES "Sandbox Plan File as the Primary..." and the tracked MULTI_AGENT_USER_INSTRUCTIONS.md). The harness session plan.md is process log only.
 - **Approval:** You MUST wait for explicit user approval in the chat before calling `exit_plan_mode`. Approval must reference the exact dev-ai-interaction/...-plan.md path using the magic phrasing in MULTI_AGENT_USER_INSTRUCTIONS.md.
 
 ### Phase 3: Execution (Implementation)
