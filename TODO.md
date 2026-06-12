@@ -127,3 +127,19 @@
 - Verification per plan: builds clean; after fix the processed images for A and B (full PD and B's clean red-only) have the rotation direction that makes text upright the same way current Set C images do; "Tilt per set" and JSON reflect the corrected applied tilts for A/B; C visuals and all non-rotation behavior identical to before.
 - See the full approved sandbox plan for Context, Recommended Approach, Critical Files, exact Reuse list, detailed Verification, and Handoff Requirements. Any post-handoff feedback starts *new* turn (new plan file + directive).
 - Local plan hygiene + current-state continuity followed. No historical plans or sessions/plan.md read/used as source.
+
+# Pump experiment red 3sides nesting for B (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-red-3sides-nesting-for-b-20260612-plan.md)
+- Execution started after explicit approval (includes the inspection of the user's JSON: row 3 Set B has 18 raw ICRS reds in Paddle Raw; current exact filter keeps ~5 (user sees 6 in the red-only image); among kept, the pair kept[2] (large l~-0.155 t~-0.232 w0.60 h0.196) and kept[4] (l~-0.019 t~-0.186 w0.288 h0.154) has 3 sides inside with exactly 12px protrude on 4th side (<=40px) -- this should have been extended+deleted by the 3sides algo but wasn't by exact).
+- Re-reads of plan + state + TODO (done).
+- Phase 0: Updated this TODO.md (mandatory first action; no .kt before it).
+- Background preserved (red-only for B from prior turn used for this inspection, rotation fix, 40px 3sides only in C blue/orange until now, etc.).
+- Follow the approved plan exactly:
+  - Phase 1: In doCrossScaleRedboxFilter (after the existing exact sequential "kept" loop), add the 3sides +40px extend (copy the run{} logic from the blue code: pixel Rect via IcrsMath, insides.count==3, min/max extend on out dim for PumpHunk/RectF, then contained cleanup pass). Update the filter comment to document both exact and the 3sides case. The final list (post both) is what gets used for redAnns in B (red-only and PD) and red source for C. Forensic read on the filter + calls + the 3sides reference in blue.
+  - Phase 2 (light): update comments at B call site or global filter if they only mention "exact"/"nested".
+  - Phase 3: Build (re-verify state, git add .kt + current-state explicit, ./build_app with files, verify tag). Forensic re-reads post build.
+  - Phase 4: Full forensics. Final build (clean). Update state with COMPLETE + tag. Handoff with exact plan path + "results ready to test. **END OF EXECUTION TURN**" (remind to re-run; red-only for Set B like row 3 will now have the 12px pair merged via extend+delete, fewer reds as expected).
+- See the approved sandbox plan for the full inspection data from the JSON, the before/after counts, the specific 12px pair, and the fix (port to red filter so nesting removal works for the reds the user is inspecting in Set B via red-only).
+- All constraints followed.
+- Verification: the red filter now also does 3sides, so for the reported case the pair will be merged, red count in red-only drops, matching user expectation from the "new 3 sides enclosed algorithm".
+- See the full approved plan for Context (with the 18 list and pair), Approach (enhance the shared red filter with the proven 3sides logic), etc.
+- Local hygiene + continuity followed. No historical as source.
