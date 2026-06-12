@@ -1,5 +1,12 @@
 # TODO
 
+- [ ] Pump experiment Set B / Set C OCR reporting (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/pump-experiment-set-b-c-ocr-reporting-20260612-plan.md)
+    - [ ] Add `recognizeNumericDecimal` (uses ALLOWED_DIGITS_DECIMAL) in NativePaddleEngine.kt.
+    - [ ] Update digits passes in ExperimentPumpScreen.kt (Set B and Set C blocks) to use decimal numeric for pump reports.
+    - [ ] Filter ocrLinesB/ocrLinesC (and optionally PD anns) to only boxes with >=2 digits (reuse existing .count { isDigit() } logic).
+    - [ ] Forensic reads before/after edits; ./build_app at milestones; full experiment run + report inspection for verification.
+    - See approved sandbox plan for full Context, Approach, Critical Files (NativePaddleEngine.kt + ExperimentPumpScreen.kt), Reusable functions, Phased steps, and Verification. First execution actions completed (this TODO + current-state.md updated). CC memory note included in plan for future reference.
+
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
