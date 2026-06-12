@@ -55,3 +55,14 @@
 - Update bootstrap files (new_grok_agent_prompt point 5 + Sandbox Plan File paragraph, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md) + .gitignore so that when the user explicitly directs a current-turn plan, agents create/revise fresh plan files under dev-ai-interaction/ and use the local untracked per-worktree state file for continuity. The "historical reference only" rule applies only to old/abandoned plans from other agents/cycles.
 - Demo during execution: create local untracked current-state.md in the current worktree root with minimal structure. Primary plan documents stay in the sandbox.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
+
+# Pump experiment B and C boxes (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/pump-experiment-b-and-c-red-nested-filter-and-blue-retract-20260612-plan.md)
+- Execution started after approval.
+- Forensic reads of filter call site, Set B block, Set C block, blue derivation (~913), Native expandByUniformity (done).
+- Verify/add explicit nested filter application in Set B block for redAnns and blue source (shared filter at 731 applies to B's pdHunksRawTotal; add explicit per user feedback that it may have been removed from B).
+- Same explicit for C before redBoxes/blue loop.
+- Implement blue retract for Set C (after blueRects union from CC hunks per red): use NativeImageUtils.expandByUniformity on binMat to get retractedRect for tight text fit (retract when hit limit with no text).
+- Similar retract for B's blue from pdHunksExpTotal.
+- Update comments; strengthen filter if needed.
+- ./build_app milestones; final forensic, build, user verification run (inspect B and C reports for de-nested reds, retracted tight blues).
+- See the approved sandbox plan for full Context (including B vs C filter investigation and JSON check: error format, source analysis), Approach, Critical Files, Reuse, Phased steps, and Verification. CC memory note in state. Previous ocr decimal/2-digit plan also in state.
