@@ -12,8 +12,8 @@ This document provides the detailed procedural logic for the VehicleExpenses-aut
 ### Phase 2: Strategy (Planning)
 - **Goal:** Propose a comprehensive, idiomatic solution.
 - **Integrity:** The turn where you propose a plan must be **Application-Implementation-Free**.
-- **Sandbox:** You may use tools to write plans or scripts within the sandbox during this turn.
-- **Approval:** You MUST wait for explicit user approval in the chat before calling `exit_plan_mode`.
+- **Sandbox:** You may use tools to write plans or scripts within the sandbox during this turn. The primary artifact you must produce is a fresh plan document under dev-ai-interaction/ (standard structure; see AGENT_MANDATES "Sandbox Plan File as the Primary..." and the tracked MULTI_AGENT_USER_INSTRUCTIONS.md). The harness session plan.md is process log only.
+- **Approval:** You MUST wait for explicit user approval in the chat before calling `exit_plan_mode`. Approval must reference the exact dev-ai-interaction/...-plan.md path using the magic phrasing in MULTI_AGENT_USER_INSTRUCTIONS.md.
 
 ### Phase 3: Execution (Implementation)
 - **Goal:** High-fidelity transcription of the approved plan.
