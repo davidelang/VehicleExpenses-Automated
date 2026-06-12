@@ -672,6 +672,99 @@ object OdometerOcrUtils {
         return bins
     }
 
+    fun valleyPushToPeaks(mat: Mat): FloatArray {
+        // New for Set C per approved plan: histogram valley centers -> push values outward to peaks.
+        // Result: image with only a *small number* of brightness values (quantized to peaks/modes).
+        // Not binarization. Reuses findValleyMidpoints + 64-bin/smooth/peak patterns from automaticContrastStretch.
+        // In-place mutate like the stretch funcs. Returns before-bins (caller makes after-hist from mutated mat).
+        val hist = Mat()
+        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
+
+        val bins = FloatArray(64); hist.get(0, 0, bins)
+        val smoothed = FloatArray(64)
+        for (i in 0..63) {
+            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+        }
+
+        val valleys = findValleyMidpoints(bins)  // centers of valleys (bin indices)
+
+        // Robust peaks (adapt left-to-right + right-to-left with drop-off confirmation from automaticContrastStretch)
+        val peakBins = mutableListOf<Int>()
+        val totalPixels = mat.rows() * mat.cols().toDouble()
+        val dropOffThreshold = totalPixels * 0.003
+        // left-to-right
+        for (i in 1..61) {
+            if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
+                var peakConfirmed = false
+                for (j in i+1..62) {
+                    if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+                    if (smoothed[j] > smoothed[i]) break
+                }
+                if (peakConfirmed) peakBins.add(i)
+            }
+        }
+        // right-to-left
+        for (i in 62 downTo 2) {
+            if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
+                var peakConfirmed = false
+                for (j in i-1 downTo 1) {
+                    if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+                    if (smoothed[j] > smoothed[i]) break
+                }
+                if (peakConfirmed) peakBins.add(i)
+            }
+        }
+        val peakList = peakBins.distinct().sorted()
+
+        if (peakList.size < 2 || valleys.isEmpty()) {
+            // fallback: no meaningful valleys/peaks -> identity (return bins, no mutate)
+            hist.release()
+            return bins
+        }
+
+        // 256-entry LUT: push values out from valley centers until they hit a (nearest) peak gray.
+        // This collapses the image to a small number of distinct brightness values (the peaks).
+        val lut = IntArray(256)
+        val peakGrays = peakList.map { (it * 4).coerceIn(0, 255) }
+        for (g in 0..255) {
+            // nearest peak (primary)
+            var best = peakGrays[0]
+            var minD = Math.abs(g - best)
+            for (pg in peakGrays) {
+                val d = Math.abs(g - pg)
+                if (d < minD) { minD = d; best = pg }
+            }
+            var target = best
+            // "push the values out from [valley centers]": for values near a valley, bias a step outward toward the peak
+            val bin = (g / 4).coerceIn(0, 63)
+            for (v in valleys) {
+                val vGray = (v * 4).coerceIn(0, 255)
+                if (Math.abs(g - vGray) <= 12) {  // small radius around valley
+                    // step away from valley toward the chosen peak
+                    if (g < target) target = (g + 4).coerceAtMost(target) else target = (g - 4).coerceAtLeast(target)
+                    break
+                }
+            }
+            lut[g] = target
+        }
+
+        // In-place remap on the mat (CV_8U single channel assumed, consistent with callers)
+        val total = mat.total().toInt()
+        if (total > 0) {
+            val data = ByteArray(total)
+            mat.get(0, 0, data)
+            for (i in data.indices) {
+                val old = data[i].toInt() and 0xFF
+                data[i] = (lut[old] and 0xFF).toByte()
+            }
+            mat.put(0, 0, data)
+        }
+
+        hist.release()
+        return bins
+    }
+
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
         val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
