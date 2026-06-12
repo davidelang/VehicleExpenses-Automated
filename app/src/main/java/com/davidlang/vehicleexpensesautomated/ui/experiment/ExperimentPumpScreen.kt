@@ -681,7 +681,13 @@ private suspend fun runPumpExperiment(
                     branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
                 }
                 if (flowName == "Set C") {
-                    // already set to composite inside Set C block
+                    // TEMP during transition (array of processors + C entry for valley): skeletal C processor does not
+                    // set composite yet (full valley + stack in plan for C entry; hoisting/inlining needed for scope).
+                    // Force set PD using current pdHunks (normal discovery for now) so HTML has no broken <img> links
+                    // for Set C Paddle column. When C processor filled and call positioned after discovery, it can
+                    // overwrite with the stacked binarized composite, and we can restore the "already set" branch.
+                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                    branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
                 } else {
                     // Only red raw boxes for now (focus on redbox debugging: larger by +1, nested removed, correct positions after scaling fix)
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
