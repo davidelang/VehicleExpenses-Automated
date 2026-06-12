@@ -77,5 +77,25 @@
 - Harness sessions plan.md (the one shown in dialog) was force-overwritten via terminal with short log only referencing the correct dev-ai sandbox plan (per rules: it is process log only and must not be the approved artifact or contain bulk/old plans).
 - current-state.md updated. No .kt edits.
 - Background memory preserved from state.
-- Status: Planning. Plan revised to exactly reflect this turn's work. Awaiting explicit approval of the sandbox plan at the dev-ai path above + directive.
-- After approval: re-read this plan + state, exec (TODO first, forensic, builds, END).
+- Status: Execution COMPLETE for this approved plan (redbox hist display + 40px near-containment merging rule for Set C). All phases followed (TODO first as mandatory action, re-reads, code edits with forensics after every, milestone + final ./build_app, state updates).
+  - Hist: generateHistogramB64 extended with optional mask; redboxHistC captured in Set C polarity probe (using red mask on pushed mat) and stored; displayed (labeled) in Set C column renderer.
+  - Merging: the exact 40px protrusion rule (extend containing on 4th side, then delete now-contained) added as post-union pass in blueRects and orangeRects creation in Set C block (pixel conversion for check, ICRS preserved).
+  - Builds: milestone + final successful (tag fix-pump-experiment/builds at 82adfc53, version fix-pump-experiment-start-67-g82adfc53). Tree clean.
+  - Forensic: reads before/after every edit (plan, state, TODO, generate, polarity capture, merging blocks in blue/orange, builder display) + post-build re-reads + final state read confirmed exact.
+  - Verification per plan: user to run Limited Experiment (Golden Subset) to inspect Set C column in HTML (redbox hist visible, different from global; blue/orange boxes reflect the merging rule with fewer redundants after extends) + JSON under Set C images for redboxHistC. A/B and other Set C visuals (raw/pushed/global hists/PD/ocr) preserved. ICRS and prior behavior unchanged.
+- Local plan hygiene: harness log short reference only (overwritten to point to correct dev-ai sandbox plan). Primary plan at dev-ai path (re-read on exec start). current-state + TODO updated.
+- Notes: Turn handed off. See the approved sandbox plan for full (lean) details. All prior memory (valley, CC, OCR filter, red nesting, retract) preserved. After this END: feedback = new cycle (new plan + Directive).
+- Last ./build_app: final clean run (nothing to commit, tag updated).
+- Handoff: Changes for the approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-c-redbox-histogram-and-merging-20260612-plan.md are ready for testing. **END OF EXECUTION TURN**
+
+# New cycle start (2026-06-12) — Set B red-only image + full annotations (new turn for display modification + redbox merging inspection)
+- New turn, new plan (user directive): "modify set B to display one image with only the redboxes and the other with all annotations as is happening now it does not look like the redbox merging is happening as I expected after the last change to merge boxes that almost overlap, I need to see the red boxes without anything else".
+- First actions (per mandates): read local current-state.md (done at cycle start); researched Set B viz block (the if (flowName == "Set B") with aPd = red + retracted blue + orange, baseB64, PD, ocrLinesB) and pBuildHtmlRowDynamic (generic for B, special only for C); no TODO.md read; no historical-plans or sessions/plan.md as source.
+- Fresh sandbox plan written as first concrete deliverable (absolute path below).
+- Primary plan artifact: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-b-red-only-and-full-annotations-20260612-plan.md
+  - Standard structure. Adds in Set B processing: red-only image (from post-filter pdHunksRawTotal reds only) stored as "PD_red_only"; keeps full "PD" exactly "as is". In builder: special for B to emit red-only (labeled) + full (labeled as before) + ocr html. Addresses the need for clean red view to inspect merging (post the previous near-40px change).
+- Local current-state.md will be updated. Harness sessions plan.md will be set to short log only (referencing the correct dev-ai sandbox plan).
+- Background memory preserved from state (previous valley for B, red filter, blue retract for B, the 40px merging rule added to C blues/oranges in prior turn, decimal OCR filter, exact red nesting, etc.).
+- Status: Planning complete. Fresh plan written for this turn's display request. Awaiting explicit user approval of the sandbox plan path + directive to proceed. No tracked source edits yet.
+- After approval: re-read *exactly* the designated plan + current-state.md, then exec phases (TODO first, forensic every edit, builds, END marker).
+- Plan uses 20260612 + descriptive name per new-turn rule. This is independent of the prior Set C plan (new cycle after its END).
