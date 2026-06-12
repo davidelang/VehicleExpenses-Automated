@@ -623,4 +623,32 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             metadata = res.metadata
         )
     }
+
+    /**
+     * Decimal-aware numeric recognition for pump cost/volume (includes '.').
+     * Uses the same numeric model but the ALLOWED_DIGITS_DECIMAL constrained set.
+     */
+    suspend fun recognizeNumericDecimal(input: Any): OcrResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val w: Int; val h: Int
+        when (input) {
+            is Bitmap -> { w = input.width; h = input.height }
+            is BufferSet.Slice -> { w = input.width; h = input.height }
+            is Mat -> { w = input.cols(); h = input.rows() }
+            else -> throw IllegalArgumentException("Unsupported input type for recognizeNumericDecimal")
+        }
+
+        if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Decimal Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
+
+        val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS_DECIMAL)
+        OcrResult(
+            engineName = "Paddle Numeric Decimal Greedy",
+            executionTimeMs = System.currentTimeMillis() - t0,
+            debugText = res.text,
+            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
+            imageWidth = w,
+            imageHeight = h,
+            metadata = res.metadata
+        )
+    }
 }
