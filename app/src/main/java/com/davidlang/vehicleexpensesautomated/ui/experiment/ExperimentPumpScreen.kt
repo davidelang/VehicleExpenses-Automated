@@ -813,27 +813,30 @@ private suspend fun runPumpExperiment(
                     // show all these results under the image (taller composite: annotated PD on top, OCR texts for blue+orange drawn below; re-encode as PD b64 so report shows it without pBuild change)
                     val pdForB = try {
                         val bytes = Base64.decode(baseB64, Base64.DEFAULT)
-                        var bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: baseB64
-                        val mutable = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
-                        bmp.recycle(); bmp = mutable
-                        val tallerH = bmp.height + 64
-                        val taller = android.graphics.Bitmap.createBitmap(bmp.width, tallerH, android.graphics.Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(taller)
-                        canvas.drawColor(android.graphics.Color.BLACK)
-                        canvas.drawBitmap(bmp, 0f, 0f, null)
-                        val paint = android.graphics.Paint().apply {
-                            color = android.graphics.Color.YELLOW
-                            textSize = 16f
-                            isAntiAlias = true
-                            setShadowLayer(1.5f, 1f, 1f, android.graphics.Color.BLACK)
+                        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        if (decoded == null) baseB64 else {
+                            var bmp = decoded
+                            val mutable = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                            bmp.recycle(); bmp = mutable
+                            val tallerH = bmp.height + 64
+                            val taller = android.graphics.Bitmap.createBitmap(bmp.width, tallerH, android.graphics.Bitmap.Config.ARGB_8888)
+                            val canvas = android.graphics.Canvas(taller)
+                            canvas.drawColor(android.graphics.Color.BLACK)
+                            canvas.drawBitmap(bmp, 0f, 0f, null)
+                            val paint = android.graphics.Paint().apply {
+                                color = android.graphics.Color.YELLOW
+                                textSize = 16f
+                                isAntiAlias = true
+                                setShadowLayer(1.5f, 1f, 1f, android.graphics.Color.BLACK)
+                            }
+                            canvas.drawText("Blue boxes: " + blueTexts.joinToString("  "), 6f, bmp.height + 18f, paint)
+                            canvas.drawText("Orange boxes: " + orangeTexts.joinToString("  "), 6f, bmp.height + 38f, paint)
+                            val baos = java.io.ByteArrayOutputStream()
+                            taller.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
+                            val out = Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
+                            bmp.recycle(); taller.recycle()
+                            out
                         }
-                        canvas.drawText("Blue boxes: " + blueTexts.joinToString("  "), 6f, bmp.height + 18f, paint)
-                        canvas.drawText("Orange boxes: " + orangeTexts.joinToString("  "), 6f, bmp.height + 38f, paint)
-                        val baos = java.io.ByteArrayOutputStream()
-                        taller.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
-                        val out = Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
-                        bmp.recycle(); taller.recycle()
-                        out
                     } catch (e: Exception) { baseB64 }
                     branch.images["PD"] = pdForB
                 } else {
