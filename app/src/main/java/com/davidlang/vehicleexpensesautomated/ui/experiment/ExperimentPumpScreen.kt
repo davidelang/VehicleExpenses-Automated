@@ -537,10 +537,37 @@ private suspend fun runPumpExperiment(
                     var bestExpTotal = listOf<PumpHunk>()
                     var maxHunks = -1
 
+                    // Get initial red boxes by running detection on the (deskewed, no-stretch) grayscale.
+                    // Then compute the 64-bin histogram *only on pixels inside those red boxes* (text regions),
+                    // so the valley thresholds are tuned to the actual content rather than the whole image background.
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+                    runBlocking(Dispatchers.IO) { runPaddleDiscovery() }
+
+                    // Build a mask with 255 only inside the initial red boxes (in pixel space for the current mat).
+                    val mask = org.opencv.core.Mat.zeros(ws.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
+                    for (hunk in pdHunksRawTotal) {
+                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, w, h)
+                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, w, h)
+                        val rect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
+                        org.opencv.imgproc.Imgproc.rectangle(mask, rect, org.opencv.core.Scalar(255.0), -1)
+                    }
+
+                    // Histogram using the mask (only pixels inside red boxes).
                     val hist = org.opencv.core.Mat()
-                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(ws.p.mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(ws.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
                     val bins = FloatArray(64); hist.get(0, 0, bins)
                     hist.release()
+                    mask.release()
+
+                    // Clear the initial reds; the valley loop will populate fresh detections on each binarized version.
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+
                     val midpoints = OdometerOcrUtils.findValleyMidpoints(bins)
 
                     midpoints.forEach { binIdx ->
