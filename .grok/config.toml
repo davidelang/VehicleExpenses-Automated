@@ -35,6 +35,13 @@ rules = [
   { action = "allow", tool = "bash", pattern = "./update-rules.sh*" },
   { action = "allow", tool = "bash", pattern = "./setup_agent.sh*" },
   { action = "allow", tool = "bash", pattern = "./sync_infrastructure.sh*" },
+  # get-builds-tag.sh: safe helper for the mandatory preflight before any
+  # non-HEAD git reset --hard (see AGENT_MANDATES.md). Agents should use
+  #   TAG=$(./get-builds-tag.sh)
+  # instead of inlining the branch/tag logic. This whitelist avoids repeated
+  # per-use permission prompts for this very common safe read-only operation.
+  { action = "allow", tool = "bash", pattern = "./get-builds-tag.sh*" },
+  { action = "allow", tool = "bash", pattern = "../get-builds-tag.sh*" },
   # Run launchers (invoked as ./run-* from root or ../run-* from worktrees)
   { action = "allow", tool = "bash", pattern = "./run-grok*" },
   { action = "allow", tool = "bash", pattern = "./run-gemini*" },

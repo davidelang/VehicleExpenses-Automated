@@ -22,9 +22,12 @@ Grok scans the worktree git root for project instructions. This file (AGENTS.md)
 | docs/specs/          | Authoritative specs (ISOTROPIC_COORDINATE_SPEC.md is source of truth for coords) | Reference             | ICRS / raw pixel only |
 
 ## Plans Directory Rule (Historical Only)
-`dev-ai-interaction/plans/` contains finished, abandoned, or in-progress work (usually by another agent). 
-- Move completed plans into `dev-ai-interaction/plans/old/` upon finishing.
-- **Do not** start new work from any plan in `plans/` (or `plans/old/`) unless the user has *explicitly* directed you to a specific plan file.
+`dev-ai-interaction/plans/` (and the historical-plans/ sibling) contains finished, abandoned, or in-progress work (usually by another agent). 
+- In every planning phase the first concrete deliverable **must** be a fresh task plan written to a new file directly under `dev-ai-interaction/` (standard structure; see the "Sandbox Plan File as the Primary Approved Artifact" subsection in AGENT_MANDATES.md and the explicit user magic/forbidden phrases + rituals in the tracked `MULTI_AGENT_USER_INSTRUCTIONS.md`).
+- In addition, each worktree maintains its own **local untracked per-branch state file** (`current-state.md` or `.agent-state/current-state.md` in the worktree root; gitignored). On cycle start the agent must read the local current-state.md (this worktree) first for cheap continuity, in addition to the user-designated sandbox plan file.
+- The harness `~/.grok/sessions/.../plan.md` is the process log only (short entries referencing the sandbox plan path; roll old bulk to historical-plans/ then minimal prepend — prepending to, not even superseding).
+- Completed plans are moved to `dev-ai-interaction/historical-plans/`.
+- **Do not** start new work from any plan in `historical-plans/`, `plans/` (or any old/ subdirs) unless the user has *explicitly* designated the single current sandbox plan file for *this* turn by full path.
 
 ## Coordinates Policy (Project-Wide)
 The only valid coordinate systems are **ICRS** (Isotropic Center-Relative Space — radial shortest-edge normalization) and **raw pixel integers**.
@@ -37,7 +40,8 @@ Never use HEAD^, HEAD~, arbitrary SHAs, or other-branch tags.
 
 ## Next Steps After Reading
 - If this is a fresh launch or post-compaction: immediately produce the Mandate Acknowledgment report from `new_grok_agent_prompt` (or equivalent in GROK.md) and enter plan mode / STOP & WAIT.
-- For implementation: only after explicit user approval of a plan.
+- For implementation: only after explicit user approval of a plan. Approval must reference the exact `dev-ai-interaction/<name>-plan.md` path (see MULTI_AGENT_USER_INSTRUCTIONS.md for the required magic phrasing). The approved plan is always the designated sandbox file, not the harness session plan.md.
+- In planning, create the fresh sandbox plan file as the primary artifact (see updated Plans Directory Rule + AGENT_MANDATES "Sandbox Plan File..." subsection). Read the local `current-state.md` in the worktree root first for per-branch continuity. Use relaunch via run-grok after handoff for the cleanest new cycle, or the short gate file written by the agent.
 - Always use the absolute sandbox `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` when writing research artifacts.
 
 This project uses physical copies of the shared brain (delivered by `git worktree add` from master tip + hotfixed via `update-rules.sh` run from the orchestration root). 
