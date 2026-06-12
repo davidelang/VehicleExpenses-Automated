@@ -64,11 +64,21 @@ See AGENT_MANDATES.md "No Loophole Hunting or Rationalization (CRITICAL)" and "E
 
 ## 4. Quick Checklist for Every New Request or Post-Handoff Message
 1. If this follows a handoff/END marker: prefer relaunch (`../run-grok`). Fallback: `cat dev-ai-interaction/.post-handoff-gate.txt` then your text.
-2. In planning the agent must create a *new* plan file under dev-ai-interaction/ (not supersede or continue an old one in the harness session plan.md).
+2. In planning the agent must create a *new* plan file under dev-ai-interaction/ (not supersede or continue an old one in the harness session plan.md). Read (and help maintain) the local untracked `current-state.md` in the worktree root for per-branch continuity.
 3. When ready to execute: use one of the magic approval phrases in section 2 that names the *exact* sandbox plan path.
 4. After the agent says results are ready + END marker + has run `./build_app`: the turn for that plan is over. Treat your next input as a new cycle (relaunch or short gate ritual).
 5. Never read or let the agent rely on historical plans/ or the harness session plan.md as the approved contract for work.
 6. If the agent appears to be continuing edits without a new approved path, remind it of the END marker / this document and the handoff rules; it must self-report, revert if needed, enter plan mode, and wait for a fresh directive + sandbox plan.
+
+## 4.5 Interactive Strategic Planning and Low-Cost Continuity (using local per-worktree state)
+The pre-approval planning phase is the interactive strategic layer. You are encouraged to give rich problem descriptions, high-level direction, and detailed iterative feedback on draft plan documents (e.g. "The plan at dev-ai-interaction/xxx-plan.md correctly identifies the issue but under-specifies Y. Revise and write the updated plan to dev-ai-interaction/xxx-v2-plan.md addressing: [your details].").
+
+To keep re-familiarization cheap across relaunches or cycles:
+- Each worktree maintains a local untracked `current-state.md` (or `.agent-state/current-state.md`) directly in the worktree root (gitignored, per-branch by nature).
+- On every new message after handoff (or fresh launch), include language such as: "Continue strategic planning for the work described in current-state.md (this worktree) and the previous plan at dev-ai-interaction/xxx-plan.md. New feedback: [details]. Produce a revised plan at dev-ai-interaction/yyy-plan.md."
+- The agent is required to read the local current-state.md first (for branch-specific recent context, decisions, and links) + the designated sandbox plan file, then update the local state file while revising the plan document.
+
+This gives you low-cost interactive guidance without paying full re-derivation cost on every turn, while the safety rules (written sandbox plan + explicit magic approval) remain in force. The local state file travels with the branch/worktree and is never treated as a substitute for the approved plan document.
 
 ## 5. References (Always Re-Read These on Fresh Launch / After Compaction / Post-Handoff)
 - `AGENT_MANDATES.md` (the authoritative shared core, especially Bi-Modal Workflow, Completion and Handoff, Plan File Access and Discovery Rules, Sandbox Plan File as Primary Artifact, Harness Session plan.md Lifecycle and Hygiene, Planning and Execution Subagent Separation, Post-Handoff Cycle Start Protocol).

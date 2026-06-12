@@ -54,6 +54,10 @@ master/
 AGENT_CONTEXT.md
 **/AGENT_CONTEXT.md
 
+# Local per-worktree untracked agent state (for interactive strategic planning + low-cost continuity across cycles)
+current-state.md
+.agent-state/
+
 # Generated files
 app/src/main/assets/*
 app/src/main/res/raw/*
