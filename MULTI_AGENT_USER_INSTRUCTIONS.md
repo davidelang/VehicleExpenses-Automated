@@ -30,14 +30,14 @@ This eliminates context bloat, accumulation in the harness `~/.grok/sessions/...
   Then immediately append (or type after) your actual new feedback or request.
 - The gate file text is intentionally short. All the detailed rules, magic words, and "never say" lists are in this document + the re-read AGENT_MANDATES.md.
 
-The agent must also have created (or the user explicitly designated) a fresh sandbox plan file for the *prior* cycle; your new input will cause it to create a *new* one under `dev-ai-interaction/` for this cycle.
+The agent must also have created (or the user explicitly designated) a fresh sandbox plan file for the *prior* cycle; your new input will cause it to create a *new* one under `dev-ai-interaction/plans/` for this cycle.
 
 ## 2. Magic Words / Required Phrases the User *Must* Use for Approval (these count as the "explicit Directive")
 When you are ready to let the agent proceed from planning to execution, your approval message **must** reference the exact sandbox plan file path and use one of the following (or very close unambiguous equivalents). The agent is instructed to treat only these as authorizing source changes for that plan.
 
-- `approved the plan at dev-ai-interaction/<exact-filename>.md for the following request: [paste or clearly describe the work]`
-- `The user approved the plan at dev-ai-interaction/xxx-plan.md. Proceed with execution of exactly the steps described in that plan only.`
-- `approved, use the plan at dev-ai-interaction/my-task-20260612-plan.md for: [summary]. First action update TODO.md then follow the phased steps with forensic reads and build at milestones.`
+- `approved the plan at dev-ai-interaction/plans/<exact-filename>.md for the following request: [paste or clearly describe the work]`
+- `The user approved the plan at dev-ai-interaction/plans/xxx-plan.md. Proceed with execution of exactly the steps described in that plan only.`
+- `approved, use the plan at dev-ai-interaction/plans/my-task-20260612-plan.md for: [summary]. First action update TODO.md then follow the phased steps with forensic reads and build at milestones.`
 
 After you send one of the above, the agent may exit plan mode (if still in it), update TODO.md (first execution action), re-read the designated plan file, and begin the small decomposed steps.
 
@@ -64,19 +64,19 @@ See AGENT_MANDATES.md "No Loophole Hunting or Rationalization (CRITICAL)" and "E
 
 ## 4. Quick Checklist for Every New Request or Post-Handoff Message
 1. If this follows a handoff/END marker: prefer relaunch (`../run-grok`). Fallback: `cat dev-ai-interaction/.post-handoff-gate.txt` then your text.
-2. In planning the agent must create a *new* plan file under dev-ai-interaction/ (not supersede or continue an old one in the harness session plan.md). Read (and help maintain) the local untracked `current-state.md` in the worktree root for per-branch continuity.
+2. In planning the agent must create a *new* plan file under dev-ai-interaction/plans/ (not supersede or continue an old one in the harness session plan.md). Read (and help maintain) the local untracked `current-state.md` in the worktree root for per-branch continuity.
 3. When ready to execute: use one of the magic approval phrases in section 2 that names the *exact* sandbox plan path.
 4. After the agent says results are ready + END marker + has run `./build_app`: the turn for that plan is over. Treat your next input as a new cycle (relaunch or short gate ritual).
 5. Never read or let the agent rely on historical plans/ or the harness session plan.md as the approved contract for work.
 6. If the agent appears to be continuing edits without a new approved path, remind it of the END marker / this document and the handoff rules; it must self-report, revert if needed, enter plan mode, and wait for a fresh directive + sandbox plan.
 
 ## 4.5 Interactive Strategic Planning and Low-Cost Continuity (using local per-worktree state)
-The pre-approval planning phase is the interactive strategic layer. You are encouraged to give rich problem descriptions, high-level direction, and detailed iterative feedback on draft plan documents (e.g. "The plan at dev-ai-interaction/xxx-plan.md correctly identifies the issue but under-specifies Y. Revise and write the updated plan to dev-ai-interaction/xxx-v2-plan.md addressing: [your details].").
+The pre-approval planning phase is the interactive strategic layer. You are encouraged to give rich problem descriptions, high-level direction, and detailed iterative feedback on draft plan documents (e.g. "The plan at dev-ai-interaction/plans/xxx-plan.md correctly identifies the issue but under-specifies Y. Revise and write the updated plan to dev-ai-interaction/plans/xxx-v2-plan.md addressing: [your details].").
 
 To keep re-familiarization cheap across relaunches or cycles:
 - Each worktree maintains a local untracked `current-state.md` (or `.agent-state/current-state.md`) directly in the worktree root (gitignored, per-branch by nature).
-- On every new message after handoff (or fresh launch), include language such as: "Continue strategic planning for the work described in current-state.md (this worktree) and the previous plan at dev-ai-interaction/xxx-plan.md. New feedback: [details]. Produce a revised plan at dev-ai-interaction/yyy-plan.md."
-- The agent is required to read the local current-state.md first (for branch-specific recent context, decisions, and links) + the designated sandbox plan file, then update the local state file while revising the plan document.
+- On every new message after handoff (or fresh launch), include language such as: "Continue strategic planning for the work described in current-state.md (this worktree) and the previous plan at dev-ai-interaction/plans/xxx-plan.md. New feedback: [details]. Produce a revised plan at dev-ai-interaction/plans/yyy-plan.md."
+- The agent is required to read the local current-state.md first (for branch-specific recent context, decisions, and links) + the designated sandbox plan file (in dev-ai-interaction/plans/), then update the local state file while revising the plan document.
 
 This gives you low-cost interactive guidance without paying full re-derivation cost on every turn, while the safety rules (written sandbox plan + explicit magic approval) remain in force. The local state file travels with the branch/worktree and is never treated as a substitute for the approved plan document.
 
@@ -86,7 +86,7 @@ This gives you low-cost interactive guidance without paying full re-derivation c
 - `new_grok_agent_prompt` (the report the agent must give on fresh launch or after compaction; it now includes explicit confirmations about the sandbox plan file, harness log hygiene, and post-handoff behavior).
 - `MULTI_AGENT_USER_INSTRUCTIONS.md` (this file — the human rituals).
 - The specific sandbox plan file the user has most recently and explicitly designated for the *current turn* only.
-- Existing example plans in dev-ai-interaction/ (for structure): `buffer_set_lock_removal_plan.md`, `jpg_removal_plan.md`, etc.
+- Existing example plans in dev-ai-interaction/plans/ (for structure): `buffer_set_lock_removal_plan.md`, `jpg_removal_plan.md`, etc.
 
 ## 6. Notes for Agent Implementers / This Document's Maintenance
 This file is maintained in the orchestration root (like the other core instruction files) and distributed by `update-rules.sh`. When the protocol or rituals evolve, update this file + the corresponding sections in AGENT_MANDATES.md / AGENTS.md / new_grok_agent_prompt, then run the sync from the orchestration root on the orchestration branch.
