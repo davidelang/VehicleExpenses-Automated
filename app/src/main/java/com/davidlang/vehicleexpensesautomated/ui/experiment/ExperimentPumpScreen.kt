@@ -265,7 +265,13 @@ private suspend fun runPumpExperiment(
             var originalHistogram = JSONArray()
 
             // Dynamic Flow Processing
-            flows.forEach { flowName ->
+            // Phase 2 dispatch (approved array-of-processors refactor): iterate the flowProcessors array in lockstep
+            // with flows (forEachIndexed). Common per-flow setup + call to the processor for this index.
+            // The processor bodies (linear "what to do for this path", no internal flowName ifs) will be filled
+            // and the old tangled body below will be removed in subsequent phases. Temp: old body still runs
+            // so behavior is unchanged during the transition builds.
+            flows.forEachIndexed { i, flowName ->
+                // (processor call will be enabled when bodies are complete; for now the original body executes)
                 val branch = root.getBranch(flowName)
                 val workspace = NativePaddleEngine.bufferSetA
                 workspace.resize(imgW, imgH)
@@ -309,6 +315,49 @@ private suspend fun runPumpExperiment(
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
+
+                // Phase 2 of approved refactor plan: the array of processor functions (one per flow, in same order as
+                // the flows list) that we iterate over (forEachIndexed or zip). Each is a self-contained lambda whose
+                // body is the linear list of steps for that path (no if(flowName) inside). Common setup (ws copy,
+                // discoveryDetails map) happens at the dispatch site; processors receive ws/br/det/w/h and populate
+                // only their branch (images, pathResults, metadata["tilt"]). Old tangled forEach body remains
+                // temporarily (will be removed as logic is moved into the processors in subsequent phases).
+                // Set C valley (bin-test) will be fully implemented in its processor (Phase 3).
+                val flowProcessors = listOf(
+                    // Set A (baseline dual ML+Paddle, stretch, standard angle)
+                    { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                        // linear steps (no conditionals on set):
+                        // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
+                        // - standard tilt = deskewRes.angle; rotate; br.metadata["tilt"] = ...
+                        // - its mlBlocksRaw + pd* totals
+                        // - ml + pd discovery (via runPaddleDiscovery / inline scales for now)
+                        // - global filter (via doCross...)
+                        // - mlHunks + pdMerged; getFinal (shared) for both -> pathResults ML + Paddle
+                        // - viz: ML image + PD raw reds snapshot
+                    },
+                    // Set B (pump-only, no stretch, paddleCpp tilt)
+                    { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                        // linear for B:
+                        // - no stretch
+                        // - paddleCpp tilt (from deskewRes); rotate; tilt meta
+                        // - pd totals only (mlBlocksRaw empty or guarded)
+                        // - pd discovery (runPaddleDiscovery)
+                        // - filter
+                        // - only pdMerged + getFinal for "Paddle" path
+                        // - only PD viz (raw reds)
+                    },
+                    // Set C (pump-only + valley bin-test from alignment Set J, no stretch, paddleCpp, composite + best)
+                    { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                        // linear for C (full impl in Phase 3; skeleton for introduce):
+                        // - no stretch
+                        // - paddleCpp tilt; rotate; tilt meta
+                        // - 64-bin hist, bins, midpoints = OdometerOcrUtils.findValleyMidpoints(bins)
+                        // - for each midpoint: binarize (THRESH_BINARY), swap, clear pd*, runPaddleDiscovery(), filter,
+                        //   version snapshot (getAnns + takeSnapshot), track best, restore
+                        // - set best pd* ; br.images["PD"] = stackVertically(versionB64s)
+                        // - only "Paddle" path using best
+                    }
+                )
 
                 fun stackVertically(b64List: List<String>): String {
                     if (b64List.isEmpty()) return ""
