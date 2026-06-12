@@ -322,6 +322,7 @@ private suspend fun runPumpExperiment(
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
+                val pdHunksDetectedTotal = mutableListOf<PumpHunk>()  // pre-redbox raw detected hunks (tFullB equiv); for Set C white 1px + blue/orange derivation from hunks (see alignment Set J tRawB vs tFullB)
 
                 fun stackVertically(b64List: List<String>): String {
                     if (b64List.isEmpty()) return ""
@@ -549,6 +550,7 @@ private suspend fun runPumpExperiment(
                     pdHunksExpTotal.clear()
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
+                    pdHunksDetectedTotal.clear()
                     runPaddleDiscovery()  // probe to populate initial reds on current mat state
 
                     // Build mask (255 inside red boxes, pixel space) -- exact pattern from prior valley probe.
@@ -578,6 +580,7 @@ private suspend fun runPumpExperiment(
                     pdHunksExpTotal.clear()
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
+                    pdHunksDetectedTotal.clear()
                 }
 
                 val procA: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
@@ -691,11 +694,13 @@ private suspend fun runPumpExperiment(
                     }
 
                     val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
-                    val raw = paddleResults[0]
-                    val exp = paddleResults[1]
-                    val maxExt = paddleResults[2]
-                    val native = paddleResults[3]
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
 
+                    pdHunksDetectedTotal.addAll(detected)
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
                     pdHunksMaxTotal.addAll(maxExt)
@@ -859,10 +864,12 @@ private suspend fun runPumpExperiment(
                     branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
                 } else if (flowName == "Set C") {
-                    // Set C: derive blue/orange from raw hunks using per-red overlap + Y-range horizontal extend + exact dedup (per user clarifications; no overlap/nesting tests, only exact box matches from same objects).
-                    val hunks = pdHunksRawTotal.toList()  // the "objects"/hunks (raw after cross filter)
+                    // Set C: derive blue/orange from raw hunks (pre-redbox detected objects, tFullB equiv per alignment Set J) using per-red overlap + Y-range horizontal extend + exact dedup (per user clarifications; no overlap/nesting tests, only exact box matches from same objects).
+                    // redBoxes = the post-redbox "raw red" level (pdHunksRawTotal, tRawB equiv); hunks = the raw detected (pdHunksDetectedTotal) for white 1px + as the objects to union/extend.
+                    val redBoxes = pdHunksRawTotal.toList()
+                    val hunks = pdHunksDetectedTotal.toList()  // the raw detected hunks (pre +1/denest) for white anns + derivation source
                     val blueRects = mutableListOf<RectF>()
-                    for (red in hunks) {
+                    for (red in redBoxes) {
                         val overlapping = hunks.filter { other ->
                             !(other.icrs.right < red.icrs.left || other.icrs.left > red.icrs.right || other.icrs.bottom < red.icrs.top || other.icrs.top > red.icrs.bottom)
                         }
@@ -894,7 +901,7 @@ private suspend fun runPumpExperiment(
                     for (o in orangeRects) {
                         if (dedupedOrange.none { d -> d.left == o.left && d.top == o.top && d.right == o.right && d.bottom == o.bottom }) dedupedOrange.add(o)
                     }
-                    // anns: red + 1px white around each hunk (to show hunk bounds) + blue + orange
+                    // anns: red + 1px white around each (raw detected) hunk (to show hunk bounds) + blue + orange
                     val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                     val whiteAnns = hunks.map { h ->
                         val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
@@ -1348,12 +1355,27 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
 
 
 private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine, contentW: Int, contentH: Int): List<List<PumpHunk>> {
-    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
+    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
     val rawBlocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
     val rawRects = rawBlocks.map { it.boundingBox }
+
+    // Pre-redbox detected hunks (tFullB equivalent from alignment Set J runBinTrialsPaddle).
+    // These are the raw objects from the detector (pre +1/denest/nonNested that produce the "raw red" tRawB-equivalent level).
+    // Used only for Set C: 1px white anns (to show each detected hunk) + as the "hunks" source for per-red overlap + Y-extend derivation of blue/orange.
+    // (The pdHunksRawTotal level remains the post-redbox "RED raw boxes" for display/anns/crops/mask.)
+    val hunksDetected = mutableListOf<PumpHunk>()
+    rawRects.forEach { r ->
+        val ml = r.left.toInt().coerceIn(0, masterW - 1)
+        val mt = r.top.toInt().coerceIn(0, masterH - 1)
+        val mr = r.right.toInt().coerceIn(0, masterW - 1)
+        val mb = r.bottom.toInt().coerceIn(0, masterH - 1)
+        val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), contentW, contentH)
+        val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), contentW, contentH)
+        hunksDetected.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
+    }
 
     // Redbox improvement from Set J (alignment experiment) - first item per user directive.
     // Move sides of detected box out by 1 pixel in low-res (this crop/detect-input space) before
@@ -1441,7 +1463,7 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
     }
 
-    return listOf(hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
+    return listOf(hunksDetected, hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
 }
 
 
