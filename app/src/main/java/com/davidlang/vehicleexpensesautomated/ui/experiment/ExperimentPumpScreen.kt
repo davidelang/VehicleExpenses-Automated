@@ -238,7 +238,7 @@ private suspend fun runPumpExperiment(
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
-    // Set C: pump-only (copy of Set B) but uses alignment Set J bin-test (histogram valleys for multiple binarizations instead of stretch); each version gets full detect/redbox (incl. nesting filter); versions shown stacked in Set C column.
+    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists displayed in the Set C column (plus PD/ocr with boxes for context). Polarity + discovery + CC blue derivation run on the pushed mat state.
     val flows = listOf("Set A", "Set B", "Set C")
 
     fun pStartNewFile(): File {
@@ -290,12 +290,26 @@ private suspend fun runPumpExperiment(
                 }
 
                 // 1. Transform
-                // C now uses the same histogram/automaticContrastStretch as B (per "go back to the same histogram that B uses"; removed special-case skip for C).
-                val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
-                if (flowName == flows.first() && flowName != "Set C") {
-                    originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
-                    root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
-                    root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                // Per approved valley plan: for Set C, display raw then valleyPushToPeaks (replaces stretch) producing image with small # brightness values (not binarization).
+                // Capture rawC + histBeforeC (pre), apply push, capture pushedC + histAfterC to branch for Set C column.
+                // A still populates root after/hist2 for the left column. B unchanged.
+                val rawHist: FloatArray
+                if (flowName == "Set C") {
+                    // Capture raw (pre any C-specific transform) + before hist for column display
+                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace)
+                    branch.images["rawC"] = rawForC
+                    branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)  // replaces stretch; mutates workspace to few-brightness image
+                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace)
+                    branch.images["pushedC"] = pushedForC
+                    branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                } else {
+                    rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                    if (flowName == flows.first()) {
+                        originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
+                        root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
+                        root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    }
                 }
 
                 // 2. Deskew (ported Set E style from alignment for Set B; uses dedicated populate + JNI angle path)
@@ -534,13 +548,14 @@ private suspend fun runPumpExperiment(
                 }
 
                 suspend fun doValleyForC(ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int) {
-                    /* bin-trials removed 2026-06-11 per user directive ("remove the bin-trials from set C and go back to the same histogram that B uses").
-                       C now:
-                       - uses same automaticContrastStretch histogram as B (rawHist change)
-                       - gets red-box-hist polarity probe + invert (if dark text on light) inserted in common per-flow scope before discovery (forces light text on dark)
-                       - deskew tilt is negated for C (common)
-                       - uses the normal discovery body (after guard change below) + PD/path like B
-                       The old valley (gray + per-midpoint binarize + per-version stack + best) is gone; no more multiple thresh images for C.
+                    /* Valley push (2026-06-12 per approved plan): bin-trials long removed. C now uses valleyPushToPeaks (replaces stretch) for raw display + quantized few-brightness image + before/after hists in column.
+                       - capture raw + histBefore to branch before push
+                       - valleyPushToPeaks (valley centers -> push values out to peaks; small # brightness, non-binary)
+                       - capture pushed + histAfter to branch
+                       - polarity probe (red-box hist) + invert still for C (now on pushed state)
+                       - negated tilt for C
+                       - normal discovery body + PD (boxes on pushed) + CC blue derivation (on pushed binMat) + path like B
+                       Old per-valley multi-binarize stacking gone.
                     */
                 }
 
@@ -613,32 +628,16 @@ private suspend fun runPumpExperiment(
                     // - only PD viz (raw reds)
                 }
                 val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // C no longer uses dedicated valley (bin-trials removed). Polarity invert probe + common deskew/hist already applied; body discovery (now unskipped for C) + PD/path do the rest. Empty to keep array dispatch happy.
+                    // C uses valleyPushToPeaks (replaces stretch) for the raw + quantized-few-brightness display + before/after hists in column (per plan). Polarity + discovery + PD + CC blues run on the pushed mat.
                 }
                 val flowProcessors = listOf(procA, procB, procC)
 
-                // Call the processor for this flow (i) from the array. Placed after the flowProcessors list val
-                // in source (name resolves) and after per-flow setup in execution. For Set C (i==2) this invokes
-                // the dedicated processor lambda containing the full valley bin-test logic (no hard-coded "Set C"
-                // checks inside the per-path code itself -- the array + index is how we select/iterate the
-                // function per the clarification, avoiding ugly name hard-coding at call sites or inside paths).
-                // The C processor sets br.images["PD"] to the stacked composite (multiple binarized versions +
-                // their red raw boxes post +1/nest filters) and br.pathResults["Paddle"] to the best version's.
-                // Old body continues (normal discovery runs for C on restored mat; viz if-C skips PD overwrite;
-                // path set guarded below to protect processor result). Temp during transition; old body to be
-                // removed when array fully replaces the tangle.
+                // Call the processor for this flow (i) from the array. ... (transitional; C now driven by the early valley push transform + normal body for discovery/PD)
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
 
                 if (flowName == "Set C_old_bin_trials") {
-                    // (bin-trials removed per 2026-06-11 directive; C now executes normal body (probe invert + negated tilt + B-like hist already applied upstream)
-                    // old long comment left for reference but block now skipped for C
-
-                    // per-valley binarized images, each with "thresh = XX" label + reds from detection on that version).
-                    // Skip the following old duplicated // 3. Discovery (the inline scales.forEach etc.) and later
-                    // unconditional path/viz blocks for the normal pdHunks so they do not execute for C. This lets
-                    // the processor's composite "win" and prevents interference with the mat state or pdHunks the
-                    // processor used for best tracking. The old code for C is now dead for this turn (to be removed
-                    // in a later phase when the tangle is fully replaced by the array of processors).
+                    // (bin-trials / old multi-valley thresh removed long ago; C now uses valley center push quantize (replaces stretch) for display of raw + pushed (small # brightness) + hists in column.
+                    // Block skipped; normal body + push integration handles C.
                 } else {
                     // stackVertically hoisted earlier (before flowProcessors list) for name resolution inside the
                     // C processor lambda body (the array entry for Set C contains the valley that calls it).
@@ -1375,7 +1374,15 @@ private fun pBuildHtmlRowDynamic(
         val extraOcr = if ((name == "Set B" || name == "Set C") && br.metadata.containsKey("pd_ocr_html")) {
             "<br><div style='font-family:monospace; font-size:18px; text-align:left; background:#fafafa; padding:2px;'>" + br.metadata["pd_ocr_html"] + "</div>"
         } else ""
-        appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+        if (name == "Set C" && br.images.containsKey("rawC")) {
+            val raw = br.images["rawC"] ?: ""
+            val pushed = br.images["pushedC"] ?: ""
+            val hB = br.images["histBeforeC"] ?: ""
+            val hA = br.images["histAfterC"] ?: ""
+            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:48%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:48%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:48%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:48%;'><br><small>After</small></td></tr></table><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+        } else {
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+        }
     }
 
     appendLine("<td><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
