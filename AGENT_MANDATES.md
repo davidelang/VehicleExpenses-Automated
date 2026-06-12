@@ -32,6 +32,8 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
 
 - **Completion and Handoff (CRITICAL):** Execution of a specific approved plan ends when you have made the described changes for that plan, performed the required forensic validation and `./build_app` (creating the builds tag for that state), and explicitly informed the user that the changes for this plan are ready for testing.
 
+  When launching via the `run-grok` wrapper (or equivalent), the `--todo-gate` flag is passed by default. This enables Grok's runtime turn-end TodoGate, which provides harness-level enforcement of the TODO.md update and handoff discipline described here (in addition to the prompt instructions). You can disable it for a session with `GROK_TODO_GATE=0`. The launcher also passes `--no-alt-screen` to prevent alternate screen buffer problems.
+
   Once you have handed off in this way ("test this", "the changes are ready", etc.), the current execution turn is complete. Any subsequent user feedback, corrections, or observations about the results are **not** a continuation of the previous execution turn. They are the start of a *new* planning/research cycle.
 
   You must return to the Strategy phase, incorporate the feedback into a revised or new plan, and obtain a fresh explicit Directive (approval) before making any additional source changes. You must not continue editing, "fixing," or iterating on the just-completed plan's changes after the handoff.
