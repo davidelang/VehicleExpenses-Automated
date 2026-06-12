@@ -490,6 +490,20 @@ private suspend fun runPumpExperiment(
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                 }
 
+                fun qualifiesFor3SidesNearExtend(cR: android.graphics.Rect, oR: android.graphics.Rect): Boolean {
+                    val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                    if (insides.count { it } != 3) return false
+                    // identify protruding side + compute pixel protrusion distance + overlap on that axis
+                    val (protrPx, hasOverlap) = when {
+                        !insides[0] -> (cR.left - oR.left) to (oR.right > cR.left)   // left
+                        !insides[2] -> (oR.right - cR.right) to (oR.left < cR.right) // right
+                        !insides[1] -> (cR.top - oR.top) to (oR.bottom > cR.top)     // top
+                        !insides[3] -> (oR.bottom - cR.bottom) to (oR.top < cR.bottom) // bottom
+                        else -> 0 to true
+                    }
+                    return protrPx <= 40 && hasOverlap
+                }
+
                 fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
                     if (pdHunksRawTotal.isNotEmpty()) {
                         // Remove redundant nested or duplicate red boxes (entirely contained or perfectly overlapping).
@@ -498,7 +512,7 @@ private suspend fun runPumpExperiment(
                         // Use exact containment (no artificial inset/spacing); for perfect overlaps,
                         // keep one representative (the first in order) and drop the rest.
                         // Sequential keep: only check against already-kept boxes to ensure at least one survives duplicates.
-                        // Also applies the 3 sides enclosed + <=40px "new 3 sides enclosed algorithm" (per user): if one is inside on 3 sides but protrudes on the 4th by <=40px in pixel, extend the containing on that side, then the protruding one is now fully contained and deleted as redundant. This uses the same pixel 40px logic as the blue/orange 3sides code in Set C.
+                        // Also applies the corrected 3 sides enclosed + <=40px (per user): exactly 3 edge insides + protrusion on 4th <=40px in pixel space *and* the boxes still overlap on the protruding axis (no gap). Uses shared qualifiesFor3SidesNearExtend helper (same logic for blue/orange in Set C).
                         val kept = mutableListOf<PumpHunk>()
                         for (h1 in pdHunksRawTotal) {
                             val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
@@ -530,7 +544,7 @@ private suspend fun runPumpExperiment(
                                 val op = IcrsMath.icrsToPixel(oth.icrs.left, oth.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.icrs.right, oth.icrs.bottom, imgW, imgH)
                                 val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
                                 val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                                if (insides.count { it } == 3) {
+                                if (qualifiesFor3SidesNearExtend(cR, oR)) {
                                     val newL = if (!insides[0]) min(cur.icrs.left, oth.icrs.left) else cur.icrs.left
                                     val newT = if (!insides[1]) min(cur.icrs.top, oth.icrs.top) else cur.icrs.top
                                     val newR = if (!insides[2]) max(cur.icrs.right, oth.icrs.right) else cur.icrs.right
@@ -821,7 +835,7 @@ private suspend fun runPumpExperiment(
                 if (flowName == "Set B") {
                     // add back blue (exp) + orange (max) annotations for Set B (per user directive)
                     // Explicit nested red filter for B (shared call at 731 already cleans pdHunksRawTotal used for B redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
-                    // Now also includes the 3 sides +<=40px (the new 3 sides enclosed algorithm) so near-nested reds like the 12px pair in row 3 Set B get extended+deleted (visible in the red-only image).
+                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
 
                     // Red-only image for Set B (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now".
@@ -998,9 +1012,9 @@ private suspend fun runPumpExperiment(
                     }
 
                     // Near-containment merging rule (per approved plan for this turn, "when merging").
-                    // If one box is inside another on 3 sides but protrudes on the 4th by <=40px (pixel space), extend the containing box to the protruding side.
+                    // If one box is inside another on 3 sides but protrudes on the 4th by <=40px (pixel space) *and* the boxes still overlap on that axis (no gap), extend the containing box to the protruding side.
                     // Then the protruding box is no longer outside and can be deleted as redundant (now fully inside after extend).
-                    // Applied to blueRects (the union from overlapping hunks per red) before retraction.
+                    // Applied to blueRects (the union from overlapping hunks per red) before retraction. Uses qualifiesFor3SidesNearExtend.
                     run {
                         val toProcess = blueRects.toMutableList()
                         val extended = mutableListOf<RectF>()
@@ -1015,8 +1029,7 @@ private suspend fun runPumpExperiment(
                                 val op = IcrsMath.icrsToPixel(oth.left, oth.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.right, oth.bottom, imgW, imgH)
                                 val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
                                 val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                                val insideCount = insides.count { it }
-                                if (insideCount == 3) {
+                                if (qualifiesFor3SidesNearExtend(cR, oR)) {
                                     // Extend cur on the non-inside side to cover oth
                                     val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
                                     val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
@@ -1072,7 +1085,7 @@ private suspend fun runPumpExperiment(
                     }
 
                     // Near-containment merging rule (per approved plan) also applied to orangeRects (same-row unions).
-                    // Same 3-side inside + <=40px protrusion on 4th -> extend containing, then remove fully contained after.
+                    // Same 3-side inside + protrusion <=40px on 4th *and* overlap on that axis (no gap) -> extend containing, then remove fully contained after. Uses qualifiesFor3SidesNearExtend.
                     run {
                         val toProcess = orangeRects.toMutableList()
                         val extended = mutableListOf<RectF>()
@@ -1086,8 +1099,7 @@ private suspend fun runPumpExperiment(
                                 val op = IcrsMath.icrsToPixel(oth.left, oth.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.right, oth.bottom, imgW, imgH)
                                 val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
                                 val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                                val insideCount = insides.count { it }
-                                if (insideCount == 3) {
+                                if (qualifiesFor3SidesNearExtend(cR, oR)) {
                                     val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
                                     val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
                                     val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
