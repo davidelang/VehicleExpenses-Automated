@@ -491,6 +491,31 @@ private suspend fun runPumpExperiment(
                 }
                 branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
+                // Extracted shared helper (Phase 1 of approved refactor plan to array of per-flow processors).
+                // Body is the exact prior inline global cross-scale filter (ICRS +2 inset contains removal of
+                // entirely contained raw reds). Mutates the passed list in place (clear + addAll of kept).
+                fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
+                    if (pdHunksRawTotal.isNotEmpty()) {
+                        val kept = pdHunksRawTotal.filter { h1 ->
+                            val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
+                            val p2 = IcrsMath.icrsToPixel(h1.icrs.right, h1.icrs.bottom, imgW, imgH)
+                            val r1 = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                            pdHunksRawTotal.none { h2 ->
+                                h1 !== h2 && run {
+                                    val op1 = IcrsMath.icrsToPixel(h2.icrs.left, h2.icrs.top, imgW, imgH)
+                                    val op2 = IcrsMath.icrsToPixel(h2.icrs.right, h2.icrs.bottom, imgW, imgH)
+                                    val r2 = android.graphics.Rect(op1.x.toInt(), op1.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                    // Small inset tolerance in final pixel space (cross-scale nesting can appear after mapping).
+                                    // Remove only boxes that are entirely contained.
+                                    r2.contains(r1.left + 2, r1.top + 2, r1.right - 2, r1.bottom - 2)
+                                }
+                            }
+                        }
+                        pdHunksRawTotal.clear()
+                        pdHunksRawTotal.addAll(kept)
+                    }
+                }
+
                 // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
                 // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
                 // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
@@ -498,25 +523,8 @@ private suspend fun runPumpExperiment(
                 // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
                 // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
                 // takeCrop) have no entirely-contained nested boxes, matching the intent.
-                if (pdHunksRawTotal.isNotEmpty()) {
-                    val kept = pdHunksRawTotal.filter { h1 ->
-                        val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(h1.icrs.right, h1.icrs.bottom, imgW, imgH)
-                        val r1 = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                        pdHunksRawTotal.none { h2 ->
-                            h1 !== h2 && run {
-                                val op1 = IcrsMath.icrsToPixel(h2.icrs.left, h2.icrs.top, imgW, imgH)
-                                val op2 = IcrsMath.icrsToPixel(h2.icrs.right, h2.icrs.bottom, imgW, imgH)
-                                val r2 = android.graphics.Rect(op1.x.toInt(), op1.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                // Small inset tolerance in final pixel space (cross-scale nesting can appear after mapping).
-                                // Remove only boxes that are entirely contained.
-                                r2.contains(r1.left + 2, r1.top + 2, r1.right - 2, r1.bottom - 2)
-                            }
-                        }
-                    }
-                    pdHunksRawTotal.clear()
-                    pdHunksRawTotal.addAll(kept)
-                }
+                // (Now via shared helper; body unchanged.)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
 
                 val mlHunks = if (flowName == "Set B") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
@@ -525,12 +533,27 @@ private suspend fun runPumpExperiment(
                 val minEdge = min(imgW, imgH).toFloat()
                 val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
 
-                suspend fun getFinal(hunks: List<PumpHunk>, engine: String): PathResult {
+                // Shared getFinal (Phase 1 of approved refactor): now takes explicit params for tilt, the pd raw list
+                // (for red anns in paddle crops), workspace/rec/paddle/context/img dims so it can be called from
+                // per-processor code with each set's own values (no hard closure on the tangled per-flow vars).
+                // Body updated to use params; takeCrop inner updated for pdRawForAnns.
+                suspend fun getFinal(
+                    hunks: List<PumpHunk>,
+                    engine: String,
+                    tilt: Float,
+                    pdRawForAnns: List<PumpHunk>,
+                    ws: BufferSet,
+                    recBuf: BufferSet,
+                    paddleEng: NativePaddleEngine,
+                    ctx: Context,
+                    imgW: Int,
+                    imgH: Int
+                ): PathResult {
                     val stitched = stitchHunksHorizontally(hunks)
                     val (top, bottom) = groupLanesByVerticalGap(stitched)
                     val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
                     val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
-                    val res = performHunkRecognition(listOf(expT, expB), workspace, experimentRecSet320x48, engine, paddleEngine, context, tilt)
+                    val res = performHunkRecognition(listOf(expT, expB), ws, recBuf, engine, paddleEng, ctx, tilt)
 
                     suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
                         val p1 = IcrsMath.icrsToPixel(exp.icrs.left, exp.icrs.top, imgW, imgH)
@@ -539,7 +562,7 @@ private suspend fun runPumpExperiment(
                         val anns = mutableListOf<SnapshotAnnotation>()
                         if (engine == "Paddle") {
                             // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
-                            pdHunksRawTotal.forEach { h ->
+                            pdRawForAnns.forEach { h ->
                                 val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
                                 val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
                                 anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.RED, 2))
@@ -548,7 +571,7 @@ private suspend fun runPumpExperiment(
                             // pdHunksExpTotal.forEach { ... BLUE }
                             // ... ORANGE for the specific
                         }
-                        return OcrUtils.takeSnapshot(workspace.p, rect, 300, 100, anns, null, workspace).first
+                        return OcrUtils.takeSnapshot(ws.p, rect, 300, 100, anns, null, ws).first
                     }
                     val cropT = takeCrop(expT, pair.first); val cropB = takeCrop(expB, pair.second)
                     return PathResult(res[0].text, res[1].text, cropT, cropB)
@@ -556,9 +579,9 @@ private suspend fun runPumpExperiment(
 
                 // Set B / Set C are pump-only (no MLKit for the recognition step). Only populate Paddle result for these flows.
                 // Set A keeps dual for comparison.
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle")
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 if (flowName != "Set B" && flowName != "Set C") {
-                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
+                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 }
 
                 // 5. Visualization
