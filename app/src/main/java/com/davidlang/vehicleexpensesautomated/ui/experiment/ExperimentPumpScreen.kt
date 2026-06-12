@@ -313,13 +313,12 @@ private suspend fun runPumpExperiment(
                 }
 
                 // 2. Deskew (ported Set E style from alignment for Set B; uses dedicated populate + JNI angle path)
-                // Compute per-flow but select angle source based on flow. Set B (pump-only) uses paddleCppAngle (from the optimized/JNI path inside calculateAverageTextAngle).
-                // Set C uses negated paddleCppAngle (user: "deskew rotation of set C seems to be rotating the wrong direction").
+                // Compute per-flow but select angle source based on flow. Set A and Set B now use the negated value so the applied rotation direction matches what makes Set C (the currently correct direction per user observation: "set C is -1 * rotation of set B and it looks right") look right on the images (including the clean red-only for B from the prior turn). Set C line kept literally as-is so its effective value remains the one the user reports as correct.
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
                 val tilt = when (flowName) {
-                    "Set B" -> deskewRes.paddleCppAngle
+                    "Set B" -> -deskewRes.paddleCppAngle
                     "Set C" -> -deskewRes.paddleCppAngle
-                    else -> deskewRes.angle
+                    else -> -deskewRes.angle
                 }
 
                 // Use shared modern rotate (UV handling, parity with alignment improvements). Local pRotate removed.
@@ -613,7 +612,7 @@ private suspend fun runPumpExperiment(
                 val procA: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear steps (no conditionals on set):
                     // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
-                    // - standard tilt = deskewRes.angle; rotate; br.metadata["tilt"] = ...
+                    // - standard tilt = -deskewRes.angle (A now negated for correct direction matching the one that makes C look right); rotate; br.metadata["tilt"] = ...
                     // - its mlBlocksRaw + pd* totals
                     // - ml + pd discovery (via runPaddleDiscovery / inline scales for now)
                     // - global filter (via doCross...)
@@ -623,7 +622,7 @@ private suspend fun runPumpExperiment(
                 val procB: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear for B:
                     // - no stretch
-                    // - paddleCpp tilt (from deskewRes); rotate; tilt meta
+                    // - paddleCpp tilt = -deskewRes.paddleCppAngle (B now negated for correct direction matching the one that makes C look right); rotate; tilt meta
                     // - pd totals only (mlBlocksRaw empty or guarded)
                     // - pd discovery (runPaddleDiscovery)
                     // - filter
