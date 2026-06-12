@@ -547,7 +547,7 @@ private suspend fun runPumpExperiment(
                     // - only pdMerged + getFinal for "Paddle" path
                     // - only PD viz (raw reds)
                 }
-                val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                val procC: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear for C (no ifs on set name; the valley bin-test logic is the "list what needs to be done"
                     // for this path, inside its entry in the array of functions. The array is iterated by the
                     // dispatch (forEachIndexed + call by i); no hard-coded "Set C" checks inside this per-path
@@ -587,7 +587,7 @@ private suspend fun runPumpExperiment(
                         pdHunksMaxTotal.clear()
                         pdHunksNativeTotal.clear()
 
-                        runBlocking(Dispatchers.IO) { runPaddleDiscovery() }
+                        runPaddleDiscovery()
                         doCrossScaleRedboxFilter(pdHunksRawTotal, w, h)
 
                         val aPdV = pdHunksRawTotal.map { hh ->
@@ -620,7 +620,7 @@ private suspend fun runPumpExperiment(
                     br.images["PD"] = if (versionB64s.isNotEmpty()) stackVertically(versionB64s) else ""
 
                     val pdHunksMergedC = mergeGeometryIntoHunks(pdHunksExpTotal)
-                    br.pathResults["Paddle"] = runBlocking(Dispatchers.IO) { getFinal(pdHunksMergedC, "Paddle", tilt, pdHunksRawTotal, ws, experimentRecSet320x48, paddleEngine, context, w, h) }
+                    br.pathResults["Paddle"] = getFinal(pdHunksMergedC, "Paddle", tilt, pdHunksRawTotal, ws, experimentRecSet320x48, paddleEngine, context, w, h)
                 }
                 val flowProcessors = listOf(procA, procB, procC)
 
