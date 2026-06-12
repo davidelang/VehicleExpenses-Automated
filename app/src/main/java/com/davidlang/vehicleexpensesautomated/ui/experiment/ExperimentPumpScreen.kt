@@ -788,6 +788,12 @@ private suspend fun runPumpExperiment(
                     // add back blue (exp) + orange (max) annotations for Set B (per user directive)
                     // Explicit nested red filter for B (shared call at 731 already cleans pdHunksRawTotal used for B redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+
+                    // Red-only image for Set B (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now".
+                    val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
+                    val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnnsOnly, null, workspace).first
+                    branch.images["PD_red_only"] = redOnlyB64
+
                     // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
                     val retractedExpForBlue = mutableListOf<PumpHunk>()
                     for (h in pdHunksExpTotal) {
@@ -1467,7 +1473,12 @@ private fun pBuildHtmlRowDynamic(
         val extraOcr = if ((name == "Set B" || name == "Set C") && br.metadata.containsKey("pd_ocr_html")) {
             "<br><div style='font-family:monospace; font-size:18px; text-align:left; background:#fafafa; padding:2px;'>" + br.metadata["pd_ocr_html"] + "</div>"
         } else ""
-        if (name == "Set C" && br.images.containsKey("rawC")) {
+        if (name == "Set B") {
+            // Two images for Set B per approved plan: red-only (clean post-filter reds, no blue/orange) for inspecting redbox merging state, plus the full annotations image exactly "as is happening now" (with ocr html).
+            val redOnly = br.images["PD_red_only"] ?: ""
+            val full = br.images["PD"] ?: ""
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$extraOcr</td>")
+        } else if (name == "Set C" && br.images.containsKey("rawC")) {
             val raw = br.images["rawC"] ?: ""
             val pushed = br.images["pushedC"] ?: ""
             val hB = br.images["histBeforeC"] ?: ""
