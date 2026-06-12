@@ -299,6 +299,17 @@ private suspend fun runPumpExperiment(
                 OdometerOcrUtils.rotate(workspace, tilt)
                 branch.metadata["tilt"] = "%.2f".format(tilt)
 
+                // Hoisted decls (Phase 1 small step of approved refactor plan): declared before the local helper funs
+                // (stackVertically, runPaddleDiscovery) that close over them (and before the inline discovery).
+                // This resolves forward-ref compile issues for 'scales', the pd*Totals, mlBlocksRaw etc that the
+                // helpers reference. (The processedScales for the inline remains at its site for now.)
+                val scales = listOf(224, 608, 1024, 2560)
+                val mlBlocksRaw = if (flowName == "Set B") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()
+                val pdHunksRawTotal = mutableListOf<PumpHunk>()
+                val pdHunksExpTotal = mutableListOf<PumpHunk>()
+                val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+                val pdHunksNativeTotal = mutableListOf<PumpHunk>()
+
                 fun stackVertically(b64List: List<String>): String {
                     if (b64List.isEmpty()) return ""
                     val bitmaps = mutableListOf<android.graphics.Bitmap>()
@@ -410,14 +421,9 @@ private suspend fun runPumpExperiment(
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                 }
 
-                // 3. Discovery
-                val scales = listOf(224, 608, 1024, 2560)
-                val mlBlocksRaw = if (flowName == "Set B") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()
-                val pdHunksRawTotal = mutableListOf<PumpHunk>()
-                val pdHunksExpTotal = mutableListOf<PumpHunk>()
-                val pdHunksMaxTotal = mutableListOf<PumpHunk>()
-                val pdHunksNativeTotal = mutableListOf<PumpHunk>()
-
+                // 3. Discovery (decls for scales/ml/pd* hoisted earlier in Phase 1 for local helper closure visibility
+                // and to resolve compile forward refs; see the block after tilt metadata. The inline processedScales
+                // remains local to this forEach.)
                 val processedScales = mutableSetOf<Int>()
                 scales.forEach { scale ->
                     val srcW = workspace.p.width
