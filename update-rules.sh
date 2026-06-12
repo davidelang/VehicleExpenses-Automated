@@ -44,6 +44,9 @@ FILES=(
     "new_grok_agent_prompt"
     ".grok/config.toml"
     ".grok/hooks/plan-mode-hard-stops.js"
+    # Tracked human-facing ritual document (magic words, forbidden phrases, post-handoff instructions).
+    # Added per approved meta-plan for plan/execute cycle enforcement; synced to all worktrees.
+    "MULTI_AGENT_USER_INSTRUCTIONS.md"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
