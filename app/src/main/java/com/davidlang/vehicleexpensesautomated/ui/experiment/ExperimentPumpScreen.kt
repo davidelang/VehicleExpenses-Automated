@@ -238,7 +238,8 @@ private suspend fun runPumpExperiment(
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
-    val flows = listOf("Set A", "Set B")
+    // Set C: pump-only (copy of Set B) but uses alignment Set J bin-test (histogram valleys for multiple binarizations instead of stretch); each version gets full detect/redbox (incl. nesting filter); versions shown stacked in Set C column.
+    val flows = listOf("Set A", "Set B", "Set C")
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -279,8 +280,8 @@ private suspend fun runPumpExperiment(
                 }
 
                 // 1. Transform
-                val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
-                if (flowName == flows.first()) {
+                val rawHist = if (flowName == "Set C") floatArrayOf() else OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                if (flowName == flows.first() && flowName != "Set C") {
                     originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
                     root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
                     root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
@@ -290,13 +291,47 @@ private suspend fun runPumpExperiment(
                 // Compute per-flow but select angle source based on flow. Set B (pump-only) uses paddleCppAngle (from the optimized/JNI path inside calculateAverageTextAngle).
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
                 val tilt = when (flowName) {
-                    "Set B" -> deskewRes.paddleCppAngle
+                    "Set B", "Set C" -> deskewRes.paddleCppAngle
                     else -> deskewRes.angle
                 }
 
                 // Use shared modern rotate (UV handling, parity with alignment improvements). Local pRotate removed.
                 OdometerOcrUtils.rotate(workspace, tilt)
                 branch.metadata["tilt"] = "%.2f".format(tilt)
+
+                fun stackVertically(b64List: List<String>): String {
+                    if (b64List.isEmpty()) return ""
+                    val bitmaps = mutableListOf<android.graphics.Bitmap>()
+                    try {
+                        b64List.forEach { b64 ->
+                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            if (bmp != null) bitmaps.add(bmp)
+                        }
+                        if (bitmaps.isEmpty()) return ""
+                        val w = bitmaps.maxOf { it.width }
+                        val totalH = bitmaps.sumOf { it.height }
+                        val stacked = android.graphics.Bitmap.createBitmap(w, totalH, android.graphics.Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(stacked)
+                        canvas.drawColor(android.graphics.Color.BLACK)
+                        var y = 0
+                        bitmaps.forEach { bmp ->
+                            val scale = w.toFloat() / bmp.width.toFloat()
+                            val nh = (bmp.height * scale).toInt()
+                            val sb = android.graphics.Bitmap.createScaledBitmap(bmp, w, nh, true)
+                            canvas.drawBitmap(sb, 0f, y.toFloat(), null)
+                            y += nh
+                            if (sb != bmp) sb.recycle()
+                            bmp.recycle()
+                        }
+                        val res = OcrUtils.bitmapToBase64(stacked, 70)
+                        stacked.recycle()
+                        return res
+                    } catch (e: Exception) {
+                        bitmaps.forEach { it.recycle() }
+                        return ""
+                    }
+                }
 
                 // 3. Discovery
                 val scales = listOf(224, 608, 1024, 2560)
@@ -442,10 +477,10 @@ private suspend fun runPumpExperiment(
                     return PathResult(res[0].text, res[1].text, cropT, cropB)
                 }
 
-                // Set B is pump-only (no MLKit for the recognition step). Only populate Paddle result for this flow.
+                // Set B / Set C are pump-only (no MLKit for the recognition step). Only populate Paddle result for these flows.
                 // Set A keeps dual for comparison.
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle")
-                if (flowName != "Set B") {
+                if (flowName != "Set B" && flowName != "Set C") {
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
                 }
 
@@ -455,14 +490,18 @@ private suspend fun runPumpExperiment(
                     SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
 
-                if (flowName != "Set B") {
+                if (flowName != "Set B" && flowName != "Set C") {
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
                     branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
                 }
-                // Only red raw boxes for now (focus on redbox debugging: larger by +1, nested removed, correct positions after scaling fix)
-                val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
-                // + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
-                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+                if (flowName == "Set C") {
+                    // already set to composite inside Set C block
+                } else {
+                    // Only red raw boxes for now (focus on redbox debugging: larger by +1, nested removed, correct positions after scaling fix)
+                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                    // + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
+                    branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+                }
             }
 
             // Final Reporting
@@ -732,7 +771,7 @@ private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: L
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
     appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
     flows.toSortedSet().forEach { flow ->
-        if (flow != "Set B") {
+        if (flow != "Set B" && flow != "Set C") {
             appendLine("<th style='width:350px;'>$flow ML</th>")
         }
         appendLine("<th style='width:350px;'>$flow Paddle</th>")
@@ -762,7 +801,7 @@ private fun pBuildHtmlRowDynamic(
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        if (name != "Set B") {
+        if (name != "Set B" && name != "Set C") {
             appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
         }
         appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,${br.images["PD"]}'></td>")
