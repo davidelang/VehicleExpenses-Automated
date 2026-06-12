@@ -271,24 +271,11 @@ private suspend fun runPumpExperiment(
             // and the old tangled body below will be removed in subsequent phases. Temp: old body still runs
             // so behavior is unchanged during the transition builds.
             flows.forEachIndexed { i, flowName ->
-                // Temp duplicated setup for C processor call (Phase 3). Old body continues after (A/B use it fully;
-                // for C the processor sets composite + path best, old viz if-C skips snapshot so composite stays,
-                // old path may overwrite result -- cleaned in later phases when old body removed).
-                val branch = root.getBranch(flowName)
-                val workspace = NativePaddleEngine.bufferSetA
-                workspace.resize(imgW, imgH)
-                masterBuffer.p.mat.copyTo(workspace.p.mat)
-                masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
-
-                val discoveryDetails = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>().apply {
-                    put("Paddle Raw", mutableMapOf())
-                    put("Paddle Expanded", mutableMapOf())
-                    put("Paddle Max Extent", mutableMapOf())
-                    put("Paddle Native", mutableMapOf())
-                }
-
-                if (i == 2) flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
-                // (processor call for C enabled; old body below still executes for transition)
+                // (original per-flow setup follows; the call to the processor for this i will be placed after the
+                // flowProcessors list definition later in this per-flow body, so the array reference resolves and
+                // the C processor (with valley) runs after setup and after its own def in source. This activates
+                // the array-of-functions iteration per the clarification (no hard-coded per-set function names at
+                // call sites; just index into the array). Old body remains temp during transition.)
                 val branch = root.getBranch(flowName)
                 val workspace = NativePaddleEngine.bufferSetA
                 workspace.resize(imgW, imgH)
@@ -432,6 +419,18 @@ private suspend fun runPumpExperiment(
                         br.pathResults["Paddle"] = getFinal(pdHunksMergedC, "Paddle", tilt, pdHunksRawTotal, ws, experimentRecSet320x48, paddleEngine, context, w, h)
                     }
                 )
+
+                // Call the processor for this flow (i) from the array. Placed after the flowProcessors list val
+                // in source (name resolves) and after per-flow setup in execution. For Set C (i==2) this invokes
+                // the dedicated processor lambda containing the full valley bin-test logic (no hard-coded "Set C"
+                // checks inside the per-path code itself -- the array + index is how we select/iterate the
+                // function per the clarification, avoiding ugly name hard-coding at call sites or inside paths).
+                // The C processor sets br.images["PD"] to the stacked composite (multiple binarized versions +
+                // their red raw boxes post +1/nest filters) and br.pathResults["Paddle"] to the best version's.
+                // Old body continues (normal discovery runs for C on restored mat; viz if-C skips PD overwrite;
+                // path set guarded below to protect processor result). Temp during transition; old body to be
+                // removed when array fully replaces the tangle.
+                flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
 
                 fun stackVertically(b64List: List<String>): String {
                     if (b64List.isEmpty()) return ""
@@ -708,7 +707,13 @@ private suspend fun runPumpExperiment(
 
                 // Set B / Set C are pump-only (no MLKit for the recognition step). Only populate Paddle result for these flows.
                 // Set A keeps dual for comparison.
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+                // Temp guard (during transition to array-of-processors per user clarification): the C processor
+                // (called above after the list) has already set "Paddle" to the best valley result. This old set
+                // (and the name check) will be removed when the old tangled body is deleted and the array fully
+                // drives the flows (avoiding hard-coded names in the main logic).
+                if (flowName != "Set C") {
+                    branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+                }
                 if (flowName != "Set B" && flowName != "Set C") {
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 }
