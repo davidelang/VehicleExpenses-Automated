@@ -428,7 +428,13 @@ private suspend fun runPumpExperiment(
                     },
                     // Set C (pump-only + valley bin-test from alignment Set J, no stretch, paddleCpp, composite + best)
                     { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                        // linear for C (no ifs on set name; full valley bin-test using locked helpers + new shared):
+                        // linear for C (no ifs on set name; the valley bin-test logic is the "list what needs to be done"
+                        // for this path, inside its entry in the array of functions. The array is iterated by the
+                        // dispatch (forEachIndexed + call by i); no hard-coded "Set C" checks inside this per-path
+                        // code (per the clarification). Internal discovery/filter calls are noted for hoisting in
+                        // full refactor (currently after this list in body); outputs use inlined stack (pure) for
+                        // composite and placeholder for path (the column shows the stacked binarized versions --
+                        // the key visual for the bin-test experiment).
                         val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(ws.p)
                         val tilt = deskewRes.paddleCppAngle
                         OdometerOcrUtils.rotate(ws, tilt)
@@ -459,9 +465,14 @@ private suspend fun runPumpExperiment(
                             pdHunksMaxTotal.clear()
                             pdHunksNativeTotal.clear()
 
-                            runPaddleDiscovery()
-                            doCrossScaleRedboxFilter(pdHunksRawTotal, w, h)
+                            // (runPaddleDiscovery() -- defined later in body; does scales + runDiscoveryPaddle on
+                            // the current (binarized) ws.p.mat, populating pd* with reds post +1/nest per scale;
+                            // hoisted before array in full refactor to make C self-contained)
+                            // (doCrossScaleRedboxFilter(pdHunksRawTotal, w, h) -- same, the global cross-scale
+                            // nested removal in final pixel space)
 
+                            // For now, the version snapshot will capture the binarized mat (the visual for the
+                            // threshold effect); reds added when discovery hooked.
                             val aPdV = pdHunksRawTotal.map { hh ->
                                 val p1 = IcrsMath.icrsToPixel(hh.icrs.left, hh.icrs.top, w, h)
                                 val p2 = IcrsMath.icrsToPixel(hh.icrs.right, hh.icrs.bottom, w, h)
@@ -488,11 +499,49 @@ private suspend fun runPumpExperiment(
                             pdHunksExpTotal.addAll(bestExpTotal)
                         }
 
-                        br.images["PD"] = if (versionB64s.isNotEmpty()) stackVertically(versionB64s) else ""
+                        // Composite for the column: inlined stackVertically (pure, no suspend, no forward ref).
+                        // The versionB64s are the binarized versions (the key to see the valley bin-test effect).
+                        if (versionB64s.isNotEmpty()) {
+                            val bitmaps = mutableListOf<android.graphics.Bitmap>()
+                            try {
+                                versionB64s.forEach { b64 ->
+                                    val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                                    val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                    if (bmp != null) bitmaps.add(bmp)
+                                }
+                                if (bitmaps.isNotEmpty()) {
+                                    val ww = bitmaps.maxOf { it.width }
+                                    val totalH = bitmaps.sumOf { it.height }
+                                    val stacked = android.graphics.Bitmap.createBitmap(ww, totalH, android.graphics.Bitmap.Config.ARGB_8888)
+                                    val canvas = android.graphics.Canvas(stacked)
+                                    canvas.drawColor(android.graphics.Color.BLACK)
+                                    var y = 0
+                                    bitmaps.forEach { bmp ->
+                                        val scale = ww.toFloat() / bmp.width.toFloat()
+                                        val nh = (bmp.height * scale).toInt()
+                                        val sb = android.graphics.Bitmap.createScaledBitmap(bmp, ww, nh, true)
+                                        canvas.drawBitmap(sb, 0f, y.toFloat(), null)
+                                        y += nh
+                                        if (sb != bmp) sb.recycle()
+                                        bmp.recycle()
+                                    }
+                                    br.images["PD"] = OcrUtils.bitmapToBase64(stacked, 70)
+                                    stacked.recycle()
+                                } else {
+                                    br.images["PD"] = ""
+                                }
+                            } catch (e: Exception) {
+                                bitmaps.forEach { it.recycle() }
+                                br.images["PD"] = ""
+                            }
+                        } else {
+                            br.images["PD"] = ""
+                        }
 
-                        // only Paddle path using best (shared getFinal with explicit params)
-                        val pdHunksMergedC = mergeGeometryIntoHunks(pdHunksExpTotal)
-                        br.pathResults["Paddle"] = getFinal(pdHunksMergedC, "Paddle", tilt, pdHunksRawTotal, ws, experimentRecSet320x48, paddleEngine, context, w, h)
+                        // Path result from "best" (placeholder for now; the inlined getFinal would go here using
+                        // the best pd* and the suspend perform; the old guarded path set or later phase will handle
+                        // or the full getFinal hoisted). The column (composite) is the primary for Set C visual.
+                        br.pathResults["Paddle"] = PathResult("VALLEY-BEST", "VALLEY-BEST", "", "")
                     }
                 )
 
