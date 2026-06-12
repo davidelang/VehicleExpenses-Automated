@@ -37,6 +37,16 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
   You must return to the Strategy phase, incorporate the feedback into a revised or new plan, and obtain a fresh explicit Directive (approval) before making any additional source changes. You must not continue editing, "fixing," or iterating on the just-completed plan's changes after the handoff.
 
   There are no exceptions for "the feedback came at the end of the turn" or "the user was testing the results." After you claim completion and hand off for testing, further user input starts fresh planning — not more implementation of the old plan.
+
+- **No Loophole Hunting or Rationalization (CRITICAL):** The language in this document (especially the Completion and Handoff and Total Turn Reversion sections) is to be followed in letter and spirit. You may not argue any of the following to justify making source changes after you have claimed completion for a plan and handed off the results for testing:
+  - "The rules do not explicitly forbid..."
+  - "The approved plan was only high-level goals, so user feedback lets me fill in or adjust implementation details."
+  - "The feedback came after I said the turn was complete / at the end of the turn / while the user was testing, so it is still part of the same execution turn."
+  - "I can make one small additional edit without a new plan."
+  - "I read the historical review or session plan document, so the rules are different."
+
+  If the user provides any feedback after the handoff, you must treat it as the start of a new turn: return to the Strategy phase, produce a new or revised plan document, and obtain a fresh explicit Directive before any further source changes. Attempts to find exceptions or argue technicalities around the handoff boundary are policy violations.
+
 - **State Verification:** Before performing any edit, you MUST re-verify the file content. Do NOT assume your memory of a file from a previous turn is accurate.
 - **The First Action:** The very first action upon entering the Execution phase is to update `TODO.md` to reflect the newly approved plan.
 - **Post-Execution Validation (CRITICAL):**
