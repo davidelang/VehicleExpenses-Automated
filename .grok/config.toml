@@ -72,6 +72,32 @@ rules = [
   # For plan mode hard stops (reinforce native plan mode via enter_plan_mode / SwitchMode):
   # deny edit/write/bash to non-sandbox paths; deny Task/subagent/invoke in plan mode, etc.
   # (exact rules tuned here + PreToolUse hooks below)
+
+  # Granular edit permissions for designated safe locations only.
+  # This allows search_replace / write on the sandbox (for plans, artifacts, logs)
+  # and on the local per-worktree untracked state files (current-state.md etc.)
+  # without prompting for *every* edit, while still gating everything else.
+  # Add more specific patterns here as needed instead of a blanket "allow all edits".
+  # These are merged with ~/.grok/config.toml (project rules take precedence).
+  { action = "allow", tool = "search_replace", pattern = "dev-ai-interaction/**" },
+  { action = "allow", tool = "search_replace", pattern = "dev-ai-interaction/plans/**" },
+  { action = "allow", tool = "search_replace", pattern = "dev-ai*/plans/**" },
+  { action = "allow", tool = "search_replace", pattern = "current-state.md" },
+  { action = "allow", tool = "search_replace", pattern = ".agent-state/**" },
+  { action = "allow", tool = "write", pattern = "dev-ai-interaction/**" },
+  { action = "allow", tool = "write", pattern = "dev-ai-interaction/plans/**" },
+  { action = "allow", tool = "write", pattern = "dev-ai*/plans/**" },
+  { action = "allow", tool = "write", pattern = "current-state.md" },
+  { action = "allow", tool = "write", pattern = ".agent-state/**" },
+
+  # When NOT in planning mode (i.e. after exit_plan_mode, during approved execution),
+  # allow edits to tracked files (and anywhere) via search_replace/write.
+  # Plan mode restrictions (deny non-sandbox edits, etc.) are enforced by the
+  # native enter/exit_plan_mode + plan-mode-hard-stops.js PreToolUse hook.
+  # This stops the constant per-edit permission prompts during normal work
+  # while preserving the strict "read-only outside sandbox" rule in planning.
+  { action = "allow", tool = "search_replace" },
+  { action = "allow", tool = "write" },
 ]
 
 # Project .grok/hooks/ (PreToolUse) provide additional hard enforcement for plan-mode restrictions

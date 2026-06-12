@@ -4,7 +4,7 @@ This is a thin overlay. The authoritative shared content is in `AGENT_MANDATES.m
 
 **Grok CLI specifics:**
 - Tool mapping: Read, Write, StrReplace, Shell, Task, SwitchMode (plan/agent).
-- Phase gating: Use plan mode (enter_plan_mode / SwitchMode) for research/strategy; only exit after explicit user approval of a plan and directive to implement. The primary planning artifact is always a fresh plan file written to dev-ai-interaction/ (see AGENT_MANDATES "Sandbox Plan File as the Primary..." + MULTI_AGENT_USER_INSTRUCTIONS.md); the harness session plan.md is process log only (roll + minimal prepend, never the approved work plan).
+- Phase gating: Use plan mode (enter_plan_mode / SwitchMode) for research/strategy; only exit after explicit user approval of a plan and directive to implement. The primary planning artifact is always a fresh plan file written to dev-ai-interaction/plans/ (see AGENT_MANDATES "Sandbox Plan File as the Primary..." + MULTI_AGENT_USER_INSTRUCTIONS.md); the harness session plan.md is process log only (roll + minimal prepend, never the approved work plan).
 - Old plans rule: as above (plus harness plan hygiene and explicit sandbox plan file requirement in AGENT_MANDATES).
 - Coordinates: ICRS or pixel only.
 - Git reset: three contexts with preflight.
