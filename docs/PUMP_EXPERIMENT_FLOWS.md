@@ -30,17 +30,24 @@ val flows = listOf("Set A", "New Set")
 Adding a string to this list **normally** adds two columns (ML and Paddle) to the HTML report. Exception: documented pure-pump / ML-free flows (see below) only produce a Paddle column; the reporting builders auto-omit the ML th/td for those flow names.
 
 ### Step 2: Implement Flow-Specific Logic
-Inside the `flows.forEach { flowName -> ... }` loop, use `if` or `when` statements to apply specific logic based on the `flowName`.
+Use an array (list) of processor functions/lambdas (or references to them), in the same order as the `flows` list. Iterate the array (e.g. `flows.forEachIndexed { i, _ -> ... flowProcessors[i](ws, br, det, w, h) }` or zip). Each processor entry is a self-contained function/lambda whose body is the linear list of steps for that path (transform, deskew/tilt, discovery, extraction, viz, populate only its branch keys). No `if (flowName == "Set X")` or hard-coded per-set function names inside the per-path code itself -- the array + index/zip is how the dispatch selects and iterates the function for each flow (per the clarification: "an array of functions that you can iterate over is fine", avoiding ugly hard-coding of names like "setAmlkit"/"setApaddle" at call sites or inside paths).
 
-Example:
+Example (skeletal):
 ```kotlin
-if (flowName == "New Set") {
-    // Apply different contrast stretch or different deskew engine
-    OdometerOcrUtils.applyContrastStretch(workspace.p.mat, 0.10f)
-} else {
-    OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+val flowProcessors = listOf(
+    { ws, br, det, w, h -> /* linear steps for Set A (stretch, standard tilt, ml+pd, both results/viz) */ },
+    { ws, br, det, w, h -> /* linear for Set B (pump-only, paddleCpp tilt, pd only) */ },
+    { ws, br, det, w, h -> /* linear for Set C (pump-only + valley bin-test: hist, midpoints, per-bin binarize, discovery per version, stack composite for PD, best for path) */ }
+)
+flows.forEachIndexed { i, _ ->
+    val branch = root.getBranch(flows[i])
+    ... common setup (ws copy, discoveryDetails) ...
+    flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
 }
 ```
+The old `if`/`when` inside a single `forEach` on flowName is the tangled mess being refactored away (old body remains temp during transition; full cleanup when processors are filled and old body removed). Pure-pump sets (B, C) just don't populate ML keys in their processor. Do not modify the reporting builders (pBuild*); they auto-handle via the branch data and flow names.
+
+See ExperimentPumpScreen.kt for the current array + dispatch (C entry is the dedicated per-path for the valley bin-test from alignment Set J).
 
 ### Step 3: Populate the Branch
 Results are stored in the `branch` object provided for each iteration:
