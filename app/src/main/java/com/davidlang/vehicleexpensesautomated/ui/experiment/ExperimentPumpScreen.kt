@@ -529,7 +529,7 @@ private suspend fun runPumpExperiment(
                 // Set C valley (bin-test) will be fully implemented in its processor (Phase 3).
                 val flowProcessors: List<suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> = listOf(
                     // Set A (baseline dual ML+Paddle, stretch, standard angle)
-                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    suspend fun (ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int) {
                         // linear steps (no conditionals on set):
                         // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
                         // - standard tilt = deskewRes.angle; rotate; br.metadata["tilt"] = ...
@@ -540,7 +540,7 @@ private suspend fun runPumpExperiment(
                         // - viz: ML image + PD raw reds snapshot
                     },
                     // Set B (pump-only, no stretch, paddleCpp tilt)
-                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    suspend fun (ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int) {
                         // linear for B:
                         // - no stretch
                         // - paddleCpp tilt (from deskewRes); rotate; tilt meta
@@ -551,7 +551,7 @@ private suspend fun runPumpExperiment(
                         // - only PD viz (raw reds)
                     },
                     // Set C (pump-only + valley bin-test from alignment Set J, no stretch, paddleCpp, composite + best)
-                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    suspend fun (ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int) {
                         // linear for C (no ifs on set name; the valley bin-test logic is the "list what needs to be done"
                         // for this path, inside its entry in the array of functions. The array is iterated by the
                         // dispatch (forEachIndexed + call by i); no hard-coded "Set C" checks inside this per-path
