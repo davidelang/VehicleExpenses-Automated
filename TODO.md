@@ -1,21 +1,28 @@
 # TODO
 
-- [ ] Pump Experiment Set C (bin-test valley binarizations from alignment Set J; no stretch; multiple versions with per-version detect/redbox/nesting; stacked composite in Set C column; best version for result)
-    - Forensic analysis (post multiple resets in prior attempts): Root cause was large search_replace duplicating discovery block inside runPumpExperiment, breaking scope/closings (unresolved privates like prepareScale/runDiscoveryPaddle, private not for local, ambiguous component1/2 on Pair, syntax at end). Violated "small" duplication in approved plan and turn-boundary rules (post-build feedback requires new cycle). Exceeded 3 strikes without mandatory analysis until now.
-    - Decomposed sub-plan (per 3-3-3 + handoff rules; no reset past successful builds point per user note):
-      1. Update TODO.md first (this).
-      2. Small targeted search_replace only (forensic read_file before/after EVERY edit).
-      3. Add stackVertically helper (small insert).
-      4. Add local runPaddleDiscovery() helper (small insert, clean block with explicit pair for prepareScale to avoid ambiguous).
-      5. Small insert for if(flowName == "Set C") { valley hist/midpoints; per-version: binarize, swap p.mat, clear pd*, call helper, gen vB64 + collect, track best by raw count, restore } before normal discovery.
-      6. Small wrap of existing normal discovery block with if(flowName != "Set C") { ... } (replace the block with guarded version; body unchanged).
-      7. Ensure small support (flows list, tilt for C, stretch skip for C, no-ML conditionals for C in header/row/summary/pathResults/mlHunks/visual, ml if update) are in (some already from prior small; verify).
-      8. Update docs/PUMP... if needed (small).
-      9. ./build_app after pieces (list files); once a piece builds successfully, lock the builds tag; no reset past it.
-      10. Forensic build success + manual device run/golden subset + report inspect for Set C stacked binarized (no stretch) with reds post-filter, best result, A/B unchanged.
-    - Reuses per plan: OdometerOcrUtils.findValleyMidpoints, runDiscoveryPaddle (nesting), getAnns/takeSnapshot, existing patterns (no report builder mods), explicit pair in dupe.
-    - Once logic in and builds, treat as handed off for that piece per rules; further feedback = new turn.
-    - (Some small support like flows/tilt/stretch-skip/conditionals already in from re-applies post-reset; lock them.)
+- [ ] Pump Experiment: Refactor to array of per-flow processor functions (user-approved pattern: "an array of functions that you can iterate over is fine") + deliver Set C (pump-only + alignment Set J valley bin-test: 64bin hist, findValleyMidpoints, per-midpoint THRESH_BINARY, independent detect/redbox(+1/nest per scale + cross filter) on each binarized, stacked composite in Set C column via stackVertically, best version for Paddle result+crops). No modifications to pBuild* reporting.
+    - Locked builds point (per user note + mandates): a8f17a0e6330441c9b7a6fa7fde1a957d497f236 (fix-pump-experiment/builds) — state after stackVertically + runPaddleDiscovery helper + redbox ports + partial Set C guards built. In this turn: ONLY git checkout . (or restore/HEAD reset for uncommitted) for discards; never reset --hard past a8f17a0e or to older tag. New successful ./build_app advances the builds tag (new "do not reset past" point).
+    - Approved plan (from session plan.md): Refactor removes the tangled if/when/guards/dupe discovery inside flows.forEach by introducing a list/array of processor functions (one per set, in matching order with flows) that are iterated (forEachIndexed/zip). Each processor body is a clean linear "list what needs to be done for that path" (its transform, tilt, discovery, extraction, viz) calling shared helpers; no flowName conditionals inside the processors. Set C valley implemented cleanly in its processor. Shared helpers extracted first (filter, param'd getFinal etc). Old inline dupe removed as logic moves. docs/PUMP_EXPERIMENT_FLOWS.md updated for the new "array of processors" addition pattern.
+    - Execution rules (strict): 
+      1. First action: update this TODO.md (done in this edit).
+      2. Small targeted search_replace ONLY (one logical piece at a time).
+      3. Re-verify with read_file (offset/limit on target region) immediately BEFORE every search_replace.
+      4. After every search_replace: immediate forensic read_file on edited blocks + context (confirm no corruption, A/B paths unchanged where applicable, new structure, valley matches spec, braces/scopes).
+      5. ./build_app after each logical piece (or group that forms a buildable unit); success locks progress.
+      6. On build fail in turn: git checkout . only to restore to last built state (post locked a8f17a0e initially), then tiny fix + re-verify + build. Follow 3-3-3.
+      7. Handoff ("results ready to test") only after final build + full verification per plan; then STOP. Feedback = new planning cycle + fresh directive before more source changes.
+      8. No .. paths, no deploy, ICRS/raw only, update plan.md only for strategy (already done), sandbox at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/ if extra artifacts.
+    - Phased small steps (per approved plan):
+      - Phase 1: Extract 1-2 shared helpers (doCrossScaleRedboxFilter; param-accepting getFinal/takeCrop). Forensic before/after, build.
+      - Phase 2: Introduce flowProcessors list (3 lambdas/skeletal) + forEachIndexed dispatch (old body may stay temporarily). Forensic + build (key lock point).
+      - Phase 3: Implement Set C processor (full valley: hist 64 on deskewed no-stretch, midpoints via findValleyMidpoints, per-bin threshold/swap/clear pd*/runPaddleDiscovery/filter/version snapshot via getAnns+take/stackVertically/best pd* set for result + only Paddle path). Forensic + build.
+      - Phase 4: Move Set B logic into its processor slot, remove B-specific ifs/dupe discovery remnants. Forensic + build.
+      - Phase 5: Move Set A, remove remaining conditionals/old inline, handle first/A root snaps (after/hist2) inside A processor or pre-dispatch. Forensic + build.
+      - Phase 6: Tiny cleanups, update docs/PUMP_EXPERIMENT_FLOWS.md (array-of-processors pattern + Set C bin-test example). Forensic + build.
+      - Final: Full forensic reads of processors/dispatch/valley/helpers, ./build_app, handoff for manual test (golden subset) + report inspection (Set C stacked composites with post-filter reds per version, best result used, A/B 100% unchanged incl. stretch/single-PD/ML-for-A, tilt per set, no ML cols for B/C).
+    - Reuses (per plan): OdometerOcrUtils (findValleyMidpoints, automaticContrastStretch (A only), calculateAverageTextAngle, rotate, processPaddleHeatmap, consolidate); kt locals (prepareScale, runDiscoveryPaddle with +1/nonNested redbox from Set J, stackVertically (locked), runPaddleDiscovery (locked)); shared (IcrsMath, merge..., stitch/group/expand/findBest/performHunkRecognition, OcrUtils.takeSnapshot/bitmapToBase64); Pump* types, NativePaddle, BufferSet (all in kt). Do not touch pBuildHtmlHeader/pBuildHtmlRowDynamic.
+    - Success = clean build + report matches Set C spec (stacked binarized versions + filtered reds, best for numeric) + A/B identical to pre-refactor + clean processor array with linear per-path bodies + docs updated. Further user feedback starts new turn (re-plan).
+    - (Historical valley-insert sub-plan superseded by this approved refactor plan; follow the phases above exactly.)
 
 - [x] Refactor Agent Workspace Syncing
 
