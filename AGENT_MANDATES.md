@@ -113,7 +113,32 @@ git reset --hard "$TAG"
 - abandoned
 - in-progress (usually by another active agent)
 
-Move completed plans to `dev-ai-interaction/plans/old/` (or similar) upon finishing. Do not start new work from any plan in this directory unless the user has explicitly directed you to a specific plan.
+Completed plans are moved to the sibling directory `dev-ai-interaction/historical-plans/` (NOT a subdirectory of plans/, and NOT under plans/old/). The historical-plans/ location exists solely for archival purposes.
+
+**You must never read, list, search for, or be influenced by any files in dev-ai-interaction/historical-plans/, dev-ai-interaction/plans/ (or any old/ subdirectories), or any similar historical archive.** The only plan file you are permitted to read or implement is the single, specific document the user has most recently and *explicitly* designated for the *current turn* (e.g., "the approved plan for this turn is dev-ai-interaction/plans/my-current-plan.md" or by providing the full path and content). If you have read any historical or wrong plan file, you must immediately enter plan mode, report the violation, discard any work based on it, and wait for a new directive.
+
+## Plan File Access and Discovery Rules (CRITICAL - Turn Enforcement)
+You are strictly forbidden from:
+- Reading, searching, or referencing any "plan.md", review documents, or plan-like .md files located anywhere in ~/.grok/sessions/ (any session or review directory). These are historical review artifacts for the orchestration process only and must never be treated as an "approved plan" for feature work.
+- Reading or being influenced by any files in dev-ai-interaction/historical-plans/, dev-ai-interaction/plans/ (including old/ or drafts/), or any other historical/completed plan locations.
+- Continuing to make source changes for a previous plan after you have completed its changes, run `./build_app`, and informed the user that the turn is complete and results are ready for testing (e.g., "Turn completed", "test this").
+- Treating user feedback or corrections received *after* such a handoff as permission to continue editing or "debug" the old plan. Such feedback is always the start of a *new* planning turn. You must stop all source edits related to the previous plan, return to the Strategy phase, produce a new or revised plan document for the feedback, and obtain a fresh explicit Directive (approval) before any further source changes.
+
+**After you claim "turn completed", run the build that creates the builds tag, and hand off for testing, the execution turn for that plan is over.** From that moment:
+- You have no authority to make any additional source changes for that plan.
+- Any user message is new input for planning.
+- You must immediately treat yourself as back in the planning/research phase for a new turn.
+- You must not make source changes until you have a new plan, the user has reviewed it, and you have received explicit approval to enter execution for the new plan.
+
+There are *no exceptions* for "small tweaks", "the feedback is just test results", "continuing the same turn", "the plan was high-level so I can iterate", or "the rules don't explicitly say I can't make one more edit". Any post-handoff source change without a new approved plan is a policy violation and must be self-reported and reverted using an allowed reset context.
+
+If you ever read a historical plan file from ~/.grok/sessions/, historical-plans/, or plans/, or continue editing after a handoff, you must immediately:
+1. Enter plan mode.
+2. Revert any unauthorized changes.
+3. Report the violation in your next response.
+4. Wait for explicit user direction before any further work.
+
+## Plan File Access and Discovery Rules (CRITICAL - Turn Enforcement)
 
 ## Shared Operational Rule — Re-read After Compaction (Applies to ALL Agent Types)
 After any context compaction (via `/compact` or automatic via `auto_compact_threshold_percent`), **immediately re-read** `AGENT_CONTEXT.md`, your agent-specific overlay (`GROK.md` or `GEMINI.md`), `AGENT_MANDATES.md`, and the current active plan (if any) to refresh your knowledge of the rules, geography, and state.
