@@ -864,10 +864,38 @@ private suspend fun runPumpExperiment(
                     branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
                 } else if (flowName == "Set C") {
-                    // Set C: derive blue/orange from raw hunks (pre-redbox detected objects, tFullB equiv per alignment Set J) using per-red overlap + Y-range horizontal extend + exact dedup (per user clarifications; no overlap/nesting tests, only exact box matches from same objects).
-                    // redBoxes = the post-redbox "raw red" level (pdHunksRawTotal, tRawB equiv); hunks = the raw detected (pdHunksDetectedTotal) for white 1px + as the objects to union/extend.
+                    // Set C: derive blue/orange from raw hunks using the image-based object finding from alignment Set J (large/small filter path), not Paddle.
+                    // The "command" to find the objects (per-char or per 7-seg segment) is NativeImageUtils.findAllComponentsH (wraps cv::connectedComponentsWithStats),
+                    // called after blackOutLargeAndSmallComponentsH (and rolling) on a binarized version of the mat.
+                    // See ExperimentAlignmentScreen.kt:1180 (blackOutLargeAndSmall), 1194 (findAllComponentsH after wide/tall processing) and the nativeBlackOut... / nativeFindAll... in NativeImageUtils.cpp
+                    // which do CC passes at the beginning for large/wide, then after processing them before small.
                     val redBoxes = pdHunksRawTotal.toList()
-                    val hunks = pdHunksDetectedTotal.toList()  // the raw detected hunks (pre +1/denest) for white anns + derivation source
+
+                    // Compute vSW/hSW from the red boxes (using the red-box hist method, as in Set J / OcrHarness).
+                    val redPixelRects = redBoxes.map { r ->
+                        val p1 = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(r.right, r.bottom, imgW, imgH)
+                        android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    }
+                    val hRes = NativeImageUtils.calculateHistogramWithThresholdH(workspace.p.mat, redPixelRects, 128f)
+                    val vSW = hRes?.second?.get(0)?.toFloat() ?: 6f
+                    val hSW = hRes?.second?.get(1)?.toFloat() ?: 6f
+
+                    // Find the raw objects ("hunks") for white boxes + derivation source using the exact image processing path from Set J.
+                    // Work on a binary clone (threshold the current polarity-adjusted mat) so the main mat for snapshot/OCR is untouched.
+                    val binMat = org.opencv.core.Mat()
+                    org.opencv.imgproc.Imgproc.threshold(workspace.p.mat, binMat, 128.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+                    NativeImageUtils.blackOutLargeAndSmallComponentsH(binMat, vSW, hSW, 0.20f * binMat.cols())
+                    NativeImageUtils.blackOutRollingDigitsH(binMat, vSW, hSW)
+                    val compRects = NativeImageUtils.findAllComponentsH(binMat, vSW, hSW)
+                    binMat.release()
+
+                    // compRects are the pixel-space bounding boxes of the individual characters / 7-seg segments (the "objects").
+                    val hunks = compRects.map { r ->
+                        val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
+                        val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
+                        PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    }
                     val blueRects = mutableListOf<RectF>()
                     for (red in redBoxes) {
                         val overlapping = hunks.filter { other ->
@@ -901,12 +929,11 @@ private suspend fun runPumpExperiment(
                     for (o in orangeRects) {
                         if (dedupedOrange.none { d -> d.left == o.left && d.top == o.top && d.right == o.right && d.bottom == o.bottom }) dedupedOrange.add(o)
                     }
-                    // anns: red + 1px white around each (raw detected) hunk (to show hunk bounds) + blue + orange
+                    // anns: red + 1px white around each character/segment object (from findAllComponentsH) + blue + orange
                     val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
-                    val whiteAnns = hunks.map { h ->
-                        val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                        SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.WHITE, 1)
+                    // Use the original comp pixel rects directly (they are already in the snapshot pixel space).
+                    val whiteAnns = compRects.map { r ->
+                        SnapshotAnnotation(r.left, r.top, r.right, r.bottom, Shape.RECTANGLE, Color.WHITE, 1)
                     }
                     val blueAnns = blueRects.map { r ->
                         val p1 = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
