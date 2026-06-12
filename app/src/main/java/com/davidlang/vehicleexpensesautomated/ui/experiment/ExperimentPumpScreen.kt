@@ -527,9 +527,9 @@ private suspend fun runPumpExperiment(
                 // only their branch (images, pathResults, metadata["tilt"]). Old tangled forEach body remains
                 // temporarily (will be removed as logic is moved into the processors in subsequent phases).
                 // Set C valley (bin-test) will be fully implemented in its processor (Phase 3).
-                val flowProcessors = listOf(
+                val flowProcessors: List<suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> = listOf(
                     // Set A (baseline dual ML+Paddle, stretch, standard angle)
-                    { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                         // linear steps (no conditionals on set):
                         // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
                         // - standard tilt = deskewRes.angle; rotate; br.metadata["tilt"] = ...
@@ -540,7 +540,7 @@ private suspend fun runPumpExperiment(
                         // - viz: ML image + PD raw reds snapshot
                     },
                     // Set B (pump-only, no stretch, paddleCpp tilt)
-                    { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    suspend { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                         // linear for B:
                         // - no stretch
                         // - paddleCpp tilt (from deskewRes); rotate; tilt meta
