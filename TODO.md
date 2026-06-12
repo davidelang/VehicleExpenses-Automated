@@ -77,6 +77,19 @@
   - Phase 3: Update pBuildHtmlRowDynamic (Set C td ~1370s) to render raw + pushed (few brightness) + before/after hists (mini table or stack, labeled) inside the column td, above existing PD + pd_ocr_html. Update comments (top flow desc, stretch comment, doValleyForC stub, old_bin_trials block). Forensic read after. A/B columns untouched.
   - Phase 4: Re-verify current-state, git add *only* the two .kt + current-state.md (explicit, no TODO), run ./build_app (pass files), verify success + new branch-scoped tag (get-builds-tag.sh + describe). Forensic reads on .kt post-build. (3-3-3 strikes + preflight approved reset only if needed.)
   - Phase 5: Full forensic re-reads on all edited sites. Final ./build_app (clean). Update current-state.md (re-read first) with COMPLETE + last tag + handoff. Explicit user message including plan path + "results ready to test. **END OF EXECUTION TURN**". Complete stop.
+
+# Pump experiment Set C red box pixel histogram + near-containment merging rule (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-c-redbox-histogram-and-merging-20260612-plan.md)
+- Execution started after explicit approval of the sandbox plan (revised lean version focused only on this turn's work).
+- Re-reads of the approved plan + current-state.md + this TODO.md (done).
+- Phase 0: Updated this TODO.md (this is the mandatory first action per the plan and mandates; no .kt source edits before it).
+- Background preserved from state (valley push column structure for hists, CC via connectedComponentsWithStats in Set C, decimal OCR + >=2 digit filter, exact red nesting filter, blue retract).
+- Follow the approved plan's Phased Small-Step Execution exactly:
+  - Phase 1: Extend generateHistogramB64 with optional mask param. Capture redboxHistC in the Set C polarity probe block (using the existing red mask + masked calcHist on the pushed mat). Forensic read_file after edit + surrounding.
+  - Phase 2: Implement the 40px near-containment extend-then-delete rule in the Set C blueRects (per-red overlapping hunks min/max) and orangeRects (same-row) logic (and retracted), using IcrsMath for pixel-space 40px check. Forensic read after.
+  - Phase 3: Update pBuildHtmlRowDynamic Set C special case to display the redboxHistC (labeled "Redbox Hist (pixels in red boxes)") in the column (e.g. in the hists section). Forensic read after.
+  - Phase 4: Re-verify current-state, git add the .kt + current-state.md (explicit), run ./build_app (pass files), verify success + new branch-scoped tag. Forensic re-reads on .kt post-build.
+  - Phase 5: Full forensic re-reads. Final ./build_app (clean). Update current-state with COMPLETE + tag + handoff. Explicit message with the exact plan path + "results ready to test. **END OF EXECUTION TURN**". Complete stop.
+- See the approved sandbox plan (the dev-ai path) for full (lean) Context (the work for this turn only), Approach, Critical Files, Reuse, detailed Phased steps, and Verification. No obsolete data.
 - All constraints: ICRS/raw pixel only (no 0-1), forensic before/after every edit, ./build_app milestones, no deployment, no .. paths, primary artifact this plan, local state updated, etc.
 - Verification per plan: builds clean; Set C column shows raw + the pushed image (small number of brightness values, visibly not binarized) + before/after hists + PD/ocr; A/B/root unchanged; JSON has new keys under Set C images; current-state + this TODO reflect.
 - See the full approved sandbox plan (the executed path above) for Context, Recommended Approach (vs. display-only, bin-trials revival, etc.), Critical Files, exact Reuse list, detailed Verification, and Handoff Requirements. Any post-handoff feedback starts *new* turn (new plan file + directive).
