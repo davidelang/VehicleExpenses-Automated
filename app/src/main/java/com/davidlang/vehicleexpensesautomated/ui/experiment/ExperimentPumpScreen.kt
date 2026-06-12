@@ -831,7 +831,7 @@ private suspend fun runPumpExperiment(
                             val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
                             val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet320x48.c[recCropId])
                             experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
                             res.debugText
                         }
@@ -851,16 +851,23 @@ private suspend fun runPumpExperiment(
                             val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
                             val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet320x48.c[recCropId])
                             experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
                             res.debugText
                         }
                     }
 
                     // HTML text rows under the image (one row per box, as-is + digits separately). Store in metadata for pBuild to append after <img> (not baked in the PD image itself).
+                    // Filter: only show boxes with >=2 digits in the (decimal) digits result (per plan requirement for clean pump reports).
                     val ocrLinesB = mutableListOf<String>()
-                    blueTexts.forEachIndexed { i, asis -> ocrLinesB += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: ${blueDigits[i]}" }
-                    orangeTexts.forEachIndexed { i, asis -> ocrLinesB += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: ${orangeDigits[i]}" }
+                    blueTexts.forEachIndexed { i, asis ->
+                        val d = blueDigits[i]
+                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d"
+                    }
+                    orangeTexts.forEachIndexed { i, asis ->
+                        val d = orangeDigits[i]
+                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d"
+                    }
                     branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
                 } else if (flowName == "Set C") {
@@ -975,7 +982,7 @@ private suspend fun runPumpExperiment(
                             val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
                             val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet320x48.c[recCropId])
                             experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
                             res.debugText
                         }
@@ -999,14 +1006,20 @@ private suspend fun runPumpExperiment(
                             val recCropId = experimentRecSet320x48.createCrop(0, 0, targetW, targetH)
                             val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet320x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[recCropId])
+                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet320x48.c[recCropId])
                             experimentRecSet320x48.c[recCropId].release(); workspace.c[cropId].release()
                             res.debugText
                         }
                     }
                     val ocrLinesC = mutableListOf<String>()
-                    blueAsIs.forEachIndexed { i, a -> ocrLinesC += "Blue ${i+1} as-is: $a &nbsp;&nbsp; digits: ${blueDigits[i]}" }
-                    orangeAsIs.forEachIndexed { i, a -> ocrLinesC += "Orange ${i+1} as-is: $a &nbsp;&nbsp; digits: ${orangeDigits[i]}" }
+                    blueAsIs.forEachIndexed { i, a ->
+                        val d = blueDigits[i]
+                        if (d.count { it.isDigit() } >= 2) ocrLinesC += "Blue ${i+1} as-is: $a &nbsp;&nbsp; digits: $d"
+                    }
+                    orangeAsIs.forEachIndexed { i, a ->
+                        val d = orangeDigits[i]
+                        if (d.count { it.isDigit() } >= 2) ocrLinesC += "Orange ${i+1} as-is: $a &nbsp;&nbsp; digits: $d"
+                    }
                     branch.metadata["pd_ocr_html"] = ocrLinesC.joinToString("<br>")
                 } else {
                     // A (reds only)
