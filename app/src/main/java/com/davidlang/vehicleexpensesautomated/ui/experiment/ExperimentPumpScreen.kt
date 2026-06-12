@@ -622,7 +622,14 @@ private suspend fun runPumpExperiment(
                 }
                 val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // bridge to the dedicated per-path doValleyForC (the valley with greyscale + labeled binarized thresh images is there; the runBlocking bridges the suspend work from the normal C processor entry in the array).
-                    runBlocking(Dispatchers.IO) { doValleyForC(ws, br, det, w, h) }
+                    try {
+                        runBlocking(Dispatchers.IO) { doValleyForC(ws, br, det, w, h) }
+                    } catch (e: Exception) {
+                        // Visible error surfacing for silent failures in doValleyForC (e.g. during binarization, labeling, or stacking) that would cause fallback to greyscale only in the Set C column.
+                        Log.e("ExperimentPump", "doValleyForC failed for Set C", e)
+                        // Leave images["PD"] unset or set a clear error placeholder so it is obvious in the report.
+                        br.images["PD"] = ""  // or a base64 of a small "ERROR" image if desired
+                    }
                 }
                 val flowProcessors = listOf(procA, procB, procC)
 
@@ -638,18 +645,27 @@ private suspend fun runPumpExperiment(
                 // removed when array fully replaces the tangle.
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
 
-                // stackVertically hoisted earlier (before flowProcessors list) for name resolution inside the
-                // C processor lambda body (the array entry for Set C contains the valley that calls it).
+                if (flowName == "Set C") {
+                    // C processor (via doValleyForC) has set br.images["PD"] to the composite (greyscale first +
+                    // per-valley binarized images, each with "thresh = XX" label + reds from detection on that version).
+                    // Skip the following old duplicated // 3. Discovery (the inline scales.forEach etc.) and later
+                    // unconditional path/viz blocks for the normal pdHunks so they do not execute for C. This lets
+                    // the processor's composite "win" and prevents interference with the mat state or pdHunks the
+                    // processor used for best tracking. The old code for C is now dead for this turn (to be removed
+                    // in a later phase when the tangle is fully replaced by the array of processors).
+                } else {
+                    // stackVertically hoisted earlier (before flowProcessors list) for name resolution inside the
+                    // C processor lambda body (the array entry for Set C contains the valley that calls it).
 
 
-                // runPaddleDiscovery hoisted earlier (before flowProcessors list) so it is visible inside the
-                // C processor lambda (the per-path valley for Set C calls it on each binarized version).
+                    // runPaddleDiscovery hoisted earlier (before flowProcessors list) so it is visible inside the
+                    // C processor lambda (the per-path valley for Set C calls it on each binarized version).
 
-                // 3. Discovery (decls for scales/ml/pd* hoisted earlier in Phase 1 for local helper closure visibility
-                // and to resolve compile forward refs; see the block after tilt metadata. The inline processedScales
-                // remains local to this forEach.)
-                val processedScales = mutableSetOf<Int>()
-                scales.forEach { scale ->
+                    // 3. Discovery (decls for scales/ml/pd* hoisted earlier in Phase 1 for local helper closure visibility
+                    // and to resolve compile forward refs; see the block after tilt metadata. The inline processedScales
+                    // remains local to this forEach.)
+                    val processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
                     val srcW = workspace.p.width
                     val srcH = workspace.p.height
                     val currentLongEdge = max(srcW, srcH)
@@ -783,6 +799,7 @@ private suspend fun runPumpExperiment(
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
                 }
             }
+            }  // close the else for old body (skipped for Set C so processor composite wins)
 
             // Final Reporting
             val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
