@@ -264,6 +264,15 @@
 - Local plan hygiene + current-state continuity followed. Primary approved artifact is the sandbox plan at the dev-ai path (revised with the builds note).
 
 ## Chunk complete: B retracted+OCR/PD (second small mechanical; frequent build locked per user's builds note)
+- (see current-state for full; B if body thin with 2 calls; fun has verbatim retracted + OCR + PD; build success + tag advance locked it).
+
+## B locked; C attempt (small) troubleshot by revert (per user's builds note)
+- After B build success, attempted first C/E chunk (prep + valley verbatim to fun; else if thinned to call). Remaining C code had references to prep-declared vars (scope for partial move).
+- Small change did not build. Easy troubleshoot: `git checkout -- .kt` (reverted only uncommitted C edits; file at B-success state, B locked work untouched).
+- Demonstrates "if they don't work, the change is small and should be easy to troubleshoot" + "we only reset to the last commit that built" (B green build preserved).
+- TODO/state record it. B remains thin/locked. Next small chunk: C prep (or smaller first piece) re-extracted + build. Frequent builds continue for the mechanical refactor.
+
+## Chunk complete: B retracted+OCR/PD (second small mechanical; frequent build locked per user's builds note)
 - Verbatim move of the retractedExpForBlue loop + aPd + baseB64 + the 4 OCR maps (blueTexts etc with 1024x48 + 4px) + ocrLinesB + metadata/images["PD"] into suspend fun doBOrDRetractedBlueAndPD (after the red-only fun).
 - if (B||D) body now contains only: filter; red-only call; retracted+ocr-pd call; } else if (C||E).
 - Forensic reads/grep confirmed (before/after the insert of fun + append of consumers + removal of the moved code from body).
