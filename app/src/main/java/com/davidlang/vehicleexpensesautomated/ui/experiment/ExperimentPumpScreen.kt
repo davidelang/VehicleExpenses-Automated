@@ -268,9 +268,9 @@ private suspend fun runPumpExperiment(
             // Dynamic Flow Processing
             // Phase 2 dispatch (approved array-of-processors refactor): iterate the flowProcessors array in lockstep
             // with flows (forEachIndexed). Common per-flow setup + call to the processor for this index.
-            // The processor bodies (linear "what to do for this path", no internal flowName ifs) are the intended home for per-set logic.
-            // Note: special per-set viz/processing (valley + per-red hists for C/E, red-only + B-style blue for B/D, OCR inlines, etc.)
-            // (per-set special logic now in thin calls to extracted helpers after the common filter; procs delegate where applicable. Refactor mechanical phase for ifs complete per user directive.)
+            // Per-set special logic (B/D red-only + retracted+OCR/PD; C/E valley/3sides/retract/orange/PD/OCR) is in thin if calls to extracted helpers (after common filter).
+            // if (B||D) and else if (C||E) bodies are now only calls (hoists for C). Mechanical extraction for the tangled ifs complete per user directive ("between each if flowname you pretty much only have a function call").
+            // Procs via the array are the entry (stubs document the linear steps). Scaffolding comments cleaned.
             flows.forEachIndexed { i, flowName ->
                 // (original per-flow setup follows; the call to the processor for this i will be placed after the
                 // flowProcessors list definition later in this per-flow body, so the array reference resolves and
