@@ -1064,15 +1064,11 @@ private suspend fun runPumpExperiment(
                     branch.images["PD_red_only"] = redOnlyB64
                 }
 
-                if (flowName == "Set B" || flowName == "Set D") {
-                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
-                    // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
-                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
-                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
-
-                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
-                    doBOrDRedOnlyImage()
-
+                // Mechanical extraction (second small digestible chunk for B/D): the retractedExpForBlue computation + aPd + baseB64 snapshot.
+                // Exact same code, moved verbatim (outer-scope for the lists and subsequent OCR consumers is acceptable on this first-pass mechanical move per user definition of "mechanical code changes").
+                // Semantic noop for this chunk. Build after this small piece to lock the change in history (per user: frequent builds mean we only ever reset to the last commit that built).
+                // (suspend keyword to preserve original suspend context.)
+                suspend fun doBOrDRetractedBlueAndPD() {
                     // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
                     val retractedExpForBlue = mutableListOf<PumpHunk>()
                     for (h in pdHunksExpTotal) {
@@ -1189,6 +1185,19 @@ private suspend fun runPumpExperiment(
                     }
                     branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
+                }
+
+                if (flowName == "Set B" || flowName == "Set D") {
+                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
+                    // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
+                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+
+                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
+                    doBOrDRedOnlyImage()
+
+                    // Mechanical extraction (second small chunk): call to the extracted function (exact same retractedExpForBlue + aPd + baseB64 + dependent OCR/ocrLines/PD now lives in doBOrDRetractedBlueAndPD).
+                    doBOrDRetractedBlueAndPD()
                 } else if (flowName == "Set C" || flowName == "Set E") {
                     val tBlueStart = System.currentTimeMillis()
                     // Set C: derive blue/orange from raw hunks using the image-based object finding from alignment Set J (large/small filter path), not Paddle.
