@@ -174,3 +174,21 @@
 - All constraints followed: ICRS/raw pixel only, forensic before/after every edit, ./build_app milestones, no deployment, no .. paths, primary artifact this plan, local state + TODO updated, etc.
 - Verification per plan: builds clean; Set C column shows per-red hists labeled with h/w/area (replacing combined), before/after images at 3x res; JSON has per-red b64s + numeric data for analysis; other behavior (polarity, PD, A/B, valley) unchanged.
 - Local plan hygiene + current-state continuity followed. No historical as source.
+
+# Pump experiment Set C sorting timing blue expansion (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-c-sorting-timing-blue-expansion-fixes-20260612-plan.md)
+- Execution started after explicit approval ("approved").
+- Re-reads of *exactly* the approved plan + current-state.md + this TODO.md (done).
+- Phase 0: Updated this TODO.md (this is the mandatory first action per the plan and mandates; no .kt source edits performed before it).
+- Background preserved from state (per-redbox hists + 3x from prior plan, red filter, 3sides fix, valley push, CC blue in Set C, alignment Set E expansion references, existing timings, ICRS/pixel, etc.).
+- Follow the approved plan's Phased Small-Step Execution exactly:
+  - Phase 1: In pBuildHtmlRowDynamic Set C branch, parse rdata, sort by area desc (largest first), build as <table> 3 cols with per cell <img> + stacked <small>h=${hh}<br>w=${ww}<br>area=${aa}</small>. Update related comment. Forensic read after.
+  - Phase 2: In header metaHtml build, filter entries to skip keys containing "redboxDataC" or "DataC". Forensic after.
+  - Phase 3: In Set C td table for raw/pushed/hB/hA, change max-width from 60% to e.g. 120% (twice current), add "(2x)" labels. Forensic after.
+  - Phase 4: Add timing points (t0 = System.currentTimeMillis() etc.) in procC / Set C ifs: before/after valley, red probe + per red hists, blue creation, 3sides+retract, orange, discovery, PD snap, total. Store as branch.metadata["t_xxx_ms"]. Update comments. Forensic after.
+  - Phase 5: In Set C blue section (after redBoxes + vSW/hSW), replace the blackOut/findAll + overlapping hunks for blueRects with loop over reds calling NativeImageUtils.expandByValleyDiagnostic(workspace.p.mat, redPixRect, 0.40f) (or char aware), convert to ICRS for blueRects. Note bg adaptation (post-invert). Keep 3sides/retract/orange. Remove/comment old logic. Update long comment. Forensic after on blue block + comment.
+  - Phase 6: Re-verify current-state, git add .kt + current-state.md (explicit), ./build_app (pass files), verify tag. Forensic re-reads post-build.
+  - Phase 7: Full forensic re-reads. Final ./build_app (clean). Update current-state (re-read first) with COMPLETE + tag + handoff. Explicit message with exact plan path + "results ready to test. **END OF EXECUTION TURN**" (remind to re-run Limited Experiment on photos with many reds; inspect Set C for sorted 3-wide stacked per-red hists (largest area first), clean meta, 2x dash, timings in meta/JSON; check pump_results JSON for new t_ keys + still per-red data; verify blue boxes look better/fewer errors from valley expand; compare timings for bottlenecks).
+- See the approved sandbox plan (the dev-ai path) for full Context (verbatim multi-bullet user request + code grounding from pump/alignment), Approach (5 targeted changes), Critical Files, exact Reuse list, detailed Phased steps, and Verification.
+- All constraints followed: ICRS/raw pixel only, forensic before/after every edit, ./build_app milestones, no deployment, no .. paths, primary artifact this plan, local state + TODO updated, etc.
+- Verification per plan: builds clean; Set C column has sorted 3-wide stacked per-red hists (largest area first), no verbose redboxDataC in meta header, twice larger before/after dash images, many t_ timings in JSON, blue now via Set E valley expand (fewer errors); other behavior (A/B, valley, red filter, PD, ocr) unchanged. Per-red data from prior remains.
+- Local plan hygiene + current-state continuity followed. No historical as source.
