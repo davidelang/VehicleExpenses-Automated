@@ -724,51 +724,11 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.rectangle(mask, rect, org.opencv.core.Scalar(255.0), -1)
                     }
 
-                    // Per-redbox histograms for display + JSON analysis (per this plan).
-                    // Keeps the combined mask above solely for the polarity (dark/light) decision.
-                    // For each red box: individual mask, hist b64 (for images), + numeric h/w/area (pixels) + 64-bin histBins (for analysis of which reds to pay attention to).
-                    // HISTOGRAM IMPL DETAILS (per user diagnostic + this plan): created in Kotlin (ExperimentPumpScreen.kt). OpenCV calcHist via Kotlin bindings (Imgproc.calcHist). NOT using native calculateHistogram* path (that is separate, used in blue hRes + alignment Set E/J). NOT a crop of data: full-size Mat.zeros(workspace.p.mat.size()) + rectangle(white) on perMask, passed with the *original* mat to generate/calcHist (OpenCV respects mask internally). Manual loops: yes — the b64 visual (186x300) is drawn by explicit Kotlin `for (i in 1..62) { canvas.drawRect ... }` inside generateHistogramB64 after the calc (white bars + ticks); numeric bins from calcHist. The per-red forEach (30 pre-filter in example row0 JSON) + Mat allocs + 2x calc per red + generate (manual draw) is the real cost behind the ~4.8s t_per_red numbers.
-                    val redboxDataC = JSONArray()
-                    val tPerRedLoopStart = System.currentTimeMillis()
-                    var accMask = 0L
-                    var accGen = 0L
-                    var accBins = 0L
-                    pdHunksRawTotal.forEachIndexed { i, hunk ->
-                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
-                        val rw = (p2.x - p1.x).toInt()
-                        val rh = (p2.y - p1.y).toInt()
-                        val rarea = rw * rh
-                        val m0 = System.currentTimeMillis()
-                        val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
-                        org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
-                        accMask += System.currentTimeMillis() - m0
-                        val g0 = System.currentTimeMillis()
-                        val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
-                        branch.images["redboxHistC_${i}"] = perHistB64
-                        accGen += System.currentTimeMillis() - g0
-                        // bins for analysis (reuse calc pattern)
-                        val b0 = System.currentTimeMillis()
-                        val hmat = org.opencv.core.Mat()
-                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
-                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
-                        accBins += System.currentTimeMillis() - b0
-                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
-                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
-                        redboxDataC.put(stat)
-                        perMask.release()
-                    }
+                    // Per-redbox histograms for *display* + JSON (C/E) now captured post-prune on the filtered 6 (see after the common prune block for the re-capture using pruned pdHunksRawTotal; this fixes the "histograms on line 1 still show 30" issue and scopes the work to the final reds for those sets).
+                    // The early probe here only builds the combined mask over initial reds for the polarity (dark/light) decision + invert (needed before the final discovery on the possibly-inverted mat). No per-red hists loop here anymore (avoids paying the old 30x cost; the 6 post-prune capture is cheap + will get the YUV/crop opt in next phase).
+                    // n_reds_at_probe still reflects the initial for analysis.
                     branch.metadata["n_reds_at_probe"] = pdHunksRawTotal.size.toString()
-                    branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
-                    branch.metadata["redboxDataC"] = redboxDataC.toString()
-                    branch.metadata["t_per_red_mask_create_ms"] = accMask.toString()
-                    branch.metadata["t_per_red_generate_b64_ms"] = accGen.toString()  // covers the manual for (i in 1..62) drawRect loop + bitmapToBase64 inside generateHistogramB64
-                    branch.metadata["t_per_red_bins_calc_ms"] = accBins.toString()
-                    val loopTotal = System.currentTimeMillis() - tPerRedLoopStart
-                    branch.metadata["t_per_red_loop_overhead_ms"] = (loopTotal - (accMask + accGen + accBins)).toString()
-                    branch.metadata["t_per_red_hists_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
-                    // t_per_red_* now granular: mask (alloc+rect heavy for 30), generate_b64 (the manual Kotlin Canvas loops for visuals), bins_calc; cross-checkable vs existing t_per_red_hists_ms (from tFlowStart) and t_red_probe_ms. Pre-filter count (30 in example) captured for analysis.
+                    // (t_per_red_* etc for the display data are now set in the post-prune capture for C/E)
 
                     val tPolDecStart = System.currentTimeMillis()
                     val hist = org.opencv.core.Mat()
@@ -999,6 +959,10 @@ private suspend fun runPumpExperiment(
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
                 // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
                 if (flowName == "Set C" || flowName == "Set E") {
+                    // Post-prune (filtered 6) redbox hists for C/E *display* / JSON (Phase 1 filtering fix + Phase 2 crop opt applied here).
+                    // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 6 for builder column + redboxDataC in JSON (no more 30).
+                    // Crop vs full-mask: use workspace crop of the red rect for the numeric bins calcHist (point routine at the crop data, no full Mat.zeros + perMask for bins).
+                    // Visual b64 still via generate (correct plot); YUV direct BufferSet + compressYuvToBase64 for the monochrome visual b64 is the target per the original plan (to be wired in a follow if needed; only 6 now so cheap either way).
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
@@ -1006,14 +970,19 @@ private suspend fun runPumpExperiment(
                         val rw = (p2.x - p1.x).toInt()
                         val rh = (p2.y - p1.y).toInt()
                         val rarea = rw * rh
+                        // visual b64 (keep generate for correct mono plot of bins; only on the 6)
                         val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
                         val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
                         org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
                         val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
                         branch.images["redboxHistC_${i}"] = perHistB64
+                        // numeric bins: crop the red rect area and point calcHist at the crop (applies "create a bufferset crop and point the histogram code at it" + avoids full-size zero/mask for the bins part)
+                        val cropId = workspace.createCrop(hunk.icrs.left, hunk.icrs.top, (hunk.icrs.right - hunk.icrs.left), (hunk.icrs.bottom - hunk.icrs.top))
+                        val cropForHist = workspace.c[cropId].mat
                         val hmat = org.opencv.core.Mat()
-                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(cropForHist), org.opencv.core.MatOfInt(0), null, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
                         val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        workspace.c[cropId].release()
                         val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
                         val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
