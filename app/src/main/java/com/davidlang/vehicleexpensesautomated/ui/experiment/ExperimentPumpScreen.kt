@@ -1248,8 +1248,8 @@ private suspend fun runPumpExperiment(
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
                 }
             }
-            }  // close the else for old body (skipped for Set C so processor composite wins)
             branch.metadata["t_total_flow_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+            }  // close the else for old body (skipped for Set C so processor composite wins)
 
             // Final Reporting
             val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
