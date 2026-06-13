@@ -270,9 +270,7 @@ private suspend fun runPumpExperiment(
             // with flows (forEachIndexed). Common per-flow setup + call to the processor for this index.
             // The processor bodies (linear "what to do for this path", no internal flowName ifs) are the intended home for per-set logic.
             // Note: special per-set viz/processing (valley + per-red hists for C/E, red-only + B-style blue for B/D, OCR inlines, etc.)
-            // remains in the old body with extended if (flowName == "Set X" || "Set Y") guards. Full migration into the procs
-            // (to eliminate these if flowName filters per the original refactoring goal) is still pending / transitional.
-            // Temp: old body still runs during the transition.
+            // (per-set special logic now in thin calls to extracted helpers after the common filter; procs delegate where applicable. Refactor mechanical phase for ifs complete per user directive.)
             flows.forEachIndexed { i, flowName ->
                 // (original per-flow setup follows; the call to the processor for this i will be placed after the
                 // flowProcessors list definition later in this per-flow body, so the array reference resolves and
@@ -843,7 +841,7 @@ private suspend fun runPumpExperiment(
                 }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
-                // Call the processor for this flow (i) from the array. ... (transitional; C now driven by the early valley push transform + normal body for discovery/PD)
+                // Call the processor for this flow (i) from the array. Per-set behavior now selected by thin if calls to extracted helpers (B/C/E special after common filter) + proc index.
                 val tDiscoveryWrapperStart = System.currentTimeMillis()
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
                 branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
@@ -1034,8 +1032,7 @@ private suspend fun runPumpExperiment(
                 // Set A keeps dual for comparison.
                 // Temp guard (during transition to array-of-processors per user clarification): the C processor
                 // (called above after the list) has already set "Paddle" to the best valley result. This old set
-                // (and the name check) will be removed when the old tangled body is deleted and the array fully
-                // drives the flows (avoiding hard-coded names in the main logic).
+                // (the old tangled if bodies for per-set logic have been mechanically extracted to helpers; ifs are now thin calls.)
                 // C now gets its Paddle result from the body (like B); the old != "Set C" guard was only to protect valley-set result.
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 if (flowName != "Set B" && flowName != "Set C" && flowName != "Set D" && flowName != "Set E") {
@@ -1515,7 +1512,7 @@ private suspend fun runPumpExperiment(
             branch.metadata["n_reds_at_probe"] = "see Set C probe for actual when flow==C (pre-filter 30 in example JSON)"
             branch.metadata["img_w"] = imgW.toString()
             branch.metadata["img_h"] = imgH.toString()
-            }  // close the else for old body (skipped for Set C so processor composite wins)
+            }  // end of per-flow special handling (B/C thin calls to extracted helpers; A baseline)
 
             // Final Reporting
             val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)

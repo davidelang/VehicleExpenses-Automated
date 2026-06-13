@@ -448,3 +448,15 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
 - "we only reset to the last commit that built" (B green build preserved; the C attempt cost only the small revert effort).
 - State/TODO updated with B success + this demonstration of the process. Next: re-do C extraction as small chunk(s) (starting with prep or a smaller first piece of the C block) + forensic + git add + build to lock the next piece. Frequent builds continue.
 - B chunk remains locked and the structure for B is the desired thin calls. The overall mechanical refactor progresses with the user's guidance strictly followed.
+
+## Major milestone: if thinning complete for B and C/E (mechanical extraction + frequent builds)
+- C first chunk (prep+valley+3sides+retract) + orange/PD/OCR tail moved (combined in the fun for buildability and to thin the entire else if to one call + hoists).
+- else if (C||E) now thin: hoisted outputs + single call to doCOrEPrepareHunksAndValleyInputs (which contains all the C special logic verbatim).
+- if (B||D) already thin from prior chunks.
+- Both per-set special logics after common filter are now in extracted suspend funs (exact original code).
+- Forensic reads + grep confirmed structure (thin ifs, fun has verbatim, no behavior change).
+- Explicit git add + ./build_app: BUILD SUCCESSFUL (11s + 14s for prior). Tag advanced (ef7bac52 -> d77d6c26 for the C completion).
+- This achieves the core user goal from the directive: "breaking the tangled mess into separate functions first, so that between each if flowname you pretty much only have a function call".
+- Frequent builds after every small piece (B two chunks, C one combined for scope, all locked via builds tags). The C attempt from earlier was small and troubleshot without losing locked work.
+- Remaining per approved plan: light proc delegation (if procs still have dupe, make them thin calls to the do* funs), delete any remaining "old body"/"close the else"/transitional scaffolding and comments, final clean build + handoff naming the plan path.
+- State/TODO updated. Next small step (continue): clean the "close the else for old body" comment and related transitional text + build.
