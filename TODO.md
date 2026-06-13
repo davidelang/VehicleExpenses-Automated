@@ -158,3 +158,19 @@
 - All constraints followed: ICRS/raw pixel only (no 0-1), forensic before/after every edit, ./build_app milestones, no deployment, no .. paths, primary artifact this plan, local state + TODO updated, etc.
 - Verification per plan: builds clean; the "test" (3-sides decision) now requires real overlap + <=40px; red-only (Set B) and blue/orange (C) will correctly avoid over-merging on the 20-box cases; user to visually confirm via re-run.
 - Local plan hygiene + current-state continuity followed. No historical as source.
+
+# Pump experiment Set C per-redbox histograms + 3x images (approved primary plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-set-c-per-redbox-histograms-3x-images-20260612-plan.md)
+- Execution started after explicit approval ("approved").
+- Re-reads of *exactly* the approved plan + current-state.md + this TODO.md (done).
+- Phase 0: Updated this TODO.md (this is the mandatory first action per the plan and mandates; no .kt source edits performed before it).
+- Background preserved from state (valley push + before/after hists + redboxHistC combined for C from prior plans, red filter/3sides, branch.images/metadata serialization to JSON reports, ICRS/pixel rects, etc.).
+- Follow the approved plan's Phased Small-Step Execution exactly:
+  - Phase 1: Enlarge before/after (raw/pushed snapshots 225->675; hist bmp sizes in generateHistogramB64 *3: 62x100->186x300 and 100x60->300x180). Forensic read after.
+  - Phase 2: In Set C probe block (keep combined mask for polarity), add per-redbox loop over pdHunksRawTotal: per-mask, per-histB64 to branch.images["redboxHistC_${i}"], compute h/w/area (pixels) + 64-bin histBins, collect into redboxDataC JSONArray, store as branch.metadata["redboxDataC"]. Update comment. Forensic after.
+  - Phase 3: In builder Set C display, replace single rbox with per-red labeled hists (using redboxDataC for labels); keep/enhance raw/pushed/hB/hA table (now 3x res). Update Set C flow comment. Forensic after.
+  - Phase 4: Re-verify current-state, git add .kt + current-state.md (explicit), ./build_app (pass files), verify tag. Forensic re-reads post-build.
+  - Phase 5: Full forensic re-reads. Final ./build_app (clean). Update current-state (re-read first) with COMPLETE + tag + handoff. Explicit message with exact plan path + "results ready to test. **END OF EXECUTION TURN**" (remind to re-run Limited Experiment; inspect new Set C column for per-red labeled hists + visibly larger before/after images/hists; check pump_results JSON under Set C for redboxHistC_N b64s + redboxDataC with h/w/area/bins).
+- See the approved sandbox plan (the dev-ai path) for full Context (verbatim user request + current combined logic), Approach (per-box masks + structured data + 3x sizes), Critical Files, exact Reuse list, detailed Phased steps, and Verification.
+- All constraints followed: ICRS/raw pixel only, forensic before/after every edit, ./build_app milestones, no deployment, no .. paths, primary artifact this plan, local state + TODO updated, etc.
+- Verification per plan: builds clean; Set C column shows per-red hists labeled with h/w/area (replacing combined), before/after images at 3x res; JSON has per-red b64s + numeric data for analysis; other behavior (polarity, PD, A/B, valley) unchanged.
+- Local plan hygiene + current-state continuity followed. No historical as source.
