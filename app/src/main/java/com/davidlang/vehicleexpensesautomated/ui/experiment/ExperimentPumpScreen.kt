@@ -238,7 +238,7 @@ private suspend fun runPumpExperiment(
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
-    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists displayed in the Set C column (plus PD/ocr with boxes for context). Polarity + discovery + CC blue derivation run on the pushed mat state.
+    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (3x size) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms (with h/w/area labels + bins in JSON for analysis) instead of combined. Polarity + discovery + CC blue derivation run on the pushed mat state.
     val flows = listOf("Set A", "Set B", "Set C")
 
     fun pStartNewFile(): File {
@@ -296,11 +296,11 @@ private suspend fun runPumpExperiment(
                 val rawHist: FloatArray
                 if (flowName == "Set C") {
                     // Capture raw (pre any C-specific transform) + before hist for column display
-                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace)
+                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["rawC"] = rawForC
                     branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)  // replaces stretch; mutates workspace to few-brightness image
-                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace)
+                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["pushedC"] = pushedForC
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                 } else {
@@ -634,8 +634,31 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.rectangle(mask, rect, org.opencv.core.Scalar(255.0), -1)
                     }
 
-                    // Capture redbox histogram for display in Set C column (per approved plan). Uses the mask-aware generate (new optional param) on the post-push mat restricted to red box pixels.
-                    branch.images["redboxHistC"] = generateHistogramB64(workspace.p.mat, 0.40f, mask)
+                    // Per-redbox histograms for display + JSON analysis (per this plan).
+                    // Keeps the combined mask above solely for the polarity (dark/light) decision.
+                    // For each red box: individual mask, hist b64 (for images), + numeric h/w/area (pixels) + 64-bin histBins (for analysis of which reds to pay attention to).
+                    val redboxDataC = JSONArray()
+                    pdHunksRawTotal.forEachIndexed { i, hunk ->
+                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
+                        val rw = (p2.x - p1.x).toInt()
+                        val rh = (p2.y - p1.y).toInt()
+                        val rarea = rw * rh
+                        val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
+                        val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
+                        org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
+                        val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
+                        branch.images["redboxHistC_${i}"] = perHistB64
+                        // bins for analysis (reuse calc pattern)
+                        val hmat = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        redboxDataC.put(stat)
+                        perMask.release()
+                    }
+                    branch.metadata["redboxDataC"] = redboxDataC.toString()
 
                     val hist = org.opencv.core.Mat()
                     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
@@ -1422,8 +1445,8 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
 
     val bins = FloatArray(64); hist.get(0, 0, bins)
 
-    // 62px wide to exclude 0 and 63 bins
-    val bmp = Bitmap.createBitmap(62, 100, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
+    // 186px wide (3x) to exclude 0 and 63 bins
+    val bmp = Bitmap.createBitmap(186, 300, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
     canvas.drawColor(Color.BLACK)
     val paint = Paint()
 
@@ -1431,12 +1454,12 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
     val maxVal = (1..62).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
 
     for (i in 1..62) {
-        val h = (bins[i] / maxVal * 80.0).toInt().coerceAtMost(80)
-        val x = (i - 1).toFloat()
-        paint.color = Color.WHITE; canvas.drawRect(x, (80 - h).toFloat(), x + 1f, 80f, paint)
+        val h = (bins[i] / maxVal * 240.0).toInt().coerceAtMost(240)
+        val x = ((i - 1) * 3).toFloat()
+        paint.color = Color.WHITE; canvas.drawRect(x, (240 - h).toFloat(), x + 3f, 240f, paint)
 
-        if (i % 8 == 0) { paint.color = Color.RED; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
-        if (i == (floorPercentile * 63).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
+        if (i % 8 == 0) { paint.color = Color.RED; canvas.drawRect(x, 246f, x + 3f, 270f, paint) }
+        if (i == (floorPercentile * 63).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(x, 246f, x + 3f, 270f, paint) }
     }
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
@@ -1530,8 +1553,21 @@ private fun pBuildHtmlRowDynamic(
             val pushed = br.images["pushedC"] ?: ""
             val hB = br.images["histBeforeC"] ?: ""
             val hA = br.images["histAfterC"] ?: ""
-            val rbox = br.images["redboxHistC"] ?: ""
-            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:48%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:48%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:48%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:48%;'><br><small>After</small></td></tr></table><img src='data:image/jpeg;base64,$rbox' style='max-width:60%;'><br><small>Redbox Hist (pixels in red boxes)</small><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+            // Per-redbox hists + labels from redboxDataC (h/w/area pixels + bins for analysis)
+            val rdataStr = br.metadata["redboxDataC"] ?: "[]"
+            val rdata = try { org.json.JSONArray(rdataStr) } catch (e: Exception) { org.json.JSONArray() }
+            val perRedHtml = StringBuilder()
+            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Hists (h/w/area pixels):</b></div>")
+            for (j in 0 until rdata.length()) {
+                val s = rdata.getJSONObject(j)
+                val ii = s.getInt("index")
+                val hh = s.getInt("h")
+                val ww = s.getInt("w")
+                val aa = s.getInt("area")
+                val hb = br.images["redboxHistC_${ii}"] ?: ""
+                perRedHtml.append("<img src='data:image/jpeg;base64,$hb' style='max-width:18%; vertical-align:top;'><br><small>Red${ii}: h=${hh} w=${ww} area=${aa}</small> ")
+            }
+            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:60%;'><br><small>Raw (3x)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:60%;'><br><small>Valley-Pushed (few brightness vals, 3x)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:60%;'><br><small>Before (3x)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:60%;'><br><small>After (3x)</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
         } else {
             appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
         }
