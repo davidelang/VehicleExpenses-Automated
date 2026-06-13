@@ -993,6 +993,36 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
                 // For D/E the proc stubs (and later filled logic) + B/C blocks below will now see the pruned <=6 in the lists. The explicit doCross in B/C blocks (for redBoxes) will see the already-pruned.
 
+                // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 6 (sorted by area desc, 3-wide stacked in the HTML).
+                // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
+                // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
+                if (flowName == "Set C" || flowName == "Set E") {
+                    val redboxDataC = JSONArray()
+                    pdHunksRawTotal.forEachIndexed { i, hunk ->
+                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
+                        val rw = (p2.x - p1.x).toInt()
+                        val rh = (p2.y - p1.y).toInt()
+                        val rarea = rw * rh
+                        val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
+                        val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
+                        org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
+                        val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
+                        branch.images["redboxHistC_${i}"] = perHistB64
+                        val hmat = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        redboxDataC.put(stat)
+                        perMask.release()
+                    }
+                    branch.metadata["redboxDataC"] = redboxDataC.toString()
+                    branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
+                }
+
                 val mlHunks = if (flowName == "Set B" || flowName == "Set C" || flowName == "Set D" || flowName == "Set E") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)  // no ML hunks for the pump-only sets (B/C/D/E mirrors)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
