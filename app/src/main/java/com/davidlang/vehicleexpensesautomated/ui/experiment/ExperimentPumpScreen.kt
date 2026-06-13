@@ -1056,7 +1056,8 @@ private suspend fun runPumpExperiment(
                 // Mechanical extraction (first small digestible chunk for B/D red-only, per user directive).
                 // Exact same code, moved verbatim. Outer-scope access (workspace, branch, pdHunks*, getAnns, imgW etc.) is acceptable on first pass.
                 // Semantic noop for this chunk.
-                fun doBOrDRedOnlyImage() {
+                // (suspend keyword added to preserve the original suspend context of the moved code; still mechanical/semantic noop on first pass.)
+                suspend fun doBOrDRedOnlyImage() {
                     // Red-only image for Set B/D (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now". D mirrors B.
                     val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
                     val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnnsOnly, null, workspace).first
