@@ -278,6 +278,7 @@ private suspend fun runPumpExperiment(
                 // call sites; just index into the array). Old body remains temp during transition.)
                 val branch = root.getBranch(flowName)
                 val tFlowStart = System.currentTimeMillis()
+                val tSetupStart = System.currentTimeMillis()
                 val workspace = NativePaddleEngine.bufferSetA
                 workspace.resize(imgW, imgH)
                 masterBuffer.p.mat.copyTo(workspace.p.mat)
@@ -289,6 +290,8 @@ private suspend fun runPumpExperiment(
                     put("Paddle Max Extent", mutableMapOf())
                     put("Paddle Native", mutableMapOf())
                 }
+                branch.metadata["t_setup_ms"] = (System.currentTimeMillis() - tSetupStart).toString()
+                // t_setup_ms covers buffer resize/copy + discoveryDetails map (common high-level phase for A/B/C gap analysis)
 
                 // 1. Transform
                 // Per approved valley plan: for Set C, display raw then valleyPushToPeaks (replaces stretch) producing image with small # brightness values (not binarization).
@@ -299,11 +302,15 @@ private suspend fun runPumpExperiment(
                     // Capture raw (pre any C-specific transform) + before hist for column display
                     val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["rawC"] = rawForC
+                    val tG0 = System.currentTimeMillis()
                     branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
                     rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)  // replaces stretch; mutates workspace to few-brightness image
                     val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["pushedC"] = pushedForC
+                    val tG1 = System.currentTimeMillis()
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
                     if (flowName == "Set C") {
                         branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
                     }
@@ -318,6 +325,7 @@ private suspend fun runPumpExperiment(
 
                 // 2. Deskew (ported Set E style from alignment for Set B; uses dedicated populate + JNI angle path)
                 // Compute per-flow but select angle source based on flow. Set A and Set B now use the negated value so the applied rotation direction matches what makes Set C (the currently correct direction per user observation: "set C is -1 * rotation of set B and it looks right") look right on the images (including the clean red-only for B from the prior turn). Set C line kept literally as-is so its effective value remains the one the user reports as correct.
+                val tDeskewStart = System.currentTimeMillis()
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
                 val tilt = when (flowName) {
                     "Set B" -> -deskewRes.paddleCppAngle
@@ -328,6 +336,8 @@ private suspend fun runPumpExperiment(
                 // Use shared modern rotate (UV handling, parity with alignment improvements). Local pRotate removed.
                 OdometerOcrUtils.rotate(workspace, tilt)
                 branch.metadata["tilt"] = "%.2f".format(tilt)
+                branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                // t_deskew_ms covers calculateAverageTextAngle + rotate + tilt metadata write (common high-level phase)
 
                 // Hoisted decls (Phase 1 small step of approved refactor plan): declared before the local helper funs
                 // (stackVertically, runPaddleDiscovery) that close over them (and before the inline discovery).
@@ -622,12 +632,14 @@ private suspend fun runPumpExperiment(
                 // Looks at 64-bin hist *only inside the initial red boxes* (text regions) on the (deskewed, same-hist-as-B stretched) mat to decide dark text on light bg vs light on dark.
                 // If dark text, inverts the mat (bitwise_not) so subsequent detection/rec + PD snapshot for C always see light text on dark bg.
                 if (flowName == "Set C") {
+                    val tProbeStart = System.currentTimeMillis()
                     pdHunksRawTotal.clear()
                     pdHunksExpTotal.clear()
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
                     pdHunksDetectedTotal.clear()
                     runPaddleDiscovery()  // probe to populate initial reds on current mat state
+                    branch.metadata["t_polarity_run_ms"] = (System.currentTimeMillis() - tProbeStart).toString()
 
                     // Build mask (255 inside red boxes, pixel space) -- exact pattern from prior valley probe.
                     val mask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
@@ -641,30 +653,50 @@ private suspend fun runPumpExperiment(
                     // Per-redbox histograms for display + JSON analysis (per this plan).
                     // Keeps the combined mask above solely for the polarity (dark/light) decision.
                     // For each red box: individual mask, hist b64 (for images), + numeric h/w/area (pixels) + 64-bin histBins (for analysis of which reds to pay attention to).
+                    // HISTOGRAM IMPL DETAILS (per user diagnostic + this plan): created in Kotlin (ExperimentPumpScreen.kt). OpenCV calcHist via Kotlin bindings (Imgproc.calcHist). NOT using native calculateHistogram* path (that is separate, used in blue hRes + alignment Set E/J). NOT a crop of data: full-size Mat.zeros(workspace.p.mat.size()) + rectangle(white) on perMask, passed with the *original* mat to generate/calcHist (OpenCV respects mask internally). Manual loops: yes — the b64 visual (186x300) is drawn by explicit Kotlin `for (i in 1..62) { canvas.drawRect ... }` inside generateHistogramB64 after the calc (white bars + ticks); numeric bins from calcHist. The per-red forEach (30 pre-filter in example row0 JSON) + Mat allocs + 2x calc per red + generate (manual draw) is the real cost behind the ~4.8s t_per_red numbers.
                     val redboxDataC = JSONArray()
+                    val tPerRedLoopStart = System.currentTimeMillis()
+                    var accMask = 0L
+                    var accGen = 0L
+                    var accBins = 0L
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
                         val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
                         val rw = (p2.x - p1.x).toInt()
                         val rh = (p2.y - p1.y).toInt()
                         val rarea = rw * rh
+                        val m0 = System.currentTimeMillis()
                         val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
                         val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
                         org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
+                        accMask += System.currentTimeMillis() - m0
+                        val g0 = System.currentTimeMillis()
                         val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
                         branch.images["redboxHistC_${i}"] = perHistB64
+                        accGen += System.currentTimeMillis() - g0
                         // bins for analysis (reuse calc pattern)
+                        val b0 = System.currentTimeMillis()
                         val hmat = org.opencv.core.Mat()
                         org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
                         val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        accBins += System.currentTimeMillis() - b0
                         val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
                         val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
                         perMask.release()
                     }
+                    branch.metadata["n_reds_at_probe"] = pdHunksRawTotal.size.toString()
+                    branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
+                    branch.metadata["t_per_red_mask_create_ms"] = accMask.toString()
+                    branch.metadata["t_per_red_generate_b64_ms"] = accGen.toString()  // covers the manual for (i in 1..62) drawRect loop + bitmapToBase64 inside generateHistogramB64
+                    branch.metadata["t_per_red_bins_calc_ms"] = accBins.toString()
+                    val loopTotal = System.currentTimeMillis() - tPerRedLoopStart
+                    branch.metadata["t_per_red_loop_overhead_ms"] = (loopTotal - (accMask + accGen + accBins)).toString()
                     branch.metadata["t_per_red_hists_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+                    // t_per_red_* now granular: mask (alloc+rect heavy for 30), generate_b64 (the manual Kotlin Canvas loops for visuals), bins_calc; cross-checkable vs existing t_per_red_hists_ms (from tFlowStart) and t_red_probe_ms. Pre-filter count (30 in example) captured for analysis.
 
+                    val tPolDecStart = System.currentTimeMillis()
                     val hist = org.opencv.core.Mat()
                     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
                     val bins = FloatArray(64); hist.get(0, 0, bins)
@@ -677,6 +709,8 @@ private suspend fun runPumpExperiment(
                     if (isDarkTextOnLightBg) {
                         org.opencv.core.Core.bitwise_not(workspace.p.mat, workspace.p.mat)
                     }
+                    branch.metadata["t_polarity_decision_ms"] = (System.currentTimeMillis() - tPolDecStart).toString()
+                    branch.metadata["t_invert_if_needed_ms"] = if (isDarkTextOnLightBg) "1" else "0"  // light cost; decision time covers mass + possible invert
 
                     // Re-clear so the (now-unskipped for C) body discovery populates the *final* pd* on the (possibly inverted) mat.
                     pdHunksRawTotal.clear()
@@ -685,6 +719,7 @@ private suspend fun runPumpExperiment(
                     pdHunksNativeTotal.clear()
                     pdHunksDetectedTotal.clear()
                     branch.metadata["t_red_probe_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+                    // t_red_probe_ms (kept) now covers from tFlowStart (or tProbeStart) through probe + per-red (granular subs above) + polarity decision/invert + clears. All answers to "Kotlin or C?", "crop and point routine?", "manual loops?" are in comments above the per-red forEach.
                 }
 
                 val procA: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
@@ -713,7 +748,10 @@ private suspend fun runPumpExperiment(
                 val flowProcessors = listOf(procA, procB, procC)
 
                 // Call the processor for this flow (i) from the array. ... (transitional; C now driven by the early valley push transform + normal body for discovery/PD)
+                val tDiscoveryWrapperStart = System.currentTimeMillis()
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
+                branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
+                // t_discovery_wrapper_ms covers the main body processor / 4-scale discovery call (distinct from inner per-scale t_pd_inference_* / t_pd_native_post_*) for A/B gap attribution
 
                 if (flowName == "Set C_old_bin_trials") {
                     // (bin-trials / old multi-valley thresh removed long ago; C now uses valley center push quantize (replaces stretch) for display of raw + pushed (small # brightness) + hists in column.
@@ -823,6 +861,9 @@ private suspend fun runPumpExperiment(
                 // blue derivation.
                 doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
                 doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()  // reuse start as approx for filter delta; finer per-phase in later granular
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
                 val mlHunks = if (flowName == "Set B" || flowName == "Set C") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
@@ -1009,7 +1050,9 @@ private suspend fun runPumpExperiment(
                         val p2 = IcrsMath.icrsToPixel(rr, b, imgW, imgH)
                         redPixelRects.add(android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt()))
                     }
+                    val tBlueNativeStart = System.currentTimeMillis()
                     val hRes = NativeImageUtils.calculateHistogramWithThresholdH(workspace.p.mat, redPixelRects, 128f)
+                    branch.metadata["t_blue_native_hist_ms"] = (System.currentTimeMillis() - tBlueNativeStart).toString()
                     val vSW = hRes?.second?.get(0)?.toFloat() ?: 6f
                     val hSW = hRes?.second?.get(1)?.toFloat() ?: 6f
 
@@ -1032,6 +1075,7 @@ private suspend fun runPumpExperiment(
                     // instead of overlapping hunks for blue from red. This should reduce errors in expansion.
                     // (hunks kept for orange same-row)
                     val blueRects = mutableListOf<RectF>()
+                    val tBlueValleyStart = System.currentTimeMillis()
                     for (red in redBoxes) {
                         val p1 = IcrsMath.icrsToPixel(red.icrs.left, red.icrs.top, imgW, imgH)
                         val p2 = IcrsMath.icrsToPixel(red.icrs.right, red.icrs.bottom, imgW, imgH)
@@ -1043,11 +1087,13 @@ private suspend fun runPumpExperiment(
                         val i2 = IcrsMath.pixelToIcrs(bluePix.right.toFloat(), bluePix.bottom.toFloat(), imgW, imgH)
                         blueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
                     }
+                    branch.metadata["t_blue_valley_expands_ms"] = (System.currentTimeMillis() - tBlueValleyStart).toString()
 
                     // Near-containment merging rule (per approved plan for this turn, "when merging").
                     // If one box is inside another on 3 sides but protrudes on the 4th by <=40px (pixel space) *and* the boxes still overlap on that axis (no gap), extend the containing box to the protruding side.
                     // Then the protruding box is no longer outside and can be deleted as redundant (now fully inside after extend).
                     // Applied to blueRects (the union from overlapping hunks per red) before retraction. Uses qualifiesFor3SidesNearExtend.
+                    val tBlue3sStart = System.currentTimeMillis()
                     run {
                         val toProcess = blueRects.toMutableList()
                         val extended = mutableListOf<RectF>()
@@ -1088,9 +1134,11 @@ private suspend fun runPumpExperiment(
                         blueRects.clear()
                         blueRects.addAll(cleaned)
                     }
+                    branch.metadata["t_blue_3sides_ms"] = (System.currentTimeMillis() - tBlue3sStart).toString()
 
                     // Blue retract to tight fit around text (per approved plan): after union of overlapping CC hunks (from the big/little filter on binMat) per red, retract using expandByUniformity to shrink back when expansion hits limit with no text/content.
                     // This ensures blues are tight rather than over-expanded.
+                    val tBlueRetractStart = System.currentTimeMillis()
                     val retractedBlueRects = mutableListOf<RectF>()
                     for (b in blueRects) {
                         val p1 = IcrsMath.icrsToPixel(b.left, b.top, imgW, imgH)
@@ -1102,6 +1150,7 @@ private suspend fun runPumpExperiment(
                         retractedBlueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
                     }
                     binMat.release()  // release after use in blue retract
+                    branch.metadata["t_blue_retract_ms"] = (System.currentTimeMillis() - tBlueRetractStart).toString()
                     branch.metadata["t_blue_creation_ms"] = (System.currentTimeMillis() - tBlueStart).toString()
                     val orangeRects = mutableListOf<RectF>()
                     for (blue in retractedBlueRects) {
@@ -1242,6 +1291,10 @@ private suspend fun runPumpExperiment(
                         if (d.count { it.isDigit() } >= 2) ocrLinesC += "Orange ${i+1} as-is: $a &nbsp;&nbsp; digits: $d"
                     }
                     branch.metadata["pd_ocr_html"] = ocrLinesC.joinToString("<br>")
+                    branch.metadata["t_ocr_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
+                    // t_ocr_ms for C (after ocrLinesC build + pd_ocr_html write); B similar in its block
+                    branch.metadata["t_pd_snapshot_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
+                    // t_pd_snapshot_ms approx for final PD annotated image (baseB64 / takeSnapshot with anns for C; B equivalent before its ocr)
                 } else {
                     // A (reds only)
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
@@ -1249,6 +1302,10 @@ private suspend fun runPumpExperiment(
                 }
             }
             branch.metadata["t_total_flow_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+            // Additional lightweight context for interpreting the granular timings (cheap, high value, no extra run needed)
+            branch.metadata["n_reds_at_probe"] = "see Set C probe for actual when flow==C (pre-filter 30 in example JSON)"
+            branch.metadata["img_w"] = imgW.toString()
+            branch.metadata["img_h"] = imgH.toString()
             }  // close the else for old body (skipped for Set C so processor composite wins)
 
             // Final Reporting
