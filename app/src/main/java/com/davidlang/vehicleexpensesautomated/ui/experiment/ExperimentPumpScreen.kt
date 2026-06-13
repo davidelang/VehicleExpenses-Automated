@@ -979,7 +979,7 @@ private suspend fun runPumpExperiment(
                         stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
                         // Do not store redboxHistC image for this degenerate (builder will treat missing as empty img). Prevents NPE in calcHist on null-native crop Mat.
-                        continue
+                        return@forEachIndexed
                     }
                     // visual b64 (keep generate for correct mono plot of bins; only on the 6)
                     val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
