@@ -971,23 +971,33 @@ private suspend fun runPumpExperiment(
                         val rw = (p2.x - p1.x).toInt()
                         val rh = (p2.y - p1.y).toInt()
                         val rarea = rw * rh
-                        // visual b64 (keep generate for correct mono plot of bins; only on the 6)
-                        val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
-                        org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
-                        val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
-                        branch.images["redboxHistC_${i}"] = perHistB64
-                        // numeric bins: crop the red rect area and point calcHist at the crop (applies "create a bufferset crop and point the histogram code at it" + avoids full-size zero/mask for the bins part)
-                        val cropId = workspace.createCrop(hunk.icrs.left, hunk.icrs.top, (hunk.icrs.right - hunk.icrs.left), (hunk.icrs.bottom - hunk.icrs.top))
-                        val cropForHist = workspace.c[cropId].mat
-                        val hmat = org.opencv.core.Mat()
-                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(cropForHist), org.opencv.core.MatOfInt(0), null, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
-                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
-                        workspace.c[cropId].release()
+                    if (rw < 2 || rh < 2) {
+                        // Degenerate red after prune/filter (rare for largest 6, but can happen due to ICRS roundtrip fp on first photo or edge cases). Guard prevents bad crop/Mat for calcHist and keeps the display data consistent (builder expects entries for the 6).
                         val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
-                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        val binsArr = JSONArray()
+                        repeat(64) { binsArr.put(0.0) }
+                        stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
-                        perMask.release()
+                        // Do not store redboxHistC image for this degenerate (builder will treat missing as empty img). Prevents NPE in calcHist on null-native crop Mat.
+                        continue
+                    }
+                    // visual b64 (keep generate for correct mono plot of bins; only on the 6)
+                    val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
+                    val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
+                    org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
+                    val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
+                    branch.images["redboxHistC_${i}"] = perHistB64
+                    // numeric bins: crop the red rect area and point calcHist at the crop (applies "create a bufferset crop and point the histogram code at it" + avoids full-size zero/mask for the bins part)
+                    val cropId = workspace.createCrop(hunk.icrs.left, hunk.icrs.top, (hunk.icrs.right - hunk.icrs.left), (hunk.icrs.bottom - hunk.icrs.top))
+                    val cropForHist = workspace.c[cropId].mat
+                    val hmat = org.opencv.core.Mat()
+                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(cropForHist), org.opencv.core.MatOfInt(0), null, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                    val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                    workspace.c[cropId].release()
+                    val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                    val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                    redboxDataC.put(stat)
+                    perMask.release()
                     }
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
                     branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
@@ -2089,6 +2099,8 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
         val cropId = buffer.createCrop(l, t, r - l, b - t)
 
         val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
+        if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 6 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
+
         recBuffer.p.clear()
         val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
         val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR

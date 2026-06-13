@@ -541,3 +541,13 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
 - Plan dated 20260613, descriptive name per rules. Independent new cycle after prior END. Directly addresses the user's verification question with evidence-based gap analysis rather than source changes.
 - Local plan hygiene: harness log short; primary at dev-ai path (this plan); current-state updated.
 - Notes: Turn in planning. See the approved sandbox plan (this one) for the full gap table once directed. All prior memory preserved. After any future END: feedback = new cycle (new plan + Directive).
+
+# Revision to "what is left" plan (2026-06-13, new user feedback on the last filtering iteration)
+- Additional input: "as if the last iteration is not working correctly, it never completes the first image. check the adb logs".
+- The sandbox plan at dev-ai-interaction/plans/pump-experiment-remaining-yuv-hists-and-pixel-red-primary-20260613-plan.md was revised to treat this as the new highest-priority item in the gap analysis (regression in first photo/row completion from the post-prune C/E hists re-capture + early probe clean in the prior filtering/scope turn).
+- The revised plan now lists:
+  1. Regression in first image/row (investigate with adb logs; fix while preserving the 6-for-display filtering).
+  2. Full YUV direct for hists visuals (per-red for C/E + before/after).
+  3. End-to-end pixel primary for red working (reduce pdHunks* rebuilds).
+- Refactoring remains functionally complete.
+- Primary artifact remains the dev-ai plan (revised). Awaiting Directive + magic approval of that path before any execution or source work.
