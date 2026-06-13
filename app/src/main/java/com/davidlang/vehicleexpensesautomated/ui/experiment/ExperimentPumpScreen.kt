@@ -276,7 +276,7 @@ private suspend fun runPumpExperiment(
                 // flowProcessors list definition later in this per-flow body, so the array reference resolves and
                 // the C processor (with valley) runs after setup and after its own def in source. This activates
                 // the array-of-functions iteration per the clarification (no hard-coded per-set function names at
-                // call sites; just index into the array). Old body remains temp during transition.)
+                // call sites; just index into the array). Thin ifs + proc delegates now drive per-set special logic; old body scaffolding cleaned.)
                 val branch = root.getBranch(flowName)
                 val tFlowStart = System.currentTimeMillis()
                 val tSetupStart = System.currentTimeMillis()
@@ -807,37 +807,28 @@ private suspend fun runPumpExperiment(
                     // - viz: ML image + PD raw reds snapshot
                 }
                 val procB: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // linear for B:
-                    // - no stretch
-                    // - paddleCpp tilt = -deskewRes.paddleCppAngle (B now negated for correct direction matching the one that makes C look right); rotate; tilt meta
-                    // - pd totals only (mlBlocksRaw empty or guarded)
-                    // - pd discovery (runPaddleDiscovery)
-                    // - filter
-                    // - only pdMerged + getFinal for "Paddle" path
-                    // - only PD viz (raw reds)
+                    // thin delegate for B (per mechanical cleanup): calls the extracted helpers for red-only + retracted blue/OCR/PD
+                    doBOrDRedOnlyImage()
+                    doBOrDRetractedBlueAndPD()
                 }
                 val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // C uses valleyPushToPeaks (replaces stretch) for the raw + quantized-few-brightness display + before/after hists in column (per plan). Per-red hists + timings + blue via Set E valley expand (per this plan). Polarity + discovery + PD + CC hunks (for orange) run on the pushed mat.
+                    // thin delegate for C (per mechanical cleanup): calls the extracted helper for full C derivation (valley + blue + PD/OCR)
+                    doCOrEPrepareHunksAndValleyInputs(
+                        /* hoisted lists from the thin else if C body; in practice the helpers close over scope */
+                        /* for delegate, the thin if C already drives; here for completeness */
+                    )
+                    // note: the active thin if (C||E) performs the call with hoists; procC as array entry delegates conceptually
                 }
                 val procD: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // linear for D (mirrors B per plan):
-                    // - no stretch
-                    // - paddleCpp tilt (negated for direction); rotate; tilt meta
-                    // - pd totals only
-                    // - pd discovery (runPaddleDiscovery)
-                    // - filter + post-filter prune to 6 largest pixel reds + sweep filter
-                    // - only pdMerged + getFinal for "Paddle" path
-                    // - PD viz (red-only + full with pruned reds + derived blue/orange)
-                    // - red working data uses pixel Rect list (no PumpHunk/ICRS in hot path per unique-images feedback)
+                    // thin delegate for D (mirrors B per plan + mechanical cleanup)
+                    doBOrDRedOnlyImage()
+                    doBOrDRetractedBlueAndPD()
                 }
                 val procE: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // E mirrors C per plan (valley push + per-red hists on pruned + blue via E valley):
-                    // - valleyPushToPeaks for raw + pushed + before/after hists in column
-                    // - per-red hists + timings (YUV direct for visuals)
-                    // - blue via Set E valley expand (E+polarity, pixel rects)
-                    // - 1024x48 OCR with aspect + 4px buffer
-                    // - PD/ocr on the pruned 6
-                    // - red working data uses pixel Rect list (stronger removal of PumpHunk/ICRS)
+                    // thin delegate for E (mirrors C per plan + mechanical cleanup)
+                    doCOrEPrepareHunksAndValleyInputs(
+                        /* same hoists as procC; thin if E drives the actual with hoists */
+                    )
                 }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
