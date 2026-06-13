@@ -325,12 +325,12 @@ private suspend fun runPumpExperiment(
                 }
 
                 // 2. Deskew (ported Set E style from alignment for Set B; uses dedicated populate + JNI angle path)
-                // Compute per-flow but select angle source based on flow. Set A and Set B now use the negated value so the applied rotation direction matches what makes Set C (the currently correct direction per user observation: "set C is -1 * rotation of set B and it looks right") look right on the images (including the clean red-only for B from the prior turn). Set C line kept literally as-is so its effective value remains the one the user reports as correct.
+                // Compute per-flow but select angle source based on flow. Set A, and the B/D mirror (pump-only red focus) now use the negated paddleCpp value; C/E mirror use negated paddleCpp so the applied rotation matches the direction that makes the C/E visuals look right per user observation. D mirrors B, E mirrors C. Set C/E lines kept as the reference.
                 val tDeskewStart = System.currentTimeMillis()
                 val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
                 val tilt = when (flowName) {
-                    "Set B" -> -deskewRes.paddleCppAngle
-                    "Set C" -> -deskewRes.paddleCppAngle
+                    "Set B", "Set D" -> -deskewRes.paddleCppAngle
+                    "Set C", "Set E" -> -deskewRes.paddleCppAngle
                     else -> -deskewRes.angle
                 }
 
@@ -1762,7 +1762,7 @@ private fun pBuildHtmlRowDynamic(
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        if (name != "Set B" && name != "Set C") {
+        if (name != "Set B" && name != "Set C" && name != "Set D" && name != "Set E") {
             appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
         }
         val pdB64 = br.images["PD"] ?: ""
