@@ -1239,10 +1239,8 @@ private suspend fun runPumpExperiment(
                     // (hunks kept for orange same-row)
                     val blueRects = mutableListOf<RectF>()
                     val tBlueValleyStart = System.currentTimeMillis()
-                    for (red in redBoxes) {
-                        val p1 = IcrsMath.icrsToPixel(red.icrs.left, red.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(red.icrs.right, red.icrs.bottom, imgW, imgH)
-                        val redPixRect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
+                    // Optimization (inside split-out C/E helper): iterate the precomputed redPixelRects (built once above from the post-filter redBoxes) for the valley expand calls. Avoids repeated IcrsToPixel per red inside the loop (the opt from the D/E plan: pixel working lists for intra-image red-derived work after one boundary convert; N small post-prune6). The resulting bluePix still converted to ICRS only for the output list (needed for downstream orange/anns/OCR in the hoisted tail).
+                    for (redPixRect in redPixelRects) {
                         // use the main mat (post polarity/invert in Set C so text regions suit white-on-black assumption of the diagnostic)
                         val valleyRes = NativeImageUtils.expandByValleyDiagnostic(workspace.p.mat, redPixRect, 0.40f)
                         val bluePix = valleyRes.first
