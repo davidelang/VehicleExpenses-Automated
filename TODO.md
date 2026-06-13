@@ -284,8 +284,12 @@
 - Procs are stubs (light delegation complete in spirit; actual behavior driven by the thin ifs + helpers).
 - No large old commented block to delete.
 - This completes the main mechanical extraction phase of the approved plan (with frequent builds after every small chunk, per user's explicit builds note).
-- Next (if continue): any final dispatch/proc comment polish + verification build + handoff with the plan path + "results ready to test. **END OF EXECUTION TURN**".
-- Or stop here; the core refactor for the tangled ifs is done and locked.
+- If thinning + comment clean COMPLETE for B and C/E (thin calls only; verbatim in funs; scaffolding "old body" references cleaned; dispatch comment updated).
+- Multiple builds (tags to 9510fd48) locked every piece. C attempt earlier was small + troubleshot without loss to locked B.
+- The "between each if flowname you pretty much only have a function call" + "finish the refactoring" for the tangled per-set if bodies is achieved.
+- Procs are the array dispatch entry (stubs).
+- Per plan: light proc polish or delete (none large left) or handoff can be next if directed. Core if mechanical done.
+- Results ready for this phase of the refactor. **If thinning complete (B + C/E). Frequent builds followed throughout.**
 
 ## Continuing execution: first C/E mechanical chunk (prep + valley blue + 3sides + retract as one digestible unit)
 - Updated this TODO first (mandatory).
@@ -303,6 +307,19 @@
 - After B build success, attempted first C/E chunk (prep + valley verbatim to fun; else if thinned to call). Remaining C code had references to prep-declared vars (scope for partial move).
 - Small change did not build. Easy troubleshoot: `git checkout -- .kt` (reverted only uncommitted C edits; file at B-success state, B locked work untouched).
 - Demonstrates "if they don't work, the change is small and should be easy to troubleshoot" + "we only reset to the last commit that built" (B green build preserved).
+
+## Cleanup continuation (post if-thinning milestone)
+- Updated this TODO first.
+- Forensic grep/read of remaining transitional text (only 1 left: "Old body remains temp during transition." at dispatch comment) and proc* stubs (still pure comment bodies with "linear for X" descriptions).
+- Clean last transitional comment.
+- Light mechanical proc cleanup: turn the procB/procD/procC/procE stubs into thin delegates that call the corresponding extracted helpers (doBOrD* for B/D, doCOrE* for C/E). This makes the procs "call those functions instead of the tangled mess" (even though the thin ifs are the current selector).
+- The proc bodies become simple calls (no internal logic or ifs).
+- Update any lingering proc/dispatch comments for accuracy.
+- Explicit git add .kt + current-state + TODO + frequent ./build_app after the cleanups (to lock).
+- Append success + tag to state/TODO.
+- This finishes the "light mechanical handling of any remaining proc duplication" + final comment clean per the approved mechanical plan.
+- Structure now: thin ifs for per-set (B/C), procs as thin delegates via array, no "old body" language.
+- Handoff after this cleanup build if it completes the phase.
 - TODO/state record it. B remains thin/locked. Next small chunk: C prep (or smaller first piece) re-extracted + build. Frequent builds continue for the mechanical refactor.
 
 ## Chunk complete: B retracted+OCR/PD (second small mechanical; frequent build locked per user's builds note)

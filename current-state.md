@@ -459,6 +459,20 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
 - No large commented old tangled block present to delete (already absent in baseline).
 - Remaining per plan: any light proc delegation (procs are stubs; may just need comment refresh to note delegation to helpers), final verification build, handoff naming the plan path + "results ready to test. **END OF EXECUTION TURN**".
 - State/TODO updated. The mechanical if extraction + basic clean is complete and locked.
+
+## Refactor for the tangled ifs (B + C/E) COMPLETE (with frequent builds per user's note)
+- B: two small mechanical chunks (red-only; retracted+full OCR/PD) -> thin if (B||D) with 2 calls; verbatim in doBOrD* funs. Locked with builds.
+- C/E: one chunk (prep+valley+3sides+retract + orange+PD+OCR tail) -> thin else if (C||E) with hoists + 1 call; verbatim in doCOrE* fun.
+- Scaffolding comment clean: "close the else for old body" removed/updated; other "old body"/"Temp"/"transitional" refreshed to note completion of the if extraction.
+- Dispatch comment refreshed to declare the achievement ("between each if flowname you pretty much only have a function call").
+- All forensic reads + explicit git add + ./build_app after every small piece (multiple builds, tags advanced e.g. to 9510fd48).
+- Frequent builds locked every change (B chunks, C chunk, comment clean). The C attempt was small + easily troubleshot (revert to B-locked tag, no re-do of locked work).
+- The core user directive from the "finish the refactoring" is achieved for the tangled per-set if bodies.
+- Procs remain array entry points (stubs describe steps; actual per-set behavior now via the thin helpers).
+- No large commented old tangled block was present.
+- Per approved mechanical plan: this completes the "breaking the tangled mess into separate functions first" + thin calls + frequent builds/locking. Light proc or final handoff can follow if directed.
+- Last build: fix-pump-experiment-start-97-g9510fd48.
+- Results for the if thinning + clean (core of the refactor, with the builds practice) ready. The mechanical phase for the ifs is finished. **If thinning complete. Continuing per plan or handoff as directed.**
 - C first chunk (prep+valley+3sides+retract) + orange/PD/OCR tail moved (combined in the fun for buildability and to thin the entire else if to one call + hoists).
 - else if (C||E) now thin: hoisted outputs + single call to doCOrEPrepareHunksAndValleyInputs (which contains all the C special logic verbatim).
 - if (B||D) already thin from prior chunks.
