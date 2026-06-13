@@ -313,6 +313,30 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
   - Forensic re-reads/greps confirmed: PumpHunk + ICRS conversions are pervasive in pump red path (lists, filter, blue, anns, OCR, serialization); alignment already uses createCrop(4,4,...) for rec buffers. 
   - Sandbox plan revised with new "Additional feedback..." section: stronger recommendation to remove PumpHunk/ICRS entirely from red working data in D/E (and mirrors) because each pump photo is independent (no cross-image rect scaling or learning); use pure pixel Rects for all red/blue/orange processing. Only final one-time emit if report format still needs legacy form (and prefer to change reports to pixel for pump reds). For OCR: add explicit 4px margin via createCrop(4, 4, targetW-8, targetH-8) (or equivalent inset) matching alignment pattern, in the 1024x48 path (and performHunkRecognition). Phased/Verification updated. Still fully in planning.
 
+# Refactoring status + A/B timing diagnosis (user feedback after D/E implementation)
+- The array-of-processors refactoring (procA/procB/procC/procD/procE as linear per-set functions + flowProcessors list + dispatch via flowProcessors[i]()) **was not reverted**. It is present, with explicit comments acknowledging the "approved array-of-processors refactor" and the intent that "processor bodies (linear 'what to do for this path', no internal flowName ifs)" would be the home for per-set logic. The call to the processor happens for all flows (including D/E).
+- However, the special per-set functionality (early valley + rawC/pushedC/hist captures + per-red hists probe for C/E; red-only image + B-style blue derivation + inline OCR for B/D; the C-style blue derivation/3sides/retract/OCR for C/E; etc.) is still in the "old tangled body" *after* the processor call, guarded by if (flowName == "Set C" || "Set E") and if (flowName == "Set B" || "Set D"). When we added D/E we extended those guards (as a transitional shortcut) rather than completing the migration of that logic into the proc* bodies. The code even contains comments noting this is "Temp: old body still runs so behavior is unchanged during the transition builds." We updated the top dispatch comment to make the current state (and the pending full migration to eliminate if flowName filters) explicit.
+- One remaining old check (`mlHunks = if (flowName == "Set B" || "Set C")`) was cleaned to include D/E for correctness.
+- The per-red probe (the Mat.zeros + generate + calc loop that was ~4-6s on 30 reds) and the heavy blue-from-red derivation are *inside* the C/E if, so A and B never execute them (and thus saw no reduction from the "prune before other processing", pixel lists, sweep, 4px/1024, etc.).
+- For A/B (and the common paths): time is spent in deskew (t_deskew_ms), the *global* doCrossScaleRedboxFilter (still the PumpHunk/ICRS version, called unconditionally for discoveryDetails "Paddle Raw/Expanded/Max" cleaning – this is likely the bulk of the ~3k "filter" time you see in A/B data), the creation in runDiscoveryPaddle (still does pixelToIcrs with per-scale content dims for the hunks in discoveryDetails), and the actual multi-scale Paddle inference (t_pd_inference_* + wrapper). A also runs the ML path.
+- The last turn's cleanups (pixel storage for reds to avoid repeated ICRS roundtrips, sweep instead of O(n^2) pairs, 4px buffer, etc.) were applied to the "red working" path and post-global prune used by the sets that do red-derived "other processing" (B/C/D/E). They were not universally applied to every Paddle call or the discoveryDetails paths (which A/B still use for "Paddle Raw"). The granular timings (t_deskew, t_filter from the global, t_discovery_wrapper, per-scale t_pd, etc.) *were* added to common code and should be in metadata/JSON for A/B too.
+- Result: C/E saw the big drop (the optimized paths now only run on the 6); A/B times are dominated by the un-optimized common discovery + deskew + inference paths. The data from the JSON you provided last turn is consistent with this (A/B/D filter ~3-4k and totals ~5-8k; the per-red/blue costs that were slashed are absent from A/B).
+- To make A/B noticeably faster, the global discovery filter + creation sites would need the same "pixel Rects from the start + sweep" treatment (while preserving the discoveryDetails output if desired).
+
+# Additional fix for HTML first column (Tilt per set / timing summary) to include D and E
+- The "Tilt per set" line in the first (left/original) column of the HTML row is built as:
+  val perSetTilts = root.subBranches.toSortedMap().entries.joinToString(" | ") { (name, br) -> "$name: ${br.metadata["tilt"] ?: "?"}°" }
+  Then <b>Tilt per set:</b> $perSetTilts in the first <td>.
+- Previously the when (flowName) only set distinct values for B and C; D/E fell to else (A's tilt), so "new" entries for D and E either showed duplicate A value or were not distinctly matching.
+- Fixed: updated when to "Set B", "Set D" -> -paddleCppAngle; "Set C", "Set E" -> -paddleCppAngle.
+- Updated the deskew comment.
+- Also ensured the ML column emission in pBuildHtmlRowDynamic skips D and E (to match processing and no-ML for them).
+- Now perSetTilts will show 5 entries: ... | Set D: correctBtilt° | Set E: correctCtilt° 
+- Plus, since t_deskew_ms is set per-branch in common code, the metaHtml (flattened metadata in first column) will list t_deskew_ms for D and E too.
+- Also t_ values from D/E branches will appear in the diag/meta dump in first column.
+- Re-run the experiment to see the first column now has timing data (tilts + deskew_ms etc) matching up with D and E.
+- Build successful after this small targeted fix.
+
 # Fixes + timing analysis for new report pump_results_2026-06-13_00-12-39.json (post last turn optimizations)
 - Code fixes applied (forensic reads before/after, build success):
   - ML columns removed for D/E: mlBlocksRaw empty for non-Set A; ML pathResults if now excludes B/C/D/E (if (flowName != "Set B" && != "Set C" && != "Set D" && != "Set E")).
