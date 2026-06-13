@@ -515,6 +515,21 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
 - Primary sandbox plan paths referenced: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-finish-tangled-refactor-20260613-plan.md and pump-experiment-forensic-mechanical-extraction-refactor-20260613-plan.md (plus D/E opt plans for the specific content of the opts).
 - results ready to test. **END OF EXECUTION TURN**
 
+## Regression fix (adb logs showed crashes on first/some images after the filtering changes)
+- User reported: current (start-107-g0a72a250 and later) "never completes the first image"; last good start-103-g4fc82f0e.
+- From adb logs (FATAL in ExperimentPump process): 
+  - CvException in resize (inv_scale_x > 0) inside performHunkRecognition (called for final Paddle OCR of blues/oranges derived from the pruned 6).
+  - Repeated NullPointerException on Mat.nativeObj in calcHist at the post-prune C/E re-capture block (the one added to provide the filtered 6 hists for display/JSON).
+- Root cause: the "filter red boxes to 6 for C/E display" (post-prune re-capture + early probe clean) fed the final 6 (or blues derived from them) to paths that previously had more reds or pre-filter data. The new capture block had no `rw/rh <2` guard before createCrop/calc (unlike B helper and old early probe), and ICRS roundtrip fp or aspect after prune could produce effective 0-size for crop or for the proportional targetW in OCR (pH large relative to pW -> scaled targetW .toInt() ==0 even if pW/pH >=2).
+- Fixes (minimal defensive guards, no behavior change for good cases):
+  - In post-prune C/E hists re-capture: if (rw < 2 || rh < 2) { put dummy stat with area 0; continue; } before perMask/crop/calc/generate. Prevents bad crop Mat for calcHist; builder gets entry (with 0 area) or missing image (treated as empty).
+  - In performHunkRecognition (the shared final OCR path): after targetW calc, if (targetW <= 0 || targetH <= 0) return@map the original hunk (no resize/rec). Prevents the resize assertion for bad-aspect tiny derived boxes from the 6 largest reds. The >=2 digit filter in ocrLines will drop them anyway.
+- These match the existing guards in the B helper's blue/orange OCR maps.
+- New build after guards should allow the first image (and subsequent) to complete for C/E while keeping the post-prune 6 hists (the goal of the filtering fix).
+- Forensic reads of the two edited sites confirmed the guards.
+- git add + ./build_app produced the next version (tag advanced from the previous broken one). User can test with the new build (install the apk from the output or the one the script produces).
+- If adb logs on the new build still show issues on the first image, provide the new excerpts (focus on the C/E flows for the first photo); there may be additional guards needed in the blue derivation / 3sides / expand in the C helper for degenerate 6.
+
 ## COMPLETE for the approved plan (clarification + filtering fix + scope opts to all paddle + continue implementation): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-fix-red-filtering-for-c-e-hists-and-scope-opts-to-all-paddle-20260613-plan.md
 - Execution followed the plan exactly (TODO first as Phase 0; re-reads of plan + current-state; small phases with forensic read before/after every edit + explicit git add .kt + current-state + TODO + ./build_app after each to lock per frequent-builds guidance; final clean build + state update).
 - Phase 1 (filtering): post-prune re-capture for C/E redboxDataC + redboxHistC_* (using the pruned pdHunksRawTotal, re-index 0-5) so builder/JSON for C/E now see only the 6 (fixes "histograms on line 1 still show 30"); early probe kept only for polarity (cheap combined mask) + n_reds_at_probe for analysis.
