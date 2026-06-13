@@ -299,7 +299,7 @@ private suspend fun runPumpExperiment(
                 // Capture rawC + histBeforeC (pre), apply push, capture pushedC + histAfterC to branch for Set C column.
                 // A still populates root after/hist2 for the left column. B unchanged.
                 val rawHist: FloatArray
-                if (flowName == "Set C") {
+                if (flowName == "Set C" || flowName == "Set E") {
                     // Capture raw (pre any C-specific transform) + before hist for column display
                     val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["rawC"] = rawForC
@@ -312,7 +312,7 @@ private suspend fun runPumpExperiment(
                     val tG1 = System.currentTimeMillis()
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
-                    if (flowName == "Set C") {
+                    if (flowName == "Set C" || flowName == "Set E") {
                         branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
                     }
                 } else {
@@ -345,7 +345,7 @@ private suspend fun runPumpExperiment(
                 // This resolves forward-ref compile issues for 'scales', the pd*Totals, mlBlocksRaw etc that the
                 // helpers reference. (The processedScales for the inline remains at its site for now.)
                 val scales = listOf(224, 608, 1024, 2560)
-                val mlBlocksRaw = if (flowName == "Set B") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()
+                val mlBlocksRaw = if (flowName == "Set A") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()  // empty for B/C/D/E (pump-only, no ML columns)
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
@@ -443,7 +443,7 @@ private suspend fun runPumpExperiment(
                         val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
                         val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
 
-                        if (flowName != "Set B" && flowName != "Set C") {
+                        if (flowName != "Set B" && flowName != "Set C" && flowName != "Set D" && flowName != "Set E") {
                             if (!processedScales.contains(chosenScale)) {
                                 processedScales.add(chosenScale)
                                 chosenBuffer.p.clear()
@@ -1036,7 +1036,7 @@ private suspend fun runPumpExperiment(
                 // drives the flows (avoiding hard-coded names in the main logic).
                 // C now gets its Paddle result from the body (like B); the old != "Set C" guard was only to protect valley-set result.
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
-                if (flowName != "Set B" && flowName != "Set C") {
+                if (flowName != "Set B" && flowName != "Set C" && flowName != "Set D" && flowName != "Set E") {
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 }
 
@@ -1046,7 +1046,7 @@ private suspend fun runPumpExperiment(
                     SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
 
-                if (flowName != "Set B" && flowName != "Set C") {
+                if (flowName != "Set B" && flowName != "Set C" && flowName != "Set D" && flowName != "Set E") {
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
                     branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
                 }
@@ -1177,7 +1177,7 @@ private suspend fun runPumpExperiment(
                     }
                     branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
-                } else if (flowName == "Set C") {
+                } else if (flowName == "Set C" || flowName == "Set E") {
                     val tBlueStart = System.currentTimeMillis()
                     // Set C: derive blue/orange from raw hunks using the image-based object finding from alignment Set J (large/small filter path), not Paddle.
                     // Blue now via alignment Set E valley expansion from red (adapted for pump post-polarity/invert mat to suit white-on-black assumption), replacing the overlapping CC for blue to fix frequent expansion errors. (CC kept for orange; old overlapping commented/replaced).
