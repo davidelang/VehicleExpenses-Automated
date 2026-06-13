@@ -268,9 +268,11 @@ private suspend fun runPumpExperiment(
             // Dynamic Flow Processing
             // Phase 2 dispatch (approved array-of-processors refactor): iterate the flowProcessors array in lockstep
             // with flows (forEachIndexed). Common per-flow setup + call to the processor for this index.
-            // The processor bodies (linear "what to do for this path", no internal flowName ifs) will be filled
-            // and the old tangled body below will be removed in subsequent phases. Temp: old body still runs
-            // so behavior is unchanged during the transition builds.
+            // The processor bodies (linear "what to do for this path", no internal flowName ifs) are the intended home for per-set logic.
+            // Note: special per-set viz/processing (valley + per-red hists for C/E, red-only + B-style blue for B/D, OCR inlines, etc.)
+            // remains in the old body with extended if (flowName == "Set X" || "Set Y") guards. Full migration into the procs
+            // (to eliminate these if flowName filters per the original refactoring goal) is still pending / transitional.
+            // Temp: old body still runs during the transition.
             flows.forEachIndexed { i, flowName ->
                 // (original per-flow setup follows; the call to the processor for this i will be placed after the
                 // flowProcessors list definition later in this per-flow body, so the array reference resolves and
@@ -1013,7 +1015,7 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
                 // For D/E the proc stubs (and later filled logic) + B/C blocks below will now see the pruned <=6 in the lists. The explicit doCross in B/C blocks (for redBoxes) will see the already-pruned.
 
-                val mlHunks = if (flowName == "Set B" || flowName == "Set C") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)
+                val mlHunks = if (flowName == "Set B" || flowName == "Set C" || flowName == "Set D" || flowName == "Set E") emptyList<PumpHunk>() else mergeGeometryIntoHunks(mlBlocksRaw)  // no ML hunks for the pump-only sets (B/C/D/E mirrors)
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
                 // 4. Extraction
