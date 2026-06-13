@@ -812,12 +812,8 @@ private suspend fun runPumpExperiment(
                     doBOrDRetractedBlueAndPD()
                 }
                 val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // thin delegate for C (per mechanical cleanup): calls the extracted helper for full C derivation (valley + blue + PD/OCR)
-                    doCOrEPrepareHunksAndValleyInputs(
-                        /* hoisted lists from the thin else if C body; in practice the helpers close over scope */
-                        /* for delegate, the thin if C already drives; here for completeness */
-                    )
-                    // note: the active thin if (C||E) performs the call with hoists; procC as array entry delegates conceptually
+                    // thin delegate for C (per mechanical cleanup): see thin else if (C||E) body for the actual doCOrE... call (with hoists for the derivation lists)
+                    // procC as array entry is the conceptual delegate; the if body performs the helper invocation with the required hoisted state.
                 }
                 val procD: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // thin delegate for D (mirrors B per plan + mechanical cleanup)
@@ -825,10 +821,7 @@ private suspend fun runPumpExperiment(
                     doBOrDRetractedBlueAndPD()
                 }
                 val procE: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // thin delegate for E (mirrors C per plan + mechanical cleanup)
-                    doCOrEPrepareHunksAndValleyInputs(
-                        /* same hoists as procC; thin if E drives the actual with hoists */
-                    )
+                    // thin delegate for E (mirrors C per plan + mechanical cleanup): see thin else if for the actual call with hoists
                 }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
