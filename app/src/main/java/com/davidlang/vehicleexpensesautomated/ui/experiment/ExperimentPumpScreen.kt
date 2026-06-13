@@ -1333,31 +1333,6 @@ private suspend fun runPumpExperiment(
                     outBlueRects.addAll(blueRects)
                     outRetractedBlueRects.addAll(retractedBlueRects)
                     outCompRects.addAll(compRects)
-                }
-
-                if (flowName == "Set B" || flowName == "Set D") {
-                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
-                    // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
-                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
-                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
-
-                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
-                    doBOrDRedOnlyImage()
-
-                    // Mechanical extraction (second small chunk): call to the extracted function (exact same retractedExpForBlue + aPd + baseB64 + dependent OCR/ocrLines/PD now lives in doBOrDRetractedBlueAndPD).
-                    doBOrDRetractedBlueAndPD()
-                } else if (flowName == "Set C" || flowName == "Set E") {
-                    // Hoisted outputs for this C/E chunk (and immediate following orange code) -- mechanical first-pass glue so the body after the call compiles (per user's allowed outer-scope for first pass).
-                    val tBlueStart = System.currentTimeMillis()
-                    val redBoxes = mutableListOf<PumpHunk>()
-                    val redPixelRects = mutableListOf<android.graphics.Rect>()
-                    val hunks = mutableListOf<PumpHunk>()
-                    val blueRects = mutableListOf<RectF>()
-                    val retractedBlueRects = mutableListOf<RectF>()
-                    val compRects = mutableListOf<android.graphics.Rect>()
-
-                    // Mechanical extraction (first C/E chunk): call to the extracted function (exact same prep+valley+3sides+retract now lives in doCOrEPrepareHunksAndValleyInputs).
-                    doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects)
 
                     val orangeRects = mutableListOf<RectF>()
                     for (blue in retractedBlueRects) {
@@ -1504,6 +1479,31 @@ private suspend fun runPumpExperiment(
                     // t_ocr_ms for C (after ocrLinesC build + pd_ocr_html write); B similar in its block
                     branch.metadata["t_pd_snapshot_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
                     // t_pd_snapshot_ms approx for final PD annotated image (baseB64 / takeSnapshot with anns for C; B equivalent before its ocr)
+                }
+
+                if (flowName == "Set B" || flowName == "Set D") {
+                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
+                    // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
+                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+
+                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
+                    doBOrDRedOnlyImage()
+
+                    // Mechanical extraction (second small chunk): call to the extracted function (exact same retractedExpForBlue + aPd + baseB64 + dependent OCR/ocrLines/PD now lives in doBOrDRetractedBlueAndPD).
+                    doBOrDRetractedBlueAndPD()
+                } else if (flowName == "Set C" || flowName == "Set E") {
+                    // Hoisted outputs for this C/E chunk (and immediate following orange code) -- mechanical first-pass glue so the body after the call compiles (per user's allowed outer-scope for first pass).
+                    val tBlueStart = System.currentTimeMillis()
+                    val redBoxes = mutableListOf<PumpHunk>()
+                    val redPixelRects = mutableListOf<android.graphics.Rect>()
+                    val hunks = mutableListOf<PumpHunk>()
+                    val blueRects = mutableListOf<RectF>()
+                    val retractedBlueRects = mutableListOf<RectF>()
+                    val compRects = mutableListOf<android.graphics.Rect>()
+
+                    // Mechanical extraction (first C/E chunk): call to the extracted function (exact same prep+valley+3sides+retract + orange + PD + OCR now lives in doCOrEPrepareHunksAndValleyInputs).
+                    doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects)
                 } else {
                     // A (reds only)
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
