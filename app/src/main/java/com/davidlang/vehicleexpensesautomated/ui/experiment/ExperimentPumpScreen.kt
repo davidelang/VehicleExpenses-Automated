@@ -1047,30 +1047,43 @@ private suspend fun runPumpExperiment(
                 // (suspend keyword to preserve original suspend context.)
                 suspend fun doBOrDRetractedBlueAndPD() {
                     // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
-                    val retractedExpForBlue = mutableListOf<PumpHunk>()
-                    for (h in pdHunksExpTotal) {
+                    // Optimization (inside split-out helper per the D/E + user pixel/sweep plan): convert input lists to pixel Rects *once* (O(N) ICRS at boundary only). Use the pixel Rects for the expandByUniformity (native pixel), for all blue/orange size math in OCR, and for any future per-box work. Convert back only for the final retractedExpForBlue list (used by getAnns for the annotated PD). This eliminates repeated ICRS<->pixel inside the per-box loops (even on the post-prune N=6). PumpHunk form kept only for anns/snapshot compatibility; intra red/blue working is pixel Rects (images are unique per photo, no cross-image ICRS use needed).
+                    val expPixelRects = pdHunksExpTotal.map { h ->
                         val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
                         val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                        val (retracted, _) = NativeImageUtils.expandByUniformity(workspace.p.mat, rect)
-                        val i1 = IcrsMath.pixelToIcrs(retracted.left.toFloat(), retracted.top.toFloat(), imgW, imgH)
-                        val i2 = IcrsMath.pixelToIcrs(retracted.right.toFloat(), retracted.bottom.toFloat(), imgW, imgH)
-                        retractedExpForBlue.add(PumpHunk(h.text, RectF(i1.x, i1.y, i2.x, i2.y)))
+                        android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    }
+                    val maxPixelRects = pdHunksMaxTotal.map { h ->
+                        val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                        android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    }
+                    val retractedPixel = mutableListOf<android.graphics.Rect>()
+                    for (r in expPixelRects) {
+                        val (retracted, _) = NativeImageUtils.expandByUniformity(workspace.p.mat, r)
+                        retractedPixel.add(retracted)
+                    }
+                    // convert back only the final for anns/OCR (minimal ICRS at boundary)
+                    val retractedExpForBlue = retractedPixel.map { r ->
+                        val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
+                        val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
+                        PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
                     }
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(retractedExpForBlue, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
                     val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
 
                     // run ocr recognize on *every* blue and *every* orange box; scale to 48px tall buffer with width multiple of 32 (for the recognition)
-                    // (inline crop/resize/rec using experimentRecSet320x48 and direct paddle rec, modeled on performHunkRecognition but forcing %32 width)
-                    val blueTexts = retractedExpForBlue.map { h ->
+                    // (inline crop/resize/rec using experimentRecSet1024x48 dedicated + clear; 4px buffer + aspect from alignment)
+                    // Optimization (inside split-out helper): use the pixel rect list for the blue (from the retractedPixel) and for orange (maxPixelRects) so pW/pH are integer .width/.height with no per-item ICRS->pixel. Pair with the ICRS list only for the createCrop (l,t,w,h in ICRS) and coerce. 4px + targetH=48 + %32 targetW preserved.
+                    val blueTexts = retractedPixel.mapIndexed { i, r ->
+                        val h = retractedExpForBlue.getOrNull(i) ?: return@mapIndexed "?"
                         val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
                         val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
                         val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
-                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
-                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        val pW = r.width(); val pH = r.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
@@ -1083,15 +1096,15 @@ private suspend fun runPumpExperiment(
                             res.debugText
                         }
                     }
-                    val orangeTexts = pdHunksMaxTotal.map { h ->
+                    val orangeTexts = maxPixelRects.mapIndexed { i, r ->
+                        val h = pdHunksMaxTotal.getOrNull(i) ?: return@mapIndexed "?"
                         val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
                         val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
                         val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
-                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
-                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        val pW = r.width(); val pH = r.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
@@ -1106,15 +1119,15 @@ private suspend fun runPumpExperiment(
                     }
 
                     // digits-only (0-9) pass using recognizeNumeric for the second OCR per box (as-is above + digits)
-                    val blueDigits = retractedExpForBlue.map { h ->
+                    val blueDigits = retractedExpForBlue.mapIndexed { i, h ->
+                        val rp = retractedPixel.getOrNull(i) ?: return@mapIndexed "?"
                         val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
                         val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
                         val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
-                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
-                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        val pW = rp.width(); val pH = rp.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
@@ -1127,15 +1140,15 @@ private suspend fun runPumpExperiment(
                             res.debugText
                         }
                     }
-                    val orangeDigits = pdHunksMaxTotal.map { h ->
+                    val orangeDigits = pdHunksMaxTotal.mapIndexed { i, h ->
+                        val rp = maxPixelRects.getOrNull(i) ?: return@mapIndexed "?"
                         val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
                         val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val r = h.icrs.right.coerceIn(l + 0.001f, maxX)
+                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
                         val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
-                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
-                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+                        val pW = rp.width(); val pH = rp.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, r - l, b - t)
+                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
