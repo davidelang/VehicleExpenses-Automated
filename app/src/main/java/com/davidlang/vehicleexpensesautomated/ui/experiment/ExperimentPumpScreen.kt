@@ -807,21 +807,17 @@ private suspend fun runPumpExperiment(
                     // - viz: ML image + PD raw reds snapshot
                 }
                 val procB: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // thin delegate for B (per mechanical cleanup): calls the extracted helpers for red-only + retracted blue/OCR/PD
-                    doBOrDRedOnlyImage()
-                    doBOrDRetractedBlueAndPD()
+                    // B proc (per mechanical cleanup / thin delegate intent): actual per-set special (red-only + retracted+OCR/PD) now in extracted helpers called from the thin if (B||D) body after common filter.
+                    // (proc as array entry documents the linear steps; thin if + helper is the implemented path)
                 }
                 val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // thin delegate for C (per mechanical cleanup): see thin else if (C||E) body for the actual doCOrE... call (with hoists for the derivation lists)
-                    // procC as array entry is the conceptual delegate; the if body performs the helper invocation with the required hoisted state.
+                    // C proc (per mechanical cleanup): actual C derivation (valley etc) in extracted helper called from the thin else if (C||E) body (with hoists).
                 }
                 val procD: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // thin delegate for D (mirrors B per plan + mechanical cleanup)
-                    doBOrDRedOnlyImage()
-                    doBOrDRetractedBlueAndPD()
+                    // D proc (mirrors B per plan + mechanical cleanup): see thin if (B||D) + doBOrD* helpers.
                 }
                 val procE: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // thin delegate for E (mirrors C per plan + mechanical cleanup): see thin else if for the actual call with hoists
+                    // E proc (mirrors C per plan + mechanical cleanup): see thin else if + doCOrE* helper.
                 }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
