@@ -1052,16 +1052,25 @@ private suspend fun runPumpExperiment(
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
                     branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
                 }
+
+                // Mechanical extraction (first small digestible chunk for B/D red-only, per user directive).
+                // Exact same code, moved verbatim. Outer-scope access (workspace, branch, pdHunks*, getAnns, imgW etc.) is acceptable on first pass.
+                // Semantic noop for this chunk.
+                fun doBOrDRedOnlyImage() {
+                    // Red-only image for Set B/D (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now". D mirrors B.
+                    val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
+                    val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnnsOnly, null, workspace).first
+                    branch.images["PD_red_only"] = redOnlyB64
+                }
+
                 if (flowName == "Set B" || flowName == "Set D") {
                     // add back blue (exp) + orange (max) annotations for Set B (per user directive)
                     // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
                     // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
 
-                    // Red-only image for Set B/D (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now". D mirrors B.
-                    val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
-                    val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnnsOnly, null, workspace).first
-                    branch.images["PD_red_only"] = redOnlyB64
+                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
+                    doBOrDRedOnlyImage()
 
                     // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
                     val retractedExpForBlue = mutableListOf<PumpHunk>()
