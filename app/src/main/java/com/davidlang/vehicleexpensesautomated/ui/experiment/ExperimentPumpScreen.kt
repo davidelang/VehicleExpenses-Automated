@@ -973,40 +973,22 @@ private suspend fun runPumpExperiment(
                         val rarea = rw * rh
 
                         // Always do the safe visual hist (full perMask on the red rect) -- this is robust and gives the per-red hist image for display.
+                        // For bins, also use the same safe perMask (with rect) to avoid any createCrop / crop Mat nativeObj issues that were causing the persistent NPE in calcHist on the first/early rows (as seen in fresh adb logs even after size guards).
+                        // This keeps the capture simple, safe, and limited to the post-prune 6 (fixing the "30 hists" problem) while guaranteeing the first row completes for C/E.
                         val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
                         val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
                         org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
                         val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
                         branch.images["redboxHistC_${i}"] = perHistB64
 
-                        // For numeric bins, use crop if possible. Guard after createCrop to handle cases where createCrop returns a bad/0-size crop even if rw/rh >0 (fp in ICRS roundtrip, boundary reds on first photo, or mat state after early probe invert).
-                        // Also check nativeObj != 0, because size/empty checks can pass but the native backing can still be invalid (the exact NPE on nativeObj in calcHist seen in adb logs for the first row).
-                        var usedCrop = false
-                        val cropId = workspace.createCrop(hunk.icrs.left, hunk.icrs.top, (hunk.icrs.right - hunk.icrs.left), (hunk.icrs.bottom - hunk.icrs.top))
-                        val cropForHist = if (cropId >= 0) workspace.c[cropId].mat else null
-                        if (cropForHist != null && cropForHist.nativeObj != 0L && !cropForHist.empty() && cropForHist.cols() > 0 && cropForHist.rows() > 0) {
-                            val hmat = org.opencv.core.Mat()
-                            try {
-                                org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(cropForHist), org.opencv.core.MatOfInt(0), null, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
-                                val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
-                                workspace.c[cropId].release()
-                                val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
-                                val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
-                                redboxDataC.put(stat)
-                                usedCrop = true
-                            } catch (t: Throwable) {
-                                // Any failure in the crop calc path for this red (rare after the nativeObj/size guards) -> fallback
-                                workspace.c[cropId].release() // best effort
-                            }
-                        }
-                        if (!usedCrop) {
-                            // Fallback for bad crop (or small rw/rh): put stat with real size + zero bins to keep the 6 entries for the builder.
-                            val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
-                            val binsArr = JSONArray()
-                            repeat(64) { binsArr.put(0.0) }
-                            stat.put("histBins", binsArr)
-                            redboxDataC.put(stat)
-                        }
+                        // Bins via the safe perMask (same as visual). No crop in this path to eliminate the nativeObj NPE source.
+                        val hmat = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        redboxDataC.put(stat)
+
                         perMask.release()
                     }
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
