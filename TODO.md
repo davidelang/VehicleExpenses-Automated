@@ -289,6 +289,17 @@
 - The "between each if flowname you pretty much only have a function call" + "finish the refactoring" for the tangled per-set if bodies is achieved.
 - Procs are the array dispatch entry (stubs).
 - Per plan: light proc polish or delete (none large left) or handoff can be next if directed. Core if mechanical done.
+
+## Cleanups continuation COMPLETE (final transitional + proc comments)
+- Last "Old body remains temp during transition." comment cleaned (dispatch now notes thin ifs + helpers, scaffolding cleaned).
+- ProcB/D/C/E bodies: light mechanical comment polish (updated notes referencing the thin if/else if + extracted helpers as the path; procs document steps as array entry). Avoided invalid calls that broke compile (small troubleshoot: reverted to safe comments).
+- Explicit git add + ./build_app: BUILD SUCCESSFUL. Tag advanced (0b9b6ab7; start-100-g0b9b6ab7).
+- Frequent builds locked the cleanups.
+- No remaining old body/transitional language for the tangled mess.
+- Structure: thin if calls for B/C special, helpers with verbatim, procs with updated comments, clean dispatch.
+- This finishes the light proc + final comment clean per the approved plan.
+- The if thinning + cleanups (core "finish the refactoring" + builds practice) are complete and locked.
+- Results ready. **Cleanups complete. Frequent builds followed. If thinning + proc comments + scaffolding finished.** Handoff or verification next if directed (name the sandbox plan).
 - Results ready for this phase of the refactor. **If thinning complete (B + C/E). Frequent builds followed throughout.**
 
 ## Continuing execution: first C/E mechanical chunk (prep + valley blue + 3sides + retract as one digestible unit)
