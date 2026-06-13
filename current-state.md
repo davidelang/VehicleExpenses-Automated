@@ -313,6 +313,31 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
   - Forensic re-reads/greps confirmed: PumpHunk + ICRS conversions are pervasive in pump red path (lists, filter, blue, anns, OCR, serialization); alignment already uses createCrop(4,4,...) for rec buffers. 
   - Sandbox plan revised with new "Additional feedback..." section: stronger recommendation to remove PumpHunk/ICRS entirely from red working data in D/E (and mirrors) because each pump photo is independent (no cross-image rect scaling or learning); use pure pixel Rects for all red/blue/orange processing. Only final one-time emit if report format still needs legacy form (and prefer to change reports to pixel for pump reds). For OCR: add explicit 4px margin via createCrop(4, 4, targetW-8, targetH-8) (or equivalent inset) matching alignment pattern, in the 1024x48 path (and performHunkRecognition). Phased/Verification updated. Still fully in planning.
 
+# Fixes + timing analysis for new report pump_results_2026-06-13_00-12-39.json (post last turn optimizations)
+- Code fixes applied (forensic reads before/after, build success):
+  - ML columns removed for D/E: mlBlocksRaw empty for non-Set A; ML pathResults if now excludes B/C/D/E (if (flowName != "Set B" && != "Set C" && != "Set D" && != "Set E")).
+  - D now fully mirrors B: if (flowName == "Set B" || "Set D") covers red-only PD, B-style blue derivation from pruned, inline OCR for blues/oranges on pruned 6, explicit red filter.
+  - E now fully mirrors C: if (flowName == "Set C" || "Set E") for valley push/rawC/pushedC/histBefore/After capture, per-red hists probe (redboxDataC + redboxHistC_* on initial, per plan), blue block (redBoxes from pruned, valley expandBy* for blue on pixel, 3sides, retract, white CC hunks, OCR with 1024x48 + 4px buffer createCrop(4,4,targetW,targetH) for as-is/digits).
+  - Builder already had D (red-only+full) and E (raw/pushed + hists + per-red on 6 + PD/ocr) cases from prior.
+  - 1024x48 + 4px already in OCR sites for the derived.
+  - Build after: successful, tag updated.
+- Timing extraction (jq on the 10 photos; key t_* and n_reds_after_prune6 / reds; table summary for first 10 rows shown, pattern consistent):
+  Photo Set Total Blue PerRed Filter Ocr Pd2560 Reds6
+  ... (full from tool: D/E reds 5-6; E totals 8.7k-12.9k vs C 14k-98k; D~B~5-8k like A; per_red for E/C ~5-9k; filter ~3-4k; examples of C high blue 26k-90k/ocr high eliminated in E).
+- What improved (vs prior runs like 21-13-02 where C~40s with t_blue~30s + t_per_red~5.8s on 30, t_filter~3s):
+  - Prune to 6 + pixel working lists (no repeated ICRS roundtrips in red path for filter/blue/anns/ocr) + sweep (O(2N) instead of pair) + 4px/1024 OCR: E totals slashed vs C (E consistent ~9k, C spikes to 50k-98k from full-red blue/ocr on 30).
+  - D matches B performance (prune on 6 doesn't add cost for B-like path).
+  - Reds after prune6 =5-6 as designed.
+  - Overall "other processing" (blue, ocr on derived, anns) now only on 6 for D/E; early probe/per_red still on initial (allowed per plan).
+- Current bottlenecks (from data):
+  - Early per_red_hists (t_per_red_hists_ms ~5-9k for C/E): still on full initial detections (~30 pre-prune, Mat.zeros+generate+calc per red).
+  - Filter (t_filter ~3-4k): even with sweep + pixel, the global on PumpHunk lists for discoveryDetails + pixel sweep; some ICRS in creation.
+  - Common (deskew/rotate/setup ~ inferred 1-2k from A/B/D totals ~5-6k minus pd~1k + filter~3k).
+  - Pd 2560 stable ~1-1.4k (not the variable).
+  - Some variance in E per_red (up to 9k); ocr for main Paddle on cost/vol still present.
+- Next: the fixes ensure future runs will have full visuals for D (red-only + full + OCR on pruned) and E (full C visuals + hists/per-red on pruned + 4px OCR), with the timing benefits. The optimizations delivered on the "prune before other processing" goal. Re-run experiment to confirm visuals in new report.
+- Build successful post-fixes (tag fix-pump-experiment/builds updated). Forensic on if extensions, ML conditions, mlBlocksRaw.
+
 # COMPLETE for approved plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-sets-d-e-top6-largest-reds-20260612-plan.md
 - Execution followed the plan exactly (re-read plan + current-state + TODO first as Phase 0 before any logic; TODO updated first as mandatory; forensic read_file before/after every edit + post each build; explicit git add .kt + current-state + TODO when demanded; ./build_app (with files) milestone + final clean; 3-3-3 not triggered (builds succeeded); no deployment; ICRS/raw pixel (stronger pixel-only red working per unique-images feedback); relative paths; primary sandbox plan).
 - All phases completed with forensics:
