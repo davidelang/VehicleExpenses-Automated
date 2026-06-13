@@ -268,6 +268,13 @@
 
 ## B locked; C attempt (small) troubleshot by revert (per user's builds note)
 
+## If thinning milestone complete (B + C/E); continuing to scaffolding clean + proc light (per plan)
+- After the C chunk build (tag d77d6c26), the if (B||D) and else if (C||E) are now thin calls only (hoists + call(s); all special logic verbatim in the extracted fun(s)).
+- This fulfills the core of the user's "focus on breaking the tangled mess into separate functions first, so that between each if flowname you pretty much only have a function call".
+- Frequent builds after every piece (B chunks, C chunk) locked the changes.
+- Next small steps: clean the remaining "close the else for old body" comment and other transitional "old body"/"Temp"/"will be removed" comments (update to reflect completion of the if extraction); light update to procs if they still reference old; delete any large commented old tangled block if present; final build + handoff.
+- All mechanical, builds after each.
+
 ## Continuing execution: first C/E mechanical chunk (prep + valley blue + 3sides + retract as one digestible unit)
 - Updated this TODO first (mandatory).
 - Forensic read of the full current else if (C||E) block (lines ~1201+).
