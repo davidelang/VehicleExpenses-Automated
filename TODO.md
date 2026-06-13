@@ -267,6 +267,20 @@
 - (see current-state for full; B if body thin with 2 calls; fun has verbatim retracted + OCR + PD; build success + tag advance locked it).
 
 ## B locked; C attempt (small) troubleshot by revert (per user's builds note)
+
+## Continuing execution: first C/E mechanical chunk (prep + valley blue + 3sides + retract as one digestible unit)
+- Updated this TODO first (mandatory).
+- Forensic read of the full current else if (C||E) block (lines ~1201+).
+- First digestible C/E chunk: from "val tBlueStart = ..." through the valley blue loop, 3sides on blue, retract (including binMat.release and the t_blue_retract / t_blue_creation metadata writes). Exact verbatim original code moved into suspend fun doCOrEPrepareHunksAndValleyInputs (with out* mutable list params for the hoisted outputs).
+- Hoisted in the else if (before the call): the output lists needed by the remaining code (retractedBlueRects, hunks) + tBlueStart.
+- Thin the else if to the hoisted decls + single call to the fun.
+- The code after the call (orangeRects creation using retractedBlueRects + hunks) now works with the hoisted.
+- Forensic read_file + grep after the edits (if site and fun).
+- Explicit git add .kt + current-state + TODO.
+- ./build_app (frequent build to lock this chunk per user's builds directive).
+- Will append success + tag to state/TODO.
+- Next after this: the orange + orange 3sides + PD + OCR as the follow-on small chunk for C/E (thin the remaining to call, or move into the fun).
+- All mechanical, verbatim, no behavior change, builds after each.
 - After B build success, attempted first C/E chunk (prep + valley verbatim to fun; else if thinned to call). Remaining C code had references to prep-declared vars (scope for partial move).
 - Small change did not build. Easy troubleshoot: `git checkout -- .kt` (reverted only uncommitted C edits; file at B-success state, B locked work untouched).
 - Demonstrates "if they don't work, the change is small and should be easy to troubleshoot" + "we only reset to the last commit that built" (B green build preserved).
