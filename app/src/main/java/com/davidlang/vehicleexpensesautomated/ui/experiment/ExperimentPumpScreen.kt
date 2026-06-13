@@ -238,7 +238,7 @@ private suspend fun runPumpExperiment(
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
-    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (3x size) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms (with h/w/area labels + bins in JSON for analysis) instead of combined. Polarity + discovery + CC blue derivation run on the pushed mat state.
+    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (3x size, 2x displayed) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan). Extensive t_ timings added to metadata/JSON. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state.
     val flows = listOf("Set A", "Set B", "Set C")
 
     fun pStartNewFile(): File {
@@ -277,6 +277,7 @@ private suspend fun runPumpExperiment(
                 // the array-of-functions iteration per the clarification (no hard-coded per-set function names at
                 // call sites; just index into the array). Old body remains temp during transition.)
                 val branch = root.getBranch(flowName)
+                val tFlowStart = System.currentTimeMillis()
                 val workspace = NativePaddleEngine.bufferSetA
                 workspace.resize(imgW, imgH)
                 masterBuffer.p.mat.copyTo(workspace.p.mat)
@@ -303,6 +304,9 @@ private suspend fun runPumpExperiment(
                     val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["pushedC"] = pushedForC
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    if (flowName == "Set C") {
+                        branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+                    }
                 } else {
                     rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                     if (flowName == flows.first()) {
@@ -659,6 +663,7 @@ private suspend fun runPumpExperiment(
                         perMask.release()
                     }
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
+                    branch.metadata["t_per_red_hists_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
 
                     val hist = org.opencv.core.Mat()
                     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
@@ -679,6 +684,7 @@ private suspend fun runPumpExperiment(
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
                     pdHunksDetectedTotal.clear()
+                    branch.metadata["t_red_probe_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
                 }
 
                 val procA: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
@@ -702,7 +708,7 @@ private suspend fun runPumpExperiment(
                     // - only PD viz (raw reds)
                 }
                 val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // C uses valleyPushToPeaks (replaces stretch) for the raw + quantized-few-brightness display + before/after hists in column (per plan). Polarity + discovery + PD + CC blues run on the pushed mat.
+                    // C uses valleyPushToPeaks (replaces stretch) for the raw + quantized-few-brightness display + before/after hists in column (per plan). Per-red hists + timings + blue via Set E valley expand (per this plan). Polarity + discovery + PD + CC hunks (for orange) run on the pushed mat.
                 }
                 val flowProcessors = listOf(procA, procB, procC)
 
@@ -979,7 +985,9 @@ private suspend fun runPumpExperiment(
                     branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
                 } else if (flowName == "Set C") {
+                    val tBlueStart = System.currentTimeMillis()
                     // Set C: derive blue/orange from raw hunks using the image-based object finding from alignment Set J (large/small filter path), not Paddle.
+                    // Blue now via alignment Set E valley expansion from red (adapted for pump post-polarity/invert mat to suit white-on-black assumption), replacing the overlapping CC for blue to fix frequent expansion errors. (CC kept for orange; old overlapping commented/replaced).
                     // The "command" to find the objects (per-char or per 7-seg segment) is NativeImageUtils.findAllComponentsH (wraps cv::connectedComponentsWithStats),
                     // called after blackOutLargeAndSmallComponentsH (and rolling) on a binarized version of the mat.
                     // See ExperimentAlignmentScreen.kt:1180 (blackOutLargeAndSmall), 1194 (findAllComponentsH after wide/tall processing) and the nativeBlackOut... / nativeFindAll... in NativeImageUtils.cpp
@@ -1012,7 +1020,7 @@ private suspend fun runPumpExperiment(
                     NativeImageUtils.blackOutLargeAndSmallComponentsH(binMat, vSW, hSW, 0.20f * binMat.cols())
                     NativeImageUtils.blackOutRollingDigitsH(binMat, vSW, hSW)
                     val compRects = NativeImageUtils.findAllComponentsH(binMat, vSW, hSW)
-                    binMat.release()
+                    // binMat.release() moved later to after retract (was premature, causing errors)
 
                     // compRects are the pixel-space bounding boxes of the individual characters / 7-seg segments (the "objects").
                     val hunks = compRects.map { r ->
@@ -1020,18 +1028,20 @@ private suspend fun runPumpExperiment(
                         val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
                         PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
                     }
+                    // Phase 5: use alignment Set E valley expansion from red (adapted for pump polarity/bg assumption)
+                    // instead of overlapping hunks for blue from red. This should reduce errors in expansion.
+                    // (hunks kept for orange same-row)
                     val blueRects = mutableListOf<RectF>()
                     for (red in redBoxes) {
-                        val overlapping = hunks.filter { other ->
-                            !(other.icrs.right < red.icrs.left || other.icrs.left > red.icrs.right || other.icrs.bottom < red.icrs.top || other.icrs.top > red.icrs.bottom)
-                        }
-                        if (overlapping.isNotEmpty()) {
-                            val l = overlapping.minOf { it.icrs.left }
-                            val t = overlapping.minOf { it.icrs.top }
-                            val r = overlapping.maxOf { it.icrs.right }
-                            val b = overlapping.maxOf { it.icrs.bottom }
-                            blueRects.add(RectF(l, t, r, b))
-                        }
+                        val p1 = IcrsMath.icrsToPixel(red.icrs.left, red.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(red.icrs.right, red.icrs.bottom, imgW, imgH)
+                        val redPixRect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
+                        // use the main mat (post polarity/invert in Set C so text regions suit white-on-black assumption of the diagnostic)
+                        val valleyRes = NativeImageUtils.expandByValleyDiagnostic(workspace.p.mat, redPixRect, 0.40f)
+                        val bluePix = valleyRes.first
+                        val i1 = IcrsMath.pixelToIcrs(bluePix.left.toFloat(), bluePix.top.toFloat(), imgW, imgH)
+                        val i2 = IcrsMath.pixelToIcrs(bluePix.right.toFloat(), bluePix.bottom.toFloat(), imgW, imgH)
+                        blueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
                     }
 
                     // Near-containment merging rule (per approved plan for this turn, "when merging").
@@ -1091,6 +1101,8 @@ private suspend fun runPumpExperiment(
                         val i2 = IcrsMath.pixelToIcrs(retracted.right.toFloat(), retracted.bottom.toFloat(), imgW, imgH)
                         retractedBlueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
                     }
+                    binMat.release()  // release after use in blue retract
+                    branch.metadata["t_blue_creation_ms"] = (System.currentTimeMillis() - tBlueStart).toString()
                     val orangeRects = mutableListOf<RectF>()
                     for (blue in retractedBlueRects) {
                         val yMin = blue.top
@@ -1237,6 +1249,7 @@ private suspend fun runPumpExperiment(
                 }
             }
             }  // close the else for old body (skipped for Set C so processor composite wins)
+            branch.metadata["t_total_flow_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
 
             // Final Reporting
             val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
@@ -1526,7 +1539,8 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
+    // Phase 2: filter verbose redboxDataC etc from column 2 / meta dump (too much detail)
+    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) -> !k.contains("redboxDataC") && !k.contains("DataC") }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
@@ -1554,20 +1568,28 @@ private fun pBuildHtmlRowDynamic(
             val hB = br.images["histBeforeC"] ?: ""
             val hA = br.images["histAfterC"] ?: ""
             // Per-redbox hists + labels from redboxDataC (h/w/area pixels + bins for analysis)
+            // Phase 1: sorted by area desc (largest first), 3-wide table, stacked values per cell
             val rdataStr = br.metadata["redboxDataC"] ?: "[]"
             val rdata = try { org.json.JSONArray(rdataStr) } catch (e: Exception) { org.json.JSONArray() }
             val perRedHtml = StringBuilder()
-            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Hists (h/w/area pixels):</b></div>")
-            for (j in 0 until rdata.length()) {
-                val s = rdata.getJSONObject(j)
+            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Hists (sorted by area desc, 3 wide, stacked h/w/area):</b></div>")
+            val sortedData = (0 until rdata.length()).map { rdata.getJSONObject(it) }.sortedByDescending { it.getInt("area") }
+            val numCols = 3
+            perRedHtml.append("<table style='width:100%; border:none; font-size:10px;'><tr>")
+            for (j in sortedData.indices) {
+                val s = sortedData[j]
                 val ii = s.getInt("index")
                 val hh = s.getInt("h")
                 val ww = s.getInt("w")
                 val aa = s.getInt("area")
                 val hb = br.images["redboxHistC_${ii}"] ?: ""
-                perRedHtml.append("<img src='data:image/jpeg;base64,$hb' style='max-width:18%; vertical-align:top;'><br><small>Red${ii}: h=${hh} w=${ww} area=${aa}</small> ")
+                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><img src='data:image/jpeg;base64,$hb' style='max-width:95%;'><br><small>Red${ii}:<br>h=${hh}<br>w=${ww}<br>area=${aa}</small></td>")
+                if ((j + 1) % numCols == 0 && j < sortedData.size - 1) {
+                    perRedHtml.append("</tr><tr>")
+                }
             }
-            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:60%;'><br><small>Raw (3x)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:60%;'><br><small>Valley-Pushed (few brightness vals, 3x)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:60%;'><br><small>Before (3x)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:60%;'><br><small>After (3x)</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+            perRedHtml.append("</tr></table>")
+            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:120%;'><br><small>Raw (3x, 2x displayed)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:120%;'><br><small>Valley-Pushed (few brightness vals, 3x, 2x displayed)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:120%;'><br><small>Before (3x, 2x displayed)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:120%;'><br><small>After (3x, 2x displayed)</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
         } else {
             appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
         }
