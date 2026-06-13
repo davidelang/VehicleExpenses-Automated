@@ -951,7 +951,8 @@ private suspend fun runPumpExperiment(
                     PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
                 })
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
-                // For D/E the proc stubs (and later filled logic) + B/C blocks below will now see the pruned <=6 in the lists. The explicit doCross in B/C blocks (for redBoxes) will see the already-pruned.
+                // For D/E (and B/C where they use the red lists) the proc stubs + thin if calls + helpers will see the pruned <=6 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (B/C/D/E red-derived paths per user clarification). D/E add the prune-to-6 limitation on top. Early probe for C/E now only does polarity on initial (cheap combined mask); the 6 post-prune capture provides the filtered redboxDataC + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
                 // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
                 // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
