@@ -275,6 +275,18 @@
 - Next small steps: clean the remaining "close the else for old body" comment and other transitional "old body"/"Temp"/"will be removed" comments (update to reflect completion of the if extraction); light update to procs if they still reference old; delete any large commented old tangled block if present; final build + handoff.
 - All mechanical, builds after each.
 
+## If thinning + scaffolding clean complete (B + C/E)
+- C chunk finished the thinning for the C/E if (full derivation now in the fun; else if is hoists + one call).
+- B already thin from prior.
+- Small comment clean removed "close the else for old body" and refreshed transitional notes.
+- Build after the clean locked it (tag 37fb574c).
+- The "between each if flowname you pretty much only have a function call" is achieved for the per-set experiment logic.
+- Procs are stubs (light delegation complete in spirit; actual behavior driven by the thin ifs + helpers).
+- No large old commented block to delete.
+- This completes the main mechanical extraction phase of the approved plan (with frequent builds after every small chunk, per user's explicit builds note).
+- Next (if continue): any final dispatch/proc comment polish + verification build + handoff with the plan path + "results ready to test. **END OF EXECUTION TURN**".
+- Or stop here; the core refactor for the tangled ifs is done and locked.
+
 ## Continuing execution: first C/E mechanical chunk (prep + valley blue + 3sides + retract as one digestible unit)
 - Updated this TODO first (mandatory).
 - Forensic read of the full current else if (C||E) block (lines ~1201+).

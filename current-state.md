@@ -449,7 +449,16 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
 - State/TODO updated with B success + this demonstration of the process. Next: re-do C extraction as small chunk(s) (starting with prep or a smaller first piece of the C block) + forensic + git add + build to lock the next piece. Frequent builds continue.
 - B chunk remains locked and the structure for B is the desired thin calls. The overall mechanical refactor progresses with the user's guidance strictly followed.
 
-## Major milestone: if thinning complete for B and C/E (mechanical extraction + frequent builds)
+## Major milestone: if thinning complete for B and C/E (mechanical extraction + frequent builds) + scaffolding comment clean
+- C chunk (prep+valley+3sides+retract + orange+PD+OCR) completed the C/E if thinning (one call + hoists in else if; full verbatim in the fun).
+- if (B||D) and else if (C||E) now both thin calls only for per-set special logic.
+- Small mechanical comment clean: removed "close the else for old body" reference + updated other "old body"/"Temp"/"transitional"/"will be removed" comments to reflect completion of the if extraction phase.
+- Forensic + explicit git add + ./build_app after the clean: BUILD SUCCESSFUL. Tag advanced (d77d6c26 -> 37fb574c).
+- Frequent builds after every small piece (B two chunks, C one, comment clean) locked all changes per the user's builds note.
+- The core user directive is achieved: "breaking the tangled mess into separate functions first, so that between each if flowname you pretty much only have a function call".
+- No large commented old tangled block present to delete (already absent in baseline).
+- Remaining per plan: any light proc delegation (procs are stubs; may just need comment refresh to note delegation to helpers), final verification build, handoff naming the plan path + "results ready to test. **END OF EXECUTION TURN**".
+- State/TODO updated. The mechanical if extraction + basic clean is complete and locked.
 - C first chunk (prep+valley+3sides+retract) + orange/PD/OCR tail moved (combined in the fun for buildability and to thin the entire else if to one call + hoists).
 - else if (C||E) now thin: hoisted outputs + single call to doCOrEPrepareHunksAndValleyInputs (which contains all the C special logic verbatim).
 - if (B||D) already thin from prior chunks.
