@@ -515,6 +515,21 @@ OCR, note that you must maintain the aspect ratio, see how it's done in the alig
 - Primary sandbox plan paths referenced: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-finish-tangled-refactor-20260613-plan.md and pump-experiment-forensic-mechanical-extraction-refactor-20260613-plan.md (plus D/E opt plans for the specific content of the opts).
 - results ready to test. **END OF EXECUTION TURN**
 
+## Regression fix for "never completes the first image" (between start-103-g4fc82f0e good and start-107-g0a72a250+ broken)
+- User: the filtering changes (post-prune re-capture for C/E 6 hists + early probe clean) caused the experiment to never complete the first photo/row.
+- Adb logs showed the exact crashes introduced/exposed:
+  - NullPointerException on Mat.nativeObj in calcHist at the post-prune C/E hists re-capture (line ~984, the cropForHist from createCrop on a red rect that after ICRS roundtrip/filter had effective 0 size for the first photo).
+  - CvException (inv_scale_x > 0) in resize inside performHunkRecognition (for final Paddle OCR of a blue/orange derived from one of the 6 largest reds; the proportional targetW rounded to 0 due to aspect even when pW/pH >=2).
+- The post-prune block (added to give C/E the filtered 6 hists instead of 30) and the final OCR path had no equivalent of the `if (pW <2 || pH <2) "?"` guards that existed in the B helper and the old pre-prune early probe code. Pruning + the ICRS/pixel roundtrips in the new capture exposed degenerate or bad-aspect cases for the first photo.
+- Fixes (two small guards, no behavior change for normal 6 largest reds):
+  - In the post-prune C/E re-capture: after rw/rh, `if (rw < 2 || rh < 2) { dummy stat with area 0; return@forEachIndexed; }` before any perMask/crop/calc/generate. Skips bad crop, prevents the nativeObj NPE; builder still gets an entry (0 area, missing/empty hist image is fine).
+  - In performHunkRecognition (the shared final OCR used for C/E blues/oranges): after the targetW calc (even with the existing pW/pH guard), `if (targetW <= 0 || targetH <= 0) return@map hunk`. Prevents the resize assertion; the small blue just contributes no text (later >=2 digit filter drops it).
+- These make the re-capture and the OCR robust for the pruned 6 (the goal of the filtering) while letting the first (and other) images complete.
+- Forensic reads of the guard sites confirmed.
+- git add + ./build_app succeeded (new version fix-pump-experiment-start-110-ga04ecd19).
+- Test the new build on device. The first image/row for C/E should now finish (with the 6 post-prune hists), and the overall experiment should complete all rows.
+- If adb logs on the new version still show problems on the first image (or other rows), paste the relevant FATAL/ExperimentPump lines (especially around the C/E early probe, the post-prune if, blue derivation in the helper, or performHunkRecognition for the first photo); we can add more guards in the valley/3sides/expand if a degenerate red slips through to blue rects.
+
 ## Regression fix (adb logs showed crashes on first/some images after the filtering changes)
 - User reported: current (start-107-g0a72a250 and later) "never completes the first image"; last good start-103-g4fc82f0e.
 - From adb logs (FATAL in ExperimentPump process): 
