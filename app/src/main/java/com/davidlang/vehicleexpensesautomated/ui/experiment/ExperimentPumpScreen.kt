@@ -1187,18 +1187,10 @@ private suspend fun runPumpExperiment(
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
                 }
 
-                if (flowName == "Set B" || flowName == "Set D") {
-                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
-                    // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
-                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
-                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
-
-                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
-                    doBOrDRedOnlyImage()
-
-                    // Mechanical extraction (second small chunk): call to the extracted function (exact same retractedExpForBlue + aPd + baseB64 + dependent OCR/ocrLines/PD now lives in doBOrDRetractedBlueAndPD).
-                    doBOrDRetractedBlueAndPD()
-                } else if (flowName == "Set C" || flowName == "Set E") {
+                // Mechanical extraction (first small digestible chunk for C/E): the initial redBoxes + filter + redPixelRects + vSW/hSW + blackOut/findAll + hunks creation (the prep for blue derivation).
+                // Exact same code, moved verbatim. Outer-scope access acceptable on first-pass mechanical.
+                // Semantic noop. Build after this small piece to lock (per user's frequent builds guidance).
+                suspend fun doCOrEPrepareHunksAndValleyInputs() {
                     val tBlueStart = System.currentTimeMillis()
                     // Set C: derive blue/orange from raw hunks using the image-based object finding from alignment Set J (large/small filter path), not Paddle.
                     // Blue now via alignment Set E valley expansion from red (adapted for pump post-polarity/invert mat to suit white-on-black assumption), replacing the overlapping CC for blue to fix frequent expansion errors. (CC kept for orange; old overlapping commented/replaced).
@@ -1261,6 +1253,22 @@ private suspend fun runPumpExperiment(
                         blueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
                     }
                     branch.metadata["t_blue_valley_expands_ms"] = (System.currentTimeMillis() - tBlueValleyStart).toString()
+                }
+
+                if (flowName == "Set B" || flowName == "Set D") {
+                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
+                    // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
+                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+
+                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
+                    doBOrDRedOnlyImage()
+
+                    // Mechanical extraction (second small chunk): call to the extracted function (exact same retractedExpForBlue + aPd + baseB64 + dependent OCR/ocrLines/PD now lives in doBOrDRetractedBlueAndPD).
+                    doBOrDRetractedBlueAndPD()
+                } else if (flowName == "Set C" || flowName == "Set E") {
+                    // Mechanical extraction (first small chunk for C/E): call to the extracted prep (redBoxes + filter + redPixelRects + vSW/hSW + blackOut/findAll + hunks + valley blue loop).
+                    doCOrEPrepareHunksAndValleyInputs()
 
                     // Near-containment merging rule (per approved plan for this turn, "when merging").
                     // If one box is inside another on 3 sides but protrudes on the 4th by <=40px (pixel space) *and* the boxes still overlap on that axis (no gap), extend the containing box to the protruding side.

@@ -260,5 +260,14 @@
   - Phases for C/E + light proc delegation + verification milestone + final delete of any remaining scaffolding + comment cleanup + handoff: as detailed in the approved sandbox plan (and the TODO section above). Build green after every micro-step.
 - All constraints followed: TODO first (this entry), forensic before/after every, git add + frequent ./build_app after each small chunk (to lock per the user's builds directive), preflight on resets, relative paths, absolute for sandbox plan, STOP after sub-handoff with exact plan path.
 - Verification per plan: builds green after the chunk(s); forensic proves exact verbatim move + if body thinned to the call(s); no behavior change.
-- Status: Phase 0 complete (TODO + re-reads + plan revision for the builds note). Beginning first post-red-only B chunk now (retracted blue). Will append progress after each build. Handoff only when mechanical phase complete per the plan.
+- Status: Phase 0 complete (TODO + re-reads + plan revision for the builds note). B second chunk (retracted + dependent full OCR/PD) complete + built/locked. Beginning first C/E chunk now. Will append progress after each build. Handoff only when mechanical phase complete per the plan.
 - Local plan hygiene + current-state continuity followed. Primary approved artifact is the sandbox plan at the dev-ai path (revised with the builds note).
+
+## Chunk complete: B retracted+OCR/PD (second small mechanical; frequent build locked per user's builds note)
+- Verbatim move of the retractedExpForBlue loop + aPd + baseB64 + the 4 OCR maps (blueTexts etc with 1024x48 + 4px) + ocrLinesB + metadata/images["PD"] into suspend fun doBOrDRetractedBlueAndPD (after the red-only fun).
+- if (B||D) body now contains only: filter; red-only call; retracted+ocr-pd call; } else if (C||E).
+- Forensic reads/grep confirmed (before/after the insert of fun + append of consumers + removal of the moved code from body).
+- git add + ./build_app: BUILD SUCCESSFUL (15s). Tag advanced (fix-pump-experiment/builds now at new commit after this chunk; previous 7b05e164). Version e.g. fix-pump-experiment-start-90-gb1e2d3de.
+- This change is small, locked in history. Per user: if trouble later, reset only loses post-this-built work.
+- TODO updated; state updated with tag + next (first C/E chunk).
+- No behavior change (exact code, same calls from the if). The B/D special logic after common filter is now in the two extracted funs (red-only; retracted+ocr-pd). C/E block is next target for small chunks.
