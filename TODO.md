@@ -1,5 +1,13 @@
 # TODO
 
+- [ ] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
+  - [ ] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js
+  - [ ] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token)
+  - [ ] Update comments in .grok/config.toml documenting the prefix form + hook normalization
+  - [ ] Selectively promote confirmed items from agent-1/permission_grok-pager.toml allowed_bash_commands (adb logcat for reads [confirmed allowed by user], echo *, find *, true, and specific git describe/tag--list if not redundant) as narrow patterns in root config.toml. Do **not** add any python3 * (user confirmed: too dangerous; use dedicated helpers only)
+  - [ ] Run ./update-rules.sh (from orchestration root)
+  - [ ] ./build_app (create builds tag)
+  - [ ] Update this TODO, output **END OF EXECUTION TURN** marker + "results ready to test"
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
@@ -42,7 +50,7 @@
     - [x] Commit and sync rules across all worktrees.
 
 # Meta plan (approved 2026-06-12 on orchestration branch): Robust Plan/Execute Cycle
-- Primary deliverable of every planning phase must be a fresh, clean task-specific plan document written to dev-ai-interaction/ (e.g. <task>-<date>-plan.md) using the standard structure (Context, Recommended Approach, Critical Files with paths, Reusable utilities with exact locations, Phased steps with forensic+build, Verification). User approves by explicit path reference + directive (e.g. "approved the plan at dev-ai-interaction/XXX-plan.md for the following..."). Agent must re-read exactly that designated file as first step in execution.
+- Primary deliverable of every planning phase must be a fresh, clean task-specific plan document written to dev-ai-interaction/plans/ (e.g. <task>-<date>-plan.md) using the standard structure (Context, Recommended Approach, Critical Files with paths, Reusable utilities with exact locations, Phased steps with forensic+build, Verification). User approves by explicit path reference + directive (e.g. "approved the plan at dev-ai-interaction/XXX-plan.md for the following..."). Agent must re-read exactly that designated file as first step in execution.
 - Harness ~/.grok/sessions/.../plan.md (the process log whose path appears in plan-mode reminders) is *not* the work plan. Use it only for short log entries referencing the sandbox plan path. At start of new cycle (or post-handoff), roll any prior superseding/historical bulk to dev-ai-interaction/historical-plans/harness-plan-archive-....md first, then prepend only the minimal current-cycle header (prepending to, not even superseding, old content).
 - Subagent separation supported and recommended for complex work: in planning (main stays in plan mode), optionally spawn_subagent (type "plan" or via "design" skill) with narrow prompt whose *only* job is research + write one new sandbox plan file + return its path. After user approval of that specific sandbox plan path, main (or spawned "implement"/execution subagent with the approved plan content injected) executes precisely, with TODO first, forensic read before/after every edit, ./build_app, exact END OF EXECUTION TURN marker + "results ready to test", then complete stop. Subagents blocked in plan mode per existing rules.
 - Post-handoff / new cycle start: Happy path is exit the CLI and relaunch via run-grok (forces fresh Mandate report + enter_plan_mode + STOP per the launcher + new_grok_agent_prompt). Fallback: agent at every handoff writes short dev-ai-interaction/.post-handoff-gate.txt; user does `cat dev-ai-interaction/.post-handoff-gate.txt` then appends request (one-liner ritual). The new tracked MULTI_AGENT_USER_INSTRUCTIONS.md (at root, synced by update-rules.sh to master/agent worktrees) is the authoritative human reference.
