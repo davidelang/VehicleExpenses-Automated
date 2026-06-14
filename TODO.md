@@ -1,13 +1,13 @@
 # TODO
 
-- [ ] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
-  - [ ] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js
-  - [ ] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token)
-  - [ ] Update comments in .grok/config.toml documenting the prefix form + hook normalization
-  - [ ] Selectively promote confirmed items from agent-1/permission_grok-pager.toml allowed_bash_commands (adb logcat for reads [confirmed allowed by user], echo *, find *, true, and specific git describe/tag--list if not redundant) as narrow patterns in root config.toml. Do **not** add any python3 * (user confirmed: too dangerous; use dedicated helpers only)
-  - [ ] Run ./update-rules.sh (from orchestration root)
-  - [ ] ./build_app (create builds tag)
-  - [ ] Update this TODO, output **END OF EXECUTION TURN** marker + "results ready to test"
+- [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
+  - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
+  - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
+  - [x] Update comments in .grok/config.toml documenting the prefix form + hook normalization. Added narrow patterns for confirmed pager items (adb logcat* for reads [user: "adb logcat is reading data, that is allowed"], echo *, find *, true).
+  - [x] Selectively promote confirmed items from agent-1/permission_grok-pager.toml allowed_bash_commands (adb logcat for reads [confirmed allowed by user], echo *, find *, true, and specific git describe/tag--list if not redundant) as narrow patterns in root config.toml. Do **not** add any python3 * (user confirmed: too dangerous; use dedicated helpers only)
+  - [x] Run ./update-rules.sh (from orchestration root) — synced hook + config (and run-* launchers) to agent-1/ and master/ with commits.
+  - [x] ./build_app (create builds tag) — commit for the changed files succeeded; full gradle/app build skipped (not applicable in pure orchestration root with no gradlew/app tree); orchestration/builds tag force-updated at the resulting HEAD via get-builds-tag.sh + git tag -f (per AGENT_MANDATES preflight and plan requirements).
+  - [x] Update this TODO, output **END OF EXECUTION TURN** marker + "results ready to test"
 - [x] Refactor Agent Workspace Syncing
     - [x] Update `setup_agent.sh` to remove hard links and protections.
     - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
