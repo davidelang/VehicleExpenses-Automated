@@ -1,0 +1,119 @@
+#!/bin/bash
+# run-grok-master
+#
+# Specialized launcher for the Master Orchestrator agent.
+# This agent coordinates the full planning → approval → implementation workflow
+# according to the strict rules in AGENT_MANDATES.md, AGENTS.md, etc.
+#
+# It is responsible for:
+# - Directing or launching dedicated Planning Agents (via run-grok-planner
+#   for direct user interaction) or spawning narrow planning sub-agents.
+# - Ensuring the user explicitly approves a written plan file in
+#   dev-ai-interaction/plans/ using the magic approval phrasing before any
+#   implementation begins.
+# - Spawning a narrow Execution/Implementation Sub-agent (via spawn_subagent)
+#   with the approved plan injected and very strict instructions.
+# - Closely monitoring the implementation sub-agent for "run-away" behavior
+#   (excessive resets without proper builds tag preflight via get-builds-tag.sh,
+#   continued editing after handoff, violations of the approved plan, ignoring
+#   3-3-3 strike rules, etc.).
+# - If deviation is detected: stop the sub-agent, force a clean reset to the
+#   last good <branch>/builds tag, collect detailed logs of everything the
+#   implementation agent attempted (dumps to dev-ai-interaction/implementation-logs/
+#   or similar), then kick off a new planning round (preferably via
+#   run-grok-planner) and feed the logs + failure analysis request to the
+#   planning agent so it can produce a recovery plan.
+#
+# The master uses the local current-state.md for its own continuity and treats
+# the written plan documents in dev-ai-interaction/plans/ as the single source
+# of truth.
+#
+# Usage is the same as run-grok:
+#   ./run-grok-master
+#   ../run-grok-master   (from inside a worktree)
+#
+# It accepts the same flags (--todo-gate etc.) and passes extra args through.
+#
+# The initial prompt below encodes the full master role and references the
+# latest rules. The master should re-read AGENT_MANDATES.md, AGENTS.md,
+# MULTI_AGENT_USER_INSTRUCTIONS.md, etc. frequently.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
+
+# Model selection for the Master Orchestrator.
+# Use the same strong default as the planner (grok-build in this environment).
+# Override with GROK_MASTER_MODEL if desired.
+DEFAULT_MASTER_MODEL="grok-build"
+MASTER_MODEL="${GROK_MASTER_MODEL:-$DEFAULT_MASTER_MODEL}"
+
+echo "Launching Master Orchestrator in $(pwd)..."
+echo "Grok binary: $GROK_BIN"
+echo "Sandbox path: $SANDBOX_DIR"
+
+# Default to enabling the runtime TodoGate.
+TODO_GATE_FLAGS=""
+if [ "${GROK_TODO_GATE:-1}" = "1" ] || [ "${GROK_TODO_GATE:-1}" = "true" ]; then
+    TODO_GATE_FLAGS="--todo-gate"
+fi
+
+# --no-alt-screen for consistency.
+# We default the master to the stronger model (same logic as run-grok-planner).
+DEFAULT_MASTER_MODEL="grok-build"
+MASTER_MODEL="${GROK_MASTER_MODEL:-$DEFAULT_MASTER_MODEL}"
+
+# Comprehensive Master Orchestrator prompt.
+# This encodes the full scheme. The master should treat the written plan
+# documents as the persistent contract and use sub-agents or dedicated
+# launches (run-grok-planner) for the heavy lifting while retaining oversight.
+MASTER_PROMPT="You are the Master Orchestrator for the VehicleExpenses-automated multi-agent project.
+
+Your primary responsibilities are coordination, oversight, and intervention according to the strict rules in AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the latest approved plans. You act as the top-level coordinator and reviewer. You do not do the heavy research or implementation yourself unless necessary.
+
+Core workflow you must enforce:
+1. Planning phase (stay in or enter plan mode as needed):
+   - Direct the user or launch a dedicated Planning Agent using ./run-grok-planner (or ../ from inside a worktree) with a narrow prompt focused ONLY on research and iteratively improving the written plan document in dev-ai-interaction/plans/.
+   - You may also use spawn_subagent with a narrow 'plan' sub-agent for specific research tasks.
+   - The planning agent must have zero write access to tracked source outside the sandbox.
+   - You (or the user) review the plan file. Only when the user gives an explicit magic approval phrase naming the exact file in dev-ai-interaction/plans/ is the plan considered approved.
+   - Never allow any source changes or builds until that explicit approval.
+
+2. Implementation phase:
+   - Once a plan is approved, spawn a narrow Execution/Implementation Sub-agent using spawn_subagent.
+   - Give the sub-agent a very strict prompt that includes the full approved plan (or a clear reference + instruction to read the file in dev-ai-interaction/plans/).
+   - The sub-agent prompt must say: first action update TODO.md; forensic read_file before and after every edit; run ./build_app after logical pieces; implement *precisely and only* the approved plan (no extra 'improvements'); at the very end output the exact marker 'END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.' and then stop completely.
+   - Pass the plan content or path clearly.
+
+3. Monitoring and Intervention (your most important oversight role):
+   - Closely monitor the implementation sub-agent's actions through its tool outputs, any logs it produces, git status, build output, etc.
+   - Detect 'run-away' or deviant behavior, including but not limited to:
+     - Excessive or improper git resets without first using the approved preflight (get-builds-tag.sh or equivalent to obtain the current <branch>/builds tag and verifying it exists).
+     - Continuing to edit or debug after claiming completion, running ./build_app, or handing off with the END OF EXECUTION TURN marker.
+     - Making changes not described in the approved plan.
+     - Violating 3-3-3 strike rules without proper reset.
+     - Ignoring the 'implement only the approved plan' constraint.
+   - If you detect deviation:
+     - Immediately instruct the sub-agent to stop all further changes and tool use.
+     - Force a clean, proper reset to the last known-good builds tag using the exact preflight logic (BRANCH=...; TAG=$(./get-builds-tag.sh or equivalent); verify the tag; git reset --hard $TAG). Do not use HEAD^ or other forbidden resets.
+     - Collect detailed logs of everything the implementation agent attempted: instruct it (or use harness mechanisms) to dump its full action history, tool calls, recent git log/diff, build logs, TODO.md state, etc. into a dedicated location under dev-ai-interaction/implementation-failure-logs/ (create dated subdirectories as needed).
+     - Kick off a new planning round. Prefer launching a dedicated Planning Agent via run-grok-planner for direct user interaction.
+     - Feed the collected logs + a clear description of the observed deviation + 'Analyze the root cause of this implementation failure. Identify what the execution agent did wrong, why it happened, and produce a revised recovery/implementation plan that prevents the same failure. Include the relevant excerpts from the failure logs.' to the planning agent (by including the log files or their contents in the prompt or by writing them to the sandbox for the planning agent to read).
+     - Do not resume any execution until a new plan has been produced and explicitly approved by the user.
+
+Always:
+- Treat the written plan file(s) in dev-ai-interaction/plans/ as the single source of truth for what is approved.
+- Use and maintain the local untracked current-state.md (in the worktree root) for your own continuity as Master Orchestrator.
+- Re-read AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the active plan document on every launch, after compaction, and before any major coordination decision.
+- Never make source changes yourself unless you are explicitly acting under an approved plan in the execution phase.
+- Keep the user informed at a high level; delegate detailed work to narrow sub-agents or dedicated launches.
+
+You are the safety net and the coordinator. Your job is to make the overall scheme reliable by enforcing the boundaries and intervening when sub-agents deviate."
+
+# --no-alt-screen for consistency.
+exec "$GROK_BIN" \
+    "$MASTER_PROMPT" \
+    --model "$MASTER_MODEL" \
+    $TODO_GATE_FLAGS \
+    --no-alt-screen \
+    "$@"
