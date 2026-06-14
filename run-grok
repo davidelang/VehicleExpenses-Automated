@@ -14,10 +14,15 @@ echo "Sandbox path: $SANDBOX_DIR"
 # Post-handoff / new cycle: relaunching this script (from inside an agent worktree) always injects the full
 # fresh-session instruction (see the long string below + new_grok_agent_prompt). This forces the Mandate
 # report + enter_plan_mode + STOP for a clean boundary. The primary planning deliverable the agent must
-# produce is a fresh plan file under dev-ai-interaction/ (never treat the harness session plan.md as the
+# produce is a fresh plan file under dev-ai-interaction/plans/ (never treat the harness session plan.md as the
 # approved work plan; see AGENT_MANDATES "Sandbox Plan File..." + MULTI_AGENT_USER_INSTRUCTIONS.md).
 # The agent is required to write dev-ai-interaction/.post-handoff-gate.txt at every handoff for the
 # low-friction in-session fallback ritual.
+#
+# Note on models: The companion script `run-grok-planner` (used for dedicated Planning Agent sessions)
+# forces a strong reasoning model by default (see its source and AGENT_MANDATES.md). The main `run-grok`
+# launcher uses whatever model the underlying grok binary defaults to (or what you pass on the command line).
+# Stronger reasoning models are preferred for the planning phase.
 
 # Default to enabling the runtime TodoGate (turn-end enforcement around TODO.md updates).
 # Set GROK_TODO_GATE=0 to disable for this invocation.

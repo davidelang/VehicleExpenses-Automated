@@ -30,6 +30,15 @@ To assign a task to a new agent:
     ../run-grok
     # Paste on launch: "Read new_grok_agent_prompt and follow its instructions."
 
+    # For a dedicated narrow Planning Agent session (direct interaction during planning):
+    ../run-grok-planner
+    # (The main orchestrator will have written the narrow prompt to dev-ai-interaction/.planning-agent-prompt.txt)
+
+    # For the top-level Master Orchestrator (coordinates planning via run-grok-planner,
+    # spawns and monitors execution sub-agents, intervenes on run-away behavior,
+    # collects logs, and kicks off recovery planning):
+    ../run-grok-master
+
     # For Gemini CLI (legacy/parallel):
     GEMINI_PROJECT_ROOT=$(pwd) ~/git/gemini/bin/gemini
     # Paste: "Read new_agent_prompt and follow its instructions."
@@ -50,7 +59,7 @@ cat dev-ai-interaction/.post-handoff-gate.txt
 <then type or paste your actual feedback/request here>
 ```
 
-The gate file itself is short; the authoritative lists of exact magic approval phrases the user *must* type (e.g. "approved the plan at dev-ai-interaction/<name>.md for the following...") and phrases the user must *never* say after a handoff live in the tracked `MULTI_AGENT_USER_INSTRUCTIONS.md`. For low-cost continuity, also read/maintain the local untracked `current-state.md` (or `.agent-state/current-state.md`) in the worktree root (gitignored, per-branch). See AGENT_MANDATES.md (Sandbox Plan File as Primary Artifact + Interactive Strategic Nature of Planning + local state), AGENTS.md, and the updated Plans Directory Rule.
+The gate file itself is short; the authoritative lists of exact magic approval phrases the user *must* type (e.g. "approved the plan at dev-ai-interaction/plans/<name>.md for the following...") and phrases the user must *never* say after a handoff live in the tracked `MULTI_AGENT_USER_INSTRUCTIONS.md`. For low-cost continuity, also read/maintain the local untracked `current-state.md` (or `.agent-state/current-state.md`) in the worktree root (gitignored, per-branch). See AGENT_MANDATES.md (Sandbox Plan File as Primary Artifact + Interactive Strategic Nature of Planning + local state), AGENTS.md, and the updated Plans Directory Rule.
 
 ### 2.2. Critical Troubleshooting: EBADF Crash
 If the Gemini CLI crashes with `An unexpected critical error occurred:Error: ioctl(2) failed, EBADF`, it is likely due to a **Policy Violation Race Condition**.

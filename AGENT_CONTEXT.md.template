@@ -2,7 +2,7 @@
 
 - **Agent ID:** agent-X
 - **Current Branch:** UNASSIGNED
-- **Active Plan:** [the single user-designated fresh file under dev-ai-interaction/ for this turn, e.g. dev-ai-interaction/my-task-20260612-plan.md; see MULTI_AGENT_USER_INSTRUCTIONS.md and AGENT_MANDATES "Sandbox Plan File..." subsection. Harness session plan.md is never the work plan.]
+- **Active Plan:** [the single user-designated fresh file under dev-ai-interaction/plans/ for this turn, e.g. dev-ai-interaction/plans/my-task-20260612-plan.md; see MULTI_AGENT_USER_INSTRUCTIONS.md and AGENT_MANDATES "Sandbox Plan File..." subsection. Harness session plan.md is never the work plan.]
 - **Status:** IDLE
 
 ---
