@@ -30,6 +30,15 @@ To assign a task to a new agent:
     ../run-grok
     # Paste on launch: "Read new_grok_agent_prompt and follow its instructions."
 
+    # For a dedicated narrow Planning Agent session (direct interaction during planning):
+    ../run-grok-planner
+    # (The main orchestrator will have written the narrow prompt to dev-ai-interaction/.planning-agent-prompt.txt)
+
+    # For the top-level Master Orchestrator (coordinates planning via run-grok-planner,
+    # spawns and monitors execution sub-agents, intervenes on run-away behavior,
+    # collects logs, and kicks off recovery planning):
+    ../run-grok-master
+
     # For Gemini CLI (legacy/parallel):
     GEMINI_PROJECT_ROOT=$(pwd) ~/git/gemini/bin/gemini
     # Paste: "Read new_agent_prompt and follow its instructions."

@@ -1,0 +1,111 @@
+#!/bin/bash
+# run-grok-planner
+# Launch a dedicated narrow-scoped Planning Agent for direct user interaction
+# during the research/planning phase.
+#
+# Primary supported mode: long-lived terminals.
+# Keep one terminal with the master (`run-grok-master`) and one dedicated
+# planning terminal (`run-grok-planner`). These stay open across many cycles.
+#
+# When the master starts a new planning cycle it writes a fresh narrow prompt
+# (containing the current standard block, high-signal rules, hygiene
+# expectations, etc.) to `dev-ai-interaction/.planning-agent-prompt.txt` and
+# tells you to restart the planner terminal with the updated file.
+#
+# Usage:
+#   ./run-grok-planner                  # uses dev-ai-interaction/.planning-agent-prompt.txt
+#   ./run-grok-planner path/to/prompt.txt
+#
+#   In an existing planner terminal you can simply re-run the command
+#   (or use `exec ./run-grok-planner`) to replace the process with a fresh
+#   one using the latest prompt. This is the normal low-friction ritual for
+#   beginning a new planning cycle in the long-lived workflow.
+#
+# The main orchestrator (master) is responsible for generating the narrow
+# prompt at the start of each new planning cycle and for clearly instructing
+# you to restart the planner terminal with the updated file.
+#
+# The prompt file contains the full strict instructions for the Planning Agent:
+# - Stay in plan mode.
+# - Only research and revise the plan document in dev-ai-interaction/plans/.
+# - Zero write access to tracked source outside the sandbox.
+# - High-signal / low-boilerplate plans; always include the exact standard
+#   block verbatim.
+# - Aggressive current-state.md hygiene and light reporting.
+# - Only call exit_plan_mode (or signal readiness) when the user explicitly says
+#   a phrase like "this plan is good, exit planning mode" or the exact magic
+#   approval phrasing.
+#
+# Even in a long-lived session the planner must treat each new cycle (after
+# restart or after being told a new cycle has begun) as a fresh planning phase:
+# re-read current-state.md (with required prune), start a new high-signal plan,
+# etc.
+#
+# This workflow gives you direct, unmediated back-and-forth with the Planning
+# Agent without bouncing every message through the main orchestrator, while
+# still allowing the master to keep the planner on current instructions.
+#
+# See AGENT_MANDATES.md (dedicated Planning Agent Session section) and
+# MULTI_AGENT_USER_INSTRUCTIONS.md for the full long-lived workflow and the
+# recommended prompt template.
+#
+# Sandbox is provided via the ./dev-ai-interaction symlink + absolute path in mandates.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
+
+# === Model selection for Planning Agent ===
+#
+# In this grok.com environment the available models (from `grok models`) are:
+#   * grok-build (default / primary)
+#
+# "grok-build" is the appropriate model for planning and interpreting existing code.
+# It is the stronger default here and better at long-horizon reasoning, code understanding,
+# and strictly obeying "stay in plan mode / only revise the plan document / no source changes".
+#
+# We default the planner to grok-build.
+# Override only if you have a different valid model via the GROK_PLANNER_MODEL
+# environment variable or by passing --model on the command line (passed through in "$@").
+DEFAULT_PLANNER_MODEL="grok-build"
+PLANNER_MODEL="${GROK_PLANNER_MODEL:-$DEFAULT_PLANNER_MODEL}"
+
+# Default prompt file written by the main agent.
+# Can be overridden as first argument.
+PROMPT_FILE="${1:-$SANDBOX_DIR/.planning-agent-prompt.txt}"
+if [ -n "$1" ]; then
+    shift
+fi
+
+if [ ! -f "$PROMPT_FILE" ]; then
+    echo "ERROR: Planning prompt file not found: $PROMPT_FILE" >&2
+    echo "Ask the main orchestrator to generate and write the narrow prompt for the dedicated Planning Agent." >&2
+    echo "It will typically write it to dev-ai-interaction/.planning-agent-prompt.txt" >&2
+    exit 1
+fi
+
+echo "Launching dedicated Planning Agent in $(pwd)..."
+echo "Grok binary: $GROK_BIN"
+echo "Sandbox path: $SANDBOX_DIR"
+echo "Using narrow prompt from: $PROMPT_FILE"
+echo "Forcing planning model: $PLANNER_MODEL (set GROK_PLANNER_MODEL to override)"
+
+# Read the entire prompt file content.
+# The file contains the complete strict instructions for this session.
+PLANNING_PROMPT=$(cat "$PROMPT_FILE")
+
+# Default to enabling the runtime TodoGate.
+TODO_GATE_FLAGS=""
+if [ "${GROK_TODO_GATE:-1}" = "1" ] || [ "${GROK_TODO_GATE:-1}" = "true" ]; then
+    TODO_GATE_FLAGS="--todo-gate"
+fi
+
+# --no-alt-screen for consistency with run-grok.
+# We explicitly pass --model for the planner. Any additional --model on the command
+# line (in "$@") will override this.
+exec "$GROK_BIN" \
+    "$PLANNING_PROMPT" \
+    --model "$PLANNER_MODEL" \
+    $TODO_GATE_FLAGS \
+    --no-alt-screen \
+    "$@"
