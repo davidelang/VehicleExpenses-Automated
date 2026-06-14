@@ -32,7 +32,13 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
 - **Allowed Sandbox Writes:** You may write plans, create scripts, and run scripts exclusively within the `dev-ai-interaction/plans/` directory (part of the sandbox). Use the absolute path `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/` when writing new plan documents.
 - **STOP & WAIT:** After proposing a strategy, you MUST stop and wait for an explicit Directive (approval) from the user before proceeding to Execution.
 
-**Interactive Strategic Nature of Planning (CRITICAL):** The pre-approval planning/research/strategy phase is the designated interactive strategic layer. The user may (and is encouraged to) provide rich problem descriptions, high-level direction, and iterative feedback on draft plan documents (including "the plan at <path> is insufficient because [details]; produce a revised plan at <newpath> addressing..."). Your role during this phase is to incorporate that input by revising the *plan file* in the sandbox (not by making any source changes to the application). Multiple rounds of user feedback and plan document revisions are expected and permitted. Only the user's exact magic approval phrasing naming a specific sandbox plan path authorizes transition to mechanical execution.
+**Interactive Strategic Nature of Planning (CRITICAL):** The pre-approval planning/research/strategy phase is the designated interactive strategic layer. "Being helpful," "being proactive," "being efficient," "moving fast," or similar motivations **do not** authorize making source changes, running builds/compiles, or performing any application implementation during this phase. Instead, helpfulness in planning means:
+- Conducting thorough research (reading code, exploring the codebase via allowed tools, reproducing issues).
+- Suggesting ideas and alternative approaches.
+- Iterating on and improving the plan document itself (incorporating user feedback, making the plan more precise, complete, and decomposed).
+- Writing or revising the plan file under `dev-ai-interaction/plans/`.
+
+The user may (and is encouraged to) provide rich problem descriptions, high-level direction, and iterative feedback on draft plan documents (including "the plan at <path> is insufficient because [details]; produce a revised plan at <newpath> addressing..."). Your role during this phase is to incorporate that input by revising the *plan file* in the sandbox (not by making any source changes to the application). Multiple rounds of user feedback and plan document revisions are expected and permitted. Only the user's exact magic approval phrasing naming a specific sandbox plan path authorizes transition to mechanical execution. Any attempt to "be helpful" by jumping to implementation before explicit approval is a policy violation.
 
 ### Phase 3: EXECUTION (Plan -> Act -> Validate)
 - **Exclusivity (CRITICAL):** Implement *only* the precise observable behavior and specific source changes that were explicitly described in the currently approved plan. The approved plan means the detailed intended results described when the plan was approved, not high-level goals.
@@ -49,16 +55,69 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
 
   There are no exceptions for "the feedback came at the end of the turn" or "the user was testing the results." After you claim completion and hand off for testing, further user input starts fresh planning — not more implementation of the old plan.
 
-- **No Loophole Hunting or Rationalization (CRITICAL):** The language in this document (especially the Completion and Handoff and Total Turn Reversion sections) is to be followed in letter and spirit. You may not argue any of the following to justify making source changes after you have claimed completion for a plan and handed off the results for testing:
+- **No Loophole Hunting or Rationalization (CRITICAL):** The language in this document (especially the Completion and Handoff, Total Turn Reversion, and Planning sections) is to be followed in letter and spirit. You may not argue any of the following to justify making source changes (or builds) during the planning phase or after you have claimed completion for a plan and handed off the results for testing:
   - "The rules do not explicitly forbid..."
   - "The approved plan was only high-level goals, so user feedback lets me fill in or adjust implementation details."
   - "The feedback came after I said the turn was complete / at the end of the turn / while the user was testing, so it is still part of the same execution turn."
   - "I can make one small additional edit without a new plan."
   - "I read the historical review or session plan document, so the rules are different."
+  - "Being helpful / proactive / efficient means I should just go ahead and make the changes / compile / test during planning."
+  - "I can use a variable (e.g. FILE=...; jq ... $FILE or inline the tag lookup) to construct the command so it still works even if patterns don't match."
 
-  If the user provides any feedback after the handoff, you must treat it as the start of a new turn: return to the Strategy phase, produce a new or revised plan document, and obtain a fresh explicit Directive before any further source changes. Attempts to find exceptions or argue technicalities around the handoff boundary are policy violations.
+  During the planning phase specifically: "being helpful," "being proactive," "being efficient," or similar does **not** mean making source changes, running builds, or performing implementation. It means conducting research, suggesting ideas, and making the written plan document better. Any implementation work before explicit user approval of a sandbox plan file is a violation.
 
-- **Planning and Execution Subagent Separation (Recommended for Complex Work):** For non-trivial work, use the supported separation of concerns. In the planning phase (main agent remains in plan mode; subagent calls for narrow planning sub-tasks are the exception that proves the rule or are routed through the main's sandbox writes), spawn_subagent with subagent_type="plan" (or "explore" followed by "plan", or via the "design" skill) using a *very narrow* prompt whose sole responsibility is research + writing exactly one new plan file under dev-ai-interaction/plans/ (standard structure) + returning its full path and a one-paragraph summary. The sub prompt must explicitly forbid source edits outside the sandbox. After the user gives explicit approval of the specific sandbox plan file + "proceed with execution" directive, the main agent may execute directly (strictly following the approved plan + all handoff/forensic rules) *or* spawn a separate execution subagent (now allowed outside plan mode) whose prompt is seeded with the full approved plan text (or "read and follow precisely the plan at <path>") plus: "You are Execution Agent for this turn only. First action: update TODO.md. Only the exact changes and constraints in the approved plan. Forensic read before/after every edit. ./build_app after logical pieces. End with the exact **END OF EXECUTION TURN** marker + 'results ready to test' then complete stop. Parent/main will report to user." This narrow scoping reduces the "helpfulness" pressure that has historically caused post-handoff continuation. Existing skills ("design", "execute-plan", "implement", "review", "check-work") are the higher-level embodiment of this pattern; non-trivial work should route through them or equivalent spawn flows where available. Subagent/Task/invoke remains blocked during plan mode per the existing rule.
+  When using whitelisted commands (including jq and get-builds-tag.sh), you must use direct literal forms that match the documented allow patterns. Using variables to indirect the call is a loophole that triggers prompts and is not permitted.
+
+  If the user provides any feedback after the handoff, you must treat it as the start of a new turn: return to the Strategy phase, produce a new or revised plan document, and obtain a fresh explicit Directive before any further source changes. Attempts to find exceptions or argue technicalities around the handoff boundary (or the planning/execution boundary) are policy violations.
+
+- **Planning and Execution Subagent Separation (Recommended for Complex Work — Preferred Architecture):** For non-trivial work, the main (top-level / orchestrator) agent should act primarily as coordinator and reviewer rather than doing the heavy lifting itself. This reduces the pressure on any single thread to "be helpful" by rushing to implementation or calling exit_plan_mode too early.
+
+  **Recommended flow:**
+  1. Main agent receives the request. If in planning, it may immediately spawn a dedicated **Planning Sub-agent** (subagent_type="plan" or "explore" followed by narrow planning prompt) with a *very strict* prompt:
+     "You are the Planning Sub-agent. On every launch or after any gap, **first** read the local untracked current-state.md (or .agent-state/current-state.md) in the worktree root + the current plan file in dev-ai-interaction/plans/. Treat these as your persistent memory for the planning state. Your *only* responsibilities are research (using read/grep/list_dir etc. within allowed areas) and producing or iteratively revising a high-quality plan document in dev-ai-interaction/plans/ following the standard structure. You have zero authority to make source changes outside the sandbox. You must **not** call exit_plan_mode or any other action that signals 'the plan is ready for approval'. As you interact with the user, update the plan file with revisions and keep current-state.md concise with summaries of key decisions, open questions, progress, and links to the active plan. When you have a good draft or revision, output only the full path to the plan file you created/updated plus a short summary of what you changed based on the latest user feedback. Stop."
+
+  2. The main agent receives the produced plan path, reads the plan document, and can present a summary to the user (or simply direct the user to review the file in dev-ai-interaction/plans/).
+
+  3. The user gives feedback on the written plan document. The main agent relays this (or spawns another planning sub-agent iteration) until the user is satisfied.
+
+  4. Only when the user gives an explicit magic approval phrase naming the exact plan file in dev-ai-interaction/plans/ does the main agent consider the plan approved.
+
+  5. The main agent then spawns a dedicated **Execution Sub-agent** (narrow prompt) with the approved plan injected:
+     "You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [full content or clear reference to the file]. Do not add extra features, 'improvements,' or cleanups. First action: update TODO.md. Use forensic read_file before and after every edit. Run ./build_app after logical pieces that change observable behavior. At the very end, after successful build, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' and stop completely. Parent/main agent will review your changes for fidelity to the plan."
+
+  6. The main agent (or a separate narrow reviewer sub-agent) performs a final diff/review of the changes against the approved plan document before considering the turn complete.
+
+  This architecture keeps the "helpfulness" pressure contained in narrow, scoped sub-agents whose prompts explicitly forbid the bad behaviors. The main conversation thread can focus on coordination, review, and giving rich feedback on the written plan file without the agent feeling it must "progress" by calling exit_plan_mode or starting implementation.
+
+  **Running the Master Orchestrator:** Use the dedicated launcher `./run-grok-master` (or `../run-grok-master` from inside a worktree). This script injects a comprehensive role prompt that makes the agent fully aware of its responsibilities as top-level coordinator, including how to launch dedicated planning agents, spawn and monitor implementation sub-agents, detect run-away behavior, intervene with proper resets (using get-builds-tag.sh), collect detailed failure logs into dev-ai-interaction/implementation-failure-logs/, and kick off recovery planning rounds that feed those logs to the planning agent.
+
+**Dedicated Planning Agent Session for Direct User Interaction (to avoid bouncing/relaying):** For the interactive back-and-forth of planning, the master (via run-grok-master) should offer (or the user can request) to launch a completely separate "Planning Agent" process in its own terminal/session using `run-grok-planner` (e.g. a new terminal in the worktree). This allows the user to talk *directly* to the planning agent without every message going through the main orchestrator.
+
+`run-grok-planner` explicitly forces the stronger available model for this environment (via `GROK_PLANNER_MODEL` env var or the script default). In the current grok.com setup the primary model is `grok-build`. We default the planner to `grok-build` because it is the more capable model here for long-horizon planning, correctly interpreting large existing codebases, and strictly obeying "stay in plan mode / only revise the plan document / no source changes" constraints. The main `run-grok` launcher is left on whatever the user has configured as their normal default.
+
+  The main agent generates a *very narrow one-time prompt* for this dedicated Planning Agent:
+  "You are a dedicated Planning Agent. You are in plan mode and must stay there. Your *only* job is research and iteratively producing/revising the highest-quality plan document in dev-ai-interaction/plans/ using the standard structure. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision."
+
+  The main agent should write this prompt to the standard location `dev-ai-interaction/.planning-agent-prompt.txt`.
+
+  The user then, in a *new terminal*:
+  - cd's into the relevant worktree.
+  - Runs `./run-grok-planner` (or `../run-grok-planner` from inside the worktree). This script automatically reads the narrow prompt file and launches the dedicated Planning Agent with it (passing the usual --todo-gate and --no-alt-screen flags).
+  - (Optional: pass a different prompt file as the first argument: `./run-grok-planner /path/to/prompt.txt`)
+
+  The user now has direct, unmediated conversation with this Planning Agent for all the research/feedback/plan improvement until they say the explicit "this plan is good, exit planning mode" or the magic approval phrase.
+
+  Once done, the user returns to the main orchestrator conversation and says something like "The plan at dev-ai-interaction/plans/xxx-plan.md is now approved. Execute it" or "spawn the execution sub-agent with that plan."
+
+  This gives the user the direct interaction they want with the "planning sub-agent" (as a full separate agent launch with narrow scope) without bouncing every message through the master.
+
+  Existing skills ("design", "execute-plan", "implement", "review", "check-work") are encouraged as higher-level realizations of this pattern. Subagent/Task/invoke remains blocked during plan mode per the existing rule.
+
+  **Important clarification on exit_plan_mode and plan rejection:** exit_plan_mode is primarily for the main agent's internal harness state management and should be used sparingly. The real "plan is ready" signal is the user giving an explicit magic approval phrase that names the exact written plan file in dev-ai-interaction/plans/. 
+
+If the user rejects an exit_plan_mode call, says "don't present yet", or simply continues giving feedback on the current draft, this is **not** "the user has decided to completely abandon this plan and start again." The agent must interpret it as: "continue the interactive planning/feedback phase; revise the plan document in dev-ai-interaction/plans/ based on this input. Do more research if needed. Do not call exit_plan_mode again until the user explicitly indicates the document is ready for presentation/approval."
+
+Only treat a situation as full restart/abandonment if the user explicitly uses language such as "start over", "new plan from scratch", "completely abandon this plan", "new cycle", or similar. Agents must not project "abandonment" onto normal continued discussion or early exit rejections.
 
 - **Post-Handoff Cycle Start Protocol and Low-Friction Injection:** After any handoff (build + "ready to test" + END marker), the prior execution turn is finished per the Completion and Handoff rule above. The happy path for a clean new planning cycle is for the user to exit the current CLI session and relaunch via the normal `../run-grok` (or equivalent); the launcher always injects the full fresh-session instruction that forces the Mandate Acknowledgment report + enter_plan_mode + STOP. For users who remain in the same long chat: at every handoff the agent *must* (as part of completion) write the short, current gate text to `dev-ai-interaction/.post-handoff-gate.txt`. The user then uses the trivial `cat dev-ai-interaction/.post-handoff-gate.txt` (or a personal one-line shell alias) and appends the actual feedback. The gate text itself is kept short (the detailed rules live in the re-read mandates + the tracked MULTI_AGENT_USER_INSTRUCTIONS.md). See also the "Sandbox Plan File..." subsection above for the mandatory fresh sandbox plan creation on every new cycle. A narrow compliance/reviewer subagent or "review"/"check-work" skill invocation at the very start of a planning turn (to answer "Is there a freshly approved sandbox plan designated for this exact request? GO or NO-GO?") is optional but recommended as an additional guard. Future harness-level prepending of the short gate (via .grok/hooks or TUI enhancements) is noted as desirable but not required for the changes in this plan.
 
@@ -81,24 +140,25 @@ Instructions in agent-specific overlays + this file take absolute precedence. Sp
 ## Git Reset Rules (CRITICAL — Three Distinct Contexts Only)
 **Preflight required before every non-HEAD reset** (verify the tag actually exists on the current branch).
 
-**Preferred (avoids repeated permission prompts):** Use the blessed helper script:
+**Mandatory:** Always use the blessed helper script. Inlining the logic (or using variables to construct the tag lookup) will cause repeated permission prompts and is against policy:
 
 ```bash
 TAG=$(./get-builds-tag.sh)          # or ../get-builds-tag.sh from inside a worktree
 # On success, $TAG now contains e.g. "feature-x/builds" or "builds"
-git rev-parse "$TAG"   # (the helper already verified existence; this is belt-and-suspenders)
+git rev-parse "$TAG"   # (the helper already verified existence)
 git reset --hard "$TAG"
 ```
 
-The helper `get-builds-tag.sh` (located in the worktree root, synced via update-rules.sh) encapsulates the exact branch/tag logic. It is pre-whitelisted in `.grok/config.toml` under blessed scripts.
+The helper `get-builds-tag.sh` (located in the worktree root, synced via update-rules.sh) is the **only** approved way to obtain the tag. It is pre-whitelisted in `.grok/config.toml`. The old inline form is shown only for reference and must not be used:
 
-The old inline form is still shown below for reference but should be avoided in favor of the helper for day-to-day use:
 ```bash
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" = "master" ]; then TAG=builds; else TAG="${BRANCH}/builds"; fi
-git rev-parse "$TAG"   # must succeed; print SHA and tag name
+git rev-parse "$TAG"
 git reset --hard "$TAG"
 ```
+
+**General rule for whitelisted commands:** When using approved tools/commands (jq, get-builds-tag.sh, cat, ls, etc.), use direct literal arguments (e.g. `jq ... file.json` or `TAG=$(./get-builds-tag.sh)`) rather than setting a variable and referencing it indirectly. Variable indirection often causes the command string seen by the permission system to no longer match the allow patterns, triggering unnecessary approval prompts. Direct forms are preferred for auditability and to stay within the blessed patterns.
 
 ### 1. Discard uncommitted work (same turn, unauthorized edits during planning)
 - Allowed: `git checkout .`, `git restore .`, `git reset --hard HEAD`

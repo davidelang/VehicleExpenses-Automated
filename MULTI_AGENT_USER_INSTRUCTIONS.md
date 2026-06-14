@@ -71,12 +71,40 @@ See AGENT_MANDATES.md "No Loophole Hunting or Rationalization (CRITICAL)" and "E
 6. If the agent appears to be continuing edits without a new approved path, remind it of the END marker / this document and the handoff rules; it must self-report, revert if needed, enter plan mode, and wait for a fresh directive + sandbox plan.
 
 ## 4.5 Interactive Strategic Planning and Low-Cost Continuity (using local per-worktree state)
-The pre-approval planning phase is the interactive strategic layer. You are encouraged to give rich problem descriptions, high-level direction, and detailed iterative feedback on draft plan documents (e.g. "The plan at dev-ai-interaction/plans/xxx-plan.md correctly identifies the issue but under-specifies Y. Revise and write the updated plan to dev-ai-interaction/plans/xxx-v2-plan.md addressing: [your details].").
+The pre-approval planning phase is the interactive strategic layer. "Being helpful," "being proactive," "being efficient," or similar **does not** mean the agent should make source changes or run builds/compiles. It means the agent should do research, suggest ideas, and make the plan document better.
+
+**How to give feedback without triggering "abandon plan":**
+- For continued discussion on the current draft: "This is more feedback on the plan at dev-ai-interaction/plans/xxx-plan.md. Revise the plan document and produce an updated version at dev-ai-interaction/plans/xxx-v2-plan.md (or the same file) addressing: [your points]. Do not call exit_plan_mode yet."
+- Only use language like "start over", "new plan", "completely abandon this plan", or "new cycle from scratch" if you actually want a full reset.
+
+You are encouraged to give rich problem descriptions, high-level direction, and detailed iterative feedback on draft plan documents (e.g. "The plan at dev-ai-interaction/plans/xxx-plan.md correctly identifies the issue but under-specifies Y. Revise and write the updated plan to dev-ai-interaction/plans/xxx-v2-plan.md addressing: [your details].").
+
+For significant or long-running work, start the top-level coordinator using the dedicated master launcher:
+
+```bash
+./run-grok-master          # from the orchestration root
+../run-grok-master         # from inside a worktree
+```
+
+This launches the Master Orchestrator with a role prompt that makes it fully aware of the entire scheme. Its responsibilities include:
+- Coordinating planning (usually by telling you to open a new terminal and run `./run-grok-planner` with a narrow prompt it generates, so you can interact *directly* with the Planning Agent).
+- Only considering a plan approved when you use the exact magic approval phrasing that names the file in `dev-ai-interaction/plans/`.
+- Spawning a narrow Execution Sub-agent (via `spawn_subagent`) with the approved plan injected.
+- Actively monitoring the implementation sub-agent for run-away behavior (excessive/improper resets without using `get-builds-tag.sh`, continued editing after the END OF EXECUTION TURN marker, violating the approved plan, etc.).
+- If deviation is detected: stop the sub-agent, force a clean reset to the last good builds tag, collect detailed logs of everything the implementation agent attempted (into `dev-ai-interaction/implementation-failure-logs/`), launch a new planning round (preferably via `run-grok-planner` for direct interaction), and feed the logs + a clear "analyze what went wrong and produce a recovery plan" request to the planning agent.
+
+**Direct Planning Agent interaction (still the best way to do the research/feedback loop):** Once the master is running, ask it to launch a dedicated Planning Agent. It will generate the narrow prompt and instruct you to open a new terminal and run `./run-grok-planner`. You then have direct, unmediated conversation with the Planning Agent (no relay) until you say "this plan is good, exit planning mode" or the magic approval phrase. Return to the master with the approved plan path.
+
+For lighter work you can still use the ordinary `run-grok`.
+
+**Option 2 (within one session):** The main agent spawns a narrow Planning Sub-agent via tool. All feedback still routes through the main agent (some bouncing), but the sub-agent prompt keeps it focused.
+
+This gives you direct, unmediated conversation with the "planning sub-agent" until you explicitly approve and exit. The main agent only gets involved for orchestration, final approval handoff, and execution.
 
 To keep re-familiarization cheap across relaunches or cycles:
 - Each worktree maintains a local untracked `current-state.md` (or `.agent-state/current-state.md`) directly in the worktree root (gitignored, per-branch by nature).
 - On every new message after handoff (or fresh launch), include language such as: "Continue strategic planning for the work described in current-state.md (this worktree) and the previous plan at dev-ai-interaction/plans/xxx-plan.md. New feedback: [details]. Produce a revised plan at dev-ai-interaction/plans/yyy-plan.md."
-- The agent is required to read the local current-state.md first (for branch-specific recent context, decisions, and links) + the designated sandbox plan file (in dev-ai-interaction/plans/), then update the local state file while revising the plan document.
+- The agent (including any dedicated Planning Agent launched in a separate session) is required to read the local current-state.md first (for branch-specific recent context, decisions, and links) + the designated plan file (in dev-ai-interaction/plans/), then update the local state file while revising the plan document. This is how context is preserved across turns, relaunches, or separate planning sessions without needing the full previous chat history.
 
 This gives you low-cost interactive guidance without paying full re-derivation cost on every turn, while the safety rules (written sandbox plan + explicit magic approval) remain in force. The local state file travels with the branch/worktree and is never treated as a substitute for the approved plan document.
 
