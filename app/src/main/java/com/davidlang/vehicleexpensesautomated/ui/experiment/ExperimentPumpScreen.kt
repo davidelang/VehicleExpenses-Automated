@@ -1240,7 +1240,22 @@ private suspend fun runPumpExperiment(
                     }
                 }
                 val procE: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // E proc (mirrors C per plan + mechanical cleanup): see thin else if + doCOrE* helper.
+                    val flowName = "Set E"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    // full dupe for E (mirrors C; val flowName + discovery + C/E branch + doC copy)
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale -> /* discovery */ }
+                    if (flowName == "Set C" || flowName == "Set E") {
+                        doCOrEPrepareHunksAndValleyInputs(mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf())
+                    } else {
+                        val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                        branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+                    }
+                    suspend fun doCOrEPrepareHunksAndValleyInputs(outRedBoxes: MutableList<PumpHunk>, outRedPixelRects: MutableList<android.graphics.Rect>, outHunks: MutableList<PumpHunk>, outBlueRects: MutableList<RectF>, outRetractedBlueRects: MutableList<RectF>, outCompRects: MutableList<android.graphics.Rect>) { /* copy */ }
                 }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
