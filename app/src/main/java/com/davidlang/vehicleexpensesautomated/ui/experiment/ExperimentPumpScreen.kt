@@ -995,35 +995,10 @@ private suspend fun runPumpExperiment(
                     branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
                 }
 
-                // (doBOrD* and doCOrE* hoisted or copies at dupe per Phase 0; the thin if below selects A for this proc)
-                if (flowName == "Set B" || flowName == "Set D") {
-                    // add back blue (exp) + orange (max) annotations for Set B (per user directive)
-                    // Explicit nested red filter for B/D (shared call at 731 already cleans pdHunksRawTotal used for B/D redAnns and exp/blue source; filter was not removed from B per code inspection -- added explicit here per user feedback/hypothesis that it was implemented on C but removed from B).
-                    // Now also includes the corrected 3 sides +<=40px (with overlap check) so near-nested reds like the 12px pair in row 3 Set B (that satisfy the rule) get extended+deleted (visible in the red-only image). Gapped or >40px cases are no longer merged.
-                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
-
-                    // Mechanical extraction (first small chunk): call to the extracted function (exact same code now lives in doBOrDRedOnlyImage).
-                    doBOrDRedOnlyImage()
-
-                    // Mechanical extraction (second small chunk): call to the extracted function (exact same retractedExpForBlue + aPd + baseB64 + dependent OCR/ocrLines/PD now lives in doBOrDRetractedBlueAndPD).
-                    doBOrDRetractedBlueAndPD()
-                } else if (flowName == "Set C" || flowName == "Set E") {
-                    // Hoisted outputs for this C/E chunk (and immediate following orange code) -- mechanical first-pass glue so the body after the call compiles (per user's allowed outer-scope for first pass).
-                    val tBlueStart = System.currentTimeMillis()
-                    val redBoxes = mutableListOf<PumpHunk>()
-                    val redPixelRects = mutableListOf<android.graphics.Rect>()
-                    val hunks = mutableListOf<PumpHunk>()
-                    val blueRects = mutableListOf<RectF>()
-                    val retractedBlueRects = mutableListOf<RectF>()
-                    val compRects = mutableListOf<android.graphics.Rect>()
-
-                    // Mechanical extraction (first C/E chunk): call to the extracted function (exact same prep+valley+3sides+retract + orange + PD + OCR now lives in doCOrEPrepareHunksAndValleyInputs).
-                    doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects)
-                } else {
-                    // A (reds only)
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
-                    branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
-                }
+                // (doBOrD* and doCOrE* not hoisted in Phase 0 for this A dupe per plan "if not hoisted include copies at dupe"; excised B/C branches in this repair to remove unresolved calls in procA paste while keeping full A logic (different minimal repair per anti-doom after first dupe error; see failure log scope symptoms))
+                // A (reds only)
+                val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
                 }
                 val procB: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // B proc (per mechanical cleanup / thin delegate intent): actual per-set special (red-only + retracted+OCR/PD) now in extracted helpers called from the thin if (B||D) body after common filter.
