@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-bd-20260615-plan.md to transition setup logic for Sets B and D into procB and procD (Step 2), compile, and verify CDE red boxes.
+- [x] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-bd-20260615-plan.md to transition setup logic for Sets B and D into procB and procD (Step 2), compile, and verify CDE red boxes.
 - [x] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-20260615-plan.md to transition setup logic (valley push, contrast stretch, deskew, rotate) from the outer loop into flow processors (Step 1 - procA), compile, and verify CDE red boxes.
 - [x] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-hoist-helpers-plan.md to hoist the 5 pure helper functions to the top of runPumpExperiment, compile, and verify red boxes in CDE.
 - [x] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-restore-working-124b0527-state-plan.md to restore the screen file to the working 124b0527 state, compile, and verify red boxes in CDE.
