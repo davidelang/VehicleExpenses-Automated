@@ -1224,6 +1224,7 @@ private suspend fun runPumpExperiment(
                     suspend fun doBOrDRedOnlyImage() { /* copy */ }
                     suspend fun doBOrDRetractedBlueAndPD() { /* copy */ }
                     if (flowName == "Set B" || flowName == "Set D") {
+                        doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH);
                         doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                         doBOrDRedOnlyImage()
                         doBOrDRetractedBlueAndPD()
