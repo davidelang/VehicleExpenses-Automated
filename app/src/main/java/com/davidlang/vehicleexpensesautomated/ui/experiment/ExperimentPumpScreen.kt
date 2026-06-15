@@ -1865,12 +1865,12 @@ private fun pBuildHtmlRowDynamic(
             val hB = br.images["histBeforeC"] ?: ""
             val hA = br.images["histAfterC"] ?: ""
             // Per-redbox hists + labels from redboxDataC (h/w/area pixels + bins for analysis)
-            // Phase 1: sorted by area desc (largest first), 3-wide table, stacked values per cell
-            // For E: on the pruned 6, YUV direct jpeg visuals per plan.
+            // Dual visuals per red entry (red rect snapshot from crop + histogram snapshot from plot); 3-wide table, stacked h/w/area labels.
+            // (Removed outdated "YUV direct jpeg visuals per plan" / "YUV direct is the target" note.)
             val rdataStr = br.metadata["redboxDataC"] ?: "[]"
             val rdata = try { org.json.JSONArray(rdataStr) } catch (e: Exception) { org.json.JSONArray() }
             val perRedHtml = StringBuilder()
-            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Hists (sorted by area desc, 3 wide, stacked h/w/area):</b></div>")
+            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Hists (sorted by area desc, 3 wide, stacked h/w/area; rect + hist images):</b></div>")
             val sortedData = (0 until rdata.length()).map { rdata.getJSONObject(it) }.sortedByDescending { it.getInt("area") }
             val numCols = 3
             perRedHtml.append("<table style='width:100%; border:none; font-size:10px;'><tr>")
@@ -1880,8 +1880,9 @@ private fun pBuildHtmlRowDynamic(
                 val hh = s.getInt("h")
                 val ww = s.getInt("w")
                 val aa = s.getInt("area")
+                val rectb = br.images["redboxRectC_${ii}"] ?: ""
                 val hb = br.images["redboxHistC_${ii}"] ?: ""
-                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><img src='data:image/jpeg;base64,$hb' style='max-width:95%;'><br><small>Red${ii}:<br>h=${hh}<br>w=${ww}<br>area=${aa}</small></td>")
+                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><img src='data:image/jpeg;base64,$rectb' style='max-width:95%;'><br><img src='data:image/jpeg;base64,$hb' style='max-width:95%;'><br><small>Red${ii}:<br>h=${hh}<br>w=${ww}<br>area=${aa}</small></td>")
                 if ((j + 1) % numCols == 0 && j < sortedData.size - 1) {
                     perRedHtml.append("</tr><tr>")
                 }
