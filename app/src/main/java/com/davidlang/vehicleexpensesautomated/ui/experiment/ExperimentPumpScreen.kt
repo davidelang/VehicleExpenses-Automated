@@ -1246,6 +1246,7 @@ private suspend fun runPumpExperiment(
                     scales.forEach { scale -> /* discovery */ }
                     suspend fun doCOrEPrepareHunksAndValleyInputs(outRedBoxes: MutableList<PumpHunk>, outRedPixelRects: MutableList<android.graphics.Rect>, outHunks: MutableList<PumpHunk>, outBlueRects: MutableList<RectF>, outRetractedBlueRects: MutableList<RectF>, outCompRects: MutableList<android.graphics.Rect>) { /* copy */ }
                     if (flowName == "Set C" || flowName == "Set E") {
+                        doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH);
                         doCOrEPrepareHunksAndValleyInputs(mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf())
                     } else {
                         val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
