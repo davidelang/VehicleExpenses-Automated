@@ -1,7 +1,7 @@
 - Branch: fix-pump-experiment
 - Current builds tag: fix-pump-experiment/builds @ 38be57f1
-- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-remove-ce-blue-orange-20260615-plan.md
-- Progress: Execution phase. Removing blue/orange box processing on C/E and performing final refactoring cleanup.
-- Key Decisions:
-  - Deleting doCOrEPrepareHunksAndValleyInputs and its calls.
-  - Simplifying mlBlocksRaw.
+- Active plan (this cycle): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-eliminate-paddle-heatmap-rect-double-icrs-conversion-20260615-plan.md (eliminate paddle heatmap rect double-ICRS: pixel ingest + explicit upscale once, PumpHunk.rect= pixel, drop IcrsMath roundtrips on pd*/recog)
+- New planning cycle started: 2026-06-15 (user trigger: "new plan cycle")
+- Previous plan (completed/handoff): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-remove-ce-blue-orange-20260615-plan.md (C/E blue/orange box processing removal)
+- Phase 0 ritual complete: re-read current-state (prune/hygiene per rules: header+branch+active+tag+3-4 facts), full plan (abs) + 5 failure logs read+lessons (identical first-action deviations: skipped TODO as VERY FIRST SOURCE EDIT + multi gates + started search before ritual; must obey 100% or stop; scope strictly ONLY paddle double-ICRS elim, explicit pixel upscale at ingest/direct in PumpHunk+downstream, no ML/other); TODO.md updated as *VERY FIRST SOURCE EDIT* (verified grep top + top read); compliance first10 re-read + last5 state re-read + grep plan in TODO + git porcelain (no .kt mod yet).
+- Phase 0: narrow forensic read_file (PumpHunk@80, runDiscoveryPaddle@2013+ingest, redPrune@861+dups, getAnns@590, performHunk@2167, takeCrop@544, call sites@814+) + targeted greps (PumpHunk + icrs + IcrsMath baseline, runDiscoveryPaddle sites). All gates passed. git add 3 + ./build_app next for baseline tag.
