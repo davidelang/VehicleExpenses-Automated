@@ -1,10 +1,10 @@
 # TODO
 
-- [ ] Execution of pump-experiment-fix-coordinate-system-error-plan.md
+- [x] Execution of pump-experiment-fix-coordinate-system-error-plan.md
   - [x] Phase 1: Modify expandHunkContext and its caller getFinal to use pixel limits
   - [x] Phase 2: Fix performHunkRecognition and doBOrDRetractedBlueAndPD to use integer pixel crops
   - [x] Phase 3: Fix Set C and Set E per-redbox crops to use integer pixel crops
-  - [ ] Phase 4: Final Verification and build validation
+  - [x] Phase 4: Final Verification and build validation
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
