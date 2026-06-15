@@ -1142,7 +1142,7 @@ private suspend fun runPumpExperiment(
                         // For bins, also use the same safe perMask (with rect) to avoid any createCrop / crop Mat nativeObj issues that were causing the persistent NPE in calcHist on the first/early rows (as seen in fresh adb logs even after size guards).
                         // This keeps the capture simple, safe, and limited to the post-prune 6 (fixing the "30 hists" problem) while guaranteeing the first row completes for C/E.
                         val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(h.rect.left.toInt(), h.rect.top.toInt(), rw, rh)
+                        val rrect = org.opencv.core.Rect(hunk.rect.left.toInt(), hunk.rect.top.toInt(), rw, rh)
                         org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
                         val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
                         branch.images["redboxHistC_${i}"] = perHistB64
@@ -1472,7 +1472,7 @@ private suspend fun runPumpExperiment(
                         // For bins, also use the same safe perMask (with rect) to avoid any createCrop / crop Mat nativeObj issues that were causing the persistent NPE in calcHist on the first/early rows (as seen in fresh adb logs even after size guards).
                         // This keeps the capture simple, safe, and limited to the post-prune 6 (fixing the "30 hists" problem) while guaranteeing the first row completes for C/E.
                         val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(h.rect.left.toInt(), h.rect.top.toInt(), rw, rh)
+                        val rrect = org.opencv.core.Rect(hunk.rect.left.toInt(), hunk.rect.top.toInt(), rw, rh)
                         org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
                         val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
                         branch.images["redboxHistC_${i}"] = perHistB64
@@ -2071,17 +2071,17 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
                 val minH = min(current.rect.height(), next.rect.height())
                 val significantOverlap = overlapH >= (minH * 0.3f)
 
-                val isNested = current.rect.contains(next.icrs) || next.rect.contains(current.icrs)
+                val isNested = current.rect.contains(next.rect) || next.rect.contains(current.rect)
 
                 if (significantOverlap || isNested) {
-                    val newIcrs = RectF(
+                    val newRect = RectF(
                         min(current.rect.left, next.rect.left),
                         min(current.rect.top, next.rect.top),
                         max(current.rect.right, next.rect.right),
                         max(current.rect.bottom, next.rect.bottom)
                     )
                     val bestText = if (current.text.count { it.isDigit() } >= next.text.count { it.isDigit() }) current.text else next.text
-                    current = PumpHunk(bestText, newIcrs)
+                    current = PumpHunk(bestText, newRect)
                     iterator.remove()
                     changed = true
                 }
