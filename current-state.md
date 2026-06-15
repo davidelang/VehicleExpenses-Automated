@@ -13,3 +13,4 @@
 - Phase 0 baseline build SUCCESS (git add TODO+state only; no kt). Tag updated: fix-pump-experiment/builds (post 4d780094). All gates + multi self-verifs + forensic passed; no .kt ever edited this run. Ready Phase 1 ultra-micro procA first line.
 - procA: inserted scales line (after imgH alias). Build SUCCESS. TAG: fix-pump-experiment/builds . State 1-2 lines.
 - procA: inserted mlBlocksRaw line (after scales). Build SUCCESS. TAG: fix-pump-experiment/builds . State 1-2 lines.
+- procA: inserted pdHunksRawTotal line. Build SUCCESS. TAG: fix-pump-experiment/builds . State 1-2 lines.
