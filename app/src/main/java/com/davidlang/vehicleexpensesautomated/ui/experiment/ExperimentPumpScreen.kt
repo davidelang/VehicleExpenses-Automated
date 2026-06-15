@@ -737,6 +737,8 @@ private suspend fun runPumpExperiment(
                     val pdHunksRawTotal = mutableListOf<PumpHunk>()
                     val pdHunksExpTotal = mutableListOf<PumpHunk>()
                     val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+                    val pdHunksNativeTotal = mutableListOf<PumpHunk>()
+                    val pdHunksDetectedTotal = mutableListOf<PumpHunk>()
                     val rawHist: FloatArray
                     if (flowName == "Set C" || flowName == "Set E") {
                         // Capture raw (pre any C-specific transform) + before hist for column display
@@ -763,6 +765,11 @@ private suspend fun runPumpExperiment(
                         }
                     }
                     val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val tilt = when (flowName) { "Set B", "Set D" -> -deskewRes.paddleCppAngle "Set C", "Set E" -> -deskewRes.paddleCppAngle else -> -deskewRes.angle }
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
                     // val mlBlocksRaw = if (flowName == "Set A") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()   // plan step13 literal; pre-existing decl in procA from dupe state; anti-doom different repair (comment vs delete)
                     // val pdHunksRawTotal = mutableListOf<PumpHunk>()  // pre-existing from dupe; anti-doom different repair (comment second, not delete) for pdRaw step
                     // full duplicate of the per-flow logic (from remnant discovery through end of special handling / A viz; pre-proc C/E is C/E only and remains outside for C/E paths; includes inner if(B||D)else if(C||E)else{A} + getAnns calls etc; flowName local selects A path; other closed hoisted names visible)
