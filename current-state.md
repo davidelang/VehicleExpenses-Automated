@@ -1,8 +1,7 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 93324977
-- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-restore-working-124b0527-state-plan.md
-- Progress: Planning phase. Proposing a plan to restore `ExperimentPumpScreen.kt` to the working `124b0527` codebase state to resolve the CDE red box regression.
+- Current builds tag: fix-pump-experiment/builds @ e409a823
+- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-hoist-helpers-plan.md
+- Progress: Execution phase. Hoisted 5 pure helper functions to the top of `runPumpExperiment` and cleaned up duplicate `originalHistogram` variable declaration. Preparing to compile.
 - Key Decisions:
-  - Forensic analysis showed the discovery loops for C, D, and E were stubbed out with comments in the broken HEAD codebase, causing 0 red boxes.
-  - Commit `124b0527` is a verified good commit where all red box counts are populated correctly (Set C: 12, Set D: 6, Set E: 12).
-  - We will overwrite the screen file with the content of `124b0527` linearly to restore functionality, then build and verify.
+  - Hoisted pure helpers to top of `runPumpExperiment` in `ExperimentPumpScreen.kt` to simplify future flow processor extractions.
+  - Removed duplicate `originalHistogram` declaration to prevent build failures.
