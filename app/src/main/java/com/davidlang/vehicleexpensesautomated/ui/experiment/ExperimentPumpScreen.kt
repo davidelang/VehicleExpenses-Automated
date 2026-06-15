@@ -594,8 +594,6 @@ private suspend fun runPumpExperiment(
                 }
 
                 suspend fun doBOrDRetractedBlueAndPD() {
-                    val minEdge = kotlin.math.min(imgW, imgH).toFloat()
-                    val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
                     // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
                     // Optimization (inside split-out helper per the D/E + user pixel/sweep plan): convert input lists to pixel Rects *once* (O(N) ICRS at boundary only). Use the pixel Rects for the expandByUniformity (native pixel), for all blue/orange size math in OCR, and for any future per-box work. Convert back only for the final retractedExpForBlue list (used by getAnns for the annotated PD). This eliminates repeated ICRS<->pixel inside the per-box loops (even on the post-prune N=6). PumpHunk form kept only for anns/snapshot compatibility; intra red/blue working is pixel Rects (images are unique per photo, no cross-image ICRS use needed).
                     val expPixelRects = pdHunksExpTotal.map { h ->
@@ -620,14 +618,13 @@ private suspend fun runPumpExperiment(
                     // (inline crop/resize/rec using experimentRecSet1024x48 dedicated + clear; 4px buffer + aspect from alignment)
                     // Optimization (inside split-out helper): use the pixel rect list for the blue (from the retractedPixel) and for orange (maxPixelRects) so pW/pH are integer .width/.height with no per-item ICRS->pixel. Pair with the ICRS list only for the createCrop (l,t,w,h in ICRS) and coerce. 4px + targetH=48 + %32 targetW preserved.
                     val blueTexts = retractedPixel.mapIndexed { i, r ->
-                        val h = retractedExpForBlue.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
                         val pW = r.width(); val pH = r.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
+                            val l = r.left.coerceIn(0, imgW - 1)
+                            val t = r.top.coerceIn(0, imgH - 1)
+                            val rr = r.right.coerceIn(l + 1, imgW)
+                            val bb = r.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
@@ -641,14 +638,13 @@ private suspend fun runPumpExperiment(
                         }
                     }
                     val orangeTexts = maxPixelRects.mapIndexed { i, r ->
-                        val h = pdHunksMaxTotal.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
                         val pW = r.width(); val pH = r.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
+                            val l = r.left.coerceIn(0, imgW - 1)
+                            val t = r.top.coerceIn(0, imgH - 1)
+                            val rr = r.right.coerceIn(l + 1, imgW)
+                            val bb = r.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
@@ -663,15 +659,14 @@ private suspend fun runPumpExperiment(
                     }
 
                     // digits-only (0-9) pass using recognizeNumeric for the second OCR per box (as-is above + digits)
-                    val blueDigits = retractedExpForBlue.mapIndexed { i, h ->
-                        val rp = retractedPixel.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
+                    val blueDigits = retractedPixel.mapIndexed { i, rp ->
                         val pW = rp.width(); val pH = rp.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
+                            val l = rp.left.coerceIn(0, imgW - 1)
+                            val t = rp.top.coerceIn(0, imgH - 1)
+                            val rr = rp.right.coerceIn(l + 1, imgW)
+                            val bb = rp.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
@@ -684,15 +679,14 @@ private suspend fun runPumpExperiment(
                             res.debugText
                         }
                     }
-                    val orangeDigits = pdHunksMaxTotal.mapIndexed { i, h ->
-                        val rp = maxPixelRects.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
+                    val orangeDigits = maxPixelRects.mapIndexed { i, rp ->
                         val pW = rp.width(); val pH = rp.height()
                         if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, rr - l, b - t)
+                            val l = rp.left.coerceIn(0, imgW - 1)
+                            val t = rp.top.coerceIn(0, imgH - 1)
+                            val rr = rp.right.coerceIn(l + 1, imgW)
+                            val bb = rp.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
                             val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
                             val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                             experimentRecSet1024x48.p.clear()
@@ -2134,7 +2128,7 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
 
         if (pW < 2 || pH < 2) return@map hunk
 
-        val cropId = buffer.createCrop(l, t, r - l, b - t)
+        val cropId = buffer.createCrop(l.toInt(), t.toInt(), (r - l).toInt(), (b - t).toInt())
 
         val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
         if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 6 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
