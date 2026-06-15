@@ -1226,6 +1226,7 @@ private suspend fun runPumpExperiment(
                     if (flowName == "Set B" || flowName == "Set D") {
                         doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH);
                         doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                        val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2);
                         doBOrDRedOnlyImage()
                         doBOrDRetractedBlueAndPD()
                     } else {
