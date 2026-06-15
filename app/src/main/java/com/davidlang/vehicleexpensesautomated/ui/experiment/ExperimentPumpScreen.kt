@@ -764,6 +764,12 @@ private suspend fun runPumpExperiment(
                 var tG1 = 0L
                 // (more t* for C/E valley/blue etc hoisted in later substeps or covered by early tFlowStart; assignments below use reassign or original inner vals where block scoped)
 
+                // Phase 0 hoist of getAnns (small local used by A viz + inside doBOrD*/doCOrE* helpers): moved early before proc defs so visible to proc lambdas (when full logic incl calls is duplicated into them) + do* (per plan "hoist ... getAnns, the doBOrD*/doCOrE* defs if referenced from procs"; do* large bodies left in place, copies included at dupe time per plan wording).
+                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
+                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
+                    SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
+                }
+
                 val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear steps (no conditionals on set):
                     // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
@@ -1030,10 +1036,7 @@ private suspend fun runPumpExperiment(
                 }
 
                 // 5. Visualization
-                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
-                }
+                // (getAnns hoisted earlier in Phase 0 to before proc defs for visibility inside procs and do* helpers; removed from here to avoid redecl after hoist)
 
                 if (flowName != "Set B" && flowName != "Set C" && flowName != "Set D" && flowName != "Set E") {
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
