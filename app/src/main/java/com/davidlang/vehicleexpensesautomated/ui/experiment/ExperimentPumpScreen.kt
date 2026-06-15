@@ -705,56 +705,7 @@ private suspend fun runPumpExperiment(
                 // Looks at 64-bin hist *only inside the initial red boxes* (text regions) on the (deskewed, same-hist-as-B stretched) mat to decide dark text on light bg vs light on dark.
                 // If dark text, inverts the mat (bitwise_not) so subsequent detection/rec + PD snapshot for C/E always see light text on dark bg.
                 // E mirrors C per plan (valley + per-red on the pruned 6 + blue via E).
-                if (flowName == "Set C" || flowName == "Set E") {
-                    val tProbeStart = System.currentTimeMillis()
-                    pdHunksRawTotal.clear()
-                    pdHunksExpTotal.clear()
-                    pdHunksMaxTotal.clear()
-                    pdHunksNativeTotal.clear()
-                    pdHunksDetectedTotal.clear()
-                    runPaddleDiscovery()  // probe to populate initial reds on current mat state
-                    branch.metadata["t_polarity_run_ms"] = (System.currentTimeMillis() - tProbeStart).toString()
-
-                    // Build mask (255 inside red boxes, pixel space) -- exact pattern from prior valley probe.
-                    val mask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                    for (hunk in pdHunksRawTotal) {
-                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
-                        val rect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), (p2.x - p1.x).toInt(), (p2.y - p1.y).toInt())
-                        org.opencv.imgproc.Imgproc.rectangle(mask, rect, org.opencv.core.Scalar(255.0), -1)
-                    }
-
-                    // Per-redbox histograms for *display* + JSON (C/E) now captured post-prune on the filtered 6 (see after the common prune block for the re-capture using pruned pdHunksRawTotal; this fixes the "histograms on line 1 still show 30" issue and scopes the work to the final reds for those sets).
-                    // The early probe here only builds the combined mask over initial reds for the polarity (dark/light) decision + invert (needed before the final discovery on the possibly-inverted mat). No per-red hists loop here anymore (avoids paying the old 30x cost; the 6 post-prune capture is cheap + will get the YUV/crop opt in next phase).
-                    // n_reds_at_probe still reflects the initial for analysis.
-                    branch.metadata["n_reds_at_probe"] = pdHunksRawTotal.size.toString()
-                    // (t_per_red_* etc for the display data are now set in the post-prune capture for C/E)
-
-                    val tPolDecStart = System.currentTimeMillis()
-                    val hist = org.opencv.core.Mat()
-                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), mask, hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
-                    val bins = FloatArray(64); hist.get(0, 0, bins)
-                    hist.release()
-                    mask.release()
-
-                    val lowMass = bins.take(32).sum()
-                    val highMass = bins.drop(32).sum()
-                    val isDarkTextOnLightBg = lowMass > highMass
-                    if (isDarkTextOnLightBg) {
-                        org.opencv.core.Core.bitwise_not(workspace.p.mat, workspace.p.mat)
-                    }
-                    branch.metadata["t_polarity_decision_ms"] = (System.currentTimeMillis() - tPolDecStart).toString()
-                    branch.metadata["t_invert_if_needed_ms"] = if (isDarkTextOnLightBg) "1" else "0"  // light cost; decision time covers mass + possible invert
-
-                    // Re-clear so the (now-unskipped for C) body discovery populates the *final* pd* on the (possibly inverted) mat.
-                    pdHunksRawTotal.clear()
-                    pdHunksExpTotal.clear()
-                    pdHunksMaxTotal.clear()
-                    pdHunksNativeTotal.clear()
-                    pdHunksDetectedTotal.clear()
-                    branch.metadata["t_red_probe_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
-                    // t_red_probe_ms (kept) now covers from tFlowStart (or tProbeStart) through probe + per-red (granular subs above) + polarity decision/invert + clears. All answers to "Kotlin or C?", "crop and point routine?", "manual loops?" are in comments above the per-red forEach.
-                }
+                /* pre-proc C/E polarity block retired (Phase 4 tiny step 2: removed per granular retirement; pre-proc C/E no longer drives; dispatch + procs sole) */
 
                 // Phase 0 hoist (per granular plan + failure lessons): timing vars referenced in remnant/procs logic hoisted to scope before proc lambdas (with initial) so visible inside proc bodies + after retirement of remnant decl sites. (tDiscoveryWrapperStart was declared inside else after proc defs.)
                 var tDiscoveryWrapperStart = 0L

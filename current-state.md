@@ -23,5 +23,6 @@
 - Phase 2 procE: replace with val flowName="Set E" + dupe (C mirror). Repair: reorder doC copy before if. Build success. New tag 65add516.
 - All 5 procs duplicated with own val flowName="Set X" at top + logic. Builds at each. Ready Phase 3 post-dupe prep. Current builds 65add516.
 - Phase 3: narrow reads of 5 procs + remnant; minimal prep comment added ("post-dupe prep complete; ... ready for granular retirement"). Forensic + build success. New tag ee3202a5. Ready Phase 4 granular retirement.
+- Phase 4 tiny 1: disabled outer if (C_old) to false (forensic before/after + grep). git add + build success. New tag b67778db.
 - Re-exec failure rolled: duplication re-exec (prior plan) cancelled by harness on repeated Phase 4 errors (no new repairs); reverted to pre-dupe clean. See dev-ai-interaction/implementation-failure-logs/2026-06-15-duplication-reexec-doom-loop-failure.md (reviewed at start per new plan rule). Ready for granular steps.
 
