@@ -1260,6 +1260,7 @@ private suspend fun runPumpExperiment(
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
                 // Call the processor for this flow (i) from the array. Per-set behavior now selected by thin if calls to extracted helpers (B/C/E special after common filter) + proc index.
+                // Phase 3 post-dupe prep: all 5 procs have full dupe + local flowName; additional vis hoists done in Phase 0; remnant still present but names resolvable; ready for granular retirement (dispatch sole after).
                 tDiscoveryWrapperStart = System.currentTimeMillis()
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
                 branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
