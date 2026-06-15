@@ -732,6 +732,7 @@ private suspend fun runPumpExperiment(
                     val discoveryDetails = det
                     val imgW = w
                     val imgH = h
+                    val scales = listOf(224, 608, 1024, 2560)
                     // full duplicate of the per-flow logic (from remnant discovery through end of special handling / A viz; pre-proc C/E is C/E only and remains outside for C/E paths; includes inner if(B||D)else if(C||E)else{A} + getAnns calls etc; flowName local selects A path; other closed hoisted names visible)
                     // [exact text dupe from current remnant body after dispatch, adapted only by the 5 aliases above]
                     var processedScales = mutableSetOf<Int>()
