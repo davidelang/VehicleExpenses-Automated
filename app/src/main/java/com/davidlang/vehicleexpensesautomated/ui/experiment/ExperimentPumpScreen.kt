@@ -737,6 +737,7 @@ private suspend fun runPumpExperiment(
                     val pdHunksRawTotal = mutableListOf<PumpHunk>()
                     val pdHunksExpTotal = mutableListOf<PumpHunk>()
                     val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+                    val rawHist: FloatArray
                     // val mlBlocksRaw = if (flowName == "Set A") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()   // plan step13 literal; pre-existing decl in procA from dupe state; anti-doom different repair (comment vs delete)
                     // val pdHunksRawTotal = mutableListOf<PumpHunk>()  // pre-existing from dupe; anti-doom different repair (comment second, not delete) for pdRaw step
                     // full duplicate of the per-flow logic (from remnant discovery through end of special handling / A viz; pre-proc C/E is C/E only and remains outside for C/E paths; includes inner if(B||D)else if(C||E)else{A} + getAnns calls etc; flowName local selects A path; other closed hoisted names visible)
