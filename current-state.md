@@ -1,5 +1,5 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ a51bfa7f
+- Current builds tag: fix-pump-experiment/builds @ 30688dd3
 - Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-hoist-helpers-plan.md
 - Progress: Execution phase. Completed helper function hoisting and cleaned up duplicate `originalHistogram` variable declaration. Build successful and tag updated.
 - Key Decisions:
