@@ -7,10 +7,12 @@
 # Keep one terminal with the master (`run-grok-master`) and one dedicated
 # planning terminal (`run-grok-planner`). These stay open across many cycles.
 #
-# When the master starts a new planning cycle it writes a fresh narrow prompt
-# (containing the current standard block, high-signal rules, hygiene
-# expectations, etc.) to `dev-ai-interaction/.planning-agent-prompt.txt` and
-# tells you to restart the planner terminal with the updated file.
+# When you tell the master "New planning cycle" (optionally + one short sentence
+# of context or feedback), the master's built-in prompt automates the rest:
+# it reads current-state.md + the latest standard-plan-compliance-block.md,
+# writes a complete narrow prompt (full dedicated planner template + embedded
+# guardrails + your context) to `dev-ai-interaction/.planning-agent-prompt.txt`,
+# and tells you the exact one-line restart command.
 #
 # Usage:
 #   ./run-grok-planner                  # uses dev-ai-interaction/.planning-agent-prompt.txt
@@ -21,9 +23,8 @@
 #   one using the latest prompt. This is the normal low-friction ritual for
 #   beginning a new planning cycle in the long-lived workflow.
 #
-# The main orchestrator (master) is responsible for generating the narrow
-# prompt at the start of each new planning cycle and for clearly instructing
-# you to restart the planner terminal with the updated file.
+# The master prompt now contains the full logic and template so you only need
+# the short "New planning cycle" trigger in the master terminal.
 #
 # The prompt file contains the full strict instructions for the Planning Agent:
 # - Stay in plan mode.
@@ -79,8 +80,9 @@ fi
 
 if [ ! -f "$PROMPT_FILE" ]; then
     echo "ERROR: Planning prompt file not found: $PROMPT_FILE" >&2
-    echo "Ask the main orchestrator to generate and write the narrow prompt for the dedicated Planning Agent." >&2
-    echo "It will typically write it to dev-ai-interaction/.planning-agent-prompt.txt" >&2
+    echo "In the master terminal say: 'New planning cycle' (or 'New planning cycle. [brief context]')." >&2
+    echo "The master will write the full narrow prompt to dev-ai-interaction/.planning-agent-prompt.txt and tell you the restart command." >&2
+    echo "Then run ./run-grok-planner (or exec it) in this terminal." >&2
     exit 1
 fi
 
@@ -89,6 +91,7 @@ echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Using narrow prompt from: $PROMPT_FILE"
 echo "Forcing planning model: $PLANNER_MODEL (set GROK_PLANNER_MODEL to override)"
+echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
 
 # Read the entire prompt file content.
 # The file contains the complete strict instructions for this session.
