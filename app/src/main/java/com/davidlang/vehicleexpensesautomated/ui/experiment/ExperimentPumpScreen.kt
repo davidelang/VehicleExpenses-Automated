@@ -564,7 +564,6 @@ private suspend fun runPumpExperiment(
                 }
 
                 suspend fun runPaddleDiscovery() {
-                    val tilt = 0f
                     val processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
                         val srcW = workspace.p.width
@@ -834,7 +833,8 @@ private suspend fun runPumpExperiment(
                     outHunks: MutableList<PumpHunk>,
                     outBlueRects: MutableList<RectF>,
                     outRetractedBlueRects: MutableList<RectF>,
-                    outCompRects: MutableList<android.graphics.Rect>
+                    outCompRects: MutableList<android.graphics.Rect>,
+                    tilt: Float
                 ) {
                     val minEdge = kotlin.math.min(imgW, imgH).toFloat()
                     val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
@@ -1611,7 +1611,7 @@ private suspend fun runPumpExperiment(
                 val blueRects = mutableListOf<RectF>()
                 val retractedBlueRects = mutableListOf<RectF>()
                 val compRects = mutableListOf<android.graphics.Rect>()
-                doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects)
+                doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects, tilt)
             }
                 val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set D"
@@ -1973,7 +1973,7 @@ private suspend fun runPumpExperiment(
                 val blueRects = mutableListOf<RectF>()
                 val retractedBlueRects = mutableListOf<RectF>()
                 val compRects = mutableListOf<android.graphics.Rect>()
-                doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects)
+                doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects, tilt)
             }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
