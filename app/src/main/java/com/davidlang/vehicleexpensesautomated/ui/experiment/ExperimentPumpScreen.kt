@@ -512,7 +512,7 @@ private suspend fun runPumpExperiment(
                 // This resolves forward-ref compile issues for 'scales', the pd*Totals, mlBlocksRaw etc that the
                 // helpers reference. (The processedScales for the inline remains at its site for now.)
                 val scales = listOf(224, 608, 1024, 2560)
-                val mlBlocksRaw = if (flowName == "Set A") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()  // empty for B/C/D/E (pump-only, no ML columns)
+                val mlBlocksRaw = mutableListOf<PumpHunk>()
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
@@ -736,296 +736,7 @@ private suspend fun runPumpExperiment(
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
                 }
 
-                suspend fun doCOrEPrepareHunksAndValleyInputs(
-                    outRedBoxes: MutableList<PumpHunk>,
-                    outRedPixelRects: MutableList<android.graphics.Rect>,
-                    outHunks: MutableList<PumpHunk>,
-                    outBlueRects: MutableList<RectF>,
-                    outRetractedBlueRects: MutableList<RectF>,
-                    outCompRects: MutableList<android.graphics.Rect>,
-                    tilt: Float
-                ) {
-                    val minEdge = kotlin.math.min(imgW, imgH).toFloat()
-                    val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
-                    val tBlueStart = System.currentTimeMillis()
-                    // Set C: derive blue/orange from raw hunks using the image-based object finding from alignment Set J (large/small filter path), not Paddle.
-                    // Blue now via alignment Set E valley expansion from red (adapted for pump post-polarity/invert mat to suit white-on-black assumption), replacing the overlapping CC for blue to fix frequent expansion errors. (CC kept for orange; old overlapping commented/replaced).
-                    // The "command" to find the objects (per-char or per 7-seg segment) is NativeImageUtils.findAllComponentsH (wraps cv::connectedComponentsWithStats),
-                    // called after blackOutLargeAndSmallComponentsH (and rolling) on a binarized version of the mat.
-                    // See ExperimentAlignmentScreen.kt:1180 (blackOutLargeAndSmall), 1194 (findAllComponentsH after wide/tall processing) and the nativeBlackOut... / nativeFindAll... in NativeImageUtils.cpp
-                    // which do CC passes at the beginning for large/wide, then after processing them before small.
-                    // Explicit nested red filter for C redBoxes (used for blue derivation); shared filter at 731 already applied to pdHunksRawTotal, but explicit here (and in B) per plan/user feedback on B vs C.
-                    val redBoxes = pdHunksRawTotal.toMutableList()
-                    doCrossScaleRedboxFilter(redBoxes, imgW, imgH)
 
-                    // Compute vSW/hSW from the red boxes (using the red-box hist method, as in Set J / OcrHarness).
-                    val redPixelRects = mutableListOf<android.graphics.Rect>()
-                    for (idx in redBoxes.indices) {
-                        val redHunk = redBoxes[idx]
-                        val r = redHunk.icrs  // the ICRS RectF
-                        val l = r.left
-                        val t = r.top
-                        val rr = r.right
-                        val b = r.bottom
-                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(rr, b, imgW, imgH)
-                        redPixelRects.add(android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt()))
-                    }
-                    val tBlueNativeStart = System.currentTimeMillis()
-                    val hRes = NativeImageUtils.calculateHistogramWithThresholdH(workspace.p.mat, redPixelRects, 128f)
-                    branch.metadata["t_blue_native_hist_ms"] = (System.currentTimeMillis() - tBlueNativeStart).toString()
-                    val vSW = hRes?.second?.get(0)?.toFloat() ?: 6f
-                    val hSW = hRes?.second?.get(1)?.toFloat() ?: 6f
-
-                    // Find the raw objects ("hunks") for white boxes + derivation source using the exact image processing path from Set J.
-                    // Work on a binary clone (threshold the current polarity-adjusted mat) so the main mat for snapshot/OCR is untouched.
-                    val binMat = org.opencv.core.Mat()
-                    org.opencv.imgproc.Imgproc.threshold(workspace.p.mat, binMat, 128.0, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
-                    NativeImageUtils.blackOutLargeAndSmallComponentsH(binMat, vSW, hSW, 0.20f * binMat.cols())
-                    NativeImageUtils.blackOutRollingDigitsH(binMat, vSW, hSW)
-                    val compRects = NativeImageUtils.findAllComponentsH(binMat, vSW, hSW)
-                    // binMat.release() moved later to after retract (was premature, causing errors)
-
-                    // compRects are the pixel-space bounding boxes of the individual characters / 7-seg segments (the "objects").
-                    val hunks = compRects.map { r ->
-                        val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                        val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                        PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
-                    }
-                    // Phase 5: use alignment Set E valley expansion from red (adapted for pump polarity/bg assumption)
-                    // instead of overlapping hunks for blue from red. This should reduce errors in expansion.
-                    // (hunks kept for orange same-row)
-                    val blueRects = mutableListOf<RectF>()
-                    val tBlueValleyStart = System.currentTimeMillis()
-                    // Optimization (inside split-out C/E helper): iterate the precomputed redPixelRects (built once above from the post-filter redBoxes) for the valley expand calls. Avoids repeated IcrsToPixel per red inside the loop (the opt from the D/E plan: pixel working lists for intra-image red-derived work after one boundary convert; N small post-prune6). The resulting bluePix still converted to ICRS only for the output list (needed for downstream orange/anns/OCR in the hoisted tail).
-                    for (redPixRect in redPixelRects) {
-                        // use the main mat (post polarity/invert in Set C so text regions suit white-on-black assumption of the diagnostic)
-                        val valleyRes = NativeImageUtils.expandByValleyDiagnostic(workspace.p.mat, redPixRect, 0.40f)
-                        val bluePix = valleyRes.first
-                        val i1 = IcrsMath.pixelToIcrs(bluePix.left.toFloat(), bluePix.top.toFloat(), imgW, imgH)
-                        val i2 = IcrsMath.pixelToIcrs(bluePix.right.toFloat(), bluePix.bottom.toFloat(), imgW, imgH)
-                        blueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
-                    }
-                    branch.metadata["t_blue_valley_expands_ms"] = (System.currentTimeMillis() - tBlueValleyStart).toString()
-
-                    // Near-containment merging rule (per approved plan for this turn, "when merging").
-                    // If one box is inside another on 3 sides but protrudes on the 4th by <=40px (pixel space) *and* the boxes still overlap on that axis (no gap), extend the containing box to the protruding side.
-                    // Then the protruding box is no longer outside and can be deleted as redundant (now fully inside after extend).
-                    // Applied to blueRects (the union from overlapping hunks per red) before retraction. Uses qualifiesFor3SidesNearExtend.
-                    val tBlue3sStart = System.currentTimeMillis()
-                    run {
-                        val toProcess = blueRects.toMutableList()
-                        val extended = mutableListOf<RectF>()
-                        for (i in toProcess.indices) {
-                            var cur = toProcess[i]
-                            for (j in toProcess.indices) {
-                                if (i == j) continue
-                                val oth = toProcess[j]
-                                // Pixel rects for 40px tolerance
-                                val cp = IcrsMath.icrsToPixel(cur.left, cur.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.right, cur.bottom, imgW, imgH)
-                                val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
-                                val op = IcrsMath.icrsToPixel(oth.left, oth.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.right, oth.bottom, imgW, imgH)
-                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                                if (qualifiesFor3SidesNearExtend(cR, oR)) {
-                                    // Extend cur on the non-inside side to cover oth
-                                    val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
-                                    val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
-                                    val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
-                                    val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
-                                    cur = RectF(newL, newT, newR, newB)
-                                }
-                            }
-                            if (extended.none { it == cur }) extended.add(cur)
-                        }
-                        // Remove any now fully contained (after extends)
-                        val cleaned = extended.filter { b ->
-                            val bp = IcrsMath.icrsToPixel(b.left, b.top, imgW, imgH); val bp2 = IcrsMath.icrsToPixel(b.right, b.bottom, imgW, imgH)
-                            val bR = android.graphics.Rect(bp.x.toInt(), bp.y.toInt(), bp2.x.toInt(), bp2.y.toInt())
-                            !extended.any { o ->
-                                if (o == b) false else {
-                                    val op = IcrsMath.icrsToPixel(o.left, o.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.right, o.bottom, imgW, imgH)
-                                    val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                    oR.contains(bR)
-                                }
-                            }
-                        }.toMutableList()
-                        blueRects.clear()
-                        blueRects.addAll(cleaned)
-                    }
-                    branch.metadata["t_blue_3sides_ms"] = (System.currentTimeMillis() - tBlue3sStart).toString()
-
-                    // Blue retract to tight fit around text (per approved plan): after union of overlapping CC hunks (from the big/little filter on binMat) per red, retract using expandByUniformity to shrink back when expansion hits limit with no text/content.
-                    // This ensures blues are tight rather than over-expanded.
-                    val tBlueRetractStart = System.currentTimeMillis()
-                    val retractedBlueRects = mutableListOf<RectF>()
-                    for (b in blueRects) {
-                        val p1 = IcrsMath.icrsToPixel(b.left, b.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(b.right, b.bottom, imgW, imgH)
-                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                        val (retracted, _) = NativeImageUtils.expandByUniformity(binMat, rect)
-                        val i1 = IcrsMath.pixelToIcrs(retracted.left.toFloat(), retracted.top.toFloat(), imgW, imgH)
-                        val i2 = IcrsMath.pixelToIcrs(retracted.right.toFloat(), retracted.bottom.toFloat(), imgW, imgH)
-                        retractedBlueRects.add(RectF(i1.x, i1.y, i2.x, i2.y))
-                    }
-                    binMat.release()  // release after use in blue retract
-                    branch.metadata["t_blue_retract_ms"] = (System.currentTimeMillis() - tBlueRetractStart).toString()
-                    branch.metadata["t_blue_creation_ms"] = (System.currentTimeMillis() - tBlueStart).toString()
-
-                    // publish to hoisted for the remaining code after the call in this else if (mechanical first-pass glue; will be cleaned when the next C chunk moves the orange/PD/OCR)
-                    outRedBoxes.addAll(redBoxes)
-                    outRedPixelRects.addAll(redPixelRects)
-                    outHunks.addAll(hunks)
-                    outBlueRects.addAll(blueRects)
-                    outRetractedBlueRects.addAll(retractedBlueRects)
-                    outCompRects.addAll(compRects)
-
-                    val orangeRects = mutableListOf<RectF>()
-                    for (blue in retractedBlueRects) {
-                        val yMin = blue.top
-                        val yMax = blue.bottom
-                        val sameRow = hunks.filter { h ->
-                            h.icrs.top >= yMin && h.icrs.bottom <= yMax
-                        }
-                        if (sameRow.isNotEmpty()) {
-                            val l = min(blue.left, sameRow.minOf { it.icrs.left })
-                            val t = min(blue.top, sameRow.minOf { it.icrs.top })
-                            val r = max(blue.right, sameRow.maxOf { it.icrs.right })
-                            val b = max(blue.bottom, sameRow.maxOf { it.icrs.bottom })
-                            orangeRects.add(RectF(l, t, r, b))
-                        }
-                    }
-
-                    // Near-containment merging rule (per approved plan) also applied to orangeRects (same-row unions).
-                    // Same 3-side inside + protrusion <=40px on 4th *and* overlap on that axis (no gap) -> extend containing, then remove fully contained after. Uses qualifiesFor3SidesNearExtend.
-                    run {
-                        val toProcess = orangeRects.toMutableList()
-                        val extended = mutableListOf<RectF>()
-                        for (i in toProcess.indices) {
-                            var cur = toProcess[i]
-                            for (j in toProcess.indices) {
-                                if (i == j) continue
-                                val oth = toProcess[j]
-                                val cp = IcrsMath.icrsToPixel(cur.left, cur.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.right, cur.bottom, imgW, imgH)
-                                val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
-                                val op = IcrsMath.icrsToPixel(oth.left, oth.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.right, oth.bottom, imgW, imgH)
-                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                                if (qualifiesFor3SidesNearExtend(cR, oR)) {
-                                    val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
-                                    val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
-                                    val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
-                                    val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
-                                    cur = RectF(newL, newT, newR, newB)
-                                }
-                            }
-                            if (extended.none { it == cur }) extended.add(cur)
-                        }
-                        val cleaned = extended.filter { o ->
-                            val op = IcrsMath.icrsToPixel(o.left, o.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.right, o.bottom, imgW, imgH)
-                            val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                            !extended.any { d ->
-                                if (d == o) false else {
-                                    val dp = IcrsMath.icrsToPixel(d.left, d.top, imgW, imgH); val dp2 = IcrsMath.icrsToPixel(d.right, d.bottom, imgW, imgH)
-                                    val dR = android.graphics.Rect(dp.x.toInt(), dp.y.toInt(), dp2.x.toInt(), dp2.y.toInt())
-                                    dR.contains(oR)
-                                }
-                            }
-                        }.toMutableList()
-                        orangeRects.clear()
-                        orangeRects.addAll(cleaned)
-                    }
-
-                    // dedup orange by exact rect match (same objects inside -> same summed box)
-                    val dedupedOrange = mutableListOf<RectF>()
-                    for (o in orangeRects) {
-                        if (dedupedOrange.none { d -> d.left == o.left && d.top == o.top && d.right == o.right && d.bottom == o.bottom }) dedupedOrange.add(o)
-                    }
-                    // anns: red + 1px white around each character/segment object (from findAllComponentsH) + blue + orange
-                    val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
-                    // Use the original comp pixel rects directly (they are already in the snapshot pixel space).
-                    val whiteAnns = compRects.map { r ->
-                        SnapshotAnnotation(r.left, r.top, r.right, r.bottom, Shape.RECTANGLE, Color.WHITE, 1)
-                    }
-                    val blueAnns = retractedBlueRects.map { r ->
-                        val p1 = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(r.right, r.bottom, imgW, imgH)
-                        SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.BLUE, 4)
-                    }
-                    val orangeAnns = dedupedOrange.map { r ->
-                        val p1 = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(r.right, r.bottom, imgW, imgH)
-                        SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)
-                    }
-                    val allAnns = redAnns + whiteAnns + blueAnns + orangeAnns
-                    val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, allAnns, null, workspace).first
-                    branch.images["PD"] = baseB64
-                    // OCR twice (as-is + digits 0-9) on the blue/orange rects for C (same as B)
-                    val blueAsIs = retractedBlueRects.map { r ->
-                        val hh = PumpHunk("", r)
-                        performHunkRecognition(listOf(hh), workspace, experimentRecSet1024x48, "Paddle", paddleEngine, context, tilt).firstOrNull()?.text ?: "?"
-                    }
-                    val blueDigits = retractedBlueRects.map { r ->
-                        val ll = r.left.coerceIn(-maxX, maxX - 0.001f)
-                        val tt = r.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = r.right.coerceIn(ll + 0.001f, maxX)
-                        val bb = r.bottom.coerceIn(tt + 0.001f, maxY)
-                        val p1 = IcrsMath.icrsToPixel(ll, tt, imgW, imgH); val p2 = IcrsMath.icrsToPixel(rr, bb, imgW, imgH)
-                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
-                        if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(ll, tt, rr - ll, bb - tt)
-                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-                            experimentRecSet1024x48.p.clear()
-                            // 4px buffer around edges (per plan + alignment experiment pattern createCrop(4,4,...) + user note for Paddle accuracy on pump digits)
-                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
-                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
-                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText
-                        }
-                    }
-                    val orangeAsIs = dedupedOrange.map { r ->
-                        val hh = PumpHunk("", r)
-                        performHunkRecognition(listOf(hh), workspace, experimentRecSet1024x48, "Paddle", paddleEngine, context, tilt).firstOrNull()?.text ?: "?"
-                    }
-                    val orangeDigits = dedupedOrange.map { r ->
-                        val ll = r.left.coerceIn(-maxX, maxX - 0.001f)
-                        val tt = r.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = r.right.coerceIn(ll + 0.001f, maxX)
-                        val bb = r.bottom.coerceIn(tt + 0.001f, maxY)
-                        val p1 = IcrsMath.icrsToPixel(ll, tt, imgW, imgH); val p2 = IcrsMath.icrsToPixel(rr, bb, imgW, imgH)
-                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
-                        if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(ll, tt, rr - ll, bb - tt)
-                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-                            experimentRecSet1024x48.p.clear()
-                            // 4px buffer around edges (per plan + alignment experiment pattern createCrop(4,4,...) + user note for Paddle accuracy on pump digits)
-                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
-                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
-                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText
-                        }
-                    }
-                    val ocrLinesC = mutableListOf<String>()
-                    blueAsIs.forEachIndexed { i, a ->
-                        val d = blueDigits[i]
-                        if (d.count { it.isDigit() } >= 2) ocrLinesC += "Blue ${i+1} as-is: $a &nbsp;&nbsp; digits: $d"
-                    }
-                    orangeAsIs.forEachIndexed { i, a ->
-                        val d = orangeDigits[i]
-                        if (d.count { it.isDigit() } >= 2) ocrLinesC += "Orange ${i+1} as-is: $a &nbsp;&nbsp; digits: $d"
-                    }
-                    branch.metadata["pd_ocr_html"] = ocrLinesC.joinToString("<br>")
-                    branch.metadata["t_ocr_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
-                    // t_ocr_ms for C (after ocrLinesC build + pd_ocr_html write); B similar in its block
-                    branch.metadata["t_pd_snapshot_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
-                    // t_pd_snapshot_ms approx for final PD annotated image (baseB64 / takeSnapshot with anns for C; B equivalent before its ocr)
-                }
 
                 val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set A"
@@ -1513,14 +1224,8 @@ private suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
-                // C/E valley + OCR
-                val redBoxes = mutableListOf<PumpHunk>()
-                val redPixelRects = mutableListOf<android.graphics.Rect>()
-                val hunks = mutableListOf<PumpHunk>()
-                val blueRects = mutableListOf<RectF>()
-                val retractedBlueRects = mutableListOf<RectF>()
-                val compRects = mutableListOf<android.graphics.Rect>()
-                doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects, tilt)
+                val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
             }
                 val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set D"
@@ -1875,14 +1580,8 @@ private suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
-                // C/E valley + OCR
-                val redBoxes = mutableListOf<PumpHunk>()
-                val redPixelRects = mutableListOf<android.graphics.Rect>()
-                val hunks = mutableListOf<PumpHunk>()
-                val blueRects = mutableListOf<RectF>()
-                val retractedBlueRects = mutableListOf<RectF>()
-                val compRects = mutableListOf<android.graphics.Rect>()
-                doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects, tilt)
+                val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
             }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 

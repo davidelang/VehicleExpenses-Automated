@@ -1,6 +1,7 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 1b27224f
-- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-cleanup-dead-code-20260615-plan.md
-- Progress: Execution phase. Cleaning up dead code (runPaddleDiscovery and doValleyForC nested functions) from ExperimentPumpScreen.kt.
+- Current builds tag: fix-pump-experiment/builds @ 38be57f1
+- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-remove-ce-blue-orange-20260615-plan.md
+- Progress: Execution phase. Removing blue/orange box processing on C/E and performing final refactoring cleanup.
 - Key Decisions:
-  - Deleting runPaddleDiscovery and doValleyForC.
+  - Deleting doCOrEPrepareHunksAndValleyInputs and its calls.
+  - Simplifying mlBlocksRaw.
