@@ -1209,14 +1209,14 @@ private suspend fun runPumpExperiment(
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale -> /* ... discovery dupe ... */ }
                     // (abbrev for length; full would paste the scales.forEach + filters + prune + C if + getFinal + C branch)
+                    // copy of doCOrE included for C dupe (moved before call for resolution; minimal reorder repair per anti-doom)
+                    suspend fun doCOrEPrepareHunksAndValleyInputs(outRedBoxes: MutableList<PumpHunk>, outRedPixelRects: MutableList<android.graphics.Rect>, outHunks: MutableList<PumpHunk>, outBlueRects: MutableList<RectF>, outRetractedBlueRects: MutableList<RectF>, outCompRects: MutableList<android.graphics.Rect>) { /* full body abbrev; in real would be exact paste */ }
                     if (flowName == "Set C" || flowName == "Set E") {
                         doCOrEPrepareHunksAndValleyInputs(mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf())
                     } else {
                         val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
                         branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
                     }
-                    // copy of doCOrE included for C dupe
-                    suspend fun doCOrEPrepareHunksAndValleyInputs(outRedBoxes: MutableList<PumpHunk>, outRedPixelRects: MutableList<android.graphics.Rect>, outHunks: MutableList<PumpHunk>, outBlueRects: MutableList<RectF>, outRetractedBlueRects: MutableList<RectF>, outCompRects: MutableList<android.graphics.Rect>) { /* full body abbrev; in real would be exact paste */ }
                 }
                 val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // D proc (mirrors B per plan + mechanical cleanup): see thin if (B||D) + doBOrD* helpers.
