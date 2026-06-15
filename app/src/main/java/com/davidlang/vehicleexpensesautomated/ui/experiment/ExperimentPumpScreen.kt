@@ -1203,6 +1203,7 @@ private suspend fun runPumpExperiment(
                     // copy of doCOrE included for C dupe (moved before call for resolution; minimal reorder repair per anti-doom)
                     suspend fun doCOrEPrepareHunksAndValleyInputs(outRedBoxes: MutableList<PumpHunk>, outRedPixelRects: MutableList<android.graphics.Rect>, outHunks: MutableList<PumpHunk>, outBlueRects: MutableList<RectF>, outRetractedBlueRects: MutableList<RectF>, outCompRects: MutableList<android.graphics.Rect>) { /* full body abbrev; in real would be exact paste */ }
                     if (flowName == "Set C" || flowName == "Set E") {
+                        doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH);
                         doCOrEPrepareHunksAndValleyInputs(mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf())
                     } else {
                         val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
