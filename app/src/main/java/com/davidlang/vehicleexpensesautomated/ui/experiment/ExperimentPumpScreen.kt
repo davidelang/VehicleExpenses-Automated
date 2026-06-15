@@ -1266,7 +1266,7 @@ private suspend fun runPumpExperiment(
                 branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
                 // t_discovery_wrapper_ms covers the main body processor / 4-scale discovery call (distinct from inner per-scale t_pd_inference_* / t_pd_native_post_*) for A/B gap attribution
 
-                if (flowName == "Set C_old_bin_trials") {
+                if (false) {  // Phase 4 tiny retirement step 1: disabled outer if condition (granular, no behavior change yet; per plan to retire remnant so dispatch sole)
                     // (bin-trials / old multi-valley thresh removed long ago; C now uses valley center push quantize (replaces stretch) for display of raw + pushed (small # brightness) + hists in column.
                     // Block skipped; normal body + push integration handles C.
                 } else {
