@@ -531,12 +531,10 @@ private suspend fun runPumpExperiment(
                     imgW: Int,
                     imgH: Int
                 ): PathResult {
-                    val minEdge = min(imgW, imgH).toFloat()
-                    val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
                     val stitched = stitchHunksHorizontally(hunks)
                     val (top, bottom) = groupLanesByVerticalGap(stitched)
                     val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
-                    val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
+                    val expT = expandHunkContext(pair.first, imgW, imgH); val expB = expandHunkContext(pair.second, imgW, imgH)
                     val res = performHunkRecognition(listOf(expT, expB), ws, recBuf, engine, paddleEng, ctx, tilt)
 
                     suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
@@ -2277,16 +2275,16 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
     }
 }
 
-private fun expandHunkContext(hunk: PumpHunk, maxX: Float, maxY: Float): PumpHunk {
+private fun expandHunkContext(hunk: PumpHunk, imgW: Int, imgH: Int): PumpHunk {
     val h = hunk.rect.height()
     val newH = h * 1.5f
     val dy = (newH - h) / 2f
     val dx = newH // Horizontal expansion is value of NEW height on EACH side
 
-    val l = (hunk.rect.left - dx).coerceIn(-maxX, maxX - 0.001f)
-    val t = (hunk.rect.top - dy).coerceIn(-maxY, maxY - 0.001f)
-    val r = (hunk.rect.right + dx).coerceIn(l + 0.001f, maxX)
-    val b = (hunk.rect.bottom + dy).coerceIn(t + 0.001f, maxY)
+    val l = (hunk.rect.left - dx).coerceIn(0f, imgW.toFloat() - 0.001f)
+    val t = (hunk.rect.top - dy).coerceIn(0f, imgH.toFloat() - 0.001f)
+    val r = (hunk.rect.right + dx).coerceIn(l + 0.001f, imgW.toFloat())
+    val b = (hunk.rect.bottom + dy).coerceIn(t + 0.001f, imgH.toFloat())
 
     return PumpHunk(hunk.text, RectF(l, t, r, b))
 }

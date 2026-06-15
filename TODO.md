@@ -1,7 +1,7 @@
 # TODO
 
 - [ ] Execution of pump-experiment-fix-coordinate-system-error-plan.md
-  - [ ] Phase 1: Modify expandHunkContext and its caller getFinal to use pixel limits
+  - [x] Phase 1: Modify expandHunkContext and its caller getFinal to use pixel limits
   - [ ] Phase 2: Fix performHunkRecognition and doBOrDRetractedBlueAndPD to use integer pixel crops
   - [ ] Phase 3: Fix Set C and Set E per-redbox crops to use integer pixel crops
   - [ ] Phase 4: Final Verification and build validation
