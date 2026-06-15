@@ -1115,44 +1115,32 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Per plan Phase 2 (D/E + refinements + unique-images feedback from additional round): after global filter (which used the old PumpHunk ICRS path for discoveryDetails compatibility), convert the red working data to full-image integer pixel Rect list (one-time), run the pixel sweep-based filter (the new doCross...Pixel which does exact + the O(2N) X/Y sweep per user spec for overlap discovery, only small intersect for careful 3sides), then prune to top 6 largest by area (integer w*h). This is the "red working" form (pixel integer list is what is managed/altered) for all "other processing" (blue source, anns, OCR, red-only). Rebuild the PumpHunk lists from the final <=6 for compatibility with getFinal / existing downstream (ICRS only for the kept 6, at "very end"). Stronger per feedback: for pump reds, ICRS/PumpHunk in the working path was a mistake (unique images, no cross-image rect scaling/learning); pixel is sufficient and simpler. Early probe can see full initial; prune after filter for the 6.
+                // Direct pixel (already in .rect); no roundtrip.
                 val redPixelList = pdHunksRawTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                // Rebuild pdHunksRawTotal from the final <=6 pixel rects (full img ICRS only for kept)
+                // Rebuild pdHunksRawTotal from the final <=6 (direct pixel RectF, no IcrsMath)
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 // Propagate prune to exp/max (blue/orange sources in B/C paths)
                 val expPixel = pdHunksExpTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 val maxPixel = pdHunksMaxTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
                 // For D/E (and B/C where they use the red lists) the proc stubs + thin if calls + helpers will see the pruned <=6 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
