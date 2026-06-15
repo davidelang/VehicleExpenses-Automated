@@ -733,6 +733,7 @@ private suspend fun runPumpExperiment(
                     val imgW = w
                     val imgH = h
                     val scales = listOf(224, 608, 1024, 2560)
+                    val scales = listOf(224, 608, 1024, 2560)
                     val mlBlocksRaw = if (flowName == "Set A") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()
                     // val mlBlocksRaw = if (flowName == "Set A") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()   // plan step13 literal; pre-existing decl in procA from dupe state; anti-doom different repair (comment vs delete)
                     val pdHunksRawTotal = mutableListOf<PumpHunk>()
