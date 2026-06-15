@@ -1234,6 +1234,7 @@ private suspend fun runPumpExperiment(
                     // (hoisted in Phase 0; reinit here)
                     processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
+                    /* [Phase 0 tiny removal step 1 (chunk 1, *different comment-not-delete approach* per anti-doom + 3-3-3 escalation after repeated identical internal compiler crash on prior delete/excise edits; failure log retirement section read; symptom=internal kotlin analyzer crash at 199; 3 proposals (preserve-else, noop, wrapper-excise-repair (tried)); this applied: comment the driving (keep "forEach { scale -> /* body */ }" + reinit construct *exact* as in good 06c7431d, no net brace/nesting/statement count change). The discovery logic (if(flowName), ML/PD, hunks, paddle etc) is now inactive/"removed". Dispatch 1216 + procs sole. Braces for parser identical to pre-Phase0. Next: excise if(false) wrapper containing this commented block (will be final for no if(false)). ]
                     val srcW = workspace.p.width
                     val srcH = workspace.p.height
                     val currentLongEdge = max(srcW, srcH)
@@ -1304,6 +1305,7 @@ private suspend fun runPumpExperiment(
                     discoveryDetails["Paddle Expanded"]!![scale] = exp
                     discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
                     discoveryDetails["Paddle Native"]!![scale] = native
+                    */
                 }
                 branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
