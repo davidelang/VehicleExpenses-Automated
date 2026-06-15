@@ -419,14 +419,10 @@ private suspend fun runPumpExperiment(
                     // Also applies the corrected 3 sides enclosed + <=40px (per user): exactly 3 edge insides + protrusion on 4th <=40px in pixel space *and* the boxes still overlap on the protruding axis (no gap). Uses shared qualifiesFor3SidesNearExtend helper (same logic for blue/orange in Set C).
                     val kept = mutableListOf<PumpHunk>()
                     for (h1 in pdHunksRawTotal) {
-                        val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(h1.icrs.right, h1.icrs.bottom, imgW, imgH)
-                        val r1 = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        val r1 = android.graphics.Rect(h1.rect.left.toInt(), h1.rect.top.toInt(), h1.rect.right.toInt(), h1.rect.bottom.toInt())
                         val isContained = kept.any { h2 ->
                             h1 !== h2 && run {
-                                val op1 = IcrsMath.icrsToPixel(h2.icrs.left, h2.icrs.top, imgW, imgH)
-                                val op2 = IcrsMath.icrsToPixel(h2.icrs.right, h2.icrs.bottom, imgW, imgH)
-                                val r2 = android.graphics.Rect(op1.x.toInt(), op1.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                val r2 = android.graphics.Rect(h2.rect.left.toInt(), h2.rect.top.toInt(), h2.rect.right.toInt(), h2.rect.bottom.toInt())
                                 // Exact containment (no inset). Perfect overlaps/duplicates: keep the first, drop redundant.
                                 r2.contains(r1.left, r1.top, r1.right, r1.bottom)
                             }
@@ -443,28 +439,24 @@ private suspend fun runPumpExperiment(
                         for (j in toProcess.indices) {
                             if (i == j) continue
                             val oth = toProcess[j]
-                            val cp = IcrsMath.icrsToPixel(cur.icrs.left, cur.icrs.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.icrs.right, cur.icrs.bottom, imgW, imgH)
-                            val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
-                            val op = IcrsMath.icrsToPixel(oth.icrs.left, oth.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.icrs.right, oth.icrs.bottom, imgW, imgH)
-                            val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                            val cR = android.graphics.Rect(cur.rect.left.toInt(), cur.rect.top.toInt(), cur.rect.right.toInt(), cur.rect.bottom.toInt())
+                            val oR = android.graphics.Rect(oth.rect.left.toInt(), oth.rect.top.toInt(), oth.rect.right.toInt(), oth.rect.bottom.toInt())
                             val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
                             if (qualifiesFor3SidesNearExtend(cR, oR)) {
-                                val newL = if (!insides[0]) min(cur.icrs.left, oth.icrs.left) else cur.icrs.left
-                                val newT = if (!insides[1]) min(cur.icrs.top, oth.icrs.top) else cur.icrs.top
-                                val newR = if (!insides[2]) max(cur.icrs.right, oth.icrs.right) else cur.icrs.right
-                                val newB = if (!insides[3]) max(cur.icrs.bottom, oth.icrs.bottom) else cur.icrs.bottom
+                                val newL = if (!insides[0]) min(cur.rect.left, oth.rect.left) else cur.rect.left
+                                val newT = if (!insides[1]) min(cur.rect.top, oth.rect.top) else cur.rect.top
+                                val newR = if (!insides[2]) max(cur.rect.right, oth.rect.right) else cur.rect.right
+                                val newB = if (!insides[3]) max(cur.rect.bottom, oth.rect.bottom) else cur.rect.bottom
                                 cur = PumpHunk(cur.text, RectF(newL, newT, newR, newB))
                             }
                         }
-                        if (extended.none { it.icrs == cur.icrs }) extended.add(cur)
+                        if (extended.none { it.rect == cur.rect }) extended.add(cur)
                     }
                     val cleaned = extended.filter { b ->
-                        val bp = IcrsMath.icrsToPixel(b.icrs.left, b.icrs.top, imgW, imgH); val bp2 = IcrsMath.icrsToPixel(b.icrs.right, b.icrs.bottom, imgW, imgH)
-                        val bR = android.graphics.Rect(bp.x.toInt(), bp.y.toInt(), bp2.x.toInt(), bp2.y.toInt())
+                        val bR = android.graphics.Rect(b.rect.left.toInt(), b.rect.top.toInt(), b.rect.right.toInt(), b.rect.bottom.toInt())
                         !extended.any { o ->
                             if (o === b) false else {
-                                val op = IcrsMath.icrsToPixel(o.icrs.left, o.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.icrs.right, o.icrs.bottom, imgW, imgH)
-                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                val oR = android.graphics.Rect(o.rect.left.toInt(), o.rect.top.toInt(), o.rect.right.toInt(), o.rect.bottom.toInt())
                                 oR.contains(bR)
                             }
                         }
@@ -542,16 +534,12 @@ private suspend fun runPumpExperiment(
                     val res = performHunkRecognition(listOf(expT, expB), ws, recBuf, engine, paddleEng, ctx, tilt)
 
                     suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
-                        val p1 = IcrsMath.icrsToPixel(exp.icrs.left, exp.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(exp.icrs.right, exp.icrs.bottom, imgW, imgH)
-                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        val rect = android.graphics.Rect(exp.rect.left.toInt(), exp.rect.top.toInt(), exp.rect.right.toInt(), exp.rect.bottom.toInt())
                         val anns = mutableListOf<SnapshotAnnotation>()
                         if (engine == "Paddle") {
                             // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
                             pdRawForAnns.forEach { h ->
-                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.RED, 2))
+                                anns.add(SnapshotAnnotation(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt(), Shape.RECTANGLE, Color.RED, 2))
                             }
                             // BLUE and ORANGE temporarily disabled
                             // pdHunksExpTotal.forEach { ... BLUE }
@@ -607,25 +595,19 @@ private suspend fun runPumpExperiment(
                     // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
                     // Optimization (inside split-out helper per the D/E + user pixel/sweep plan): convert input lists to pixel Rects *once* (O(N) ICRS at boundary only). Use the pixel Rects for the expandByUniformity (native pixel), for all blue/orange size math in OCR, and for any future per-box work. Convert back only for the final retractedExpForBlue list (used by getAnns for the annotated PD). This eliminates repeated ICRS<->pixel inside the per-box loops (even on the post-prune N=6). PumpHunk form kept only for anns/snapshot compatibility; intra red/blue working is pixel Rects (images are unique per photo, no cross-image ICRS use needed).
                     val expPixelRects = pdHunksExpTotal.map { h ->
-                        val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                        android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
                     val maxPixelRects = pdHunksMaxTotal.map { h ->
-                        val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                        android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
                     val retractedPixel = mutableListOf<android.graphics.Rect>()
                     for (r in expPixelRects) {
                         val (retracted, _) = NativeImageUtils.expandByUniformity(workspace.p.mat, r)
                         retractedPixel.add(retracted)
                     }
-                    // convert back only the final for anns/OCR (minimal ICRS at boundary)
+                    // direct pixel wrap (no ICRS at boundary; retractedPixel already full photo pixel space)
                     val retractedExpForBlue = retractedPixel.map { r ->
-                        val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                        val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                        PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                        PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                     }
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(retractedExpForBlue, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
                     val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
@@ -635,10 +617,10 @@ private suspend fun runPumpExperiment(
                     // Optimization (inside split-out helper): use the pixel rect list for the blue (from the retractedPixel) and for orange (maxPixelRects) so pW/pH are integer .width/.height with no per-item ICRS->pixel. Pair with the ICRS list only for the createCrop (l,t,w,h in ICRS) and coerce. 4px + targetH=48 + %32 targetW preserved.
                     val blueTexts = retractedPixel.mapIndexed { i, r ->
                         val h = retractedExpForBlue.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
+                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
                         val pW = r.width(); val pH = r.height()
                         if (pW < 2 || pH < 2) "?" else {
                             val cropId = workspace.createCrop(l, t, rr - l, b - t)
@@ -656,10 +638,10 @@ private suspend fun runPumpExperiment(
                     }
                     val orangeTexts = maxPixelRects.mapIndexed { i, r ->
                         val h = pdHunksMaxTotal.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
+                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
                         val pW = r.width(); val pH = r.height()
                         if (pW < 2 || pH < 2) "?" else {
                             val cropId = workspace.createCrop(l, t, rr - l, b - t)
@@ -679,10 +661,10 @@ private suspend fun runPumpExperiment(
                     // digits-only (0-9) pass using recognizeNumeric for the second OCR per box (as-is above + digits)
                     val blueDigits = retractedExpForBlue.mapIndexed { i, h ->
                         val rp = retractedPixel.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
+                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
                         val pW = rp.width(); val pH = rp.height()
                         if (pW < 2 || pH < 2) "?" else {
                             val cropId = workspace.createCrop(l, t, rr - l, b - t)
@@ -700,10 +682,10 @@ private suspend fun runPumpExperiment(
                     }
                     val orangeDigits = pdHunksMaxTotal.mapIndexed { i, h ->
                         val rp = maxPixelRects.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
-                        val b = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
+                        val l = h.rect.left.coerceIn(-maxX, maxX - 0.001f)
+                        val t = h.rect.top.coerceIn(-maxY, maxY - 0.001f)
+                        val rr = h.rect.right.coerceIn(l + 0.001f, maxX)
+                        val b = h.rect.bottom.coerceIn(t + 0.001f, maxY)
                         val pW = rp.width(); val pH = rp.height()
                         if (pW < 2 || pH < 2) "?" else {
                             val cropId = workspace.createCrop(l, t, rr - l, b - t)
@@ -996,9 +978,7 @@ private suspend fun runPumpExperiment(
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 val maxPixel = pdHunksMaxTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
                 pdHunksMaxTotal.clear()
@@ -1154,17 +1134,15 @@ private suspend fun runPumpExperiment(
                     // Visual b64 still via generate (correct plot); YUV direct BufferSet + compressYuvToBase64 for the monochrome visual b64 is the target per the original plan (to be wired in a follow if needed; only 6 now so cheap either way).
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
-                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
-                        val rw = (p2.x - p1.x).toInt()
-                        val rh = (p2.y - p1.y).toInt()
+                        val rw = (hunk.rect.right - hunk.rect.left).toInt()
+                        val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
                         val rarea = rw * rh
 
                         // Always do the safe visual hist (full perMask on the red rect) -- this is robust and gives the per-red hist image for display.
                         // For bins, also use the same safe perMask (with rect) to avoid any createCrop / crop Mat nativeObj issues that were causing the persistent NPE in calcHist on the first/early rows (as seen in fresh adb logs even after size guards).
                         // This keeps the capture simple, safe, and limited to the post-prune 6 (fixing the "30 hists" problem) while guaranteeing the first row completes for C/E.
                         val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
+                        val rrect = org.opencv.core.Rect(h.rect.left.toInt(), h.rect.top.toInt(), rw, rh)
                         org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
                         val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
                         branch.images["redboxHistC_${i}"] = perHistB64
@@ -1276,11 +1254,9 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Per plan Phase 2 (D/E + refinements + unique-images feedback from additional round): after global filter (which used the old PumpHunk ICRS path for discoveryDetails compatibility), convert the red working data to full-image integer pixel Rect list (one-time), run the pixel sweep-based filter (the new doCross...Pixel which does exact + the O(2N) X/Y sweep per user spec for overlap discovery, only small intersect for careful 3sides), then prune to top 6 largest by area (integer w*h). This is the "red working" form (pixel integer list is what is managed/altered) for all "other processing" (blue source, anns, OCR, red-only). Rebuild the PumpHunk lists from the final <=6 for compatibility with getFinal / existing downstream (ICRS only for the kept 6, at "very end"). Stronger per feedback: for pump reds, ICRS/PumpHunk in the working path was a mistake (unique images, no cross-image rect scaling/learning); pixel is sufficient and simpler. Early probe can see full initial; prune after filter for the 6.
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for C/E display.
                 val redPixelList = pdHunksRawTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
                 if (redPixelList.size > 6) {
@@ -1294,9 +1270,7 @@ private suspend fun runPumpExperiment(
                 })
                 // Propagate prune to exp/max (blue/orange sources in B/C paths)
                 val expPixel = pdHunksExpTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
                 if (expPixel.size > 6) {
@@ -1308,9 +1282,7 @@ private suspend fun runPumpExperiment(
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 val maxPixel = pdHunksMaxTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
                 if (maxPixel.size > 6) {
@@ -1438,11 +1410,9 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Per plan Phase 2 (D/E + refinements + unique-images feedback from additional round): after global filter (which used the old PumpHunk ICRS path for discoveryDetails compatibility), convert the red working data to full-image integer pixel Rect list (one-time), run the pixel sweep-based filter (the new doCross...Pixel which does exact + the O(2N) X/Y sweep per user spec for overlap discovery, only small intersect for careful 3sides), then prune to top 6 largest by area (integer w*h). This is the "red working" form (pixel integer list is what is managed/altered) for all "other processing" (blue source, anns, OCR, red-only). Rebuild the PumpHunk lists from the final <=6 for compatibility with getFinal / existing downstream (ICRS only for the kept 6, at "very end"). Stronger per feedback: for pump reds, ICRS/PumpHunk in the working path was a mistake (unique images, no cross-image rect scaling/learning); pixel is sufficient and simpler. Early probe can see full initial; prune after filter for the 6.
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for C/E display.
                 val redPixelList = pdHunksRawTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
                 if (redPixelList.size > 6) {
@@ -1456,9 +1426,7 @@ private suspend fun runPumpExperiment(
                 })
                 // Propagate prune to exp/max (blue/orange sources in B/C paths)
                 val expPixel = pdHunksExpTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
                 if (expPixel.size > 6) {
@@ -1470,9 +1438,7 @@ private suspend fun runPumpExperiment(
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 val maxPixel = pdHunksMaxTotal.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                    val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
                 if (maxPixel.size > 6) {
@@ -1498,17 +1464,15 @@ private suspend fun runPumpExperiment(
                     // Visual b64 still via generate (correct plot); YUV direct BufferSet + compressYuvToBase64 for the monochrome visual b64 is the target per the original plan (to be wired in a follow if needed; only 6 now so cheap either way).
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
-                        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, imgW, imgH)
-                        val rw = (p2.x - p1.x).toInt()
-                        val rh = (p2.y - p1.y).toInt()
+                        val rw = (hunk.rect.right - hunk.rect.left).toInt()
+                        val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
                         val rarea = rw * rh
 
                         // Always do the safe visual hist (full perMask on the red rect) -- this is robust and gives the per-red hist image for display.
                         // For bins, also use the same safe perMask (with rect) to avoid any createCrop / crop Mat nativeObj issues that were causing the persistent NPE in calcHist on the first/early rows (as seen in fresh adb logs even after size guards).
                         // This keeps the capture simple, safe, and limited to the post-prune 6 (fixing the "30 hists" problem) while guaranteeing the first row completes for C/E.
                         val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(p1.x.toInt(), p1.y.toInt(), rw, rh)
+                        val rrect = org.opencv.core.Rect(h.rect.left.toInt(), h.rect.top.toInt(), rw, rh)
                         org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
                         val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
                         branch.images["redboxHistC_${i}"] = perHistB64
@@ -1740,8 +1704,8 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
             val arr = JSONArray()
             hunks.forEach { h ->
                 arr.put(JSONObject().apply {
-                    put("l", h.icrs.left.toDouble()); put("t", h.icrs.top.toDouble())
-                    put("w", h.icrs.width().toDouble()); put("h", h.icrs.height().toDouble())
+                    put("l", h.rect.left.toDouble()); put("t", h.rect.top.toDouble())
+                    put("w", h.rect.width().toDouble()); put("h", h.rect.height().toDouble())
                     put("text", h.text)
                 })
             }
@@ -2100,21 +2064,21 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
             val iterator = remaining.iterator()
             while (iterator.hasNext()) {
                 val next = iterator.next()
-                val interL = max(current.icrs.left, next.icrs.left); val interT = max(current.icrs.top, next.icrs.top)
-                val interR = min(current.icrs.right, next.icrs.right); val interB = min(current.icrs.bottom, next.icrs.bottom)
+                val interL = max(current.rect.left, next.rect.left); val interT = max(current.rect.top, next.rect.top)
+                val interR = min(current.rect.right, next.rect.right); val interB = min(current.rect.bottom, next.rect.bottom)
 
                 val overlapH = if (interB > interT) interB - interT else 0f
-                val minH = min(current.icrs.height(), next.icrs.height())
+                val minH = min(current.rect.height(), next.rect.height())
                 val significantOverlap = overlapH >= (minH * 0.3f)
 
-                val isNested = current.icrs.contains(next.icrs) || next.icrs.contains(current.icrs)
+                val isNested = current.rect.contains(next.icrs) || next.rect.contains(current.icrs)
 
                 if (significantOverlap || isNested) {
                     val newIcrs = RectF(
-                        min(current.icrs.left, next.icrs.left),
-                        min(current.icrs.top, next.icrs.top),
-                        max(current.icrs.right, next.icrs.right),
-                        max(current.icrs.bottom, next.icrs.bottom)
+                        min(current.rect.left, next.rect.left),
+                        min(current.rect.top, next.rect.top),
+                        max(current.rect.right, next.rect.right),
+                        max(current.rect.bottom, next.rect.bottom)
                     )
                     val bestText = if (current.text.count { it.isDigit() } >= next.text.count { it.isDigit() }) current.text else next.text
                     current = PumpHunk(bestText, newIcrs)
@@ -2130,17 +2094,14 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
 
 private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: BufferSet, recBuffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context, angle: Float = 0f): List<PumpHunk> {
     val masterW = buffer.p.width; val masterH = buffer.p.height
-    val minEdge = Math.min(masterW, masterH).toFloat()
-    val maxX = masterW / (2f * minEdge); val maxY = masterH / (2f * minEdge)
-
+    // full pixel .rect already in master space (explicit upscale at ingest); no ICRS range/minEdge calc needed (relative math in callees equivalent)
     return hunks.map { hunk ->
-        val l = hunk.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-        val t = hunk.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-        val r = hunk.icrs.right.coerceIn(l + 0.001f, maxX)
-        val b = hunk.icrs.bottom.coerceIn(t + 0.001f, maxY)
+        val l = hunk.rect.left
+        val t = hunk.rect.top
+        val r = hunk.rect.right
+        val b = hunk.rect.bottom
 
-        val p1 = IcrsMath.icrsToPixel(l, t, masterW, masterH); val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
-        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+        val pW = (r - l).toInt(); val pH = (b - t).toInt()
 
         if (pW < 2 || pH < 2) return@map hunk
 
@@ -2171,23 +2132,23 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
         }
 
         recBuffer.c[recCropId].release(); buffer.c[cropId].release()
-        PumpHunk(res.debugText, hunk.icrs)
+        PumpHunk(res.debugText, hunk.rect)
     }
 }
 
 
 private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
     if (hunks.isEmpty()) return emptyList()
-    val sorted = hunks.sortedBy { it.icrs.left }
+    val sorted = hunks.sortedBy { it.rect.left }
     val result = mutableListOf<MutableList<PumpHunk>>()
 
     for (hunk in sorted) {
         var merged = false
         for (line in result) {
             val last = line.last()
-            val h = min(hunk.icrs.height(), last.icrs.height())
-            val vOverlap = max(0f, min(hunk.icrs.bottom, last.icrs.bottom) - max(hunk.icrs.top, last.icrs.top))
-            val hGap = hunk.icrs.left - last.icrs.right
+            val h = min(hunk.rect.height(), last.rect.height())
+            val vOverlap = max(0f, min(hunk.rect.bottom, last.rect.bottom) - max(hunk.rect.top, last.rect.top))
+            val hGap = hunk.rect.left - last.rect.right
 
             if (vOverlap > 0.7f * h && hGap < 1.0f * h) {
                 line.add(hunk)
@@ -2199,13 +2160,13 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
     }
 
     return result.map { line ->
-        val l = line.minOf { it.icrs.left }
-        val t = line.minOf { it.icrs.top }
-        val r = line.maxOf { it.icrs.right }
-        val b = line.maxOf { it.icrs.bottom }
+        val l = line.minOf { it.rect.left }
+        val t = line.minOf { it.rect.top }
+        val r = line.maxOf { it.rect.right }
+        val b = line.maxOf { it.rect.bottom }
         val widest = r - l
-        val shortest = line.minOf { it.icrs.height() }
-        val centerY = line.map { it.icrs.centerY() }.average().toFloat()
+        val shortest = line.minOf { it.rect.height() }
+        val centerY = line.map { it.rect.centerY() }.average().toFloat()
 
         // Spec: inherit string with highest digit count
         val bestText = line.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
@@ -2217,15 +2178,15 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
 
 private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>, List<PumpHunk>> {
     if (hunks.isEmpty()) return Pair(emptyList(), emptyList())
-    val sortedY = hunks.sortedBy { it.icrs.centerY() }
+    val sortedY = hunks.sortedBy { it.rect.centerY() }
 
     val lanes = mutableListOf<MutableList<PumpHunk>>()
     for (hunk in sortedY) {
         var found = false
         for (lane in lanes) {
             val anchor = lane.first()
-            val h = anchor.icrs.height()
-            if (Math.abs(hunk.icrs.centerY() - anchor.icrs.centerY()) < 0.3f * h) {
+            val h = anchor.rect.height()
+            if (Math.abs(hunk.rect.centerY() - anchor.rect.centerY()) < 0.3f * h) {
                 lane.add(hunk)
                 found = true
                 break
@@ -2237,13 +2198,13 @@ private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>,
     if (lanes.size < 2) return Pair(hunks, emptyList())
 
     // Sort lanes by centerY
-    val sortedLanes = lanes.sortedBy { it.first().icrs.centerY() }
+    val sortedLanes = lanes.sortedBy { it.first().rect.centerY() }
 
     // Find largest gap between adjacent lanes
     var maxGap = -1f
     var splitIdx = 0
     for (i in 0 until sortedLanes.size - 1) {
-        val gap = sortedLanes[i+1].first().icrs.centerY() - sortedLanes[i].first().icrs.centerY()
+        val gap = sortedLanes[i+1].first().rect.centerY() - sortedLanes[i].first().rect.centerY()
         if (gap > maxGap) {
             maxGap = gap
             splitIdx = i
@@ -2260,10 +2221,10 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
 
     for (top in topLanes) {
         for (bottom in bottomLanes) {
-            val hB = bottom.icrs.height()
-            val gap = bottom.icrs.top - top.icrs.bottom
-            val vOverlap = max(0f, min(top.icrs.bottom, bottom.icrs.bottom) - max(top.icrs.top, bottom.icrs.top))
-            val xOverlap = max(0f, min(top.icrs.right, bottom.icrs.right) - max(top.icrs.left, bottom.icrs.left))
+            val hB = bottom.rect.height()
+            val gap = bottom.rect.top - top.rect.bottom
+            val vOverlap = max(0f, min(top.rect.bottom, bottom.rect.bottom) - max(top.rect.top, bottom.rect.top))
+            val xOverlap = max(0f, min(top.rect.right, bottom.rect.right) - max(top.rect.left, bottom.rect.left))
 
             val digitTop = top.text.count { it.isDigit() }
             val digitBottom = bottom.text.count { it.isDigit() }
@@ -2286,15 +2247,15 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
 }
 
 private fun expandHunkContext(hunk: PumpHunk, maxX: Float, maxY: Float): PumpHunk {
-    val h = hunk.icrs.height()
+    val h = hunk.rect.height()
     val newH = h * 1.5f
     val dy = (newH - h) / 2f
     val dx = newH // Horizontal expansion is value of NEW height on EACH side
 
-    val l = (hunk.icrs.left - dx).coerceIn(-maxX, maxX - 0.001f)
-    val t = (hunk.icrs.top - dy).coerceIn(-maxY, maxY - 0.001f)
-    val r = (hunk.icrs.right + dx).coerceIn(l + 0.001f, maxX)
-    val b = (hunk.icrs.bottom + dy).coerceIn(t + 0.001f, maxY)
+    val l = (hunk.rect.left - dx).coerceIn(-maxX, maxX - 0.001f)
+    val t = (hunk.rect.top - dy).coerceIn(-maxY, maxY - 0.001f)
+    val r = (hunk.rect.right + dx).coerceIn(l + 0.001f, maxX)
+    val b = (hunk.rect.bottom + dy).coerceIn(t + 0.001f, maxY)
 
     return PumpHunk(hunk.text, RectF(l, t, r, b))
 }
@@ -2310,9 +2271,7 @@ private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<PumpHunk>, color: Int, ex
     val canvas = existingCanvas ?: Canvas(out)
     val paint = Paint().apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 10f }
     hunks.forEach { hunk ->
-        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, bmp.width, bmp.height)
-        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, bmp.width, bmp.height)
-        canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint)
+        canvas.drawRect(hunk.rect.left, hunk.rect.top, hunk.rect.right, hunk.rect.bottom, paint)
     }
     return out
 }
