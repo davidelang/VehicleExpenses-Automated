@@ -2,4 +2,4 @@
 - Current builds tag: fix-pump-experiment/builds
 - New planning cycle started: 2026-06-15
 - Active plan (this cycle): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-fix-coordinate-system-error-plan.md
-- Progress: Phase 2 complete (performHunkRecognition and doBOrDRetractedBlueAndPD modified to use integer pixel crops).
+- Progress: Phase 3 complete (Set C and Set E per-redbox crops modified to use integer pixel crops).
