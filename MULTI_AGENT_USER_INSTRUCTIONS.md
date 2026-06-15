@@ -6,6 +6,38 @@ It lives at the orchestration root and is physically synced (via `update-rules.s
 
 Read this (and the referenced sections in AGENT_MANDATES.md and AGENTS.md) before giving any directive after a handoff or when starting new work with an agent. The goal is reliable plan/execute cycle boundaries: the agent produces a visible plan file in the sandbox that you review and explicitly approve by path; after handoff the turn is over and the next input starts a brand-new planning cycle.
 
+## 0. Two-Terminal Long-Lived Workflow (Primary Recommended Mode) — Minimal Human Ritual
+
+Keep two terminals open:
+- Master: `./run-grok-master` (coordination only)
+- Planner: `./run-grok-planner` (all research + plan document work)
+
+**To begin or restart planning after a handoff:**
+1. In the **master** terminal say the short trigger:
+   ```
+   New planning cycle
+   ```
+   or
+   ```
+   New planning cycle. [one short sentence: goal or feedback from last test / current-state.md]
+   ```
+
+2. The master (automation is built into its initial prompt) will:
+   - Read current-state.md + latest `standard-plan-compliance-block.md`
+   - Write a complete narrow prompt file to `dev-ai-interaction/.planning-agent-prompt.txt` (full planner template + embedded current guardrails block + your context)
+   - Tell you: "New planning cycle. Please restart your planner terminal now with the updated prompt file (run `./run-grok-planner` or `exec ./run-grok-planner`)."
+   - Stop (it will not plan or research)
+
+3. In your **planner** terminal run (or `exec`):
+   ```
+   ./run-grok-planner
+   ```
+   Talk directly to the planner for everything until you have a plan file ready to approve.
+
+4. When ready for execution, return to the **master** terminal and use a magic approval phrase naming the exact plan file (see section 2).
+
+The detailed instructions for constructing the planner prompt and the exact output the master must give have been moved into the master's built-in prompt (see `run-grok-master`). You should rarely need to look up long meta-phrases.
+
 ## 1. After Any Handoff ("results ready to test", END OF EXECUTION TURN marker, or `./build_app` success that the agent announces)
 The prior execution turn is **finished** (per AGENT_MANDATES "Completion and Handoff (CRITICAL)" and "Plan File Access..." rules). Any feedback you give is the start of a *new* planning/research cycle. The agent must treat it as such.
 
@@ -93,13 +125,41 @@ This launches the Master Orchestrator with a role prompt that makes it fully awa
 - Actively monitoring the implementation sub-agent for run-away behavior (excessive/improper resets without using `get-builds-tag.sh`, continued editing after the END OF EXECUTION TURN marker, violating the approved plan, etc.).
 - If deviation is detected: stop the sub-agent, force a clean reset to the last good builds tag, collect detailed logs of everything the implementation agent attempted (into `dev-ai-interaction/implementation-failure-logs/`), launch a new planning round (by updating the prompt and telling you to restart the planner terminal), and feed the logs + a clear "analyze what went wrong and produce a recovery plan" request to the planning agent.
 
-**Primary recommended workflow (long-lived terminals):** Keep one master terminal and one dedicated planning terminal open across multiple plans and cycles. The planner is started once with `./run-grok-planner` (or `../run-grok-planner`). When the master begins a new planning cycle it updates the narrow prompt file and instructs you: "New planning cycle — please restart your planner terminal now with the fresh prompt (just re-run `./run-grok-planner` in that terminal, or use `exec` to replace the process in place)." You interact directly and unmediated with the Planning Agent for all research/feedback/plan revision. Return to the master conversation only to deliver the approved plan path ("The plan at dev-ai-interaction/plans/xxx-plan.md is now approved. Execute it") or to ask the master to spawn execution.
+**Primary recommended workflow (long-lived terminals) — now heavily automated in the master prompt:**
+
+When you start a new planning cycle with a question about the code ("how does the current dispatch work?", "where is the valley logic?"), the dedicated planner is instructed to treat this as pure research: it should investigate with tools and answer you directly in the conversation. It should **not** spend time creating a formal plan file in `dev-ai-interaction/plans/` or spawning sub-agents unless you later say the work involves making changes and you want a plan for implementation. 
+
+Formal sandbox plans are for cycles that involve code changes / refactoring that will need approval and execution. Research questions do not require one unless you explicitly ask for a plan.
+
+Keep one master terminal (`./run-grok-master`) and one dedicated planning terminal (`./run-grok-planner`) open across cycles. The planner is started once.
+
+**To start (or restart after handoff) a planning cycle — the only thing you usually say to the master:**
+- In the *master* terminal say exactly (or very close):
+  `New planning cycle` 
+  or
+  `New planning cycle. [one short sentence of goal or feedback from the last test / current-state.md]`
+
+- The master (whose prompt now contains the full automation) will:
+  - Read current-state.md + the latest `standard-plan-compliance-block.md`.
+  - Write a complete, ready-to-use narrow prompt (including the full dedicated planner template + embedded current guardrails block + your context) to `dev-ai-interaction/.planning-agent-prompt.txt`.
+  - Tell you the single line: "New planning cycle. Please restart your planner terminal now with the updated prompt file (run `./run-grok-planner` again in that terminal, or use `exec ./run-grok-planner` to replace the process in place)."
+  - Then stop. It will not do research or planning itself.
+
+- Immediately switch to (or restart in) your planner terminal with `./run-grok-planner` (or `exec ./run-grok-planner`).
+
+**Give the actual detailed problem description directly to the planner terminal.** The short trigger to the master is deliberately minimal (just enough to load the current rules, hygiene, and a rough topic into the planner's prompt). The planner has been explicitly instructed *not* to treat a one-line trigger as sufficient requirements. It should ask you for the real problem statement, goals, constraints, etc., before doing research or writing a plan. All the interactive back-and-forth and plan iteration happens directly with the planner.
+
+- When ready for execution, return to the master terminal and use one of the exact magic approval phrases that names the plan (see section 2 below), e.g. "The plan at dev-ai-interaction/plans/xxx-plan.md is now approved. Execute it."
+
+This is the expected primary mode. The detailed "what to say" logic has been moved into the master's initial prompt so you have less ritual to remember.
 
 This is the expected primary mode of operation for most users. The same hygiene rules (aggressive pruning of `current-state.md`, facts-and-pointers only, light reporting during mechanical steps) remain mandatory on every cycle even though the terminals are long-lived.
 
 For lighter or one-off work you can still use the ordinary `run-grok` (or ask the master for an in-session Planning Sub-agent via tool). All feedback in that case still routes through the main agent.
 
-**Restart ritual for new cycles (critical for long-lived mode):** After any handoff the master will (when it is ready for the next planning phase) write a fresh narrow prompt containing the latest instructions and standard block, then tell you to restart the planner terminal. This is the normal, low-friction way to ensure the Planning Agent is operating under current rules without requiring a full relaunch of the master. You may also restart the planner terminal proactively if you notice context bloat or after the master has updated rules via `update-rules.sh`.
+**Restart ritual for new cycles (now largely automatic):** After any handoff (or to begin fresh work), just say the short trigger in the master terminal ("New planning cycle" + optional one-liner). The master prompt is built to handle writing the full `.planning-agent-prompt.txt` (with current block and hygiene rules) and giving you the exact one-line restart instruction. You then restart the planner terminal and talk to it directly.
+
+**Important:** Give the substantive problem details (what exactly is wrong, what success looks like, constraints, etc.) to the *planner*, not the master. The planner is now strongly prompted to wait for your detailed input rather than autonomously generating a large plan from a tiny trigger.
 
 This gives you direct, unmediated conversation with the "planning sub-agent" until you explicitly approve and exit. The main agent only gets involved for orchestration, final approval handoff, and execution.
 
