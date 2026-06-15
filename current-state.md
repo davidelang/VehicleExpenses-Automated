@@ -15,3 +15,4 @@
 - procA: inserted mlBlocksRaw line (after scales). Build SUCCESS. TAG: fix-pump-experiment/builds . State 1-2 lines.
 - procA: inserted pdHunksRawTotal line. Build SUCCESS. TAG: fix-pump-experiment/builds . State 1-2 lines.
 - Anti-doom escalation (same compile symptom post-excise): literal preflight TAG=$(./get-builds-tag.sh); git rev-parse; git reset --hard. State + baseline build. Plan not fully executed (reset); final tag for turn. Reviewed 3 2026-06-15 logs.
+- Phase 8 final forensic (post reset): sites back to pre (outer setup/A/C blocks present, partial procA setup from early, markers present, dispatch comment remnant). Baseline build success. All initial gates + TODO first + multi verif + anti-doom + literal preflight followed. No deviations on first actions from 3 failure logs. Final tag.
