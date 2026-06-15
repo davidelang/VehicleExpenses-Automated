@@ -1,7 +1,7 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ d6f3af53
+- Current builds tag: fix-pump-experiment/builds @ e45a5f36
 - Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-20260615-plan.md
-- Progress: Execution phase. Transitioning setup logic (Valley Push / Contrast Stretch, and Deskew / Rotate) into `procA` for Set A, and bypassing it in the outer loop.
+- Progress: Execution phase. Completed transitioning setup logic (Valley Push / Contrast Stretch, and Deskew / Rotate) into `procA` for Set A, and bypassed it in the outer loop. Build successful.
 - Key Decisions:
   - Transitioning Set A setup logic to be fully self-contained inside `procA`.
   - Wrapping outer loop setup code to bypass Set A.
