@@ -726,27 +726,41 @@ object OdometerOcrUtils {
         // 256-entry LUT: push values out from valley centers until they hit a (nearest) peak gray.
         // This collapses the image to a small number of distinct brightness values (the peaks).
         val lut = IntArray(256)
-        val peakGrays = peakList.map { (it * 4).coerceIn(0, 255) }
+        val peakGrays = peakList.map { (it * 4 + 2).coerceIn(0, 255) }
+        val valleyGrays = valleys.map { (it * 4 + 2).coerceIn(0, 255) }
+
+        val minPeak = peakGrays.first().toDouble()
+        val maxPeak = peakGrays.last().toDouble()
+        val peakSpan = maxPeak - minPeak
+
         for (g in 0..255) {
-            // nearest peak (primary)
-            var best = peakGrays[0]
-            var minD = Math.abs(g - best)
-            for (pg in peakGrays) {
-                val d = Math.abs(g - pg)
-                if (d < minD) { minD = d; best = pg }
-            }
-            var target = best
-            // "push the values out from [valley centers]": for values near a valley, bias a step outward toward the peak
-            val bin = (g / 4).coerceIn(0, 63)
-            for (v in valleys) {
-                val vGray = (v * 4).coerceIn(0, 255)
-                if (Math.abs(g - vGray) <= 12) {  // small radius around valley
-                    // step away from valley toward the chosen peak
-                    if (g < target) target = (g + 4).coerceAtMost(target) else target = (g - 4).coerceAtLeast(target)
-                    break
+            val closestValley = valleyGrays.minByOrNull { Math.abs(g - it) }
+            val targetPeak = if (closestValley != null) {
+                if (g < closestValley) {
+                    val leftPeaks = peakGrays.filter { it < closestValley }
+                    if (leftPeaks.isNotEmpty()) {
+                        leftPeaks.minByOrNull { Math.abs(g - it) }!!
+                    } else {
+                        peakGrays.first()
+                    }
+                } else {
+                    val rightPeaks = peakGrays.filter { it >= closestValley }
+                    if (rightPeaks.isNotEmpty()) {
+                        rightPeaks.minByOrNull { Math.abs(g - it) }!!
+                    } else {
+                        peakGrays.last()
+                    }
                 }
+            } else {
+                peakGrays.minByOrNull { Math.abs(g - it) }!!
             }
-            lut[g] = target
+
+            val stretched = if (peakSpan > 0.0) {
+                Math.round((targetPeak - minPeak) * 255.0 / peakSpan).toInt().coerceIn(0, 255)
+            } else {
+                targetPeak
+            }
+            lut[g] = stretched
         }
 
         // In-place remap on the mat (CV_8U single channel assumed, consistent with callers)

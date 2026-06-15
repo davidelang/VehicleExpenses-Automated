@@ -1,6 +1,5 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 884debed
-- New planning cycle started: 2026-06-15 (user trigger: "execute .planning-agent-prompt.txt" -- loaded dedicated planner role prompt)
-- Previous active plan (rolled per hygiene): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-eliminate-paddle-heatmap-rect-double-icrs-conversion-20260615-plan.md (paddle rect double ICRS elim; prior state noted phases 0-1 + builds)
-- Awaiting detailed problem statement and requirements from user before any research or writing plan document (per executed .planning-agent-prompt.txt rules).
-- Active plan (this cycle): none yet (fresh start for new cycle)
+- Current builds tag: fix-pump-experiment/builds @ e4e7257b
+- New planning cycle started: 2026-06-15
+- Active plan (this cycle): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-valley-push-matching-display-plan.md
+- Progress: Phase 1 execution started. Updating OdometerOcrUtils.kt valleyPushToPeaks mapping.
