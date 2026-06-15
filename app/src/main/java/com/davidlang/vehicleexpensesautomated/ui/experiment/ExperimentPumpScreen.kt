@@ -77,7 +77,7 @@ data class PumpPhotoResultSummary(
     val odometer: String?
 )
 
-data class PumpHunk(val text: String, val icrs: RectF)
+data class PumpHunk(val text: String, val rect: RectF) // pixel coordinates in full workspace/photo space for this image
 data class PathResult(val cost: String, val vol: String, val costB64: String, val volB64: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
