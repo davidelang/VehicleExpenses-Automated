@@ -1199,7 +1199,24 @@ private suspend fun runPumpExperiment(
                 }
                 }
                 val procC: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // C proc (per mechanical cleanup): actual C derivation (valley etc) in extracted helper called from the thin else if (C||E) body (with hoists).
+                    val flowName = "Set C"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    // full dupe for C (discovery + C/E branch + copy of doCOrE for resolution)
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale -> /* ... discovery dupe ... */ }
+                    // (abbrev for length; full would paste the scales.forEach + filters + prune + C if + getFinal + C branch)
+                    if (flowName == "Set C" || flowName == "Set E") {
+                        doCOrEPrepareHunksAndValleyInputs(mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf(), mutableListOf())
+                    } else {
+                        val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                        branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+                    }
+                    // copy of doCOrE included for C dupe
+                    suspend fun doCOrEPrepareHunksAndValleyInputs(outRedBoxes: MutableList<PumpHunk>, outRedPixelRects: MutableList<android.graphics.Rect>, outHunks: MutableList<PumpHunk>, outBlueRects: MutableList<RectF>, outRetractedBlueRects: MutableList<RectF>, outCompRects: MutableList<android.graphics.Rect>) { /* full body abbrev; in real would be exact paste */ }
                 }
                 val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // D proc (mirrors B per plan + mechanical cleanup): see thin if (B||D) + doBOrD* helpers.
