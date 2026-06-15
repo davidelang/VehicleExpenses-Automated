@@ -1130,32 +1130,47 @@ private suspend fun runPumpExperiment(
                 // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
                     // Post-prune (filtered 6) redbox hists for C/E *display* / JSON (Phase 1 filtering fix + Phase 2 crop opt applied here).
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 6 for builder column + redboxDataC in JSON (no more 30).
-                    // Crop vs full-mask: use workspace crop of the red rect for the numeric bins calcHist (point routine at the crop data, no full Mat.zeros + perMask for bins).
-                    // Visual b64 still via generate (correct plot); YUV direct BufferSet + compressYuvToBase64 for the monochrome visual b64 is the target per the original plan (to be wired in a follow if needed; only 6 now so cheap either way).
+                    // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
                         val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
                         val rarea = rw * rh
 
-                        // Always do the safe visual hist (full perMask on the red rect) -- this is robust and gives the per-red hist image for display.
-                        // For bins, also use the same safe perMask (with rect) to avoid any createCrop / crop Mat nativeObj issues that were causing the persistent NPE in calcHist on the first/early rows (as seen in fresh adb logs even after size guards).
-                        // This keeps the capture simple, safe, and limited to the post-prune 6 (fixing the "30 hists" problem) while guaranteeing the first row completes for C/E.
-                        val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(hunk.rect.left.toInt(), hunk.rect.top.toInt(), rw, rh)
-                        org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
-                        val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
-                        branch.images["redboxHistC_${i}"] = perHistB64
+                        // Use createCrop on red rect pixel coords from hunk (for red rect image snapshot).
+                        // Bins: direct calcHist on crop's .mat (no mask).
+                        // Red rect snapshot: OcrUtils.takeSnapshot on the rect crop.
+                        // Histogram snapshot: render plot from bins into temp plot crop, then takeSnapshot on it (dual visuals).
+                        // scratchYuv = workspace here (longLivedHistogramBuffer dedicated init + call updates + plot crop in Phase 3).
+                        // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
+                        // (Comments: removed "safe perMask", "Crop vs full-mask", "to avoid nativeObj issues", "manual drawRect loops"; now documents crop + dual takeSnapshot.)
+                        val cropId = workspace.createCrop(hunk.rect.left, hunk.rect.top, hunk.rect.right - hunk.rect.left, hunk.rect.bottom - hunk.rect.top)
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = workspace)
+                        branch.images["redboxRectC_${i}"] = rectB64
 
-                        // Bins via the safe perMask (same as visual). No crop in this path to eliminate the nativeObj NPE source.
                         val hmat = org.opencv.core.Mat()
-                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.c[cropId].mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
                         val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
                         val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
                         val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
 
-                        perMask.release()
+                        // Histogram visual via plot render + takeSnapshot (no generate)
+                        val plotW = 186; val plotH = 300
+                        val plotCropId = workspace.createCrop(0f, 0f, plotW.toFloat(), plotH.toFloat())
+                        val plotMat = workspace.c[plotCropId].mat
+                        plotMat.setTo(org.opencv.core.Scalar(0.0))
+                        val maxVal = (1..62).maxOf { rbins[it] }.toDouble().coerceAtLeast(1.0)
+                        for (k in 1..62) {
+                            val hh = (rbins[k] / maxVal * 240.0).toInt().coerceAtMost(240)
+                            val xx = (k - 1) * 3
+                            org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
+                        }
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = workspace.c[plotCropId], targetW = 120, scratchYuv = workspace)
+                        branch.images["redboxHistC_${i}"] = histB64
+                        workspace.c[plotCropId].release()
+
+                        workspace.c[cropId].release()
                     }
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
                     branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
@@ -1460,32 +1475,47 @@ private suspend fun runPumpExperiment(
                 // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
                     // Post-prune (filtered 6) redbox hists for C/E *display* / JSON (Phase 1 filtering fix + Phase 2 crop opt applied here).
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 6 for builder column + redboxDataC in JSON (no more 30).
-                    // Crop vs full-mask: use workspace crop of the red rect for the numeric bins calcHist (point routine at the crop data, no full Mat.zeros + perMask for bins).
-                    // Visual b64 still via generate (correct plot); YUV direct BufferSet + compressYuvToBase64 for the monochrome visual b64 is the target per the original plan (to be wired in a follow if needed; only 6 now so cheap either way).
+                    // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
                         val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
                         val rarea = rw * rh
 
-                        // Always do the safe visual hist (full perMask on the red rect) -- this is robust and gives the per-red hist image for display.
-                        // For bins, also use the same safe perMask (with rect) to avoid any createCrop / crop Mat nativeObj issues that were causing the persistent NPE in calcHist on the first/early rows (as seen in fresh adb logs even after size guards).
-                        // This keeps the capture simple, safe, and limited to the post-prune 6 (fixing the "30 hists" problem) while guaranteeing the first row completes for C/E.
-                        val perMask = org.opencv.core.Mat.zeros(workspace.p.mat.size(), org.opencv.core.CvType.CV_8UC1)
-                        val rrect = org.opencv.core.Rect(hunk.rect.left.toInt(), hunk.rect.top.toInt(), rw, rh)
-                        org.opencv.imgproc.Imgproc.rectangle(perMask, rrect, org.opencv.core.Scalar(255.0), -1)
-                        val perHistB64 = generateHistogramB64(workspace.p.mat, 0.40f, perMask)
-                        branch.images["redboxHistC_${i}"] = perHistB64
+                        // Use createCrop on red rect pixel coords from hunk (for red rect image snapshot).
+                        // Bins: direct calcHist on crop's .mat (no mask).
+                        // Red rect snapshot: OcrUtils.takeSnapshot on the rect crop.
+                        // Histogram snapshot: render plot from bins into temp plot crop, then takeSnapshot on it (dual visuals).
+                        // scratchYuv = workspace here (longLivedHistogramBuffer dedicated init + call updates + plot crop in Phase 3).
+                        // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
+                        // (Comments: removed "safe perMask", "Crop vs full-mask", "to avoid nativeObj issues", "manual drawRect loops"; now documents crop + dual takeSnapshot.)
+                        val cropId = workspace.createCrop(hunk.rect.left, hunk.rect.top, hunk.rect.right - hunk.rect.left, hunk.rect.bottom - hunk.rect.top)
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = workspace)
+                        branch.images["redboxRectC_${i}"] = rectB64
 
-                        // Bins via the safe perMask (same as visual). No crop in this path to eliminate the nativeObj NPE source.
                         val hmat = org.opencv.core.Mat()
-                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), perMask, hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.c[cropId].mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
                         val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
                         val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
                         val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
 
-                        perMask.release()
+                        // Histogram visual via plot render + takeSnapshot (no generate)
+                        val plotW = 186; val plotH = 300
+                        val plotCropId = workspace.createCrop(0f, 0f, plotW.toFloat(), plotH.toFloat())
+                        val plotMat = workspace.c[plotCropId].mat
+                        plotMat.setTo(org.opencv.core.Scalar(0.0))
+                        val maxVal = (1..62).maxOf { rbins[it] }.toDouble().coerceAtLeast(1.0)
+                        for (k in 1..62) {
+                            val hh = (rbins[k] / maxVal * 240.0).toInt().coerceAtMost(240)
+                            val xx = (k - 1) * 3
+                            org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
+                        }
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = workspace.c[plotCropId], targetW = 120, scratchYuv = workspace)
+                        branch.images["redboxHistC_${i}"] = histB64
+                        workspace.c[plotCropId].release()
+
+                        workspace.c[cropId].release()
                     }
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
                     branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
