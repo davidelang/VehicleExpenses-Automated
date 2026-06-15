@@ -756,7 +756,7 @@ private suspend fun runPumpExperiment(
                     // t_red_probe_ms (kept) now covers from tFlowStart (or tProbeStart) through probe + per-red (granular subs above) + polarity decision/invert + clears. All answers to "Kotlin or C?", "crop and point routine?", "manual loops?" are in comments above the per-red forEach.
                 }
 
-                val procA: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear steps (no conditionals on set):
                     // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
                     // - standard tilt = -deskewRes.angle (A now negated for correct direction matching the one that makes C look right); rotate; br.metadata["tilt"] = ...
@@ -766,17 +766,17 @@ private suspend fun runPumpExperiment(
                     // - mlHunks + pdMerged; getFinal (shared) for both -> pathResults ML + Paddle
                     // - viz: ML image + PD raw reds snapshot
                 }
-                val procB: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                val procB: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // B proc (per mechanical cleanup / thin delegate intent): actual per-set special (red-only + retracted+OCR/PD) now in extracted helpers called from the thin if (B||D) body after common filter.
                     // (proc as array entry documents the linear steps; thin if + helper is the implemented path)
                 }
-                val procC: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                val procC: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // C proc (per mechanical cleanup): actual C derivation (valley etc) in extracted helper called from the thin else if (C||E) body (with hoists).
                 }
-                val procD: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // D proc (mirrors B per plan + mechanical cleanup): see thin if (B||D) + doBOrD* helpers.
                 }
-                val procE: (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                val procE: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // E proc (mirrors C per plan + mechanical cleanup): see thin else if + doCOrE* helper.
                 }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
