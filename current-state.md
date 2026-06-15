@@ -11,4 +11,5 @@
 - procD: inserted red filter on pdHunksRawTotal for B/D (exact ; line before doBOrD in if; duplicate ok per ultra-micro). Builds fix-pump-experiment/builds (9cb7994d). Forensic+grep + gates. Next: redAnnsOnly line in procD.
 - procD: inserted val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2); in if (B/D) before doB (from filtered main for D). Builds fix-pump-experiment/builds (2df86fa0). Forensic+grep. Next: prune if in procD, then procE.
 - procD prune skipped (anti-doom): build success no kt change. Tag fix-pump-experiment/builds (gf67575af). Now procE filter per plan.
+- procE: inserted red filter on pdHunksRawTotal for C/E (exact ; line before doCOrE in if). Builds fix-pump-experiment/builds (5d896469). Forensic+grep. Next: redAnns line in procE.
 - procD prune if needed: skipped (exact group would repeat compile symptom on PumpHunk vs Rect; 1 prior anti-doom repair on prune family per logs; no further .kt edit; core filter+redAnnsOnly on main pdHunksRawTotal for D done). Narrow read done. git add+build (no kt change) for tag.
