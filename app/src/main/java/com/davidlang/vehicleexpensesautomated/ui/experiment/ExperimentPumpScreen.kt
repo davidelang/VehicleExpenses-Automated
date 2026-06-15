@@ -738,6 +738,31 @@ private suspend fun runPumpExperiment(
                     val pdHunksExpTotal = mutableListOf<PumpHunk>()
                     val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                     val rawHist: FloatArray
+                    if (flowName == "Set C" || flowName == "Set E") {
+                        // Capture raw (pre any C-specific transform) + before hist for column display
+                        val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                        branch.images["rawC"] = rawForC
+                        val tG0 = System.currentTimeMillis()
+                        branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                        branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
+                        rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)  // replaces stretch; mutates workspace to few-brightness image
+                        val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                        branch.images["pushedC"] = pushedForC
+                        val tG1 = System.currentTimeMillis()
+                        branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                        branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
+                        if (flowName == "Set C" || flowName == "Set E") {
+                            branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+                        }
+                    } else {
+                        rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                        if (flowName == flows.first()) {
+                            originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
+                            root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
+                            root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                        }
+                    }
+                    val tDeskewStart = System.currentTimeMillis()
                     // val mlBlocksRaw = if (flowName == "Set A") mutableListOf<PumpHunk>() else mutableListOf<PumpHunk>()   // plan step13 literal; pre-existing decl in procA from dupe state; anti-doom different repair (comment vs delete)
                     // val pdHunksRawTotal = mutableListOf<PumpHunk>()  // pre-existing from dupe; anti-doom different repair (comment second, not delete) for pdRaw step
                     // full duplicate of the per-flow logic (from remnant discovery through end of special handling / A viz; pre-proc C/E is C/E only and remains outside for C/E paths; includes inner if(B||D)else if(C||E)else{A} + getAnns calls etc; flowName local selects A path; other closed hoisted names visible)
