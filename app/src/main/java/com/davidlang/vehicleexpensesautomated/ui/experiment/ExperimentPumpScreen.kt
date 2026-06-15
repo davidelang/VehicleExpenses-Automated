@@ -1004,9 +1004,7 @@ private suspend fun runPumpExperiment(
                 doCrossScaleRedboxFilterPixel(maxPixel)
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
 
@@ -1293,9 +1291,7 @@ private suspend fun runPumpExperiment(
                 // Rebuild pdHunksRawTotal from the final <=6 pixel rects (full img ICRS only for kept)
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 // Propagate prune to exp/max (blue/orange sources in B/C paths)
                 val expPixel = pdHunksExpTotal.map { h ->
@@ -1310,9 +1306,7 @@ private suspend fun runPumpExperiment(
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 val maxPixel = pdHunksMaxTotal.map { h ->
                     val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
@@ -1326,9 +1320,7 @@ private suspend fun runPumpExperiment(
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
                 // For D/E (and B/C where they use the red lists) the proc stubs + thin if calls + helpers will see the pruned <=6 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
@@ -1461,9 +1453,7 @@ private suspend fun runPumpExperiment(
                 // Rebuild pdHunksRawTotal from the final <=6 pixel rects (full img ICRS only for kept)
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 // Propagate prune to exp/max (blue/orange sources in B/C paths)
                 val expPixel = pdHunksExpTotal.map { h ->
@@ -1478,9 +1468,7 @@ private suspend fun runPumpExperiment(
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 val maxPixel = pdHunksMaxTotal.map { h ->
                     val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
@@ -1494,9 +1482,7 @@ private suspend fun runPumpExperiment(
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
-                    val i1 = IcrsMath.pixelToIcrs(r.left.toFloat(), r.top.toFloat(), imgW, imgH)
-                    val i2 = IcrsMath.pixelToIcrs(r.right.toFloat(), r.bottom.toFloat(), imgW, imgH)
-                    PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y))
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
                 // For D/E (and B/C where they use the red lists) the proc stubs + thin if calls + helpers will see the pruned <=6 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
