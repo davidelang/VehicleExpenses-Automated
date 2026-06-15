@@ -756,6 +756,14 @@ private suspend fun runPumpExperiment(
                     // t_red_probe_ms (kept) now covers from tFlowStart (or tProbeStart) through probe + per-red (granular subs above) + polarity decision/invert + clears. All answers to "Kotlin or C?", "crop and point routine?", "manual loops?" are in comments above the per-red forEach.
                 }
 
+                // Phase 0 hoist (per granular plan + failure lessons): timing vars referenced in remnant/procs logic hoisted to scope before proc lambdas (with initial) so visible inside proc bodies + after retirement of remnant decl sites. (tDiscoveryWrapperStart was declared inside else after proc defs.)
+                var tDiscoveryWrapperStart = 0L
+                var tProbeStart = 0L
+                var tPolDecStart = 0L
+                var tG0 = 0L
+                var tG1 = 0L
+                // (more t* for C/E valley/blue etc hoisted in later substeps or covered by early tFlowStart; assignments below use reassign or original inner vals where block scoped)
+
                 val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear steps (no conditionals on set):
                     // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
@@ -782,7 +790,7 @@ private suspend fun runPumpExperiment(
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
                 // Call the processor for this flow (i) from the array. Per-set behavior now selected by thin if calls to extracted helpers (B/C/E special after common filter) + proc index.
-                val tDiscoveryWrapperStart = System.currentTimeMillis()
+                tDiscoveryWrapperStart = System.currentTimeMillis()
                 flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
                 branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
                 // t_discovery_wrapper_ms covers the main body processor / 4-scale discovery call (distinct from inner per-scale t_pd_inference_* / t_pd_native_post_*) for A/B gap attribution
