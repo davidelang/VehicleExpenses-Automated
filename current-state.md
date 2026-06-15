@@ -1,7 +1,5 @@
 - Branch: fix-pump-experiment
 - Current builds tag: fix-pump-experiment/builds
 - New planning cycle started: 2026-06-15
-- Active plan (this cycle): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-cleanup-per-red-histogram-generation-c-e-20260615-plan.md
-- Phase 3: long-lived histogram BufferSet added at runPump start (before photo loop; 186x300 + histPlotCrop); capture blocks updated to pass as scratchYuv + use histPlotCrop for render (release only rect crops); remaining C/E comments/timings audited+cleaned (old mask/generate refs/timings removed from header + capture notes). No global hist conversions (left as-is per scope). Narrow forensic + grep on init/calls/comments.
-- Phase 3 build + final verif next. All gates/forensic/greps before/after edits; git add+build each phase; global grep proof no per-red perMask/custom generate remains; dual visuals + long-lived + crop+take only for per-red C/E.
-- Progress: Execution of pump-experiment-cleanup-per-red-histogram-generation-c-e-20260615-plan.md in progress (Phase 3 complete; final build + END next).
+- Active plan (this cycle): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-fix-coordinate-system-error-plan.md
+- Progress: New planning cycle started to fix the coordinate system error and redbox histogram issue. Plan drafted and written to dev-ai-interaction/plans/pump-experiment-fix-coordinate-system-error-plan.md.
