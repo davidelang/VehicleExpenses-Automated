@@ -564,6 +564,7 @@ private suspend fun runPumpExperiment(
                 }
 
                 suspend fun runPaddleDiscovery() {
+                    val tilt = 0f
                     val processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
                         val srcW = workspace.p.width
