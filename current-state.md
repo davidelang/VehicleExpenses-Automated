@@ -1,7 +1,7 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 1f52602e
+- Current builds tag: fix-pump-experiment/builds @ bc20e574
 - Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-bd-20260615-plan.md
-- Progress: Execution phase. Transitioning setup logic (automatic Contrast Stretch, negated `paddleCppAngle` JNI deskew, and Rotate) into `procB` and `procD`, and bypassing it in the outer loop.
+- Progress: Execution phase. Completed transitioning setup logic (automatic Contrast Stretch, negated `paddleCppAngle` JNI deskew, and Rotate) into `procB` and `procD`, and bypassed it in the outer loop. Build successful.
 - Key Decisions:
   - Transitioning Sets B and D setup logic to be self-contained inside `procB` and `procD`.
   - Wrapping outer loop setup code to bypass Sets B and D.
