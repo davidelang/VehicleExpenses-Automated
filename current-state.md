@@ -1,5 +1,5 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 5e21a34b
+- Current builds tag: fix-pump-experiment/builds @ ba1e0cfc
 - New planning cycle started: 2026-06-15 (user trigger: "execute .planning-agent-prompt.txt" -- loaded dedicated planner role prompt)
 - Previous active plan (rolled per hygiene): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-eliminate-paddle-heatmap-rect-double-icrs-conversion-20260615-plan.md (paddle rect double ICRS elim; prior state noted phases 0-1 + builds)
 - Awaiting detailed problem statement and requirements from user before any research or writing plan document (per executed .planning-agent-prompt.txt rules).
