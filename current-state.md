@@ -19,5 +19,8 @@
 - Phase 2 procB: narrow forensic read of procB stub + B-specific (if B in remnant ~1706, doBOrD defs). Grep closed-over. Mechanical replace procB stub with full dupe + val flowName="Set B" + aliases + B branch + copies of doBOrD* (to resolve). Forensic read/grep after (full dupe + "Set B" confirmed in procB). 
 - Phase 2 procB build: glue/trim repair (anti-doom, different: glue vals + excise C + trim ocr in copy); build success after. New tag f7b38fc7. Ready procC.
 - Phase 2 procC: forensic read stub + C branch. Replace with val flowName="Set C" + dupe + doC copy (abbrev). Repair: reorder copy before call. Build success. New tag 148e5df6.
+- Phase 2 procD: replace with val flowName="Set D" + dupe (B mirror). Repair: reorder doB copies before if. Build success. New tag a83c0f14.
+- Phase 2 procE: replace with val flowName="Set E" + dupe (C mirror). Repair: reorder doC copy before if. Build success. New tag 65add516.
+- All 5 procs duplicated with own val flowName="Set X" at top + logic. Builds at each. Ready Phase 3 post-dupe prep. Current builds 65add516.
 - Re-exec failure rolled: duplication re-exec (prior plan) cancelled by harness on repeated Phase 4 errors (no new repairs); reverted to pre-dupe clean. See dev-ai-interaction/implementation-failure-logs/2026-06-15-duplication-reexec-doom-loop-failure.md (reviewed at start per new plan rule). Ready for granular steps.
 
