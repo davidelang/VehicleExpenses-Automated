@@ -508,46 +508,49 @@ private suspend fun runPumpExperiment(
                 // Per approved valley plan: for Set C, display raw then valleyPushToPeaks (replaces stretch) producing image with small # brightness values (not binarization).
                 // Capture rawC + histBeforeC (pre), apply push, capture pushedC + histAfterC to branch for Set C column.
                 // A still populates root after/hist2 for the left column. B unchanged.
-                val rawHist: FloatArray
-                if (flowName == "Set C" || flowName == "Set E") {
-                    // Capture raw (pre any C-specific transform) + before hist for column display
-                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
-                    branch.images["rawC"] = rawForC
-                    val tG0 = System.currentTimeMillis()
-                    branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
-                    branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
-                    rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)  // replaces stretch; mutates workspace to few-brightness image
-                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
-                    branch.images["pushedC"] = pushedForC
-                    val tG1 = System.currentTimeMillis()
-                    branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
-                    branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
+                if (flowName != "Set A") {
+                    val rawHist: FloatArray
                     if (flowName == "Set C" || flowName == "Set E") {
-                        branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
-                    }
-                } else {
-                    rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
-                    if (flowName == flows.first()) {
-                        originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
-                        root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
-                        root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                        // Capture raw (pre any C-specific transform) + before hist for column display
+                        val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                        branch.images["rawC"] = rawForC
+                        val tG0 = System.currentTimeMillis()
+                        branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                        branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
+                        rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)  // replaces stretch; mutates workspace to few-brightness image
+                        val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                        branch.images["pushedC"] = pushedForC
+                        val tG1 = System.currentTimeMillis()
+                        branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                        branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
+                        if (flowName == "Set C" || flowName == "Set E") {
+                            branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+                        }
+                    } else {
+                        rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                        if (flowName == flows.first()) {
+                            originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
+                            root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
+                            root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                        }
                     }
                 }
 
                 // 2. Deskew (ported Set E style from alignment for Set B; uses dedicated populate + JNI angle path)
                 // Compute per-flow but select angle source based on flow. Set A, and the B/D mirror (pump-only red focus) now use the negated paddleCpp value; C/E mirror use negated paddleCpp so the applied rotation matches the direction that makes the C/E visuals look right per user observation. D mirrors B, E mirrors C. Set C/E lines kept as the reference.
-                val tDeskewStart = System.currentTimeMillis()
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
-                val tilt = when (flowName) {
-                    "Set B", "Set D" -> -deskewRes.paddleCppAngle
-                    "Set C", "Set E" -> -deskewRes.paddleCppAngle
-                    else -> -deskewRes.angle
+                val tilt = if (flowName == "Set A") 0f else {
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val t = when (flowName) {
+                        "Set B", "Set D" -> -deskewRes.paddleCppAngle
+                        "Set C", "Set E" -> -deskewRes.paddleCppAngle
+                        else -> -deskewRes.angle
+                    }
+                    OdometerOcrUtils.rotate(workspace, t)
+                    branch.metadata["tilt"] = "%.2f".format(t)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    t
                 }
-
-                // Use shared modern rotate (UV handling, parity with alignment improvements). Local pRotate removed.
-                OdometerOcrUtils.rotate(workspace, tilt)
-                branch.metadata["tilt"] = "%.2f".format(tilt)
-                branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
                 // t_deskew_ms covers calculateAverageTextAngle + rotate + tilt metadata write (common high-level phase)
 
                 // Hoisted decls (Phase 1 small step of approved refactor plan): declared before the local helper funs
@@ -1168,6 +1171,19 @@ private suspend fun runPumpExperiment(
                     val discoveryDetails = det
                     val imgW = w
                     val imgH = h
+                    val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                    if (flowName == flows.first()) {
+                        originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
+                        root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
+                        root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    }
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val tilt = -deskewRes.angle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+
                     // full duplicate of the per-flow logic (from remnant discovery through end of special handling / A viz; pre-proc C/E is C/E only and remains outside for C/E paths; includes inner if(B||D)else if(C||E)else{A} + getAnns calls etc; flowName local selects A path; other closed hoisted names visible)
                     // [exact text dupe from current remnant body after dispatch, adapted only by the 5 aliases above]
                     var processedScales = mutableSetOf<Int>()

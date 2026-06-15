@@ -1,7 +1,7 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 30688dd3
-- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-hoist-helpers-plan.md
-- Progress: Execution phase. Completed helper function hoisting and cleaned up duplicate `originalHistogram` variable declaration. Build successful and tag updated.
+- Current builds tag: fix-pump-experiment/builds @ d6f3af53
+- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-20260615-plan.md
+- Progress: Execution phase. Transitioning setup logic (Valley Push / Contrast Stretch, and Deskew / Rotate) into `procA` for Set A, and bypassing it in the outer loop.
 - Key Decisions:
-  - Hoisted pure helpers to top of `runPumpExperiment` in `ExperimentPumpScreen.kt` to simplify future flow processor extractions.
-  - Removed duplicate `originalHistogram` declaration to prevent build failures.
+  - Transitioning Set A setup logic to be fully self-contained inside `procA`.
+  - Wrapping outer loop setup code to bypass Set A.
