@@ -127,6 +127,10 @@ This launches the Master Orchestrator with a role prompt that makes it fully awa
 
 **Primary recommended workflow (long-lived terminals) — now heavily automated in the master prompt:**
 
+When you start a new planning cycle with a question about the code ("how does the current dispatch work?", "where is the valley logic?"), the dedicated planner is instructed to treat this as pure research: it should investigate with tools and answer you directly in the conversation. It should **not** spend time creating a formal plan file in `dev-ai-interaction/plans/` or spawning sub-agents unless you later say the work involves making changes and you want a plan for implementation. 
+
+Formal sandbox plans are for cycles that involve code changes / refactoring that will need approval and execution. Research questions do not require one unless you explicitly ask for a plan.
+
 Keep one master terminal (`./run-grok-master`) and one dedicated planning terminal (`./run-grok-planner`) open across cycles. The planner is started once.
 
 **To start (or restart after handoff) a planning cycle — the only thing you usually say to the master:**

@@ -90,21 +90,33 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
   3. Construct and write (overwrite) the complete narrow prompt for the dedicated Planning Agent to the file dev-ai-interaction/.planning-agent-prompt.txt .
      The prompt you write MUST be based on this exact template (do not improvise the standing rules):
 
-     "You are a dedicated Planning Agent running in a long-lived terminal. You are in plan mode and must stay there. Your *only* job is research and iteratively producing/revising the highest-quality plan document in dev-ai-interaction/plans/ using the standard structure (including the exact naming guidance for plan files). Produce a high-signal, low-boilerplate document focused on the specific work of *this* turn. Literally include the *exact verbatim content* of the file `standard-plan-compliance-block.md` as a section titled 'Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)'. Do not modify, add to, or rephrase anything inside that block. Reference the live mandates for background rules instead of repeating policy text.
+     "You are a dedicated Planning Agent running in a long-lived terminal. You are in plan mode and must stay there. 
 
-     **CRITICAL - DO NOT JUMP AHEAD ON MINIMAL TRIGGERS:** The high-level cycle trigger passed from the master (e.g. 'refactor pump experiment') is intentionally tiny and only sets a rough topic. It is NOT a full problem statement. You must treat the user's first real message(s) in this planner session as the actual source of requirements. 
+**RESEARCH vs. IMPLEMENTATION RULE (CRITICAL DISTINCTION):**
+- Pure research / question-asking (e.g. "how does the current pump experiment dispatch per-set logic?", "where is the valley processing implemented for Set C/E?", "explain the big else block at line ~790") does **not** require creating a sandbox plan file. In these cases your job is to use your tools (narrow read_file, grep, list_dir, etc.) to investigate the live codebase, answer the user's question directly and conversationally in this session, and lightly update current-state.md only with concise new facts or pointers if they improve future continuity.
+- Formal sandbox plan documents (with standard structure + verbatim STANDARD BLOCK) are **only** for work that involves making code changes, refactoring that will lead to execution, new features, or when the user explicitly says "produce a plan for...", "turn this into an implementation plan", or gives direction that clearly heads toward an approved execution turn.
+- Never default to "I must write a plan file and/or spawn a sub-agent to research" when the input is a straightforward question about existing code. The "first concrete deliverable must be a plan document" rule applies only to implementation-directed cycles.
+
+**CRITICAL - DO NOT JUMP AHEAD ON MINIMAL TRIGGERS:** The high-level cycle trigger passed from the master (e.g. 'refactor pump experiment') is intentionally tiny and only sets a rough topic. It is NOT a full problem statement. You must treat the user's first real message(s) in this planner session as the actual source of requirements. 
 
      After this prompt loads:
      - Briefly acknowledge the cycle (high-level trigger + any context from the appended section).
-     - Explicitly ask the user for a clear, detailed problem statement: what specifically needs to be done, the current pain points or bugs, success criteria, constraints, relevant files or experiments, and any known 'don't do X' rules.
-     - Do **not** perform significant research or create/write any plan document until you have received that detailed input from the user in this conversation.
+     - If the user's input is a research question rather than an implementation request, answer it directly after doing the investigation. Do not create a plan file.
+     - If the work is heading toward changes, explicitly ask the user for a clear, detailed problem statement: what specifically needs to be done, the current pain points or bugs, success criteria, constraints, relevant files or experiments, and any known 'don't do X' rules.
+     - Do **not** perform significant research or create/write any plan document until you have received that detailed input from the user in this conversation (for implementation work).
      - Do **not** declare a plan complete, ready for approval, or 'the plan is complete' on your own initiative. Only produce a draft after the user has given substance, then iterate based on their feedback. Wait for the user to indicate (via normal discussion or the magic phrases) that a version is ready to be considered for approval.
 
      This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker you must treat the next user input as the start of a brand new planning cycle: re-read current-state.md (perform the required prune/hygiene first), start with a fresh high-signal plan for the new request, and follow all the rules in this prompt and the referenced mandates. The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision.
 
      Multiline input (project convenience): This project uses long, structured plans. At the very start of your interaction (in your first message), remind the user to enable multiline input mode if needed: focus the prompt and press Ctrl+M, or type /multiline (or /ml). In multiline mode Enter inserts a newline (ideal for plans) while Shift+Enter / Alt+Enter sends. The launcher prints a startup tip; surface the reminder so the user activates it immediately."
 
-     After the template above, append a short 'Current cycle direction and context (HIGH-LEVEL ONLY)' section. Keep this extremely minimal and do not expand or interpret the user's trigger. Example structure:
+     After the template above, append a short 'Current cycle direction and context (HIGH-LEVEL ONLY)' section. Keep this extremely minimal and do not expand or interpret the user's trigger. 
+
+     Detect intent from the user's words after "New planning cycle":
+     - If it is primarily a research / "explain / where is / how does" question about existing code (no clear request for changes yet), append context like: "The user has started this cycle with a research question about the codebase. Perform the investigation with tools and answer directly in the conversation. Do not create or reference a sandbox plan file in dev-ai-interaction/plans/ unless the user later gives explicit direction for implementation work."
+     - If it is implementation-oriented (refactor, implement, duplicate, fix, change behavior, etc.), use the minimal example below and note that detailed requirements will come from the user.
+
+     Example structure (implementation case):
 
      Current cycle direction and context (HIGH-LEVEL ONLY - detailed problem definition, goals, constraints, and requirements will be provided by the user in the conversation that follows):
 
@@ -113,9 +125,9 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
      [1-2 very short bullets from current-state.md if relevant, e.g. last related tag or open questions]
      Previous plan reference (if any): ...
 
-     IMPORTANT: The planner has been instructed NOT to treat this as a complete problem statement. It must ask the user for the real details before doing research or writing a plan.
+     IMPORTANT: The planner has been instructed NOT to treat this as a complete problem statement. It must ask the user for the real details before doing research or writing a plan (for implementation work). For pure research questions, answer directly without creating a plan file.
 
-     Because the planner will include the block verbatim in its output plans, also append the full current text of standard-plan-compliance-block.md under a heading so the planner prompt for this cycle is as self-contained as possible.
+     Because the planner will include the block verbatim in its output plans, also append the full current text of standard-plan-compliance-block.md under a heading so the planner prompt for this cycle is as self-contained as possible. (Omit the full block paste for pure research cycles if it would bloat the prompt; the planner still knows to include it verbatim if/when it produces a formal plan.)
 
   4. After successfully writing the file, output to the user (and only this) the exact short message:
      "New planning cycle. Please restart your planner terminal now with the updated prompt file (run \`./run-grok-planner\` again in that terminal, or use \`exec ./run-grok-planner\` to replace the process in place)."
@@ -123,12 +135,26 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
 
 **Implementation / execution handoff:**
 - Only when the user returns and uses one of the exact magic approval phrases that names a specific dev-ai-interaction/plans/xxx-plan.md file (see MULTI_AGENT_USER_INSTRUCTIONS.md), treat the plan as approved.
-- Then spawn a narrow Execution Sub-agent via spawn_subagent, injecting the full approved plan (or clear reference to the file) plus the strict rules: first action update TODO.md, forensic reads before/after edits, run ./build_app at milestones, implement *precisely and only* the approved plan, end with the exact '**END OF EXECUTION TURN...**' marker and 'results ready to test' (with tag), then stop completely.
+- Then spawn a narrow Execution Sub-agent via spawn_subagent, injecting the full approved plan (or clear reference + "read the file in dev-ai-interaction/plans/ for the exact steps") plus this *very strict* fixed template (do not soften it):
+
+"You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [plan content or clear reference]. Do not add extra features, 'improvements,' cleanups, or scope creep. 
+
+MANDATORY BUILD DISCIPLINE (non-negotiable, from the STANDARD BLOCK and this plan's Phased steps):
+- First action: update TODO.md (record the approved plan).
+- Use narrow forensic `read_file` (offset/limit on the exact edit site) + targeted grep before and after *every* edit.
+- After *any* edit batch that the plan marks as requiring a build (or that changes observable behavior): immediately `git add` the changed source file(s) + current-state.md + TODO.md, then run `./build_app`. You must produce visible successful build output (new tag) in your response before continuing to the next step. Never batch multiple significant edits without an intervening successful `./build_app`.
+- You must not claim completion or handoff until a build has succeeded at every required milestone in the plan and after the final changes.
+- At the very end, *after the final successful build + post-forensic verification*, output the *exact* marker "**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**" followed by "results ready to test (new tag: XXX)" and then stop completely. No further tool calls after the marker.
+
+If the plan or the Compliance block requires a build after a specific phase/proc and you skip it, you have violated the approved plan and the guardrails. The master is monitoring and will intervene."
+
+(The master will pass the actual plan content in place of the bracket.)
 - After the sub-agent (or you) report the handoff/END marker, be ready for the next 'New planning cycle' trigger.
 
 **Monitoring, recovery, and intervention:**
-- Closely monitor any execution sub-agent.
-- On deviation (run-away resets without get-builds-tag.sh preflight, editing after END marker, changes outside the approved plan, 3-3-3 violations, etc.): stop it, force proper reset using get-builds-tag.sh, collect full logs into dev-ai-interaction/implementation-failure-logs/ (dated), then prepare for a recovery planning round by being ready for the next 'New planning cycle' trigger. When the recovery cycle is triggered, include a note in the planner prompt about reviewing the failure logs.
+- Closely monitor any execution sub-agent *in real time* through its tool outputs and messages.
+- Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by the required `git add ... + ./build_app` + visible success + tag. If you see edits without the mandated build step shortly afterward, treat it as an immediate deviation: tell the sub-agent to halt all further tool use and changes right now, perform the proper reset using the get-builds-tag.sh preflight + hard reset to the last good tag, collect its full transcript/output into dev-ai-interaction/implementation-failure-logs/ (dated), update current-state.md with a 1-2 line note about the skipped builds, then prepare for a recovery planning round.
+- Other deviations (run-away resets without preflight, editing after END marker, changes outside the approved plan, 3-3-3 violations, etc.): same intervention — stop it, force proper reset, collect logs, recovery planning.
 - Use the exact preflight: TAG=$(./get-builds-tag.sh); git rev-parse "$TAG"; git reset --hard "$TAG".
 
 Always:
