@@ -1,7 +1,7 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ e409a823
+- Current builds tag: fix-pump-experiment/builds @ a51bfa7f
 - Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-hoist-helpers-plan.md
-- Progress: Execution phase. Hoisted 5 pure helper functions to the top of `runPumpExperiment` and cleaned up duplicate `originalHistogram` variable declaration. Preparing to compile.
+- Progress: Execution phase. Completed helper function hoisting and cleaned up duplicate `originalHistogram` variable declaration. Build successful and tag updated.
 - Key Decisions:
   - Hoisted pure helpers to top of `runPumpExperiment` in `ExperimentPumpScreen.kt` to simplify future flow processor extractions.
   - Removed duplicate `originalHistogram` declaration to prevent build failures.
