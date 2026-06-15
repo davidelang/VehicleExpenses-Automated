@@ -1,5 +1,6 @@
 - Branch: fix-pump-experiment
 - Current builds tag: fix-pump-experiment/builds
 - New planning cycle started: 2026-06-15
-- Active plan (this cycle): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-valley-push-matching-display-plan.md
-- Progress: Implementation completed, forensically audited, and compiled successfully. Awaiting user test results.
+- Active plan (this cycle): /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-cleanup-per-red-histogram-generation-c-e-20260615-plan.md
+- Phase 0 start: re-read current-state (already minimal per hygiene rules: header+branch+active+tag+facts), full plan+6 logs, compliance STANDARD BLOCK, last5 state, git no-kt confirm, grep TODO ourplan top; narrow forensic reads (procC/procE per-red blocks at ~1135/1465, generateHistogramB64, perRedHtml report, runPumpExperiment init ~191, createCrop sites, spec crop/ROI) + targeted grep (perMask/Mat.zeros/generate/redboxHistC_ only in the 2 per-red C/E blocks + builder); TODO first verified; gates 100% passed; baseline build next. 1-2 facts only. Scope strictly per-red C/E hist cleanup.
+- Progress: Execution of pump-experiment-cleanup-per-red-histogram-generation-c-e-20260615-plan.md in progress (Phase 0 baseline).
