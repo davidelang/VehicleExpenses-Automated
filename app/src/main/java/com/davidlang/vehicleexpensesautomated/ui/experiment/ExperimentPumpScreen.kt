@@ -770,6 +770,9 @@ private suspend fun runPumpExperiment(
                     SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
                 }
 
+                // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
+                var processedScales = mutableSetOf<Int>()
+
                 val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // linear steps (no conditionals on set):
                     // - automaticContrastStretch + (A is first) root after/hist2/originalHistogram snaps
@@ -815,7 +818,8 @@ private suspend fun runPumpExperiment(
                     // 3. Discovery (decls for scales/ml/pd* hoisted earlier in Phase 1 for local helper closure visibility
                     // and to resolve compile forward refs; see the block after tilt metadata. The inline processedScales
                     // remains local to this forEach.)
-                    val processedScales = mutableSetOf<Int>()
+                    // (hoisted in Phase 0; reinit here)
+                    processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
                     val srcW = workspace.p.width
                     val srcH = workspace.p.height

@@ -11,5 +11,7 @@
 - Step 4 (Phase 0.4 hoist): inserted Phase 0 hoist block + vars (tDiscoveryWrapperStart, tProbeStart etc) before proc defs; changed tDiscovery decl to reassign (forensic narrow read+grep before/after + plan comment). 1-2 lines/step. Builds still 7d50a6b2 (hoist pre-build).
 - Step 5 (Phase 0.4 build): git add kt+current+TODO + build_app after hoist edit; success. New builds tag d36c6e8f.
 - Step 6 (Phase 0.5 fun hoist): hoisted getAnns fun def early before procA (small; forensic read/grep before/after; plan comment; doBOrD*/doCOrE* left per "if not hoisted, include copies at dupe"; other stack/runPaddle/getFinal already early). 
+- Step 7 (Phase 0.5 build): git add kt+current+TODO + build_app after getAnns hoist edit; success. New builds tag 22e843db.
+- Step 8 (Phase 0.6 other vis): hoisted processedScales var early before procs (forensic before/after; reinit in remnant; other lists like pdHunks*/mlBlocksRaw/scales/experimentRec* already early or top). 
 - Re-exec failure rolled: duplication re-exec (prior plan) cancelled by harness on repeated Phase 4 errors (no new repairs); reverted to pre-dupe clean. See dev-ai-interaction/implementation-failure-logs/2026-06-15-duplication-reexec-doom-loop-failure.md (reviewed at start per new plan rule). Ready for granular steps.
 
