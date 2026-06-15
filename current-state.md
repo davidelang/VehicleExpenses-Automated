@@ -12,3 +12,4 @@
 - Phase 0 forensic: narrow read_file (loop setup~297-375 Transform/Deskew/decls; A@950/1928; C@1565-1615+1895/doCOrE@1616/redboxDataC@900/1400; dispatch@1216/close~1945; procA@727,procB@954,procC@1152,procD@1172,procE@1193) + grep markers ("A (reds only)", redboxDataC, doCOrEPrepare..., valleyPushToPeaks, when(flowName), mlBlocksRaw=if, val flowName="Set, flowProcessors[i]) all confirmed. Exact single lines/branches for moves/deletes identified (per plan Phase1+). 1-2 lines.
 - Phase 0 baseline build SUCCESS (git add TODO+state only; no kt). Tag updated: fix-pump-experiment/builds (post 4d780094). All gates + multi self-verifs + forensic passed; no .kt ever edited this run. Ready Phase 1 ultra-micro procA first line.
 - procA: inserted scales line (after imgH alias). Build SUCCESS. TAG: fix-pump-experiment/builds . State 1-2 lines.
+- procA: inserted mlBlocksRaw line (after scales). Build SUCCESS. TAG: fix-pump-experiment/builds . State 1-2 lines.
