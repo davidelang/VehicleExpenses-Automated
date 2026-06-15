@@ -63,3 +63,10 @@
 - Update bootstrap files (new_grok_agent_prompt point 5 + Sandbox Plan File paragraph, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md) + .gitignore so that when the user explicitly directs a current-turn plan, agents create/revise fresh plan files under dev-ai-interaction/ and use the local untracked per-worktree state file for continuity. The "historical reference only" rule applies only to old/abandoned plans from other agents/cycles.
 - Demo during execution: create local untracked current-state.md in the current worktree root with minimal structure. Primary plan documents stay in the sandbox.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
+
+- [ ] Implement valley-push contrast mapping logic in OdometerOcrUtils.valleyPushToPeaks
+  - [x] Update TODO.md with the execution task
+  - [ ] Implement partition-based mapping, bin center alignment, and stretching in OdometerOcrUtils.kt
+  - [ ] Perform forensic verification of the source changes
+  - [ ] Stage and compile/build app via `./build_app`
+  - [ ] Inform user and deliver END OF EXECUTION TURN marker
