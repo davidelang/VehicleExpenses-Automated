@@ -236,10 +236,16 @@ private suspend fun runPumpExperiment(
         it.s.clearChroma()
     }
 
+    // Long-lived histogram BufferSet for per-red C/E report (dual visuals: rect snapshot from workspace crop + hist plot snapshot); initialized once before photo loop, sized for per-red display (plot 186x300), held for experiment lifetime, passed as scratchYuv to takeSnapshot, never released here. Internal histPlotCrop for render from bins (replaces per-red custom generate + temp workspace plot).
+    val longLivedHistogramBuffer = BufferSet(186, 300)
+    longLivedHistogramBuffer.p.clear()
+    longLivedHistogramBuffer.s.clear()
+    val histPlotCrop = longLivedHistogramBuffer.createCrop(0, 0, 186, 300)
+
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
-    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (3x size, 2x displayed) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_mask_create_ms / t_per_red_generate_b64_ms (covers manual for(i in 1..62) drawRect loops in generateHistogramB64) / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic from probe/generate): data in Kotlin (not C; native hist path separate/not used here for redboxDataC/redboxHistC_*); full Mat.zeros(size) + rectangle mask on original mat (no crop of data, OpenCV mask internal); manual loops yes (Kotlin Canvas for (i in 1..62) drawRect for b64 visuals after calcHist; numeric bins from calcHist). Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state.
+    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (3x size, 2x displayed) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state.
     val flows = listOf("Set A", "Set B", "Set C", "Set D", "Set E")
 
     fun pStartNewFile(): File {
@@ -1127,8 +1133,8 @@ private suspend fun runPumpExperiment(
                 // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
                 // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 6 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
-                // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
-                    // Post-prune (filtered 6) redbox hists for C/E *display* / JSON (Phase 1 filtering fix + Phase 2 crop opt applied here).
+                // (The capture logic updated per per-red C/E histogram cleanup plan: createCrop + direct calcHist + dual takeSnapshot from longLived.)
+                    // Post-prune (filtered 6) redbox hists for C/E *display* / JSON (updated to createCrop + dual takeSnapshot + long-lived buffer per plan).
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 6 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     val redboxDataC = JSONArray()
@@ -1139,13 +1145,13 @@ private suspend fun runPumpExperiment(
 
                         // Use createCrop on red rect pixel coords from hunk (for red rect image snapshot).
                         // Bins: direct calcHist on crop's .mat (no mask).
-                        // Red rect snapshot: OcrUtils.takeSnapshot on the rect crop.
-                        // Histogram snapshot: render plot from bins into temp plot crop, then takeSnapshot on it (dual visuals).
-                        // scratchYuv = workspace here (longLivedHistogramBuffer dedicated init + call updates + plot crop in Phase 3).
+                        // Red rect snapshot + hist snapshot via OcrUtils.takeSnapshot (dual); scratchYuv = longLivedHistogramBuffer (init at pump start, held lifetime).
+                        // Plot render into longLived's histPlotCrop (no temp on workspace; plotCrop never released).
+                        // Only the per-red rect crop released promptly.
                         // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
-                        // (Comments: removed "safe perMask", "Crop vs full-mask", "to avoid nativeObj issues", "manual drawRect loops"; now documents crop + dual takeSnapshot.)
+                        // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
                         val cropId = workspace.createCrop(hunk.rect.left, hunk.rect.top, hunk.rect.right - hunk.rect.left, hunk.rect.bottom - hunk.rect.top)
-                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = workspace)
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
 
                         val hmat = org.opencv.core.Mat()
@@ -1155,10 +1161,8 @@ private suspend fun runPumpExperiment(
                         val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
 
-                        // Histogram visual via plot render + takeSnapshot (no generate)
-                        val plotW = 186; val plotH = 300
-                        val plotCropId = workspace.createCrop(0f, 0f, plotW.toFloat(), plotH.toFloat())
-                        val plotMat = workspace.c[plotCropId].mat
+                        // Histogram visual via plot render into longLived histPlotCrop + takeSnapshot (no generate, no workspace temp)
+                        val plotMat = longLivedHistogramBuffer.c[histPlotCrop].mat
                         plotMat.setTo(org.opencv.core.Scalar(0.0))
                         val maxVal = (1..62).maxOf { rbins[it] }.toDouble().coerceAtLeast(1.0)
                         for (k in 1..62) {
@@ -1166,11 +1170,10 @@ private suspend fun runPumpExperiment(
                             val xx = (k - 1) * 3
                             org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
                         }
-                        val (histB64, _) = OcrUtils.takeSnapshot(source = workspace.c[plotCropId], targetW = 120, scratchYuv = workspace)
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxHistC_${i}"] = histB64
-                        workspace.c[plotCropId].release()
 
-                        workspace.c[cropId].release()
+                        workspace.c[cropId].release()  // only rect crop; longLived + histPlotCrop held lifetime, never released in per-red path
                     }
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
                     branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
@@ -1472,8 +1475,8 @@ private suspend fun runPumpExperiment(
                 // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
                 // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 6 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
-                // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
-                    // Post-prune (filtered 6) redbox hists for C/E *display* / JSON (Phase 1 filtering fix + Phase 2 crop opt applied here).
+                // (The capture logic updated per per-red C/E histogram cleanup plan: createCrop + direct calcHist + dual takeSnapshot from longLived.)
+                    // Post-prune (filtered 6) redbox hists for C/E *display* / JSON (updated to createCrop + dual takeSnapshot + long-lived buffer per plan).
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 6 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     val redboxDataC = JSONArray()
@@ -1484,13 +1487,13 @@ private suspend fun runPumpExperiment(
 
                         // Use createCrop on red rect pixel coords from hunk (for red rect image snapshot).
                         // Bins: direct calcHist on crop's .mat (no mask).
-                        // Red rect snapshot: OcrUtils.takeSnapshot on the rect crop.
-                        // Histogram snapshot: render plot from bins into temp plot crop, then takeSnapshot on it (dual visuals).
-                        // scratchYuv = workspace here (longLivedHistogramBuffer dedicated init + call updates + plot crop in Phase 3).
+                        // Red rect snapshot + hist snapshot via OcrUtils.takeSnapshot (dual); scratchYuv = longLivedHistogramBuffer (init at pump start, held lifetime).
+                        // Plot render into longLived's histPlotCrop (no temp on workspace; plotCrop never released).
+                        // Only the per-red rect crop released promptly.
                         // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
-                        // (Comments: removed "safe perMask", "Crop vs full-mask", "to avoid nativeObj issues", "manual drawRect loops"; now documents crop + dual takeSnapshot.)
+                        // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
                         val cropId = workspace.createCrop(hunk.rect.left, hunk.rect.top, hunk.rect.right - hunk.rect.left, hunk.rect.bottom - hunk.rect.top)
-                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = workspace)
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
 
                         val hmat = org.opencv.core.Mat()
@@ -1500,10 +1503,8 @@ private suspend fun runPumpExperiment(
                         val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
                         redboxDataC.put(stat)
 
-                        // Histogram visual via plot render + takeSnapshot (no generate)
-                        val plotW = 186; val plotH = 300
-                        val plotCropId = workspace.createCrop(0f, 0f, plotW.toFloat(), plotH.toFloat())
-                        val plotMat = workspace.c[plotCropId].mat
+                        // Histogram visual via plot render into longLived histPlotCrop + takeSnapshot (no generate, no workspace temp)
+                        val plotMat = longLivedHistogramBuffer.c[histPlotCrop].mat
                         plotMat.setTo(org.opencv.core.Scalar(0.0))
                         val maxVal = (1..62).maxOf { rbins[it] }.toDouble().coerceAtLeast(1.0)
                         for (k in 1..62) {
@@ -1511,11 +1512,10 @@ private suspend fun runPumpExperiment(
                             val xx = (k - 1) * 3
                             org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
                         }
-                        val (histB64, _) = OcrUtils.takeSnapshot(source = workspace.c[plotCropId], targetW = 120, scratchYuv = workspace)
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxHistC_${i}"] = histB64
-                        workspace.c[plotCropId].release()
 
-                        workspace.c[cropId].release()
+                        workspace.c[cropId].release()  // only rect crop; longLived + histPlotCrop held lifetime, never released in per-red path
                     }
                     branch.metadata["redboxDataC"] = redboxDataC.toString()
                     branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
