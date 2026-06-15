@@ -1,18 +1,8 @@
 - Branch: fix-pump-experiment
-- Current builds tag / HEAD: fix-pump-experiment/builds @ 5a41ac4b . Confirmed by ./get-builds-tag.sh + git describe.
-- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-fix-cde-red-boxes-regression-only-ultra-micro-20260615-plan.md (new narrow plan: ONLY CDE red regression, no other changes)
-- Prior plans aborted on ritual (no first TODO + gates, edits early). Rolled older details. See logs + git since 5a41ac4b.
-- 2026-06-15 new cycle: Re-read + pruned per hygiene. Read 5 failure logs (same ritual deviation). Updated TODO first (verified with grep/read). New narrow plan filename (ONLY CDE red fix). Phase 0 gate passed. Active plan path.
-- Phase 0 forensic: narrow reads/greps procC~1192 if(C/E)~1205 (calls doCOrE copy), procD~1212 if(B/D)~1224 (has filter), procE~1233 if(C/E)~1244; redbox~1435 (C/E hists on main), doCOrE~1656 (redBoxes=pdHunksRawTotal.toMutable + filter on copy), doBOrD~1509 (redAnnsOnly from raw), remnant outer B/D filter~1948, C/E redAnns~1859. Confirmed: C/E proc PD falls to raw/else; red filter not on main pdHunksRawTotal before redAnns for proc C/D/E PD paths. Baseline build next. No .kt edits yet.
-- Phase 0 baseline build SUCCESS (6s). Tag updated: fix-pump-experiment/builds (was bb41aef9; now at 3a5a1e4e per get-builds-tag.sh + describe). All Phase 0 gates + ritual + first-action + forensic passed pre-build. No .kt changes. Ready Phase 1 ultra-micro (procC first, one line at a time).
-- procC: inserted red filter on pdHunksRawTotal for C/E (doCross... line before doCOrE in if). Builds fix-pump-experiment/builds (3d677303). Forensic+grep + all pre-edit gates passed. Next: redAnns line in procC.
-- procC: inserted val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2); after filter (redAnns from filtered main for C/E). Builds fix-pump-experiment/builds (5db7976f). Forensic+grep + ritual recheck before edit. Next: prune if needed in procC, then procD.
-- procC: anti-doom (logs reviewed, exact symptom listed, 3 different repairs proposed, 1 applied: excised bad prune group which failed compile on PumpHunk .right vs Rect list expr). Filter+redAnns for C/E on main pdHunksRawTotal remain. Builds fix-pump-experiment/builds (dc2a78a8). Success after repair. Narrow forensic post-repair. Now procD filter.
-- procD: inserted red filter on pdHunksRawTotal for B/D (exact ; line before doBOrD in if; duplicate ok per ultra-micro). Builds fix-pump-experiment/builds (9cb7994d). Forensic+grep + gates. Next: redAnnsOnly line in procD.
-- procD: inserted val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2); in if (B/D) before doB (from filtered main for D). Builds fix-pump-experiment/builds (2df86fa0). Forensic+grep. Next: prune if in procD, then procE.
-- procD prune skipped (anti-doom): build success no kt change. Tag fix-pump-experiment/builds (gf67575af). Now procE filter per plan.
-- procE: inserted red filter on pdHunksRawTotal for C/E (exact ; line before doCOrE in if). Builds fix-pump-experiment/builds (5d896469). Forensic+grep. Next: redAnns line in procE.
-- procE: inserted val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2); after filter in if (C/E) (from filtered main for E). Builds fix-pump-experiment/builds (5926fa3a). Forensic+grep. Next: prune if in procE + final verify build per plan.
-- procE prune if needed: skipped (anti-doom; repeat compile on same group expr after prior repair on family; no kt edit; core filter+redAnns in procE if for C/E done). Narrow read + git add 3 + build for tag.
-- procE prune skipped: build success no kt. Tag fix-pump-experiment/builds (dfa3589b). Now final narrow reads/greps + last build per plan Verification.
-- procD prune if needed: skipped (exact group would repeat compile symptom on PumpHunk vs Rect; 1 prior anti-doom repair on prune family per logs; no further .kt edit; core filter+redAnnsOnly on main pdHunksRawTotal for D done). Narrow read done. git add+build (no kt change) for tag.
+- Current builds tag: fix-pump-experiment/builds @ 93324977
+- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-restore-working-124b0527-state-plan.md
+- Progress: Planning phase. Proposing a plan to restore `ExperimentPumpScreen.kt` to the working `124b0527` codebase state to resolve the CDE red box regression.
+- Key Decisions:
+  - Forensic analysis showed the discovery loops for C, D, and E were stubbed out with comments in the broken HEAD codebase, causing 0 red boxes.
+  - Commit `124b0527` is a verified good commit where all red box counts are populated correctly (Set C: 12, Set D: 6, Set E: 12).
+  - We will overwrite the screen file with the content of `124b0527` linearly to restore functionality, then build and verify.
