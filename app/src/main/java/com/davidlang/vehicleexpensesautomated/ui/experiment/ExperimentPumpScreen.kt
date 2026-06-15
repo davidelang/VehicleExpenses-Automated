@@ -1142,7 +1142,7 @@ private suspend fun runPumpExperiment(
                         // Only the per-red rect crop released promptly.
                         // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
                         // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
-                        val cropId = workspace.createCrop(hunk.rect.left, hunk.rect.top, hunk.rect.right - hunk.rect.left, hunk.rect.bottom - hunk.rect.top)
+                        val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
                         val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
 
@@ -1484,7 +1484,7 @@ private suspend fun runPumpExperiment(
                         // Only the per-red rect crop released promptly.
                         // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
                         // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
-                        val cropId = workspace.createCrop(hunk.rect.left, hunk.rect.top, hunk.rect.right - hunk.rect.left, hunk.rect.bottom - hunk.rect.top)
+                        val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
                         val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
 
