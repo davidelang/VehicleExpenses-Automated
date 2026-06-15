@@ -1,7 +1,7 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 99455832
+- Current builds tag: fix-pump-experiment/builds @ f6eee498
 - Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-ce-20260615-plan.md
-- Progress: Execution phase. Transitioning setup logic (Valley Push, JNI deskew, and Rotate) into `procC` and `procE`, and completely removing setup blocks from the outer loop.
+- Progress: Completed transitioning setup logic (Valley Push, JNI deskew, and Rotate) into `procC` and `procE`, and completely removing setup blocks from the outer loop. Build successful.
 - Key Decisions:
   - Transitioning Sets C and E setup logic to be self-contained inside `procC` and `procE`.
   - Deleting outer loop setup code so the outer loop is purely dispatch-oriented.
