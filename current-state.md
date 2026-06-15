@@ -1,7 +1,6 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ f6eee498
-- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-ce-20260615-plan.md
-- Progress: Completed transitioning setup logic (Valley Push, JNI deskew, and Rotate) into `procC` and `procE`, and completely removing setup blocks from the outer loop. Build successful.
+- Current builds tag: fix-pump-experiment/builds @ 1b27224f
+- Active plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-cleanup-dead-code-20260615-plan.md
+- Progress: Execution phase. Cleaning up dead code (runPaddleDiscovery and doValleyForC nested functions) from ExperimentPumpScreen.kt.
 - Key Decisions:
-  - Transitioning Sets C and E setup logic to be self-contained inside `procC` and `procE`.
-  - Deleting outer loop setup code so the outer loop is purely dispatch-oriented.
+  - Deleting runPaddleDiscovery and doValleyForC.

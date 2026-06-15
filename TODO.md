@@ -1,5 +1,6 @@
 # TODO
 
+- [ ] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-cleanup-dead-code-20260615-plan.md to clean up dead code (runPaddleDiscovery and doValleyForC) in ExperimentPumpScreen.kt (Step 4), compile, and verify CDE red boxes.
 - [x] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-ce-20260615-plan.md to transition setup logic for Sets C and E into procC and procE (Step 3), compile, and verify CDE red boxes.
 - [x] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-bd-20260615-plan.md to transition setup logic for Sets B and D into procB and procD (Step 2), compile, and verify CDE red boxes.
 - [x] Execute approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-proc-transition-setup-20260615-plan.md to transition setup logic (valley push, contrast stretch, deskew, rotate) from the outer loop into flow processors (Step 1 - procA), compile, and verify CDE red boxes.
