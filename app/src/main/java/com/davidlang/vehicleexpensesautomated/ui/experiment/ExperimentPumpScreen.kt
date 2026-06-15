@@ -2023,25 +2023,31 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
     // Used only for Set C: 1px white anns (to show each detected hunk) + as the "hunks" source for per-red overlap + Y-extend derivation of blue/orange.
     // (The pdHunksRawTotal level remains the post-redbox "RED raw boxes" for display/anns/crops/mask.)
     val hunksDetected = mutableListOf<PumpHunk>()
+    // Explicit pixel upscale once at ingest to full workspace/photo pixel space (using buffer full dims vs content/detect size).
+    // Replaces the prior worthless ICRS roundtrip (content for pixelToIcrs + full for later icrsToPixel); direct scale here.
+    // All pd* hunks now hold full pixel values in .rect from the start.
+    val fullW = buffer.p.width; val fullH = buffer.p.height
     rawRects.forEach { r ->
         val ml = r.left.toInt().coerceIn(0, masterW - 1)
         val mt = r.top.toInt().coerceIn(0, masterH - 1)
         val mr = r.right.toInt().coerceIn(0, masterW - 1)
         val mb = r.bottom.toInt().coerceIn(0, masterH - 1)
-        val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), contentW, contentH)
-        val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), contentW, contentH)
-        hunksDetected.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
+        val fl = ml * fullW.toFloat() / contentW
+        val ft = mt * fullH.toFloat() / contentH
+        val fr = mr * fullW.toFloat() / contentW
+        val fb = mb * fullH.toFloat() / contentH
+        hunksDetected.add(PumpHunk("", RectF(fl, ft, fr, fb)))
     }
 
     // Redbox improvement from Set J (alignment experiment) - first item per user directive.
     // Move sides of detected box out by 1 pixel in low-res (this crop/detect-input space) before
-    // the ICRS "scaling back up" (and before doing anything more: consolidate, native expand, hunks).
+    // the explicit upscale to full (and before doing anything more: consolidate, native expand, hunks).
     // Then remove nested red boxes (inset contains filter, matching alignment tRawB logic in runBinTrialsPaddle).
     //
     // Pump note (variable scale vs fixed in alignment): scaleFactor computed in caller scales.forEach
     // (currentLongEdge vs target/scale + prepareScale 32-align outer/inner + process 1.0f on crop).
-    // ICRS here uses crop masterW/H; later icrsToPixel in getFinal uses full original imgW/imgH.
-    // This chain causes erosion (e.g. 63px feature -> ~56px effective after down/up as described).
+    // Explicit upscale (full/content ratio) applied once here to produce full photo pixel rects for PumpHunk.rect.
+    // No ICRS roundtrip or erosion chain in the pd path.
     // +1 here (in the post-process rect space) + nested removal is the ported math.
     // Per clarification: the lowest level does the +1 adjustment; layers above (scale/prepare) apply the
     // scale factor from there. Buffer sizes are multiples of 32x2 (for alignment), but the boxes themselves
@@ -2067,8 +2073,7 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
     val hunksNative = mutableListOf<PumpHunk>()
 
     // Build raw hunks from the non-nested expanded rects (pre-consolidate) so the RED raw boxes in reports
-    // show the individual +1 expanded and de-nested detections. Use contentW/contentH for ICRS to fix
-    // scaling back up / offsets (the outer master includes padding, content is the actual downscaled image size).
+    // show the individual +1 expanded and de-nested detections. Explicit upscale (full/content) once for full photo pixels.
     nonNestedRects.forEach { rect ->
         val ml = rect.left.toInt().coerceIn(0, masterW - 1)
         val mt = rect.top.toInt().coerceIn(0, masterH - 1)
@@ -2076,9 +2081,11 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
-        val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), contentW, contentH)
-        val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), contentW, contentH)
-        hunksRaw.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
+        val fl = ml * fullW.toFloat() / contentW
+        val ft = mt * fullH.toFloat() / contentH
+        val fr = mr * fullW.toFloat() / contentW
+        val fb = mb * fullH.toFloat() / contentH
+        hunksRaw.add(PumpHunk("", RectF(fl, ft, fr, fb)))
     }
 
     consolidated.forEach { rect ->
@@ -2092,29 +2099,32 @@ private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine:
         // 2. Perform Native Expansion (with Height-Relative Jump-Out and Retraction)
         val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
 
-        // Capture Expanded/Retracted result -- use content size for ICRS (consistent scaling)
-        val i1 = IcrsMath.pixelToIcrs(retractedRect.left.toFloat(), retractedRect.top.toFloat(), contentW, contentH)
-        val i2 = IcrsMath.pixelToIcrs(retractedRect.right.toFloat(), retractedRect.bottom.toFloat(), contentW, contentH)
-        hunksExpanded.add(PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y)))
+        // Capture Expanded/Retracted result -- explicit upscale to full pixel space (no content-size ICRS).
+        val fl = retractedRect.left * fullW.toFloat() / contentW
+        val ft = retractedRect.top * fullH.toFloat() / contentH
+        val fr = retractedRect.right * fullW.toFloat() / contentW
+        val fb = retractedRect.bottom * fullH.toFloat() / contentH
+        hunksExpanded.add(PumpHunk("", RectF(fl, ft, fr, fb)))
 
         // Capture Max Extent reach (Yellow tier)
-        val y1 = IcrsMath.pixelToIcrs(maxExtentRect.left.toFloat(), maxExtentRect.top.toFloat(), contentW, contentH)
-        val y2 = IcrsMath.pixelToIcrs(maxExtentRect.right.toFloat(), maxExtentRect.bottom.toFloat(), contentW, contentH)
-        hunksMaxExtent.add(PumpHunk("", RectF(y1.x, y1.y, y2.x, y2.y)))
+        val yfl = maxExtentRect.left * fullW.toFloat() / contentW
+        val yft = maxExtentRect.top * fullH.toFloat() / contentH
+        val yfr = maxExtentRect.right * fullW.toFloat() / contentW
+        val yfb = maxExtentRect.bottom * fullH.toFloat() / contentH
+        hunksMaxExtent.add(PumpHunk("", RectF(yfl, yft, yfr, yfb)))
     }
 
-    // Capture Native Results (Phase 2 A/B) -- using content size for ICRS too
+    // Capture Native Results (Phase 2 A/B) -- explicit upscale using full/content ratio (no ICRS).
     res.nativeBoxes.forEach { box ->
         // Points are in input Mat pixels (crop-relative)
-        val icrsPoints = box.points.toList().chunked(2).map { (px, py) ->
-            IcrsMath.pixelToIcrs(px, py, contentW, contentH)
-        }
-
+        val scaleX = fullW.toFloat() / contentW
+        val scaleY = fullH.toFloat() / contentH
         var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
         var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
-        icrsPoints.forEach { p ->
-            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
-            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+        box.points.toList().chunked(2).forEach { (px, py) ->
+            val sx = px * scaleX; val sy = py * scaleY
+            if (sx < minX) minX = sx; if (sx > maxX) maxX = sx
+            if (sy < minY) minY = sy; if (sy > maxY) maxY = sy
         }
         hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
     }
