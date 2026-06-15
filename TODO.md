@@ -66,7 +66,7 @@
 
 - [ ] Implement valley-push contrast mapping logic in OdometerOcrUtils.valleyPushToPeaks
   - [x] Update TODO.md with the execution task
-  - [ ] Implement partition-based mapping, bin center alignment, and stretching in OdometerOcrUtils.kt
-  - [ ] Perform forensic verification of the source changes
-  - [ ] Stage and compile/build app via `./build_app`
+  - [x] Implement partition-based mapping, bin center alignment, and stretching in OdometerOcrUtils.kt
+  - [x] Perform forensic verification of the source changes
+  - [x] Stage and compile/build app via `./build_app`
   - [ ] Inform user and deliver END OF EXECUTION TURN marker
