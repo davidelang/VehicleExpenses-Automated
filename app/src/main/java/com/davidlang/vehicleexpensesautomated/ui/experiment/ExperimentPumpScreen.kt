@@ -265,6 +265,216 @@ private suspend fun runPumpExperiment(
 
             var originalHistogram = JSONArray()
 
+
+            // --- Pure helper functions (no closure on loop variables) ---
+
+            fun stackVertically(b64List: List<String>): String {
+                if (b64List.isEmpty()) return ""
+                val bitmaps = mutableListOf<android.graphics.Bitmap>()
+                try {
+                    b64List.forEach { b64 ->
+                        val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        if (bmp != null) bitmaps.add(bmp)
+                    }
+                    if (bitmaps.isEmpty()) return ""
+                    val w = bitmaps.maxOf { it.width }
+                    val totalH = bitmaps.sumOf { it.height }
+                    val stacked = android.graphics.Bitmap.createBitmap(w, totalH, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(stacked)
+                    canvas.drawColor(android.graphics.Color.BLACK)
+                    var y = 0
+                    bitmaps.forEach { bmp ->
+                        val scale = w.toFloat() / bmp.width.toFloat()
+                        val nh = (bmp.height * scale).toInt()
+                        val sb = android.graphics.Bitmap.createScaledBitmap(bmp, w, nh, true)
+                        canvas.drawBitmap(sb, 0f, y.toFloat(), null)
+                        y += nh
+                        if (sb != bmp) sb.recycle()
+                        bmp.recycle()
+                    }
+                    val res = OcrUtils.bitmapToBase64(stacked, 70)
+                    stacked.recycle()
+                    return res
+                } catch (e: Exception) {
+                    bitmaps.forEach { it.recycle() }
+                    return ""
+                }
+            }
+
+            fun qualifiesFor3SidesNearExtend(cR: android.graphics.Rect, oR: android.graphics.Rect): Boolean {
+                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                if (insides.count { it } != 3) return false
+                // identify protruding side + compute pixel protrusion distance + overlap on that axis
+                val (protrPx, hasOverlap) = when {
+                    !insides[0] -> (cR.left - oR.left) to (oR.right > cR.left)   // left
+                    !insides[2] -> (oR.right - cR.right) to (oR.left < cR.right) // right
+                    !insides[1] -> (cR.top - oR.top) to (oR.bottom > cR.top)     // top
+                    !insides[3] -> (oR.bottom - cR.bottom) to (oR.top < cR.bottom) // bottom
+                    else -> 0 to true
+                }
+                return protrPx <= 40 && hasOverlap
+            }
+
+            fun doCrossScaleRedboxFilterPixel(redRects: MutableList<android.graphics.Rect>) {
+                if (redRects.isEmpty()) return
+                // Exact containment pass (sequential kept, pure integer, no ICRS)
+                val kept = mutableListOf<android.graphics.Rect>()
+                for (r1 in redRects) {
+                    val isContained = kept.any { r2 ->
+                        r2.contains(r1.left, r1.top, r1.right, r1.bottom)
+                    }
+                    if (!isContained) kept.add(r1)
+                }
+                // Now 3sides + <=40px with smart sweep instead of O(n^2) pair
+                // Build intervals
+                data class Iv(val s: Int, val e: Int, val idx: Int)
+                // X sweep for overlaps
+                val xIvs = kept.withIndex().map { (i, r) -> Iv(r.left, r.right, i) }.sortedBy { it.s }
+                val xOver = mutableSetOf<Pair<Int, Int>>()
+                val activeX = mutableListOf<Iv>()
+                for (iv in xIvs) {
+                    activeX.removeAll { it.e < iv.s }
+                    for (a in activeX) {
+                        val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
+                        xOver.add(lo to hi)
+                    }
+                    activeX.add(iv)
+                }
+                // Y sweep
+                val yIvs = kept.withIndex().map { (i, r) -> Iv(r.top, r.bottom, i) }.sortedBy { it.s }
+                val yOver = mutableSetOf<Pair<Int, Int>>()
+                val activeY = mutableListOf<Iv>()
+                for (iv in yIvs) {
+                    activeY.removeAll { it.e < iv.s }
+                    for (a in activeY) {
+                        val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
+                        yOver.add(lo to hi)
+                    }
+                    activeY.add(iv)
+                }
+                val candidates = xOver intersect yOver
+                // 3sides only on candidates (small N)
+                val toProcess = kept.toMutableList()
+                val extended = mutableListOf<android.graphics.Rect>()
+                for (i in toProcess.indices) {
+                    var cur = toProcess[i]
+                    for (j in toProcess.indices) {
+                        if (i == j) continue
+                        val p = minOf(i, j) to maxOf(i, j)
+                        if (p !in candidates) continue
+                        val oth = toProcess[j]
+                        if (qualifiesFor3SidesNearExtend(cur, oth)) {
+                            val insides = listOf(oth.left >= cur.left, oth.top >= cur.top, oth.right <= cur.right, oth.bottom <= cur.bottom)
+                            val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
+                            val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
+                            val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
+                            val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
+                            cur = android.graphics.Rect(newL, newT, newR, newB)
+                        }
+                    }
+                    if (extended.none { it == cur }) extended.add(cur)
+                }
+                // final cleanup contains
+                val cleaned = extended.filter { b ->
+                    !extended.any { o -> o != b && o.contains(b) }
+                }.toMutableList()
+                redRects.clear()
+                redRects.addAll(cleaned)
+            }
+
+            fun labelWithText(b64: String, text: String): String {
+                return try {
+                    val bytes = Base64.decode(b64, Base64.DEFAULT)
+                    var bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return b64
+                    val mutable = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                    bmp.recycle()
+                    bmp = mutable
+                    val canvas = android.graphics.Canvas(bmp)
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.YELLOW
+                        textSize = (bmp.height * 0.06f).coerceAtLeast(18f)
+                        isAntiAlias = true
+                        setShadowLayer(2f, 1f, 1f, android.graphics.Color.BLACK)
+                    }
+                    canvas.drawText(text, 8f, paint.textSize + 4f, paint)
+                    val baos = java.io.ByteArrayOutputStream()
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
+                    val out = Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
+                    bmp.recycle()
+                    out
+                } catch (e: Exception) {
+                    b64
+                }
+            }
+
+            fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
+                if (pdHunksRawTotal.isNotEmpty()) {
+                    // Remove redundant nested or duplicate red boxes (entirely contained or perfectly overlapping).
+                    // Purpose: eliminate redundant detections so they do not contribute to derived
+                    // blue/orange boxes or final results. Filtered boxes are removed completely.
+                    // Use exact containment (no artificial inset/spacing); for perfect overlaps,
+                    // keep one representative (the first in order) and drop the rest.
+                    // Sequential keep: only check against already-kept boxes to ensure at least one survives duplicates.
+                    // Also applies the corrected 3 sides enclosed + <=40px (per user): exactly 3 edge insides + protrusion on 4th <=40px in pixel space *and* the boxes still overlap on the protruding axis (no gap). Uses shared qualifiesFor3SidesNearExtend helper (same logic for blue/orange in Set C).
+                    val kept = mutableListOf<PumpHunk>()
+                    for (h1 in pdHunksRawTotal) {
+                        val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
+                        val p2 = IcrsMath.icrsToPixel(h1.icrs.right, h1.icrs.bottom, imgW, imgH)
+                        val r1 = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
+                        val isContained = kept.any { h2 ->
+                            h1 !== h2 && run {
+                                val op1 = IcrsMath.icrsToPixel(h2.icrs.left, h2.icrs.top, imgW, imgH)
+                                val op2 = IcrsMath.icrsToPixel(h2.icrs.right, h2.icrs.bottom, imgW, imgH)
+                                val r2 = android.graphics.Rect(op1.x.toInt(), op1.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                // Exact containment (no inset). Perfect overlaps/duplicates: keep the first, drop redundant.
+                                r2.contains(r1.left, r1.top, r1.right, r1.bottom)
+                            }
+                        }
+                        if (!isContained) {
+                            kept.add(h1)
+                        }
+                    }
+                    // 3 sides +40px on the exact survivors (the near-nested cases exact didn't catch)
+                    val toProcess = kept.toMutableList()
+                    val extended = mutableListOf<PumpHunk>()
+                    for (i in toProcess.indices) {
+                        var cur = toProcess[i]
+                        for (j in toProcess.indices) {
+                            if (i == j) continue
+                            val oth = toProcess[j]
+                            val cp = IcrsMath.icrsToPixel(cur.icrs.left, cur.icrs.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.icrs.right, cur.icrs.bottom, imgW, imgH)
+                            val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
+                            val op = IcrsMath.icrsToPixel(oth.icrs.left, oth.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.icrs.right, oth.icrs.bottom, imgW, imgH)
+                            val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                            val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                            if (qualifiesFor3SidesNearExtend(cR, oR)) {
+                                val newL = if (!insides[0]) min(cur.icrs.left, oth.icrs.left) else cur.icrs.left
+                                val newT = if (!insides[1]) min(cur.icrs.top, oth.icrs.top) else cur.icrs.top
+                                val newR = if (!insides[2]) max(cur.icrs.right, oth.icrs.right) else cur.icrs.right
+                                val newB = if (!insides[3]) max(cur.icrs.bottom, oth.icrs.bottom) else cur.icrs.bottom
+                                cur = PumpHunk(cur.text, RectF(newL, newT, newR, newB))
+                            }
+                        }
+                        if (extended.none { it.icrs == cur.icrs }) extended.add(cur)
+                    }
+                    val cleaned = extended.filter { b ->
+                        val bp = IcrsMath.icrsToPixel(b.icrs.left, b.icrs.top, imgW, imgH); val bp2 = IcrsMath.icrsToPixel(b.icrs.right, b.icrs.bottom, imgW, imgH)
+                        val bR = android.graphics.Rect(bp.x.toInt(), bp.y.toInt(), bp2.x.toInt(), bp2.y.toInt())
+                        !extended.any { o ->
+                            if (o === b) false else {
+                                val op = IcrsMath.icrsToPixel(o.icrs.left, o.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.icrs.right, o.icrs.bottom, imgW, imgH)
+                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
+                                oR.contains(bR)
+                            }
+                        }
+                    }.toMutableList()
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(cleaned)
+                }
+            }
+
+
             // Dynamic Flow Processing
             // Phase 2 dispatch (approved array-of-processors refactor): iterate the flowProcessors array in lockstep
             // with flows (forEachIndexed). Common per-flow setup + call to the processor for this index.
@@ -352,39 +562,7 @@ private suspend fun runPumpExperiment(
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
                 val pdHunksDetectedTotal = mutableListOf<PumpHunk>()  // pre-redbox raw detected hunks (tFullB equiv); for Set C white 1px + blue/orange derivation from hunks (see alignment Set J tRawB vs tFullB)
 
-                fun stackVertically(b64List: List<String>): String {
-                    if (b64List.isEmpty()) return ""
-                    val bitmaps = mutableListOf<android.graphics.Bitmap>()
-                    try {
-                        b64List.forEach { b64 ->
-                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            if (bmp != null) bitmaps.add(bmp)
-                        }
-                        if (bitmaps.isEmpty()) return ""
-                        val w = bitmaps.maxOf { it.width }
-                        val totalH = bitmaps.sumOf { it.height }
-                        val stacked = android.graphics.Bitmap.createBitmap(w, totalH, android.graphics.Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(stacked)
-                        canvas.drawColor(android.graphics.Color.BLACK)
-                        var y = 0
-                        bitmaps.forEach { bmp ->
-                            val scale = w.toFloat() / bmp.width.toFloat()
-                            val nh = (bmp.height * scale).toInt()
-                            val sb = android.graphics.Bitmap.createScaledBitmap(bmp, w, nh, true)
-                            canvas.drawBitmap(sb, 0f, y.toFloat(), null)
-                            y += nh
-                            if (sb != bmp) sb.recycle()
-                            bmp.recycle()
-                        }
-                        val res = OcrUtils.bitmapToBase64(stacked, 70)
-                        stacked.recycle()
-                        return res
-                    } catch (e: Exception) {
-                        bitmaps.forEach { it.recycle() }
-                        return ""
-                    }
-                }
+
 
                 suspend fun getFinal(
                     hunks: List<PumpHunk>,
@@ -505,182 +683,9 @@ private suspend fun runPumpExperiment(
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
                 }
 
-                fun qualifiesFor3SidesNearExtend(cR: android.graphics.Rect, oR: android.graphics.Rect): Boolean {
-                    val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                    if (insides.count { it } != 3) return false
-                    // identify protruding side + compute pixel protrusion distance + overlap on that axis
-                    val (protrPx, hasOverlap) = when {
-                        !insides[0] -> (cR.left - oR.left) to (oR.right > cR.left)   // left
-                        !insides[2] -> (oR.right - cR.right) to (oR.left < cR.right) // right
-                        !insides[1] -> (cR.top - oR.top) to (oR.bottom > cR.top)     // top
-                        !insides[3] -> (oR.bottom - cR.bottom) to (oR.top < cR.bottom) // bottom
-                        else -> 0 to true
-                    }
-                    return protrPx <= 40 && hasOverlap
-                }
 
-                /**
-                 * Pixel-rect version of redbox nesting filter using the exact user-specified sweep for overlap discovery (O(2N) + small).
-                 * Used for the red working path (prune to 6, blue source, etc.) per the D/E plan + unique-images feedback (avoid ICRS for reds).
-                 * Exact containment sequential + 3sides with sweep on X then Y, only intersect candidates get careful qualifies + integer extend.
-                 */
-                fun doCrossScaleRedboxFilterPixel(redRects: MutableList<android.graphics.Rect>) {
-                    if (redRects.isEmpty()) return
-                    // Exact containment pass (sequential kept, pure integer, no ICRS)
-                    val kept = mutableListOf<android.graphics.Rect>()
-                    for (r1 in redRects) {
-                        val isContained = kept.any { r2 ->
-                            r2.contains(r1.left, r1.top, r1.right, r1.bottom)
-                        }
-                        if (!isContained) kept.add(r1)
-                    }
-                    // Now 3sides + <=40px with smart sweep instead of O(n^2) pair
-                    // Build intervals
-                    data class Iv(val s: Int, val e: Int, val idx: Int)
-                    // X sweep for overlaps
-                    val xIvs = kept.withIndex().map { (i, r) -> Iv(r.left, r.right, i) }.sortedBy { it.s }
-                    val xOver = mutableSetOf<Pair<Int, Int>>()
-                    val activeX = mutableListOf<Iv>()
-                    for (iv in xIvs) {
-                        activeX.removeAll { it.e < iv.s }
-                        for (a in activeX) {
-                            val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
-                            xOver.add(lo to hi)
-                        }
-                        activeX.add(iv)
-                    }
-                    // Y sweep
-                    val yIvs = kept.withIndex().map { (i, r) -> Iv(r.top, r.bottom, i) }.sortedBy { it.s }
-                    val yOver = mutableSetOf<Pair<Int, Int>>()
-                    val activeY = mutableListOf<Iv>()
-                    for (iv in yIvs) {
-                        activeY.removeAll { it.e < iv.s }
-                        for (a in activeY) {
-                            val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
-                            yOver.add(lo to hi)
-                        }
-                        activeY.add(iv)
-                    }
-                    val candidates = xOver intersect yOver
-                    // 3sides only on candidates (small N)
-                    val toProcess = kept.toMutableList()
-                    val extended = mutableListOf<android.graphics.Rect>()
-                    for (i in toProcess.indices) {
-                        var cur = toProcess[i]
-                        for (j in toProcess.indices) {
-                            if (i == j) continue
-                            val p = minOf(i, j) to maxOf(i, j)
-                            if (p !in candidates) continue
-                            val oth = toProcess[j]
-                            if (qualifiesFor3SidesNearExtend(cur, oth)) {
-                                val insides = listOf(oth.left >= cur.left, oth.top >= cur.top, oth.right <= cur.right, oth.bottom <= cur.bottom)
-                                val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
-                                val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
-                                val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
-                                val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
-                                cur = android.graphics.Rect(newL, newT, newR, newB)
-                            }
-                        }
-                        if (extended.none { it == cur }) extended.add(cur)
-                    }
-                    // final cleanup contains
-                    val cleaned = extended.filter { b ->
-                        !extended.any { o -> o != b && o.contains(b) }
-                    }.toMutableList()
-                    redRects.clear()
-                    redRects.addAll(cleaned)
-                }
 
-                fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
-                    if (pdHunksRawTotal.isNotEmpty()) {
-                        // Remove redundant nested or duplicate red boxes (entirely contained or perfectly overlapping).
-                        // Purpose: eliminate redundant detections so they do not contribute to derived
-                        // blue/orange boxes or final results. Filtered boxes are removed completely.
-                        // Use exact containment (no artificial inset/spacing); for perfect overlaps,
-                        // keep one representative (the first in order) and drop the rest.
-                        // Sequential keep: only check against already-kept boxes to ensure at least one survives duplicates.
-                        // Also applies the corrected 3 sides enclosed + <=40px (per user): exactly 3 edge insides + protrusion on 4th <=40px in pixel space *and* the boxes still overlap on the protruding axis (no gap). Uses shared qualifiesFor3SidesNearExtend helper (same logic for blue/orange in Set C).
-                        val kept = mutableListOf<PumpHunk>()
-                        for (h1 in pdHunksRawTotal) {
-                            val p1 = IcrsMath.icrsToPixel(h1.icrs.left, h1.icrs.top, imgW, imgH)
-                            val p2 = IcrsMath.icrsToPixel(h1.icrs.right, h1.icrs.bottom, imgW, imgH)
-                            val r1 = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                            val isContained = kept.any { h2 ->
-                                h1 !== h2 && run {
-                                    val op1 = IcrsMath.icrsToPixel(h2.icrs.left, h2.icrs.top, imgW, imgH)
-                                    val op2 = IcrsMath.icrsToPixel(h2.icrs.right, h2.icrs.bottom, imgW, imgH)
-                                    val r2 = android.graphics.Rect(op1.x.toInt(), op1.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                    // Exact containment (no inset). Perfect overlaps/duplicates: keep the first, drop redundant.
-                                    r2.contains(r1.left, r1.top, r1.right, r1.bottom)
-                                }
-                            }
-                            if (!isContained) {
-                                kept.add(h1)
-                            }
-                        }
-                        // 3 sides +40px on the exact survivors (the near-nested cases exact didn't catch)
-                        val toProcess = kept.toMutableList()
-                        val extended = mutableListOf<PumpHunk>()
-                        for (i in toProcess.indices) {
-                            var cur = toProcess[i]
-                            for (j in toProcess.indices) {
-                                if (i == j) continue
-                                val oth = toProcess[j]
-                                val cp = IcrsMath.icrsToPixel(cur.icrs.left, cur.icrs.top, imgW, imgH); val cp2 = IcrsMath.icrsToPixel(cur.icrs.right, cur.icrs.bottom, imgW, imgH)
-                                val cR = android.graphics.Rect(cp.x.toInt(), cp.y.toInt(), cp2.x.toInt(), cp2.y.toInt())
-                                val op = IcrsMath.icrsToPixel(oth.icrs.left, oth.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(oth.icrs.right, oth.icrs.bottom, imgW, imgH)
-                                val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                                if (qualifiesFor3SidesNearExtend(cR, oR)) {
-                                    val newL = if (!insides[0]) min(cur.icrs.left, oth.icrs.left) else cur.icrs.left
-                                    val newT = if (!insides[1]) min(cur.icrs.top, oth.icrs.top) else cur.icrs.top
-                                    val newR = if (!insides[2]) max(cur.icrs.right, oth.icrs.right) else cur.icrs.right
-                                    val newB = if (!insides[3]) max(cur.icrs.bottom, oth.icrs.bottom) else cur.icrs.bottom
-                                    cur = PumpHunk(cur.text, RectF(newL, newT, newR, newB))
-                                }
-                            }
-                            if (extended.none { it.icrs == cur.icrs }) extended.add(cur)
-                        }
-                        val cleaned = extended.filter { b ->
-                            val bp = IcrsMath.icrsToPixel(b.icrs.left, b.icrs.top, imgW, imgH); val bp2 = IcrsMath.icrsToPixel(b.icrs.right, b.icrs.bottom, imgW, imgH)
-                            val bR = android.graphics.Rect(bp.x.toInt(), bp.y.toInt(), bp2.x.toInt(), bp2.y.toInt())
-                            !extended.any { o ->
-                                if (o === b) false else {
-                                    val op = IcrsMath.icrsToPixel(o.icrs.left, o.icrs.top, imgW, imgH); val op2 = IcrsMath.icrsToPixel(o.icrs.right, o.icrs.bottom, imgW, imgH)
-                                    val oR = android.graphics.Rect(op.x.toInt(), op.y.toInt(), op2.x.toInt(), op2.y.toInt())
-                                    oR.contains(bR)
-                                }
-                            }
-                        }.toMutableList()
-                        pdHunksRawTotal.clear()
-                        pdHunksRawTotal.addAll(cleaned)
-                    }
-                }
 
-                fun labelWithText(b64: String, text: String): String {
-                    return try {
-                        val bytes = Base64.decode(b64, Base64.DEFAULT)
-                        var bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return b64
-                        val mutable = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
-                        bmp.recycle()
-                        bmp = mutable
-                        val canvas = android.graphics.Canvas(bmp)
-                        val paint = android.graphics.Paint().apply {
-                            color = android.graphics.Color.YELLOW
-                            textSize = (bmp.height * 0.06f).coerceAtLeast(18f)
-                            isAntiAlias = true
-                            setShadowLayer(2f, 1f, 1f, android.graphics.Color.BLACK)
-                        }
-                        canvas.drawText(text, 8f, paint.textSize + 4f, paint)
-                        val baos = java.io.ByteArrayOutputStream()
-                        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
-                        val out = Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
-                        bmp.recycle()
-                        out
-                    } catch (e: Exception) {
-                        b64
-                    }
-                }
 
                 suspend fun doValleyForC(ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int) {
                     /* Valley push (2026-06-12 per approved plan): bin-trials long removed. C now uses valleyPushToPeaks (replaces stretch) for raw display + quantized few-brightness image + before/after hists in column.
