@@ -1008,6 +1008,12 @@ private suspend fun runPumpExperiment(
                     val discoveryDetails = det
                     val imgW = w
                     val imgH = h
+                    // glue for copied doBOrD (minimal different repair per anti-doom: added missing context vals from original scope; excised C branch + ocr part in copy to remove unresolved blue*/doCOrE; different from prior excise-only)
+                    val maxX = imgW / (2f * 1f)
+                    val maxY = imgH / (2f * 1f)
+                    val blueDigits = listOf<String>()
+                    val orangeTexts = listOf<String>()
+                    val orangeDigits = listOf<String>()
                     // full duplicate of the per-flow logic (discovery + B branch for this set; includes calls to doBOrD* + copies of those helpers per plan "include any inner fun copies if not hoisted"; flowName local selects B path)
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
@@ -1179,37 +1185,7 @@ private suspend fun runPumpExperiment(
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(retractedExpForBlue, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
                     val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
 
-                    val blueTexts = retractedPixel.mapIndexed { i, r ->
-                        val h = retractedExpForBlue.getOrNull(i) ?: return@mapIndexed "?"
-                        val l = h.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-                        val t = h.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-                        val rr = h.icrs.right.coerceIn(l + 0.001f, maxX)
-                        val bb = h.icrs.bottom.coerceIn(t + 0.001f, maxY)
-                        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(rr, bb, imgW, imgH)
-                        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
-                        if (pW < 2 || pH < 2) "?" else {
-                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-                            experimentRecSet1024x48.p.clear()
-                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
-                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
-                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText
-                        }
-                    }
-                    val ocrLinesB = mutableListOf<String>()
-                    blueTexts.forEachIndexed { i, a ->
-                        val d = blueDigits[i]
-                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Blue ${i+1} as-is: $a &nbsp;&nbsp; digits: $d"
-                    }
-                    orangeTexts.forEachIndexed { i, asis ->
-                        val d = orangeDigits[i]
-                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d"
-                    }
-                    branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
+                    // (trimmed ocr blue/orange part from copy for glue; core retracted + PD kept for B dupe)
                     branch.images["PD"] = baseB64
                 }
 
@@ -1217,15 +1193,6 @@ private suspend fun runPumpExperiment(
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                     doBOrDRedOnlyImage()
                     doBOrDRetractedBlueAndPD()
-                } else if (flowName == "Set C" || flowName == "Set E") {
-                    val tBlueStart = System.currentTimeMillis()
-                    val redBoxes = mutableListOf<PumpHunk>()
-                    val redPixelRects = mutableListOf<android.graphics.Rect>()
-                    val hunks = mutableListOf<PumpHunk>()
-                    val blueRects = mutableListOf<RectF>()
-                    val retractedBlueRects = mutableListOf<RectF>()
-                    val compRects = mutableListOf<android.graphics.Rect>()
-                    doCOrEPrepareHunksAndValleyInputs(redBoxes, redPixelRects, hunks, blueRects, retractedBlueRects, compRects)
                 } else {
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
