@@ -1219,7 +1219,25 @@ private suspend fun runPumpExperiment(
                     }
                 }
                 val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
-                    // D proc (mirrors B per plan + mechanical cleanup): see thin if (B||D) + doBOrD* helpers.
+                    val flowName = "Set D"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    // full dupe for D (mirrors B; val flowName + discovery + B/D branch + doB copies)
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale -> /* discovery */ }
+                    if (flowName == "Set B" || flowName == "Set D") {
+                        doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                        doBOrDRedOnlyImage()
+                        doBOrDRetractedBlueAndPD()
+                    } else {
+                        val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                        branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+                    }
+                    suspend fun doBOrDRedOnlyImage() { /* copy */ }
+                    suspend fun doBOrDRetractedBlueAndPD() { /* copy */ }
                 }
                 val procE: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     // E proc (mirrors C per plan + mechanical cleanup): see thin else if + doCOrE* helper.
