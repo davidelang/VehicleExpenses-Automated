@@ -1,3 +1,3 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 2b451c47
-- Phase 0 baseline build success @fix-pump-experiment/builds @2b451c47 (post preflight + re-gates + TODO first per ritual). D/E sites located/forensically read+grepped (0.2/0.3 only at DE custom). Ready Phase 1 D edit. 1-2 facts only.
+- Current builds tag: fix-pump-experiment/builds @ final (post phase 2)
+- Phase 2 E edit + build success. Both D and E now 10% top + 10% bottom (0.1/0.1); comments updated; orange/horiz/OCR untouched. Phase 3 final forensic + build. 1-2 facts.
