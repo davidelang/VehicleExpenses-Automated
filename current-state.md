@@ -1,3 +1,3 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 517b23cd
-- Phase 1: helper createBlueAndOrangeHunksFromReds added (exact body/params/defaults/vertFactors loop + 0.5 horiz + oExt 0.1; internal comment for sweep; hoisted after getAnns for visibility; "fun" per local pattern); narrow forensic before/after + grep (func present, D/E/G inlines untouched); state updated 1-2 facts after prune. Next Phase 2 D replace. Plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-get-extra-blue-boxes-function-horiz-50-vertical-sweep-20260616-plan.md
+- Current builds tag: fix-pump-experiment/builds @ 71cd9161
+- Phase 2: D block replaced (narrow forensic/grep before/after; inline+0.75/0.1/forEach gone, call with (10..40 step 5).map +0.5f + updated comment present; aPdD/snapshot/OCR maps untouched; E/G unchanged); git add + build success. Phase 3 E next. Plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-get-extra-blue-boxes-function-horiz-50-vertical-sweep-20260616-plan.md
