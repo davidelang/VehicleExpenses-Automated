@@ -2873,3 +2873,6 @@ private fun JSONObject.pPutSafe(key: String, value: Double, context: String = ""
 private fun JSONObject.pPutSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
 
+                    // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
+                    captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData (all sets); E visuals/redboxDataC follow
+                    val redboxDataC = JSONArray()
