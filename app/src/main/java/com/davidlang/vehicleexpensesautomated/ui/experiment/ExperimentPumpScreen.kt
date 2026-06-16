@@ -2001,8 +2001,10 @@ private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: L
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
     appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
-    flows.toSortedSet().forEach { flow ->
-        appendLine("<th style='width:350px;'>$flow ML</th>")
+    val sorted = flows.toSortedSet()
+    val hasML = if (sorted.isNotEmpty()) setOf(sorted.first()) else emptySet()  // data-driven from subBranches presence (ML only on first/A); no name if; matches row hasML intent
+    sorted.forEach { flow ->
+        if (flow in hasML) appendLine("<th style='width:350px;'>$flow ML</th>")
         appendLine("<th style='width:350px;'>$flow Paddle</th>")
     }
     appendLine("<th style='width:600px;'>Final Comparison</th></tr>")
