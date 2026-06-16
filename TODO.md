@@ -5,7 +5,7 @@
   - [x] Phase 1: procB dupe wrapper removal (narrow 995/10 before/after + grep)
   - [x] Phase 2: procD dupe wrapper removal (narrow 1326/10 before/after + grep)
   - [x] Phase 3: procC/procE dupe cleanups
-  - [ ] Phase 4: procA if(flowName) removal (narrow 731/5 before/after + grep)
+  - [x] Phase 4: procA if(flowName) removal (narrow 731/5 before/after + grep)
   - [ ] Phase 5: report builder name-if -> key-presence (multiple narrow reads + grep)
   - [ ] Phase 6: final narrow forensic re-reads + grep zero remaining name/flow/dupe; state+TODO 1-2 facts; git add + build; END marker
 

@@ -728,11 +728,9 @@ private suspend fun runPumpExperiment(
                     val imgW = w
                     val imgH = h
                     val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
-                    if (flowName == flows.first()) {
-                        originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
-                        root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
-                        root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
-                    }
+                    originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
+                    root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
+                    root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     val tDeskewStart = System.currentTimeMillis()
                     val deskewRes = OdometerOcrUtils.calculateDeskewAngleMlOnly(workspace.p)
                     val tilt = -deskewRes.angle
