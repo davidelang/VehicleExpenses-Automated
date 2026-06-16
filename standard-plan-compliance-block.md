@@ -6,7 +6,9 @@
 
 - Use narrow forensic `read_file` (offset/limit focused on the exact change site) + targeted grep verification before and after every edit.
 
-- Before each `./build_app`: `git add` the changed source file(s) + `current-state.md` + `TODO.md`.
+- **Mandatory ultra-micro phased execution with per-phase success gates**: The plan's "Phased Small-Step Execution" section must decompose the work into a large number of explicitly named, ultra-small phases (typically 8–20+ for non-trivial related changes). Each phase performs the smallest observable edit, followed **immediately** by narrow forensic `read_file` (offset/limit) + targeted grep before/after + `git add` (changed tracked sources + TODO.md) + a **confirmed successful `./build_app`** (new branch-scoped builds tag recorded and noted in current-state.md). No edits for the next phase may begin until the current phase's `./build_app` has succeeded. On any failure, trouble, or partial reset, only the tag from the most recent successful phase's `./build_app` (obtained via the mandatory `./get-builds-tag.sh` preflight) may be used.
+
+- Before each `./build_app`: `git add` the changed tracked source file(s) + `TODO.md`. (current-state.md is updated as required by the plan but is deliberately untracked/gitignored and must never be `git add`ed.)
 
 - current-state.md updates: 1-2 concise facts/pointers per step only (after pruning older completed items to a rolled summary line).
 

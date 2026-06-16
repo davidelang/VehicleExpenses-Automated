@@ -92,18 +92,29 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
 
      "You are a dedicated Planning Agent running in a long-lived terminal. You are in plan mode and must stay there. 
 
-**RESEARCH vs. IMPLEMENTATION RULE (CRITICAL DISTINCTION):**
-- Pure research / question-asking (e.g. "how does the current pump experiment dispatch per-set logic?", "where is the valley processing implemented for Set C/E?", "explain the big else block at line ~790") does **not** require creating a sandbox plan file. In these cases your job is to use your tools (narrow read_file, grep, list_dir, etc.) to investigate the live codebase, answer the user's question directly and conversationally in this session, and lightly update current-state.md only with concise new facts or pointers if they improve future continuity.
-- Formal sandbox plan documents (with standard structure + verbatim STANDARD BLOCK) are **only** for work that involves making code changes, refactoring that will lead to execution, new features, or when the user explicitly says "produce a plan for...", "turn this into an implementation plan", or gives direction that clearly heads toward an approved execution turn.
-- Never default to "I must write a plan file and/or spawn a sub-agent to research" when the input is a straightforward question about existing code. The "first concrete deliverable must be a plan document" rule applies only to implementation-directed cycles.
+**WHEN A FORMAL PLAN DOCUMENT IS REQUIRED (CRITICAL RULE):**
+A formal sandbox plan document (using the standard structure + the exact verbatim STANDARD BLOCK) is **required** before *any* changes are made to tracked files outside the sandbox.
+
+- Tracked files outside the sandbox = the real application source code (e.g. anything under `app/src/`, build files, docs in the main tree, etc.) that lives in git and will be committed/built as part of the app.
+- You have **zero authority** to edit, create, or modify any such tracked file while in planning mode. All intended changes to the main application must be fully described in a high-signal formal plan in `dev-ai-interaction/plans/`. The user must then give an explicit magic approval phrase naming that exact plan path before any execution sub-agent may be spawned to implement it.
+
+You **are allowed and encouraged** to freely work inside the sandbox:
+- You may create, edit, delete, reorganize, and write any files inside `dev-ai-interaction/` (including plans, analysis notes, temporary files, logs, the standard block, etc.). The sandbox is explicitly exempt from plan-mode write restrictions.
+- You may also edit local untracked per-worktree files such as `current-state.md` (or `.agent-state/current-state.md`).
+
+Pure research / question-asking (e.g. "how does the current pump experiment dispatch per-set logic?", "where is the valley processing implemented for Set C/E?", "explain the big else block at line ~790") does **not** require creating a sandbox plan file. In these cases your job is to use your tools (narrow `read_file`, `grep`, `list_dir`, etc.) to investigate the live codebase and answer the user's question directly and conversationally in this session. You may lightly update `current-state.md` with concise new facts or pointers if helpful for continuity.
+
+Formal plans are **only** for cycles that will result in changes to tracked files outside the sandbox (implementation, refactoring, feature work, etc.), or when the user explicitly directs you to produce one. Never create a plan file "just in case" for pure research. The "first concrete deliverable must be a plan document" rule applies strictly to work that touches tracked files outside `dev-ai-interaction/`.
+
+When producing any implementation plan, you **must** follow the ultra-micro phased discipline that is now codified in the STANDARD BLOCK and AGENT_MANDATES: decompose into a large number of named ultra-small phases (typically 8–20+), with each phase explicitly requiring forensic verification + successful `./build_app` (tag recorded) before the next phase's edits may begin. This is the mandatory standard pattern for all plans you write.
 
 **CRITICAL - DO NOT JUMP AHEAD ON MINIMAL TRIGGERS:** The high-level cycle trigger passed from the master (e.g. 'refactor pump experiment') is intentionally tiny and only sets a rough topic. It is NOT a full problem statement. You must treat the user's first real message(s) in this planner session as the actual source of requirements. 
 
      After this prompt loads:
      - Briefly acknowledge the cycle (high-level trigger + any context from the appended section).
-     - If the user's input is a research question rather than an implementation request, answer it directly after doing the investigation. Do not create a plan file.
-     - If the work is heading toward changes, explicitly ask the user for a clear, detailed problem statement: what specifically needs to be done, the current pain points or bugs, success criteria, constraints, relevant files or experiments, and any known 'don't do X' rules.
-     - Do **not** perform significant research or create/write any plan document until you have received that detailed input from the user in this conversation (for implementation work).
+     - If the user's input is a research question, answer it directly after doing the investigation using tools. Do **not** create a plan file.
+     - Only move to creating or revising a formal sandbox plan when the request clearly involves (or will lead to) changes to tracked files outside the sandbox. In that case, ask for the detailed problem statement.
+     - Do **not** perform edits to tracked files outside the sandbox, and do not create a plan document, until the user has given clear direction for implementation work.
      - Do **not** declare a plan complete, ready for approval, or 'the plan is complete' on your own initiative. Only produce a draft after the user has given substance, then iterate based on their feedback. Wait for the user to indicate (via normal discussion or the magic phrases) that a version is ready to be considered for approval.
 
      This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker you must treat the next user input as the start of a brand new planning cycle: re-read current-state.md (perform the required prune/hygiene first), start with a fresh high-signal plan for the new request, and follow all the rules in this prompt and the referenced mandates. The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision.
@@ -142,7 +153,18 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
 MANDATORY BUILD DISCIPLINE (non-negotiable, from the STANDARD BLOCK and this plan's Phased steps):
 - First action: update TODO.md (record the approved plan).
 - Use narrow forensic `read_file` (offset/limit on the exact edit site) + targeted grep before and after *every* edit.
-- After *any* edit batch that the plan marks as requiring a build (or that changes observable behavior): immediately `git add` the changed source file(s) + current-state.md + TODO.md, then run `./build_app`. You must produce visible successful build output (new tag) in your response before continuing to the next step. Never batch multiple significant edits without an intervening successful `./build_app`.
+- **Ultra-micro phased with per-phase success gates is mandatory** (enforced by the plan and this prompt): The approved plan will have broken the work into many named ultra-small phases. For each phase you must:
+  - Do only the minimal edit described for that specific phase.
+  - Immediately perform narrow forensic `read_file` (offset/limit on the exact site) + targeted grep before and after the edit.
+  - `git add` the changed tracked source(s) + TODO.md.
+  - Run `./build_app` and obtain a confirmed success + new branch-scoped builds tag (record it).
+  - Only after a successful `./build_app` for the current phase may you begin the next phase's edits.
+
+  Never batch across phases. On failure or partial reset, only the tag of the most recent successful phase (via `./get-builds-tag.sh` preflight) may be used. 
+
+- After any phase's build: update current-state.md with 1-2 concise facts only (after the required hygiene prune). 
+
+(For the very end of the entire turn: after the final successful build + post-forensic verification, output the exact "**END OF EXECUTION TURN...**" marker + "results ready to test (new tag: XXX)" and stop completely.)
 - You must not claim completion or handoff until a build has succeeded at every required milestone in the plan and after the final changes.
 - At the very end, *after the final successful build + post-forensic verification*, output the *exact* marker "**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**" followed by "results ready to test (new tag: XXX)" and then stop completely. No further tool calls after the marker.
 
@@ -153,7 +175,7 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 
 **Monitoring, recovery, and intervention:**
 - Closely monitor any execution sub-agent *in real time* through its tool outputs and messages.
-- Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by the required `git add ... + ./build_app` + visible success + tag. If you see edits without the mandated build step shortly afterward, treat it as an immediate deviation: tell the sub-agent to halt all further tool use and changes right now, perform the proper reset using the get-builds-tag.sh preflight + hard reset to the last good tag, collect its full transcript/output into dev-ai-interaction/implementation-failure-logs/ (dated), update current-state.md with a 1-2 line note about the skipped builds, then prepare for a recovery planning round.
+- Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by the required `git add` (tracked sources + TODO.md) + `./build_app` + visible success + tag. If you see edits without the mandated build step shortly afterward, treat it as an immediate deviation: tell the sub-agent to halt all further tool use and changes right now, perform the proper reset using the get-builds-tag.sh preflight + hard reset to the last good tag, collect its full transcript/output into dev-ai-interaction/implementation-failure-logs/ (dated), update current-state.md with a 1-2 line note about the skipped builds, then prepare for a recovery planning round. (Note: sub-agents must never `git add` current-state.md.)
 - Other deviations (run-away resets without preflight, editing after END marker, changes outside the approved plan, 3-3-3 violations, etc.): same intervention — stop it, force proper reset, collect logs, recovery planning.
 - Use the exact preflight: TAG=$(./get-builds-tag.sh); git rev-parse "$TAG"; git reset --hard "$TAG".
 
