@@ -1,8 +1,5 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 07e8c8b54d94668e99924225f7e6e5a696ce2da2
-- Last completed: optimize-pump-scales-and-duplicate-detect-plan.md
-- Phase 1: Update TODO.md (Completed)
-- Phase 2: Modify runDiscoveryPaddle in ExperimentPumpScreen.kt (Completed)
-- Phase 3: Modify Outer Loops for Sets A, B, C, D, E (Completed)
-- Phase 4: Modify Bounding Box Scales List (Completed)
-- Phase 5: Verification & Build (In progress)
+- Current builds tag: fix-pump-experiment/builds @ fbf8ec27
+- Last completed: pump-experiment-make-ml-column-data-driven-20260616-plan.md (full ritual, 4 builds, ML column now data-driven via containsKey in builder; results ready)
+- Execution of pump-experiment-b-c-to-6-reds-valley-c-ocr-c-e-new-blue-orange-d-e-remove-valley-d-font-timing-20260616-plan.md started (user execute magic). Master baseline: .kt clean, tag fbf8ec27, state pruned. Spawning narrow bg Execution Sub-agent (strict ritual: TODO as VERY FIRST + gates + all 6 06-15 failure logs + plan Phased + scope B/C 6-reds + valley-C + OCR-C/E + new blue/orange D/E + remove valley-D + font/timing). Sub does Phase 0 forensic (procB/C prune, retracted, valley, first-column, D/E red) + baseline build first. 1-2 facts only. Rolled: prior eliminate-set-name + make-ml + rectf + optimize-scales phases (see last plans + git since tag).
+- Phase 0 gates 100% (re-read state/plan/TODO/mandates/standard/6logs + AGENT_CONTEXT/GROK; narrow forensic B~950/ C~1070+1240/ retracted~598/ pBuild~1805/ D/E~1985 + targeted greps if>6 only D/E, valley in C/E+retracted, ocrLinesB digits filter, pd_ocr, Deskew/Tilt at 1805; porcelain only state M no .kt; TODO grep pre no match then post match; OCR filter confirmed: numericdecimal digits >=2 includes regular as-is; lessons internalized from 6 logs on first-TODO-skip; TODO first source edit done; state hygiene/rolled; ready baseline build. 1 fact: no scope creep.
