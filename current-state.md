@@ -1,0 +1,4 @@
+- Branch: fix-pump-experiment
+- Current builds tag: fix-pump-experiment/builds @ 177283f7
+- Last completed: pump-experiment-eliminate-rectf-icrs-float-math-set-a-20260616-plan.md (full ritual, 6 builds, Set A integer pixel paths; results ready)
+- Execution of pump-experiment-eliminate-set-name-conditionals-20260616-plan.md started (user execute magic). Master baseline: .kt clean, tag 177283f7, state pruned. Spawning narrow bg Execution Sub-agent (strict ritual: TODO as VERY FIRST + gates + all 6 06-15 failure logs + plan Phased + scope eliminate name conditionals/dupe wrappers only). Sub does Phase 0 forensic (report builder + procs) + baseline build first. 1-2 facts only. Rolled: prior deskew proposal + detailed rectf phases (see last plan + git since tag).
