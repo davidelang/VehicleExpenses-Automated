@@ -1835,7 +1835,11 @@ private fun pBuildHtmlRowDynamic(
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"] ?: ""}'></td>")
+        if (br.images.containsKey("ML") && br.images["ML"]?.isNotEmpty() == true) {
+            appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
+        } else {
+            appendLine("<td></td>")  // blank for alignment; no broken link for pure-pump sets
+        }
         val pdB64 = br.images["PD"] ?: ""
         val extraOcr = if (br.metadata.containsKey("pd_ocr_html")) {
             "<br><div style='font-family:monospace; font-size:18px; text-align:left; background:#fafafa; padding:2px;'>" + br.metadata["pd_ocr_html"] + "</div>"
