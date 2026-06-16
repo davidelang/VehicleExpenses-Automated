@@ -734,7 +734,7 @@ private suspend fun runPumpExperiment(
                         root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     }
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAngleMlOnly(workspace.p)
                     val tilt = -deskewRes.angle
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)
@@ -904,7 +904,7 @@ private suspend fun runPumpExperiment(
                     val imgH = h
                     val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
                     val tilt = -deskewRes.paddleCppAngle
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)
@@ -1006,7 +1006,7 @@ private suspend fun runPumpExperiment(
                     val imgH = h
 
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
                     val tilt = -deskewRes.paddleCppAngle
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)
@@ -1193,7 +1193,7 @@ private suspend fun runPumpExperiment(
                     val imgH = h
                     val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
                     val tilt = -deskewRes.paddleCppAngle
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)
@@ -1337,7 +1337,7 @@ private suspend fun runPumpExperiment(
                     val imgH = h
 
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
                     val tilt = -deskewRes.paddleCppAngle
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)

@@ -1,8 +1,15 @@
 # TODO
 
-- [ ] Execution of pump-experiment-eliminate-rectf-icrs-float-math-set-a-20260616-plan.md (VERY FIRST SOURCE EDIT this TODO after re-read current-state.md (hygiene prune first per rules) + FULL plan read (abs) + all prior failure logs read + record lessons on identical first-action skips; compliance re-read of STANDARD first 10 lines + last 5 current-state + git --porcelain no .kt + grep TODO pre (no match); Phase 0: narrow forensic reads of procA (720/180) + ML ICRS site (774) + red rebuilds (839) + getFinal call from A (883) + getFinal/expand/takeCrop sites + targeted grep for IcrsMath/RectF/float... ; update TODO first (this) + verifs + baseline git add + ./build_app; then Phases 1-5 ultra-micro per plan (ML ICRS in procA only, red collection/rebuild for A only, getFinal+expand/takeCrop exercised by A, viz for A, final verif); all gates/forensic/grep before/after every edit, git add .kt+state+TODO before each build; scope strictly Set A only (procA red+ML paths + exercised getFinal/expand/takeCrop for A data) — ZERO edits to ExperimentPumpScreen.kt outside the described A sites, ZERO edits to PumpHunk/runDiscoveryPaddle/other procs/B-E paths/global filters; 3-3-3 + anti-doom + literal preflight only; end with exact END marker + results ready (tag) + this plan path)
-  - Phase 4: viz read/grep + state+TODO update (A final crops integer clean)
-  - Phase 5: final forensic re-reads + grep zero bad ICRS/RectF/float in A red+ML+getFinal/expand/takeCrop; state+TODO; final build + END marker (tag) + plan path.
+- [x] Execution of pump-experiment-eliminate-rectf-icrs-float-math-set-a-20260616-plan.md (VERY FIRST SOURCE EDIT this TODO after re-read current-state.md (hygiene prune first per rules) + FULL plan read (abs) + all prior failure logs read + record lessons on identical first-action skips; compliance re-read of STANDARD first 10 lines + last 5 current-state + git --porcelain no .kt + grep TODO pre (no match); Phase 0: narrow forensic reads of procA (720/180) + ML ICRS site (774) + red rebuilds (839) + getFinal call from A (883) + getFinal/expand/takeCrop sites + targeted grep for IcrsMath/RectF/float... ; update TODO first (this) + verifs + baseline git add + ./build_app; then Phases 1-5 ultra-micro per plan (ML ICRS in procA only, red collection/rebuild for A only, getFinal+expand/takeCrop exercised by A, viz for A, final verif); all gates/forensic/grep before/after every edit, git add .kt+state+TODO before each build; scope strictly Set A only (procA red+ML paths + exercised getFinal/expand/takeCrop for A data) — ZERO edits to ExperimentPumpScreen.kt outside the described A sites, ZERO edits to PumpHunk/runDiscoveryPaddle/other procs/B-E paths/global filters; 3-3-3 + anti-doom + literal preflight only; end with exact END marker + results ready (tag) + this plan path)
+  - [x] Phase 4: viz read/grep + state+TODO update (A final crops integer clean)
+  - [x] Phase 5: final forensic re-reads + grep zero bad ICRS/RectF/float in A red+ML+getFinal/expand/takeCrop; state+TODO; final build + END marker (tag) + plan path.
+
+- [ ] Execution of optimize-deskew-and-valley-lut-plan.md
+  - [ ] Phase 1: Update TODO.md (Completed)
+  - [ ] Phase 2: Implement Valley Push Native LUT in OdometerOcrUtils.kt
+  - [ ] Phase 3: Add split deskew functions to OdometerOcrUtils.kt
+  - [ ] Phase 4: Update ExperimentPumpScreen.kt to call new deskew functions
+  - [ ] Phase 5: Verification & Build
 
 - [x] Execution of pump-experiment-reorder-valley-push-20260615-plan.md
   - [x] Phase 0: Preflight & Audit
