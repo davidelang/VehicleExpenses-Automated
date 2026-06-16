@@ -1,83 +1,22 @@
 # TODO
 
-- [x] Execution of pump-experiment-takesnapshot-buffer-target-size-logging-20260615-plan.md (add diagnostic takeSnapshot Log.d for buffer/target sizes w/ (0=unlimited); log already present at baseline)
-  - VERY FIRST SOURCE EDIT this TODO after re-read current-state.md (hygiene prune first per rules) + FULL plan read (abs) + all prior failure logs read + record lessons on identical first-action skips; compliance re-read of STANDARD BLOCK first 10 lines + last 5 current-state + git --porcelain no [OcrEngine or pump .kt] + grep TODO pre (no match for this plan); Phase 0: narrow forensic reads of takeSnapshot full + insertion site in OcrEngine.kt, Log import, pump screen per-red call sites + createCrop + red rect math, BufferSet, targeted grep... ; update TODO first (this) + verifs + baseline git add + ./build_app; then Phase1 insert the single Log.d at exact post-else pre-alignment spot in OcrEngine.kt only; Phase2 final reads/greps (no more edits); all gates/forensic/grep before/after every edit, git add [correct .kt for this plan i.e. OcrEngine.kt when changed] +state+TODO before each build; scope strictly the single diagnostic log insertion described (edit OcrEngine.kt ONLY for the log line; pump screen + BufferSet are read-only forensic context only -- ZERO edits to ExperimentPumpScreen.kt or any callers or other .kt); 3-3-3 + anti-doom + literal preflight only; end with exact END marker + results ready (tag) + this plan path.
-  - [x] Phase 0: Re-read current-state.md (prune), this plan, TODO.md, AGENT_MANDATES, standard-plan-compliance-block.md. Narrow forensic read_file on the full takeSnapshot (OcrEngine.kt ~237-359, with focus on the src/roi/final block ~247-286), the Log import, and the call sites + red rect creation in ExperimentPumpScreen.kt (per-red forEach ~1133+, createCrop + takeSnapshot lines, report image population). Targeted grep for takeSnapshot calls, createCrop.*hunk, rw/rh/rarea, targetW=120 or target.*=0, "0=unlimited", and "ExperimentPump". Read the ManagedCrop width/height in BufferSet.kt. Update TODO.md (first edit). git add + ./build_app (baseline).
-  - [x] Phase 1: In OcrUtils.takeSnapshot, insert the single Log.d line immediately after the final size/else block for target handling (after `finalW = roiW; finalH = roiH`) and before the "// 2-pixel alignment for YUV" comment. Use a message that records the buffer pointed-at size (src + roi) and the target size with the explicit "(0=unlimited)" reminder text. Keep the insertion minimal; do not alter any sizing, coercion, alloc, sub/resize, or return logic. Narrow forensic read_file (offset/limit on the insertion site + 15 lines context) + grep for the new log string and "takeSnapshot:" before/after. Update a nearby comment if helpful for readers. git add + ./build_app.
-  - [x] Phase 2: Final narrow forensic re-read of the takeSnapshot function (full) + the primary per-red and report-image call sites in the pump screen. Targeted grep confirming the log is present exactly once, no other modifications to takeSnapshot or callers, and the 0=unlimited note is in the message. Post-build verification reads. Update current-state + TODO.
-  - [x] All phases + 3 builds successful. Log present exactly once at 288 (pre-existing, no dup/edit to kt, no changes to pump callers or sizing logic). All gates/forensics/greps/ritual (TODO first, etc.) followed; scope strictly observed (Ocr only; read-only on pump/BufferSet). Ready for END OF EXECUTION TURN marker.
+- [ ] Execution of pump-experiment-reorder-valley-push-20260615-plan.md
+  - [ ] Phase 0: Preflight & Audit
+  - [ ] Phase 1: Reorder Set C (`procC`)
+  - [ ] Phase 2: Reorder Set E (`procE`)
+  - [ ] Phase 3: Final Verification
+
+- [x] Execution of pump-experiment-takesnapshot-buffer-target-size-logging-20260615-plan.md
 - [x] Execution of pump-experiment-fix-coordinate-system-error-plan.md
-  - [x] Phase 1: Modify expandHunkContext and its caller getFinal to use pixel limits
-  - [x] Phase 2: Fix performHunkRecognition and doBOrDRetractedBlueAndPD to use integer pixel crops
-  - [x] Phase 3: Fix Set C and Set E per-redbox crops to use integer pixel crops
-  - [x] Phase 4: Final Verification and build validation
-- [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
-  - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
-  - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
-  - [x] Update comments in .grok/config.toml documenting the prefix form + hook normalization. Added narrow patterns for confirmed pager items (adb logcat* for reads [user: "adb logcat is reading data, that is allowed"], echo *, find *, true).
-  - [x] Selectively promote confirmed items from agent-1/permission_grok-pager.toml allowed_bash_commands (adb logcat for reads [confirmed allowed by user], echo *, find *, true, and specific git describe/tag--list if not redundant) as narrow patterns in root config.toml. Do **not** add any python3 * (user confirmed: too dangerous; use dedicated helpers only)
-  - [x] Run ./update-rules.sh (from orchestration root) — synced hook + config (and run-* launchers) to agent-1/ and master/ with commits.
-  - [x] ./build_app (create builds tag) — commit for the changed files succeeded; full gradle/app build skipped (not applicable in pure orchestration root with no gradlew/app tree); orchestration/builds tag force-updated at the resulting HEAD via get-builds-tag.sh + git tag -f (per AGENT_MANDATES preflight and plan requirements).
-  - [x] Update this TODO, output **END OF EXECUTION TURN** marker + "results ready to test"
+- [x] Safe leading env assignment prefix support
 - [x] Refactor Agent Workspace Syncing
-    - [x] Update `setup_agent.sh` to remove hard links and protections.
-    - [x] Update `update-rules.sh` to push updates and commit to all worktrees.
-    - [x] Validate changes by audit and build.
 - [x] Fix Sandbox Policy Permissions
-    - [x] Update `.gemini/policies/plans.toml` with whitespace tolerance.
-    - [x] Update `.gemini/policies/auto-saved.toml` to cleanup mode-based restrictions.
-    - [x] Commit and sync rules across all worktrees.
 - [x] Refine update-rules.sh Robustness
-    - [x] Update `update-rules.sh` to break links and handle read-only targets.
-    - [x] Re-run sync and verify inodes.
 - [x] Cleanup Reports on Device
-    - [x] Modify `fetch_latest_reports.py` to remove old reports from device.
-    - [x] Commit changes.
 - [x] Enforce Git Reset and Validation Rigor
-    - [x] Update `.gemini/policies/auto-saved.toml` to restrict `git reset`.
-    - [x] Update `GEMINI.md` to mandate forensic audits.
-    - [x] Update `.gemini/system.md` to reflect new rigor.
-    - [x] Commit and sync rules across all worktrees.
 - [x] Refine Git Reset and Approval Policy
-    - [x] Update `.gemini/policies/auto-saved.toml` with tiered policies (HEAD allowance, 'ask' for other resets, 'deny' for catch-all git).
-    - [x] Commit and sync rules across all worktrees.
 - [x] Recommend jq for JSON Parsing
-    - [x] Update `GEMINI.md` with jq recommendation.
-    - [x] Update `.gemini/system.md` with jq recommendation.
-    - [x] Commit and sync rules across all worktrees.
 - [x] Fix jq and Whitespace Permissions
-    - [x] Update `plans.toml` with robust whitespace regex.
-    - [x] Update `auto-saved.toml` to allow `jq` in Plan Mode.
-    - [x] Commit and sync rules across all worktrees.
 - [x] Resolve jq Plan Mode Block
-    - [x] Update `auto-saved.toml` with high-priority regex for jq.
-    - [x] Commit and sync rules across all worktrees.
 - [x] Refactor jq Rule and Whitelist ls
-    - [x] Update `auto-saved.toml` to use commandPrefix for jq and add ls.
-    - [x] Commit and sync rules across all worktrees.
 - [x] Fix Master Agent 'works' Tag Violation
-    - [x] Update `GEMINI.md` with Safety Override clause.
-    - [x] Update `MASTER_AGENT_MANDATE.md` with strict merge template.
-    - [x] Commit and sync rules across all worktrees.
-
-# Meta plan (approved 2026-06-12 on orchestration branch): Robust Plan/Execute Cycle
-- Primary deliverable of every planning phase must be a fresh, clean task-specific plan document written to dev-ai-interaction/plans/ (e.g. <task>-<date>-plan.md) using the standard structure (Context, Recommended Approach, Critical Files with paths, Reusable utilities with exact locations, Phased steps with forensic+build, Verification). User approves by explicit path reference + directive (e.g. "approved the plan at dev-ai-interaction/XXX-plan.md for the following..."). Agent must re-read exactly that designated file as first step in execution.
-- Harness ~/.grok/sessions/.../plan.md (the process log whose path appears in plan-mode reminders) is *not* the work plan. Use it only for short log entries referencing the sandbox plan path. At start of new cycle (or post-handoff), roll any prior superseding/historical bulk to dev-ai-interaction/historical-plans/harness-plan-archive-....md first, then prepend only the minimal current-cycle header (prepending to, not even superseding, old content).
-- Subagent separation supported and recommended for complex work: in planning (main stays in plan mode), optionally spawn_subagent (type "plan" or via "design" skill) with narrow prompt whose *only* job is research + write one new sandbox plan file + return its path. After user approval of that specific sandbox plan path, main (or spawned "implement"/execution subagent with the approved plan content injected) executes precisely, with TODO first, forensic read before/after every edit, ./build_app, exact END OF EXECUTION TURN marker + "results ready to test", then complete stop. Subagents blocked in plan mode per existing rules.
-- Post-handoff / new cycle start: Happy path is exit the CLI and relaunch via run-grok (forces fresh Mandate report + enter_plan_mode + STOP per the launcher + new_grok_agent_prompt). Fallback: agent at every handoff writes short dev-ai-interaction/.post-handoff-gate.txt; user does `cat dev-ai-interaction/.post-handoff-gate.txt` then appends request (one-liner ritual). The new tracked MULTI_AGENT_USER_INSTRUCTIONS.md (at root, synced by update-rules.sh to master/agent worktrees) is the authoritative human reference.
-- In new_grok_agent_prompt Mandate report: agent must confirm "I created/wrote the task plan to dev-ai-interaction/<name>.md", "harness session plan kept concise with roll if needed", "post-handoff will use relaunch or wrote the short gate file".
-- See approved plan (this session's harness plan.md + the produced MULTI_AGENT_USER_INSTRUCTIONS.md) for full details, critical files, and verification. Pre-turn state: orchestration branch; session plan at /home/dlang/.grok/sessions/%2Fhome%2Fdlang%2Fgit%2FVehicleExpenses-automated/019ebbe2-611e-77e1-a312-f7cd1412096e/plan.md; no app source changes in scope.
-
-# Meta plan (approved 2026-06-12 on orchestration branch): Interactive Strategic Planning + Continuity
-- State files must be **per-branch** and live **in the local worktree directory** as **untracked** files (e.g. `current-state.md` or `.agent-state/current-state.md` at the worktree root, not in the shared dev-ai-interaction/ sandbox). Agent instructions require reading the local current-state.md first on every fresh launch or new cycle + the user-designated sandbox plan file.
-- Planning phase is the **interactive strategic layer**: user may give rich problem descriptions, direction, and iterative feedback. Agent responds by revising the *plan document* in dev-ai-interaction/ (not source). Only after the user issues the exact magic approval phrasing naming a specific sandbox plan path does mechanical execution begin.
-- Update bootstrap files (new_grok_agent_prompt point 5 + Sandbox Plan File paragraph, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md) + .gitignore so that when the user explicitly directs a current-turn plan, agents create/revise fresh plan files under dev-ai-interaction/ and use the local untracked per-worktree state file for continuity. The "historical reference only" rule applies only to old/abandoned plans from other agents/cycles.
-- Demo during execution: create local untracked current-state.md in the current worktree root with minimal structure. Primary plan documents stay in the sandbox.
-- See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
-
-- [ ] Implement valley-push contrast mapping logic in OdometerOcrUtils.valleyPushToPeaks
-  - [x] Update TODO.md with the execution task
-  - [x] Implement partition-based mapping, bin center alignment, and stretching in OdometerOcrUtils.kt
-  - [x] Perform forensic verification of the source changes
-  - [x] Stage and compile/build app via `./build_app`
-  - [x] Inform user and deliver END OF EXECUTION TURN marker
