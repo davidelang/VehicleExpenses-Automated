@@ -772,13 +772,18 @@ private suspend fun runPumpExperiment(
                             chosenBuffer.c[recCropId].release()
 
                             val hunks = result.textBlocks.map { block ->
-                                val ml = block.boundingBox.left.toFloat()
-                                val mt = block.boundingBox.top.toFloat()
-                                val mr = block.boundingBox.right.toFloat()
-                                val mb = block.boundingBox.bottom.toFloat()
-                                val i1 = IcrsMath.pixelToIcrs(ml, mt, targetW, targetH)
-                                val i2 = IcrsMath.pixelToIcrs(mr, mb, targetW, targetH)
-                                PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
+                                // Set A ML only: direct integer pixel mapping from ML block (at target buffer size) to full imgW/imgH.
+                                // No IcrsMath, no pixelToIcrs, no ICRS roundtrip, integer arithmetic (equiv within rounding to prior).
+                                // Produces integer-valued rects (via .0 in RectF for PumpHunk compat; PumpHunk kept as-is per plan).
+                                val ml = block.boundingBox.left
+                                val mt = block.boundingBox.top
+                                val mr = block.boundingBox.right
+                                val mb = block.boundingBox.bottom
+                                val l = ml * imgW / targetW
+                                val t = mt * imgH / targetH
+                                val r = mr * imgW / targetW
+                                val b = mb * imgH / targetH
+                                PumpHunk(block.text, RectF(l.toFloat(), t.toFloat(), r.toFloat(), b.toFloat()))
                             }
                             mlBlocksRaw.addAll(hunks)
                         }
