@@ -1806,9 +1806,7 @@ private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: L
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
     appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
     flows.toSortedSet().forEach { flow ->
-        if (flow != "Set B" && flow != "Set C") {
-            appendLine("<th style='width:350px;'>$flow ML</th>")
-        }
+        appendLine("<th style='width:350px;'>$flow ML</th>")
         appendLine("<th style='width:350px;'>$flow Paddle</th>")
     }
     appendLine("<th style='width:600px;'>Final Comparison</th></tr>")
@@ -1837,19 +1835,17 @@ private fun pBuildHtmlRowDynamic(
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        if (name != "Set B" && name != "Set C" && name != "Set D" && name != "Set E") {
-            appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
-        }
+        appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"] ?: ""}'></td>")
         val pdB64 = br.images["PD"] ?: ""
-        val extraOcr = if ((name == "Set B" || name == "Set C") && br.metadata.containsKey("pd_ocr_html")) {
+        val extraOcr = if (br.metadata.containsKey("pd_ocr_html")) {
             "<br><div style='font-family:monospace; font-size:18px; text-align:left; background:#fafafa; padding:2px;'>" + br.metadata["pd_ocr_html"] + "</div>"
         } else ""
-        if (name == "Set B" || name == "Set D") {
-            // Two images for Set B/D per approved plan: red-only (clean post-filter reds, no blue/orange) for inspecting redbox merging state, plus the full annotations image exactly "as is happening now" (with ocr html). D mirrors B, using the pruned 6 largest reds (pixel list).
+        if (br.images.containsKey("PD_red_only")) {
+            // red-only + full PD pair (when branch populates the key from explicit helper call)
             val redOnly = br.images["PD_red_only"] ?: ""
             val full = br.images["PD"] ?: ""
             appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$extraOcr</td>")
-        } else if ((name == "Set C" || name == "Set E") && br.images.containsKey("rawC")) {
+        } else if (br.images.containsKey("rawC")) {
             val raw = br.images["rawC"] ?: ""
             val pushed = br.images["pushedC"] ?: ""
             val hB = br.images["histBeforeC"] ?: ""
