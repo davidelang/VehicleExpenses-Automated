@@ -1,3 +1,4 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 3f98aaa1
-- Phase 3 final forensic + build. Both DE blue margins now 10% top+bottom only (D/E sites); all else (orange, horiz, OCR, B/C, prune, red PD) untouched. Results ready. 1-2 facts. End of turn.
+- Current builds tag: fix-pump-experiment/builds @ 43fc9b86 (updated by F/G build)
+- Execution of pump-experiment-descriptive-column-labels-stretch-blue-method-20260616-plan.md started (user execute magic, correct absolute sandbox path). Master baseline: tag 43fc9b86, porcelain M only current-state (no .kt), state short. Spawning narrow bg Execution Sub-agent (strict ritual: re-reads + hygiene, gates 100% incl porcelain + TODO grep pre + narrow forensic on flows comment+list ~245 + builders, TODO as VERY FIRST source edit, baseline build; Phase 1 single edit on flows+comment; Phase 2 final; 1-2 facts/step; exact END). 1-2 facts only.
+- Last completed (prior): F/G raw clones (now using proper sandbox plan for labels follow-on).
