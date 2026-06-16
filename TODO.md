@@ -50,6 +50,7 @@
     - [x] Commit and sync rules across all worktrees.
 
 - 2026-06-16: pump-experiment-calculated-blue-box-expansion-to-fixed-20pct-20260616-plan.md — remove range, set calculated blue vert expansion to fixed 0.2f in ExperimentPumpScreen.kt (D/E/G sets)
+- 2026-06-16: pump-experiment-heatmap-redbox-threshold-to-0.03f-20260616-plan.md — change heatmap-to-redbox threshold from 0.20f to 0.03f in NativePaddleEngine.kt processHeatmap calls (detect + detectMat)
 
 # Meta plan (approved 2026-06-12 on orchestration branch): Robust Plan/Execute Cycle
 - Primary deliverable of every planning phase must be a fresh, clean task-specific plan document written to dev-ai-interaction/plans/ (e.g. <task>-<date>-plan.md) using the standard structure (Context, Recommended Approach, Critical Files with paths, Reusable utilities with exact locations, Phased steps with forensic+build, Verification). User approves by explicit path reference + directive (e.g. "approved the plan at dev-ai-interaction/XXX-plan.md for the following..."). Agent must re-read exactly that designated file as first step in execution.
