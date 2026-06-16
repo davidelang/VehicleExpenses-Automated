@@ -150,7 +150,8 @@ data class OcrResult(
     val imageHeight: Int = 0,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
+    val perCharProbs: String = ""
 ) {
     fun filterByCrops(odoCrop: android.graphics.RectF?, otherCrop: android.graphics.RectF?): OcrResult {
         val filteredBlocks = textBlocks.filter { block ->
