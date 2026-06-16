@@ -5,3 +5,4 @@
 - Phase 0: TODO first edit (full ritual) after all gates/6logs/narrow baseline reads (1810/995 etc)/greps/porcelain clean/tag 177283f7; build success (new tag); 1-2 facts. Phase 1: procB dupe comment removed (3 calls now direct unconditional); narrow 995/10 + grep post (8 matches remain); build next.
 - Phase 2: procD dupe comment removed (discovery now explicit); narrow 1326/10 read + grep post (7 matches); build. 1-2 facts only.
 - Phase 3: C and E dupe comments removed (discovery blocks explicit no wrapper); narrow reads on C/E post-valley + 1020/1350 sections + grep (5 matches left: flow if A + 4 name ifs in builder); build. 1-2 facts.
+- Phase 4: procA if(flowName == flows.first()) guard removed (hist assigns now unconditional direct for A); narrow 731/5 + grep post (flow == gone, 5 matches: meta comment + 4 name ifs); build. 1-2 facts.
