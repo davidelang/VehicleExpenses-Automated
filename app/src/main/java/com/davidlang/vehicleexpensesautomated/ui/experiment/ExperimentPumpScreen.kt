@@ -1633,25 +1633,9 @@ private suspend fun runPumpExperiment(
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
-                // E custom blue/orange (matching D, no valley): red extended 10% top + 10% bottom vert, horiz +/-75% of newH; orange derived from blue
-                val customBlueE = mutableListOf<PumpHunk>()
-                val customOrangeE = mutableListOf<PumpHunk>()
-                pdHunksRawTotal.forEach { h ->
-                    val r = android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
-                    val hgt = r.height()
-                    var nt = (r.top - (0.1 * hgt)).toInt().coerceIn(0, imgH - 1)
-                    var nb = (r.bottom + (0.1 * hgt)).toInt().coerceIn(nt + 1, imgH)
-                    val newH = nb - nt
-                    var nl = (r.left - (0.75 * newH)).toInt().coerceIn(0, imgW - 1)
-                    var nr = (r.right + (0.75 * newH)).toInt().coerceIn(nl + 1, imgW)
-                    val bRect = android.graphics.Rect(nl, nt, nr, nb)
-                    val oExt = (0.1 * newH).toInt()
-                    val ol = (nl - oExt).coerceIn(0, imgW - 1)
-                    val orr = (nr + oExt).coerceIn(0, imgW)
-                    val oRect = android.graphics.Rect(ol, nt, orr, nb)
-                    customBlueE.add(PumpHunk("", RectF(bRect.left.toFloat(), bRect.top.toFloat(), bRect.right.toFloat(), bRect.bottom.toFloat())))
-                    customOrangeE.add(PumpHunk("", RectF(oRect.left.toFloat(), oRect.top.toFloat(), oRect.right.toFloat(), oRect.bottom.toFloat())))
-                }
+                // E custom blue/orange (matching D, no valley) via createBlueAndOrangeHunksFromReds (vert sweep 10-40% step 5%, horiz 50%)
+                val (customBlueE, customOrangeE) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, (10..40 step 5).map { it / 100f }, 0.5f)
                 val aPdE = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueE, Color.BLUE, 4) + getAnns(customOrangeE, Color.rgb(255, 165, 0), 2)
                 val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdE, null, workspace).first
                 branch.images["PD"] = baseB64E
