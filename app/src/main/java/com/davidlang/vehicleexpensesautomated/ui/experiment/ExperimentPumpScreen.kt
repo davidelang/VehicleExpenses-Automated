@@ -1517,6 +1517,9 @@ private suspend fun runPumpExperiment(
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doBOrDRedOnlyImage()
+                doBOrDRetractedBlueAndPD()
             }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE)
 
