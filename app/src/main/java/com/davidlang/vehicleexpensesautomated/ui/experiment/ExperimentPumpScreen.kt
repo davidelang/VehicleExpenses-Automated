@@ -911,6 +911,7 @@ private suspend fun runPumpExperiment(
                 pdHunksMaxTotal.clear()
                 maxPixel.forEach { r -> pdHunksMaxTotal.add(PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))) }
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // data for all sets (redboxData + n_per_red_hists); C/E visuals/redboxDataC follow below
                 // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
@@ -1188,6 +1189,7 @@ private suspend fun runPumpExperiment(
                     // Post-prune (filtered 4) redbox hists for C/E *display* / JSON (updated to createCrop + dual takeSnapshot + long-lived buffer per plan).
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
+                    captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData for JSON (all sets); C visuals/redboxDataC + n_per_red_hists below
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
