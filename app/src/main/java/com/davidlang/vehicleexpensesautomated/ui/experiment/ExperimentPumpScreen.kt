@@ -509,7 +509,7 @@ private suspend fun runPumpExperiment(
                 // (stackVertically, runPaddleDiscovery) that close over them (and before the inline discovery).
                 // This resolves forward-ref compile issues for 'scales', the pd*Totals, mlBlocksRaw etc that the
                 // helpers reference. (The processedScales for the inline remains at its site for now.)
-                val scales = listOf(224, 608, 1024, 2560)
+                val scales = listOf(224, 608, 1024)
                 val mlBlocksRaw = mutableListOf<PumpHunk>()
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
@@ -789,13 +789,7 @@ private suspend fun runPumpExperiment(
                         }
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val res = paddleEngine.detect(workspace.c[outerId])
-                    if (res != null) {
-                        branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
-                        branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
-                    }
-
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
                     val detected = paddleResults[0]
                     val raw = paddleResults[1]
                     val exp = paddleResults[2]
@@ -923,13 +917,7 @@ private suspend fun runPumpExperiment(
 
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val res = paddleEngine.detect(workspace.c[outerId])
-                    if (res != null) {
-                        branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
-                        branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
-                    }
-
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
                     val detected = paddleResults[0]
                     val raw = paddleResults[1]
                     val exp = paddleResults[2]
@@ -1037,13 +1025,7 @@ private suspend fun runPumpExperiment(
 
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val res = paddleEngine.detect(workspace.c[outerId])
-                    if (res != null) {
-                        branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
-                        branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
-                    }
-
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
                     val detected = paddleResults[0]
                     val raw = paddleResults[1]
                     val exp = paddleResults[2]
@@ -1210,13 +1192,7 @@ private suspend fun runPumpExperiment(
 
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val res = paddleEngine.detect(workspace.c[outerId])
-                    if (res != null) {
-                        branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
-                        branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
-                    }
-
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
                     val detected = paddleResults[0]
                     val raw = paddleResults[1]
                     val exp = paddleResults[2]
@@ -1366,13 +1342,7 @@ private suspend fun runPumpExperiment(
 
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val res = paddleEngine.detect(workspace.c[outerId])
-                    if (res != null) {
-                        branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
-                        branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
-                    }
-
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
                     val detected = paddleResults[0]
                     val raw = paddleResults[1]
                     val exp = paddleResults[2]
@@ -1949,8 +1919,20 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
 }
 
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine, contentW: Int, contentH: Int): List<List<PumpHunk>> {
+private suspend fun runDiscoveryPaddle(
+    buffer: BufferSet,
+    id: Int,
+    paddleEngine: NativePaddleEngine,
+    contentW: Int,
+    contentH: Int,
+    scale: Int,
+    metadata: MutableMap<String, String>? = null
+): List<List<PumpHunk>> {
     val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+    if (metadata != null) {
+        metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
+        metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
+    }
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
