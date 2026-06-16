@@ -285,6 +285,8 @@ object OcrUtils {
             finalW = roiW; finalH = roiH
         }
 
+        Log.d("ExperimentPump", "takeSnapshot: buffer pointed at ${srcW}x${srcH} (roi ${roiW}x${roiH}) target size ${targetW}x${targetH} (0=unlimited) final ${finalW}x${finalH}")
+
         // 2-pixel alignment for YUV
         finalW = ((finalW + 1) / 2) * 2
         finalH = ((finalH + 1) / 2) * 2
