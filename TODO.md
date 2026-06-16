@@ -1,10 +1,10 @@
 # TODO
 
-- [ ] Execution of pump-experiment-reorder-valley-push-20260615-plan.md
-  - [ ] Phase 0: Preflight & Audit
-  - [ ] Phase 1: Reorder Set C (`procC`)
-  - [ ] Phase 2: Reorder Set E (`procE`)
-  - [ ] Phase 3: Final Verification
+- [x] Execution of pump-experiment-reorder-valley-push-20260615-plan.md
+  - [x] Phase 0: Preflight & Audit
+  - [x] Phase 1: Reorder Set C (`procC`)
+  - [x] Phase 2: Reorder Set E (`procE`)
+  - [x] Phase 3: Final Verification
 
 - [x] Execution of pump-experiment-takesnapshot-buffer-target-size-logging-20260615-plan.md
 - [x] Execution of pump-experiment-fix-coordinate-system-error-plan.md
