@@ -690,7 +690,7 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText
+                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                         }
                     }
                     val orangeTexts = maxPixelRects.mapIndexed { i, r ->
@@ -710,7 +710,7 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText
+                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                         }
                     }
 
@@ -732,7 +732,7 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText
+                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                         }
                     }
                     val orangeDigits = maxPixelRects.mapIndexed { i, rp ->
@@ -752,7 +752,7 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText
+                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                         }
                     }
 
@@ -1407,7 +1407,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val orangeTextsD = customOrangeD.mapIndexed { i, bh ->
@@ -1425,7 +1425,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val blueDigitsD = customBlueD.mapIndexed { i, bh ->
@@ -1443,7 +1443,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val orangeDigitsD = customOrangeD.mapIndexed { i, bh ->
@@ -1461,7 +1461,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val ocrLinesD = mutableListOf<String>()
@@ -1684,7 +1684,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val orangeTextsE = customOrangeE.mapIndexed { i, bh ->
@@ -1702,7 +1702,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val blueDigitsE = customBlueE.mapIndexed { i, bh ->
@@ -1720,7 +1720,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val orangeDigitsE = customOrangeE.mapIndexed { i, bh ->
@@ -1738,7 +1738,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val ocrLinesE = mutableListOf<String>()
@@ -2011,7 +2011,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val orangeTextsG = customOrangeG.mapIndexed { i, bh ->
@@ -2029,7 +2029,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val blueDigitsG = customBlueG.mapIndexed { i, bh ->
@@ -2047,7 +2047,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val orangeDigitsG = customOrangeG.mapIndexed { i, bh ->
@@ -2065,7 +2065,7 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText
+                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
                     }
                 }
                 val ocrLinesG = mutableListOf<String>()
@@ -2719,7 +2719,7 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
         }
 
         recBuffer.c[recCropId].release(); buffer.c[cropId].release()
-        PumpHunk(res.debugText, hunk.rect)
+        PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else "", hunk.rect)
     }
 }
 
