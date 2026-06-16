@@ -1,3 +1,3 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 8ba1cb81
-- Active plan: pump-experiment-de-blue-margins-10pct-top-bottom-20260616-plan.md (post-preflight re-gates + re-prune + TODO first + Phase 0 baseline; 1-2 facts)
+- Current builds tag: fix-pump-experiment/builds @ 2b451c47
+- Phase 0 baseline build success @fix-pump-experiment/builds @2b451c47 (post preflight + re-gates + TODO first per ritual). D/E sites located/forensically read+grepped (0.2/0.3 only at DE custom). Ready Phase 1 D edit. 1-2 facts only.

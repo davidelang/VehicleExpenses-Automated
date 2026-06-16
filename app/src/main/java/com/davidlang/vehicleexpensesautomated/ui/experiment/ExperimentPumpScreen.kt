@@ -1324,14 +1324,14 @@ private suspend fun runPumpExperiment(
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
-                // D custom blue/orange (no valley): red extended 20% up + 30% down vert, horiz +/-75% of newH; orange derived from blue
+                // D custom blue/orange (no valley): red extended 10% top + 10% bottom vert, horiz +/-75% of newH; orange derived from blue
                 val customBlueD = mutableListOf<PumpHunk>()
                 val customOrangeD = mutableListOf<PumpHunk>()
                 pdHunksRawTotal.forEach { h ->
                     val r = android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     val hgt = r.height()
-                    var nt = (r.top - (0.2 * hgt)).toInt().coerceIn(0, imgH - 1)
-                    var nb = (r.bottom + (0.3 * hgt)).toInt().coerceIn(nt + 1, imgH)
+                    var nt = (r.top - (0.1 * hgt)).toInt().coerceIn(0, imgH - 1)
+                    var nb = (r.bottom + (0.1 * hgt)).toInt().coerceIn(nt + 1, imgH)
                     val newH = nb - nt
                     var nl = (r.left - (0.75 * newH)).toInt().coerceIn(0, imgW - 1)
                     var nr = (r.right + (0.75 * newH)).toInt().coerceIn(nl + 1, imgW)
