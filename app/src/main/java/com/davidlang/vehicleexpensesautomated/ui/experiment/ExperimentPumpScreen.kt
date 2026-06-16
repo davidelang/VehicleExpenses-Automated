@@ -1988,9 +1988,9 @@ private suspend fun runPumpExperiment(
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
-                // G custom blue/orange (raw clone of D, no stretch) via createBlueAndOrangeHunksFromReds (vert sweep 10-40% step 5%, horiz 50%)
+                // G custom blue/orange (raw clone of D, no stretch) via createBlueAndOrangeHunksFromReds (fixed 20% vert, horiz 50%)
                 val (customBlueG, customOrangeG) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, (10..40 step 5).map { it / 100f }, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
                 val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
