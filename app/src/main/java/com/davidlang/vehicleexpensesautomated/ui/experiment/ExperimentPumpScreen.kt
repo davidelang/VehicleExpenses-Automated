@@ -1023,7 +1023,6 @@ private suspend fun runPumpExperiment(
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
                     branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
-                    // full dupe for C (discovery + C/E branch + copy of doCOrE for resolution)
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
                     val srcW = workspace.p.width
@@ -1353,7 +1352,6 @@ private suspend fun runPumpExperiment(
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
                     branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
-                    // full dupe for E (mirrors C; val flowName + discovery + C/E branch + doC copy)
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
                     val srcW = workspace.p.width
