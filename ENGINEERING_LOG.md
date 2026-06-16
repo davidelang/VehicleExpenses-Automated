@@ -59,6 +59,16 @@ This log tracks the implementation, refactoring, and deployment activities perfo
     - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine.kt`
     - `TODO.md`
 
+## [2026-06-16] - Pump Experiment Heatmap + Per-Char Probs (Phases 2-8 of approved plan)
+- **Activity:** Master (orchestrator) completing remaining phases of pump-experiment-heatmap-hist-in-redbox-fn-plus-perchar-recognition-probs-in-json-20260616-plan.md after sub-agent cancellation/repair cycle. Sub-agents (IDs 019ed1b4 etc.) had been used for initial phases; repair sub did early work then was killed; master took over with full forensic gates.
+- **Key Changes (from state narrative at time of roll):**
+  - Phase 2: Wired hist return as Pair<List<TextBlock>, IntArray?> in processPaddleHeatmap / Native paths; legacy return updated; call site in runDiscoveryPaddle destructures.
+  - Phase 3: Added metadata["heatmap_hist_${scale}"] = JSONArray... in runDiscoveryPaddle (flows to branch metadata/JSON); forensic PASS.
+  - Phase 3 build: SUCCESS at tag d7fcf099 (from 133fce63); hist now in metadata/JSON for redbox fn paths.
+  - Phase 5 start: Extended RecStageResult + OcrResult with perCharProbs: String; capture in processOcr / processOcrNumeric using maxVal; passed through constructions; forensic PASS. Ready for blue/orange wiring.
+- **Notes:** Sub-agent stagnation/cancellation and repair preflight details rolled here from current-state.md. Full code forensics and subsequent phases in the sandbox plan + git history since baseline. Current-state.md pruned to facts/pointers only (see hygiene rules).
+- **Files Referenced (at time):** ExperimentPumpScreen.kt (various per forensic reads), NativeImageUtils, etc.
+
 ## [2026-05-22] - ICRS Coordinate Migration
 - **Activity:** Migrated the entire repository from anisotropic normalization to Isotropic Center-Relative Space (ICRS) to solve alignment geometry bugs and support arbitrary aspect ratios.
 - **Improvements:**
