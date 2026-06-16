@@ -7,3 +7,4 @@
 - Phase 1: font edit (14px->6px on deskewHtml td in row timing block) + narrow/grep before/after (only style num changed, span6px intact); git add + build success (new tag). Ready Phase 2 header ML th data-driven.
 - Phase 2: header ML th data-driven (val hasML + if in forEach; adapted first() for scope no root, no name if); narrow/grep before/after; git add + build success (new tag). Ready Phase 3 row ML td.
 - Phase 3: row ML td data-driven (exact val hasML = root.subBranches.filter + if(name in hasML) no else blank); narrow/grep before/after (no blank, matches ths, data only); git add + build success (new tag). Ready Phase 4 procA.
+- Phase 4: procA narrow read/grep @~731 (no if(flowName == flows.first()) guard present - already cleaned per prior eliminate plan; unconditional hist confirmed; review prior complete); no kt edit; git add + build success (new tag). Ready Phase 5 summary.
