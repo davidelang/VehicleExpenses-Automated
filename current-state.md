@@ -8,3 +8,5 @@
 - Phase 2: header ML th data-driven (val hasML + if in forEach; adapted first() for scope no root, no name if); narrow/grep before/after; git add + build success (new tag). Ready Phase 3 row ML td.
 - Phase 3: row ML td data-driven (exact val hasML = root.subBranches.filter + if(name in hasML) no else blank); narrow/grep before/after (no blank, matches ths, data only); git add + build success (new tag). Ready Phase 4 procA.
 - Phase 4: procA narrow read/grep @~731 (no if(flowName == flows.first()) guard present - already cleaned per prior eliminate plan; unconditional hist confirmed; review prior complete); no kt edit; git add + build success (new tag). Ready Phase 5 summary.
+- Phase 5: summary name if to data-driven (br.pathResults.containsKey("ML") ? ML cost : Paddle cost; no f=="Set B"); narrow/grep before/after; git add + build success (new tag). Ready Phase 6 final forensic.
+- Phase 6 final: all verifs pass (forensic reads/greps confirm fixes + no bad ifs + prior complete); state+TODO updated; git add + final build success. END turn.
