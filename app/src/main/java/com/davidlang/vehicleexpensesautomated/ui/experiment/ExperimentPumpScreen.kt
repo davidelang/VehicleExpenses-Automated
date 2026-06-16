@@ -1770,10 +1770,10 @@ private suspend fun runPumpExperiment(
 
             val summaryText = flows.map { f ->
                 val br = root.getBranch(f)
-                if (f == "Set B") {
-                    "$f Paddle: ${br.pathResults["Paddle"]?.cost ?: "F"}"
-                } else {
+                if (br.pathResults.containsKey("ML")) {
                     "$f: ${br.pathResults["ML"]?.cost ?: "F"}"
+                } else {
+                    "$f Paddle: ${br.pathResults["Paddle"]?.cost ?: "F"}"
                 }
             }.joinToString(" | ")
             val resultSummary = PumpPhotoResultSummary(file.name, summaryText, 1.0f, "")
