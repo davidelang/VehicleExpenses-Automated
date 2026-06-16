@@ -1,3 +1,3 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ 47fd5100
-- Phase 3: E block replaced (forensic/grep before/after; E now func call + sweep, old inline gone; D already done, G still old; downstream untouched); state 1-2 facts. Phase 4 G next. Plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-get-extra-blue-boxes-function-horiz-50-vertical-sweep-20260616-plan.md
+- Current builds tag: fix-pump-experiment/builds @ 71a10189
+- Phase 4: G block replaced (forensic/grep before/after; G now func+sweep; all three D/E/G sites use create... with vert sweep 10-40%+0.5; old inlines/0.75/0.1 gone from them; downstream untouched); state 1-2 facts. Phase 5 final forensic + handoff build. Plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-get-extra-blue-boxes-function-horiz-50-vertical-sweep-20260616-plan.md
