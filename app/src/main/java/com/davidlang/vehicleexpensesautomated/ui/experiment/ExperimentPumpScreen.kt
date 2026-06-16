@@ -1297,16 +1297,16 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for C/E display.
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune4 on rects; direct rebuild. Early probe sees full; post-prune 4 for all sets (C/E display only).
                 val redPixelList = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 6) {
+                if (redPixelList.size > 4) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(6, redPixelList.size).clear()
+                    redPixelList.subList(4, redPixelList.size).clear()
                 }
-                // Rebuild pdHunksRawTotal from the final <=6 pixel rects (full img ICRS only for kept)
+                // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
@@ -1316,9 +1316,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 6) {
+                if (expPixel.size > 4) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(6, expPixel.size).clear()
+                    expPixel.subList(4, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -1328,21 +1328,21 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 6) {
+                if (maxPixel.size > 4) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(6, maxPixel.size).clear()
+                    maxPixel.subList(4, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
-                branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
-                // For D/E (and B/C where they use the red lists) the proc stubs + thin if calls + helpers will see the pruned <=6 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
-                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (B/C/D/E red-derived paths per user clarification). D/E add the prune-to-6 limitation on top. Early probe for C/E now only does polarity on initial (cheap combined mask); the 6 post-prune capture provides the filtered redboxDataC + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
                 // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
-                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
-                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 6 (sorted by area desc, 3-wide stacked in the HTML).
+                // After the common prune (which thins pdHunks* to the 4 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
                 // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
 
