@@ -175,6 +175,125 @@ object OdometerOcrUtils {
         )
     }
 
+    suspend fun calculateDeskewAngleMlOnly(input: Any): DeskewResult {
+        val t0 = System.currentTimeMillis()
+        val pTargetSize = 2048
+        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
+
+        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
+        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
+
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val targetW = (srcW * pScale).toInt()
+        val targetH = (srcH * pScale).toInt()
+
+        val alignedW = ((targetW + 31) / 32) * 32
+        val alignedH = ((targetH + 31) / 32) * 32
+
+        bufferSet.p.clear()
+        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
+        bufferSet.c[outerId].clear()
+
+        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
+
+        if (input is Bitmap) {
+            val argbMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(input, argbMat)
+            val gray = Mat()
+            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            argbMat.release(); gray.release()
+        } else {
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+        }
+
+        bufferSet.c[innerId].release()
+
+        val tPrep = System.currentTimeMillis() - t0
+        val results = mutableMapOf<String, EngineResult>()
+
+        val tMl0 = System.currentTimeMillis()
+        val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
+        val tMl = System.currentTimeMillis() - tMl0
+        results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
+
+        bufferSet.c[outerId].release()
+
+        return DeskewResult(
+            angle = mlRes.angle.coerceIn(-20f, 20f),
+            mlAngle = mlRes.angle,
+            mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
+            paddleTimeMs = 0L,
+            paddleCppAngle = 0f,
+            paddleOptimizedAngle = 0f,
+            paddleOptimizedTimeMs = 0L,
+            mlBlocks = mlRes.blocks,
+            engines = results,
+            metadata = mapOf("t_prep_ms" to tPrep.toString())
+        )
+    }
+
+    suspend fun calculateDeskewAnglePaddleOnly(input: Any): DeskewResult {
+        val t0 = System.currentTimeMillis()
+        val pTargetSize = 2048
+        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
+
+        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
+        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
+
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val targetW = (srcW * pScale).toInt()
+        val targetH = (srcH * pScale).toInt()
+
+        val alignedW = ((targetW + 31) / 32) * 32
+        val alignedH = ((targetH + 31) / 32) * 32
+
+        bufferSet.p.clear()
+        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
+        bufferSet.c[outerId].clear()
+
+        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
+
+        if (input is Bitmap) {
+            val argbMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(input, argbMat)
+            val gray = Mat()
+            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            argbMat.release(); gray.release()
+        } else {
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+        }
+
+        bufferSet.c[innerId].release()
+
+        val tPrep = System.currentTimeMillis() - t0
+        val results = mutableMapOf<String, EngineResult>()
+
+        val tPd0 = System.currentTimeMillis()
+        val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
+        val tPd = System.currentTimeMillis() - tPd0
+        results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
+
+        bufferSet.c[outerId].release()
+
+        val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
+
+        return DeskewResult(
+            angle = paddleCppAngle.coerceIn(-20f, 20f),
+            mlAngle = 0f,
+            mlTimeMs = 0L,
+            paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
+            paddleCppAngle = paddleCppAngle,
+            paddleOptimizedAngle = paddleCppAngle,
+            paddleOptimizedTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
+            paddleBlocks = pdRes.blocks,
+            paddleCppBlocks = pdRes.cppBlocks,
+            engines = results,
+            metadata = mapOf("t_prep_ms" to tPrep.toString())
+        )
+    }
+
     suspend fun calculatePaddleAngleOptimized(input: Any): Pair<Float, Long> {
         val t0 = System.currentTimeMillis()
         val pTargetSize = 2048
@@ -763,16 +882,17 @@ object OdometerOcrUtils {
             lut[g] = stretched
         }
 
-        // In-place remap on the mat (CV_8U single channel assumed, consistent with callers)
+        // In-place remap on the mat using native OpenCV LUT (CV_8U single channel assumed, consistent with callers)
         val total = mat.total().toInt()
         if (total > 0) {
-            val data = ByteArray(total)
-            mat.get(0, 0, data)
-            for (i in data.indices) {
-                val old = data[i].toInt() and 0xFF
-                data[i] = (lut[old] and 0xFF).toByte()
+            val lutMat = org.opencv.core.Mat(1, 256, org.opencv.core.CvType.CV_8U)
+            val lutData = ByteArray(256)
+            for (g in 0..255) {
+                lutData[g] = (lut[g] and 0xFF).toByte()
             }
-            mat.put(0, 0, data)
+            lutMat.put(0, 0, lutData)
+            org.opencv.core.Core.LUT(mat, lutMat, mat)
+            lutMat.release()
         }
 
         hist.release()
