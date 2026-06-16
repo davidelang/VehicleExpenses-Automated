@@ -18,11 +18,11 @@
   - [x] Phase 4: viz read/grep + state+TODO update (A final crops integer clean)
   - [x] Phase 5: final forensic re-reads + grep zero bad ICRS/RectF/float in A red+ML+getFinal/expand/takeCrop; state+TODO; final build + END marker (tag) + plan path.
 
-- [ ] Execution of optimize-deskew-and-valley-lut-plan.md
-  - [ ] Phase 1: Update TODO.md (Completed)
-  - [ ] Phase 2: Implement Valley Push Native LUT in OdometerOcrUtils.kt
-  - [ ] Phase 3: Add split deskew functions to OdometerOcrUtils.kt
-  - [ ] Phase 4: Update ExperimentPumpScreen.kt to call new deskew functions
+- [ ] Execution of optimize-pump-scales-and-duplicate-detect-plan.md
+  - [x] Phase 1: Update TODO.md
+  - [x] Phase 2: Modify runDiscoveryPaddle in ExperimentPumpScreen.kt
+  - [x] Phase 3: Modify Outer Loops for Sets A, B, C, D, E
+  - [x] Phase 4: Modify Bounding Box Scales List
   - [ ] Phase 5: Verification & Build
 
 - [x] Execution of pump-experiment-reorder-valley-push-20260615-plan.md
