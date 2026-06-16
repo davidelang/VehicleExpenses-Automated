@@ -1324,7 +1324,6 @@ private suspend fun runPumpExperiment(
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
-                doBOrDRetractedBlueAndPD()
             }
                 val procE: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set E"
