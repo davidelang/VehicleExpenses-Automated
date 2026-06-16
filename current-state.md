@@ -6,3 +6,4 @@
 - Phase 2: procD dupe comment removed (discovery now explicit); narrow 1326/10 read + grep post (7 matches); build. 1-2 facts only.
 - Phase 3: C and E dupe comments removed (discovery blocks explicit no wrapper); narrow reads on C/E post-valley + 1020/1350 sections + grep (5 matches left: flow if A + 4 name ifs in builder); build. 1-2 facts.
 - Phase 4: procA if(flowName == flows.first()) guard removed (hist assigns now unconditional direct for A); narrow 731/5 + grep post (flow == gone, 5 matches: meta comment + 4 name ifs); build. 1-2 facts.
+- Phase 5: report builder header/row name ifs (incl ML conditional, extraOcr B||C, B||D red pair, C||E rawC) replaced by branch key presence (always ML th, ML td safe, extraOcr on pd_ocr_html key, PD_red_only key for pair, rawC for C/E); multiple narrow reads (1800/1820/1835/1870) + grep (only 1 meta left); build. 1-2 facts.
