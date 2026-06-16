@@ -236,7 +236,7 @@ private suspend fun runPumpExperiment(
         it.s.clearChroma()
     }
 
-    // Long-lived histogram BufferSet for per-red C/E report (dual visuals: rect snapshot from workspace crop + hist plot snapshot); initialized once before photo loop, sized for per-red display (plot 186x300), held for experiment lifetime, passed as scratchYuv to takeSnapshot, never released here. Internal histPlotCrop for render from bins (replaces per-red custom generate + temp workspace plot).
+    // Long-lived histogram BufferSet for per-red C/E report (dual visuals: rect snapshot from workspace crop + hist plot snapshot); initialized once before photo loop, sized for per-red display (plot 186x300), held for experiment lifetime, passed as scratchYuv to takeSnapshot, never released here. Internal histPlotCrop for render from bins (replaces per-red custom generate + temp workspace plot). (C/E visuals only; redboxData hists now for all 7 sets via captureRedboxData after top-4 prune.)
     val longLivedHistogramBuffer = BufferSet(186, 300)
     longLivedHistogramBuffer.p.clear()
     longLivedHistogramBuffer.s.clear()
@@ -2377,8 +2377,8 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    // Phase 2: filter verbose redboxDataC etc from column 2 / meta dump (too much detail)
-    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) -> !k.contains("redboxDataC") && !k.contains("DataC") }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
+    // Phase 2: filter verbose redboxData* (now for all sets) from column 2 / meta dump (too much detail)
+    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) -> !k.contains("redboxData") }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
@@ -2693,7 +2693,7 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
         val cropId = buffer.createCrop(l.toInt(), t.toInt(), (r - l).toInt(), (b - t).toInt())
 
         val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
-        if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 6 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
+        if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 4 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
 
         recBuffer.p.clear()
         val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
