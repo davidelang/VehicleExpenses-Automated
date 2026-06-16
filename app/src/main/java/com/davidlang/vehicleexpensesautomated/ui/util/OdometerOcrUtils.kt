@@ -1073,10 +1073,10 @@ object OdometerOcrUtils {
         sourceBuffer: Any, algorithm: String = "Native",
         nativeBoxes: List<NativePaddleEngine.DetectionBox>? = null,
         nativePostMs: String? = null
-    ): List<TextBlock> {
+    ): Pair<List<TextBlock>, IntArray?> {
         val invScale = 1.0f / scale
         if (nativeBoxes != null) {
-            return nativeBoxes.map { box ->
+            val blocks = nativeBoxes.map { box ->
                 val points = box.points
                 val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 4.0) * invScale.toDouble()).toInt()
                 val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 4.0) * invScale.toDouble()).toInt()
@@ -1091,9 +1091,10 @@ object OdometerOcrUtils {
                 val angle = calculateBoxAngle(scaledPoints)
                 TextBlock("", bounds, angle, confidence = box.confidence)
             }
+            return Pair(blocks, null)
         }
 
-        if (heatmap == null) return emptyList()
+        if (heatmap == null) return Pair(emptyList(), null)
         return processPaddleHeatmapLegacy(heatmap, w, h, scale)
     }
 
@@ -1104,7 +1105,7 @@ object OdometerOcrUtils {
      */
     private fun processPaddleHeatmapLegacy(
         heatmap: FloatArray, w: Int, h: Int, scale: Float
-    ): List<TextBlock> {
+    ): Pair<List<TextBlock>, IntArray> {
         val invScale = 1.0 / scale.toDouble()
         val maskThreshold = 0.20f
         val mask = Mat(h, w, CvType.CV_8U)
@@ -1189,7 +1190,7 @@ object OdometerOcrUtils {
         } finally {
             mask.release(); hierarchy.release(); contours.forEach { it.release() }
         }
-        return results
+        return Pair(results, hist)
     }
 
     fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap {
