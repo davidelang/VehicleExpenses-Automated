@@ -992,7 +992,6 @@ private suspend fun runPumpExperiment(
 
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
 
-                // copies of doBOrD* helpers included in this procB dupe (per plan for not-hoisted inners)
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                     doBOrDRedOnlyImage()
                     doBOrDRetractedBlueAndPD()
