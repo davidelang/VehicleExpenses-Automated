@@ -538,7 +538,9 @@ private suspend fun runPumpExperiment(
                     val res = performHunkRecognition(listOf(expT, expB), ws, recBuf, engine, paddleEng, ctx, tilt)
 
                     suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
-                        val rect = android.graphics.Rect(exp.rect.left.toInt(), exp.rect.top.toInt(), exp.rect.right.toInt(), exp.rect.bottom.toInt())
+                        // A final crop path: direct integer Rect from (now integer-valued) exp.rect (from expand integer); no float in rect construction for takeSnapshot; anns also from A integer pdRaw
+                        val el = exp.rect.left.toInt(); val et = exp.rect.top.toInt(); val er = exp.rect.right.toInt(); val eb = exp.rect.bottom.toInt()
+                        val rect = android.graphics.Rect(el, et, er, eb)
                         val anns = mutableListOf<SnapshotAnnotation>()
                         if (engine == "Paddle") {
                             // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
@@ -879,6 +881,7 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
+                // Updated for A: now receives integer pixel data (red snapped+pruned int Rect lists, ML direct int, expand/takeCrop int) -> direct int Rect to takeSnapshot crops for A final PathResult.
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
 
@@ -2245,15 +2248,18 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
 
     for (top in topLanes) {
         for (bottom in bottomLanes) {
-            val hB = bottom.rect.height()
-            val gap = bottom.rect.top - top.rect.bottom
-            val vOverlap = max(0f, min(top.rect.bottom, bottom.rect.bottom) - max(top.rect.top, bottom.rect.top))
-            val xOverlap = max(0f, min(top.rect.right, bottom.rect.right) - max(top.rect.left, bottom.rect.left))
+            // integer pixel math for A exercised path (A data now has integer rects from prior Set A phases; no float height()/1.25f* etc here)
+            val hB = (bottom.rect.bottom.toInt() - bottom.rect.top.toInt()).coerceAtLeast(1)
+            val gap = (bottom.rect.top.toInt() - top.rect.bottom.toInt())
+            val vO = min(top.rect.bottom.toInt(), bottom.rect.bottom.toInt()) - max(top.rect.top.toInt(), bottom.rect.top.toInt())
+            val vOverlap = max(0, vO)
+            val xO = min(top.rect.right.toInt(), bottom.rect.right.toInt()) - max(top.rect.left.toInt(), bottom.rect.left.toInt())
+            val xOverlap = max(0, xO)
 
             val digitTop = top.text.count { it.isDigit() }
             val digitBottom = bottom.text.count { it.isDigit() }
 
-            if (gap < 1.25f * hB && vOverlap < 0.2f * hB && xOverlap > 0 && digitTop >= 2 && digitBottom >= 2) {
+            if (gap < (hB * 5) / 4 && vOverlap < (hB / 5) && xOverlap > 0 && digitTop >= 2 && digitBottom >= 2) {
                 pairs.add(Pair(top, bottom))
             }
         }
@@ -2271,17 +2277,20 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
 }
 
 private fun expandHunkContext(hunk: PumpHunk, imgW: Int, imgH: Int): PumpHunk {
-    val h = hunk.rect.height()
-    val newH = h * 1.5f
-    val dy = (newH - h) / 2f
-    val dx = newH // Horizontal expansion is value of NEW height on EACH side
-
-    val l = (hunk.rect.left - dx).coerceIn(0f, imgW.toFloat() - 0.001f)
-    val t = (hunk.rect.top - dy).coerceIn(0f, imgH.toFloat() - 0.001f)
-    val r = (hunk.rect.right + dx).coerceIn(l + 0.001f, imgW.toFloat())
-    val b = (hunk.rect.bottom + dy).coerceIn(t + 0.001f, imgH.toFloat())
-
-    return PumpHunk(hunk.text, RectF(l, t, r, b))
+    // Set A exercised path only: integer pixel 1.5x expand (no float math, no 1.5f /2f, no .toFloat roundtrips in expand; direct int arith + clamp for min size; produces integer-valued rect for takeCrop/snapshot in A final crops)
+    val l = hunk.rect.left.toInt()
+    val t = hunk.rect.top.toInt()
+    val r = hunk.rect.right.toInt()
+    val b = hunk.rect.bottom.toInt()
+    val h = (b - t).coerceAtLeast(1)
+    val newH = (h * 3 + 1) / 2  // integer 1.5x
+    val dy = newH / 2
+    val dx = newH
+    val nl = (l - dx).coerceIn(0, imgW - 1)
+    val nt = (t - dy).coerceIn(0, imgH - 1)
+    val nr = (r + dx).coerceIn(nl + 1, imgW)
+    val nb = (b + dy).coerceIn(nt + 1, imgH)
+    return PumpHunk(hunk.text, RectF(nl.toFloat(), nt.toFloat(), nr.toFloat(), nb.toFloat()))
 }
 
 private fun applyRecognitionHeuristics(text: String): String {
