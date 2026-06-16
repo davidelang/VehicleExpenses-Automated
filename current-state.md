@@ -1,3 +1,3 @@
 - Branch: fix-pump-experiment
-- Current builds tag: fix-pump-experiment/builds @ final (post phase 2)
-- Phase 2 E edit + build success. Both D and E now 10% top + 10% bottom (0.1/0.1); comments updated; orange/horiz/OCR untouched. Phase 3 final forensic + build. 1-2 facts.
+- Current builds tag: fix-pump-experiment/builds @ 3f98aaa1
+- Phase 3 final forensic + build. Both DE blue margins now 10% top+bottom only (D/E sites); all else (orange, horiz, OCR, B/C, prune, red PD) untouched. Results ready. 1-2 facts. End of turn.
