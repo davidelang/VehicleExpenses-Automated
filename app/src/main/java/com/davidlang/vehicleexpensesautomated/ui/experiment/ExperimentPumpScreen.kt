@@ -245,8 +245,8 @@ private suspend fun runPumpExperiment(
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
-    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (3x size, 2x displayed) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state.
-    val flows = listOf("Set A", "Set B", "Set C", "Set D", "Set E")
+    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (3x size, 2x displayed) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state. Set F: raw clone of B (no automaticContrastStretch; deskew/rotate/discovery/retracted-blue/red-only/OCR/PD on raw master copy). Set G: raw clone of D (no stretch; keeps custom 10% blue/orange + red-only + OCR on raw).
+    val flows = listOf("Set A", "Set B", "Set C", "Set D", "Set E", "Set F", "Set G")
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -1717,7 +1717,349 @@ private suspend fun runPumpExperiment(
                 orangeTextsE.forEachIndexed { i, asis -> val d = orangeDigitsE[i]; if (d.count { it.isDigit() } >= 2) ocrLinesE += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
                 branch.metadata["pd_ocr_html"] = ocrLinesE.joinToString("<br>")
             }
-                val flowProcessors = listOf(procA, procB, procC, procD, procE)
+                val procF: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set F"
+                    // aliases map params for exact dupe of per-flow logic
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
+                    pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
+
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+
+                // Direct pixel (already in .rect); no roundtrip.
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
+
+                val mlHunks = emptyList<PumpHunk>()
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                    doBOrDRedOnlyImage()
+                    doBOrDRetractedBlueAndPD()
+                }
+                val procG: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set G"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
+                    pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
+
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                // doCrossScaleRedboxFilter hoisted earlier (before flowProcessors list) so it is visible inside the
+                // C processor lambda (the per-path valley for Set C calls the global cross-scale nested removal
+                // after each version's runPaddleDiscovery).
+
+                // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
+                // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
+                // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
+                // (prepareScale + detect at 224/608/1024/2560), a final pass on the union (after ICRS mapping to common
+                // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
+                // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
+                // takeCrop) have no entirely-contained nested boxes, matching the intent.
+                // (Now via shared helper; body unchanged.)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                // Propagate the dedup: filter exp and max totals too, so that blue/orange boxes
+                // (derived from expansions of the raw reds) are not created from redundants that
+                // were filtered out of the raw list. Filtered reds must not "exist" for downstream
+                // blue derivation.
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()  // reuse start as approx for filter delta; finer per-phase in later granular
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
+
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for C/E display.
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                // Rebuild pdHunksRawTotal from the final <=6 pixel rects (full img ICRS only for kept)
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                // Propagate prune to exp/max (blue/orange sources in B/C paths)
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
+                // For D/E (and B/C where they use the red lists) the proc stubs + thin if calls + helpers will see the pruned <=6 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (B/C/D/E red-derived paths per user clarification). D/E add the prune-to-6 limitation on top. Early probe for C/E now only does polarity on initial (cheap combined mask); the 6 post-prune capture provides the filtered redboxDataC + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
+
+                // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 6 (sorted by area desc, 3-wide stacked in the HTML).
+                // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
+                // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
+
+                val mlHunks = emptyList<PumpHunk>()
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                // 4. Extraction
+                // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
+                // for name resolution inside the C processor lambda body (the array entry for Set C calls it
+                // for the best path result using the valley versions).
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doBOrDRedOnlyImage()
+                // G custom blue/orange (raw clone of D, no stretch): red extended 10% top + 10% bottom vert, horiz +/-75% of newH; orange derived from blue
+                val customBlueG = mutableListOf<PumpHunk>()
+                val customOrangeG = mutableListOf<PumpHunk>()
+                pdHunksRawTotal.forEach { h ->
+                    val r = android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                    val hgt = r.height()
+                    var nt = (r.top - (0.1 * hgt)).toInt().coerceIn(0, imgH - 1)
+                    var nb = (r.bottom + (0.1 * hgt)).toInt().coerceIn(nt + 1, imgH)
+                    val newH = nb - nt
+                    var nl = (r.left - (0.75 * newH)).toInt().coerceIn(0, imgW - 1)
+                    var nr = (r.right + (0.75 * newH)).toInt().coerceIn(nl + 1, imgW)
+                    val bRect = android.graphics.Rect(nl, nt, nr, nb)
+                    // orange from extended blue (similar maxExtent)
+                    val oExt = (0.1 * newH).toInt()
+                    val ol = (nl - oExt).coerceIn(0, imgW - 1)
+                    val orr = (nr + oExt).coerceIn(0, imgW)
+                    val oRect = android.graphics.Rect(ol, nt, orr, nb)
+                    customBlueG.add(PumpHunk("", RectF(bRect.left.toFloat(), bRect.top.toFloat(), bRect.right.toFloat(), bRect.bottom.toFloat())))
+                    customOrangeG.add(PumpHunk("", RectF(oRect.left.toFloat(), oRect.top.toFloat(), oRect.right.toFloat(), oRect.bottom.toFloat())))
+                }
+                val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
+                val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdG, null, workspace).first
+                branch.images["PD"] = baseB64G
+                // OCR on custom for G (regular + numericdecimal, filter >=2 digits on numeric)
+                val blueTextsG = customBlueG.mapIndexed { i, bh ->
+                    val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                    val pW = r.width(); val pH = r.height()
+                    if (pW < 2 || pH < 2) "?" else {
+                        val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
+                        val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
+                        val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                        val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                        experimentRecSet1024x48.p.clear()
+                        val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                        val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                        org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                        val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
+                        experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                        res.debugText
+                    }
+                }
+                val orangeTextsG = customOrangeG.mapIndexed { i, bh ->
+                    val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                    val pW = r.width(); val pH = r.height()
+                    if (pW < 2 || pH < 2) "?" else {
+                        val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
+                        val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
+                        val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                        val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                        experimentRecSet1024x48.p.clear()
+                        val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                        val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                        org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                        val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
+                        experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                        res.debugText
+                    }
+                }
+                val blueDigitsG = customBlueG.mapIndexed { i, bh ->
+                    val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                    val pW = r.width(); val pH = r.height()
+                    if (pW < 2 || pH < 2) "?" else {
+                        val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
+                        val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
+                        val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                        val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                        experimentRecSet1024x48.p.clear()
+                        val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                        val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                        org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                        val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
+                        experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                        res.debugText
+                    }
+                }
+                val orangeDigitsG = customOrangeG.mapIndexed { i, bh ->
+                    val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                    val pW = r.width(); val pH = r.height()
+                    if (pW < 2 || pH < 2) "?" else {
+                        val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
+                        val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
+                        val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                        val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                        experimentRecSet1024x48.p.clear()
+                        val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                        val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                        org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                        val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
+                        experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                        res.debugText
+                    }
+                }
+                val ocrLinesG = mutableListOf<String>()
+                blueTextsG.forEachIndexed { i, asis -> val d = blueDigitsG[i]; if (d.count { it.isDigit() } >= 2) ocrLinesG += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
+                orangeTextsG.forEachIndexed { i, asis -> val d = orangeDigitsG[i]; if (d.count { it.isDigit() } >= 2) ocrLinesG += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
+                branch.metadata["pd_ocr_html"] = ocrLinesG.joinToString("<br>")
+            }
+                val flowProcessors = listOf(procA, procB, procC, procD, procE, procF, procG)
 
                 // Call the processor for this flow (i) from the array. Per-set behavior now selected by thin if calls to extracted helpers (B/C/E special after common filter) + proc index.
                 // Phase 3 post-dupe prep: all 5 procs have full dupe + local flowName; additional vis hoists done in Phase 0; remnant still present but names resolvable; ready for granular retirement (dispatch sole after).
