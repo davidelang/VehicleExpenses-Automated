@@ -590,7 +590,7 @@ private suspend fun runPumpExperiment(
                     reds: List<PumpHunk>,
                     imgW: Int,
                     imgH: Int,
-                    vertFactors: List<Float> = listOf(0.1f),
+                    vertFactor: Float = 0.2f,
                     horizFactor: Float = 0.5f
                 ): Pair<List<PumpHunk>, List<PumpHunk>> {
                     val blues = mutableListOf<PumpHunk>()
