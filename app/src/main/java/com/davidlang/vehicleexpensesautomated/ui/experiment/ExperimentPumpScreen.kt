@@ -1780,9 +1780,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 6) {
+                if (redPixelList.size > 4) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(6, redPixelList.size).clear()
+                    redPixelList.subList(4, redPixelList.size).clear()
                 }
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
@@ -1792,9 +1792,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 6) {
+                if (expPixel.size > 4) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(6, expPixel.size).clear()
+                    expPixel.subList(4, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -1804,15 +1804,15 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 6) {
+                if (maxPixel.size > 4) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(6, maxPixel.size).clear()
+                    maxPixel.subList(4, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
-                branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
 
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
