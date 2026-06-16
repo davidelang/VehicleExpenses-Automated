@@ -802,11 +802,12 @@ private suspend fun runPumpExperiment(
                     val maxExt = paddleResults[3]
                     val native = paddleResults[4]
 
-                    pdHunksDetectedTotal.addAll(detected)
-                    pdHunksRawTotal.addAll(raw)
-                    pdHunksExpTotal.addAll(exp)
-                    pdHunksMaxTotal.addAll(maxExt)
-                    pdHunksNativeTotal.addAll(native)
+                    // Set A red path only: snap rects to integer pixels on collection (re-derive integer from run results; eliminate float *fullW.toFloat()/contentW effect from shared runDiscoveryPaddle for A's pd* lists only; other sets untouched)
+                    pdHunksDetectedTotal.addAll(detected.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksRawTotal.addAll(raw.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksExpTotal.addAll(exp.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksMaxTotal.addAll(maxExt.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksNativeTotal.addAll(native.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
 
                     workspace.c[innerId].release()
                     workspace.c[outerId].release()
@@ -841,33 +842,26 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Direct pixel (pdHunks*Total hold full photo pixel in .rect after explicit upscale at runDiscoveryPaddle ingest; no ICRS roundtrip). Build rect list direct from .rect for the pixel filter; rebuild with direct RectF(pixel) wraps. Call sites addAll pre-upscaled pixel hunks; no wrapping.
+                // A red prune only: stay in integer Rect throughout (build pixel lists, run filterPixel, use pruned integer rects for A data). Removed map-to-RectF rebuilds for A's red lists (no .map {r->PumpHunk RectF} in this A block; pd* fed from integer Rects for getFinal/expand/takeCrop in A path).
                 val redPixelList = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                // Rebuild pdHunksRawTotal from the final <=6 (direct pixel RectF, no IcrsMath)
-                pdHunksRawTotal.clear()
-                pdHunksRawTotal.addAll(redPixelList.map { r ->
-                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
-                })
-                // Propagate prune to exp/max (blue/orange sources in B/C paths)
                 val expPixel = pdHunksExpTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                pdHunksExpTotal.clear()
-                pdHunksExpTotal.addAll(expPixel.map { r ->
-                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
-                })
                 val maxPixel = pdHunksMaxTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
+                // Sync A pd* lists from pruned integer Rects (ctor RectF(int) only for compat with PumpHunk/getFinal; A red path now integer end-to-end for this proc's data)
+                pdHunksRawTotal.clear()
+                redPixelList.forEach { r -> pdHunksRawTotal.add(PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))) }
+                pdHunksExpTotal.clear()
+                expPixel.forEach { r -> pdHunksExpTotal.add(PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))) }
                 pdHunksMaxTotal.clear()
-                pdHunksMaxTotal.addAll(maxPixel.map { r ->
-                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
-                })
+                maxPixel.forEach { r -> pdHunksMaxTotal.add(PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))) }
                 branch.metadata["n_reds_after_prune6"] = pdHunksRawTotal.size.toString()
                 // For D/E (and B/C where they use the red lists) the proc stubs + thin if calls + helpers will see the pruned <=6 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (B/C/D/E red-derived paths per user clarification). D/E add the prune-to-6 limitation on top. Early probe for C/E now only does polarity on initial (cheap combined mask); the 6 post-prune capture provides the filtered redboxDataC + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
