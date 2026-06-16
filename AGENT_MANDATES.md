@@ -5,11 +5,12 @@ This is the authoritative shared core for Grok, Gemini CLI, Antigravity, and fut
 Agent-specific thin overlays (GROK.md, GEMINI.md) add only CLI tool mappings, phase-gating details, and startup notes. They reference this file for common rules.
 
 ## Explicit Global Overrides (Apply to All)
-1. **Sandbox Permission:** You are EXEMPT from Plan Mode write constraints when targeting `dev-ai-interaction/`.
+1. **Sandbox Permission:** You are EXEMPT from Plan Mode write constraints when targeting `dev-ai-interaction/`. This means you may freely create, edit, delete, and organize files inside the sandbox (including plans, analysis notes, temporary files, etc.) during planning. You may also edit local untracked per-worktree files such as `current-state.md`.
 2. **Testing Exemption:** You are EXEMPT from creating automated tests. Forensic Verification (Build success + Code Audit) is prioritized.
 
 **Edit permissions model:**
-- In plan mode: edits are restricted to the sandbox (`dev-ai-interaction/**`) + designated local untracked files (e.g. `current-state.md`). The `.grok/config.toml` rules + `plan-mode-hard-stops.js` hook enforce this.
+- In plan mode: you have **zero authority** to edit, create, or modify any *tracked files outside the sandbox* (i.e. the real application source code that lives in git, such as files under `app/`, build scripts, main documentation, etc.). All intended changes to tracked files outside `dev-ai-interaction/` must be fully described in a formal sandbox plan. The user must explicitly approve that plan with the magic phrasing before any execution sub-agent may touch those files.
+- You **are allowed** to work freely inside the sandbox (`dev-ai-interaction/**`) and on local untracked per-worktree files (e.g. `current-state.md`). The `.grok/config.toml` rules + `plan-mode-hard-stops.js` hook enforce the boundary.
 - When NOT in planning mode (after `exit_plan_mode` during an approved execution phase): edits to tracked files (and generally) are allowed via blanket `search_replace` / `write` allows in `.grok/config.toml`. This eliminates per-edit permission prompts during normal implementation work while preserving the strict planning barrier.
 - Granular exceptions can be added in `.grok/config.toml` (e.g. for specific helpers or paths). Run `./update-rules.sh` after changes to propagate. Project rules take precedence over user `~/.grok/config.toml`.
 
@@ -83,7 +84,16 @@ The user may (and is encouraged to) provide rich problem descriptions, high-leve
   4. Only when the user gives an explicit magic approval phrase naming the exact plan file in dev-ai-interaction/plans/ does the main agent consider the plan approved.
 
   5. The main agent then spawns a dedicated **Execution Sub-agent** (narrow prompt) with the approved plan injected:
-     "You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [full content or clear reference to the file]. Do not add extra features, 'improvements,' or cleanups. First action: update TODO.md. Use forensic read_file before and after every edit. Run ./build_app after logical pieces that change observable behavior. At the very end, after successful build, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' and stop completely. Parent/main agent will review your changes for fidelity to the plan."
+     "You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [full content or clear reference to the file]. Do not add extra features, 'improvements,' or cleanups. 
+
+**Mandatory ultra-micro phased discipline (non-negotiable):** The approved plan will have decomposed the work into many named ultra-small phases. For each phase:
+- Perform the minimal edit for that phase only.
+- Immediately do narrow forensic `read_file` (offset/limit on the exact site) + targeted grep before and after the edit.
+- `git add` the changed tracked source(s) + TODO.md.
+- Run `./build_app` and confirm success (record the new branch-scoped builds tag).
+- Only after a successful `./build_app` for the current phase may you begin edits for the next phase.
+
+First action: update TODO.md. Use forensic reads before/after every edit. On any failure or partial reset, only the tag of the most recent successful phase (obtained via `./get-builds-tag.sh` preflight) may be used for recovery. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan."
 
   6. The main agent (or a separate narrow reviewer sub-agent) performs a final diff/review of the changes against the approved plan document before considering the turn complete.
 
@@ -185,7 +195,7 @@ git reset --hard "$TAG"
 ## Deployment & Verification Rules
 - **No Deployment:** Agents are **STRICTLY FORBIDDEN** from running `./deploy`, `./gradlew installDebug`, or `adb install`. The physical device/emulator is shared between user and all agents.
 - Deployment is a manual user action. Agent workflow: ask user to deploy → user waits → agent fetches logs next turn.
-- **Versioning Mandate:** Because the app uses `git describe` for its version string, you MUST commit all changes (via `./build_app`) BEFORE triggering a build.
+- **Versioning Mandate:** Because the app uses `git describe` for its version string, you MUST commit all changes (via `./build_app`) BEFORE triggering a build. Use a rich commit message for phased work: `./build_app @phase_summary.txt changed.kt ...` (the @file form supports multi-line summaries pulled from the plan or ENGINEERING_LOG). Single-line messages are only for trivial steps. Git log + the builds tag gives the raw deltas and state at each tag; the sandbox plan + ENGINEERING_LOG.md + current-state.md give the "why", phased intent, and net observable result (avoid forcing full re-derivation from diffs on every restart). Use a rich commit message for phased work: `./build_app @phase_summary.txt changed.kt ...` (the @file form supports multi-line summaries pulled from the plan or ENGINEERING_LOG). Single-line messages are only for trivial steps. Git log + the builds tag gives the raw deltas and state at each tag; the sandbox plan + ENGINEERING_LOG.md + current-state.md give the "why", phased intent, and net observable result without forcing full re-derivation from diffs on every restart. Use a rich commit message: pass a file (e.g. `./build_app @phase_summary.txt file1.kt ...`) containing the phase summary or plan excerpt for multi-line detail. Single-line `-m "..."` is only for trivial steps. Git log + the builds tag gives the raw change history since the prior tag; the sandbox plan + ENGINEERING_LOG.md + current-state.md give the "why", phased intent, and net observable result (avoid re-deriving everything from diffs).
 - **Manual Testing Handoff:** If validation requires the user to manually trigger a test on a physical device, explicitly instruct the user and fetch logs in the subsequent turn before any other actions.
 
 ## Multi-Agent Geography & Confinement (CRITICAL)
@@ -218,22 +228,29 @@ In addition to the sandbox plan document, each worktree has its own **local untr
   - Keep structure minimal and stable: Branch, link(s) to current approved sandbox plan file(s), most recent stable builds tag(s), "Progress" (one-line summary of where we are in the active plan), "Key Decisions" (newest 3-5, 1 line each), "Open Questions" (bullets, prune as resolved), and for long mechanical execution phases only the last 3-4 steps as "Step N: [one sentence action]. Tag after build: XXX."
 - **Update discipline**:
   - During *planning* (interactive/strategy): richer summaries of decisions and links are allowed, but still concise.
-  - During *execution* of approved plans (especially tiny-step mechanical ones with ritual "Finished with step X, can I continue?"): append **only 1-2 lines per step**. Do not re-derive context, quote the plan, or repeat previous steps in the state file.
-- **Mandatory hygiene before every append (especially in multi-step execution or after compaction)**:
+  - During *execution* of approved plans (especially tiny-step mechanical ones with ritual "Finished with step X, can I continue?"): append **only 1-2 lines per step** to current-state.md (facts/pointers or "Step N: [one sentence]. Tag: XXX" only). Detailed progress, activity logs, "user said X", sub-agent details, or process narrative must go to ENGINEERING_LOG.md (append a dated entry). Do not re-derive context, quote the plan, or repeat previous steps in current-state.md. A new agent can tail ENGINEERING_LOG.md + the plan + git since LAST_TAG for recent activity without bloat in current-state.md.
+- **Mandatory hygiene at the start of every new cycle/launch (in addition to before appends)**: On every fresh launch or new planning cycle (after re-reading the designated plan), perform a full hygiene pass on current-state.md before doing any other work or appends:
   1. Read the current current-state.md (use offset/limit for tail if large).
   2. Prune: delete or collapse all completed/corrected steps older than the last 3-4. Replace any "done wrong" history with a single line "Corrected in step Y (tag Z): [1 sentence fact]."
-  3. Remove full user directives, long plan excerpts, "First actions taken" recaps, or interaction logs.
-  4. If the file exceeds ~8 KB, perform a "roll": keep the header + current progress/open + last 3 steps + one line "Older facts rolled; see designated plan file + git history since LAST_TAG for details." Do not archive the state itself (it must stay tiny and local).
+  3. Remove full user directives, long plan excerpts, "First actions taken" recaps, interaction logs, or process narrative.
+  4. If the file exceeds ~8 KB (or contains more than the last 3-4 execution steps), perform a "roll": keep the header + current progress/open + last 3 steps + one line "Older facts rolled; see designated plan file + git history since LAST_TAG + ENGINEERING_LOG.md for details." Move detailed activity/progress updates to ENGINEERING_LOG.md (in the worktree root) instead. Do not archive the state itself (it must stay tiny and local).
+- **Mandatory hygiene before every append (especially in multi-step execution or after compaction)**: Same steps as above, but performed immediately before any write to current-state.md.
 - This keeps re-reads cheap on every cycle/launch and stops the agent from bloating its own *output* tokens by having to "explain" a giant state file in responses. The sandbox plan + git + build tags + narrow tool results are the source of truth for evidence.
 
 ## Sandbox Plan File as the Primary Approved Artifact for Feature / Implementation Work (CRITICAL)
-When the work involves code changes, refactoring that will lead to an execution turn, or feature implementation (after the mandated enter_plan_mode and any fresh Mandate Acknowledgment), your first concrete, reviewable deliverable **must** be to write (via allowed sandbox writes) a fresh, clean, self-contained plan document directly under `dev-ai-interaction/plans/` using a clear, descriptive kebab-case name that indicates the purpose of the change (e.g. `pump-experiment-hoist-procC-early-blocks-plan.md` or `fix-icrs-overflow-in-retracted-blue-plan.md`).
+A formal plan document is **required** before you make *any* changes to tracked files outside the sandbox (i.e. real application source code in the main app directories that lives in git and will be built/committed).
 
-**Pure research is different:** If the cycle starts with a question about existing code ("how does X work?", "where is the logic for Y?", "explain the Z block"), treat it as research-only. Use tools to investigate and answer directly in the conversation. Update `current-state.md` lightly if useful. Do **not** create a formal sandbox plan file in `dev-ai-interaction/plans/` unless the user later gives explicit direction that the work is heading toward implementation / code changes. The "first concrete deliverable must be a plan document" rule applies only to implementation/feature work, not to pure research queries.
+- You may freely create, edit, delete, and organize files **inside `dev-ai-interaction/`** (the sandbox) during planning. The sandbox is explicitly exempt from plan-mode restrictions. You can work there as much as you want (analysis notes, temporary files, reorganizing plans, etc.) without needing a separate "plan for the plan".
+- You may also edit local untracked per-worktree files such as `current-state.md`.
+- You have **zero authority** to edit, create, or modify any tracked file outside `dev-ai-interaction/` (the main app source) while in planning mode. All such work must first be described in a high-signal formal plan in `dev-ai-interaction/plans/`. The user must then approve it with the exact magic phrasing before any execution sub-agent touches those files.
+
+**Pure research is different:** If the cycle starts with a question about existing code ("how does X work?", "where is the logic for Y?", "explain the Z block"), treat it as research-only. Use tools to investigate and answer directly in the conversation. Update `current-state.md` lightly if useful. Do **not** create a formal sandbox plan file unless the user later gives explicit direction that the work is heading toward changes to tracked files outside the sandbox. The "first concrete deliverable must be a plan document" rule applies only to implementation/feature work that touches tracked files outside the sandbox.
 
 The filesystem mtime on the plan file is the authoritative timestamp. A date/time suffix in the filename (such as `-20260614-143022`) is optional and only useful for human sorting or when archiving into `historical-plans/`. When a timestamp is included in the name, use at least second-level granularity (`YYYYMMDD-HHMMSS`) so that multiple plans created on the same day remain easily distinguishable and sortable by filename. Day-only timestamps (e.g. `20260614`) add little value beyond what the filesystem already provides and should be avoided.
 
 - The plan must use the standard structure: Context (why this change), Recommended Approach (chosen over alternatives), Critical Files (exact paths), Existing Functions/Utilities to reuse (with file paths), Phased Small-Step Execution (forensic + build milestones), Verification (end-to-end criteria), and explicit handoff requirements (TODO first, forensic reads, ./build_app, **END OF EXECUTION TURN** marker + "results ready to test").
+
+- **Phased Small-Step Execution must be ultra-micro with per-phase success gates**: The "Phased Small-Step Execution" section **must** enumerate a large number of explicitly named, ultra-small phases (typically 8–20+ for any non-trivial set of related changes). Each phase description must be the smallest observable edit that can be forensically verified. Every phase **must terminate with** narrow forensic `read_file` (offset/limit) + targeted grep before/after the edit + `git add` (changed tracked sources + TODO.md) + a confirmed successful `./build_app` (new branch-scoped builds tag recorded) **before the next phase's edits may begin**. On trouble, user-directed partial reset, or recovery, only the tag of the most recent successful phase's `./build_app` may be used (after `./get-builds-tag.sh` preflight). This discipline is mandatory for safe, auditable execution turns.
 
 Plan filenames should follow the naming guidance above (descriptive kebab-case primary; granular timestamp only when it adds real value over filesystem mtime).
 
@@ -251,7 +268,7 @@ Plan filenames should follow the naming guidance above (descriptive kebab-case p
 
 - Use narrow forensic `read_file` (offset/limit focused on the exact change site) + targeted grep verification before and after every edit.
 
-- Before each `./build_app`: `git add` the changed source file(s) + `current-state.md` + `TODO.md`.
+- Before each `./build_app`: `git add` the changed tracked source file(s) + `TODO.md`. (current-state.md is updated as required by the plan but is deliberately untracked/gitignored and must never be `git add`ed.)
 
 - current-state.md updates: 1-2 concise facts/pointers per step only (after pruning older completed items to a rolled summary line).
 
