@@ -49,3 +49,5 @@
 
 - [x] Execution of pump-experiment-takesnapshot-buffer-target-size-logging-20260615-plan.md
 - [x] Execution of pump-experiment-fix-coordinate-system-error-plan.md
+
+- [x] Phase 0-2 + final forensic/greps/builds (3 builds) complete per pump-experiment-descriptive-column-labels-stretch-blue-method-20260616-plan.md; flows list + preceding comment updated with descriptive suffixes (A exact "Set A"; B-G exact "(clip edges, expanded)" etc); only intended changed (1 added convention sentence + list); broad/narrow forensics + diff + porcelain + builders re-reads + hasML/toSorted confirm A first/ML; all gates; state/TODO final 1-2 facts; final git add + build success; END marker output. Results ready.
