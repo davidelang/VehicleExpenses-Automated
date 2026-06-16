@@ -1662,9 +1662,9 @@ private suspend fun runPumpExperiment(
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
-                // E custom blue/orange (matching D, no valley) via createBlueAndOrangeHunksFromReds (vert sweep 10-40% step 5%, horiz 50%)
+                // E custom blue/orange (matching D, no valley) via createBlueAndOrangeHunksFromReds (fixed 20% vert, horiz 50%)
                 val (customBlueE, customOrangeE) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, (10..40 step 5).map { it / 100f }, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
                 val aPdE = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueE, Color.BLUE, 4) + getAnns(customOrangeE, Color.rgb(255, 165, 0), 2)
                 val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdE, null, workspace).first
                 branch.images["PD"] = baseB64E
