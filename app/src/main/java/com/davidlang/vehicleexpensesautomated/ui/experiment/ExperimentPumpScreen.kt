@@ -1002,6 +1002,14 @@ private suspend fun runPumpExperiment(
                     val discoveryDetails = det
                     val imgW = w
                     val imgH = h
+
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+
                     val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["rawC"] = rawForC
                     val tG0 = System.currentTimeMillis()
@@ -1014,13 +1022,6 @@ private suspend fun runPumpExperiment(
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
                     branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
-
-                    val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
-                    val tilt = -deskewRes.paddleCppAngle
-                    OdometerOcrUtils.rotate(workspace, tilt)
-                    branch.metadata["tilt"] = "%.2f".format(tilt)
-                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
                     // full dupe for C (discovery + C/E branch + copy of doCOrE for resolution)
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
@@ -1332,6 +1333,14 @@ private suspend fun runPumpExperiment(
                     val discoveryDetails = det
                     val imgW = w
                     val imgH = h
+
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+
                     val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
                     branch.images["rawC"] = rawForC
                     val tG0 = System.currentTimeMillis()
@@ -1344,13 +1353,6 @@ private suspend fun runPumpExperiment(
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
                     branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
-
-                    val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
-                    val tilt = -deskewRes.paddleCppAngle
-                    OdometerOcrUtils.rotate(workspace, tilt)
-                    branch.metadata["tilt"] = "%.2f".format(tilt)
-                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
                     // full dupe for E (mirrors C; val flowName + discovery + C/E branch + doC copy)
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
