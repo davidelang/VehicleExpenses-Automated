@@ -1609,6 +1609,7 @@ private suspend fun runPumpExperiment(
                     // Post-prune (filtered 4) redbox hists for C/E *display* / JSON (updated to createCrop + dual takeSnapshot + long-lived buffer per plan).
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
+                    captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData (all sets); E visuals/redboxDataC follow
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
@@ -2881,5 +2882,4 @@ private fun JSONObject.pPutSafe(key: String, value: Float, context: String = "")
 
 
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
-                    captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData (all sets); E visuals/redboxDataC follow
                     val redboxDataC = JSONArray()
