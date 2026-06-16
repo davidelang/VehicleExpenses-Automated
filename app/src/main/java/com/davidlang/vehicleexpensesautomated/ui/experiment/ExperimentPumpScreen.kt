@@ -2520,6 +2520,7 @@ private suspend fun runDiscoveryPaddle(
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
     val (rawBlocks, hist) = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
+    if (metadata != null && hist != null) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
     val rawRects = rawBlocks.map { it.boundingBox }
 
     // Pre-redbox detected hunks (tFullB equivalent from alignment Set J runBinTrialsPaddle).
