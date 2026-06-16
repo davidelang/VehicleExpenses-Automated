@@ -1119,6 +1119,8 @@ object OdometerOcrUtils {
             }
         }
         Log.i("PaddleDetect", "PostProcess: Threshold=$maskThreshold, ActivePixels=$activePixels / ${heatmap.size}")
+        val hist = IntArray(100)
+        for (v in heatmap) { val bin = (v * 100).toInt().coerceIn(0, 99); hist[bin]++ } // Phase 1: 100-bin hist (0.01 bins over [0,1]) in legacy processPaddleHeatmapLegacy (temp internal for redbox dev fn; return/attach Phase 2)
         mask.put(0, 0, data)
 
         val contours = mutableListOf<org.opencv.core.MatOfPoint>()

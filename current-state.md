@@ -1,3 +1,7 @@
 - Branch: fix-pump-experiment
 - Current builds tag: fix-pump-experiment/builds @ 71a10189
 - Phase 5 final: broad forensic (grep zero 0.75/0.1 in custom D/E/G calc paths; helper + 3 call sites + aPd*/baseB64*/blueTexts* re-read intact; current/TODO re-read; porcelain only intended + no other files; TODO+state final updates); git add kt+TODO + final build success + tag. All phases + gates passed. Results ready. Plan: /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/pump-experiment-get-extra-blue-boxes-function-horiz-50-vertical-sweep-20260616-plan.md
+- Phase 0 baseline (post TODO/gates): 5 gates .... PASS (porcelain/grep=0/narrow Phase0 sites at Odometer~1071/1105 + Exp~523/761/846 + Native~579/RecStage~577); narrow forensic + greps (no heatmap_hist/perCharProbs); git add 3kt+TODO; ./build_app (3kt+TODO+state) SUCCESS; tag now 0431630f (pre fe50a76d via get-builds-tag/rev-parse); 1-2 facts; ready Phase 1.
+- current tag: fix-pump-experiment/builds @ 0431630f ; plan: pump-experiment-heatmap-hist-in-redbox-fn-plus-perchar-recognition-probs-in-json-20260616-plan.md (Sub ID 019ed1b7-repair-set1-try2)
+- Phase 1: hist compute added in processPaddleHeatmapLegacy (IntArray(100) bin=(v*100).toInt().coerceIn(0,99) after threshold log ~1122; box logic (mask/contours/bounds) unchanged per narrow read/grep after; before also clean); state prune+facts; ready Phase 2.
+- tag post P1 build expected; plan ref + Sub 019ed1b7-repair-set1-try2
