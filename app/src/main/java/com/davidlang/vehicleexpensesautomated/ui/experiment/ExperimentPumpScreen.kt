@@ -617,6 +617,28 @@ private suspend fun runPumpExperiment(
                     return blues to oranges
                 }
 
+                // Hoisted data-only capture for per-red redbox histograms (stat JSON with index/h/w/area/histBins) for *all 7 sets* (A/B/C/D/E/F/G).
+                // Called after the (now top-4) prune in every proc. Reuses the existing createCrop + direct calcHist + stat pattern from C/E visuals (no visuals/longLived here; data only for JSON/metadata "redboxData" + "n_per_red_hists").
+                // C/E continue to use their specific visual capture (redboxRectC_*/redboxHistC_* + longLived) + redboxDataC; this adds the common "redboxData" for all.
+                private fun captureRedboxData(reds: List<PumpHunk>, workspace: BufferSet, branch: PumpBranch) {
+                    val redboxData = JSONArray()
+                    reds.forEachIndexed { i, hunk ->
+                        val rw = (hunk.rect.right - hunk.rect.left).toInt()
+                        val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
+                        val rarea = rw * rh
+                        val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
+                        val hmat = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.c[cropId].mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        redboxData.put(stat)
+                        workspace.c[cropId].release()
+                    }
+                    branch.metadata["redboxData"] = redboxData.toString()
+                    branch.metadata["n_per_red_hists"] = reds.size.toString()
+                }
+
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
                 var processedScales = mutableSetOf<Int>()
 
