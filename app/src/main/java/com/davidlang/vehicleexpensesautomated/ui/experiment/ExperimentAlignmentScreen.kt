@@ -1025,7 +1025,7 @@ private suspend fun runBinTrialsPaddle(
         val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-        var tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+        var tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes).first else emptyList<TextBlock>()
         experimentDetSet512x128.c[dCrId].release()
 
         var tRawB = tFullB.filter { b1 ->
@@ -1103,7 +1103,7 @@ private suspend fun runBinTrialsPaddle(
             val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
             org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-            tFullB = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes) else emptyList<TextBlock>()
+            tFullB = if (detRes2 != null) OdometerOcrUtils.processPaddleHeatmap(detRes2.heatmap, detRes2.width, detRes2.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes2.nativeBoxes).first else emptyList<TextBlock>()
             experimentDetSet512x128.c[dCrId2].release()
 
             rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
@@ -1922,7 +1922,7 @@ private suspend fun runPaddleValleyIterative(
         val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
         org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
         val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-        val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+        val rawB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes).first else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
 
         val valleyResults = rawB.map { if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox) else NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }

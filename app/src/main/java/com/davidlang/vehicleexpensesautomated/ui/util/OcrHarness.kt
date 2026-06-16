@@ -227,7 +227,7 @@ object OcrHarness {
             val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
             org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-            val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+            val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes).first else emptyList<TextBlock>()
             experimentDetSet512x128.c[dCrId].release()
             
             val tRawB = tFullB.filter { b1 ->
