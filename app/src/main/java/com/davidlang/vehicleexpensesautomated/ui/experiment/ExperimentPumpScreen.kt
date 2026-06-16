@@ -1197,7 +1197,6 @@ private suspend fun runPumpExperiment(
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)
                     branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
-                    // full dupe for D (mirrors B; val flowName + discovery + B/D branch + doB copies)
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
                     val srcW = workspace.p.width
