@@ -476,19 +476,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_out_ms" to "%.3f".format(tJniOut)
             )
 
-            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder()
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder(); val perCharProbsBuilder = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
                 var maxIdx = 0; var maxVal = -1f; val searchLimit = dictSize
                 for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
                 if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
-                    result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++; lastConf = maxVal
+                    val ch = dictionary[maxIdx - 1]
+                    result.append(ch); totalConf += maxVal; charCount++; lastConf = maxVal
+                    if (perCharProbsBuilder.isNotEmpty()) perCharProbsBuilder.append(",")
+                    perCharProbsBuilder.append("${ch}:${"%.2f".format(maxVal)}")
                 }
                 lastIdx = maxIdx
             }
             val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()))
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()), perCharProbs = perCharProbsBuilder.toString())
         } catch (t: Throwable) {
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }
@@ -536,7 +539,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_out_ms" to "%.3f".format(tJniOut)
             )
 
-            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder()
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder(); val perCharProbsBuilder = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
@@ -559,6 +562,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     if (pass) {
                         result.append(char); totalConf += maxVal; charCount++; lastConf = maxVal
                         probs.append("%s(%.3f)".format(char, maxVal))
+                        if (perCharProbsBuilder.isNotEmpty()) perCharProbsBuilder.append(",")
+                        perCharProbsBuilder.append("${char}:${"%.2f".format(maxVal)}")
                     } else {
                         Log.w("PaddleOCR", "Pruning: Confidence drop too high for '$char' (Ratio: %.3f < %.3f)".format(maxVal, ratioThr))
                         probs.append("%s(%.3f!)".format(char, maxVal))
@@ -568,13 +573,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 lastIdx = maxIdx
             }
             val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()))
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()), perCharProbs = perCharProbsBuilder.toString())
         } catch (t: Throwable) {
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }
     }
 
-    data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null, val metadata: Map<String, String> = emptyMap())
+    data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null, val metadata: Map<String, String> = emptyMap(), val perCharProbs: String = "")
 
     override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
@@ -596,7 +601,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
             imageWidth = w,
             imageHeight = h,
-            metadata = res.metadata
+            metadata = res.metadata,
+            perCharProbs = res.perCharProbs
         )
     }
 
@@ -620,7 +626,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
             imageWidth = w,
             imageHeight = h,
-            metadata = res.metadata
+            metadata = res.metadata,
+            perCharProbs = res.perCharProbs
         )
     }
 
@@ -648,7 +655,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
             imageWidth = w,
             imageHeight = h,
-            metadata = res.metadata
+            metadata = res.metadata,
+            perCharProbs = res.perCharProbs
         )
     }
 }
