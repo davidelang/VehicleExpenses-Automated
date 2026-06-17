@@ -6,7 +6,7 @@
   - [x] Phase 3: Refactor CREATE drag (the main "pixel to float" path) (replaced with adjustedScreenToImagePixel + pixelToIcrs; removed normalizedToIcrs in CREATE; forensic 407-427 + grep; git+build success; tag fix-pump-experiment/builds)
   - [x] Phase 4: Refactor EDIT handles drag (ICRS->icrsToPixel->imagePixelToScreen for display; screen->adjusted->pixelToIcrs back; removed toScreen/toIcrs/normalized entirely; forensic + build success; tag fix-pump-experiment/builds)
   - [x] Phase 5: Refactor drawing + hit test (drawIcrsRect + getScreenRect) (replaced with icrsToPixel + pixel-norm-to-fit calc; removed lx s/originalSize 0-1; forensic canvas+get + grep no remaining bad; build success)
-  - [ ] Phase 6: Cleanup + comments (guarantee no 0-1 crop Rects)
+  - [x] Phase 6: Cleanup + comments (guarantee no 0-1 crop Rects) (prominent ICRS-always comment at EditCropsView top; no dead normalizedToIcrs; onCrop calls unchanged/valid ICRS; forensic + build)
   - [ ] Phase 7: Load path hygiene
   - [ ] Phase 8: End-to-end verification (user side + final build)
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
