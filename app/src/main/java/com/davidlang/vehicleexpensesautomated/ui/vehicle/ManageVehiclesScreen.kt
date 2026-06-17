@@ -373,15 +373,17 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         if (editMode == CropEditMode.EDIT_CROPS) {
                             val pxW = viewSize.x; val pxH = viewSize.y
                             val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
-                            val s = minOf(originalSize.x, originalSize.y)
                             val hitRadius = 40f / scale // Screen pixels
 
                             fun getScreenRect(r: Rect): Rect {
-                                val lx = (r.left * s + (originalSize.x / 2f)) / originalSize.x
-                                val ly = (r.top * s + (originalSize.y / 2f)) / originalSize.y
-                                val lw = (r.width * s) / originalSize.x
-                                val lh = (r.height * s) / originalSize.y
-                                return Rect(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height, fitRect.left + (lx + lw) * fitRect.width, fitRect.top + (ly + lh) * fitRect.height)
+                                // ICRS -> image pixels (icrsToPixel) -> screen (imagePixelToScreen). No 0-1 normalized crop rect.
+                                val p1 = IcrsMath.icrsToPixel(r.left, r.top, originalSize.x.toInt(), originalSize.y.toInt())
+                                val p2 = IcrsMath.icrsToPixel(r.right, r.bottom, originalSize.x.toInt(), originalSize.y.toInt())
+                                val left = fitRect.left + (p1.x / originalSize.x) * fitRect.width
+                                val top = fitRect.top + (p1.y / originalSize.y) * fitRect.height
+                                val right = fitRect.left + (p2.x / originalSize.x) * fitRect.width
+                                val bottom = fitRect.top + (p2.y / originalSize.y) * fitRect.height
+                                return Rect(left, top, right, bottom)
                             }
 
                             listOf(true to odoRect, false to otherRect).forEach { (isOdo, rect) ->
@@ -464,12 +466,16 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                     val pxW = size.width; val pxH = size.height
                     val fitRect = if (originalSize.x > 0f) calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y) else Rect(0f, 0f, pxW, pxH)
                     fun drawIcrsRect(rect: Rect, color: Color) {
-                        val s = minOf(originalSize.x, originalSize.y)
-                        val lx = (rect.left * s + (originalSize.x / 2f)) / originalSize.x
-                        val ly = (rect.top * s + (originalSize.y / 2f)) / originalSize.y
-                        val lw = (rect.width * s) / originalSize.x
-                        val lh = (rect.height * s) / originalSize.y
-                        drawRect(color, Offset(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height), androidx.compose.ui.geometry.Size(lw * fitRect.width, lh * fitRect.height), style = Stroke(4f / scale))
+                        // ICRS -> image pixels (icrsToPixel) -> screen. No lx formula / 0-1 step.
+                        val origW = originalSize.x
+                        val origH = originalSize.y
+                        val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, origW.toInt(), origH.toInt())
+                        val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, origW.toInt(), origH.toInt())
+                        val left = fitRect.left + (p1.x / origW) * fitRect.width
+                        val top = fitRect.top + (p1.y / origH) * fitRect.height
+                        val w = ((p2.x - p1.x) / origW) * fitRect.width
+                        val h = ((p2.y - p1.y) / origH) * fitRect.height
+                        drawRect(color, Offset(left, top), androidx.compose.ui.geometry.Size(w, h), style = Stroke(4f / scale))
                     }
                     currentDragRect?.let { drawIcrsRect(it, Color.Red) }
                     odoRect?.let { drawIcrsRect(it, Color.Blue) }
