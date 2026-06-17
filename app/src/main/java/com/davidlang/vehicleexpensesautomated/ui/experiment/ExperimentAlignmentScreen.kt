@@ -313,6 +313,7 @@ private suspend fun runExperiment(
 
             // Sequential A/B Ingestion
             NativePaddleEngine.bufferSetA.resize(imgW, imgH)
+            // Buffer hygiene comment (per plan phase 10): per-photo resize ensures shared bufferSetB is in full photo size (imgW/imgH) matching ICRS conversions used later for diagnostic crops. Pump pixel mutations of shared A/B must not break ICRS assumptions.
             NativePaddleEngine.bufferSetB.resize(imgW, imgH)
 
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.bufferSetA.p)
@@ -472,6 +473,10 @@ private suspend fun runExperiment(
 
                         // Refinement Loop (Always executed to provide diagnostic data)
                         if (globalWinnerRef.vehicle.id >= 0) {
+                            // Buffer hygiene for ICRS crops on shared bufferSetB (plan p10): ensure mat is full photo size matching the imgW/imgH used for ICRS conversion (probe dims) before the diagnostic crop. Defensive vs shared global mutations from pump redbox paths.
+                            if (NativePaddleEngine.bufferSetB.p.mat.cols() != imgW || NativePaddleEngine.bufferSetB.p.mat.rows() != imgH) {
+                                NativePaddleEngine.bufferSetB.resize(imgW, imgH)
+                            }
                             // Diagnostic High-Quality Crop (Save to disk using native snapshot)
                             val l = globalWinnerRef.vehicle.odometerCropLeft ?: 0f
                             val t = globalWinnerRef.vehicle.odometerCropTop ?: 0f
