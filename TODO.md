@@ -1,5 +1,12 @@
 # TODO
 
+- [ ] remove-dead-addnew-and-normalizedtoicrs-plan.md — Remove Dead Code - AddNewVehicleScreen and normalizedToIcrs (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/remove-dead-addnew-and-normalizedtoicrs-plan.md)
+  - [ ] Phase 1: Baseline confirmation (no edits)
+  - [ ] Phase 2: Remove normalizedToIcrs function
+  - [ ] Phase 3: Remove AddNewVehicleScreen.kt
+  - [ ] Phase 4: Cleanup any incidental references in non-source
+  - [ ] Phase 5: Final verification
+  - [ ] Phase 6 (if needed): Post-removal hygiene
 - [ ] fix-manage-vehicles-no-0-1-crop-rects-plan.md — Never Use 0-1 Normalized for Crop Rects in Manage Vehicles Screen (Strict Pixel / ICRS Only) (approved plan at dev-ai-interaction/plans/fix-manage-vehicles-no-0-1-crop-rects-plan.md)
   - [x] Phase 1: Forensic baseline (reads 338-502 + greps + IcrsMath; current-state updated+pruned never git-added; TODO recorded plan; git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-345-g17ea32a3)
   - [x] Phase 2: Add pure helpers for screen <-> image pixels (no crop 0-1) (added adjustedScreenToImagePixel + imagePixelToScreen; forensic read/grep; git add kt+TODO + ./build_app success; tag fix-pump-experiment/builds, start-347-g5f238088)
