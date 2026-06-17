@@ -1,21 +1,5 @@
 # TODO
 
-- [ ] remove-dead-addnew-and-normalizedtoicrs-plan.md — Remove Dead Code - AddNewVehicleScreen and normalizedToIcrs (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/remove-dead-addnew-and-normalizedtoicrs-plan.md)
-  - [x] Phase 1: Baseline confirmation (no edits) (read IcrsMath full + normalizedToIcrs focus; greps for normalizedToIcrs in app/src + dev-ai confirm only def no callers in kt; read AddNew top50 + @Composable search only def; grep AddNewVehicleScreen in src excl self: zero; read MainActivity nav section: no ref; current-state updated (1 fact); git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-360-ge65b7906)
-  - [ ] Phase 2: Remove normalizedToIcrs function
-  - [ ] Phase 3: Remove AddNewVehicleScreen.kt
-  - [ ] Phase 4: Cleanup any incidental references in non-source
-  - [ ] Phase 5: Final verification
-  - [ ] Phase 6 (if needed): Post-removal hygiene
-- [ ] fix-manage-vehicles-no-0-1-crop-rects-plan.md — Never Use 0-1 Normalized for Crop Rects in Manage Vehicles Screen (Strict Pixel / ICRS Only) (approved plan at dev-ai-interaction/plans/fix-manage-vehicles-no-0-1-crop-rects-plan.md)
-  - [x] Phase 1: Forensic baseline (reads 338-502 + greps + IcrsMath; current-state updated+pruned never git-added; TODO recorded plan; git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-345-g17ea32a3)
-  - [x] Phase 2: Add pure helpers for screen <-> image pixels (no crop 0-1) (added adjustedScreenToImagePixel + imagePixelToScreen; forensic read/grep; git add kt+TODO + ./build_app success; tag fix-pump-experiment/builds, start-347-g5f238088)
-  - [x] Phase 3: Refactor CREATE drag (the main "pixel to float" path) (replaced with adjustedScreenToImagePixel + pixelToIcrs; removed normalizedToIcrs in CREATE; forensic 407-427 + grep; git+build success; tag fix-pump-experiment/builds)
-  - [x] Phase 4: Refactor EDIT handles drag (ICRS->icrsToPixel->imagePixelToScreen for display; screen->adjusted->pixelToIcrs back; removed toScreen/toIcrs/normalized entirely; forensic + build success; tag fix-pump-experiment/builds)
-  - [x] Phase 5: Refactor drawing + hit test (drawIcrsRect + getScreenRect) (replaced with icrsToPixel + pixel-norm-to-fit calc; removed lx s/originalSize 0-1; forensic canvas+get + grep no remaining bad; build success)
-  - [x] Phase 6: Cleanup + comments (guarantee no 0-1 crop Rects) (prominent ICRS-always comment at EditCropsView top; no dead normalizedToIcrs; onCrop calls unchanged/valid ICRS; forensic + build)
-  - [x] Phase 7: Load path hygiene (added "getCrops returns ICRS Rects (DB values are ICRS after re-creation). No 0-1 path." comment; no behavior change; forensic + build)
-  - [x] Phase 8: End-to-end verification (user side + final build) (code verified: zero normalizedToIcrs + no 0-1 crop rect paths; final state; ./build_app + tag)
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
@@ -65,9 +49,6 @@
     - [x] Update `MASTER_AGENT_MANDATE.md` with strict merge template.
     - [x] Commit and sync rules across all worktrees.
 
-- 2026-06-16: pump-experiment-calculated-blue-box-expansion-to-fixed-20pct-20260616-plan.md — remove range, set calculated blue vert expansion to fixed 0.2f in ExperimentPumpScreen.kt (D/E/G sets)
-- 2026-06-16: pump-experiment-heatmap-redbox-threshold-to-0.03f-20260616-plan.md — change heatmap-to-redbox threshold from 0.20f to 0.03f in NativePaddleEngine.kt processHeatmap calls (detect + detectMat)
-
 # Meta plan (approved 2026-06-12 on orchestration branch): Robust Plan/Execute Cycle
 - Primary deliverable of every planning phase must be a fresh, clean task-specific plan document written to dev-ai-interaction/plans/ (e.g. <task>-<date>-plan.md) using the standard structure (Context, Recommended Approach, Critical Files with paths, Reusable utilities with exact locations, Phased steps with forensic+build, Verification). User approves by explicit path reference + directive (e.g. "approved the plan at dev-ai-interaction/XXX-plan.md for the following..."). Agent must re-read exactly that designated file as first step in execution.
 - Harness ~/.grok/sessions/.../plan.md (the process log whose path appears in plan-mode reminders) is *not* the work plan. Use it only for short log entries referencing the sandbox plan path. At start of new cycle (or post-handoff), roll any prior superseding/historical bulk to dev-ai-interaction/historical-plans/harness-plan-archive-....md first, then prepend only the minimal current-cycle header (prepending to, not even superseding, old content).
@@ -82,6 +63,3 @@
 - Update bootstrap files (new_grok_agent_prompt point 5 + Sandbox Plan File paragraph, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md) + .gitignore so that when the user explicitly directs a current-turn plan, agents create/revise fresh plan files under dev-ai-interaction/ and use the local untracked per-worktree state file for continuity. The "historical reference only" rule applies only to old/abandoned plans from other agents/cycles.
 - Demo during execution: create local untracked current-state.md in the current worktree root with minimal structure. Primary plan documents stay in the sandbox.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
-
-- 2026-06-16: fix-alignment-regression-pump-shared-buffer-roi-threshold-20260616-plan.md — enforce caller-creates-red-box-crop + pass-slice pattern; restore usable ICRS sourceRect for alignment diagnostic crops (clip in OcrEngine + migrate site preserving ICRS deriv from vehicle); keep takeSnapshot internal output crop creation exactly unchanged; 0.03f for alignment; dead set_g removal; isolate pump pixel logic. (Execution Sub-agent, 11 phases)
-- 2026-06-16: eliminate-kotlin-heatmap-to-redbox-move-to-jni-20260616-plan.md: move all heatmap-to-redbox (incl hist) to JNI, fix callers in pump/alignment/harness
