@@ -479,7 +479,7 @@ private suspend fun runExperiment(
 
                         // Refinement Loop (Always executed to provide diagnostic data)
                         if (globalWinnerRef.vehicle.id >= 0) {
-                            // Buffer hygiene for ICRS crops on shared bufferSetB (plan p10): ensure mat is full photo size matching the imgW/imgH used for ICRS conversion (probe dims) before the diagnostic crop. Defensive vs shared global mutations from pump redbox paths.
+                            // Hygiene: resize B to match dims used for final icrsToPixel after alignment transform. Pump unaffected.
                             if (NativePaddleEngine.bufferSetB.p.mat.cols() != imgW || NativePaddleEngine.bufferSetB.p.mat.rows() != imgH) {
                                 NativePaddleEngine.bufferSetB.resize(imgW, imgH)
                             }
@@ -501,7 +501,7 @@ private suspend fun runExperiment(
                             val roiW = (p2.x.toInt() - p1.x.toInt()).coerceAtLeast(1)
                             val roiH = (p2.y.toInt() - p1.y.toInt()).coerceAtLeast(1)
                             val cropId = NativePaddleEngine.bufferSetB.createCrop(p1.x.toInt(), p1.y.toInt(), roiW, roiH)
-                            // ICRS sourceRect usage on full buffer (or migrated to caller-crop) for diagnostic crops must continue to work; pump pixel red box optimization must not affect this.
+                            // For post-align: ref odo ICRS transformed in ICRS space (spec) then icrsToPixel on current canvas. Pre-warp uses direct. Pump changes unaffected (caller crop kept).
                             val (cropB64, _) = OcrUtils.takeSnapshot(
                                 source = NativePaddleEngine.bufferSetB.c[cropId],
                                 targetW = 320,
