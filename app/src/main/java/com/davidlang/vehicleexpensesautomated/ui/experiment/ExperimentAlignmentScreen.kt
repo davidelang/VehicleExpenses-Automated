@@ -446,37 +446,34 @@ private suspend fun runExperiment(
                         alignResTimeMs = alignRes.timeMs
                         alignResMetadata.putAll(alignRes.metadata)
 
-                        val (snap, tSnap) = if (alignRes.success) {
-                            val odoAnns = mutableListOf<SnapshotAnnotation>()
-                            globalWinnerRef?.vehicle?.let { v ->
-                                val icrsL = v.odometerCropLeft ?: 0f
-                                val icrsT = v.odometerCropTop ?: 0f
-                                val icrsR = v.odometerCropRight ?: 1f
-                                val icrsB = v.odometerCropBottom ?: 1f
-                                val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
-                                val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
-                                val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
-                                val refW = globalWinnerRef.width
-                                val refH = globalWinnerRef.height
-                                val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
-                                val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
-                                val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
-                                // Only add if valid inside the source canvas (prevents low/off for Honda)
-                                if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < imgW && p1.y < imgH) {
-                                    odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
-                                }
+                        // Always compute (using ICRS-space mapping) so box shows for !success cases too (Honda visibility)
+                        val odoAnns = mutableListOf<SnapshotAnnotation>()
+                        globalWinnerRef?.vehicle?.let { v ->
+                            val icrsL = v.odometerCropLeft ?: 0f
+                            val icrsT = v.odometerCropTop ?: 0f
+                            val icrsR = v.odometerCropRight ?: 1f
+                            val icrsB = v.odometerCropBottom ?: 1f
+                            val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
+                            val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
+                            val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
+                            val refW = globalWinnerRef.width
+                            val refH = globalWinnerRef.height
+                            val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
+                            val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
+                            val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
+                            if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < imgW && p1.y < imgH) {
+                                odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
                             }
-                            // ICRS sourceRect usage on full buffer (or migrated to caller-crop) for diagnostic crops must continue to work; pump pixel red box optimization must not affect this.
-                            OcrUtils.takeSnapshot(
-                                source = NativePaddleEngine.bufferSetB.p,
-                                sourceRect = null,
-                                targetW = 600,
-                                targetH = 450,
-                                annotations = odoAnns,
-                                scratchArgb = null,
-                                scratchYuv = NativePaddleEngine.bufferSetB
-                            )
-                        } else Pair("", 0L)
+                        }
+                        val (snap, tSnap) = OcrUtils.takeSnapshot(
+                            source = NativePaddleEngine.bufferSetB.p,
+                            sourceRect = null,
+                            targetW = 600,
+                            targetH = 450,
+                            annotations = odoAnns,
+                            scratchArgb = null,
+                            scratchYuv = NativePaddleEngine.bufferSetB
+                        )
                         alignedBase64 = snap
                         tSnapAlign += tSnap
 
