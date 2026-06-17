@@ -496,6 +496,24 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
     }
 }
 
+/**
+ * Pure screen <-> image pixel helpers (NO crop Rects, never 0-1 normalized crop data).
+ * Used to map gesture positions to absolute image pixels, then ICRS via pixelToIcrs.
+ */
+private fun adjustedScreenToImagePixel(screen: Offset, fitRect: Rect, original: Offset): Offset {
+    if (fitRect.width == 0f || fitRect.height == 0f || original.x == 0f || original.y == 0f) return Offset.Zero
+    val ix = ((screen.x - fitRect.left) / fitRect.width) * original.x
+    val iy = ((screen.y - fitRect.top) / fitRect.height) * original.y
+    return Offset(ix, iy)
+}
+
+private fun imagePixelToScreen(imagePixel: Offset, fitRect: Rect, original: Offset): Offset {
+    if (fitRect.width == 0f || fitRect.height == 0f || original.x == 0f || original.y == 0f) return Offset.Zero
+    val sx = imagePixel.x / original.x
+    val sy = imagePixel.y / original.y
+    return Offset(fitRect.left + sx * fitRect.width, fitRect.top + sy * fitRect.height)
+}
+
 private fun calculateFitImageRect(viewW: Float, viewH: Float, imgW: Float, imgH: Float): Rect {
     val aspect = imgW / imgH; val viewAspect = viewW / viewH
     return if (aspect > viewAspect) { val fitH = viewW / aspect; Rect(0f, (viewH - fitH) / 2f, viewW, (viewH + fitH) / 2f) } else { val fitW = viewH * aspect; Rect((viewW - fitW) / 2f, 0f, (viewW + fitW) / 2f, viewH) }
