@@ -1205,6 +1205,7 @@ private suspend fun runPumpExperiment(
                         // Only the per-red rect crop released promptly.
                         // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
                         // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
+                        // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
                         val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
                         val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
@@ -1622,6 +1623,7 @@ private suspend fun runPumpExperiment(
                         // Only the per-red rect crop released promptly.
                         // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
                         // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
+                        // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
                         val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
                         val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
