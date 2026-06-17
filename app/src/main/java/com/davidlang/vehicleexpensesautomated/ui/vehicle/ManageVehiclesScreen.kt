@@ -112,6 +112,7 @@ fun ManageVehiclesScreen(
                     originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
                 } catch (e: Exception) { Log.e("ManageVehicles", "Failed dimensions", e) }
             }
+            // getCrops returns ICRS Rects (DB values are ICRS after re-creation). No 0-1 path.
             val (odo, other) = vehicleViewModel.getCrops(it)
             odometerCropRect = odo
             otherTextCropRect = other
