@@ -305,6 +305,7 @@ object OcrUtils {
 
         workspace.clear()
         val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
+        // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
 
         try {
             when (source) {
