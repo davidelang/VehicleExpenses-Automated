@@ -413,16 +413,11 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         val fitRect = calculateFitImageRect(pxW, pxH, originalSize.x, originalSize.y)
                         val imgW = originalSize.x.toInt(); val imgH = originalSize.y.toInt()
                         if (editMode == CropEditMode.CREATE_ODO || editMode == CropEditMode.CREATE_OTHER) {
-                            val p1 = IcrsMath.normalizedToIcrs(
-                                (start.x - fitRect.left) / fitRect.width,
-                                (start.y - fitRect.top) / fitRect.height,
-                                imgW, imgH
-                            ).let { Offset(it.x, it.y) }
-                            val p2 = IcrsMath.normalizedToIcrs(
-                                (end.x - fitRect.left) / fitRect.width,
-                                (end.y - fitRect.top) / fitRect.height,
-                                imgW, imgH
-                            ).let { Offset(it.x, it.y) }
+                            // Pure pixel path: screen -> image pixels (via fit) -> ICRS via pixelToIcrs. NEVER materializes 0-1 normalized crop Rect.
+                            val startImage = adjustedScreenToImagePixel(start, fitRect, originalSize)
+                            val endImage = adjustedScreenToImagePixel(end, fitRect, originalSize)
+                            val p1 = IcrsMath.pixelToIcrs(startImage.x, startImage.y, imgW, imgH)
+                            val p2 = IcrsMath.pixelToIcrs(endImage.x, endImage.y, imgW, imgH)
                             currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
                         } else if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
                             val currentRect = if (activeCropIsOdo) odoRect else otherRect
