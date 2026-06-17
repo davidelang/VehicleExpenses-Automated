@@ -456,6 +456,7 @@ private suspend fun runExperiment(
                                 val p2 = IcrsMath.icrsToPixel(icrsR, icrsB, imgW, imgH)
                                 odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
                             }
+                            // ICRS sourceRect usage on full buffer (or migrated to caller-crop) for diagnostic crops must continue to work; pump pixel red box optimization must not affect this.
                             OcrUtils.takeSnapshot(
                                 source = NativePaddleEngine.bufferSetB.p,
                                 sourceRect = null,
@@ -484,6 +485,7 @@ private suspend fun runExperiment(
                             val roiW = (p2.x.toInt() - p1.x.toInt()).coerceAtLeast(1)
                             val roiH = (p2.y.toInt() - p1.y.toInt()).coerceAtLeast(1)
                             val cropId = NativePaddleEngine.bufferSetB.createCrop(p1.x.toInt(), p1.y.toInt(), roiW, roiH)
+                            // ICRS sourceRect usage on full buffer (or migrated to caller-crop) for diagnostic crops must continue to work; pump pixel red box optimization must not affect this.
                             val (cropB64, _) = OcrUtils.takeSnapshot(
                                 source = NativePaddleEngine.bufferSetB.c[cropId],
                                 targetW = 320,
