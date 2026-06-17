@@ -227,7 +227,23 @@ object OcrHarness {
             val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
             org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-            val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes).first else emptyList<TextBlock>()
+            val tFullB = if (detRes != null) {
+                val invScale = 1.0f / detSc
+                detRes.nativeBoxes.map { box ->
+                    val points = box.points
+                    val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 4.0) * invScale.toDouble()).toInt()
+                    val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 4.0) * invScale.toDouble()).toInt()
+                    val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 4.0) * invScale.toDouble()).toInt()
+                    val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 4.0) * invScale.toDouble()).toInt()
+                    val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
+                    val scaledPoints = FloatArray(8)
+                    for (i in 0 until 8) {
+                        scaledPoints[i] = points[i] * invScale
+                    }
+                    val angle = 0f
+                    TextBlock("", bounds, angle, confidence = box.confidence)
+                }
+            } else emptyList<TextBlock>()
             experimentDetSet512x128.c[dCrId].release()
             
             val tRawB = tFullB.filter { b1 ->
