@@ -481,10 +481,11 @@ private suspend fun runExperiment(
                             val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, imgW, imgH)
                             val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, imgW, imgH)
                             val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-
+                            val roiW = (p2.x.toInt() - p1.x.toInt()).coerceAtLeast(1)
+                            val roiH = (p2.y.toInt() - p1.y.toInt()).coerceAtLeast(1)
+                            val cropId = NativePaddleEngine.bufferSetB.createCrop(p1.x.toInt(), p1.y.toInt(), roiW, roiH)
                             val (cropB64, _) = OcrUtils.takeSnapshot(
-                                source = NativePaddleEngine.bufferSetB.p,
-                                sourceRect = roi,
+                                source = NativePaddleEngine.bufferSetB.c[cropId],
                                 targetW = 320,
                                 targetH = 48,
                                 scratchArgb = null,
