@@ -453,9 +453,18 @@ private suspend fun runExperiment(
                                 val icrsT = v.odometerCropTop ?: 0f
                                 val icrsR = v.odometerCropRight ?: 1f
                                 val icrsB = v.odometerCropBottom ?: 1f
-                                val p1 = IcrsMath.icrsToPixel(icrsL, icrsT, imgW, imgH)
-                                val p2 = IcrsMath.icrsToPixel(icrsR, icrsB, imgW, imgH)
-                                odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
+                                val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
+                                val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
+                                val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
+                                val refW = globalWinnerRef.width
+                                val refH = globalWinnerRef.height
+                                val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
+                                val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
+                                val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
+                                // Only add if valid inside the source canvas (prevents low/off for Honda)
+                                if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < imgW && p1.y < imgH) {
+                                    odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
+                                }
                             }
                             // ICRS sourceRect usage on full buffer (or migrated to caller-crop) for diagnostic crops must continue to work; pump pixel red box optimization must not affect this.
                             OcrUtils.takeSnapshot(
@@ -483,9 +492,14 @@ private suspend fun runExperiment(
                             val r = globalWinnerRef.vehicle.odometerCropRight ?: 1f
                             val b = globalWinnerRef.vehicle.odometerCropBottom ?: 1f
 
-                            val icrsRect = RectF(l, t, r, b)
-                            val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, imgW, imgH)
-                            val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, imgW, imgH)
+                            val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
+                            val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
+                            val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
+                            val refW = globalWinnerRef.width
+                            val refH = globalWinnerRef.height
+                            val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(l, t, r, b, sc, tx, ty, refW, refH, imgW, imgH)
+                            val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
+                            val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
                             val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
                             val roiW = (p2.x.toInt() - p1.x.toInt()).coerceAtLeast(1)
                             val roiH = (p2.y.toInt() - p1.y.toInt()).coerceAtLeast(1)
