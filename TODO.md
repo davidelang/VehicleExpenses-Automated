@@ -4,7 +4,7 @@
   - [x] Phase 1: Forensic baseline (reads 338-502 + greps + IcrsMath; current-state updated+pruned never git-added; TODO recorded plan; git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-345-g17ea32a3)
   - [x] Phase 2: Add pure helpers for screen <-> image pixels (no crop 0-1) (added adjustedScreenToImagePixel + imagePixelToScreen; forensic read/grep; git add kt+TODO + ./build_app success; tag fix-pump-experiment/builds, start-347-g5f238088)
   - [x] Phase 3: Refactor CREATE drag (the main "pixel to float" path) (replaced with adjustedScreenToImagePixel + pixelToIcrs; removed normalizedToIcrs in CREATE; forensic 407-427 + grep; git+build success; tag fix-pump-experiment/builds)
-  - [ ] Phase 4: Refactor EDIT handles drag
+  - [x] Phase 4: Refactor EDIT handles drag (ICRS->icrsToPixel->imagePixelToScreen for display; screen->adjusted->pixelToIcrs back; removed toScreen/toIcrs/normalized entirely; forensic + build success; tag fix-pump-experiment/builds)
   - [ ] Phase 5: Refactor drawing + hit test (drawIcrsRect + getScreenRect)
   - [ ] Phase 6: Cleanup + comments (guarantee no 0-1 crop Rects)
   - [ ] Phase 7: Load path hygiene
