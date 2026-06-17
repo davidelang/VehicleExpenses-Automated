@@ -4,7 +4,7 @@
   - [x] Phase 1: Baseline confirmation (no edits) (read IcrsMath full + normalizedToIcrs focus; greps for normalizedToIcrs in app/src + dev-ai confirm only def no callers in kt; read AddNew top50 + @Composable search only def; grep AddNewVehicleScreen in src excl self: zero; read MainActivity nav section: no ref; current-state updated (1 fact); git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-360-ge65b7906)
   - [x] Phase 2: Remove normalizedToIcrs function (narrow read offset30/l30 around func; grep callers zero immediately before; deleted entire normalizedToIcrs incl KDoc; forensic read same offset/limit after confirms removal, icrsToPixel + } intact; grep no more in src *.kt (only plans now); git add IcrsMath.kt+TODO + ./build_app; tag fix-pump-experiment/builds)
   - [x] Phase 3: Remove AddNewVehicleScreen.kt (full file read for baseline; re-grep excl self confirmed zero refs; git rm on the kt file; list_dir vehicle/ before (had it) after (gone); grep project for AddNew: zero in src; git add deletion + TODO; ./build_app; tag)
-  - [ ] Phase 4: Cleanup any incidental references in non-source
+  - [x] Phase 4: Cleanup any incidental references in non-source (grep dev-ai-interaction for terms; minimal update to eliminate-normalized...plan.md (annotate AddNew/normalized refs as removed in this plan); forensic reads of edited doc before/after; git add + build)
   - [ ] Phase 5: Final verification
   - [ ] Phase 6 (if needed): Post-removal hygiene
 - [ ] fix-manage-vehicles-no-0-1-crop-rects-plan.md — Never Use 0-1 Normalized for Crop Rects in Manage Vehicles Screen (Strict Pixel / ICRS Only) (approved plan at dev-ai-interaction/plans/fix-manage-vehicles-no-0-1-crop-rects-plan.md)
