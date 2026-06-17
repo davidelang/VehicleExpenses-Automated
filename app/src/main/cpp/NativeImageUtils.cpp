@@ -1068,6 +1068,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         count++;
     }
 
+    float hist[100] = {0};
+    for(int i=0; i < h*w; i++) { int b = std::max(0, std::min(99, (int)(data[i]*100))); hist[b] += 1.0f; }
+    for(int i=0; i<100; i++) results.push_back(hist[i]);
+
     // 5. Serialization
     if (results.empty()) return nullptr;
     jfloatArray jres = env->NewFloatArray(results.size());
