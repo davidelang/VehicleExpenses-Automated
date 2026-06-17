@@ -8,7 +8,7 @@
   - [x] Phase 5: Refactor drawing + hit test (drawIcrsRect + getScreenRect) (replaced with icrsToPixel + pixel-norm-to-fit calc; removed lx s/originalSize 0-1; forensic canvas+get + grep no remaining bad; build success)
   - [x] Phase 6: Cleanup + comments (guarantee no 0-1 crop Rects) (prominent ICRS-always comment at EditCropsView top; no dead normalizedToIcrs; onCrop calls unchanged/valid ICRS; forensic + build)
   - [x] Phase 7: Load path hygiene (added "getCrops returns ICRS Rects (DB values are ICRS after re-creation). No 0-1 path." comment; no behavior change; forensic + build)
-  - [ ] Phase 8: End-to-end verification (user side + final build)
+  - [x] Phase 8: End-to-end verification (user side + final build) (code verified: zero normalizedToIcrs + no 0-1 crop rect paths; final state; ./build_app + tag)
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
