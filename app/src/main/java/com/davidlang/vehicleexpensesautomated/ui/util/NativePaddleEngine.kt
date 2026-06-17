@@ -34,7 +34,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val height: Int,
         val metadata: Map<String, String> = emptyMap(),
         val nativeBoxes: List<DetectionBox> = emptyList(),
-        val outputTensor: Any? = null
+        val outputTensor: Any? = null,
+        val heatmapHist: IntArray? = null
     )
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
@@ -328,8 +329,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
+            var hist: IntArray? = null
             if (nativeRes != null) {
-                for (i in 0 until (nativeRes.size / 9)) {
+                val boxFloats = nativeRes.size - 100
+                val nboxes = boxFloats / 9
+                for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
                     for (p in 0 until 4) {
@@ -339,6 +343,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
+                hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
 
             val tCopy0 = System.nanoTime()
@@ -356,7 +362,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor, hist)
 
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Detection failed", t); return null
@@ -400,8 +406,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
+            var hist: IntArray? = null
             if (nativeRes != null) {
-                for (i in 0 until (nativeRes.size / 9)) {
+                val boxFloats = nativeRes.size - 100
+                val nboxes = boxFloats / 9
+                for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
                     for (p in 0 until 4) {
@@ -411,6 +420,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
+                hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
             val tCopy0 = System.nanoTime()
             val heatmap = if (copyHeatmap) outputTensor.floatData else null
@@ -427,7 +438,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor, hist)
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Dynamic detection failed", t)
             return null
