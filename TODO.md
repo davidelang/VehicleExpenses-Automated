@@ -1,7 +1,7 @@
 # TODO
 
 - [ ] remove-dead-addnew-and-normalizedtoicrs-plan.md — Remove Dead Code - AddNewVehicleScreen and normalizedToIcrs (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/remove-dead-addnew-and-normalizedtoicrs-plan.md)
-  - [ ] Phase 1: Baseline confirmation (no edits)
+  - [x] Phase 1: Baseline confirmation (no edits) (read IcrsMath full + normalizedToIcrs focus; greps for normalizedToIcrs in app/src + dev-ai confirm only def no callers in kt; read AddNew top50 + @Composable search only def; grep AddNewVehicleScreen in src excl self: zero; read MainActivity nav section: no ref; current-state updated (1 fact); git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-360-ge65b7906)
   - [ ] Phase 2: Remove normalizedToIcrs function
   - [ ] Phase 3: Remove AddNewVehicleScreen.kt
   - [ ] Phase 4: Cleanup any incidental references in non-source
