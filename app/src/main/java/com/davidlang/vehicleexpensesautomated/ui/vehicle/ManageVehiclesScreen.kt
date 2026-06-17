@@ -422,13 +422,11 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         } else if (editMode == CropEditMode.EDIT_CROPS && activeHandle != DragHandle.NONE) {
                             val currentRect = if (activeCropIsOdo) odoRect else otherRect
                             currentRect?.let { r ->
-                                val s = minOf(originalSize.x, originalSize.y)
-                                fun toScreen(valX: Float, valY: Float): Offset {
-                                    val lx = (valX * s + (originalSize.x / 2f)) / originalSize.x
-                                    val ly = (valY * s + (originalSize.y / 2f)) / originalSize.y
-                                    return Offset(fitRect.left + lx * fitRect.width, fitRect.top + ly * fitRect.height)
-                                }
-                                val tl = toScreen(r.left, r.top); val br = toScreen(r.right, r.bottom)
+                                // ICRS rect -> image pixels via icrsToPixel -> screen via imagePixelToScreen (no 0-1 rect ever)
+                                val tlPx = IcrsMath.icrsToPixel(r.left, r.top, imgW, imgH)
+                                val brPx = IcrsMath.icrsToPixel(r.right, r.bottom, imgW, imgH)
+                                val tl = imagePixelToScreen(Offset(tlPx.x, tlPx.y), fitRect, originalSize)
+                                val br = imagePixelToScreen(Offset(brPx.x, brPx.y), fitRect, originalSize)
                                 var newTl = tl; var newBr = br
                                 when (activeHandle) {
                                     DragHandle.TOP_LEFT -> { newTl = end }
@@ -441,14 +439,11 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                                     DragHandle.RIGHT -> { newBr = Offset(end.x, newBr.y) }
                                     else -> {}
                                 }
-                                fun toIcrs(screen: Offset): Offset {
-                                    return IcrsMath.normalizedToIcrs(
-                                        (screen.x - fitRect.left) / fitRect.width,
-                                        (screen.y - fitRect.top) / fitRect.height,
-                                        imgW, imgH
-                                    ).let { Offset(it.x, it.y) }
-                                }
-                                val p1 = toIcrs(newTl); val p2 = toIcrs(newBr)
+                                // screen positions -> image pixels -> ICRS via pixelToIcrs
+                                val newTlImage = adjustedScreenToImagePixel(newTl, fitRect, originalSize)
+                                val newBrImage = adjustedScreenToImagePixel(newBr, fitRect, originalSize)
+                                val p1 = IcrsMath.pixelToIcrs(newTlImage.x, newTlImage.y, imgW, imgH)
+                                val p2 = IcrsMath.pixelToIcrs(newBrImage.x, newBrImage.y, imgW, imgH)
                                 currentDragRect = Rect(minOf(p1.x, p2.x), minOf(p1.y, p2.y), maxOf(p1.x, p2.x), maxOf(p1.y, p2.y))
                             }
                         }
