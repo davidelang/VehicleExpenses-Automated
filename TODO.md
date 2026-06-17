@@ -1,7 +1,7 @@
 # TODO
 
 - [ ] fix-manage-vehicles-no-0-1-crop-rects-plan.md — Never Use 0-1 Normalized for Crop Rects in Manage Vehicles Screen (Strict Pixel / ICRS Only) (approved plan at dev-ai-interaction/plans/fix-manage-vehicles-no-0-1-crop-rects-plan.md)
-  - [ ] Phase 1: Forensic baseline
+  - [x] Phase 1: Forensic baseline (reads 338-502 + greps + IcrsMath; current-state updated+pruned never git-added; TODO recorded plan; git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-345-g17ea32a3)
   - [ ] Phase 2: Add pure helpers for screen <-> image pixels (no crop 0-1)
   - [ ] Phase 3: Refactor CREATE drag (the main "pixel to float" path)
   - [ ] Phase 4: Refactor EDIT handles drag
