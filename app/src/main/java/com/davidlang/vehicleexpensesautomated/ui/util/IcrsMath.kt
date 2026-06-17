@@ -37,15 +37,4 @@ object IcrsMath {
         return PointF(px, py)
     }
 
-    /**
-     * Convert normalized [0..1] coordinates to ICRS.
-     */
-    fun normalizedToIcrs(nx: Float, ny: Float, imgW: Int, imgH: Int): PointF {
-        val s = minOf(imgW, imgH).toFloat()
-        if (s <= 0) return PointF(0f, 0f)
-        val icrsX = (nx * imgW - (imgW / 2f)) / s
-        val icrsY = (ny * imgH - (imgH / 2f)) / s
-        return PointF(icrsX, icrsY)
-    }
-
 }
