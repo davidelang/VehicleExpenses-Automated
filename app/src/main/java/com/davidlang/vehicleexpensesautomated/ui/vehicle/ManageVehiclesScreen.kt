@@ -336,6 +336,9 @@ fun ManageVehiclesScreen(
 
 @Composable
 private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, originalSize: Offset, editMode: CropEditMode, onSizeChanged: (Offset) -> Unit, onCropChanged: (Rect?, Rect?) -> Unit) {
+    // Crop rects (odoRect, otherRect, currentDragRect) are **always ICRS**.
+    // Screen interaction uses transient image pixel coordinates via fitRect.
+    // Never create or pass a 0-1 normalized Rect for crops.
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var currentDragRect by remember { mutableStateOf<Rect?>(null) }
     var viewSize by remember { mutableStateOf(Offset.Zero) }
