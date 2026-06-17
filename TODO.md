@@ -3,7 +3,7 @@
 - [ ] remove-dead-addnew-and-normalizedtoicrs-plan.md — Remove Dead Code - AddNewVehicleScreen and normalizedToIcrs (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/remove-dead-addnew-and-normalizedtoicrs-plan.md)
   - [x] Phase 1: Baseline confirmation (no edits) (read IcrsMath full + normalizedToIcrs focus; greps for normalizedToIcrs in app/src + dev-ai confirm only def no callers in kt; read AddNew top50 + @Composable search only def; grep AddNewVehicleScreen in src excl self: zero; read MainActivity nav section: no ref; current-state updated (1 fact); git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-360-ge65b7906)
   - [x] Phase 2: Remove normalizedToIcrs function (narrow read offset30/l30 around func; grep callers zero immediately before; deleted entire normalizedToIcrs incl KDoc; forensic read same offset/limit after confirms removal, icrsToPixel + } intact; grep no more in src *.kt (only plans now); git add IcrsMath.kt+TODO + ./build_app; tag fix-pump-experiment/builds)
-  - [ ] Phase 3: Remove AddNewVehicleScreen.kt
+  - [x] Phase 3: Remove AddNewVehicleScreen.kt (full file read for baseline; re-grep excl self confirmed zero refs; git rm on the kt file; list_dir vehicle/ before (had it) after (gone); grep project for AddNew: zero in src; git add deletion + TODO; ./build_app; tag)
   - [ ] Phase 4: Cleanup any incidental references in non-source
   - [ ] Phase 5: Final verification
   - [ ] Phase 6 (if needed): Post-removal hygiene
