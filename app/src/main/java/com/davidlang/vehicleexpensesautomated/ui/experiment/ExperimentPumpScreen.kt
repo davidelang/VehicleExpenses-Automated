@@ -2520,9 +2520,16 @@ private suspend fun runDiscoveryPaddle(
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
-    val (rawBlocks, hist) = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
-    if (metadata != null && hist != null) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
-    val rawRects = rawBlocks.map { it.boundingBox }
+    val hist = res.heatmapHist ?: IntArray(0)
+    if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
+    val rawRects = res.nativeBoxes.map { box ->
+        val p = box.points
+        val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
+        val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
+        val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
+        val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
+        android.graphics.Rect(minX, minY, maxX, maxY)
+    }
 
     // Pre-redbox detected hunks (tFullB equivalent from alignment Set J runBinTrialsPaddle).
     // These are the raw objects from the detector (pre +1/denest/nonNested that produce the "raw red" tRawB-equivalent level).
