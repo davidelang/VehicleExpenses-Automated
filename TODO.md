@@ -1,5 +1,14 @@
 # TODO
 
+- [ ] fix-manage-vehicles-no-0-1-crop-rects-plan.md — Never Use 0-1 Normalized for Crop Rects in Manage Vehicles Screen (Strict Pixel / ICRS Only) (approved plan at dev-ai-interaction/plans/fix-manage-vehicles-no-0-1-crop-rects-plan.md)
+  - [ ] Phase 1: Forensic baseline
+  - [ ] Phase 2: Add pure helpers for screen <-> image pixels (no crop 0-1)
+  - [ ] Phase 3: Refactor CREATE drag (the main "pixel to float" path)
+  - [ ] Phase 4: Refactor EDIT handles drag
+  - [ ] Phase 5: Refactor drawing + hit test (drawIcrsRect + getScreenRect)
+  - [ ] Phase 6: Cleanup + comments (guarantee no 0-1 crop Rects)
+  - [ ] Phase 7: Load path hygiene
+  - [ ] Phase 8: End-to-end verification (user side + final build)
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
