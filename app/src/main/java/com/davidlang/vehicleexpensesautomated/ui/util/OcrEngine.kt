@@ -319,7 +319,11 @@ object OcrUtils {
                     if (scratchArgb == null) localScratch.recycle()
                 }
                 is org.opencv.core.Mat -> {
-                    val sub = source.submat(org.opencv.core.Rect(roi.left, roi.top, roiW, roiH))
+                    val safeLeft = max(0, min(roi.left, srcW - 1))
+                    val safeTop = max(0, min(roi.top, srcH - 1))
+                    val safeW = min(roiW, srcW - safeLeft).coerceAtLeast(1)
+                    val safeH = min(roiH, srcH - safeTop).coerceAtLeast(1)
+                    val sub = source.submat(org.opencv.core.Rect(safeLeft, safeTop, safeW, safeH))
                     val graySub = if (sub.channels() == 4) {
                         val g = org.opencv.core.Mat()
                         Imgproc.cvtColor(sub, g, Imgproc.COLOR_RGBA2GRAY)
@@ -330,10 +334,14 @@ object OcrUtils {
                     sub.release()
                 }
                 is BufferSet.Slice -> {
-                    val subY = source.mat.submat(org.opencv.core.Rect(roi.left, roi.top, roiW, roiH))
+                    val safeLeft = max(0, min(roi.left, srcW - 1))
+                    val safeTop = max(0, min(roi.top, srcH - 1))
+                    val safeW = min(roiW, srcW - safeLeft).coerceAtLeast(1)
+                    val safeH = min(roiH, srcH - safeTop).coerceAtLeast(1)
+                    val subY = source.mat.submat(org.opencv.core.Rect(safeLeft, safeTop, safeW, safeH))
                     Imgproc.resize(subY, bufferSet.c[snapCropId].mat, bufferSet.c[snapCropId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
 
-                    val subUV = source.uvMat.submat(org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2))
+                    val subUV = source.uvMat.submat(org.opencv.core.Rect(safeLeft / 2, safeTop / 2, safeW / 2, safeH / 2))
                     Imgproc.resize(subUV, bufferSet.c[snapCropId].uvMat, bufferSet.c[snapCropId].uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
 
                     subY.release(); subUV.release()
