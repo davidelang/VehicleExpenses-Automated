@@ -327,8 +327,17 @@ object OcrUtils {
                 }
             }
 
-            val icrsPixelAnns = emptyList<SnapshotAnnotation>()
-            val allAnnsForScale = annotations.filterIsInstance<SnapshotAnnotation>()
+            val pixelAnns = mutableListOf<SnapshotAnnotation>()
+            for (item in annotations) {
+                when (item) {
+                    is SnapshotAnnotation -> pixelAnns.add(item)
+                    is android.graphics.RectF -> {
+                        val conv = icrsRectToSnapshotAnnotation(item, srcW, srcH)
+                        if (conv != null) pixelAnns.add(conv)
+                    }
+                }
+            }
+            val allAnnsForScale = pixelAnns
 
             // Annotation scaling
             val scaleX = finalW.toFloat() / roiW.toFloat()
