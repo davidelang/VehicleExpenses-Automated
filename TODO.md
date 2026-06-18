@@ -4,7 +4,7 @@
   - [x] Phase 1: Initial hygiene prune of current-state.md (no other changes) (prune performed + build success + 1 fact appended)
   - [x] Phase 2: Re-read plan + mandates before any TODO work (re-reads of plan/mandates sections + build)
   - [x] Phase 3: Insert the new plan entry header in TODO.md (starting unchecked) (header + 20 [ ] phases added as first edit)
-  - [ ] Phase 4: Forensic narrow read of AlignmentScreen (before any mark)
+  - [x] Phase 4: Forensic narrow read of AlignmentScreen (before any mark) (read 470/30 + grep 0 for dead block)
   - [ ] Phase 5: Forensic narrow read of API.md
   - [ ] Phase 6: First full remnant grep
   - [ ] Phase 7: Dedicated literal marker emission phase (do nothing else)
