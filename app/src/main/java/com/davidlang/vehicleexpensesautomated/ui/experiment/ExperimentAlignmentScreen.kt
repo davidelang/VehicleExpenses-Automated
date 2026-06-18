@@ -480,20 +480,6 @@ private suspend fun runExperiment(
                             if (NativePaddleEngine.bufferSetB.p.mat.cols() != imgW || NativePaddleEngine.bufferSetB.p.mat.rows() != imgH) {
                                 NativePaddleEngine.bufferSetB.resize(imgW, imgH)
                             }
-                            // Diagnostic High-Quality Crop (Save to disk using native snapshot)
-                            val l = globalWinnerRef.vehicle.odometerCropLeft ?: 0f
-                            val t = globalWinnerRef.vehicle.odometerCropTop ?: 0f
-                            val r = globalWinnerRef.vehicle.odometerCropRight ?: 1f
-                            val b = globalWinnerRef.vehicle.odometerCropBottom ?: 1f
-
-                            val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
-                            val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
-                            val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
-                            val refW = globalWinnerRef.width
-                            val refH = globalWinnerRef.height
-                            val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(l, t, r, b, sc, tx, ty, refW, refH, imgW, imgH)
-                            val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
-                            val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
 
                             // For Set F and G, only run the "Raw" stage
                             val iterativeStages = listOf("Raw", "Bin-Trials")
