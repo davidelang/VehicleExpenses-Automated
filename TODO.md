@@ -85,3 +85,24 @@
 
 - 2026-06-16: fix-alignment-regression-pump-shared-buffer-roi-threshold-20260616-plan.md — enforce caller-creates-red-box-crop + pass-slice pattern; restore usable ICRS sourceRect for alignment diagnostic crops (clip in OcrEngine + migrate site preserving ICRS deriv from vehicle); keep takeSnapshot internal output crop creation exactly unchanged; 0.03f for alignment; dead set_g removal; isolate pump pixel logic. (Execution Sub-agent, 11 phases)
 - 2026-06-16: eliminate-kotlin-heatmap-to-redbox-move-to-jni-20260616-plan.md: move all heatmap-to-redbox (incl hist) to JNI, fix callers in pump/alignment/harness
+
+- [ ] eliminate-normalized-coordinates-final-20260617-plan.md — Eliminate Rogue Normalized Coordinate Usage (Final Stage) (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/eliminate-normalized-coordinates-final-20260617-plan.md)
+  - [x] Phase 0: Pre-execution hygiene (planning state) (re-read current-state.md + plan; hygiene prune performed on current-state; confirmed no historical-plans reads)
+  - [ ] Phase 1: Initialize / update TODO.md (added exact phase checklist as active TODO top-level item)
+  - [ ] Phase 2: Remove cropRect param + logic from extractFromPhoto (OdometerOcrUtils.kt)
+  - [ ] Phase 3: Remove dead discoverLandmarks? (optional narrow; defer if scope) (leave as-is)
+  - [ ] Phase 4: Delete the 4 dead normalized data classes (OcrEngine.kt)
+  - [ ] Phase 5: Strip dead fields from TextBlock and OcrResult (OcrEngine.kt)
+  - [ ] Phase 6: Clean OcrEngine internal references (if any left after 4+5)
+  - [ ] Phase 7: Update LandmarkDebugDialog.kt - remove custom RectF import + param
+  - [ ] Phase 8: Remove dead discovery box rendering from LandmarkDebugDialog.kt
+  - [ ] Phase 9: Update ManageVehiclesScreen.kt call site
+  - [ ] Phase 10: Remove debugCropDir creation + mkdir in ExperimentAlignmentScreen.kt
+  - [ ] Phase 11: Remove debugCropDir from runExperiment signature + body (ExperimentAlignmentScreen.kt)
+  - [ ] Phase 12: Update the 3 call sites inside ExperimentAlignmentScreen.kt for runExperiment
+  - [ ] Phase 13: Remove debugCropDir creation + mkdir in ExperimentPumpScreen.kt
+  - [ ] Phase 14: Remove debugCropDir param from runPumpExperiment (ExperimentPumpScreen.kt)
+  - [ ] Phase 15: Update the 2 call sites in ExperimentPumpScreen.kt
+  - [ ] Phase 16: Delete PhotoAlignmentUtils.kt
+  - [ ] Phase 17: Any import / dead ref cleanup (narrow)
+  - [ ] Phase 18: Final end-to-end build + verification
