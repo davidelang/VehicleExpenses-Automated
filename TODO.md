@@ -105,8 +105,8 @@
   - [x] Phase 7: Final build gate with full hygiene (re-run ./get-builds-tag.sh preflight; git add TODO; ./build_app record tag; update current-state.md exactly 1-2 lines) done
   - [x] Phase 8: Output exact END marker + handoff (output exact marker string in trace; mark only this plan's phases minimally; git add TODO.md; final ./build_app) done
 - [ ] enforce-strict-ultra-micro-final-handoff-process-20260617-plan.md — Enforce Strict Ultra-Micro Final Handoff Process for Normalized Removal (Root Cause Fix) (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/enforce-strict-ultra-micro-final-handoff-process-20260617-plan.md)
-  - [ ] Phase 1: Initial hygiene prune + re-reads (no edits)
-  - [ ] Phase 2: Git add check + first build gate (baseline)
+  - [x] Phase 1: Initial hygiene prune + re-reads (no edits) -- phase1 hygiene re-reads, git status, get tag, targeted greps=0.
+  - [x] Phase 2: Git add check + first build gate (baseline) -- git add TODO, ./build_app success, 1-line state update.
   - [ ] Phase 3: Insert initial unchecked checklist header into TODO.md
   - [ ] Phase 4: Forensic read of AlignmentScreen before any further work
   - [ ] Phase 5: Forensic read of API.md
