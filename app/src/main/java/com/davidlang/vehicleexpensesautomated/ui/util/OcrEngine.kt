@@ -209,21 +209,18 @@ object OcrUtils {
      * @param sourceRect Optional ROI within the source.
      * @param targetW Requested width for the thumbnail (aspect ratio preserved).
      * @param targetH Requested height for the thumbnail (aspect ratio preserved).
-     * @param annotations List of colored boxes/lines to draw.
+     * @param annotations List of SnapshotAnnotation (pixel Int coords) or RectF (ICRS Float coords). ICRS entries are converted internally using the actual srcW/srcH of the source buffer.
      * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
      * @param scratchYuv Optional reusable BufferSet for YUV processing.
-     * ICRS rects are converted internally using the srcW/srcH derived from the concrete source buffer (not caller-provided outer dimensions).
-     * @param icrsAnnotations Optional raw ICRS rects for internal conversion using actual buffer size.
      */
     suspend fun takeSnapshot(
         source: Any,
         sourceRect: Rect? = null,
         targetW: Int = 0,
         targetH: Int = 0,
-        annotations: List<SnapshotAnnotation> = emptyList(),
+        annotations: List<Any> = emptyList(),
         scratchArgb: Bitmap? = null,
-        scratchYuv: BufferSet? = null,
-        icrsAnnotations: List<android.graphics.RectF> = emptyList()
+        scratchYuv: BufferSet? = null
     ): Pair<String, Long> = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         val srcW: Int
@@ -330,8 +327,8 @@ object OcrUtils {
                 }
             }
 
-            val icrsPixelAnns = icrsAnnotations.mapNotNull { icrsRect -> icrsRectToSnapshotAnnotation(icrsRect, srcW, srcH) }
-            val allAnnsForScale = annotations + icrsPixelAnns
+            val icrsPixelAnns = emptyList<SnapshotAnnotation>()
+            val allAnnsForScale = annotations.filterIsInstance<SnapshotAnnotation>()
 
             // Annotation scaling
             val scaleX = finalW.toFloat() / roiW.toFloat()
