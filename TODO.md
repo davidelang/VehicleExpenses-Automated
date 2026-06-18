@@ -1,5 +1,26 @@
 # TODO
 
+- [ ] enforce-one-atomic-action-per-phase-literal-marker-handoff-20260617-plan.md — Enforce One Atomic Action Per Phase + Literal Marker Emission for Final Handoff (Root Cause Fix for 4 Failed Plans) (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/enforce-one-atomic-action-per-phase-literal-marker-handoff-20260617-plan.md)
+  - [ ] Phase 1: Initial hygiene prune of current-state.md (no other changes)
+  - [ ] Phase 2: Re-read plan + mandates before any TODO work
+  - [ ] Phase 3: Insert the new plan entry header in TODO.md (starting unchecked)
+  - [ ] Phase 4: Forensic narrow read of AlignmentScreen (before any mark)
+  - [ ] Phase 5: Forensic narrow read of API.md
+  - [ ] Phase 6: First full remnant grep
+  - [ ] Phase 7: Dedicated literal marker emission phase (do nothing else)
+  - [ ] Phase 8: Verify the marker string is in the agent's own trace
+  - [ ] Phase 9: Minimal mark *only* Phase 1 in TODO checklist
+  - [ ] Phase 10: Minimal mark *only* Phase 2 in TODO
+  - [ ] Phase 11: Minimal mark *only* Phase 3
+  - [ ] Phase 12: Minimal mark *only* Phase 4
+  - [ ] Phase 13: Minimal mark *only* Phase 5
+  - [ ] Phase 14: Minimal mark *only* Phase 6
+  - [ ] Phase 15: Minimal mark *only* Phase 7 (the emission phase)
+  - [ ] Phase 16: Minimal mark *only* Phase 8 (the verify phase)
+  - [ ] Phase 17: Final full remnant grep + re-confirm code state (no changes)
+  - [ ] Phase 18: Pre-final git status + add + build
+  - [ ] Phase 19: Literal final marker re-emission
+  - [ ] Phase 20: Post-handoff verification reads + stop
 - [ ] remove-dead-addnew-and-normalizedtoicrs-plan.md — Remove Dead Code - AddNewVehicleScreen and normalizedToIcrs (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/remove-dead-addnew-and-normalizedtoicrs-plan.md)
   - [x] Phase 1: Baseline confirmation (no edits) (read IcrsMath full + normalizedToIcrs focus; greps for normalizedToIcrs in app/src + dev-ai confirm only def no callers in kt; read AddNew top50 + @Composable search only def; grep AddNewVehicleScreen in src excl self: zero; read MainActivity nav section: no ref; current-state updated (1 fact); git add + ./build_app success; tag: fix-pump-experiment/builds , describe fix-pump-experiment-start-360-ge65b7906)
   - [x] Phase 2: Remove normalizedToIcrs function (narrow read offset30/l30 around func; grep callers zero immediately before; deleted entire normalizedToIcrs incl KDoc; forensic read same offset/limit after confirms removal, icrsToPixel + } intact; grep no more in src *.kt (only plans now); git add IcrsMath.kt+TODO + ./build_app; tag fix-pump-experiment/builds)
