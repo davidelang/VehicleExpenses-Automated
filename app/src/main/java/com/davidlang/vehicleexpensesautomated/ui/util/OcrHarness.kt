@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.graphics.RectF
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.google.gson.JsonArray
@@ -182,9 +183,12 @@ object OcrHarness {
         onStage?.invoke("Aligned", masterBuffer.p.toBitmap())
 
         // 2. Odometer Crop
-        val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
-        val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
-        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
+        val icrsRect = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null && vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
+            RectF(vehicle.odometerCropLeft, vehicle.odometerCropTop, vehicle.odometerCropRight, vehicle.odometerCropBottom)
+        } else {
+            IcrsMath.fullImageIcrsRect(imgW, imgH)
+        }
+        val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, imgW, imgH)
         val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
         
         val odoBuffer = NativePaddleEngine.getOdoBuffer(context, vehicle)
