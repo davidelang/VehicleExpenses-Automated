@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.PorterDuff
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Paint
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -200,6 +201,7 @@ object OcrUtils {
      * @param annotations List of colored boxes/lines to draw.
      * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
      * @param scratchYuv Optional reusable BufferSet for YUV processing.
+     * @param icrsAnnotations List of ICRS RectF (relative to source) to convert to pixel SnapshotAnnotation if valid set-crop (skips 0/1 idiom or out of range).
      */
     suspend fun takeSnapshot(
         source: Any,
@@ -208,7 +210,8 @@ object OcrUtils {
         targetH: Int = 0,
         annotations: List<SnapshotAnnotation> = emptyList(),
         scratchArgb: Bitmap? = null,
-        scratchYuv: BufferSet? = null
+        scratchYuv: BufferSet? = null,
+        icrsAnnotations: List<android.graphics.RectF> = emptyList()
     ): Pair<String, Long> = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         val srcW: Int
@@ -315,10 +318,24 @@ object OcrUtils {
                 }
             }
 
+            // ICRS annotations support (phase9): after srcW/srcH, before regular scaling. Convert only valid set-crop ICRS (no 0/1 idiom, reasonable range); skip invalid.
+            val icrsPixelAnns = icrsAnnotations.mapNotNull { icrsRect ->
+                if ((icrsRect.left == 0f && icrsRect.top == 0f && icrsRect.right == 1f && icrsRect.bottom == 1f) ||
+                    icrsRect.left < -2f || icrsRect.right > 2f || icrsRect.top < -2f || icrsRect.bottom > 2f) {
+                    return@mapNotNull null
+                }
+                val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, srcW, srcH)
+                val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, srcW, srcH)
+                if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < srcW && p1.y < srcH) {
+                    SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2)
+                } else null
+            }
+            val allAnnsForScale = annotations + icrsPixelAnns
+
             // Annotation scaling
             val scaleX = finalW.toFloat() / roiW.toFloat()
             val scaleY = finalH.toFloat() / roiH.toFloat()
-            val scaledAnns = annotations.map { ann ->
+            val scaledAnns = allAnnsForScale.map { ann ->
                 ann.copy(
                     x1 = ((ann.x1 - roi.left) * scaleX).toInt(),
                     y1 = ((ann.y1 - roi.top) * scaleY).toInt(),
