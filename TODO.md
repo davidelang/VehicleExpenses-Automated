@@ -5,7 +5,7 @@
   - [x] Phase 2: Re-read plan + mandates before any TODO work (re-reads of plan/mandates sections + build)
   - [x] Phase 3: Insert the new plan entry header in TODO.md (starting unchecked) (header + 20 [ ] phases added as first edit)
   - [x] Phase 4: Forensic narrow read of AlignmentScreen (before any mark) (read 470/30 + grep 0 for dead block)
-  - [ ] Phase 5: Forensic narrow read of API.md
+  - [x] Phase 5: Forensic narrow read of API.md (read 40/25 + grep no PhotoAlignmentUtils)
   - [ ] Phase 6: First full remnant grep
   - [ ] Phase 7: Dedicated literal marker emission phase (do nothing else)
   - [ ] Phase 8: Verify the marker string is in the agent's own trace
