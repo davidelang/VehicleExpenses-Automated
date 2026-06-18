@@ -465,7 +465,7 @@ private suspend fun runExperiment(
                             sourceRect = null,
                             targetW = 600,
                             targetH = 450,
-                            annotations = if (odoIcrsRect != null) listOf<Any>(odoIcrsRect!!) else emptyList(),
+                            annotations = if (odoIcrsRect != null) listOf(odoIcrsRect!!) else emptyList(),
                             scratchArgb = null,
                             scratchYuv = NativePaddleEngine.bufferSetB
                         )
