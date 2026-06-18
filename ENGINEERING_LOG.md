@@ -2,6 +2,13 @@
 
 This log tracks the implementation, refactoring, and deployment activities performed by the Application Engineer session.
 
+## [2026-06-18] - ICRS filter unify, red-box storage, and pump analysis work
+- **Branch:** fix-pump-experiment
+- **Activity:** New planning cycle started; high-level plan created for remaining ICRS and storage unification work.
+- **Scope summary:** Fix bad 0/1/2f ICRS filter in takeSnapshot (clip bounds only); unify to single annotations param (pixel int / ICRS float); explicit "red_boxes"/"initial_red_rects" + odo crop rect in JSON metadata (beyond trial_*_annotations backdoor); ensure aligned odo crop outlines render in Native Aligned report images; change 4 offset->8; create pump equivalents of deep_analysis.py + stage_progression_analysis.py.
+- **First deliverable:** Plan file written to dev-ai-interaction/plans/fix-icrs-filter-unify-red-box-storage-odo-aligned-pump-analysis-20260618-plan.md
+- **Notes:** Effort tracking moved here per current-state hygiene rules. current-state.md now limited to branch/tag/plan link + codebase pointers/facts.
+
 ## [2026-06-09] - Odometer Setup UI & Filter Optimization
 - **Activity:** Merged `improve-vehicle-odo-setup` branch into master.
 - **Improvements:**
