@@ -106,10 +106,8 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
 
     val experimentDir = File(context.filesDir, "experiment_photos")
     val reportDir = File(context.filesDir, "experiment_reports")
-    val debugCropDir = File(context.filesDir, "experiment_debug_crops")
 
     if (!reportDir.exists()) reportDir.mkdirs()
-    if (!debugCropDir.exists()) debugCropDir.mkdirs()
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { scope.launch { status = "Extracting ZIP..."; val success = extractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
@@ -142,7 +140,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
                 totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, null) { res, p ->
+                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, null) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
                 isRunning = false; status = "Complete! Reports saved."
@@ -155,7 +153,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
                 val subset = allFiles.filter { it.name in GOLDEN_SUBSET.keys }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
+                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
                 isRunning = false; status = "Complete! Limited Report saved."
@@ -168,7 +166,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
                 val subset = allFiles.filter { it.name in FAILING_SUBSET.keys }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, debugCropDir, vehicles, context, { detailLog = it }, FAILING_SUBSET) { res, p ->
+                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, FAILING_SUBSET) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
                 isRunning = false; status = "Complete! Failing Subset Report saved."
@@ -207,7 +205,6 @@ data class PipelineConfig(
 private suspend fun runExperiment(
     experimentDir: File,
     reportDir: File,
-    debugCropDir: File,
     vehicles: List<Vehicle>,
     context: Context,
     onLog: (String) -> Unit,
@@ -497,21 +494,6 @@ private suspend fun runExperiment(
                             val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(l, t, r, b, sc, tx, ty, refW, refH, imgW, imgH)
                             val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
                             val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
-                            val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                            val roiW = (p2.x.toInt() - p1.x.toInt()).coerceAtLeast(1)
-                            val roiH = (p2.y.toInt() - p1.y.toInt()).coerceAtLeast(1)
-                            val cropId = NativePaddleEngine.bufferSetB.createCrop(p1.x.toInt(), p1.y.toInt(), roiW, roiH)
-                            // For post-align: ref odo ICRS transformed in ICRS space (spec) then icrsToPixel on current canvas. Pre-warp uses direct. Pump changes unaffected (caller crop kept).
-                            val (cropB64, _) = OcrUtils.takeSnapshot(
-                                source = NativePaddleEngine.bufferSetB.c[cropId],
-                                targetW = 320,
-                                targetH = 48,
-                                scratchArgb = null,
-                                scratchYuv = NativePaddleEngine.bufferSetB
-                            )
-
-                            val cropFile = File(debugCropDir, "crop_${file.name.replace(".dng", ".jpg")}")
-                            try { cropFile.outputStream().use { out -> out.write(android.util.Base64.decode(cropB64, android.util.Base64.NO_WRAP)) } } catch (e: Exception) { Log.e(TAG, "Failed to save crop", e) }
 
                             // For Set F and G, only run the "Raw" stage
                             val iterativeStages = listOf("Raw", "Bin-Trials")

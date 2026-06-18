@@ -97,12 +97,12 @@
   - [x] Phase 7: Update LandmarkDebugDialog.kt - remove custom RectF import + param (removed import + sig param; forensic)
   - [x] Phase 8: Remove dead discovery box rendering from LandmarkDebugDialog.kt (removed var show, switch, if(raw), raw/refined lets in draw+zone+chips; restored+precise edits to avoid syntax break; final grep 0 refs)
   - [x] Phase 9: Update ManageVehiclesScreen.kt call site (removed rawDiscoveryBoxes= line; forensic read 300-325)
-  - [ ] Phase 10: Remove debugCropDir creation + mkdir in ExperimentAlignmentScreen.kt
-  - [ ] Phase 11: Remove debugCropDir from runExperiment signature + body (ExperimentAlignmentScreen.kt)
-  - [ ] Phase 12: Update the 3 call sites inside ExperimentAlignmentScreen.kt for runExperiment
-  - [ ] Phase 13: Remove debugCropDir creation + mkdir in ExperimentPumpScreen.kt
-  - [ ] Phase 14: Remove debugCropDir param from runPumpExperiment (ExperimentPumpScreen.kt)
-  - [ ] Phase 15: Update the 2 call sites in ExperimentPumpScreen.kt
+  - [x] Phase 10: Remove debugCropDir creation + mkdir in ExperimentAlignmentScreen.kt (narrow read 100-115 before (val+if); grep 7 hits; sed remove 2 lines; read after (gone); post grep 5 hits left (uses only); git add kt+TODO)
+  - [x] Phase 11: Remove debugCropDir from runExperiment signature + body (ExperimentAlignmentScreen.kt) (sig remove param; excise roi/take/save crop write block + unused roi; read 490-520; grep after 0)
+  - [x] Phase 12: Update the 3 call sites inside ExperimentAlignmentScreen.kt for runExperiment (sed replace 3 args; grep calls clean)
+  - [x] Phase 13: Remove debugCropDir creation + mkdir in ExperimentPumpScreen.kt (narrow read 95-110; sed remove val+if; read after; grep dropped)
+  - [x] Phase 14: Remove debugCropDir param from runPumpExperiment (ExperimentPumpScreen.kt) (sig edit; read 185-200)
+  - [x] Phase 15: Update the 2 call sites in ExperimentPumpScreen.kt (sed remove from calls; grep 0)
   - [ ] Phase 16: Delete PhotoAlignmentUtils.kt
   - [ ] Phase 17: Any import / dead ref cleanup (narrow)
   - [ ] Phase 18: Final end-to-end build + verification
