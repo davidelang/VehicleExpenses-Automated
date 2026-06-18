@@ -236,32 +236,30 @@ private suspend fun runExperiment(
     val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
     withContext(Dispatchers.Main) {
         cachedRefs.forEach { ref ->
-            val l = ref.vehicle.odometerCropLeft ?: 0f
-            val t = ref.vehicle.odometerCropTop ?: 0f
-            val r = ref.vehicle.odometerCropRight ?: 1f
-            val b = ref.vehicle.odometerCropBottom ?: 1f
+            val icrsRect = if (ref.vehicle.odometerCropLeft != null && ref.vehicle.odometerCropTop != null &&
+                     ref.vehicle.odometerCropRight != null && ref.vehicle.odometerCropBottom != null) {
+                RectF(ref.vehicle.odometerCropLeft!!, ref.vehicle.odometerCropTop!!,
+                      ref.vehicle.odometerCropRight!!, ref.vehicle.odometerCropBottom!!)
+            } else {
+                IcrsMath.fullImageIcrsRect(ref.bmp.width, ref.bmp.height)
+            }
+            val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, ref.bmp.width, ref.bmp.height)
+            val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, ref.bmp.width, ref.bmp.height)
+            val srcW = (p2.x - p1.x).toInt()
+            val srcH = (p2.y - p1.y).toInt()
 
-            val icrsRect = RectF(l, t, r, b)
+            // Align to 32-pixel boundaries for efficient native processing
+            val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
+            val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
 
-            if (l != null) {
-                val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, ref.bmp.width, ref.bmp.height)
-                val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, ref.bmp.width, ref.bmp.height)
-                val srcW = (p2.x - p1.x).toInt()
-                val srcH = (p2.y - p1.y).toInt()
+            if (targetW > 0 && targetH > 0) {
+                vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
 
-                // Align to 32-pixel boundaries for efficient native processing
-                val targetW = if (srcW % 32 == 0) srcW else (srcW / 32 + 1) * 32
-                val targetH = if (srcH % 2 == 0) srcH else (srcH / 2 + 1) * 2
-
-                if (targetW > 0 && targetH > 0) {
-                    vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
-
-                    listOf(NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB).forEach { set ->
-                        // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
-                        // This allows an arbitrary number of vehicles to maintain long-lived,
-                        // uniquely identifiable references within the shared global buffers.
-                        set.p.createCrop(icrsRect.left, icrsRect.top, icrsRect.width(), icrsRect.height(), id = ref.vehicle.id)
-                    }
+                listOf(NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB).forEach { set ->
+                    // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
+                    // This allows an arbitrary number of vehicles to maintain long-lived,
+                    // uniquely identifiable references within the shared global buffers.
+                    set.p.createCrop(icrsRect.left, icrsRect.top, icrsRect.width(), icrsRect.height(), id = ref.vehicle.id)
                 }
             }
         }
