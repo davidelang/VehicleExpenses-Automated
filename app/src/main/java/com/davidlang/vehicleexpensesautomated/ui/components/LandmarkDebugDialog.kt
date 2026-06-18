@@ -37,7 +37,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalFocusManager
-import com.davidlang.vehicleexpensesautomated.ui.util.RectF
 import com.davidlang.vehicleexpensesautomated.ui.util.TextBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import com.davidlang.vehicleexpensesautomated.ui.util.IcrsMath
@@ -55,7 +54,7 @@ fun LandmarkDebugDialog(
     odometerCrop: androidx.compose.ui.geometry.Rect? = null,
     otherTextCrop: androidx.compose.ui.geometry.Rect? = null,
     landmarks: List<TextBlock>,
-    rawDiscoveryBoxes: List<RectF> = emptyList(),
+    
     onDismiss: () -> Unit,
     onLandmarksChanged: (List<TextBlock>) -> Unit = {},
     engineName: String = "Unknown",
@@ -67,7 +66,6 @@ fun LandmarkDebugDialog(
     totalTimeMs: Long = 0
 ) {
     val context = LocalContext.current
-    var showDiscovery by remember { mutableStateOf(true) }
     var isEditing by remember { mutableStateOf(false) }
 
     // Local state for editing
@@ -136,9 +134,6 @@ fun LandmarkDebugDialog(
                             Button(onClick = { isEditing = false; editableLandmarks = landmarks }, modifier = Modifier.padding(end = 8.dp)) { Text("Cancel") }
                         }
 
-                        Text("Discovery", style = MaterialTheme.typography.labelSmall)
-                        Switch(checked = showDiscovery, onCheckedChange = { showDiscovery = it })
-                        Spacer(modifier = Modifier.width(16.dp))
                         IconButton(onClick = onDismiss) { Text("✕", style = MaterialTheme.typography.titleLarge) }
                     }
                 }
@@ -164,13 +159,6 @@ fun LandmarkDebugDialog(
                                         dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                                     )
 
-                                    if (showDiscovery) {
-                                        rawDiscoveryBoxes.forEach { box ->
-                                            val p1 = IcrsMath.icrsToPixel(box.left, box.top, imgW.toInt(), imgH.toInt())
-                                            val p2 = IcrsMath.icrsToPixel(box.right, box.bottom, imgW.toInt(), imgH.toInt())
-                                            drawRect(color = Color.Red.copy(alpha = 0.3f), topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh), size = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh), style = Fill)
-                                        }
-
                                         fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color) {
                                             val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, imgW.toInt(), imgH.toInt())
                                             val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, imgW.toInt(), imgH.toInt())
@@ -178,11 +166,6 @@ fun LandmarkDebugDialog(
                                         }
 
                                         editableLandmarks.forEach { lm ->
-                                            lm.refinedDiscoveryBox?.let { box ->
-                                                val p1 = IcrsMath.icrsToPixel(box.left, box.top, imgW.toInt(), imgH.toInt())
-                                                val p2 = IcrsMath.icrsToPixel(box.right, box.bottom, imgW.toInt(), imgH.toInt())
-                                                drawRect(color = Color(0xFFFF8C00), topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh), size = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh), style = Stroke(3f))
-                                            }
                                             if (lm.boundingBox.width() > 0) {
                                                 val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
                                                 val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
@@ -191,7 +174,6 @@ fun LandmarkDebugDialog(
                                         }
                                         odometerCrop?.let { drawIcrsRect(it, Color.Blue) }
                                         otherTextCrop?.let { drawIcrsRect(it, Color.Green) }
-                                    }
                                 }
                             }
 
@@ -219,15 +201,7 @@ fun LandmarkDebugDialog(
                                         border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                                     ) {
                                         Row(modifier = Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else lm.refinedDiscoveryBox?.let {
-                                                val p1 = IcrsMath.icrsToPixel(it.left, it.top, imgW.toInt(), imgH.toInt())
-                                                val p2 = IcrsMath.icrsToPixel(it.right, it.bottom, imgW.toInt(), imgH.toInt())
-                                                android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                                            } ?: lm.rawDiscoveryBox?.let {
-                                                val p1 = IcrsMath.icrsToPixel(it.left, it.top, imgW.toInt(), imgH.toInt())
-                                                val p2 = IcrsMath.icrsToPixel(it.right, it.bottom, imgW.toInt(), imgH.toInt())
-                                                android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                                            }
+                                            val zone = if (lm.boundingBox.width() > 0) lm.boundingBox else null // dead refined/raw removed
 
                                             Box(modifier = Modifier.size(48.dp).background(Color.Black), contentAlignment = Alignment.Center) {
                                                 var crop by remember(zone) { mutableStateOf<Bitmap?>(null) }
@@ -301,14 +275,6 @@ fun LandmarkDebugDialog(
                                                 }
 
                                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    lm.rawDiscoveryBox?.let { 
-                                                        val sE = min(imgW, imgH)
-                                                        MetricChip(color = Color.Red, w = (it.right - it.left) * sE, h = (it.bottom - it.top) * sE) 
-                                                    }
-                                                    lm.refinedDiscoveryBox?.let { 
-                                                        val sE = min(imgW, imgH)
-                                                        MetricChip(color = Color(0xFFFF8C00), w = (it.right - it.left) * sE, h = (it.bottom - it.top) * sE) 
-                                                    }
                                                     if (lm.boundingBox.width() > 0) MetricChip(color = Color.Yellow, w = lm.boundingBox.width().toFloat(), h = lm.boundingBox.height().toFloat())
                                                 }
                                             }
