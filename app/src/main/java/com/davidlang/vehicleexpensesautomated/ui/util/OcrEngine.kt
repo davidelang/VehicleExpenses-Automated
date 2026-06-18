@@ -201,7 +201,7 @@ object OcrUtils {
      * @param annotations List of colored boxes/lines to draw.
      * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
      * @param scratchYuv Optional reusable BufferSet for YUV processing.
-     * @param icrsAnnotations List of ICRS RectF (relative to source) to convert to pixel SnapshotAnnotation if valid set-crop (skips 0/1 idiom or out of range).
+     * @param icrsAnnotations List of ICRS RectF (relative to source) to convert to pixel SnapshotAnnotation (clip to source bounds only).
      */
     suspend fun takeSnapshot(
         source: Any,
@@ -318,16 +318,16 @@ object OcrUtils {
                 }
             }
 
-            // ICRS annotations support (phase9): after srcW/srcH, before regular scaling. Convert only valid set-crop ICRS (no 0/1 idiom, reasonable range); skip invalid.
+            // ICRS annotations: convert via icrsToPixel then clip-only to source bounds [0,src]; skip if completely outside or degenerate after clip.
             val icrsPixelAnns = icrsAnnotations.mapNotNull { icrsRect ->
-                if ((icrsRect.left == 0f && icrsRect.top == 0f && icrsRect.right == 1f && icrsRect.bottom == 1f) ||
-                    icrsRect.left < -2f || icrsRect.right > 2f || icrsRect.top < -2f || icrsRect.bottom > 2f) {
-                    return@mapNotNull null
-                }
                 val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, srcW, srcH)
                 val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, srcW, srcH)
-                if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < srcW && p1.y < srcH) {
-                    SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2)
+                val x1 = min(p1.x, p2.x).toInt().coerceIn(0, srcW)
+                val y1 = min(p1.y, p2.y).toInt().coerceIn(0, srcH)
+                val x2 = max(p1.x, p2.x).toInt().coerceIn(0, srcW)
+                val y2 = max(p1.y, p2.y).toInt().coerceIn(0, srcH)
+                if (x1 < x2 && y1 < y2) {
+                    SnapshotAnnotation(x1, y1, x2, y2, Shape.RECTANGLE, android.graphics.Color.RED, 2)
                 } else null
             }
             val allAnnsForScale = annotations + icrsPixelAnns
