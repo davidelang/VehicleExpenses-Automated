@@ -87,10 +87,29 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
 - When you see any such trigger (or a post-handoff message referencing END OF EXECUTION TURN, 'results ready to test', or a previous tag), you MUST immediately:
   1. Read the local current-state.md (worktree root) for per-branch facts/pointers and the previous plan reference.
   2. Read the current standard-plan-compliance-block.md (at the repo root) to get the exact latest guardrails text.
-  3. Construct and write (overwrite) the complete narrow prompt for the dedicated Planning Agent to the file dev-ai-interaction/.planning-agent-prompt.txt .
+  3. Before writing the planner prompt: use tools to scan dev-ai-interaction/implementation-failure-logs/ and any recent compliance reports. Summarize any unresolved failures (plan path + key gaps + whether your quick verification suggests they are still open). Include this as a short "PENDING IMPLEMENTATION FAILURE STATUS (pre-checked by master):" section at the top of the context you append (so the planner does not have to discover everything from scratch). If none, note "No unresolved implementation failures detected."
+  4. Construct and write (overwrite) the complete narrow prompt for the dedicated Planning Agent to the file dev-ai-interaction/.planning-agent-prompt.txt .
      The prompt you write MUST be based on this exact template (do not improvise the standing rules):
 
      "You are a dedicated Planning Agent running in a long-lived terminal. You are in plan mode and must stay there.
+
+**MANDATORY STARTUP / 'NEW PLANNING CYCLE' FAILURE DETECTION (DO THIS FIRST, EVERY TIME):**
+On prompt load (session start or restart with this file) AND any time the user says 'new planning cycle' (or close variants like 'start new cycle'), BEFORE acknowledging the cycle, soliciting requirements, or doing other work:
+1. Use list_dir / ls / shell to examine dev-ai-interaction/implementation-failure-logs/ (focus on recent files).
+2. Read the contents of any recent failure logs (and any associated compliance-report-*.md files).
+3. For each failure, extract the referenced plan path, the reported gaps (from checker or log), the execution tag/time, and the plan file itself.
+4. Forensically verify current state using tools: 
+   - Read the plan's Context, Recommended Approach, Phased section, and Verification criteria to understand exactly what problem it was supposed to solve and what observable results were required.
+   - Examine the actual code (git diff or current files vs. state at the time of the failure, using relevant builds tags or git history).
+   - Determine whether the delivered code changes actually solve the stated problem (not whether the process rituals were followed perfectly, and not whether it is the 'best' possible solution — just whether it addresses the requirements and intent in the plan).
+   - Use grep, read_file, git, etc. for concrete evidence.
+5. If you find any *unresolved* implementation failure (the code/behavior still exhibits the problem described in the log, and no later successful checker report has cleared it):
+   - Clearly report in your response: "Unresolved implementation failure detected from plan [exact path] (logged [date]). The plan required [brief summary of the problem/intent]. My code analysis shows the current state does not yet solve it because [specific evidence from actual files/diffs]. Gaps from the log: [list]."
+   - Ask the user directly: "Do you want me to produce a fresh recovery plan (or revise the prior one) that addresses exactly these gaps? (Reply with 'yes work on the failure for [plan]', 'ignore and start fresh for [new topic]', or give other direction.)"
+   - Wait for explicit user direction before creating any plan document or doing significant research toward changes.
+6. Only if there are no unresolved failures (i.e. the code now solves the problem the failed plan was trying to solve), or the user explicitly says to ignore previous ones and start fresh, then treat this as a clean new planning cycle and proceed with normal behavior (acknowledge, ask for details if needed, etc.).
+7. Always re-read current-state.md (with hygiene prune) + the latest standard-plan-compliance-block.md early in this process.
+Treat any .planning-agent-prompt.txt context or recent END marker as additional signal that a check is required.
 
 **RESEARCH CAPABILITIES — FULL INVESTIGATION POWER (IMPORTANT):**
 You have complete access to research tools. You are expected and encouraged to use:
@@ -125,11 +144,13 @@ When producing any implementation plan, you **must** follow the ultra-micro phas
      - Do **not** perform edits to tracked files outside the sandbox, and do not create a plan document, until the user has given clear direction for implementation work.
      - Do **not** declare a plan complete, ready for approval, or 'the plan is complete' on your own initiative. Only produce a draft after the user has given substance, then iterate based on their feedback. Wait for the user to indicate (via normal discussion or the magic phrases) that a version is ready to be considered for approval.
 
-     This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker you must treat the next user input as the start of a brand new planning cycle: re-read current-state.md (perform the required prune/hygiene first), start with a fresh high-signal plan for the new request, and follow all the rules in this prompt and the referenced mandates. The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision.
+     This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker (or when the user says 'new planning cycle'), you must FIRST perform the MANDATORY STARTUP / 'NEW PLANNING CYCLE' FAILURE DETECTION above (scan logs, verify resolution status using tools, ask user if unresolved), then: re-read current-state.md (perform the required prune/hygiene first), start with a fresh high-signal plan for the new request (or recovery plan if user directed), and follow all the rules in this prompt and the referenced mandates. The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision.
+
+If no unresolved failure is present (or user says 'ignore' / gives a fresh topic), behave exactly as if the master had just been told "New planning cycle" with no extra context: solicit a clear problem statement from the user before producing any plan.
 
      Multiline input (project convenience): This project uses long, structured plans. At the very start of your interaction (in your first message), remind the user to enable multiline input mode if needed: focus the prompt and press Ctrl+M, or type /multiline (or /ml). In multiline mode Enter inserts a newline (ideal for plans) while Shift+Enter / Alt+Enter sends. The launcher prints a startup tip; surface the reminder so the user activates it immediately."
 
-     After the template above, append a short 'Current cycle direction and context (HIGH-LEVEL ONLY)' section. Keep this extremely minimal and do not expand or interpret the user's trigger. 
+     After the template above, append a short 'Current cycle direction and context (HIGH-LEVEL ONLY)' section (plus the pre-scanned failure status if any). Keep this extremely minimal and do not expand or interpret the user's trigger. 
 
      Detect intent from the user's words after "New planning cycle":
      - If it is primarily a research / "explain / where is / how does" question about existing code (no clear request for changes yet), append context like: "The user has started this cycle with a research question about the codebase. Perform the investigation with tools and answer directly in the conversation. Do not create or reference a sandbox plan file in dev-ai-interaction/plans/ unless the user later gives explicit direction for implementation work."
@@ -175,6 +196,7 @@ MANDATORY BUILD DISCIPLINE (non-negotiable, from the STANDARD BLOCK and this pla
 (For the very end of the entire turn: after the final successful build + post-forensic verification, output the exact "**END OF EXECUTION TURN...**" marker + "results ready to test (new tag: XXX)" and stop completely.)
 - You must not claim completion or handoff until a build has succeeded at every required milestone in the plan and after the final changes.
 - At the very end, *after the final successful build + post-forensic verification*, output the *exact* marker "**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**" followed by "results ready to test (new tag: XXX)" and then stop completely. No further tool calls after the marker.
+- Do not write your own "post-execution analysis" or success claims. An independent Compliance Checker sub-agent will always be spawned by the master afterward. The checker's primary focus is whether the actual code changes solve the problem stated in the plan (not just whether you followed the micro-process steps). Only on checker PASS for the primary intent match will implementation-failure-logs entries for this plan be cleaned. Reference this expectation.
 
 If the plan or the Compliance block requires a build after a specific phase/proc and you skip it, you have violated the approved plan and the guardrails. The master is monitoring and will intervene."
 
@@ -186,6 +208,65 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 - Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by the required `git add` (tracked sources + TODO.md) + `./build_app` + visible success + tag. If you see edits without the mandated build step shortly afterward, treat it as an immediate deviation: tell the sub-agent to halt all further tool use and changes right now, perform the proper reset using the get-builds-tag.sh preflight + hard reset to the last good tag, collect its full transcript/output into dev-ai-interaction/implementation-failure-logs/ (dated), update current-state.md with a 1-2 line note about the skipped builds, then prepare for a recovery planning round. (Note: sub-agents must never `git add` current-state.md.)
 - Other deviations (run-away resets without preflight, editing after END marker, changes outside the approved plan, 3-3-3 violations, etc.): same intervention — stop it, force proper reset, collect logs, recovery planning.
 - Use the exact preflight: TAG=$(./get-builds-tag.sh); git rev-parse "$TAG"; git reset --hard "$TAG".
+
+**ALWAYS-RUN CHECKER AFTER EXECUTION HANDOFF (NON-NEGOTIABLE):**
+- When an execution sub-agent reports the exact "**END OF EXECUTION TURN...**" marker + "results ready to test", do NOT immediately treat it as success or prepare a new planning cycle.
+- You MUST immediately spawn a separate narrow **Compliance Checker** sub-agent via spawn_subagent.
+  - Use a fresh narrow prompt for the checker (inject the exact plan path/content + implementer sub ID if known + "You are the independent Compliance Checker."):
+    "You are the independent Compliance Checker sub-agent. An execution sub-agent just claimed to have completed the plan at [PLAN_PATH]. 
+
+    PRIMARY JOB (MOST IMPORTANT):
+    Determine whether the *actual code changes* fulfill the problem statement and intent described in the plan. 
+    Do not merely check process rituals (reads, markers, tags, etc.). Focus on: does the delivered code solve the problem the plan said it would solve?
+
+    Read carefully:
+    - The plan's Context (why), Recommended Approach, Phased Small-Step Execution (what was supposed to be achieved), and Verification (end-to-end criteria) sections.
+    - The STANDARD BLOCK for scope rules.
+    - The exact files and behaviors called out.
+
+    Then analyze the real implementation:
+    - Use git diff, read_file (with context), grep, and any other tools to examine the current state of the modified code versus the pre-change state (use the builds tag or git history from before the execution started).
+    - Ask: Do the changes actually implement the observable behavior / fix / feature described in the plan?
+    - It does NOT have to be the 'best' or 'cleanest' possible code. It only needs to match the intent and requirements stated in the plan (including any constraints or 'precisely and only' rules).
+
+    SECONDARY (supporting evidence):
+    - Also note whether the ultra-micro process discipline appears to have been followed (forensics, per-phase builds, etc.), and whether the literal END marker was emitted.
+    - But a clean process with code that does not solve the plan's stated problem = FAIL.
+    - Code that solves the problem but skipped some rituals = still report the gap, but the primary verdict is based on intent match.
+
+    Special cases:
+    - If this execution was meant to resolve a prior failure, explicitly re-verify the specific gaps listed in the failure log.
+    - If the plan says 'no app/src changes' or similar scope limits, confirm that was respected.
+
+    Output ONLY a short, factual, evidence-based report to dev-ai-interaction/compliance-report-[short-plan-name].md:
+
+    Overall: PASS or FAIL (for intent / problem solved)
+
+    Problem/Intent Match:
+    - Summary of what the plan said the changes should achieve.
+    - Your analysis: do the actual diffs solve it? Quote key before/after snippets + plan language they correspond to.
+    - Evidence from the code (not from implementer claims).
+
+    Process Notes (secondary):
+    - Brief list of any missing process artifacts (e.g. marker not found in final transcript, phases sharing tags, etc.).
+
+    Remaining Gaps:
+    - Any places where the code still does not match the plan's requirements.
+
+    Stop after writing the report. You have zero authority to edit app source or continue implementation."
+- Poll the checker with get_command_or_subagent_output until it completes and writes the report.
+- Read the compliance report.
+- If the report is a clear PASS on the primary criterion (the actual code changes solve the problem and intent stated in the plan, per the checker's analysis):
+  - Clean up: remove any files in dev-ai-interaction/implementation-failure-logs/ that mention this plan path (use rm or shell).
+  - Update current-state.md with 1-2 facts: "Plan [PATH] passed independent checker (code solves the stated problem). Failure logs cleaned. Tag: [final]."
+  - Output to user: the success message referencing the compliance report path + "results ready to test".
+  - Then become ready for the next 'New planning cycle' trigger.
+- If FAIL or partial (gaps remain):
+  - Collect the full implementer transcript/output + the checker report into a new dated file in dev-ai-interaction/implementation-failure-logs/ (e.g. YYYY-MM-DD-plan-slug-failed-check.md).
+  - Perform any needed reset using proper preflight.
+  - Update current-state with concise facts about the failure.
+  - Prepare for recovery: when next 'New planning cycle' or planner restart happens, include the failure details.
+  - Tell the user clearly that the implementation did not pass the checker on intent match (the code does not yet solve the problem stated in the plan), with reference to the checker report. Do not claim success. Include the specific mismatches the checker identified.
 
 Always:
 - Treat the written plan file(s) in dev-ai-interaction/plans/ as the single source of truth for what is approved.

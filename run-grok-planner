@@ -86,11 +86,17 @@ if [ ! -f "$PROMPT_FILE" ]; then
     exit 1
 fi
 
+# Lightweight shell notice for failures (the planner prompt will drive the actual LLM check and user interaction)
+if ls dev-ai-interaction/implementation-failure-logs/ 2>/dev/null | grep -q . ; then
+    echo "Note: implementation-failure-logs/ contains entries. The planning agent will automatically scan them on load / 'new planning cycle' and report unresolved ones (with verification), asking whether to address them."
+fi
+
 echo "Launching dedicated Planning Agent in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Using narrow prompt from: $PROMPT_FILE"
 echo "Forcing planning model: $PLANNER_MODEL (set GROK_PLANNER_MODEL to override)"
+echo "On load and on 'new planning cycle' the agent will first scan implementation-failure-logs/ and verify whether any prior execution failures are resolved (using tools). Unresolved ones will be reported and the user asked whether to address them."
 echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
 
 # Read the entire prompt file content.
