@@ -107,8 +107,8 @@
 - [ ] enforce-strict-ultra-micro-final-handoff-process-20260617-plan.md — Enforce Strict Ultra-Micro Final Handoff Process for Normalized Removal (Root Cause Fix) (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/enforce-strict-ultra-micro-final-handoff-process-20260617-plan.md)
   - [x] Phase 1: Initial hygiene prune + re-reads (no edits) -- phase1 hygiene re-reads, git status, get tag, targeted greps=0.
   - [x] Phase 2: Git add check + first build gate (baseline) -- git add TODO, ./build_app success, 1-line state update.
-  - [ ] Phase 3: Insert initial unchecked checklist header into TODO.md
-  - [ ] Phase 4: Forensic read of AlignmentScreen before any further work
+  - [x] Phase 3: Insert initial unchecked checklist header into TODO.md -- inserted as first edit per execution start + verified.
+  - [x] Phase 4: Forensic read of AlignmentScreen before any further work -- narrow read 470/30 + grep 0 in phase4.
   - [ ] Phase 5: Forensic read of API.md
   - [ ] Phase 6: First project hygiene grep
   - [ ] Phase 7: Emit the exact END marker string (dedicated action)
