@@ -459,13 +459,14 @@ private suspend fun runExperiment(
                                 alignResMetadata["odo_crop_icrs"] = if (qI != null) "${qI.left},${qI.top},${qI.right},${qI.bottom}" else ""
                             }
                         }
-                        val ann = if (odoIcrsRect != null) OcrUtils.icrsRectToSnapshotAnnotation(odoIcrsRect!!, imgW, imgH) else null
+                        // Pass raw ICRS rect to takeSnapshot; conversion to pixels uses the actual buffer size (srcW/srcH inside takeSnapshot), not caller outer imgW/imgH per fix-icrs-conversion plan.
                         val (snap, tSnap) = OcrUtils.takeSnapshot(
                             source = NativePaddleEngine.bufferSetB.p,
                             sourceRect = null,
                             targetW = 600,
                             targetH = 450,
-                            annotations = if (ann != null) listOf(ann) else emptyList(),
+                            annotations = emptyList(),
+                            icrsAnnotations = if (odoIcrsRect != null) listOf(odoIcrsRect!!) else emptyList(),
                             scratchArgb = null,
                             scratchYuv = NativePaddleEngine.bufferSetB
                         )
