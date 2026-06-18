@@ -441,7 +441,7 @@ private suspend fun runExperiment(
                         alignResTimeMs = alignRes.timeMs
                         alignResMetadata.putAll(alignRes.metadata)
 
-                        // Always use the raw vehicle ICRS rect (ICRS invariant) so box shows for !success cases too (Honda visibility) -- but only for vehicles with explicit crop set (no legacy 0/1)
+                        // Always use the raw vehicle ICRS rect (ICRS invariant, matches cachedRefs/createCrop + refinement icrsToPixel paths) so box shows for !success cases too (Honda visibility) -- but only for vehicles with explicit crop set (no legacy 0/1)
                         var odoIcrsRect: android.graphics.RectF? = null
                         globalWinnerRef?.vehicle?.let { v ->
                             if (v.odometerCropLeft != null && v.odometerCropTop != null && v.odometerCropRight != null && v.odometerCropBottom != null) {
