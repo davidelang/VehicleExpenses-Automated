@@ -1875,12 +1875,11 @@ private suspend fun runPaddleValleyIterative(
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
 
-    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-    val t = winnerRef.vehicle.odometerCropTop ?: 0f
-    val r = winnerRef.vehicle.odometerCropRight ?: 1f
-    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-
-    val icrsRect = RectF(l, t, r, b)
+    val icrsRect = if (winnerRef.vehicle.odometerCropLeft != null && winnerRef.vehicle.odometerCropTop != null && winnerRef.vehicle.odometerCropRight != null && winnerRef.vehicle.odometerCropBottom != null) {
+        RectF(winnerRef.vehicle.odometerCropLeft, winnerRef.vehicle.odometerCropTop, winnerRef.vehicle.odometerCropRight, winnerRef.vehicle.odometerCropBottom)
+    } else {
+        IcrsMath.fullImageIcrsRect(mWidth, mHeight)
+    }
     val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
     val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
 
@@ -2083,12 +2082,11 @@ private suspend fun runMLKitIterative(
     val jsonStages = com.google.gson.JsonObject()
     val allOdo = mutableListOf<String>()
 
-    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-    val t = winnerRef.vehicle.odometerCropTop ?: 0f
-    val r = winnerRef.vehicle.odometerCropRight ?: 1f
-    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-
-    val icrsRect = RectF(l, t, r, b)
+    val icrsRect = if (winnerRef.vehicle.odometerCropLeft != null && winnerRef.vehicle.odometerCropTop != null && winnerRef.vehicle.odometerCropRight != null && winnerRef.vehicle.odometerCropBottom != null) {
+        RectF(winnerRef.vehicle.odometerCropLeft, winnerRef.vehicle.odometerCropTop, winnerRef.vehicle.odometerCropRight, winnerRef.vehicle.odometerCropBottom)
+    } else {
+        IcrsMath.fullImageIcrsRect(mWidth, mHeight)
+    }
     val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
     val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
 
