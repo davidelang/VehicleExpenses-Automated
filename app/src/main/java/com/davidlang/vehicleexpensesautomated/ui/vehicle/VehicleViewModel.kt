@@ -102,12 +102,20 @@ class VehicleViewModel @Inject constructor(
      * Get the crop rectangles for a vehicle.
      */
     fun getCrops(vehicle: Vehicle): Pair<androidx.compose.ui.geometry.Rect?, androidx.compose.ui.geometry.Rect?> {
-        val odo = vehicle.odometerCropLeft?.let { l ->
-            androidx.compose.ui.geometry.Rect(l, vehicle.odometerCropTop ?: 0f, vehicle.odometerCropRight ?: 1f, vehicle.odometerCropBottom ?: 1f)
-        }
-        val other = vehicle.otherTextCropLeft?.let { l ->
-            androidx.compose.ui.geometry.Rect(l, vehicle.otherTextCropTop ?: 0f, vehicle.otherTextCropRight ?: 1f, vehicle.otherTextCropBottom ?: 1f)
-        }
+        val odo = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
+                     vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
+            androidx.compose.ui.geometry.Rect(
+                vehicle.odometerCropLeft, vehicle.odometerCropTop,
+                vehicle.odometerCropRight, vehicle.odometerCropBottom
+            )
+        } else null
+        val other = if (vehicle.otherTextCropLeft != null && vehicle.otherTextCropTop != null &&
+                        vehicle.otherTextCropRight != null && vehicle.otherTextCropBottom != null) {
+            androidx.compose.ui.geometry.Rect(
+                vehicle.otherTextCropLeft, vehicle.otherTextCropTop,
+                vehicle.otherTextCropRight, vehicle.otherTextCropBottom
+            )
+        } else null
         return Pair(odo, other)
     }
 
