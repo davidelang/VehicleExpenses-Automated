@@ -1036,6 +1036,8 @@ private suspend fun runBinTrialsPaddle(
 
         val annsPre = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        trialsMeta["trial_${vIdx}_red_boxes"] = tRawB.joinToString(";") { b -> "${b.boundingBox.left},${b.boundingBox.top}-${b.boundingBox.right},${b.boundingBox.bottom}" }
+        trialsMeta["trial_${vIdx}_initial_red_rects"] = tRawB.joinToString(";") { b -> "${b.boundingBox.left},${b.boundingBox.top},${b.boundingBox.right},${b.boundingBox.bottom}" }
 
         val (tPlainPreB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
 
