@@ -311,7 +311,6 @@ fun ManageVehiclesScreen(
             odometerCrop = odometerCropRect,
             otherTextCrop = otherTextCropRect,
             landmarks = res.textBlocks,
-            rawDiscoveryBoxes = res.rawDiscoveryBoxes,
             odometerText = "N/A",
             engineName = res.engineName,
             sourceWidth = res.imageWidth,

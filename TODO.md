@@ -91,12 +91,12 @@
   - [x] Phase 1: Initialize / update TODO.md (added exact phase checklist as active TODO top-level item; forensic read offset 89 limit25 + grep for "Phase 1: Initialize / update TODO.md" confirmed; git add TODO.md; ./build_app "Phase 1..." TODO.md succeeded BUILD SUCCESSFUL; new tag fix-pump-experiment/builds (start-367-g93a6164e); current-state updated)
   - [x] Phase 2: Remove cropRect param + logic from extractFromPhoto (OdometerOcrUtils.kt) (narrow read 1355-1380 + 1340-60 before; grep cropRect in file (6 hits); sed ultra-micro replace of sig+if-block (removed cropRect, context, var bitmap, normalized * w/h crop); narrow read 1355-30 after (sig clean, direct processed); post-edit grep cropRect=0, sig match 1; grep callers confirm 1-arg only; git add kt+TODO)
   - [x] Phase 3: Remove dead discoverLandmarks? (optional narrow; defer if scope) (leave as-is) (narrow read ~1365-20 + grep discoverLandmarks confirmed present (only def, 0 callers in src); no edit performed per defer; same after; git add TODO; build)
-  - [ ] Phase 4: Delete the 4 dead normalized data classes (OcrEngine.kt)
-  - [ ] Phase 5: Strip dead fields from TextBlock and OcrResult (OcrEngine.kt)
-  - [ ] Phase 6: Clean OcrEngine internal references (if any left after 4+5)
-  - [ ] Phase 7: Update LandmarkDebugDialog.kt - remove custom RectF import + param
-  - [ ] Phase 8: Remove dead discovery box rendering from LandmarkDebugDialog.kt
-  - [ ] Phase 9: Update ManageVehiclesScreen.kt call site
+  - [x] Phase 4: Delete the 4 dead normalized data classes (OcrEngine.kt) (narrow read 1-60 before; grep found defs+comments; sed delete; fix stray; read 1-40 after clean; grep 0; + stripped fields in same file for compile gate)
+  - [x] Phase 5: Strip dead fields from TextBlock and OcrResult (OcrEngine.kt) (forensic read before/after on fields; sed remove 3 lines raw/refined; grep 0 in file; kept filterByCrops intact using android.graphics)
+  - [x] Phase 6: Clean OcrEngine internal references (if any left after 4+5) (grep confirmed only android.graphics.RectF left in OcrEngine; no custom; phase6 clean)
+  - [x] Phase 7: Update LandmarkDebugDialog.kt - remove custom RectF import + param (removed import + sig param; forensic)
+  - [x] Phase 8: Remove dead discovery box rendering from LandmarkDebugDialog.kt (removed var show, switch, if(raw), raw/refined lets in draw+zone+chips; restored+precise edits to avoid syntax break; final grep 0 refs)
+  - [x] Phase 9: Update ManageVehiclesScreen.kt call site (removed rawDiscoveryBoxes= line; forensic read 300-325)
   - [ ] Phase 10: Remove debugCropDir creation + mkdir in ExperimentAlignmentScreen.kt
   - [ ] Phase 11: Remove debugCropDir from runExperiment signature + body (ExperimentAlignmentScreen.kt)
   - [ ] Phase 12: Update the 3 call sites inside ExperimentAlignmentScreen.kt for runExperiment

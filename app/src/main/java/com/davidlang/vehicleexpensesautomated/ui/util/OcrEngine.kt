@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.PorterDuff
 import android.graphics.Rect
+import android.graphics.Paint
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,38 +21,6 @@ import org.opencv.core.*
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 
-import android.graphics.Paint
-
-/**
- * Simple Rect implementation for Float normalized coordinates.
- */
-data class RectF(val left: Float, val top: Float, val right: Float, val bottom: Float)
-
-/**
- * Represents a detected text region with both rotated points and axis-aligned bounds.
- * Mandated: All coordinates (points and boundingBox) are NORMALIZED (0.0 to 1.0).
- */
-data class DetectedBox(
-    val points: List<Point>,
-    val boundingBox: RectF,
-    val angle: Float
-)
-
-/**
- * Result of a DBNet discovery pass, containing raw suspicion and refined regions.
- */
-data class DbNetResult(
-    val rawBoxes: List<DetectedBox>,
-    val refinedBoxes: List<DetectedBox>,
-    val discoveryTimeMs: Long = 0,
-    val suspectCrops: List<RectF> = emptyList() // Phase 43: High-Res Sub-Window Targets
-)
-
-/**
- * Mandated: Normalized Rectangle (0.0 to 1.0)
- */
-data class NormalizedRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
-
 /**
  * Represents a single hunk of text found by an OCR engine.
  */
@@ -60,8 +29,6 @@ data class TextBlock(
     val boundingBox: Rect, // Final Crop Pixel coordinates
     val angle: Float = 0f,
     val points: List<org.opencv.core.Point> = emptyList(),
-    val rawDiscoveryBox: RectF? = null,    // RED tier
-    val refinedDiscoveryBox: RectF? = null, // ORANGE tier
     val metadata: Map<String, String> = emptyMap(),
     /**
      * Phase 109: Instance tracking for landmark disambiguation.
@@ -143,7 +110,6 @@ data class OcrResult(
     val heatmapWidth: Int = 0,
     val heatmapHeight: Int = 0,
     val discoveryHeatmap: FloatArray? = null,
-    val rawDiscoveryBoxes: List<RectF> = emptyList(),
     val scaleFactor: Float = 1.0f,
     val textBlocks: List<TextBlock> = emptyList(),
     val imageWidth: Int = 0,
