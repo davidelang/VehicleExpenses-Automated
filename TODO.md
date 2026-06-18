@@ -3,7 +3,7 @@
 - [ ] enforce-one-atomic-action-per-phase-literal-marker-handoff-20260617-plan.md — Enforce One Atomic Action Per Phase + Literal Marker Emission for Final Handoff (Root Cause Fix for 4 Failed Plans) (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/enforce-one-atomic-action-per-phase-literal-marker-handoff-20260617-plan.md)
   - [x] Phase 1: Initial hygiene prune of current-state.md (no other changes) (prune performed + build success + 1 fact appended)
   - [x] Phase 2: Re-read plan + mandates before any TODO work (re-reads of plan/mandates sections + build)
-  - [ ] Phase 3: Insert the new plan entry header in TODO.md (starting unchecked)
+  - [x] Phase 3: Insert the new plan entry header in TODO.md (starting unchecked) (header + 20 [ ] phases added as first edit)
   - [ ] Phase 4: Forensic narrow read of AlignmentScreen (before any mark)
   - [ ] Phase 5: Forensic narrow read of API.md
   - [ ] Phase 6: First full remnant grep
