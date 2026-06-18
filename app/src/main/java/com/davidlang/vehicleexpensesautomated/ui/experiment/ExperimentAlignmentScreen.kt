@@ -442,7 +442,7 @@ private suspend fun runExperiment(
                         alignResMetadata.putAll(alignRes.metadata)
 
                         // Always compute (using ICRS-space mapping) so box shows for !success cases too (Honda visibility) -- but only for vehicles with explicit crop set (no legacy 0/1)
-                        val odoAnns = mutableListOf<SnapshotAnnotation>()
+                        var odoIcrsRect: android.graphics.RectF? = null
                         globalWinnerRef?.vehicle?.let { v ->
                             if (v.odometerCropLeft != null && v.odometerCropTop != null && v.odometerCropRight != null && v.odometerCropBottom != null) {
                                 val icrsL = v.odometerCropLeft
@@ -455,11 +455,7 @@ private suspend fun runExperiment(
                                 val refW = globalWinnerRef.width
                                 val refH = globalWinnerRef.height
                                 val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
-                                val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
-                                val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
-                                if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < imgW && p1.y < imgH) {
-                                    odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
-                                }
+                                odoIcrsRect = qI
                             }
                         }
                         val (snap, tSnap) = OcrUtils.takeSnapshot(
@@ -467,12 +463,11 @@ private suspend fun runExperiment(
                             sourceRect = null,
                             targetW = 600,
                             targetH = 450,
-                            annotations = odoAnns,
+                            annotations = emptyList(),
                             scratchArgb = null,
-                            scratchYuv = NativePaddleEngine.bufferSetB
+                            scratchYuv = NativePaddleEngine.bufferSetB,
+                            icrsAnnotations = if (odoIcrsRect != null) listOf(odoIcrsRect!!) else emptyList()
                         )
-                        alignedBase64 = snap
-                        tSnapAlign += tSnap
 
                         // Refinement Loop (Always executed to provide diagnostic data)
                         if (globalWinnerRef.vehicle.id >= 0) {
