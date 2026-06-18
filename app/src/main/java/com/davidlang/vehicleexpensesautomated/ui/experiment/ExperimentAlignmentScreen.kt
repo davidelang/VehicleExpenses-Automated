@@ -456,6 +456,7 @@ private suspend fun runExperiment(
                                 val refH = globalWinnerRef.height
                                 val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
                                 odoIcrsRect = qI
+                                alignResMetadata["odo_crop_icrs"] = if (qI != null) "${qI.left},${qI.top},${qI.right},${qI.bottom}" else ""
                             }
                         }
                         val ann = if (odoIcrsRect != null) OcrUtils.icrsRectToSnapshotAnnotation(odoIcrsRect!!, imgW, imgH) else null
