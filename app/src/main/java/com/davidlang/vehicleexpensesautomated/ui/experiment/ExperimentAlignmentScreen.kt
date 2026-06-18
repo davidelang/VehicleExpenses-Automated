@@ -458,15 +458,15 @@ private suspend fun runExperiment(
                                 odoIcrsRect = qI
                             }
                         }
+                        val ann = if (odoIcrsRect != null) OcrUtils.icrsRectToSnapshotAnnotation(odoIcrsRect!!, imgW, imgH) else null
                         val (snap, tSnap) = OcrUtils.takeSnapshot(
                             source = NativePaddleEngine.bufferSetB.p,
                             sourceRect = null,
                             targetW = 600,
                             targetH = 450,
-                            annotations = emptyList(),
+                            annotations = if (ann != null) listOf(ann) else emptyList(),
                             scratchArgb = null,
-                            scratchYuv = NativePaddleEngine.bufferSetB,
-                            icrsAnnotations = if (odoIcrsRect != null) listOf(odoIcrsRect!!) else emptyList()
+                            scratchYuv = NativePaddleEngine.bufferSetB
                         )
                         alignedBase64 = snap
                         tSnapAlign += tSnap
