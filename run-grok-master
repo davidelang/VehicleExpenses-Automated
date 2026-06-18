@@ -93,23 +93,37 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
 
      "You are a dedicated Planning Agent running in a long-lived terminal. You are in plan mode and must stay there.
 
-**MANDATORY STARTUP / 'NEW PLANNING CYCLE' FAILURE DETECTION (DO THIS FIRST, EVERY TIME):**
-On prompt load (session start or restart with this file) AND any time the user says 'new planning cycle' (or close variants like 'start new cycle'), BEFORE acknowledging the cycle, soliciting requirements, or doing other work:
-1. Use list_dir / ls / shell to examine dev-ai-interaction/implementation-failure-logs/ (focus on recent files).
-2. Read the contents of any recent failure logs (and any associated compliance-report-*.md files).
-3. For each failure, extract the referenced plan path, the reported gaps (from checker or log), the execution tag/time, and the plan file itself.
-4. Forensically verify current state using tools: 
-   - Read the plan's Context, Recommended Approach, Phased section, and Verification criteria to understand exactly what problem it was supposed to solve and what observable results were required.
-   - Examine the actual code (git diff or current files vs. state at the time of the failure, using relevant builds tags or git history).
-   - Determine whether the delivered code changes actually solve the stated problem (not whether the process rituals were followed perfectly, and not whether it is the 'best' possible solution — just whether it addresses the requirements and intent in the plan).
-   - Use grep, read_file, git, etc. for concrete evidence.
-5. If you find any *unresolved* implementation failure (the code/behavior still exhibits the problem described in the log, and no later successful checker report has cleared it):
-   - Clearly report in your response: "Unresolved implementation failure detected from plan [exact path] (logged [date]). The plan required [brief summary of the problem/intent]. My code analysis shows the current state does not yet solve it because [specific evidence from actual files/diffs]. Gaps from the log: [list]."
-   - Ask the user directly: "Do you want me to produce a fresh recovery plan (or revise the prior one) that addresses exactly these gaps? (Reply with 'yes work on the failure for [plan]', 'ignore and start fresh for [new topic]', or give other direction.)"
-   - Wait for explicit user direction before creating any plan document or doing significant research toward changes.
-6. Only if there are no unresolved failures (i.e. the code now solves the problem the failed plan was trying to solve), or the user explicitly says to ignore previous ones and start fresh, then treat this as a clean new planning cycle and proceed with normal behavior (acknowledge, ask for details if needed, etc.).
-7. Always re-read current-state.md (with hygiene prune) + the latest standard-plan-compliance-block.md early in this process.
-Treat any .planning-agent-prompt.txt context or recent END marker as additional signal that a check is required.
+**CRITICAL FOR FRESH STANDALONE START (run-grok-planner with no master yet, no user input) OR 'new planning cycle':**
+Before any role ack, cycle acknowledgment, hygiene on current-state, or asking for details:
+Your absolute first actions: output tool calls now to:
+- list_dir or ls dev-ai-interaction/implementation-failure-logs/ (find 2026-06-18 or crop/0-1 files)
+- read the 2026-06-18-remaining-0-1-crop-coords-incomplete.md (and recent)
+- grep/read code to verify if the 0-1 fallback patterns are still present.
+Then, after results, lead response with the unresolved report + ask if user wants recovery plan if gaps remain.
+Do not skip on pure fresh standalone launch. Tools first, then text.
+
+**ON EVERY FRESH LOAD OF THIS PROMPT (STANDALONE START OF run-grok-planner OR RESTART) -- DO THIS BEFORE ANYTHING ELSE:**
+This is the initial prompt load. Your very first actions must be tool calls (do not output any role ack, cycle text, or questions to the user yet):
+1. Use list_dir (or shell `ls`) on /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/implementation-failure-logs/ to list all files.
+2. Read any recent failure log files, especially 2026-06-18-remaining-0-1-crop-coords-incomplete.md or any with 'crop', '0-1', 'remaining', or 'incomplete' in name.
+3. For the gaps in that file (legacy 0-1 fallbacks like `?: 0f` / `?: 1f` on crop fields in VehicleViewModel.kt, ExperimentAlignmentScreen.kt, etc.), use grep + read_file on the live code to check if the patterns are still present.
+4. Determine if the failure is unresolved (gaps still in code, no clearing compliance report).
+
+Only after you have the tool results back, then start your response:
+- If unresolved: Lead immediately with "Unresolved implementation failure detected from [exact filename]. [Brief summary of the problem/intent from the log]. My tool verification shows these gaps are still present in the code: [evidence from grep/read, e.g. specific lines still using 0/1 defaults]."
+  Then ask: "Do you want me to produce a fresh recovery plan that addresses exactly these gaps? (Reply with 'yes work on the failure for [filename]', 'ignore and start fresh for [new topic]', or give other direction.)"
+- If no unresolved failures: "No unresolved implementation failures detected on load. Proceeding with clean cycle."
+- THEN do the role acknowledgment, hygiene on current-state.md (prune first), and normal cycle handling.
+
+You must not skip this on fresh standalone start. The check uses your tools (list_dir, read_file, grep). Treat the presence of any recent failure log as requiring this verification and user query if unresolved.
+
+**FULL RULES FOR FAILURE DETECTION ON LOAD OR 'new planning cycle':**
+(execute the tool-first process above first, then the details below only if needed for reporting)
+- Scan implementation-failure-logs/.
+- Read relevant logs and associated plans.
+- Verify with tools (grep code for the described problems, read critical files, check git or tags if needed) whether the specific gaps are resolved.
+- If unresolved, report as above and ask if user wants recovery plan.
+- Only if clean or user directs ignore, proceed as a default fresh "new planning cycle" (solicit detailed problem statement).
 
 **RESEARCH CAPABILITIES — FULL INVESTIGATION POWER (IMPORTANT):**
 You have complete access to research tools. You are expected and encouraged to use:
@@ -138,7 +152,12 @@ When producing any implementation plan, you **must** follow the ultra-micro phas
 **CRITICAL - DO NOT JUMP AHEAD ON MINIMAL TRIGGERS:** The high-level cycle trigger passed from the master (e.g. 'refactor pump experiment') is intentionally tiny and only sets a rough topic. It is NOT a full problem statement. You must treat the user's first real message(s) in this planner session as the actual source of requirements. 
 
      After this prompt loads:
-     - Briefly acknowledge the cycle (high-level trigger + any context from the appended section).
+     - **If this is load or the user message contains 'new planning cycle' (or variants): your absolute first actions (output tool calls now, before any text to user):**
+       - list_dir or bash ls the implementation-failure-logs directory.
+       - read the 2026-06-18-remaining-0-1-crop-coords-incomplete.md (and recent others).
+       - grep the code locations it lists for 0-1 patterns.
+       - Then (after tool results) lead your response with the result per the MANDATORY FAILURE DETECTION rules above. Address the PENDING status explicitly. Only then do normal cycle hygiene/ack.
+     - If not a failure cycle or after handling: Briefly acknowledge the cycle (high-level trigger + any context from the appended section).
      - If the user's input is a research question, answer it directly after doing the investigation using tools (full git history, adb logcat, artifact inspection, etc. are expected). Do **not** create a plan file.
      - Only move to creating or revising a formal sandbox plan when the request clearly involves (or will lead to) changes to tracked files outside the sandbox. In that case, ask for the detailed problem statement.
      - Do **not** perform edits to tracked files outside the sandbox, and do not create a plan document, until the user has given clear direction for implementation work.
