@@ -212,6 +212,8 @@ object OcrUtils {
      * @param annotations List of colored boxes/lines to draw.
      * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
      * @param scratchYuv Optional reusable BufferSet for YUV processing.
+     * ICRS rects are converted internally using the srcW/srcH derived from the concrete source buffer (not caller-provided outer dimensions).
+     * @param icrsAnnotations Optional raw ICRS rects for internal conversion using actual buffer size.
      */
     suspend fun takeSnapshot(
         source: Any,
@@ -220,7 +222,8 @@ object OcrUtils {
         targetH: Int = 0,
         annotations: List<SnapshotAnnotation> = emptyList(),
         scratchArgb: Bitmap? = null,
-        scratchYuv: BufferSet? = null
+        scratchYuv: BufferSet? = null,
+        icrsAnnotations: List<android.graphics.RectF> = emptyList()
     ): Pair<String, Long> = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         val srcW: Int
