@@ -137,17 +137,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         fun getOdoBuffer(context: Context, vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
-            val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
-            val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
-            
             val (refW, refH) = if (!vehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
                 getReferenceDimensions(context, vehicle.referenceDashPhotoUrl)
             } else {
                 Pair(4000, 3072)
             }
 
-            val p1 = IcrsMath.icrsToPixel(l, t, refW, refH)
-            val p2 = IcrsMath.icrsToPixel(r, b, refW, refH)
+            val icrsRect = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null && vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
+                RectF(vehicle.odometerCropLeft, vehicle.odometerCropTop, vehicle.odometerCropRight, vehicle.odometerCropBottom)
+            } else {
+                IcrsMath.fullImageIcrsRect(refW, refH)
+            }
+            val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, refW, refH)
+            val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, refW, refH)
             val srcW = (p2.x - p1.x).toInt()
             val srcH = (p2.y - p1.y).toInt()
 
