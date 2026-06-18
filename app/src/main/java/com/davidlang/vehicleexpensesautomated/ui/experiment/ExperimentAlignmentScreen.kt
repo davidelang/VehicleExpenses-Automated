@@ -468,6 +468,7 @@ private suspend fun runExperiment(
                             scratchYuv = NativePaddleEngine.bufferSetB,
                             icrsAnnotations = if (odoIcrsRect != null) listOf(odoIcrsRect!!) else emptyList()
                         )
+                        alignedBase64 = snap
 
                         // Refinement Loop (Always executed to provide diagnostic data)
                         if (globalWinnerRef.vehicle.id >= 0) {
