@@ -1357,20 +1357,12 @@ object OdometerOcrUtils {
         return results
     }
 
-    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null, context: Context? = null): OcrResult = withContext(Dispatchers.IO) {
-        val rawBitmap = if (context != null) decodeBitmapSafely(context, photoPath) else BitmapFactory.decodeFile(photoPath)
+    suspend fun extractFromPhoto(photoPath: String): OcrResult = withContext(Dispatchers.IO) {
+        val rawBitmap = BitmapFactory.decodeFile(photoPath)
         if (rawBitmap == null) return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
         val processed = applyBilateral(applyGrayscale(rotated))
-        var bitmap = processed
-        if (cropRect != null) {
-            val left = (cropRect.left * processed.width).toInt().coerceIn(0, processed.width)
-            val top = (cropRect.top * processed.height).toInt().coerceIn(0, processed.height)
-            val right = (cropRect.right * processed.width).toInt().coerceAtMost(processed.width)
-            val bottom = (cropRect.bottom * processed.height).toInt().coerceAtMost(processed.height)
-            if (right > left && bottom > top) bitmap = Bitmap.createBitmap(processed, left, top, right - left, bottom - top)
-        }
-        val res = extractFromPhotoBitmap(bitmap)
+        val res = extractFromPhotoBitmap(processed)
         res.copy(originalPhotoPath = photoPath)
     }
 
