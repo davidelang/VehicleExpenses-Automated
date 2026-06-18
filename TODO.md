@@ -104,3 +104,20 @@
   - [x] Phase 6: Key site final forensic reads + prepare TODO (narrow reads of edit sites (Alignment post-ref if, API header) + current-state + TODO entry; greps extractFromPhoto / OcrEngine clean; git add tracked + TODO.md; ./build_app) done
   - [x] Phase 7: Final build gate with full hygiene (re-run ./get-builds-tag.sh preflight; git add TODO; ./build_app record tag; update current-state.md exactly 1-2 lines) done
   - [x] Phase 8: Output exact END marker + handoff (output exact marker string in trace; mark only this plan's phases minimally; git add TODO.md; final ./build_app) done
+- [ ] enforce-strict-ultra-micro-final-handoff-process-20260617-plan.md — Enforce Strict Ultra-Micro Final Handoff Process for Normalized Removal (Root Cause Fix) (approved plan at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/enforce-strict-ultra-micro-final-handoff-process-20260617-plan.md)
+  - [ ] Phase 1: Initial hygiene prune + re-reads (no edits)
+  - [ ] Phase 2: Git add check + first build gate (baseline)
+  - [ ] Phase 3: Insert initial unchecked checklist header into TODO.md
+  - [ ] Phase 4: Forensic read of AlignmentScreen before any further work
+  - [ ] Phase 5: Forensic read of API.md
+  - [ ] Phase 6: First project hygiene grep
+  - [ ] Phase 7: Emit the exact END marker string (dedicated action)
+  - [ ] Phase 8: Verify the marker string was emitted
+  - [ ] Phase 9: Minimal mark only Phase 1-2 in TODO
+  - [ ] Phase 10: Minimal mark Phase 3-4
+  - [ ] Phase 11: Minimal mark Phase 5-6
+  - [ ] Phase 12: Minimal mark Phase 7-8
+  - [ ] Phase 13: Final hygiene grep + code re-confirm (no changes)
+  - [ ] Phase 14: Pre-final git add + build
+  - [ ] Phase 15: Literal final marker emission (if not already sufficient)
+  - [ ] Phase 16: Post-handoff verification read
