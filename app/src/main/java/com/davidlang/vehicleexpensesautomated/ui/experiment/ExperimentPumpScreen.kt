@@ -98,10 +98,8 @@ fun ExperimentPumpScreen(navController: NavHostController) {
 
     val experimentDir = File(context.getExternalFilesDir(null), "pump_photos")
     val reportDir = File(context.getExternalFilesDir(null), "pump_reports")
-    val debugCropDir = File(context.getExternalFilesDir(null), "pump_debug_crops")
 
     if (!reportDir.exists()) reportDir.mkdirs()
-    if (!debugCropDir.exists()) debugCropDir.mkdirs()
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { scope.launch { status = "Extracting ZIP..."; val success = pExtractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
@@ -133,7 +131,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
                 totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, null) { res, p ->
+                runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, null) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
                 isRunning = false; status = "Complete! Reports saved."
@@ -145,7 +143,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
                 val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
+                runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
                 isRunning = false; status = "Complete! Limited Report saved."
@@ -191,7 +189,6 @@ data class PumpBranch(
 private suspend fun runPumpExperiment(
     experimentDir: File,
     reportDir: File,
-    debugCropDir: File,
     context: Context,
     onLog: (String) -> Unit,
     subsetNames: List<String>?,
