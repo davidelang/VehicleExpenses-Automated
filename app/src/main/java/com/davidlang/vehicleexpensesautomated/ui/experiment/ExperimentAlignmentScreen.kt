@@ -441,23 +441,25 @@ private suspend fun runExperiment(
                         alignResTimeMs = alignRes.timeMs
                         alignResMetadata.putAll(alignRes.metadata)
 
-                        // Always compute (using ICRS-space mapping) so box shows for !success cases too (Honda visibility)
+                        // Always compute (using ICRS-space mapping) so box shows for !success cases too (Honda visibility) -- but only for vehicles with explicit crop set (no legacy 0/1)
                         val odoAnns = mutableListOf<SnapshotAnnotation>()
                         globalWinnerRef?.vehicle?.let { v ->
-                            val icrsL = v.odometerCropLeft ?: 0f
-                            val icrsT = v.odometerCropTop ?: 0f
-                            val icrsR = v.odometerCropRight ?: 1f
-                            val icrsB = v.odometerCropBottom ?: 1f
-                            val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
-                            val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
-                            val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
-                            val refW = globalWinnerRef.width
-                            val refH = globalWinnerRef.height
-                            val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
-                            val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
-                            val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
-                            if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < imgW && p1.y < imgH) {
-                                odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
+                            if (v.odometerCropLeft != null && v.odometerCropTop != null && v.odometerCropRight != null && v.odometerCropBottom != null) {
+                                val icrsL = v.odometerCropLeft
+                                val icrsT = v.odometerCropTop
+                                val icrsR = v.odometerCropRight
+                                val icrsB = v.odometerCropBottom
+                                val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
+                                val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
+                                val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
+                                val refW = globalWinnerRef.width
+                                val refH = globalWinnerRef.height
+                                val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
+                                val p1 = IcrsMath.icrsToPixel(qI.left, qI.top, imgW, imgH)
+                                val p2 = IcrsMath.icrsToPixel(qI.right, qI.bottom, imgW, imgH)
+                                if (p1.x < p2.x && p1.y < p2.y && p2.x > 0 && p2.y > 0 && p1.x < imgW && p1.y < imgH) {
+                                    odoAnns.add(SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, android.graphics.Color.RED, 2))
+                                }
                             }
                         }
                         val (snap, tSnap) = OcrUtils.takeSnapshot(
