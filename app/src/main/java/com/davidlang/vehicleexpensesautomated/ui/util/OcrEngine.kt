@@ -190,6 +190,17 @@ class MlKitEngine : OcrEngine {
 }
 
 object OcrUtils {
+    fun icrsRectToSnapshotAnnotation(icrs: android.graphics.RectF, srcW: Int, srcH: Int): SnapshotAnnotation? {
+        val p1 = IcrsMath.icrsToPixel(icrs.left, icrs.top, srcW, srcH)
+        val p2 = IcrsMath.icrsToPixel(icrs.right, icrs.bottom, srcW, srcH)
+        val x1 = min(p1.x, p2.x).toInt().coerceIn(0, srcW)
+        val y1 = min(p1.y, p2.y).toInt().coerceIn(0, srcH)
+        val x2 = max(p1.x, p2.x).toInt().coerceIn(0, srcW)
+        val y2 = max(p1.y, p2.y).toInt().coerceIn(0, srcH)
+        return if (x1 < x2 && y1 < y2) SnapshotAnnotation(x1, y1, x2, y2, Shape.RECTANGLE, android.graphics.Color.RED, 2) else null
+    }
+
+
     /**
      * Stateless Native Snapshot Utility: Produces a high-fidelity Base64 JPEG thumbnail.
      * Supports Bitmap, Mat, and BufferSet.Slice sources.
@@ -201,7 +212,6 @@ object OcrUtils {
      * @param annotations List of colored boxes/lines to draw.
      * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
      * @param scratchYuv Optional reusable BufferSet for YUV processing.
-     * @param icrsAnnotations List of ICRS RectF (relative to source) to convert to pixel SnapshotAnnotation (clip to source bounds only).
      */
     suspend fun takeSnapshot(
         source: Any,
@@ -210,8 +220,7 @@ object OcrUtils {
         targetH: Int = 0,
         annotations: List<SnapshotAnnotation> = emptyList(),
         scratchArgb: Bitmap? = null,
-        scratchYuv: BufferSet? = null,
-        icrsAnnotations: List<android.graphics.RectF> = emptyList()
+        scratchYuv: BufferSet? = null
     ): Pair<String, Long> = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         val srcW: Int
@@ -318,19 +327,7 @@ object OcrUtils {
                 }
             }
 
-            // ICRS annotations: convert via icrsToPixel then clip-only to source bounds [0,src]; skip if completely outside or degenerate after clip.
-            val icrsPixelAnns = icrsAnnotations.mapNotNull { icrsRect ->
-                val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, srcW, srcH)
-                val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, srcW, srcH)
-                val x1 = min(p1.x, p2.x).toInt().coerceIn(0, srcW)
-                val y1 = min(p1.y, p2.y).toInt().coerceIn(0, srcH)
-                val x2 = max(p1.x, p2.x).toInt().coerceIn(0, srcW)
-                val y2 = max(p1.y, p2.y).toInt().coerceIn(0, srcH)
-                if (x1 < x2 && y1 < y2) {
-                    SnapshotAnnotation(x1, y1, x2, y2, Shape.RECTANGLE, android.graphics.Color.RED, 2)
-                } else null
-            }
-            val allAnnsForScale = annotations + icrsPixelAnns
+            val allAnnsForScale = annotations
 
             // Annotation scaling
             val scaleX = finalW.toFloat() / roiW.toFloat()
