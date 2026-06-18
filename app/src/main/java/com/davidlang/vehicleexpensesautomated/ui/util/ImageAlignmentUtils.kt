@@ -395,28 +395,6 @@ object ImageAlignmentUtils {
         }
     }
 
-    /**
-     * Apply the solved alignment (finalScale, finalTx, finalTy in ICRS space) to a Reference vehicle's
-     * odometerCrop ICRS rect to obtain the corresponding ICRS rect in the Query (working canvas) space.
-     * Per ISOTROPIC_COORDINATE_SPEC: apply the affine to the Reference ROI ICRS, then convert the result
-     * to pixels using the working canvas dims. This produces the correct pixel coords for annotations/crops
-     * on a post-align (warped) canvas when the odo definition comes from the ref.
-     */
-    fun mapRefOdoIcrsToQueryIcrs(
-        refOdoL: Float, refOdoT: Float, refOdoR: Float, refOdoB: Float,
-        finalScale: Float, finalTx: Float, finalTy: Float,
-        refW: Int, refH: Int, queW: Int, queH: Int
-    ): android.graphics.RectF {
-        // Inverse the ICRS mapping used for landmarks: q = (r - t) / s
-        // (tx/ty here are the ICRS tx/ty from the solver)
-        val qL = (refOdoL - finalTx) / finalScale
-        val qT = (refOdoT - finalTy) / finalScale
-        val qR = (refOdoR - finalTx) / finalScale
-        val qB = (refOdoB - finalTy) / finalScale
-        // Return as RectF in query ICRS space (caller will icrsToPixel with que dims)
-        return android.graphics.RectF(qL, qT, qR, qB)
-    }
-
     private fun dist(a: TextBlock, b: TextBlock): Double {
         val dx = (a.boundingBox.centerX() - b.boundingBox.centerX()).toDouble()
         val dy = (a.boundingBox.centerY() - b.boundingBox.centerY()).toDouble()
