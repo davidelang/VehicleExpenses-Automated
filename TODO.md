@@ -7,8 +7,8 @@
   - [x] Phase 4: Forensic narrow read of AlignmentScreen (before any mark) (read 470/30 + grep 0 for dead block)
   - [x] Phase 5: Forensic narrow read of API.md (read 40/25 + grep no PhotoAlignmentUtils)
   - [x] Phase 6: First full remnant grep (all forbidden 0 in src/docs; src/ clean)
-  - [ ] Phase 7: Dedicated literal marker emission phase (do nothing else)
-  - [ ] Phase 8: Verify the marker string is in the agent's own trace
+  - [x] Phase 7: Dedicated literal marker emission phase (do nothing else) (marker literally printed in trace)
+  - [x] Phase 8: Verify the marker string is in the agent's own trace (grep temp + confirm in prior output)
   - [ ] Phase 9: Minimal mark *only* Phase 1 in TODO checklist
   - [ ] Phase 10: Minimal mark *only* Phase 2 in TODO
   - [ ] Phase 11: Minimal mark *only* Phase 3
