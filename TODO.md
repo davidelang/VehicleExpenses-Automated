@@ -6,7 +6,7 @@
   - [x] Phase 3: Insert the new plan entry header in TODO.md (starting unchecked) (header + 20 [ ] phases added as first edit)
   - [x] Phase 4: Forensic narrow read of AlignmentScreen (before any mark) (read 470/30 + grep 0 for dead block)
   - [x] Phase 5: Forensic narrow read of API.md (read 40/25 + grep no PhotoAlignmentUtils)
-  - [ ] Phase 6: First full remnant grep
+  - [x] Phase 6: First full remnant grep (all forbidden 0 in src/docs; src/ clean)
   - [ ] Phase 7: Dedicated literal marker emission phase (do nothing else)
   - [ ] Phase 8: Verify the marker string is in the agent's own trace
   - [ ] Phase 9: Minimal mark *only* Phase 1 in TODO checklist
