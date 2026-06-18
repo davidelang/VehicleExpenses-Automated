@@ -330,7 +330,8 @@ object OcrUtils {
                 }
             }
 
-            val allAnnsForScale = annotations
+            val icrsPixelAnns = icrsAnnotations.mapNotNull { icrsRect -> icrsRectToSnapshotAnnotation(icrsRect, srcW, srcH) }
+            val allAnnsForScale = annotations + icrsPixelAnns
 
             // Annotation scaling
             val scaleX = finalW.toFloat() / roiW.toFloat()
