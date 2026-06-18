@@ -109,8 +109,8 @@
   - [x] Phase 2: Git add check + first build gate (baseline) -- git add TODO, ./build_app success, 1-line state update.
   - [x] Phase 3: Insert initial unchecked checklist header into TODO.md -- inserted as first edit per execution start + verified.
   - [x] Phase 4: Forensic read of AlignmentScreen before any further work -- narrow read 470/30 + grep 0 in phase4.
-  - [ ] Phase 5: Forensic read of API.md
-  - [ ] Phase 6: First project hygiene grep
+  - [x] Phase 5: Forensic read of API.md -- narrow read 40/25 + grep in phase5.
+  - [x] Phase 6: First project hygiene grep -- full grep=0 , src clean fact recorded.
   - [ ] Phase 7: Emit the exact END marker string (dedicated action)
   - [ ] Phase 8: Verify the marker string was emitted
   - [ ] Phase 9: Minimal mark only Phase 1-2 in TODO
