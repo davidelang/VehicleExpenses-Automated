@@ -111,8 +111,8 @@
   - [x] Phase 4: Forensic read of AlignmentScreen before any further work -- narrow read 470/30 + grep 0 in phase4.
   - [x] Phase 5: Forensic read of API.md -- narrow read 40/25 + grep in phase5.
   - [x] Phase 6: First project hygiene grep -- full grep=0 , src clean fact recorded.
-  - [ ] Phase 7: Emit the exact END marker string (dedicated action)
-  - [ ] Phase 8: Verify the marker string was emitted
+  - [x] Phase 7: Emit the exact END marker string (dedicated action) -- marker output in phase7.
+  - [x] Phase 8: Verify the marker string was emitted -- grep succeeded on temp + prior.
   - [ ] Phase 9: Minimal mark only Phase 1-2 in TODO
   - [ ] Phase 10: Minimal mark Phase 3-4
   - [ ] Phase 11: Minimal mark Phase 5-6
