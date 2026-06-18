@@ -104,5 +104,5 @@
   - [x] Phase 14: Remove debugCropDir param from runPumpExperiment (ExperimentPumpScreen.kt) (sig edit; read 185-200)
   - [x] Phase 15: Update the 2 call sites in ExperimentPumpScreen.kt (sed remove from calls; grep 0)
   - [x] Phase 16: Delete PhotoAlignmentUtils.kt (git rm confirmed; ls gone; grep only self before; no src refs after; git add rm + TODO)
-  - [ ] Phase 17: Any import / dead ref cleanup (narrow)
+  - [x] Phase 17: Any import / dead ref cleanup (narrow) (full project grep debugCropDir|NormalizedRect|DbNetResult|class RectF|ui.util.RectF = 0 in src; no compile issues from removed types; no edits needed; forensic reads; git add TODO + build)
   - [ ] Phase 18: Final end-to-end build + verification
