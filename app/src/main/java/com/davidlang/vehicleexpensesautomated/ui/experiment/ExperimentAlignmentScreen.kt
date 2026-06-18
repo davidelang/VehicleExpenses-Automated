@@ -441,7 +441,7 @@ private suspend fun runExperiment(
                         alignResTimeMs = alignRes.timeMs
                         alignResMetadata.putAll(alignRes.metadata)
 
-                        // Always compute (using ICRS-space mapping) so box shows for !success cases too (Honda visibility) -- but only for vehicles with explicit crop set (no legacy 0/1)
+                        // Always use the raw vehicle ICRS rect (ICRS invariant) so box shows for !success cases too (Honda visibility) -- but only for vehicles with explicit crop set (no legacy 0/1)
                         var odoIcrsRect: android.graphics.RectF? = null
                         globalWinnerRef?.vehicle?.let { v ->
                             if (v.odometerCropLeft != null && v.odometerCropTop != null && v.odometerCropRight != null && v.odometerCropBottom != null) {
@@ -449,14 +449,8 @@ private suspend fun runExperiment(
                                 val icrsT = v.odometerCropTop
                                 val icrsR = v.odometerCropRight
                                 val icrsB = v.odometerCropBottom
-                                val sc = alignResMetadata["raw_scale"]?.toFloatOrNull() ?: 1f
-                                val tx = alignResMetadata["raw_tx"]?.toFloatOrNull() ?: 0f
-                                val ty = alignResMetadata["raw_ty"]?.toFloatOrNull() ?: 0f
-                                val refW = globalWinnerRef.width
-                                val refH = globalWinnerRef.height
-                                val qI = ImageAlignmentUtils.mapRefOdoIcrsToQueryIcrs(icrsL, icrsT, icrsR, icrsB, sc, tx, ty, refW, refH, imgW, imgH)
-                                odoIcrsRect = qI
-                                alignResMetadata["odo_crop_icrs"] = if (qI != null) "${qI.left},${qI.top},${qI.right},${qI.bottom}" else ""
+                                odoIcrsRect = RectF(icrsL, icrsT, icrsR, icrsB)
+                                alignResMetadata["odo_crop_icrs"] = "${icrsL},${icrsT},${icrsR},${icrsB}"
                             }
                         }
                         // Pass raw ICRS qI via the single annotations param (List<Any>); conversion inside takeSnapshot using buffer srcW/srcH (unify plan).
