@@ -1,5 +1,6 @@
 # TODO
 
+- [ ] Active: finish-4box-per-column-cost-volume-wiring-20260619-plan.md (Execution Sub-agent; per ultra-micro phases; sandbox TODO updated at /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/TODO.md)
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
@@ -58,7 +59,7 @@
 - See approved plan (this session's harness plan.md + the produced MULTI_AGENT_USER_INSTRUCTIONS.md) for full details, critical files, and verification. Pre-turn state: orchestration branch; session plan at /home/dlang/.grok/sessions/%2Fhome%2Fdlang%2Fgit%2FVehicleExpenses-automated/019ebbe2-611e-77e1-a312-f7cd1412096e/plan.md; no app source changes in scope.
 
 # Meta plan (approved 2026-06-12 on orchestration branch): Interactive Strategic Planning + Continuity
-- State files must be **per-branch** and live **in the local worktree directory** as **untracked** files (e.g. `current-state.md` or `.agent-state/current-state.md` at the worktree root, not in the shared dev-ai-interaction/ sandbox). Agent instructions require reading the local current-state.md first on every fresh launch or new cycle + the user-designated sandbox plan file.
+- State files must be **per-branch** and live **in the local worktree directory** as **untracked** files (e.g. `current-state.md` or `.agent-state/current-state.md` at the worktree root, not in the shared dev-ai-interaction/ sandbox). Agent instructions require reading the local current-state.md first on every fresh launch or new cycle + the user-designated sandbox plan file in dev-ai-interaction/plans/.
 - Planning phase is the **interactive strategic layer**: user may give rich problem descriptions, direction, and iterative feedback. Agent responds by revising the *plan document* in dev-ai-interaction/ (not source). Only after the user issues the exact magic approval phrasing naming a specific sandbox plan path does mechanical execution begin.
 - Update bootstrap files (new_grok_agent_prompt point 5 + Sandbox Plan File paragraph, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md) + .gitignore so that when the user explicitly directs a current-turn plan, agents create/revise fresh plan files under dev-ai-interaction/ and use the local untracked per-worktree state file for continuity. The "historical reference only" rule applies only to old/abandoned plans from other agents/cycles.
 - Demo during execution: create local untracked current-state.md in the current worktree root with minimal structure. Primary plan documents stay in the sandbox.
