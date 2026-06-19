@@ -13,7 +13,7 @@
   - [x] Phase 10: Wire correct ocr rects for Set F (procF)
   - [x] Phase 11: Wire correct ocr rects for Set G (procG)
   - [x] Phase 12: Ensure per-cand rects for crops in getFull classify path
-  - [ ] Phase 13: Reduce datadump in first column of pBuildHtmlRowDynamic
+  - [x] Phase 13: Reduce datadump in first column of pBuildHtmlRowDynamic
   - [ ] Phase 14: Update spec + comments for new rules
   - [ ] Phase 15: Final forensic + verification build
 - [x] Active: complete-real-4box-per-column-wiring-20260619-plan.md (all 15 phases complete; tag fix-pump-experiment/builds)
