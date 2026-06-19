@@ -2,7 +2,7 @@
 
 **Authority:** `docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md`  
 **Implementation:** `ExperimentPumpScreen.kt` — `classifyCostVolFromBoxOcr`, `buildRedBoxCandidates`, `getFinal`  
-**Related plans:** `complete-real-4box-per-column-wiring-20260619-plan.md`, `fix-4box-report-issues-20260619-plan.md`, `fix-remaining-report-issues-20260619-plan.md`
+**Related plans:** `complete-real-4box-per-column-wiring-20260619-plan.md`, `fix-4box-report-issues-20260619-plan.md`, `fix-remaining-report-issues-20260619-plan.md`, `fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan.md`
 
 ## Purpose
 
