@@ -527,6 +527,16 @@ private suspend fun runPumpExperiment(
                 fun pumpOcrDumpText(text: String, probs: String): String =
                     if (probs.isNotEmpty()) "$text [probs:$probs]" else text
 
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: leading/trailing '.' is noise; >=2 internal '.' is bad OCR
+                fun cleanDecimal(s: String): String {
+                    var t = s.trim()
+                    while (t.startsWith(".")) t = t.substring(1)
+                    while (t.endsWith(".")) t = t.substring(0, t.length - 1)
+                    return t
+                }
+
+                fun hasBadInternalDecimals(s: String): Boolean = cleanDecimal(s).count { it == '.' } >= 2
+
                 data class PumpRectOcrLists(
                     val asis: List<String>,
                     val digits: List<String>,
@@ -579,7 +589,10 @@ private suspend fun runPumpExperiment(
                         return f to dp
                     }
                     // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: digits-only valids (>=2); distinct cost/vol candidates required when >=2 valids
-                    val valids = candidates.filter { digitCount(it.digits) >= 2 }
+                    // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean decimals early; exclude internal multi-dot OCR
+                    val valids = candidates.filter {
+                        !hasBadInternalDecimals(it.digits) && digitCount(cleanDecimal(it.digits)) >= 2
+                    }
                     if (valids.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
                     // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: asis only for golden Y-band ($/gal); distinct candidates from digits scoring
                     val goldenYs = candidates.filter { c ->
@@ -589,7 +602,8 @@ private suspend fun runPumpExperiment(
                     val costScores = mutableMapOf<RedBoxOcrCandidate, Int>()
                     val volScores = mutableMapOf<RedBoxOcrCandidate, Int>()
                     for (c in valids) {
-                        val (v, dp) = parse(c.digits)
+                        val cleanDigits = cleanDecimal(c.digits)
+                        val (v, dp) = parse(cleanDigits)
                         var cs = 0; var vs = 0
                         if (dp == 2) cs += 12
                         if (dp == 3) vs += 12
@@ -610,11 +624,11 @@ private suspend fun runPumpExperiment(
                     val remainingForVol = valids.filter { it != costCand }
                     var volCand = remainingForVol.maxByOrNull { volScores[it] ?: -1 }
                         ?: valids.maxByOrNull { volScores[it] ?: -1 }!!
-                    var cst = costCand.digits
-                    var vlm = volCand.digits
+                    var cst = cleanDecimal(costCand.digits)
+                    var vlm = cleanDecimal(volCand.digits)
                     // decimal repair for vol when cost confident (dplaces 2)
-                    val costDp = parse(costCand.digits).second
-                    val dstr = volCand.digits.filter { it.isDigit() }
+                    val costDp = parse(cst).second
+                    val dstr = vlm.filter { it.isDigit() }
                     if (costDp == 2 && dstr.length >= 4) {
                         val n = dstr.length
                         vlm = dstr.substring(0, n-3) + "." + dstr.substring(n-3)
@@ -625,7 +639,7 @@ private suspend fun runPumpExperiment(
                             ?: remainingForVol.maxByOrNull { volScores[it] ?: -1 }
                         if (altVolCand != null) {
                             volCand = altVolCand
-                            vlm = volCand.digits
+                            vlm = cleanDecimal(volCand.digits)
                             val altDstr = vlm.filter { it.isDigit() }
                             if (costDp == 2 && altDstr.length >= 4) {
                                 val n = altDstr.length
