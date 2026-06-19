@@ -1535,7 +1535,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
                 val (dAsis, dDigits) = ocrPumpRectsAsisAndDigits(customBluePixelD)
-                val dCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, dAsis, dDigits)
+                val dCands = buildRedBoxCandidates(customBluePixelD, dAsis, dDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, dCands)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()

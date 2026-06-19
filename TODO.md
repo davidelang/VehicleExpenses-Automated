@@ -8,7 +8,7 @@
   - [x] Phase 5: Wire correct ocr rects for Set A (procA)
   - [x] Phase 6: Wire correct ocr rects for Set B (procB)
   - [x] Phase 7: Wire correct ocr rects for Set C (procC)
-  - [ ] Phase 8: Wire correct ocr rects for Set D (procD)
+  - [x] Phase 8: Wire correct ocr rects for Set D (procD)
   - [ ] Phase 9: Wire correct ocr rects for Set E (procE)
   - [ ] Phase 10: Wire correct ocr rects for Set F (procF)
   - [ ] Phase 11: Wire correct ocr rects for Set G (procG)
