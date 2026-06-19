@@ -544,7 +544,7 @@ private suspend fun runPumpExperiment(
                         if (c.asis.trim() == "$") return true
                         return digitCount(c.digits) + digitCount(c.asis) < 2
                     }
-                    val valids = candidates.filter { digitCount(it.digits) + digitCount(it.asis) >= 2 }
+                    val valids = candidates.filter { digitCount(it.digits) >= 2 }
                     if (valids.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
                     // fix-remaining-report-issues-20260619-plan: lone $ is Y-row cost indicator only, never a value field
                     val goldenYs = candidates.filter { isGoldenLabel(it) && it.asis.contains("$") }.mapNotNull { it.rect?.top }
