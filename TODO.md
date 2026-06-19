@@ -5,7 +5,7 @@
 - [x] Phase 2: Update procD call sites + comments (2 sites)
 - [x] Phase 3: Update procE call sites + comments (2 sites)
 - [x] Phase 4: Update procG call sites + comments (2 sites)
-- [ ] Phase 5: Update top-level flows label convention comment
+- [x] Phase 5: Update top-level flows label convention comment
 - [ ] Phase 6: Optional PUMP_EXPERIMENT_FLOWS.md update
 - [ ] Phase 7: Cross-check + final build
 
