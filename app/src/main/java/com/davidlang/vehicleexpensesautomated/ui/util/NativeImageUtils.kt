@@ -251,7 +251,9 @@ object NativeImageUtils {
         } else Pair(rect, rect)
     }
 
-    fun binarizeRange(src: Mat, dst: Mat, low: Int, high: Int) {}
+    fun binarizeRange(src: Mat, dst: Mat, low: Int, high: Int) {
+        nativeBinarizeRange(src.nativeObj, dst.nativeObj, low, high)
+    }
 
     /**
      * Offload Paddle heatmap post-processing (threshold, contours, geometry) to C++.
