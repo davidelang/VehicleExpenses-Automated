@@ -557,6 +557,8 @@ private suspend fun runPumpExperiment(
                         if (dp == 3) vs += 12
                         if (v > 20) cs += 8
                         if (v < 60 && v > 0) vs += 6
+                        // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: light vol bias for typical gallon range
+                        if (v in 3.0..30.0) vs += 1
                         if (dp > 0) { cs += 2; vs += 2 }
                         if (goldenYs.isNotEmpty() && c.rect != null) {
                             val minDist = goldenYs.minOf { kotlin.math.abs(it - c.rect.top) }
