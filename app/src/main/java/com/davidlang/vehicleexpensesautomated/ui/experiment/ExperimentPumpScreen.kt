@@ -1992,9 +1992,9 @@ private suspend fun runPumpExperiment(
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
-                // Phase 10 wiring remaining (F): fCands before getFinal
-                val fAsis = List(pdHunksRawTotal.size) { "" }
-                val fDigits = List(pdHunksRawTotal.size) { "" }
+                // Phase 8 (complete-real-4box plan): hoist retracted blue OCR before getFinal (Set F column)
+                val fRetractedPixel = computeRetractedBluePixelRects()
+                val (fAsis, fDigits) = ocrPumpRectsAsisAndDigits(fRetractedPixel)
                 val fCands = buildRedBoxCandidates(pdHunksRawTotal, fAsis, fDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, fCands)
 
