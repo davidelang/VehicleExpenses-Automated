@@ -1103,7 +1103,11 @@ private suspend fun runPumpExperiment(
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+                // Phase 6 wiring (per finish plan): candidates before getFinal for Set B column (using local pdHunksRawTotal; texts placeholder pending hoist of blue collection)
+                val bAsis = List(pdHunksRawTotal.size) { "" }
+                val bDigits = List(pdHunksRawTotal.size) { "" }
+                val bCands = buildRedBoxCandidates(pdHunksRawTotal, bAsis, bDigits)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, bCands)
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                     doBOrDRedOnlyImage()
