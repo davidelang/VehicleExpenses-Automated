@@ -1062,7 +1062,7 @@ private suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 // Updated for A: now receives integer pixel data (red snapped+pruned int Rect lists, ML direct int, expand/takeCrop int) -> direct int Rect to takeSnapshot crops for A final PathResult.
-                // Phase 4 (complete-real-4box plan): real per-column top-4 red box OCR before getFinal (Set A column)
+                // fix-remaining-report-issues-20260619-plan: Set A — buildRedBoxCandidates uses aRedPixel ocr rects
                 val aRedPixel = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -1183,7 +1183,7 @@ private suspend fun runPumpExperiment(
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
-                // Phase 5 (complete-real-4box plan): hoist retracted blue OCR before getFinal (Set B column)
+                // fix-remaining-report-issues-20260619-plan: Set B — buildRedBoxCandidates uses bRetractedPixel ocr rects
                 val bRetractedPixel = computeRetractedBluePixelRects()
                 val (bAsis, bDigits) = ocrPumpRectsAsisAndDigits(bRetractedPixel)
                 val bCands = buildRedBoxCandidates(bRetractedPixel, bAsis, bDigits)
@@ -1385,7 +1385,7 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                // Phase 10 (complete-real-4box plan): explicit Set C wiring — retracted blue OCR before getFinal
+                // fix-remaining-report-issues-20260619-plan: Set C — buildRedBoxCandidates uses cRetractedPixel ocr rects
                 val cRetractedPixel = computeRetractedBluePixelRects()
                 val (cAsis, cDigits) = ocrPumpRectsAsisAndDigits(cRetractedPixel)
                 val cCands = buildRedBoxCandidates(cRetractedPixel, cAsis, cDigits)
@@ -1531,7 +1531,7 @@ private suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 
-                // Phase 6 (complete-real-4box plan): hoist custom blue OCR before getFinal (Set D column)
+                // fix-remaining-report-issues-20260619-plan: Set D — buildRedBoxCandidates uses customBluePixelD ocr rects
                 val (customBlueDPre, _) = createBlueAndOrangeHunksFromReds(
                     pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
                 val customBluePixelD = customBlueDPre.map { bh ->
@@ -1816,7 +1816,7 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                // Phase 7 (complete-real-4box plan): hoist custom blue OCR before getFinal (Set E column)
+                // fix-remaining-report-issues-20260619-plan: Set E — buildRedBoxCandidates uses customBluePixelE ocr rects
                 val (customBlueEPre, _) = createBlueAndOrangeHunksFromReds(
                     pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
                 val customBluePixelE = customBlueEPre.map { bh ->
@@ -2013,7 +2013,7 @@ private suspend fun runPumpExperiment(
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
-                // Phase 8 (complete-real-4box plan): hoist retracted blue OCR before getFinal (Set F column)
+                // fix-remaining-report-issues-20260619-plan: Set F — buildRedBoxCandidates uses fRetractedPixel ocr rects
                 val fRetractedPixel = computeRetractedBluePixelRects()
                 val (fAsis, fDigits) = ocrPumpRectsAsisAndDigits(fRetractedPixel)
                 val fCands = buildRedBoxCandidates(fRetractedPixel, fAsis, fDigits)
@@ -2156,7 +2156,7 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                // Phase 9 (complete-real-4box plan): hoist custom blue OCR before getFinal (Set G column)
+                // fix-remaining-report-issues-20260619-plan: Set G — buildRedBoxCandidates uses customBluePixelG ocr rects
                 val (customBlueGPre, _) = createBlueAndOrangeHunksFromReds(
                     pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
                 val customBluePixelG = customBlueGPre.map { bh ->
