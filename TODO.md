@@ -9,7 +9,7 @@
   - [x] Phase 6: Post-selection N/A digits-only confirm
   - [x] Phase 7: Simplify golden Y + remove isGoldenLabel
   - [x] Phase 8: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
-  - [ ] Phase 9: Narrow cross-ref comments
+  - [x] Phase 9: Narrow cross-ref comments
   - [ ] Phase 10: Final forensic + build
 - [x] Active: fix-4box-report-issues-20260619-plan.md
   - [x] Phase 1: Hygiene + baseline forensic

@@ -530,7 +530,7 @@ private suspend fun runPumpExperiment(
                 
                 data class CostVolClassifyResult(val cost: String, val vol: String, val costCand: RedBoxOcrCandidate, val volCand: RedBoxOcrCandidate)
 
-                // fix-remaining-report-issues-20260619-plan: min 2 digits, distinct cost/vol, $ as Y-indicator only, post-selection N/A
+                // fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan + docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: values from digits only (>=2); asis solely for golden Y-band
                 fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
                     if (candidates.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
                     fun digitCount(s: String) = s.count { it.isDigit() }
