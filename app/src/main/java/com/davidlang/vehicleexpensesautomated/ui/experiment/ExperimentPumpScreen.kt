@@ -594,6 +594,9 @@ private suspend fun runPumpExperiment(
                         }
                         if (cst == vlm) vlm = "N/A"
                     }
+                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: strip probs debug suffix from PathResult values
+                    cst = cst.substringBefore(" [")
+                    vlm = vlm.substringBefore(" [")
                     if (digitCount(cst) < 2) cst = "N/A"
                     if (digitCount(vlm) < 2) vlm = "N/A"
                     return CostVolClassifyResult(cst, vlm, costCand, volCand)

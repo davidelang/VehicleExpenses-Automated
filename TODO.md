@@ -6,7 +6,7 @@
 - [x] Phase 3: Update valids filter comment and golden for clarity (prep)
 - [x] Phase 4: Replace independent argmax + weak if with explicit different-cand selection
 - [x] Phase 5: Add post-formation string equality guard for distinct
-- [ ] Phase 6: Clean final cost/vol strings (strip probs debug suffix)
+- [x] Phase 6: Clean final cost/vol strings (strip probs debug suffix)
 - [ ] Phase 7: Light scoring differentiation to help distinct
 - [ ] Phase 8: Update getFinal comment + ensure cands path uses clean values
 - [ ] Phase 9: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
