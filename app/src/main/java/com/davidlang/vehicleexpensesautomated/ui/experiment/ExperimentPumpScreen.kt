@@ -570,10 +570,10 @@ private suspend fun runPumpExperiment(
                     if (costCand == volCand && valids.size > 1) {
                         volCand = valids.filter { it != costCand }.maxByOrNull { volScores[it] ?: -1 } ?: volCand
                     }
-                    var cst = costCand.digits.ifEmpty { costCand.asis }
-                    var vlm = volCand.digits.ifEmpty { volCand.asis }
+                    var cst = costCand.digits
+                    var vlm = volCand.digits
                     // decimal repair for vol when cost confident (dplaces 2)
-                    val costDp = parse(costCand.digits.ifEmpty { costCand.asis }).second
+                    val costDp = parse(costCand.digits).second
                     val dstr = volCand.digits.filter { it.isDigit() }
                     if (costDp == 2 && dstr.length >= 4) {
                         val n = dstr.length

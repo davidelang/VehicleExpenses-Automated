@@ -5,7 +5,7 @@
   - [x] Phase 2: Baseline forensic confirm
   - [x] Phase 3: valids filter digits-only
   - [x] Phase 4: Remove asis fallback in parse loop
-  - [ ] Phase 5: Remove asis fallback for cst/vlm
+  - [x] Phase 5: Remove asis fallback for cst/vlm
   - [ ] Phase 6: Post-selection N/A digits-only confirm
   - [ ] Phase 7: Simplify golden Y + remove isGoldenLabel
   - [ ] Phase 8: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
