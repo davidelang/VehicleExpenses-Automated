@@ -565,11 +565,11 @@ private suspend fun runPumpExperiment(
                         costScores[c] = cs
                         volScores[c] = vs
                     }
-                    var costCand = valids.maxByOrNull { costScores[it] ?: -1 }!!
-                    var volCand = valids.maxByOrNull { volScores[it] ?: -1 }!!
-                    if (costCand == volCand && valids.size > 1) {
-                        volCand = valids.filter { it != costCand }.maxByOrNull { volScores[it] ?: -1 } ?: volCand
-                    }
+                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: cost argmax, then vol argmax among remaining != costCand
+                    val costCand = valids.maxByOrNull { costScores[it] ?: -1 }!!
+                    val remainingForVol = valids.filter { it != costCand }
+                    var volCand = remainingForVol.maxByOrNull { volScores[it] ?: -1 }
+                        ?: valids.maxByOrNull { volScores[it] ?: -1 }!!
                     var cst = costCand.digits
                     var vlm = volCand.digits
                     // decimal repair for vol when cost confident (dplaces 2)
