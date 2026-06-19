@@ -2064,7 +2064,11 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+                // Phase 9 wiring (per finish plan): gCands before getFinal for Set G
+                val gAsis = List(pdHunksRawTotal.size) { "" }
+                val gDigits = List(pdHunksRawTotal.size) { "" }
+                val gCands = buildRedBoxCandidates(pdHunksRawTotal, gAsis, gDigits)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
                 // G custom blue/orange (raw clone of D, no stretch) via createBlueAndOrangeHunksFromReds (fixed 20% vert, horiz 50%)
