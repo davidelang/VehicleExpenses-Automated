@@ -551,7 +551,7 @@ private suspend fun runPumpExperiment(
                     val costScores = mutableMapOf<RedBoxOcrCandidate, Int>()
                     val volScores = mutableMapOf<RedBoxOcrCandidate, Int>()
                     for (c in valids) {
-                        val (v, dp) = parse(c.digits.ifEmpty { c.asis })
+                        val (v, dp) = parse(c.digits)
                         var cs = 0; var vs = 0
                         if (dp == 2) cs += 12
                         if (dp == 3) vs += 12

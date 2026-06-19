@@ -4,7 +4,7 @@
   - [x] Phase 1: Hygiene + baseline reads + build
   - [x] Phase 2: Baseline forensic confirm
   - [x] Phase 3: valids filter digits-only
-  - [ ] Phase 4: Remove asis fallback in parse loop
+  - [x] Phase 4: Remove asis fallback in parse loop
   - [ ] Phase 5: Remove asis fallback for cst/vlm
   - [ ] Phase 6: Post-selection N/A digits-only confirm
   - [ ] Phase 7: Simplify golden Y + remove isGoldenLabel
