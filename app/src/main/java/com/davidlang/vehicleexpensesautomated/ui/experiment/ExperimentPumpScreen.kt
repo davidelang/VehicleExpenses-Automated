@@ -517,6 +517,17 @@ private suspend fun runPumpExperiment(
 
 
 
+                data class RedBoxOcrCandidate(val label: String, val asis: String, val digits: String, val rect: android.graphics.Rect? = null)
+
+                fun buildRedBoxCandidates(reds: List<PumpHunk>, asisList: List<String>, digitsList: List<String>): List<RedBoxOcrCandidate> {
+                    val n = minOf(reds.size, asisList.size, digitsList.size)
+                    return (0 until n).map { i ->
+                        val h = reds[i]
+                        val r = android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                        RedBoxOcrCandidate("Red${i+1}", asisList[i], digitsList[i], r)
+                    }
+                }
+
                 suspend fun getFinal(
                     hunks: List<PumpHunk>,
                     engine: String,
