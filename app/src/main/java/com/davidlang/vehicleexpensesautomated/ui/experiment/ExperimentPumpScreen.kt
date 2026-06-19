@@ -519,12 +519,11 @@ private suspend fun runPumpExperiment(
 
                 data class RedBoxOcrCandidate(val label: String, val asis: String, val digits: String, val rect: android.graphics.Rect? = null)
 
-                fun buildRedBoxCandidates(reds: List<PumpHunk>, asisList: List<String>, digitsList: List<String>): List<RedBoxOcrCandidate> {
-                    val n = minOf(reds.size, asisList.size, digitsList.size)
+                // fix-4box-report-issues-20260619-plan: cand.rect from ocr rect list (blue/orange), not raw red hunks
+                fun buildRedBoxCandidates(boxRects: List<android.graphics.Rect>, asisList: List<String>, digitsList: List<String>): List<RedBoxOcrCandidate> {
+                    val n = minOf(boxRects.size, asisList.size, digitsList.size)
                     return (0 until n).map { i ->
-                        val h = reds[i]
-                        val r = android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
-                        RedBoxOcrCandidate("Red${i+1}", asisList[i], digitsList[i], r)
+                        RedBoxOcrCandidate("Red${i+1}", asisList[i], digitsList[i], boxRects[i])
                     }
                 }
 
@@ -1065,7 +1064,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val (aAsis, aDigits) = ocrPumpRectsAsisAndDigits(aRedPixel)
-                val aCands = buildRedBoxCandidates(pdHunksRawTotal, aAsis, aDigits)
+                val aCands = buildRedBoxCandidates(aRedPixel, aAsis, aDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
 
@@ -1184,7 +1183,7 @@ private suspend fun runPumpExperiment(
                 // Phase 5 (complete-real-4box plan): hoist retracted blue OCR before getFinal (Set B column)
                 val bRetractedPixel = computeRetractedBluePixelRects()
                 val (bAsis, bDigits) = ocrPumpRectsAsisAndDigits(bRetractedPixel)
-                val bCands = buildRedBoxCandidates(pdHunksRawTotal, bAsis, bDigits)
+                val bCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, bAsis, bDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, bCands)
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -1386,7 +1385,7 @@ private suspend fun runPumpExperiment(
                 // Phase 10 (complete-real-4box plan): explicit Set C wiring — retracted blue OCR before getFinal
                 val cRetractedPixel = computeRetractedBluePixelRects()
                 val (cAsis, cDigits) = ocrPumpRectsAsisAndDigits(cRetractedPixel)
-                val cCands = buildRedBoxCandidates(pdHunksRawTotal, cAsis, cDigits)
+                val cCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, cAsis, cDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, cCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
@@ -1536,7 +1535,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
                 val (dAsis, dDigits) = ocrPumpRectsAsisAndDigits(customBluePixelD)
-                val dCands = buildRedBoxCandidates(pdHunksRawTotal, dAsis, dDigits)
+                val dCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, dAsis, dDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, dCands)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
@@ -1821,7 +1820,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
                 val (eAsis, eDigits) = ocrPumpRectsAsisAndDigits(customBluePixelE)
-                val eCands = buildRedBoxCandidates(pdHunksRawTotal, eAsis, eDigits)
+                val eCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, eAsis, eDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
@@ -2014,7 +2013,7 @@ private suspend fun runPumpExperiment(
                 // Phase 8 (complete-real-4box plan): hoist retracted blue OCR before getFinal (Set F column)
                 val fRetractedPixel = computeRetractedBluePixelRects()
                 val (fAsis, fDigits) = ocrPumpRectsAsisAndDigits(fRetractedPixel)
-                val fCands = buildRedBoxCandidates(pdHunksRawTotal, fAsis, fDigits)
+                val fCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, fAsis, fDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, fCands)
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -2161,7 +2160,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
                 val (gAsis, gDigits) = ocrPumpRectsAsisAndDigits(customBluePixelG)
-                val gCands = buildRedBoxCandidates(pdHunksRawTotal, gAsis, gDigits)
+                val gCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, gAsis, gDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
