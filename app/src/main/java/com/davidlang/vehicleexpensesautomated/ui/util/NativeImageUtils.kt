@@ -251,6 +251,8 @@ object NativeImageUtils {
         } else Pair(rect, rect)
     }
 
+    fun binarizeRange(src: Mat, dst: Mat, low: Int, high: Int) {}
+
     /**
      * Offload Paddle heatmap post-processing (threshold, contours, geometry) to C++.
      * Returns a flattened array of bounding boxes: [x1, y1, x2, y2, x3, y3, x4, y4, confidence, ...]
@@ -277,6 +279,7 @@ object NativeImageUtils {
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeBinarizeRange(srcPtr: Long, dstPtr: Long, low: Int, high: Int)
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
 
