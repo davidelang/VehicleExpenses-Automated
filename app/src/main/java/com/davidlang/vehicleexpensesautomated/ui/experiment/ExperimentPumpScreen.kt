@@ -517,6 +517,23 @@ private suspend fun runPumpExperiment(
 
 
 
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean text only; probs separate for decisions
+                fun pumpOcrCleanAndProbs(debugText: String, perCharProbs: String): Pair<String, String> {
+                    val cleanText = debugText
+                    val probStr = if (perCharProbs.isNotEmpty()) perCharProbs else ""
+                    return cleanText to probStr
+                }
+
+                fun pumpOcrDumpText(text: String, probs: String): String =
+                    if (probs.isNotEmpty()) "$text [probs:$probs]" else text
+
+                data class PumpRectOcrLists(
+                    val asis: List<String>,
+                    val digits: List<String>,
+                    val asisProbs: List<String> = emptyList(),
+                    val digitsProbs: List<String> = emptyList()
+                )
+
                 data class RedBoxOcrCandidate(val label: String, val asis: String, val digits: String, val rect: android.graphics.Rect? = null)
 
                 // fix-remaining-report-issues-20260619-plan: cand.rect from ocr rect list (blue/orange/retracted), not pdHunksRawTotal reds
@@ -740,11 +757,11 @@ private suspend fun runPumpExperiment(
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
                 var processedScales = mutableSetOf<Int>()
 
-                // Per-column top-4 box OCR (PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits on pixel rects; fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: digits may carry [probs:...] for debug — classify strips before PathResult
-                suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): Pair<List<String>, List<String>> {
-                    val asisList = rects.map { r ->
+                // Per-column top-4 box OCR (PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits on pixel rects; fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean text only; probs returned separately
+                suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): PumpRectOcrLists {
+                    val asisPairs = rects.map { r ->
                         val pW = r.width(); val pH = r.height()
-                        if (pW < 2 || pH < 2) "?" else {
+                        if (pW < 2 || pH < 2) "?" to "" else {
                             val l = r.left.coerceIn(0, imgW - 1)
                             val t = r.top.coerceIn(0, imgH - 1)
                             val rr = r.right.coerceIn(l + 1, imgW)
@@ -758,12 +775,12 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
-                    val digitsList = rects.map { rp ->
+                    val digitsPairs = rects.map { rp ->
                         val pW = rp.width(); val pH = rp.height()
-                        if (pW < 2 || pH < 2) "?" else {
+                        if (pW < 2 || pH < 2) "?" to "" else {
                             val l = rp.left.coerceIn(0, imgW - 1)
                             val t = rp.top.coerceIn(0, imgH - 1)
                             val rr = rp.right.coerceIn(l + 1, imgW)
@@ -777,10 +794,15 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
-                    return asisList to digitsList
+                    return PumpRectOcrLists(
+                        asis = asisPairs.map { it.first },
+                        digits = digitsPairs.map { it.first },
+                        asisProbs = asisPairs.map { it.second },
+                        digitsProbs = digitsPairs.map { it.second }
+                    )
                 }
 
                 suspend fun computeRetractedBluePixelRects(): List<android.graphics.Rect> {
@@ -826,9 +848,9 @@ private suspend fun runPumpExperiment(
                     // run ocr recognize on *every* blue and *every* orange box; scale to 48px tall buffer with width multiple of 32 (for the recognition)
                     // (inline crop/resize/rec using experimentRecSet1024x48 dedicated + clear; 4px buffer + aspect from alignment)
                     // Optimization (inside split-out helper): use the pixel rect list for the blue (from the retractedPixel) and for orange (maxPixelRects) so pW/pH are integer .width/.height with no per-item ICRS->pixel. Pair with the ICRS list only for the createCrop (l,t,w,h in ICRS) and coerce. 4px + targetH=48 + %32 targetW preserved.
-                    val blueTexts = retractedPixel.mapIndexed { i, r ->
+                    val blueOcr = retractedPixel.mapIndexed { i, r ->
                         val pW = r.width(); val pH = r.height()
-                        if (pW < 2 || pH < 2) "?" else {
+                        if (pW < 2 || pH < 2) "?" to "" else {
                             val l = r.left.coerceIn(0, imgW - 1)
                             val t = r.top.coerceIn(0, imgH - 1)
                             val rr = r.right.coerceIn(l + 1, imgW)
@@ -843,12 +865,12 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
-                    val orangeTexts = maxPixelRects.mapIndexed { i, r ->
+                    val orangeOcr = maxPixelRects.mapIndexed { i, r ->
                         val pW = r.width(); val pH = r.height()
-                        if (pW < 2 || pH < 2) "?" else {
+                        if (pW < 2 || pH < 2) "?" to "" else {
                             val l = r.left.coerceIn(0, imgW - 1)
                             val t = r.top.coerceIn(0, imgH - 1)
                             val rr = r.right.coerceIn(l + 1, imgW)
@@ -863,14 +885,14 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
 
                     // digits-only (0-9) pass using recognizeNumeric for the second OCR per box (as-is above + digits)
-                    val blueDigits = retractedPixel.mapIndexed { i, rp ->
+                    val blueDigitsOcr = retractedPixel.mapIndexed { i, rp ->
                         val pW = rp.width(); val pH = rp.height()
-                        if (pW < 2 || pH < 2) "?" else {
+                        if (pW < 2 || pH < 2) "?" to "" else {
                             val l = rp.left.coerceIn(0, imgW - 1)
                             val t = rp.top.coerceIn(0, imgH - 1)
                             val rr = rp.right.coerceIn(l + 1, imgW)
@@ -885,12 +907,12 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
-                    val orangeDigits = maxPixelRects.mapIndexed { i, rp ->
+                    val orangeDigitsOcr = maxPixelRects.mapIndexed { i, rp ->
                         val pW = rp.width(); val pH = rp.height()
-                        if (pW < 2 || pH < 2) "?" else {
+                        if (pW < 2 || pH < 2) "?" to "" else {
                             val l = rp.left.coerceIn(0, imgW - 1)
                             val t = rp.top.coerceIn(0, imgH - 1)
                             val rr = rp.right.coerceIn(l + 1, imgW)
@@ -905,20 +927,20 @@ private suspend fun runPumpExperiment(
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                             val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                             experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
 
                     // HTML text rows under the image (one row per box, as-is + digits separately). Store in metadata for pBuild to append after <img> (not baked in the PD image itself).
                     // Filter: only show boxes with >=2 digits in the (decimal) digits result (per plan requirement for clean pump reports).
                     val ocrLinesB = mutableListOf<String>()
-                    blueTexts.forEachIndexed { i, asis ->
-                        val d = blueDigits[i]
-                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d"
+                    blueOcr.forEachIndexed { i, (asis, asisProbs) ->
+                        val (d, dProbs) = blueDigitsOcr[i]
+                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Blue ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
                     }
-                    orangeTexts.forEachIndexed { i, asis ->
-                        val d = orangeDigits[i]
-                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d"
+                    orangeOcr.forEachIndexed { i, (asis, asisProbs) ->
+                        val (d, dProbs) = orangeDigitsOcr[i]
+                        if (d.count { it.isDigit() } >= 2) ocrLinesB += "Orange ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
                     }
                     branch.metadata["pd_ocr_html"] = ocrLinesB.joinToString("<br>")
                     branch.images["PD"] = baseB64  // annotated image with rects only (no under text)
@@ -1086,8 +1108,8 @@ private suspend fun runPumpExperiment(
                 val aRedPixel = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
-                val (aAsis, aDigits) = ocrPumpRectsAsisAndDigits(aRedPixel)
-                val aCands = buildRedBoxCandidates(aRedPixel, aAsis, aDigits)
+                val ocrA = ocrPumpRectsAsisAndDigits(aRedPixel)
+                val aCands = buildRedBoxCandidates(aRedPixel, ocrA.asis, ocrA.digits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
 
@@ -1205,8 +1227,8 @@ private suspend fun runPumpExperiment(
 
                 // fix-remaining-report-issues-20260619-plan: Set B — buildRedBoxCandidates uses bRetractedPixel ocr rects
                 val bRetractedPixel = computeRetractedBluePixelRects()
-                val (bAsis, bDigits) = ocrPumpRectsAsisAndDigits(bRetractedPixel)
-                val bCands = buildRedBoxCandidates(bRetractedPixel, bAsis, bDigits)
+                val ocrB = ocrPumpRectsAsisAndDigits(bRetractedPixel)
+                val bCands = buildRedBoxCandidates(bRetractedPixel, ocrB.asis, ocrB.digits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, bCands)
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -1407,8 +1429,8 @@ private suspend fun runPumpExperiment(
                 // for the best path result using the valley versions).
                 // fix-remaining-report-issues-20260619-plan: Set C — buildRedBoxCandidates uses cRetractedPixel ocr rects
                 val cRetractedPixel = computeRetractedBluePixelRects()
-                val (cAsis, cDigits) = ocrPumpRectsAsisAndDigits(cRetractedPixel)
-                val cCands = buildRedBoxCandidates(cRetractedPixel, cAsis, cDigits)
+                val ocrC = ocrPumpRectsAsisAndDigits(cRetractedPixel)
+                val cCands = buildRedBoxCandidates(cRetractedPixel, ocrC.asis, ocrC.digits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, cCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
@@ -1557,8 +1579,8 @@ private suspend fun runPumpExperiment(
                 val customBluePixelD = customBlueDPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
-                val (dAsis, dDigits) = ocrPumpRectsAsisAndDigits(customBluePixelD)
-                val dCands = buildRedBoxCandidates(customBluePixelD, dAsis, dDigits)
+                val ocrD = ocrPumpRectsAsisAndDigits(customBluePixelD)
+                val dCands = buildRedBoxCandidates(customBluePixelD, ocrD.asis, ocrD.digits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, dCands)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
@@ -1569,10 +1591,10 @@ private suspend fun runPumpExperiment(
                 val baseB64D = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdD, null, workspace).first
                 branch.images["PD"] = baseB64D
                 // OCR on custom for D (regular + numericdecimal, filter >=2 digits on numeric)
-                val blueTextsD = customBlueD.mapIndexed { i, bh ->
+                val blueOcrD = customBlueD.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1584,13 +1606,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val orangeTextsD = customOrangeD.mapIndexed { i, bh ->
+                val orangeOcrD = customOrangeD.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1602,13 +1624,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val blueDigitsD = customBlueD.mapIndexed { i, bh ->
+                val blueDigitsOcrD = customBlueD.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1620,13 +1642,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val orangeDigitsD = customOrangeD.mapIndexed { i, bh ->
+                val orangeDigitsOcrD = customOrangeD.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1638,12 +1660,18 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
                 val ocrLinesD = mutableListOf<String>()
-                blueTextsD.forEachIndexed { i, asis -> val d = blueDigitsD[i]; if (d.count { it.isDigit() } >= 2) ocrLinesD += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
-                orangeTextsD.forEachIndexed { i, asis -> val d = orangeDigitsD[i]; if (d.count { it.isDigit() } >= 2) ocrLinesD += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
+                blueOcrD.forEachIndexed { i, (asis, asisProbs) ->
+                    val (d, dProbs) = blueDigitsOcrD[i]
+                    if (d.count { it.isDigit() } >= 2) ocrLinesD += "Blue ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
+                }
+                orangeOcrD.forEachIndexed { i, (asis, asisProbs) ->
+                    val (d, dProbs) = orangeDigitsOcrD[i]
+                    if (d.count { it.isDigit() } >= 2) ocrLinesD += "Orange ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
+                }
                 branch.metadata["pd_ocr_html"] = ocrLinesD.joinToString("<br>")
             }
                 val procE: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
@@ -1842,8 +1870,8 @@ private suspend fun runPumpExperiment(
                 val customBluePixelE = customBlueEPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
-                val (eAsis, eDigits) = ocrPumpRectsAsisAndDigits(customBluePixelE)
-                val eCands = buildRedBoxCandidates(customBluePixelE, eAsis, eDigits)
+                val ocrE = ocrPumpRectsAsisAndDigits(customBluePixelE)
+                val eCands = buildRedBoxCandidates(customBluePixelE, ocrE.asis, ocrE.digits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
@@ -1855,10 +1883,10 @@ private suspend fun runPumpExperiment(
                 val aPdE = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueE, Color.BLUE, 4) + getAnns(customOrangeE, Color.rgb(255, 165, 0), 2)
                 val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdE, null, workspace).first
                 branch.images["PD"] = baseB64E
-                val blueTextsE = customBlueE.mapIndexed { i, bh ->
+                val blueOcrE = customBlueE.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1870,13 +1898,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val orangeTextsE = customOrangeE.mapIndexed { i, bh ->
+                val orangeOcrE = customOrangeE.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1888,13 +1916,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val blueDigitsE = customBlueE.mapIndexed { i, bh ->
+                val blueDigitsOcrE = customBlueE.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1906,13 +1934,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val orangeDigitsE = customOrangeE.mapIndexed { i, bh ->
+                val orangeDigitsOcrE = customOrangeE.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -1924,12 +1952,18 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
                 val ocrLinesE = mutableListOf<String>()
-                blueTextsE.forEachIndexed { i, asis -> val d = blueDigitsE[i]; if (d.count { it.isDigit() } >= 2) ocrLinesE += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
-                orangeTextsE.forEachIndexed { i, asis -> val d = orangeDigitsE[i]; if (d.count { it.isDigit() } >= 2) ocrLinesE += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
+                blueOcrE.forEachIndexed { i, (asis, asisProbs) ->
+                    val (d, dProbs) = blueDigitsOcrE[i]
+                    if (d.count { it.isDigit() } >= 2) ocrLinesE += "Blue ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
+                }
+                orangeOcrE.forEachIndexed { i, (asis, asisProbs) ->
+                    val (d, dProbs) = orangeDigitsOcrE[i]
+                    if (d.count { it.isDigit() } >= 2) ocrLinesE += "Orange ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
+                }
                 branch.metadata["pd_ocr_html"] = ocrLinesE.joinToString("<br>")
             }
                 val procF: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
@@ -2035,8 +2069,8 @@ private suspend fun runPumpExperiment(
 
                 // fix-remaining-report-issues-20260619-plan: Set F — buildRedBoxCandidates uses fRetractedPixel ocr rects
                 val fRetractedPixel = computeRetractedBluePixelRects()
-                val (fAsis, fDigits) = ocrPumpRectsAsisAndDigits(fRetractedPixel)
-                val fCands = buildRedBoxCandidates(fRetractedPixel, fAsis, fDigits)
+                val ocrF = ocrPumpRectsAsisAndDigits(fRetractedPixel)
+                val fCands = buildRedBoxCandidates(fRetractedPixel, ocrF.asis, ocrF.digits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, fCands)
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -2182,8 +2216,8 @@ private suspend fun runPumpExperiment(
                 val customBluePixelG = customBlueGPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
-                val (gAsis, gDigits) = ocrPumpRectsAsisAndDigits(customBluePixelG)
-                val gCands = buildRedBoxCandidates(customBluePixelG, gAsis, gDigits)
+                val ocrG = ocrPumpRectsAsisAndDigits(customBluePixelG)
+                val gCands = buildRedBoxCandidates(customBluePixelG, ocrG.asis, ocrG.digits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
@@ -2194,10 +2228,10 @@ private suspend fun runPumpExperiment(
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
                 // OCR on custom for G (regular + numericdecimal, filter >=2 digits on numeric)
-                val blueTextsG = customBlueG.mapIndexed { i, bh ->
+                val blueOcrG = customBlueG.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -2209,13 +2243,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val orangeTextsG = customOrangeG.mapIndexed { i, bh ->
+                val orangeOcrG = customOrangeG.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -2227,13 +2261,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val blueDigitsG = customBlueG.mapIndexed { i, bh ->
+                val blueDigitsOcrG = customBlueG.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -2245,13 +2279,13 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
-                val orangeDigitsG = customOrangeG.mapIndexed { i, bh ->
+                val orangeDigitsOcrG = customOrangeG.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                     val pW = r.width(); val pH = r.height()
-                    if (pW < 2 || pH < 2) "?" else {
+                    if (pW < 2 || pH < 2) "?" to "" else {
                         val l = r.left.coerceIn(0, imgW - 1); val t = r.top.coerceIn(0, imgH - 1)
                         val rr = r.right.coerceIn(l + 1, imgW); val bb = r.bottom.coerceIn(t + 1, imgH)
                         val cropId = workspace.createCrop(l, t, rr - l, bb - t)
@@ -2263,12 +2297,18 @@ private suspend fun runPumpExperiment(
                         org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
                         val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
                         experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                        res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                     }
                 }
                 val ocrLinesG = mutableListOf<String>()
-                blueTextsG.forEachIndexed { i, asis -> val d = blueDigitsG[i]; if (d.count { it.isDigit() } >= 2) ocrLinesG += "Blue ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
-                orangeTextsG.forEachIndexed { i, asis -> val d = orangeDigitsG[i]; if (d.count { it.isDigit() } >= 2) ocrLinesG += "Orange ${i+1} as-is: $asis &nbsp;&nbsp; digits: $d" }
+                blueOcrG.forEachIndexed { i, (asis, asisProbs) ->
+                    val (d, dProbs) = blueDigitsOcrG[i]
+                    if (d.count { it.isDigit() } >= 2) ocrLinesG += "Blue ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
+                }
+                orangeOcrG.forEachIndexed { i, (asis, asisProbs) ->
+                    val (d, dProbs) = orangeDigitsOcrG[i]
+                    if (d.count { it.isDigit() } >= 2) ocrLinesG += "Orange ${i+1} as-is: ${pumpOcrDumpText(asis, asisProbs)} &nbsp;&nbsp; digits: ${pumpOcrDumpText(d, dProbs)}"
+                }
                 branch.metadata["pd_ocr_html"] = ocrLinesG.joinToString("<br>")
             }
                 val flowProcessors = listOf(procA, procB, procC, procD, procE, procF, procG)
