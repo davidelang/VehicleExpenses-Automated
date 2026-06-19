@@ -3,7 +3,7 @@
 ## Active Work (Fix Pump Distinct Cost/Volume + Clean Values — fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan.md)
 - [x] Phase 1: Hygiene + baseline reads + report duplicate analysis (no functional edit)
 - [x] Phase 2: Confirm current weak distinct + string pollution
-- [ ] Phase 3: Update valids filter comment and golden for clarity (prep)
+- [x] Phase 3: Update valids filter comment and golden for clarity (prep)
 - [ ] Phase 4: Replace independent argmax + weak if with explicit different-cand selection
 - [ ] Phase 5: Add post-formation string equality guard for distinct
 - [ ] Phase 6: Clean final cost/vol strings (strip probs debug suffix)
