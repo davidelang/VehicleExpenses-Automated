@@ -769,7 +769,7 @@ private suspend fun runPumpExperiment(
                 ): PathResult {
                     // complete-real-4box-per-column-wiring plan + docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: per-column top-4 candidates drive cost/vol (~8 independent column/engine invocations); pathResults unchanged
                     if (candidates.isNotEmpty()) {
-                        // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: classify returns distinct clean digit strings (no probs suffix); crops from each cand's ocr rect
+                        // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: classify returns distinct clean digit strings (probs never in PathResult); crops from each cand's ocr rect
                         val cv = classifyCostVolFromBoxOcr(candidates)
                         val costCrop = cv.costCand.rect?.let { r ->
                             OcrUtils.takeSnapshot(ws.p, r, 300, 100, emptyList(), null, ws).first
