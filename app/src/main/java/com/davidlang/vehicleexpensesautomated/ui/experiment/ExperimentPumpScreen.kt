@@ -2853,11 +2853,12 @@ private fun pBuildHtmlRowDynamic(
         val extraOcr = if (br.metadata.containsKey("pd_ocr_html")) {
             "<br><div style='font-family:monospace; font-size:18px; text-align:left; background:#fafafa; padding:2px;'>" + br.metadata["pd_ocr_html"] + "</div>"
         } else ""
+        val binPeakHtml = buildBinPeakHtmlForBranch(name, br)
         if (br.images.containsKey("PD_red_only")) {
             // red-only + full PD pair (when branch populates the key from explicit helper call)
             val redOnly = br.images["PD_red_only"] ?: ""
             val full = br.images["PD"] ?: ""
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$extraOcr</td>")
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$extraOcr$binPeakHtml</td>")
         } else if (br.images.containsKey("rawC")) {
             val raw = br.images["rawC"] ?: ""
             val pushed = br.images["pushedC"] ?: ""
@@ -2886,9 +2887,9 @@ private fun pBuildHtmlRowDynamic(
                 }
             }
             perRedHtml.append("</tr></table>")
-            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:120%;'><br><small>Raw (3x, 2x displayed)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:120%;'><br><small>Valley-Pushed (few brightness vals, 3x, 2x displayed)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:120%;'><br><small>Before (3x, 2x displayed)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:120%;'><br><small>After (3x, 2x displayed)</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:120%;'><br><small>Raw (3x, 2x displayed)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:120%;'><br><small>Valley-Pushed (few brightness vals, 3x, 2x displayed)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:120%;'><br><small>Before (3x, 2x displayed)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:120%;'><br><small>After (3x, 2x displayed)</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'>$extraOcr$binPeakHtml</td>")
         } else {
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr</td>")
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$extraOcr$binPeakHtml</td>")
         }
     }
 
