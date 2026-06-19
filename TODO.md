@@ -7,7 +7,7 @@
   - [x] Phase 4: Remove asis fallback in parse loop
   - [x] Phase 5: Remove asis fallback for cst/vlm
   - [x] Phase 6: Post-selection N/A digits-only confirm
-  - [ ] Phase 7: Simplify golden Y + remove isGoldenLabel
+  - [x] Phase 7: Simplify golden Y + remove isGoldenLabel
   - [ ] Phase 8: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
   - [ ] Phase 9: Narrow cross-ref comments
   - [ ] Phase 10: Final forensic + build
