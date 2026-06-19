@@ -578,6 +578,7 @@ private suspend fun runPumpExperiment(
                     imgH: Int,
                     candidates: List<RedBoxOcrCandidate> = emptyList()
                 ): PathResult {
+                    // Phase 12: comments + cross-ref finish-4box-per-column-cost-volume-wiring-20260619-plan.md + spec (per-column 4-box candidates drive cost/vol independently per proc/column ~8 times; pathResults emitted same)
                     if (candidates.isNotEmpty()) {
                         // Phase 11: ensure chosen rect used for B64 crops (per finish plan); fallback only on empty; per-column isolation via local candidates
                         val (cst, vlm) = classifyCostVolFromBoxOcr(candidates)
