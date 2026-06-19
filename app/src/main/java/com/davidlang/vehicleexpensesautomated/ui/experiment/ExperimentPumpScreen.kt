@@ -579,6 +579,21 @@ private suspend fun runPumpExperiment(
                         val n = dstr.length
                         vlm = dstr.substring(0, n-3) + "." + dstr.substring(n-3)
                     }
+                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: post-formation guard if cst==vlm with >=2 valids
+                    if (cst == vlm && valids.size >= 2) {
+                        val altVolCand = remainingForVol.filter { it != volCand }.maxByOrNull { volScores[it] ?: -1 }
+                            ?: remainingForVol.maxByOrNull { volScores[it] ?: -1 }
+                        if (altVolCand != null) {
+                            volCand = altVolCand
+                            vlm = volCand.digits
+                            val altDstr = vlm.filter { it.isDigit() }
+                            if (costDp == 2 && altDstr.length >= 4) {
+                                val n = altDstr.length
+                                vlm = altDstr.substring(0, n-3) + "." + altDstr.substring(n-3)
+                            }
+                        }
+                        if (cst == vlm) vlm = "N/A"
+                    }
                     if (digitCount(cst) < 2) cst = "N/A"
                     if (digitCount(vlm) < 2) vlm = "N/A"
                     return CostVolClassifyResult(cst, vlm, costCand, volCand)
