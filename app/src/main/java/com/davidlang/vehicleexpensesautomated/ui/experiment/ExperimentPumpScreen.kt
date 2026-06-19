@@ -530,7 +530,7 @@ private suspend fun runPumpExperiment(
                 
                 data class CostVolClassifyResult(val cost: String, val vol: String, val costCand: RedBoxOcrCandidate, val volCand: RedBoxOcrCandidate)
 
-                // fix-4box-report-issues-20260619-plan: min 2 digits, distinct cost/vol, $ as Y-indicator only
+                // fix-remaining-report-issues-20260619-plan: min 2 digits, distinct cost/vol, $ as Y-indicator only, post-selection N/A
                 fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
                     if (candidates.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
                     fun digitCount(s: String) = s.count { it.isDigit() }
@@ -546,6 +546,7 @@ private suspend fun runPumpExperiment(
                     }
                     val valids = candidates.filter { digitCount(it.digits) + digitCount(it.asis) >= 2 }
                     if (valids.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+                    // fix-remaining-report-issues-20260619-plan: lone $ is Y-row cost indicator only, never a value field
                     val goldenYs = candidates.filter { isGoldenLabel(it) && it.asis.contains("$") }.mapNotNull { it.rect?.top }
                     val costScores = mutableMapOf<RedBoxOcrCandidate, Int>()
                     val volScores = mutableMapOf<RedBoxOcrCandidate, Int>()
@@ -578,6 +579,8 @@ private suspend fun runPumpExperiment(
                         val n = dstr.length
                         vlm = dstr.substring(0, n-3) + "." + dstr.substring(n-3)
                     }
+                    if (digitCount(cst) < 2) cst = "N/A"
+                    if (digitCount(vlm) < 2) vlm = "N/A"
                     return CostVolClassifyResult(cst, vlm, costCand, volCand)
                 }
 
