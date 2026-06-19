@@ -1,20 +1,17 @@
 # Vehicle Expenses Automated — TODO Updated
 
-## Active Work (Fix Pump Distinct Cost/Volume + Clean Values — fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan.md)
-- [x] Phase 1: Hygiene + baseline reads + report duplicate analysis (no functional edit)
-- [x] Phase 2: Confirm current weak distinct + string pollution
-- [x] Phase 3: Update valids filter comment and golden for clarity (prep)
-- [x] Phase 4: Replace independent argmax + weak if with explicit different-cand selection
-- [x] Phase 5: Add post-formation string equality guard for distinct
-- [x] Phase 6: Clean final cost/vol strings (strip probs debug suffix)
-- [x] Phase 7: Light scoring differentiation to help distinct
-- [x] Phase 8: Update getFinal comment + ensure cands path uses clean values
-- [x] Phase 9: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
-- [x] Phase 10: Add/refresh narrow plan cross-ref comments
-- [x] Phase 11: TODO hygiene + current-state pointer
-- [x] Phase 12: Full forensic + final build
+## Active Work (Implement Varying Calculated Blue Expansion — implement-varying-calculated-blue-expansion-20260619-plan.md)
+- [ ] Phase 1: Update createBlueAndOrangeHunksFromReds signature + vertFactors loop
+- [ ] Phase 2: Update procD call sites + comments (2 sites)
+- [ ] Phase 3: Update procE call sites + comments (2 sites)
+- [ ] Phase 4: Update procG call sites + comments (2 sites)
+- [ ] Phase 5: Update top-level flows label convention comment
+- [ ] Phase 6: Optional PUMP_EXPERIMENT_FLOWS.md update
+- [ ] Phase 7: Cross-check + final build
 
 ## Completed / Historical (prior plans rolled)
+- [x] fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan.md (10 phases)
+- [x] fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan.md (12 phases)
 - [x] fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan.md (10 phases)
 - [x] fix-remaining-report-issues-20260619-plan.md (20 phases)
 - [x] fix-4box-report-issues-20260619-plan.md (15 phases)

@@ -838,7 +838,7 @@ private suspend fun runPumpExperiment(
                     reds: List<PumpHunk>,
                     imgW: Int,
                     imgH: Int,
-                    vertFactor: Float = 0.2f,
+                    vertFactors: List<Float> = listOf(0.2f),
                     horizFactor: Float = 0.5f
                 ): Pair<List<PumpHunk>, List<PumpHunk>> {
                     val blues = mutableListOf<PumpHunk>()
@@ -846,20 +846,21 @@ private suspend fun runPumpExperiment(
                     reds.forEach { h ->
                         val r = android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                         val hgt = r.height()
-                        val v = vertFactor
-                        var nt = (r.top - (v * hgt)).toInt().coerceIn(0, imgH - 1)
-                        var nb = (r.bottom + (v * hgt)).toInt().coerceIn(nt + 1, imgH)
-                        val newH = nb - nt
-                        val horiz = (horizFactor * newH).toInt()
-                        var nl = (r.left - horiz).toInt().coerceIn(0, imgW - 1)
-                        var nr = (r.right + horiz).toInt().coerceIn(nl + 1, imgW)
-                        val bRect = android.graphics.Rect(nl, nt, nr, nb)
-                        val oExt = (0.1 * newH).toInt()
-                        val ol = (nl - oExt).coerceIn(0, imgW - 1)
-                        val orr = (nr + oExt).coerceIn(0, imgW)
-                        val oRect = android.graphics.Rect(ol, nt, orr, nb)
-                        blues.add(PumpHunk("", RectF(bRect.left.toFloat(), bRect.top.toFloat(), bRect.right.toFloat(), bRect.bottom.toFloat())))
-                        oranges.add(PumpHunk("", RectF(oRect.left.toFloat(), oRect.top.toFloat(), oRect.right.toFloat(), oRect.bottom.toFloat())))
+                        vertFactors.forEach { v ->
+                            var nt = (r.top - (v * hgt)).toInt().coerceIn(0, imgH - 1)
+                            var nb = (r.bottom + (v * hgt)).toInt().coerceIn(nt + 1, imgH)
+                            val newH = nb - nt
+                            val horiz = (horizFactor * newH).toInt()
+                            var nl = (r.left - horiz).toInt().coerceIn(0, imgW - 1)
+                            var nr = (r.right + horiz).toInt().coerceIn(nl + 1, imgW)
+                            val bRect = android.graphics.Rect(nl, nt, nr, nb)
+                            val oExt = (0.1 * newH).toInt()
+                            val ol = (nl - oExt).coerceIn(0, imgW - 1)
+                            val orr = (nr + oExt).coerceIn(0, imgW)
+                            val oRect = android.graphics.Rect(ol, nt, orr, nb)
+                            blues.add(PumpHunk("", RectF(bRect.left.toFloat(), bRect.top.toFloat(), bRect.right.toFloat(), bRect.bottom.toFloat())))
+                            oranges.add(PumpHunk("", RectF(oRect.left.toFloat(), oRect.top.toFloat(), oRect.right.toFloat(), oRect.bottom.toFloat())))
+                        }
                     }
                     return blues to oranges
                 }
