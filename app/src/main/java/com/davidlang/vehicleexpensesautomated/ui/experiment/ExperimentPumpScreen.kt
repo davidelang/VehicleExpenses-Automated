@@ -600,7 +600,7 @@ private suspend fun runPumpExperiment(
                 ): PathResult {
                     // complete-real-4box-per-column-wiring plan + docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: per-column top-4 candidates drive cost/vol (~8 independent column/engine invocations); pathResults unchanged
                     if (candidates.isNotEmpty()) {
-                        // fix-4box-report-issues-20260619-plan: separate cost/vol crops from each chosen cand's ocr rect
+                        // fix-remaining-report-issues-20260619-plan: separate cost/vol crops from each chosen cand's ocr rect
                         val cv = classifyCostVolFromBoxOcr(candidates)
                         val costCrop = cv.costCand.rect?.let { r ->
                             OcrUtils.takeSnapshot(ws.p, r, 300, 100, emptyList(), null, ws).first
