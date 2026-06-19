@@ -2786,6 +2786,26 @@ private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): St
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
+private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String {
+    val blueMethodPrefixes = listOf("Set B", "Set C", "Set D", "Set E", "Set F", "Set G")
+    if (blueMethodPrefixes.none { flowName.startsWith(it) }) return ""
+    val binPeaks = br.images.keys.filter { it.startsWith("binPeak_") }
+    if (binPeaks.isEmpty()) return ""
+    val sorted = binPeaks.mapNotNull { key ->
+        val peak = key.removePrefix("binPeak_").toIntOrNull() ?: return@mapNotNull null
+        val count = br.metadata["binPeak_${peak}_count"] ?: "0"
+        val b64 = br.images[key] ?: return@mapNotNull null
+        Triple(peak, count, b64)
+    }.sortedByDescending { it.first }
+    return buildString {
+        append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range +-2, highest to lowest):</b></div>")
+        sorted.forEach { (peak, count, b64) ->
+            append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+            append("<br><small>peak=$peak (matched by $count/4 reds)</small><br>")
+        }
+    }
+}
+
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
