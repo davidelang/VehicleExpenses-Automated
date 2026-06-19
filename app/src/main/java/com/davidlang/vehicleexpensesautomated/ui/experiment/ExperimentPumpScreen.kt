@@ -1512,6 +1512,7 @@ private suspend fun runPumpExperiment(
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData for JSON (all sets); C visuals/redboxDataC + n_per_red_hists below
+                    captureBinPeakSnapshotsFromRedbox(branch, workspace)
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
