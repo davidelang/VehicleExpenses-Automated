@@ -34,18 +34,19 @@ Input: `List<RedBoxOcrCandidate>` where each has `asis`, `digits`, and `rect`.
 
 ### Candidate filter (mandatory)
 
-Only candidates with **≥ 2 digits** total across `digits` and `asis` are eligible for selection as cost or volume values. Label-only or single-digit candidates are excluded.
+Only candidates with **≥ 2 digit characters in `digits`** (from `recognizeNumericDecimal`) are eligible for cost or volume selection. Full-text `asis` results are **never** used as value candidates. Label-only or single-digit numeric OCR is excluded automatically.
 
-### Golden `$` label handling
+### Golden word Y-band handling
 
-- A candidate whose `asis` is exactly `"$"` (or otherwise has no digits) is a **golden label**, not a field value.
-- Pure `$` must **never** be selected as cost or volume.
-- When a golden `$` label is present, its Y position (`rect.top`) boosts the **cost score** of the numeric candidate on the closest row (same Y band).
-- If `$` appears combined with digits in the same OCR text (e.g. `"$12.34"`), it is treated as a normal numeric candidate (≥ 2 digits).
+Full-text `asis` is consulted **only** to detect golden words (`$`, `/gal`, `gal`, etc.) and obtain their `rect.top` Y coordinate as a **band indicator** for nearby numeric results.
+
+- `$` and similar golden words are **not** field values; they mark the Y row of the associated numeric-only result.
+- When golden words are present, their Y positions boost the **cost score** of the closest eligible **digits** candidate (existing Y-distance bonus).
+- No special "lone $ never a value" or "$ combined with digits" value rules — values come exclusively from `digits`.
 
 ### Parse
 
-For each eligible candidate, parse `digits` if non-empty else `asis`:
+For each eligible candidate, parse `digits` only:
 - Extract digits and `.` only
 - `value` = float or 0
 - `decimalPlaces` = chars after `.` or 0
@@ -71,8 +72,8 @@ If the same candidate wins both cost and volume and more than one eligible candi
 
 ### Output strings
 
-- `cost` = chosen cost candidate's digits (or asis if digits empty)
-- `vol` = chosen volume candidate's digits (or asis if digits empty)
+- `cost` = chosen cost candidate's `digits` string only
+- `vol` = chosen volume candidate's `digits` string only
 - **Post-selection enforcement:** if final `cost` or `vol` string has fewer than 2 digits, set that field to `"N/A"`
 
 ### Decimal repair (volume)
