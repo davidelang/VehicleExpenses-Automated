@@ -2013,7 +2013,7 @@ private suspend fun runPumpExperiment(
                 // Phase 8 (complete-real-4box plan): hoist retracted blue OCR before getFinal (Set F column)
                 val fRetractedPixel = computeRetractedBluePixelRects()
                 val (fAsis, fDigits) = ocrPumpRectsAsisAndDigits(fRetractedPixel)
-                val fCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, fAsis, fDigits)
+                val fCands = buildRedBoxCandidates(fRetractedPixel, fAsis, fDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, fCands)
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
