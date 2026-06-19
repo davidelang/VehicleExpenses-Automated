@@ -1510,9 +1510,13 @@ private suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 
-                // Phase 7 wiring (per finish plan): dCands for Set D column before getFinal (local pdHunksRawTotal)
-                val dAsis = List(pdHunksRawTotal.size) { "" }
-                val dDigits = List(pdHunksRawTotal.size) { "" }
+                // Phase 6 (complete-real-4box plan): hoist custom blue OCR before getFinal (Set D column)
+                val (customBlueDPre, _) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                val customBluePixelD = customBlueDPre.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                val (dAsis, dDigits) = ocrPumpRectsAsisAndDigits(customBluePixelD)
                 val dCands = buildRedBoxCandidates(pdHunksRawTotal, dAsis, dDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, dCands)
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
