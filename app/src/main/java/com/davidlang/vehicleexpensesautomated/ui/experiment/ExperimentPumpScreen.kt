@@ -529,8 +529,10 @@ private suspend fun runPumpExperiment(
                 }
 
                 
-                fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): Pair<String, String> {
-                    if (candidates.isEmpty()) return "N/A" to "N/A"
+                data class CostVolClassifyResult(val cost: String, val vol: String, val costCand: RedBoxOcrCandidate, val volCand: RedBoxOcrCandidate)
+
+                fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
+                    if (candidates.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
                     fun parse(s: String): Pair<Float, Int> {
                         val d = s.filter { it.isDigit() || it == '.'}
                         val f = d.toFloatOrNull() ?: 0f
@@ -561,7 +563,7 @@ private suspend fun runPumpExperiment(
                         val n = dstr.length
                         vlm = dstr.substring(0, n-3) + "." + dstr.substring(n-3)
                     }
-                    return cst to vlm
+                    return CostVolClassifyResult(cst, vlm, costCand, volCand)
                 }
 
 
@@ -580,14 +582,15 @@ private suspend fun runPumpExperiment(
                 ): PathResult {
                     // Phase 12: comments + cross-ref finish-4box-per-column-cost-volume-wiring-20260619-plan.md + spec (per-column 4-box candidates drive cost/vol independently per proc/column ~8 times; pathResults emitted same)
                     if (candidates.isNotEmpty()) {
-                        // Phase 11: ensure chosen rect used for B64 crops (per finish plan); fallback only on empty; per-column isolation via local candidates
-                        val (cst, vlm) = classifyCostVolFromBoxOcr(candidates)
-                        val chosen = candidates.firstOrNull { it.digits.isNotEmpty() || it.asis.isNotEmpty() } ?: candidates[0]
-                        val r = chosen.rect
-                        val crop = if (r != null) {
+                        // Phase 11 (complete-real-4box plan): per-chosen-candidate rect for cost vs vol B64 crops
+                        val cv = classifyCostVolFromBoxOcr(candidates)
+                        val costCrop = cv.costCand.rect?.let { r ->
                             OcrUtils.takeSnapshot(ws.p, r, 300, 100, emptyList(), null, ws).first
-                        } else ""
-                        return PathResult(cst, vlm, crop, crop)
+                        } ?: ""
+                        val volCrop = cv.volCand.rect?.let { r ->
+                            OcrUtils.takeSnapshot(ws.p, r, 300, 100, emptyList(), null, ws).first
+                        } ?: ""
+                        return PathResult(cv.cost, cv.vol, costCrop, volCrop)
                     }
                     // legacy fallback
                     val stitched = stitchHunksHorizontally(hunks)
