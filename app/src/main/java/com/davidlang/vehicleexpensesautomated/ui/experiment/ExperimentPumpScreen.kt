@@ -537,6 +537,44 @@ private suspend fun runPumpExperiment(
 
                 fun hasBadInternalDecimals(s: String): Boolean = cleanDecimal(s).count { it == '.' } >= 2
 
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: probs score correctness likelihood (not role)
+                fun probCorrectness(p: String): Float {
+                    if (p.isEmpty()) return 0.5f
+                    val vals = p.split(",").mapNotNull { part ->
+                        val colon = part.indexOf(':')
+                        if (colon < 0) null else part.substring(colon + 1).trim().toFloatOrNull()
+                    }
+                    return if (vals.isEmpty()) 0.5f else vals.average().toFloat()
+                }
+
+                fun yOverlapHeight(a: android.graphics.Rect, b: android.graphics.Rect): Int {
+                    val interTop = maxOf(a.top, b.top)
+                    val interBottom = minOf(a.bottom, b.bottom)
+                    return maxOf(0, interBottom - interTop)
+                }
+
+                // Significant overlap: Y-overlap height > 50% of preferred box height
+                fun significantYOverlap(preferred: android.graphics.Rect, other: android.graphics.Rect): Boolean {
+                    val overlap = yOverlapHeight(preferred, other)
+                    val prefH = preferred.height().coerceAtLeast(1)
+                    return overlap > prefH * 0.5f
+                }
+
+                // Role-based conditional decimal repair: only when clean value lacks a good decimal
+                fun repairDecimalForRole(clean: String, role: String): String {
+                    if ("." in clean) return clean
+                    val dstr = clean.filter { it.isDigit() }
+                    if (role == "cost" && dstr.length >= 3) {
+                        val n = dstr.length
+                        return dstr.substring(0, n - 2) + "." + dstr.substring(n - 2)
+                    }
+                    if (role == "vol" && dstr.length >= 4) {
+                        val n = dstr.length
+                        return dstr.substring(0, n - 3) + "." + dstr.substring(n - 3)
+                    }
+                    return clean
+                }
+
                 data class PumpRectOcrLists(
                     val asis: List<String>,
                     val digits: List<String>,
@@ -578,79 +616,138 @@ private suspend fun runPumpExperiment(
                 
                 data class CostVolClassifyResult(val cost: String, val vol: String, val costCand: RedBoxOcrCandidate, val volCand: RedBoxOcrCandidate)
 
-                // fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan + fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan + PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: digits-only values; distinct cands; clean output (no probs suffix)
+                // fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan + fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: digits-only; overlap clustering; probs for correctness; role-conditional repair
                 fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
-                    if (candidates.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+                    val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+                    if (candidates.isEmpty()) return na
                     fun digitCount(s: String) = s.count { it.isDigit() }
                     fun parse(s: String): Pair<Float, Int> {
-                        val d = s.filter { it.isDigit() || it == '.'}
+                        val d = s.filter { it.isDigit() || it == '.' }
                         val f = d.toFloatOrNull() ?: 0f
                         val dp = if ("." in d) d.substringAfter(".").length else 0
                         return f to dp
                     }
-                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: digits-only valids (>=2); distinct cost/vol candidates required when >=2 valids
-                    // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean decimals early; exclude internal multi-dot OCR
-                    val valids = candidates.filter {
-                        !hasBadInternalDecimals(it.digits) && digitCount(cleanDecimal(it.digits)) >= 2
+                    data class Enriched(
+                        val cand: RedBoxOcrCandidate,
+                        val cleanDigits: String,
+                        val value: Float,
+                        val dp: Int,
+                        val probScore: Float,
+                        val costScore: Int,
+                        val volScore: Int
+                    )
+                    fun correctnessScore(e: Enriched): Int {
+                        var s = (e.probScore * 100).toInt()
+                        if ("." in e.cleanDigits) s += 50
+                        return s
                     }
-                    if (valids.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
-                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: asis only for golden Y-band ($/gal); distinct candidates from digits scoring
+                    fun clusterOf(pool: List<Enriched>, seed: Enriched): List<Enriched> {
+                        val pref = seed.cand.rect ?: return listOf(seed)
+                        return pool.filter { e ->
+                            e.cand.rect?.let { significantYOverlap(pref, it) } == true
+                        }.ifEmpty { listOf(seed) }
+                    }
+                    fun pickClusterBest(pool: List<Enriched>, seed: Enriched): Enriched =
+                        clusterOf(pool, seed).maxByOrNull { correctnessScore(it) + maxOf(it.costScore, it.volScore) } ?: seed
                     val goldenYs = candidates.filter { c ->
                         val a = c.asis.lowercase()
                         a.contains("$") || a.contains("/gal") || a.contains("gal")
                     }.mapNotNull { it.rect?.top }
-                    val costScores = mutableMapOf<RedBoxOcrCandidate, Int>()
-                    val volScores = mutableMapOf<RedBoxOcrCandidate, Int>()
-                    for (c in valids) {
+                    val enriched = candidates.mapNotNull { c ->
+                        if (hasBadInternalDecimals(c.digits)) return@mapNotNull null
                         val cleanDigits = cleanDecimal(c.digits)
+                        if (digitCount(cleanDigits) < 2) return@mapNotNull null
                         val (v, dp) = parse(cleanDigits)
                         var cs = 0; var vs = 0
                         if (dp == 2) cs += 12
                         if (dp == 3) vs += 12
                         if (v > 20) cs += 8
                         if (v < 60 && v > 0) vs += 6
-                        // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: light vol bias for typical gallon range
                         if (v in 3.0..30.0) vs += 1
                         if (dp > 0) { cs += 2; vs += 2 }
+                        if ("." in cleanDigits) { cs += 5; vs += 5 }
                         if (goldenYs.isNotEmpty() && c.rect != null) {
                             val minDist = goldenYs.minOf { kotlin.math.abs(it - c.rect.top) }
                             cs += 20 - minOf(minDist / 10, 20)
                         }
-                        costScores[c] = cs
-                        volScores[c] = vs
+                        val prob = probCorrectness(c.digitsProbs)
+                        cs += (prob * 20).toInt()
+                        vs += (prob * 20).toInt()
+                        Enriched(c, cleanDigits, v, dp, prob, cs, vs)
                     }
-                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: cost argmax, then vol argmax among remaining != costCand
-                    val costCand = valids.maxByOrNull { costScores[it] ?: -1 }!!
-                    val remainingForVol = valids.filter { it != costCand }
-                    var volCand = remainingForVol.maxByOrNull { volScores[it] ?: -1 }
-                        ?: valids.maxByOrNull { volScores[it] ?: -1 }!!
-                    var cst = cleanDecimal(costCand.digits)
-                    var vlm = cleanDecimal(volCand.digits)
-                    // decimal repair for vol when cost confident (dplaces 2)
-                    val costDp = parse(cst).second
-                    val dstr = vlm.filter { it.isDigit() }
-                    if (costDp == 2 && dstr.length >= 4) {
-                        val n = dstr.length
-                        vlm = dstr.substring(0, n-3) + "." + dstr.substring(n-3)
+                    if (enriched.isEmpty()) return na
+                    if (enriched.none { it.cand.rect != null }) {
+                        val costE = enriched.maxByOrNull { it.costScore }!!
+                        val volE = enriched.filter { it.cand != costE.cand }.maxByOrNull { it.volScore }
+                            ?: enriched.maxByOrNull { it.volScore }!!
+                        var cstFb = repairDecimalForRole(costE.cleanDigits, "cost")
+                        var vlmFb = repairDecimalForRole(volE.cleanDigits, "vol")
+                        if (cstFb == vlmFb && enriched.size >= 2) vlmFb = "N/A"
+                        if (digitCount(cstFb) < 2) cstFb = "N/A"
+                        if (digitCount(vlmFb) < 2) vlmFb = "N/A"
+                        return CostVolClassifyResult(cstFb, vlmFb, costE.cand, volE.cand)
                     }
-                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: post-formation guard if cst==vlm with >=2 valids
-                    if (cst == vlm && valids.size >= 2) {
-                        val altVolCand = remainingForVol.filter { it != volCand }.maxByOrNull { volScores[it] ?: -1 }
-                            ?: remainingForVol.maxByOrNull { volScores[it] ?: -1 }
-                        if (altVolCand != null) {
-                            volCand = altVolCand
-                            vlm = cleanDecimal(volCand.digits)
-                            val altDstr = vlm.filter { it.isDigit() }
-                            if (costDp == 2 && altDstr.length >= 4) {
-                                val n = altDstr.length
-                                vlm = altDstr.substring(0, n-3) + "." + altDstr.substring(n-3)
-                            }
+                    val seed1 = enriched.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
+                    val firstBest = pickClusterBest(enriched, seed1)
+                    val firstCluster = clusterOf(enriched, firstBest)
+                    val firstClusterIds = firstCluster.map { it.cand }.toSet()
+                    val costLikelihood = firstCluster.sumOf { it.costScore.toDouble() }.toFloat() + firstBest.probScore * 30f
+                    val volLikelihood = firstCluster.sumOf { it.volScore.toDouble() }.toFloat() + firstBest.probScore * 30f
+                    val firstIsCost = costLikelihood >= volLikelihood
+                    val prefRect1 = firstBest.cand.rect
+                    val secondPool = enriched.filter { e ->
+                        e.cand !in firstClusterIds && (prefRect1 == null || e.cand.rect == null || !significantYOverlap(prefRect1, e.cand.rect))
+                    }
+                    var costCand: RedBoxOcrCandidate
+                    var volCand: RedBoxOcrCandidate
+                    var cst: String
+                    var vlm: String
+                    if (firstIsCost) {
+                        costCand = firstBest.cand
+                        cst = firstBest.cleanDigits
+                        if (secondPool.isNotEmpty()) {
+                            val seed2 = secondPool.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
+                            val secondBest = pickClusterBest(secondPool, seed2)
+                            volCand = secondBest.cand
+                            vlm = secondBest.cleanDigits
+                        } else {
+                            val alt = enriched.filter { it.cand != firstBest.cand }.maxByOrNull { it.volScore }
+                            if (alt != null) { volCand = alt.cand; vlm = alt.cleanDigits }
+                            else { volCand = firstBest.cand; vlm = "N/A" }
                         }
-                        if (cst == vlm) vlm = "N/A"
+                    } else {
+                        volCand = firstBest.cand
+                        vlm = firstBest.cleanDigits
+                        if (secondPool.isNotEmpty()) {
+                            val seed2 = secondPool.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
+                            val secondBest = pickClusterBest(secondPool, seed2)
+                            costCand = secondBest.cand
+                            cst = secondBest.cleanDigits
+                        } else {
+                            val alt = enriched.filter { it.cand != firstBest.cand }.maxByOrNull { it.costScore }
+                            if (alt != null) { costCand = alt.cand; cst = alt.cleanDigits }
+                            else { costCand = firstBest.cand; cst = "N/A" }
+                        }
                     }
-                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: strip probs debug suffix from PathResult values
-                    cst = cst.substringBefore(" [")
-                    vlm = vlm.substringBefore(" [")
+                    cst = repairDecimalForRole(cst, "cost")
+                    vlm = repairDecimalForRole(vlm, "vol")
+                    if (cst == vlm && enriched.size >= 2) {
+                        if (firstIsCost) {
+                            val alt = secondPool.filter { it.cand != volCand }.maxByOrNull { it.volScore }
+                                ?: enriched.filter { it.cand != costCand && it.cand != volCand }.maxByOrNull { it.volScore }
+                            if (alt != null) {
+                                volCand = alt.cand
+                                vlm = repairDecimalForRole(alt.cleanDigits, "vol")
+                            } else vlm = "N/A"
+                        } else {
+                            val alt = secondPool.filter { it.cand != costCand }.maxByOrNull { it.costScore }
+                                ?: enriched.filter { it.cand != costCand && it.cand != volCand }.maxByOrNull { it.costScore }
+                            if (alt != null) {
+                                costCand = alt.cand
+                                cst = repairDecimalForRole(alt.cleanDigits, "cost")
+                            } else cst = "N/A"
+                        }
+                    }
                     if (digitCount(cst) < 2) cst = "N/A"
                     if (digitCount(vlm) < 2) vlm = "N/A"
                     return CostVolClassifyResult(cst, vlm, costCand, volCand)
