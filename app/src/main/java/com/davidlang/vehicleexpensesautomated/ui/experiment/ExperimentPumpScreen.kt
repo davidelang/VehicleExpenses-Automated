@@ -519,7 +519,7 @@ private suspend fun runPumpExperiment(
 
                 data class RedBoxOcrCandidate(val label: String, val asis: String, val digits: String, val rect: android.graphics.Rect? = null)
 
-                // fix-4box-report-issues-20260619-plan: cand.rect from ocr rect list (blue/orange), not raw red hunks
+                // fix-remaining-report-issues-20260619-plan: cand.rect from ocr rect list (blue/orange/retracted), not pdHunksRawTotal reds
                 fun buildRedBoxCandidates(boxRects: List<android.graphics.Rect>, asisList: List<String>, digitsList: List<String>): List<RedBoxOcrCandidate> {
                     val n = minOf(boxRects.size, asisList.size, digitsList.size)
                     return (0 until n).map { i ->
