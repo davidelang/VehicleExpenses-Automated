@@ -530,7 +530,7 @@ private suspend fun runPumpExperiment(
                 
                 data class CostVolClassifyResult(val cost: String, val vol: String, val costCand: RedBoxOcrCandidate, val volCand: RedBoxOcrCandidate)
 
-                // fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan + docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: values from digits only (>=2); asis solely for golden Y-band
+                // fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan + fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan + PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: digits-only values; distinct cands; clean output (no probs suffix)
                 fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
                     if (candidates.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
                     fun digitCount(s: String) = s.count { it.isDigit() }
@@ -740,7 +740,7 @@ private suspend fun runPumpExperiment(
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
                 var processedScales = mutableSetOf<Int>()
 
-                // Per-column top-4 box OCR (docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits (cost/vol values) on pixel rects before getFinal per proc
+                // Per-column top-4 box OCR (PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits on pixel rects; fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: digits may carry [probs:...] for debug — classify strips before PathResult
                 suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): Pair<List<String>, List<String>> {
                     val asisList = rects.map { r ->
                         val pW = r.width(); val pH = r.height()
