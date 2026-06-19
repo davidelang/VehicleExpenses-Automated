@@ -2345,7 +2345,7 @@ private suspend fun runPumpExperiment(
                 // for the best path result using the valley versions).
                 // fix-remaining-report-issues-20260619-plan: Set G — buildRedBoxCandidates uses customBluePixelG ocr rects
                 val (customBlueGPre, _) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, listOf(0.2f), 0.5f)
+                    pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
                 val customBluePixelG = customBlueGPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
