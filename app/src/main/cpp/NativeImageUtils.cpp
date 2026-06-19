@@ -876,6 +876,40 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     return result;
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBinarizeRange(
+    JNIEnv* env, jobject thiz, jlong srcPtr, jlong dstPtr, jint low, jint high) {
+
+    auto* src = reinterpret_cast<cv::Mat*>(srcPtr);
+    auto* dst = reinterpret_cast<cv::Mat*>(dstPtr);
+    if (!src || !dst || src->empty() || dst->empty()) {
+        LOGE("BINARIZE_RANGE: null or empty mats");
+        return;
+    }
+    if (src->type() != CV_8UC1 || dst->type() != CV_8UC1) {
+        LOGE("BINARIZE_RANGE: expected 8UC1, got src=%d dst=%d", src->type(), dst->type());
+        return;
+    }
+    if (src->rows != dst->rows || src->cols != dst->cols) {
+        LOGE("BINARIZE_RANGE: dimension mismatch src=%dx%d dst=%dx%d",
+             src->cols, src->rows, dst->cols, dst->rows);
+        return;
+    }
+
+    const int clampedLow = std::max(0, std::min(255, (int)low));
+    const int clampedHigh = std::max(clampedLow, std::min(255, (int)high));
+    LOGI("BINARIZE_RANGE: [%d,%d] on %dx%d", clampedLow, clampedHigh, src->cols, src->rows);
+
+    for (int y = 0; y < src->rows; ++y) {
+        const uint8_t* srcRow = src->ptr<uint8_t>(y);
+        uint8_t* dstRow = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < src->cols; ++x) {
+            const uint8_t v = srcRow[x];
+            dstRow[x] = (v >= clampedLow && v <= clampedHigh) ? 255 : 0;
+        }
+    }
+}
+
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngle(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold) {
