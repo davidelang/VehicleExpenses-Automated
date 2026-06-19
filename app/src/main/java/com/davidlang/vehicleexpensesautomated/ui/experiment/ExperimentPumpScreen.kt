@@ -580,7 +580,7 @@ private suspend fun runPumpExperiment(
                     imgH: Int,
                     candidates: List<RedBoxOcrCandidate> = emptyList()
                 ): PathResult {
-                    // Phase 12: comments + cross-ref finish-4box-per-column-cost-volume-wiring-20260619-plan.md + spec (per-column 4-box candidates drive cost/vol independently per proc/column ~8 times; pathResults emitted same)
+                    // complete-real-4box-per-column-wiring plan + docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: per-column top-4 candidates drive cost/vol (~8 independent column/engine invocations); pathResults unchanged
                     if (candidates.isNotEmpty()) {
                         // Phase 11 (complete-real-4box plan): per-chosen-candidate rect for cost vs vol B64 crops
                         val cv = classifyCostVolFromBoxOcr(candidates)
@@ -702,7 +702,7 @@ private suspend fun runPumpExperiment(
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
                 var processedScales = mutableSetOf<Int>()
 
-                // Per-column top-4 box OCR helper (complete-real-4box-per-column-wiring plan): as-is + digits on pixel rects before getFinal
+                // Per-column top-4 box OCR (docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is + digits on pixel rects before getFinal per proc
                 suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): Pair<List<String>, List<String>> {
                     val asisList = rects.map { r ->
                         val pW = r.width(); val pH = r.height()
