@@ -2,7 +2,7 @@
 
 **Authority:** `docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md`  
 **Implementation:** `ExperimentPumpScreen.kt` — `classifyCostVolFromBoxOcr`, `buildRedBoxCandidates`, `getFinal`  
-**Related plans:** `complete-real-4box-per-column-wiring-20260619-plan.md`, `fix-4box-report-issues-20260619-plan.md`
+**Related plans:** `complete-real-4box-per-column-wiring-20260619-plan.md`, `fix-4box-report-issues-20260619-plan.md`, `fix-remaining-report-issues-20260619-plan.md`
 
 ## Purpose
 
@@ -73,6 +73,7 @@ If the same candidate wins both cost and volume and more than one eligible candi
 
 - `cost` = chosen cost candidate's digits (or asis if digits empty)
 - `vol` = chosen volume candidate's digits (or asis if digits empty)
+- **Post-selection enforcement:** if final `cost` or `vol` string has fewer than 2 digits, set that field to `"N/A"`
 
 ### Decimal repair (volume)
 
@@ -86,7 +87,8 @@ When cost candidate has exactly 2 decimal places and volume digits string length
 
 ## HTML Report (first column)
 
-- Metadata in the photo-info column must exclude keys containing `redbox`, `Data`, or `json`, and values longer than 100 chars.
+- Metadata in the photo-info column (first `td`) is **whitelist-only**: `t_total_flow_ms`, `img_w`, `img_h` (values ≤ 100 chars).
+- All other timing (`t_*`), counts (`n_*`), tilt, redbox data, and diagnostics remain in `branch.metadata` for JSON export only.
 - Per-red C/E column HTML shows summary text only (h/w/area); full base64 and JSON remain in metadata/JSON export.
 
 ## Verification
@@ -94,7 +96,8 @@ When cost candidate has exactly 2 decimal places and volume digits string length
 - Grep: `digitCount` / `valids` filter with `>= 2` in `classifyCostVolFromBoxOcr`
 - Grep: `buildRedBoxCandidates` called with ocr rect lists (not `pdHunksRawTotal`)
 - Grep: distinct cost/vol enforcement when same candidate wins both
-- Grep: strict `metaHtml` filter in `pBuildHtmlRowDynamic`
+- Grep: `htmlMetaWhitelist` / `t_total_flow_ms` whitelist in `pBuildHtmlRowDynamic`
+- Grep: post-selection `digitCount(cst) < 2` → `"N/A"` in `classifyCostVolFromBoxOcr`
 - `pathResults` populated via classify path when candidates non-empty
 - Spec file present at this path
 
